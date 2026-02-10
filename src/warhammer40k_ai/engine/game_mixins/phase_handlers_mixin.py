@@ -3135,6 +3135,355 @@ class GamePhaseHandlersMixin:
         )
         self.request_decision(request)
 
+    def _on_phase_start_shooting_phase_blight_bombardment(self, player=None, phase=None, **_kwargs) -> None:
+        """Start of Shooting phase: Blight Bombardment enemy selection."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "SHOOTING_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+
+        from ...utility.entity_ids import get_entity_id
+
+        enemy_roots = self._collect_enemy_unit_roots(player)
+        if not enemy_roots:
+            return
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        def _model_sort_key(m):
+            try:
+                return str(get_entity_id(m))
+            except Exception:
+                return str(getattr(m, "name", "") or "")
+
+        enemy_roots.sort(key=_unit_sort_key)
+        for unit in sorted(list(army.units or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            if not getattr(unit, "is_alive", lambda: False)():
+                continue
+            if not getattr(unit, "deployed", True):
+                continue
+            try:
+                if unit.is_in_reserves() or unit.is_embarked:
+                    continue
+            except Exception:
+                pass
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            try:
+                models = list(root.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(root, "models", []) or [])
+            if not models:
+                continue
+
+            for model in sorted([m for m in models if getattr(m, "is_alive", True)], key=_model_sort_key):
+                spec_fn = getattr(root, "model_start_shooting_phase_blight_bombardment_specs", None)
+                if not callable(spec_fn):
+                    continue
+                specs = spec_fn(model) or []
+                if not specs:
+                    continue
+                source_unit = getattr(model, "parent_unit", None) or root
+                model_id = str(get_entity_id(model) or "")
+                unit_id = str(get_entity_id(source_unit) or "")
+                if not model_id or not unit_id:
+                    continue
+                for spec in specs:
+                    try:
+                        range_value = int(spec.get("range", 0) or 0)
+                    except Exception:
+                        range_value = 0
+                    if range_value <= 0:
+                        continue
+                    candidates = self._visible_enemy_candidates_for_model(
+                        source_unit=source_unit,
+                        model=model,
+                        enemy_roots=enemy_roots,
+                        range_value=float(range_value),
+                        game_map=game_map,
+                    )
+                    if not candidates:
+                        continue
+                    ability_name = str(spec.get("source", "") or "Blight Bombardment").strip() or "Blight Bombardment"
+                    ability_key = re.sub(r"[^a-z0-9]+", "_", ability_name.lower()).strip("_") or "blight_bombardment"
+                    queue = getattr(self, "decision_queue", None)
+                    if queue is not None and hasattr(queue, "list"):
+                        duplicate = False
+                        for req in list(queue.list() or []):
+                            if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                                continue
+                            ctx = dict(getattr(req, "context", {}) or {})
+                            if str(ctx.get("ability", "") or "") != "blight_bombardment":
+                                continue
+                            if str(ctx.get("model_id", "") or "") != model_id:
+                                continue
+                            if str(ctx.get("ability_key", "") or "") != ability_key:
+                                continue
+                            duplicate = True
+                            break
+                        if duplicate:
+                            continue
+
+                    options = []
+                    for cand in sorted(list(candidates or []), key=_unit_sort_key):
+                        target_id = str(get_entity_id(cand) or "")
+                        if not target_id:
+                            continue
+                        options.append(
+                            DecisionOption.create(
+                                str(getattr(cand, "name", "Unit") or "Unit"),
+                                payload={
+                                    "target_unit_id": target_id,
+                                    "source_unit_id": unit_id,
+                                    "model_id": model_id,
+                                },
+                            )
+                        )
+                    if not options:
+                        continue
+                    ctx = {
+                        "ability": "blight_bombardment",
+                        "ability_name": ability_name,
+                        "ability_key": ability_key,
+                        "phase": "Shooting phase",
+                        "source_unit_id": unit_id,
+                        "unit_id": unit_id,
+                        "model_id": model_id,
+                        "range": int(range_value),
+                    }
+                    request = DecisionRequest.create(
+                        DECISION_CHOOSE_QUARRY,
+                        f"{ability_name}: select a visible enemy unit.",
+                        player_id=getattr(player, "id", None),
+                        options=options,
+                        context=ctx,
+                    )
+                    self.request_decision(request)
+
+    def _on_phase_start_shooting_phase_eater_plague(self, player=None, phase=None, **_kwargs) -> None:
+        """Start of Shooting phase: optional Eater Plague target selection."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "SHOOTING_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+
+        from ...utility.aura_utils import distance_between_models_bases_3d
+        from ...utility.entity_ids import get_entity_id
+
+        enemy_roots = self._collect_enemy_unit_roots(player)
+        if not enemy_roots:
+            return
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        def _model_sort_key(m):
+            try:
+                return str(get_entity_id(m))
+            except Exception:
+                return str(getattr(m, "name", "") or "")
+
+        def _target_has_lone_operative(target_root) -> bool:
+            if target_root is None:
+                return False
+            fn = getattr(target_root, "has_lone_operative", None)
+            if callable(fn):
+                try:
+                    return bool(fn())
+                except Exception:
+                    return False
+            return False
+
+        def _target_part_of_attached_unit(target_root) -> bool:
+            if target_root is None:
+                return False
+            try:
+                if getattr(target_root, "attached_to", None):
+                    return True
+            except Exception:
+                pass
+            try:
+                attached_leaders = list(getattr(target_root, "attached_leaders", []) or [])
+            except Exception:
+                attached_leaders = []
+            return bool(attached_leaders)
+
+        def _distance_model_to_unit(source_model, target_root) -> float:
+            if source_model is None or target_root is None:
+                return float("inf")
+            try:
+                target_models = list(target_root.get_models_for_collision() or [])
+            except Exception:
+                target_models = list(getattr(target_root, "models", []) or [])
+            target_models = [tm for tm in target_models if getattr(tm, "is_alive", True)]
+            if not target_models:
+                return float("inf")
+            best = float("inf")
+            for tm in target_models:
+                try:
+                    dist = float(distance_between_models_bases_3d(source_model, tm))
+                except Exception:
+                    continue
+                if dist < best:
+                    best = dist
+            return float(best)
+
+        enemy_roots.sort(key=_unit_sort_key)
+        for unit in sorted(list(army.units or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            if not getattr(unit, "is_alive", lambda: False)():
+                continue
+            if not getattr(unit, "deployed", True):
+                continue
+            try:
+                if unit.is_in_reserves() or unit.is_embarked:
+                    continue
+            except Exception:
+                pass
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            try:
+                models = list(root.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(root, "models", []) or [])
+            if not models:
+                continue
+
+            for model in sorted([m for m in models if getattr(m, "is_alive", True)], key=_model_sort_key):
+                spec_fn = getattr(root, "model_start_shooting_phase_eater_plague_specs", None)
+                if not callable(spec_fn):
+                    continue
+                specs = spec_fn(model) or []
+                if not specs:
+                    continue
+                source_unit = getattr(model, "parent_unit", None) or root
+                model_id = str(get_entity_id(model) or "")
+                unit_id = str(get_entity_id(source_unit) or "")
+                if not model_id or not unit_id:
+                    continue
+                for spec in specs:
+                    try:
+                        range_value = int(spec.get("range", 0) or 0)
+                    except Exception:
+                        range_value = 0
+                    if range_value <= 0:
+                        continue
+                    try:
+                        lone_range = int(spec.get("lone_operative_range", 12) or 12)
+                    except Exception:
+                        lone_range = 12
+                    if lone_range <= 0:
+                        lone_range = 12
+                    candidates = self._visible_enemy_candidates_for_model(
+                        source_unit=source_unit,
+                        model=model,
+                        enemy_roots=enemy_roots,
+                        range_value=float(range_value),
+                        game_map=game_map,
+                    )
+                    if candidates:
+                        filtered = []
+                        for cand in list(candidates):
+                            if not _target_has_lone_operative(cand):
+                                filtered.append(cand)
+                                continue
+                            if _target_part_of_attached_unit(cand):
+                                filtered.append(cand)
+                                continue
+                            if _distance_model_to_unit(model, cand) <= float(lone_range):
+                                filtered.append(cand)
+                        candidates = filtered
+                    if not candidates:
+                        continue
+                    ability_name = str(spec.get("source", "") or "Eater Plague").strip() or "Eater Plague"
+                    ability_key = re.sub(r"[^a-z0-9]+", "_", ability_name.lower()).strip("_") or "eater_plague"
+                    queue = getattr(self, "decision_queue", None)
+                    if queue is not None and hasattr(queue, "list"):
+                        duplicate = False
+                        for req in list(queue.list() or []):
+                            if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                                continue
+                            ctx = dict(getattr(req, "context", {}) or {})
+                            if str(ctx.get("ability", "") or "") != "eater_plague":
+                                continue
+                            if str(ctx.get("model_id", "") or "") != model_id:
+                                continue
+                            if str(ctx.get("ability_key", "") or "") != ability_key:
+                                continue
+                            duplicate = True
+                            break
+                        if duplicate:
+                            continue
+
+                    options = [DecisionOption.create("None", payload={"action": "skip"})]
+                    for cand in sorted(list(candidates or []), key=_unit_sort_key):
+                        target_id = str(get_entity_id(cand) or "")
+                        if not target_id:
+                            continue
+                        options.append(
+                            DecisionOption.create(
+                                str(getattr(cand, "name", "Unit") or "Unit"),
+                                payload={
+                                    "target_unit_id": target_id,
+                                    "source_unit_id": unit_id,
+                                    "model_id": model_id,
+                                },
+                            )
+                        )
+                    if len(options) <= 1:
+                        continue
+                    ctx = {
+                        "ability": "eater_plague",
+                        "ability_name": ability_name,
+                        "ability_key": ability_key,
+                        "phase": "Shooting phase",
+                        "source_unit_id": unit_id,
+                        "unit_id": unit_id,
+                        "model_id": model_id,
+                        "range": int(range_value),
+                        "lone_operative_range": int(lone_range),
+                    }
+                    request = DecisionRequest.create(
+                        DECISION_CHOOSE_QUARRY,
+                        f"{ability_name}: select an enemy unit (or None).",
+                        player_id=getattr(player, "id", None),
+                        options=options,
+                        context=ctx,
+                    )
+                    self.request_decision(request)
+
     def _on_phase_start_model_visible_vehicle_quarry(
         self,
         player=None,
@@ -5222,6 +5571,17 @@ class GamePhaseHandlersMixin:
                         "start_shooting_phase_visible_hit_bonus_expires_phase",
                     ):
                         sr.pop(k, None)
+                exp = str(sr.get("blight_bombardment_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "blight_bombardment_active",
+                        "blight_bombardment_owner",
+                        "blight_bombardment_turn",
+                        "blight_bombardment_source",
+                        "blight_bombardment_target_id",
+                        "blight_bombardment_expires_phase",
+                    ):
+                        sr.pop(k, None)
                 exp = str(sr.get("blinding_spray_expires_phase", "") or "").strip().upper()
                 if exp and exp == pname:
                     for k in (
@@ -6362,17 +6722,42 @@ class GamePhaseHandlersMixin:
             except Exception:
                 return str(getattr(u, "name", "") or "")
 
-        def _resolve_mortal_roll(spec: dict, roll: int) -> tuple[int, str]:
+        def _resolve_mortal_roll(spec: dict, roll: int, *, target_unit=None) -> tuple[int, str]:
             d3_roll = None
             d6_roll = None
             total_mw = 0
+            try:
+                afflicted_roll_bonus = int(spec.get("afflicted_roll_bonus", 0) or 0)
+            except Exception:
+                afflicted_roll_bonus = 0
+            applied_bonus = 0
+            if afflicted_roll_bonus > 0 and target_unit is not None:
+                try:
+                    from ...rules.nurgles_gift import NurglesGiftManager
+                except Exception:
+                    NurglesGiftManager = None
+                if NurglesGiftManager is not None:
+                    try:
+                        is_afflicted = bool(
+                            NurglesGiftManager.get_afflicted_plague_for_unit(
+                                target_unit,
+                                game=self,
+                                game_map=game_map,
+                            )
+                            is not None
+                        )
+                    except Exception:
+                        is_afflicted = False
+                    if is_afflicted:
+                        applied_bonus = int(afflicted_roll_bonus)
+            effective_roll = int(roll) + int(applied_bonus)
             threshold = spec.get("threshold")
             if threshold is not None:
                 try:
                     threshold = int(threshold or 0)
                 except Exception:
                     threshold = 0
-                if roll >= int(threshold or 0):
+                if effective_roll >= int(threshold or 0):
                     mw = spec.get("mortal_wounds")
                     mw_norm = str(mw).strip().lower()
                     if mw_norm == "d3":
@@ -6396,6 +6781,8 @@ class GamePhaseHandlersMixin:
                     d6_roll = int(get_roll("D6") or 0)
                     total_mw = int(d6_roll or 0)
             roll_note = f"roll={int(roll)}"
+            if applied_bonus:
+                roll_note += f", afflicted_bonus=+{int(applied_bonus)}, effective={int(effective_roll)}"
             if d3_roll is not None:
                 roll_note += f", d3={int(d3_roll)}"
             if d6_roll is not None:
@@ -6407,7 +6794,7 @@ class GamePhaseHandlersMixin:
                 return
             for target_unit in targets:
                 roll = int(get_roll("D6") or 0)
-                total_mw, roll_note = _resolve_mortal_roll(spec, roll)
+                total_mw, roll_note = _resolve_mortal_roll(spec, roll, target_unit=target_unit)
                 if total_mw > 0 and hasattr(source_unit, "_apply_mortal_wounds_to_unit"):
                     source_unit._apply_mortal_wounds_to_unit(target_unit, int(total_mw), game_map=game_map)
                 append_dice(

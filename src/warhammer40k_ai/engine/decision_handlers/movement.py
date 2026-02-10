@@ -266,6 +266,10 @@ def _validate_move_unit(game: object, request: DecisionRequest, result: Decision
         if placement_errors:
             return placement_errors
     movement_type = str(payload.get("movement_type", "") or ctx.get("movement_type", "") or "move").strip().lower()
+    if movement_type == "advance":
+        advance_denial_errors = _validate_advance_start_end_denial(game, unit, model_positions)
+        if advance_denial_errors:
+            return advance_denial_errors
     path_witness_ref = str(result.payload.get("path_witness_ref", "") or payload.get("path_witness_ref", "") or "")
     if path_witness_ref:
         store = getattr(game, "path_witness_store", None)
@@ -477,6 +481,143 @@ def _validate_placement_positions(
         reserves_errors = _validate_reserves_arrival_positions(game, unit, model_positions)
         if reserves_errors:
             return reserves_errors
+
+    return ()
+
+
+def _validate_advance_start_end_denial(
+    game: object,
+    unit: object,
+    model_positions: object,
+) -> Sequence[str]:
+    if unit is None:
+        return ()
+    if not isinstance(model_positions, list) or not model_positions:
+        return ()
+    game_map = getattr(game, "map", None)
+    if game_map is None:
+        return ()
+
+    try:
+        from ...utility.aura_utils import distance_between_bases_3d
+    except Exception:
+        return ()
+
+    positions_by_id: dict[str, tuple[float, float, float, float]] = {}
+    for entry in list(model_positions or []):
+        mid = str(entry.get("model_id", "") or "")
+        if not mid:
+            continue
+        pos = entry.get("position") or []
+        if not isinstance(pos, (list, tuple)) or len(pos) < 2:
+            continue
+        try:
+            x = float(pos[0])
+            y = float(pos[1])
+            z = float(pos[2]) if len(pos) > 2 else 0.0
+        except (TypeError, ValueError):
+            continue
+        facing_raw = entry.get("facing", 0.0)
+        try:
+            facing = float(facing_raw if facing_raw is not None else 0.0)
+        except (TypeError, ValueError):
+            facing = 0.0
+        positions_by_id[mid] = (x, y, z, facing)
+
+    if not positions_by_id:
+        return ()
+
+    moving_army = None
+    try:
+        moving_army = unit.get_parent_army()
+    except Exception:
+        moving_army = None
+
+    for enemy in list(getattr(game_map, "units", []) or []):
+        if enemy is None:
+            continue
+        try:
+            enemy_root = enemy.get_attached_unit_root() if hasattr(enemy, "get_attached_unit_root") else enemy
+        except Exception:
+            enemy_root = enemy
+        if enemy_root is None:
+            continue
+        try:
+            if enemy_root.get_parent_army() is moving_army:
+                continue
+        except Exception:
+            pass
+        try:
+            if not enemy_root.is_alive():
+                continue
+        except Exception:
+            continue
+        if not bool(getattr(enemy_root, "deployed", True)):
+            continue
+        try:
+            if enemy_root.is_in_reserves() or enemy_root.is_embarked:
+                continue
+        except Exception:
+            pass
+
+        try:
+            enemy_models = list(enemy_root.get_attached_unit_models() or [])
+        except Exception:
+            enemy_models = list(getattr(enemy_root, "models", []) or [])
+        enemy_models = [m for m in enemy_models if m is not None and getattr(m, "is_alive", True)]
+        if not enemy_models:
+            continue
+
+        for enemy_model in enemy_models:
+            get_specs = getattr(enemy_root, "model_no_advance_start_or_end_within_specs", None)
+            if not callable(get_specs):
+                continue
+            try:
+                specs = list(get_specs(enemy_model) or [])
+            except Exception:
+                specs = []
+            if not specs:
+                continue
+            for spec in specs:
+                try:
+                    range_value = float(spec.get("range", 0) or 0)
+                except Exception:
+                    range_value = 0.0
+                if range_value <= 0:
+                    continue
+                source = str(spec.get("source", "") or "Advance denial").strip() or "Advance denial"
+                enemy_base = getattr(enemy_model, "model_base", None)
+                if enemy_base is None:
+                    continue
+                for moving_model in list(getattr(unit, "models", []) or []):
+                    if moving_model is None or not getattr(moving_model, "is_alive", True):
+                        continue
+                    mid = str(get_entity_id(moving_model) or "")
+                    if not mid or mid not in positions_by_id:
+                        continue
+                    start_base = getattr(moving_model, "model_base", None)
+                    if start_base is None:
+                        continue
+                    x, y, z, facing = positions_by_id[mid]
+                    if hasattr(unit, "_create_potential_base"):
+                        try:
+                            end_base = unit._create_potential_base(x, y, z, facing, model=moving_model)
+                        except Exception:
+                            end_base = None
+                    else:
+                        end_base = None
+                    if end_base is None:
+                        continue
+                    try:
+                        start_dist = float(distance_between_bases_3d(start_base, enemy_base))
+                    except Exception:
+                        start_dist = float("inf")
+                    try:
+                        end_dist = float(distance_between_bases_3d(end_base, enemy_base))
+                    except Exception:
+                        end_dist = float("inf")
+                    if start_dist <= range_value or end_dist <= range_value:
+                        return (f"Advance move cannot start or end within {int(range_value)}\" of {source}.",)
 
     return ()
 
@@ -724,26 +865,32 @@ def _evaluate_reserves_arrival_positions(
         enemy_units = list(getattr(game, "get_enemy_units", lambda _p: [])(player) or [])
     except Exception:
         enemy_units = []
-    enemy_models = []
+    enemy_models: list[tuple[object, object]] = []
     for enemy in list(enemy_units or []):
         try:
-            if not getattr(enemy, "is_alive", lambda: True)():
+            enemy_root = enemy.get_attached_unit_root() if hasattr(enemy, "get_attached_unit_root") else enemy
+        except Exception:
+            enemy_root = enemy
+        if enemy_root is None:
+            continue
+        try:
+            if not getattr(enemy_root, "is_alive", lambda: True)():
                 continue
         except Exception:
-            if not getattr(enemy, "is_alive", True):
+            if not getattr(enemy_root, "is_alive", True):
                 continue
-        if not bool(getattr(enemy, "deployed", False)):
+        if not bool(getattr(enemy_root, "deployed", False)):
             continue
-        if str(getattr(enemy, "reserve_status", "deployed")) != "deployed":
+        if str(getattr(enemy_root, "reserve_status", "deployed")) != "deployed":
             continue
-        if getattr(enemy, "embarked_in", None) is not None:
+        if getattr(enemy_root, "embarked_in", None) is not None:
             continue
-        if bool(getattr(enemy, "is_embarked", False)):
+        if bool(getattr(enemy_root, "is_embarked", False)):
             continue
-        for em in list(getattr(enemy, "models", []) or []):
+        for em in list(getattr(enemy_root, "models", []) or []):
             if not getattr(em, "is_alive", True):
                 continue
-            enemy_models.append(em)
+            enemy_models.append((enemy_root, em))
 
     if callable(horizontal_distance_between_bases_2d):
         for model, (x, y, z, facing) in zip(list(getattr(unit, "models", []) or []), prospective):
@@ -753,13 +900,27 @@ def _evaluate_reserves_arrival_positions(
                 base = None
             if base is None:
                 continue
-            for em in list(enemy_models or []):
+            for enemy_root, em in list(enemy_models or []):
                 try:
                     dist = float(horizontal_distance_between_bases_2d(base, em.model_base))
                 except Exception:
                     continue
-                if dist < float(min_enemy_distance):
-                    return {"errors": [f"Reserves arrival must be more than {int(min_enemy_distance)}\" from enemy models."]}
+                required_distance = float(min_enemy_distance)
+                if battlefield_edge is None:
+                    try:
+                        per_enemy = None
+                        if hasattr(unit, "get_deep_strike_min_distance_vs_enemy"):
+                            per_enemy = unit.get_deep_strike_min_distance_vs_enemy(
+                                enemy_root,
+                                game=game,
+                                game_map=game_map,
+                            )
+                    except Exception:
+                        per_enemy = None
+                    if per_enemy:
+                        required_distance = float(per_enemy)
+                if dist < float(required_distance):
+                    return {"errors": [f"Reserves arrival must be more than {int(required_distance)}\" from enemy models."]}
 
     try:
         if bool(getattr(game, "_reserves_denial_violated")(unit, prospective)):

@@ -2528,10 +2528,101 @@ class Game(
 
         if not engaged:
             return
+        unique_engaged = []
+        seen_engaged: set[str] = set()
+        for enemy_root in list(engaged):
+            rid = str(get_entity_id(enemy_root) or "")
+            if not rid or rid in seen_engaged:
+                continue
+            seen_engaged.add(rid)
+            unique_engaged.append(enemy_root)
+        engaged = unique_engaged
 
         tested: set[tuple[str, str]] = set()
         for spec in specs:
             source = str(spec.get("source", "") or "Charge end Battle-shock").strip() or "Charge end Battle-shock"
+            try:
+                test_modifier = int(spec.get("test_modifier", 0) or 0)
+            except Exception:
+                test_modifier = 0
+            if bool(spec.get("select_one", False)):
+                if len(engaged) == 1:
+                    target = engaged[0]
+                    if target is not None:
+                        if test_modifier:
+                            target_sr = getattr(target, "special_rules", None)
+                            if not isinstance(target_sr, dict):
+                                target_sr = {}
+                            current = int(target_sr.get("battle_shock_test_modifier", 0) or 0)
+                            target_sr["battle_shock_test_modifier"] = int(current + test_modifier)
+                            reasons = list(target_sr.get("battle_shock_test_modifier_reasons", []) or [])
+                            reasons.append(source)
+                            target_sr["battle_shock_test_modifier_reasons"] = reasons
+                            target.special_rules = target_sr
+                        try:
+                            target.take_battle_shock_test(int(getattr(self, "turn", 0) or 1))
+                        except Exception:
+                            pass
+                        from ..utility.event_bus import append_action
+                        player = root.get_parent_army().player if root.get_parent_army() is not None else None
+                        if player is not None:
+                            append_action(
+                                player,
+                                f"{source}: {getattr(target, 'name', 'Unit')} takes a Battle-shock test.",
+                            )
+                    continue
+
+                root_id = str(get_entity_id(root) or "")
+                queue = getattr(self, "decision_queue", None)
+                if queue is not None and hasattr(queue, "list"):
+                    duplicate = False
+                    for req in list(queue.list() or []):
+                        if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                            continue
+                        ctx = dict(getattr(req, "context", {}) or {})
+                        if str(ctx.get("ability", "") or "") != "charge_end_select_one_battleshock":
+                            continue
+                        if str(ctx.get("source_unit_id", "") or "") != root_id:
+                            continue
+                        if str(ctx.get("ability_name", "") or "") != source:
+                            continue
+                        duplicate = True
+                        break
+                    if duplicate:
+                        continue
+
+                sorted_targets = sorted(
+                    list(engaged),
+                    key=lambda u: str(get_entity_id(u) or ""),
+                )
+                options = [
+                    DecisionOption.create(
+                        str(getattr(target, "name", "Unit") or "Unit"),
+                        payload={
+                            "target_unit_id": str(get_entity_id(target) or ""),
+                            "source_unit_id": root_id,
+                        },
+                    )
+                    for target in sorted_targets
+                    if target is not None and str(get_entity_id(target) or "")
+                ]
+                if not options:
+                    continue
+                request = DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    f"{source}: select one enemy unit to take a Battle-shock test.",
+                    player_id=getattr(getattr(root.get_parent_army(), "player", None), "id", None),
+                    options=options,
+                    context={
+                        "ability": "charge_end_select_one_battleshock",
+                        "ability_name": source,
+                        "source_unit_id": root_id,
+                        "test_modifier": int(test_modifier),
+                    },
+                )
+                self.request_decision(request)
+                continue
+
             for enemy_root in engaged:
                 key = (str(get_entity_id(enemy_root)), source.lower())
                 if key in tested:

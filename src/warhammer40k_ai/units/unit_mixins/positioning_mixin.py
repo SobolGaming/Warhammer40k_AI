@@ -3892,6 +3892,90 @@ class PositioningMixin:
 
         return float(min_dist) if min_dist is not None else None
 
+    def _enemy_is_afflicted_for_deep_strike_distance(
+        self,
+        enemy_unit,
+        *,
+        game=None,
+        game_map=None,
+    ) -> bool:
+        if enemy_unit is None:
+            return False
+        try:
+            from ...rules.nurgles_gift import NurglesGiftManager
+        except Exception:
+            return False
+        try:
+            root = enemy_unit.get_attached_unit_root() if hasattr(enemy_unit, "get_attached_unit_root") else enemy_unit
+        except Exception:
+            root = enemy_unit
+        if root is None:
+            return False
+        gm = game_map
+        if gm is None and game is not None:
+            gm = getattr(game, "map", None)
+        if game is None:
+            try:
+                army = self.get_parent_army()
+            except Exception:
+                army = None
+            try:
+                game = getattr(getattr(army, "player", None), "game", None)
+            except Exception:
+                game = None
+        try:
+            return bool(NurglesGiftManager.get_afflicted_plague_for_unit(root, game=game, game_map=gm) is not None)
+        except Exception:
+            return False
+
+    def get_deep_strike_min_distance_vs_enemy(
+        self,
+        enemy_unit,
+        *,
+        game=None,
+        game_map=None,
+    ) -> Optional[float]:
+        """
+        Return a per-enemy Deep Strike minimum distance override, if the unit has one.
+
+        Used for rules like Death Approaches where Afflicted enemies have a smaller
+        minimum distance than other enemy units.
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        get_specs = getattr(root, "unit_deep_strike_afflicted_distance_specs", None)
+        if not callable(get_specs):
+            return None
+        try:
+            specs = list(get_specs() or [])
+        except Exception:
+            specs = []
+        if not specs:
+            return None
+        afflicted = bool(
+            self._enemy_is_afflicted_for_deep_strike_distance(
+                enemy_unit,
+                game=game,
+                game_map=game_map,
+            )
+        )
+        best: Optional[float] = None
+        for spec in specs:
+            try:
+                dist = float(
+                    spec.get("afflicted_distance", 0)
+                    if afflicted
+                    else spec.get("other_distance", 0)
+                )
+            except Exception:
+                dist = 0.0
+            if dist <= 0:
+                continue
+            best = dist if best is None else min(best, dist)
+        return float(best) if best is not None else None
+
     def has_infiltrate(self) -> bool:
         """Check if the unit has Infiltrate ability."""
         # Use cached result if available

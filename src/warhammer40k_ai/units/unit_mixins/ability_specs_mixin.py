@@ -405,7 +405,7 @@ class AbilitySpecsMixin:
             return list(root._ability_cache[cache_key])
 
         specs: list[dict] = []
-        seen: set[str] = set()
+        seen: set[tuple[str, bool, int]] = set()
         try:
             members = list(root.get_attached_unit_members() or [])
         except Exception:
@@ -424,14 +424,28 @@ class AbilitySpecsMixin:
                 normalized = normalized.lower()
                 normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
                 normalized = re.sub(r"\s+", " ", normalized).strip()
-                if not self._CHARGE_END_ENGAGEMENT_BATTLESHOCK_RE.fullmatch(normalized):
+                full_enemy_match = self._CHARGE_END_ENGAGEMENT_BATTLESHOCK_RE.fullmatch(normalized)
+                single_enemy_match = self._CHARGE_END_ENGAGEMENT_SELECT_ONE_BATTLESHOCK_RE.fullmatch(normalized)
+                if not full_enemy_match and not single_enemy_match:
                     continue
                 source = str(name or "Charge end Battle-shock").strip() or "Charge end Battle-shock"
-                key = source.lower()
+                select_one = bool(single_enemy_match)
+                penalty = 0
+                if single_enemy_match is not None:
+                    try:
+                        penalty = int(single_enemy_match.group("penalty") or 0)
+                    except Exception:
+                        penalty = 0
+                key = (source.lower(), bool(select_one), int(penalty))
                 if key in seen:
                     continue
                 seen.add(key)
-                specs.append({"source": source})
+                spec = {"source": source}
+                if select_one:
+                    spec["select_one"] = True
+                    if penalty:
+                        spec["test_modifier"] = -int(penalty)
+                specs.append(spec)
 
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}
@@ -702,6 +716,82 @@ class AbilitySpecsMixin:
                     "move_penalty": int(move_penalty),
                     "charge_penalty": int(charge_penalty),
                     "source": source,
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_post_shoot_monster_vehicle_mortal_threshold_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: after this model has shot, select a hit MONSTER/VEHICLE target and
+        roll a D6 (optionally modified) to inflict mortal wounds on a threshold.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - threshold: int
+            - mortal_wounds: str | int
+            - afflicted_roll_bonus: int
+            - monster_vehicle_only: bool
+        """
+        if model is None:
+            return []
+        cache_key = f"model_post_shoot_monster_vehicle_mortal_threshold:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, str, int]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._POST_SHOOT_MONSTER_VEHICLE_MORTAL_THRESHOLD_RE.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                threshold = int(m.group("threshold") or 0)
+            except Exception:
+                threshold = 0
+            if threshold <= 0:
+                continue
+            mw_raw = str(m.group("mw") or "").strip().lower()
+            if not mw_raw:
+                continue
+            try:
+                bonus = int(m.group("bonus") or 0)
+            except Exception:
+                bonus = 0
+            if mw_raw in ("d3", "d6"):
+                mw_value: str | int = mw_raw
+            else:
+                try:
+                    mw_value = int(mw_raw)
+                except Exception:
+                    continue
+                if int(mw_value) <= 0:
+                    continue
+            source = str(name or "Post-shoot mortals").strip() or "Post-shoot mortals"
+            key = (source.lower(), int(threshold), str(mw_value), int(bonus))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "threshold": int(threshold),
+                    "mortal_wounds": mw_value,
+                    "afflicted_roll_bonus": int(bonus),
+                    "monster_vehicle_only": True,
                 }
             )
 
@@ -3437,6 +3527,126 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_start_shooting_phase_blight_bombardment_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: start of Shooting phase, select one visible enemy unit in range;
+        friendly DEATH GUARD ranged attacks gain hit re-roll support against that unit this phase.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - range: int
+        """
+        if model is None:
+            return []
+        cache_key = f"model_start_shooting_phase_blight_bombardment:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._START_SHOOTING_PHASE_BLIGHT_BOMBARDMENT_RE.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                range_value = int(m.group("range") or 0)
+            except Exception:
+                range_value = 0
+            if range_value <= 0:
+                continue
+            source = str(name or "Blight Bombardment").strip() or "Blight Bombardment"
+            key = (source.lower(), int(range_value))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "range": int(range_value),
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_start_shooting_phase_eater_plague_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: in Shooting phase, optionally select a visible enemy and roll for mortal wounds.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - range: int
+            - lone_operative_range: int
+            - optional: bool
+        """
+        if model is None:
+            return []
+        cache_key = f"model_start_shooting_phase_eater_plague:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, int]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._SHOOTING_PHASE_EATER_PLAGUE_RE.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                range_value = int(m.group("range") or 0)
+            except Exception:
+                range_value = 0
+            if range_value <= 0:
+                continue
+            try:
+                lone_range = int(m.group("lone_range") or 0)
+            except Exception:
+                lone_range = 0
+            if lone_range <= 0:
+                lone_range = 12
+            source = str(name or "Eater Plague").strip() or "Eater Plague"
+            key = (source.lower(), int(range_value), int(lone_range))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "range": int(range_value),
+                    "lone_operative_range": int(lone_range),
+                    "optional": True,
+                    "self_mortal_on_one": "d3",
+                    "target_mortal_on_mid": "d6",
+                    "target_mortal_on_six": "d3+3",
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_start_shooting_phase_death_hex_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model-specific rule: start of Shooting phase, select a visible enemy within range; roll D6 for Death Hex.
@@ -4271,7 +4481,7 @@ class AbilitySpecsMixin:
             members = [root]
 
         specs: list[dict] = []
-        seen: set[tuple[str, int, int, str]] = set()
+        seen: set[tuple[str, int, int, str, int]] = set()
         for unit in members:
             if unit is None:
                 continue
@@ -4302,6 +4512,17 @@ class AbilitySpecsMixin:
                 mw_raw = str(m.group("mw") or "").strip().lower()
                 if not mw_raw:
                     continue
+                try:
+                    afflicted_roll_bonus = int(
+                        m.group("bonus_pre")
+                        or m.group("bonus_mid")
+                        or m.group("bonus_post")
+                        or 0
+                    )
+                except Exception:
+                    afflicted_roll_bonus = 0
+                if afflicted_roll_bonus < 0:
+                    afflicted_roll_bonus = 0
                 mw_value: str | int
                 if mw_raw in ("d3", "d6"):
                     mw_value = mw_raw
@@ -4313,7 +4534,13 @@ class AbilitySpecsMixin:
                     if int(mw_value) <= 0:
                         continue
                 source = str(name or "Movement phase mortals").strip() or "Movement phase mortals"
-                key = (source.lower(), int(range_value), int(threshold), str(mw_value))
+                key = (
+                    source.lower(),
+                    int(range_value),
+                    int(threshold),
+                    str(mw_value),
+                    int(afflicted_roll_bonus),
+                )
                 if key in seen:
                     continue
                 seen.add(key)
@@ -4323,6 +4550,7 @@ class AbilitySpecsMixin:
                         "range": int(range_value),
                         "threshold": int(threshold),
                         "mortal_wounds": mw_value,
+                        "afflicted_roll_bonus": int(afflicted_roll_bonus),
                     }
                 )
 
@@ -4499,6 +4727,303 @@ class AbilitySpecsMixin:
                     continue
                 seen.add(key)
                 specs.append({"source": source, "crit_wound_threshold": threshold})
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def unit_ranged_afflicted_strength_ap_bonus_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: ranged attacks against Afflicted targets improve Strength and AP by a fixed value
+        if unit Starting Strength is high enough or if a CHARACTER is leading the unit.
+
+        Returns specs with keys:
+            - source: ability name
+            - min_starting_strength: int
+            - bonus: int
+            - afflicted_only: bool
+            - character_leader_ok: bool
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_ranged_afflicted_strength_ap_bonus_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, int]] = set()
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                m = unit._RANGED_AFFLICTED_STRENGTH_AP_BONUS_RE.fullmatch(normalized)
+                if not m:
+                    continue
+                try:
+                    min_strength = int(m.group("min") or 0)
+                except Exception:
+                    min_strength = 0
+                if min_strength <= 0:
+                    continue
+                try:
+                    bonus = int(m.group("val") or 0)
+                except Exception:
+                    bonus = 0
+                if bonus <= 0:
+                    continue
+                source = str(name or "Ranged Afflicted bonus").strip() or "Ranged Afflicted bonus"
+                key = (source.lower(), int(min_strength), int(bonus))
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "min_starting_strength": int(min_strength),
+                        "bonus": int(bonus),
+                        "afflicted_only": True,
+                        "character_leader_ok": True,
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def unit_spore_laced_shock_waves_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: when selecting a target for a specific ranged weapon, roll for target
+        and nearby enemy units; struck units suffer mortal wounds after attacks are resolved.
+
+        Returns specs with keys:
+            - source: ability name
+            - weapon_key: str
+            - range: int
+            - threshold: int
+            - afflicted_roll_bonus: int
+            - mortal_wounds: str | int
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_spore_laced_shock_waves_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str, int, int, int, str]] = set()
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                m = unit._SPORE_LACED_SHOCK_WAVES_RE.fullmatch(normalized)
+                if not m:
+                    continue
+                weapon_raw = str(m.group("weapon") or "").strip()
+                weapon_key = unit._normalize_keyword_phrase(weapon_raw) or weapon_raw.lower()
+                if not weapon_key:
+                    continue
+                try:
+                    range_value = int(m.group("range") or 0)
+                except Exception:
+                    range_value = 0
+                if range_value <= 0:
+                    continue
+                try:
+                    threshold = int(m.group("threshold") or 0)
+                except Exception:
+                    threshold = 0
+                if threshold <= 0:
+                    continue
+                try:
+                    bonus = int(m.group("bonus") or 0)
+                except Exception:
+                    bonus = 0
+                mw_raw = str(m.group("mw") or "").strip().lower()
+                if not mw_raw:
+                    continue
+                if mw_raw in ("d3", "d6"):
+                    mw_value: str | int = mw_raw
+                else:
+                    try:
+                        mw_value = int(mw_raw)
+                    except Exception:
+                        continue
+                    if int(mw_value) <= 0:
+                        continue
+                source = str(name or "Spore-laced Shock Waves").strip() or "Spore-laced Shock Waves"
+                key = (
+                    source.lower(),
+                    weapon_key,
+                    int(range_value),
+                    int(threshold),
+                    int(bonus),
+                    str(mw_value),
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "weapon_key": weapon_key,
+                        "range": int(range_value),
+                        "threshold": int(threshold),
+                        "afflicted_roll_bonus": int(bonus),
+                        "mortal_wounds": mw_value,
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_no_advance_start_or_end_within_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: enemy models cannot start or end an Advance move within range of this model.
+
+        Returns specs with keys:
+            - source: ability name
+            - range: int
+        """
+        if model is None:
+            return []
+        cache_key = f"model_no_advance_start_or_end_within:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int]] = set()
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._NO_ADVANCE_START_OR_END_WITHIN_RE.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                range_value = int(m.group("range") or 0)
+            except Exception:
+                range_value = 0
+            if range_value <= 0:
+                continue
+            source = str(name or "Advance denial").strip() or "Advance denial"
+            key = (source.lower(), int(range_value))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append({"source": source, "range": int(range_value)})
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def unit_deep_strike_afflicted_distance_specs(self) -> List[dict]:
+        """
+        Unit-specific Deep Strike rule with split minimum distances for Afflicted vs other enemy units.
+
+        Returns specs with keys:
+            - source: ability name
+            - afflicted_distance: int
+            - other_distance: int
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_deep_strike_afflicted_distance_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, int]] = set()
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                m = unit._DEEP_STRIKE_AFFLICTED_DISTANCE_RE.fullmatch(normalized)
+                if not m:
+                    continue
+                try:
+                    afflicted = int(m.group("afflicted") or 0)
+                except Exception:
+                    afflicted = 0
+                try:
+                    other = int(m.group("other") or 0)
+                except Exception:
+                    other = 0
+                if afflicted <= 0 or other <= 0:
+                    continue
+                source = str(name or "Deep Strike distance").strip() or "Deep Strike distance"
+                key = (source.lower(), int(afflicted), int(other))
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "afflicted_distance": int(afflicted),
+                        "other_distance": int(other),
+                    }
+                )
 
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}

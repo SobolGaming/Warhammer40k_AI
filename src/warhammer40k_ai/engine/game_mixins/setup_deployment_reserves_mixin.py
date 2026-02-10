@@ -993,14 +993,48 @@ class GameSetupDeploymentReservesMixin:
 
         from ...utility.aura_utils import horizontal_distance_between_bases_2d
         enemy_units = self.get_enemy_units(unit.get_parent_army().player)
-        enemy_models = [em for eu in enemy_units if eu.is_alive() and eu.deployed for em in eu.models if em.is_alive]
+        enemy_models: list[tuple[object, object]] = []
+        for eu in list(enemy_units or []):
+            if eu is None:
+                continue
+            try:
+                enemy_root = eu.get_attached_unit_root() if hasattr(eu, "get_attached_unit_root") else eu
+            except Exception:
+                enemy_root = eu
+            if enemy_root is None:
+                continue
+            try:
+                if not enemy_root.is_alive():
+                    continue
+            except Exception:
+                continue
+            if not bool(getattr(enemy_root, "deployed", False)):
+                continue
+            for em in list(getattr(enemy_root, "models", []) or []):
+                if not getattr(em, "is_alive", True):
+                    continue
+                enemy_models.append((enemy_root, em))
 
         for idx, (x, y, z, facing) in enumerate(prospective):
             if idx >= len(unit.models):
                 break
             mb = unit._create_potential_base(x, y, z, facing, model=unit.models[idx])
-            for em in enemy_models:
-                if float(horizontal_distance_between_bases_2d(mb, em.model_base)) < float(min_enemy_distance):
+            for enemy_root, em in list(enemy_models or []):
+                required_distance = float(min_enemy_distance)
+                if battlefield_edge is None:
+                    try:
+                        per_enemy = None
+                        if hasattr(unit, "get_deep_strike_min_distance_vs_enemy"):
+                            per_enemy = unit.get_deep_strike_min_distance_vs_enemy(
+                                enemy_root,
+                                game=self,
+                                game_map=self.map,
+                            )
+                    except Exception:
+                        per_enemy = None
+                    if per_enemy:
+                        required_distance = float(per_enemy)
+                if float(horizontal_distance_between_bases_2d(mb, em.model_base)) < float(required_distance):
                     return False
 
         if self._reserves_denial_violated(unit, prospective):

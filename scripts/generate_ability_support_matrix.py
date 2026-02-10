@@ -1809,6 +1809,42 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Post-shoot: select a hit enemy unit; friendly keyword units re-roll Wound rolls vs that unit until end of turn.",
         ),
+        ("DG", "Blight Bombardment"): (
+            "Supported",
+            "Start of Shooting: select a visible enemy within 30\"; friendly DEATH GUARD ranged attacks vs that unit re-roll Hit rolls of 1, and BLAST attacks can re-roll Hit rolls.",
+        ),
+        ("DG", "Blistering Fusillade"): (
+            "Supported",
+            "Ranged attacks vs Afflicted targets gain +1 Strength and +1 AP when unit Starting Strength is 5+ or when led by a CHARACTER.",
+        ),
+        ("DG", "Death Approaches"): (
+            "Supported",
+            "Deep Strike placement supports split distances: more than 6\" from Afflicted enemy units and more than 9\" from other enemy units.",
+        ),
+        ("DG", "Eater Plague (Psychic)"): (
+            "Supported",
+            "Shooting phase optional target selection within 18\" and visible (with Lone Operative exclusion logic), then resolve mortal wounds via D6 table.",
+        ),
+        ("DG", "Horrifying Visage"): (
+            "Supported",
+            "After ending a Charge move, select one engaged enemy unit to take a Battle-shock test at -1.",
+        ),
+        ("DG", "Host of Plagues"): (
+            "Supported",
+            "End of Movement: roll for each enemy unit within 6\"; add +1 vs Afflicted units and on 3+ deal D3 mortal wounds.",
+        ),
+        ("DG", "Metalophagic Infection"): (
+            "Supported",
+            "After shooting, select a hit enemy MONSTER/VEHICLE; roll D6 (+1 if Afflicted) and on 5+ deal D3 mortal wounds.",
+        ),
+        ("DG", "Putrefying Stink"): (
+            "Supported",
+            "Enemy models cannot start or end an Advance move within 9\"; advance path validation enforces the denial.",
+        ),
+        ("DG", "Spore-laced Shock Waves"): (
+            "Supported",
+            "When selecting targets for Plagueburst mortar, roll for target and nearby enemy units; struck units suffer mortal wounds after attacks are resolved.",
+        ),
         ("CD", "Mischief and Confusion"): (
             "Supported",
             "Start of opponent Shooting: select a visible enemy within 12\"; roll D6 (2-5: -1 to hit; 6: not eligible to shoot) until phase end.",

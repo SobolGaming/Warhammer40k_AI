@@ -123,7 +123,19 @@ class WargearProfile:
         if keywords_string:
             # Wahapedia weapon ability strings are comma-separated. Be defensive and also split on semicolons.
             parts = re.split(r"\s*,\s*|\s*;\s*", str(keywords_string))
-            return [p.strip() for p in parts if p and p.strip()]
+            parsed: list[str] = []
+            for raw in parts:
+                if not raw:
+                    continue
+                kw = str(raw).strip()
+                if not kw:
+                    continue
+                # Some exports wrap weapon keywords in [] or (), e.g. "[BLAST]".
+                if (kw.startswith("[") and kw.endswith("]")) or (kw.startswith("(") and kw.endswith(")")):
+                    kw = kw[1:-1].strip()
+                if kw:
+                    parsed.append(kw)
+            return parsed
         return []
 
     def get_keywords(self) -> List[str]:
@@ -903,6 +915,187 @@ class WargearProfile:
                 best = (s_bonus, a_bonus, source)
         return best if best is not None else (0, 0, "")
 
+    def _blight_bombardment_hit_reroll_rule(self, attacker: 'Model', target: 'Unit') -> Optional[dict]:
+        if attacker is None or target is None:
+            return None
+        try:
+            is_ranged = bool(self.parent_wargear and self.parent_wargear.is_ranged())
+        except Exception:
+            is_ranged = False
+        if not is_ranged:
+            return None
+        attacker_unit = getattr(attacker, "parent_unit", None)
+        if attacker_unit is None:
+            return None
+        try:
+            has_death_guard_keyword = bool(attacker_unit.has_any_keyword("DEATH GUARD") or attacker_unit.has_keyword("DEATH GUARD"))
+        except Exception:
+            has_death_guard_keyword = False
+        if not has_death_guard_keyword:
+            return None
+        try:
+            target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+        except Exception:
+            target_root = target
+        if target_root is None:
+            return None
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("blight_bombardment_active")):
+            return None
+        apply_bonus = True
+        exp = str(sr.get("blight_bombardment_expires_phase", "") or "").strip().upper()
+        if exp:
+            phase_key = self._resolve_phase_key(attacker_unit=attacker_unit, target_unit=target_root)
+            if phase_key and phase_key != exp:
+                apply_bonus = False
+        if apply_bonus:
+            owner_id = str(sr.get("blight_bombardment_owner", "") or "")
+            if owner_id:
+                attacker_player = None
+                try:
+                    army = attacker_unit.get_parent_army()
+                    attacker_player = getattr(army, "player", None) if army is not None else None
+                except Exception:
+                    attacker_player = None
+                attacker_id = ""
+                if attacker_player is not None:
+                    try:
+                        attacker_id = get_entity_id(attacker_player)
+                    except Exception:
+                        attacker_id = str(getattr(attacker_player, "id", "") or "")
+                if attacker_id and owner_id != attacker_id:
+                    apply_bonus = False
+        if apply_bonus:
+            try:
+                marked_turn = int(sr.get("blight_bombardment_turn", 0) or 0)
+            except Exception:
+                marked_turn = 0
+            if marked_turn:
+                game = None
+                try:
+                    army = attacker_unit.get_parent_army()
+                    game = getattr(getattr(army, "player", None), "game", None)
+                except Exception:
+                    game = None
+                current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                if current_turn and current_turn != marked_turn:
+                    apply_bonus = False
+        if apply_bonus:
+            target_id = str(sr.get("blight_bombardment_target_id", "") or "")
+            current_target_id = str(get_entity_id(target_root) or "")
+            if target_id and current_target_id and target_id != current_target_id:
+                apply_bonus = False
+        if not apply_bonus:
+            return None
+        source = str(sr.get("blight_bombardment_source", "") or "Blight Bombardment").strip() or "Blight Bombardment"
+        try:
+            blast = bool(self.is_blast())
+        except Exception:
+            blast = False
+        if blast:
+            return {
+                "source": source,
+                "reroll_values": (),
+                "reroll_full": True,
+            }
+        return {
+            "source": source,
+            "reroll_values": (1,),
+            "reroll_full": False,
+        }
+
+    def _ranged_afflicted_strength_ap_bonus(self, attacker: 'Model', target: 'Unit') -> tuple[int, int, tuple[str, ...]]:
+        if attacker is None or target is None:
+            return (0, 0, ())
+        try:
+            is_ranged = bool(self.parent_wargear and self.parent_wargear.is_ranged())
+        except Exception:
+            is_ranged = False
+        if not is_ranged:
+            return (0, 0, ())
+        attacker_unit = getattr(attacker, "parent_unit", None)
+        if attacker_unit is None:
+            return (0, 0, ())
+        try:
+            root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            root = attacker_unit
+        get_specs = getattr(root, "unit_ranged_afflicted_strength_ap_bonus_specs", None)
+        if not callable(get_specs):
+            return (0, 0, ())
+        specs = list(get_specs() or [])
+        if not specs:
+            return (0, 0, ())
+        try:
+            from ..rules.nurgles_gift import NurglesGiftManager
+        except Exception:
+            NurglesGiftManager = None
+        is_afflicted = False
+        if NurglesGiftManager is not None:
+            try:
+                is_afflicted = bool(
+                    NurglesGiftManager.get_afflicted_plague_for_unit(
+                        target,
+                        game=getattr(getattr(attacker_unit.get_parent_army(), "player", None), "game", None),
+                        game_map=self._get_game_map_from_model(attacker),
+                    )
+                    is not None
+                )
+            except Exception:
+                is_afflicted = False
+        try:
+            starting_strength = int(getattr(root, "starting_strength", 0) or 0)
+        except Exception:
+            starting_strength = 0
+        has_character_leader = False
+        for leader in list(getattr(root, "attached_leaders", []) or []):
+            if leader is None:
+                continue
+            try:
+                has_character = bool(leader.has_any_keyword("CHARACTER") or leader.has_keyword("CHARACTER"))
+            except Exception:
+                has_character = False
+            if has_character:
+                has_character_leader = True
+                break
+        total_s = 0
+        total_ap = 0
+        reasons: list[str] = []
+        for spec in list(specs or []):
+            if bool(spec.get("afflicted_only", False)) and not is_afflicted:
+                continue
+            try:
+                min_strength = int(spec.get("min_starting_strength", 0) or 0)
+            except Exception:
+                min_strength = 0
+            needs_leader_fallback = bool(spec.get("character_leader_ok", False))
+            if min_strength > 0 and starting_strength < min_strength:
+                if not (needs_leader_fallback and has_character_leader):
+                    continue
+            fallback_bonus = spec.get("bonus", None)
+            strength_bonus_raw = spec.get("strength_bonus", fallback_bonus)
+            ap_bonus_raw = spec.get("ap_bonus", fallback_bonus)
+            try:
+                s_bonus = int(strength_bonus_raw or 0)
+            except Exception:
+                s_bonus = 0
+            try:
+                ap_bonus = int(ap_bonus_raw or 0)
+            except Exception:
+                ap_bonus = 0
+            if s_bonus <= 0 and ap_bonus <= 0:
+                continue
+            total_s += int(s_bonus)
+            total_ap += int(ap_bonus)
+            source = str(spec.get("source", "") or "Ranged Afflicted bonus").strip() or "Ranged Afflicted bonus"
+            if s_bonus > 0 and ap_bonus > 0:
+                reasons.append(f"{source} (+{int(s_bonus)}S, +{int(ap_bonus)}AP vs Afflicted)")
+            elif s_bonus > 0:
+                reasons.append(f"{source} (+{int(s_bonus)}S vs Afflicted)")
+            elif ap_bonus > 0:
+                reasons.append(f"{source} (+{int(ap_bonus)}AP vs Afflicted)")
+        return (int(total_s), int(total_ap), tuple(reasons))
+
     def _target_cannot_have_cover_this_turn(self, target: Optional['Unit']) -> bool:
         if target is None:
             return False
@@ -1275,6 +1468,13 @@ class WargearProfile:
                     ap_val -= bonus
                 if self._bondsman_magaera_bonus_applies(attacker, target):
                     ap_val -= 1
+        except Exception:
+            pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_ranged():
+                _s_bonus, ap_bonus, _reasons = self._ranged_afflicted_strength_ap_bonus(attacker, target)
+                if ap_bonus:
+                    ap_val -= int(ap_bonus)
         except Exception:
             pass
         try:
@@ -6040,6 +6240,19 @@ class WargearProfile:
                 reroll_full_reasons.append(reason)
         except Exception:
             pass
+        try:
+            rule = self._blight_bombardment_hit_reroll_rule(attacker, target)
+            if isinstance(rule, dict):
+                source = str(rule.get("source", "") or "Blight Bombardment").strip() or "Blight Bombardment"
+                values = tuple(int(v) for v in list(rule.get("reroll_values", ()) or ()))
+                if values:
+                    reroll_hit_values.update(values)
+                    shown = ", ".join(str(v) for v in sorted(set(values)))
+                    reroll_value_reasons.append(f"{source}: re-roll Hit rolls of {shown}")
+                if bool(rule.get("reroll_full", False)):
+                    reroll_full_reasons.append(f"{source}: re-roll Hit roll")
+        except Exception:
+            pass
         # Grey Knights: Hallowed Ground (Warpbane Task Force) hit rerolls.
         unit = getattr(attacker, "parent_unit", None)
         army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
@@ -7909,6 +8122,14 @@ class WargearProfile:
             if s_bonus and isinstance(strength, int):
                 strength = strength + int(s_bonus)
                 wound_result.setdefault("modifiers", []).append(f"+{int(s_bonus)}S from {source}")
+        except Exception:
+            pass
+        try:
+            s_bonus, _ap_bonus, reasons = self._ranged_afflicted_strength_ap_bonus(attacker, target)
+            if s_bonus and isinstance(strength, int):
+                strength = strength + int(s_bonus)
+                if reasons:
+                    wound_result.setdefault("modifiers", []).extend(list(reasons))
         except Exception:
             pass
         # Enhancement: improve melee weapons' Strength by X (bearer enhancement).

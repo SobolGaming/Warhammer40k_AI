@@ -227,6 +227,7 @@ class ShootingMixin:
                             "shooting_targets_selected",
                             attacking_unit=self,
                             target_units=list(touched_targets),
+                            weapon_declarations=list(weapon_declarations),
                         )
         except Exception:
             pass

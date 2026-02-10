@@ -1812,6 +1812,56 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         except Exception:
             pass
         return None
+    if ability == "charge_end_select_one_battleshock":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, payload.get("source_unit_id") or ctx.get("source_unit_id"))
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or ctx.get("target_unit_id"))
+        if source_unit is None or target_unit is None:
+            return None
+        try:
+            source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        except Exception:
+            source_root = source_unit
+        try:
+            target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        except Exception:
+            target_root = target_unit
+        if source_root is None or target_root is None:
+            return None
+        ability_name = str(ctx.get("ability_name", "") or "Charge end Battle-shock").strip() or "Charge end Battle-shock"
+        try:
+            test_modifier = int(ctx.get("test_modifier", 0) or 0)
+        except Exception:
+            test_modifier = 0
+        if test_modifier:
+            sr = getattr(target_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            current = int(sr.get("battle_shock_test_modifier", 0) or 0)
+            sr["battle_shock_test_modifier"] = int(current + test_modifier)
+            reasons = list(sr.get("battle_shock_test_modifier_reasons", []) or [])
+            reasons.append(ability_name)
+            sr["battle_shock_test_modifier_reasons"] = reasons
+            target_root.special_rules = sr
+        try:
+            target_root.take_battle_shock_test(int(getattr(game, "turn", 0) or 1))
+        except Exception:
+            pass
+        try:
+            player = getattr(getattr(source_root, "get_parent_army", lambda: None)(), "player", None)
+        except Exception:
+            player = None
+        try:
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {getattr(target_root, 'name', 'Unit')} takes a Battle-shock test.",
+            )
+        except Exception:
+            pass
+        return target_root
     if ability == "unearthly_power":
         if is_skip_choice(request, result):
             return None
@@ -3819,6 +3869,115 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 _log_action_for_players(game, player, f"{ability_name}: {sname} selected {tname} (+{int(bonus)} to hit this phase).")
             except Exception:
                 pass
+    if str(ctx.get("ability", "") or "") == "blight_bombardment":
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is not None and chosen is not None:
+            try:
+                source_root = source_unit.get_attached_unit_root()
+            except Exception:
+                source_root = source_unit
+            try:
+                target_root = chosen.get_attached_unit_root()
+            except Exception:
+                target_root = chosen
+            try:
+                player = getattr(getattr(source_root, "get_parent_army", lambda: None)(), "player", None)
+            except Exception:
+                player = None
+            owner_id = str(getattr(player, "id", "") or "")
+            try:
+                turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            ability_name = str(ctx.get("ability_name", "") or "Blight Bombardment").strip() or "Blight Bombardment"
+            sr = getattr(target_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["blight_bombardment_active"] = True
+            sr["blight_bombardment_owner"] = owner_id
+            sr["blight_bombardment_turn"] = int(turn or 0)
+            sr["blight_bombardment_source"] = ability_name
+            sr["blight_bombardment_target_id"] = str(get_entity_id(target_root) or "")
+            sr["blight_bombardment_expires_phase"] = "SHOOTING_PHASE"
+            target_root.special_rules = sr
+            try:
+                sname = str(getattr(source_root, "name", "Unit") or "Unit")
+                tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"{ability_name}: {sname} marked {tname} for ranged hit re-roll support this phase.",
+                )
+            except Exception:
+                pass
+    if str(ctx.get("ability", "") or "") == "eater_plague":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or ctx.get("target_unit_id"))
+        model = resolve_model(game, payload.get("model_id") or ctx.get("model_id"))
+        source_unit = resolve_unit(game, payload.get("source_unit_id") or ctx.get("source_unit_id"))
+        if source_unit is None and model is not None:
+            source_unit = getattr(model, "parent_unit", None)
+        if source_unit is None or target_unit is None:
+            return None
+        try:
+            source_root = source_unit.get_attached_unit_root()
+        except Exception:
+            source_root = source_unit
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            try:
+                player = source_root.get_parent_army().player
+            except Exception:
+                player = None
+        ability_name = str(ctx.get("ability_name", "") or "Eater Plague").strip() or "Eater Plague"
+        try:
+            from ...utility.dice import get_roll
+            from ...utility.event_bus import append_dice
+        except Exception:
+            get_roll = None
+            append_dice = None
+        roll = int(get_roll("D6") or 0) if callable(get_roll) else 0
+        if callable(append_dice) and player is not None:
+            append_dice(player, f"{ability_name} roll: {roll}")
+        mortal = 0
+        recipient = target_root
+        if roll <= 1:
+            mortal = int(get_roll("D3") or 0) if callable(get_roll) else 0
+            recipient = source_root
+        elif roll <= 5:
+            mortal = int(get_roll("D6") or 0) if callable(get_roll) else 0
+            recipient = target_root
+        else:
+            d3 = int(get_roll("D3") or 0) if callable(get_roll) else 0
+            mortal = int(d3 + 3)
+            recipient = target_root
+        if callable(append_dice) and player is not None:
+            append_dice(player, f"{ability_name} mortal wounds: {int(mortal)}")
+        if mortal > 0 and source_root is not None and recipient is not None:
+            try:
+                source_root._apply_mortal_wounds_to_unit(
+                    recipient,
+                    int(mortal),
+                    game_map=getattr(game, "map", None),
+                    is_psychic_attack=True,
+                )
+            except Exception:
+                pass
+        try:
+            rname = str(getattr(recipient, "name", "Unit") or "Unit")
+            if recipient is source_root:
+                _log_action_for_players(game, player, f"{ability_name}: {rname} suffers {int(mortal)} mortal wounds.")
+            else:
+                _log_action_for_players(game, player, f"{ability_name}: {rname} suffers {int(mortal)} mortal wounds.")
+        except Exception:
+            pass
+        return recipient
     if str(ctx.get("ability", "") or "") == "post_shoot_afflicted":
         if chosen is not None:
             try:
@@ -3885,6 +4044,97 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 _log_action_for_players(game, player, f"{ability_name}: {tname} marked for Wound re-rolls.")
             except Exception:
                 pass
+    if str(ctx.get("ability", "") or "") in ("metalophagic_infection", "post_shoot_monster_vehicle_mortal_threshold"):
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or ctx.get("target_unit_id"))
+        source_unit = resolve_unit(game, payload.get("source_unit_id") or ctx.get("source_unit_id") or ctx.get("attacker_unit_id"))
+        if source_unit is None:
+            model = resolve_model(game, payload.get("model_id") or ctx.get("model_id"))
+            source_unit = getattr(model, "parent_unit", None) if model is not None else None
+        if source_unit is None or target_unit is None:
+            return None
+        try:
+            source_root = source_unit.get_attached_unit_root()
+        except Exception:
+            source_root = source_unit
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            try:
+                player = source_root.get_parent_army().player
+            except Exception:
+                player = None
+        ability_name = str(ctx.get("ability_name", "") or "Metalophagic Infection").strip() or "Metalophagic Infection"
+        try:
+            threshold = int(ctx.get("threshold", 5) or 5)
+        except Exception:
+            threshold = 5
+        try:
+            afflicted_bonus = int(ctx.get("afflicted_roll_bonus", 0) or 0)
+        except Exception:
+            afflicted_bonus = 0
+        mw_raw = str(ctx.get("mortal_wounds", "d3") or "d3").strip().lower()
+        try:
+            from ...utility.dice import get_roll
+            from ...utility.event_bus import append_dice
+            from ...rules.nurgles_gift import NurglesGiftManager
+        except Exception:
+            get_roll = None
+            append_dice = None
+            NurglesGiftManager = None
+        is_afflicted = False
+        if NurglesGiftManager is not None:
+            try:
+                is_afflicted = bool(
+                    NurglesGiftManager.get_afflicted_plague_for_unit(
+                        target_root,
+                        game=game,
+                        game_map=getattr(game, "map", None),
+                    )
+                    is not None
+                )
+            except Exception:
+                is_afflicted = False
+        roll = int(get_roll("D6") or 0) if callable(get_roll) else 0
+        total_roll = int(roll + (afflicted_bonus if is_afflicted else 0))
+        mortal = 0
+        if total_roll >= int(threshold):
+            if mw_raw == "d3":
+                mortal = int(get_roll("D3") or 0) if callable(get_roll) else 0
+            elif mw_raw == "d6":
+                mortal = int(get_roll("D6") or 0) if callable(get_roll) else 0
+            else:
+                try:
+                    mortal = int(mw_raw)
+                except Exception:
+                    mortal = 0
+        if mortal > 0:
+            try:
+                source_root._apply_mortal_wounds_to_unit(
+                    target_root,
+                    int(mortal),
+                    game_map=getattr(game, "map", None),
+                )
+            except Exception:
+                pass
+        if callable(append_dice) and player is not None:
+            append_dice(
+                player,
+                f"{ability_name}: roll {int(roll)}"
+                + (f" (+{int(afflicted_bonus)} afflicted)" if is_afflicted and afflicted_bonus else "")
+                + f" => {int(total_roll)} ({int(threshold)}+) => {int(mortal)} mortal wounds.",
+            )
+        try:
+            tname = str(getattr(target_root, "name", "Unit") or "Unit")
+            _log_action_for_players(game, player, f"{ability_name}: {tname} suffers {int(mortal)} mortal wounds.")
+        except Exception:
+            pass
+        return target_root
     if str(ctx.get("ability", "") or "") == "post_shoot_keyword_hit_bonus":
         if chosen is not None:
             try:

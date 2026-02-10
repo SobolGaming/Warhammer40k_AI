@@ -1596,6 +1596,13 @@ class Unit(
         r"models\s+in\s+(?:the\s+bearer'?s|that)\s+unit\s+have\s+the\s+deep\s+strike\s+ability",
         re.IGNORECASE,
     )
+    _DEEP_STRIKE_AFFLICTED_DISTANCE_RE = re.compile(
+        r"in your movement phase when this unit is set up on the battlefield using the deep strike ability "
+        r"it can be set up anywhere on the battlefield that is more than (?P<afflicted>\d+) "
+        r"(?:horizontally )?away from all afflicted enemy units and more than (?P<other>\d+) "
+        r"(?:horizontally )?away from all other enemy units",
+        re.IGNORECASE,
+    )
     _BEARER_UNIT_PHASE_MOVE_RE = re.compile(
         r"each\s+time\s+a\s+model\s+in\s+(?:the\s+bearer'?s|that)\s+unit\s+makes\s+a\s+.*?\bmove\b.*?move\s+horizontally\s+through\s+models\s+and\s+terrain\s+features",
         re.IGNORECASE,
@@ -1907,6 +1914,19 @@ class Unit(
         r"add (?P<val>\d+) to the hit roll",
         re.IGNORECASE,
     )
+    _START_SHOOTING_PHASE_BLIGHT_BOMBARDMENT_RE = re.compile(
+        r"at the start of your shooting phase select one enemy unit within (?P<range>\d+) of and visible to this model "
+        r"until the end of the phase each time a friendly death guard model makes a ranged attack that targets that unit "
+        r"re roll a hit roll of 1 if that attack is made with a blast weapon you can re roll the hit roll instead",
+        re.IGNORECASE,
+    )
+    _SHOOTING_PHASE_EATER_PLAGUE_RE = re.compile(
+        r"in your shooting phase you can select one enemy unit within (?P<range>\d+) of and visible to this psyker "
+        r"excluding units with the lone operative ability that are not part of an attached unit and are not within (?P<lone_range>\d+) of this psyker "
+        r"and roll (?:one|1) d6 on a 1 this psyker s unit suffers d3 mortal wounds on a 2 5 that enemy unit suffers d6 mortal wounds "
+        r"on a 6 that enemy unit suffers d3 3 mortal wounds",
+        re.IGNORECASE,
+    )
     _RANGED_ATTACK_PSYCHIC_HIT_MONSTER_VEHICLE_HIT_DAMAGE_REROLL_RE = re.compile(
         r"each time this model makes a ranged attack that targets a monster or vehicle unit that was hit by one or more psychic attacks "
         r"made by a thousand sons psyker model from your army this phase including the doombolt ritual "
@@ -1983,8 +2003,19 @@ class Unit(
         re.IGNORECASE,
     )
     _MOVEMENT_PHASE_END_ENEMY_WITHIN_RANGE_MORTAL_THRESHOLD_RE = re.compile(
-        r"at the end of your movement phase roll (?:one|1) d6 for each enemy unit within (?P<range>\d+) of one or more models "
-        r"with this ability on a (?P<threshold>\d)\+? that enemy unit suffers (?P<mw>d3|d6|\d+) mortal wounds?",
+        r"at the end of your movement phase roll (?:one|1) d6 for each enemy unit within (?P<range>\d+) of "
+        r"(?:(?:this model)|(?:one or more models(?: from your army)?(?: with this ability)?(?: from your army)?)) "
+        r"(?:(?:adding (?P<bonus_pre>\d+) to the result if that (?:enemy )?unit is afflicted) )?"
+        r"on a (?P<threshold>\d)\+? "
+        r"(?:(?:adding (?P<bonus_mid>\d+) to the result if that (?:enemy )?unit is afflicted) )?"
+        r"that enemy unit suffers (?P<mw>d3|d6|\d+) mortal wounds?"
+        r"(?: adding (?P<bonus_post>\d+) to the result if that (?:enemy )?unit is afflicted)?",
+        re.IGNORECASE,
+    )
+    _POST_SHOOT_MONSTER_VEHICLE_MORTAL_THRESHOLD_RE = re.compile(
+        r"in your shooting phase after this model has shot select one enemy monster or vehicle unit hit by one or more of those attacks "
+        r"roll (?:one|1) d6(?: adding (?P<bonus>\d+) to the result if that unit is afflicted)? on a (?P<threshold>\d)\+? "
+        r"that unit suffers (?P<mw>d3|d6|\d+) mortal wounds?",
         re.IGNORECASE,
     )
     _POINT_BLANK_DEVASTATION_RE = re.compile(
@@ -2211,7 +2242,12 @@ class Unit(
         re.IGNORECASE,
     )
     _CHARGE_END_ENGAGEMENT_BATTLESHOCK_RE = re.compile(
-        r"each time this model s unit ends a charge move each enemy unit within engagement range of that unit must take a battle shock test",
+        r"each time this (?:model s )?unit ends a charge move each enemy unit within engagement range of (?:(?:that|this) unit|it) must take a battle shock test",
+        re.IGNORECASE,
+    )
+    _CHARGE_END_ENGAGEMENT_SELECT_ONE_BATTLESHOCK_RE = re.compile(
+        r"each time this (?:model s )?unit ends a charge move select one enemy unit within engagement range of (?:(?:that|this) unit|it) "
+        r"that enemy unit must take a battle shock test subtracting (?P<penalty>\d+) from that test",
         re.IGNORECASE,
     )
     _START_ANY_PHASE_CLEAR_BATTLESHOCK_RE = re.compile(
@@ -2223,6 +2259,10 @@ class Unit(
         r"each time an enemy unit(?: excluding (?P<exclude>titanic|titan) units?)? within engagement range of one or more units "
         r"with this ability is selected to fight until the end of the phase each time a model in that enemy unit makes "
         r"(?:a )?melee attack(?:s)? subtract 1 from the hit roll",
+        re.IGNORECASE,
+    )
+    _NO_ADVANCE_START_OR_END_WITHIN_RE = re.compile(
+        r"enemy models cannot start or end an advance move within (?P<range>\d+) of this model",
         re.IGNORECASE,
     )
     _FIGHT_PHASE_END_ENGAGEMENT_MORTAL_EIGHT_D6_RE = re.compile(
@@ -2279,6 +2319,18 @@ class Unit(
         r"at the start of the fight phase you can select one enemy unit within (?P<range>\d+)\s*\"?\s*(?:of\s*)?(?:and visible to\s*)?this model "
         r"until the end of the phase each time an attack made by (?:a|an) (?P<keyword>[a-z0-9 ]+?) model is allocated to a model in that unit "
         r"add (?P<val>\d+) to the damage characteristic of that attack",
+        re.IGNORECASE,
+    )
+    _RANGED_AFFLICTED_STRENGTH_AP_BONUS_RE = re.compile(
+        r"if this unit has a starting strength of (?P<min>\d+) or more or if a character is leading this unit then each time a model in this unit makes "
+        r"a ranged attack that targets an afflicted unit improve the strength and armou?r penetration characteristics of that attack by (?P<val>\d+)",
+        re.IGNORECASE,
+    )
+    _SPORE_LACED_SHOCK_WAVES_RE = re.compile(
+        r"in your shooting phase each time you select a target for this model s (?P<weapon>[a-z0-9 ]+) roll one d6 for the target unit and every other "
+        r"enemy unit within (?P<range>\d+) of the target unit adding (?P<bonus>\d+) to that roll if the unit being rolled for is afflicted on a "
+        r"(?P<threshold>\d)\+? the unit being rolled for is struck by spores after resolving all of this model s attacks against the target unit each unit "
+        r"struck by spores suffers (?P<mw>d3|d6|\d+) mortal wounds?",
         re.IGNORECASE,
     )
     _FIGHT_PHASE_TARGET_MELEE_WOUND_BONUS_RE = re.compile(
