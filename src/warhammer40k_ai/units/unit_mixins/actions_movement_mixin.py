@@ -4754,6 +4754,11 @@ class ActionsMovementMixin:
         except Exception:
             pass
         try:
+            if self._spearhead_striker_charge_reroll_active(game=game):
+                return True
+        except Exception:
+            pass
+        try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("bondsman_reroll_charge"):
                 return True
@@ -5173,6 +5178,40 @@ class ActionsMovementMixin:
             source = "Wargear keyword (charge bonus)"
         return [(bonus, source)]
 
+    def _spearhead_striker_charge_reroll_active(self, *, game: Optional['Game'] = None) -> bool:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        if not sr.get("spearhead_striker_charge_reroll"):
+            return False
+        if game is None:
+            try:
+                army = self.get_parent_army()
+                game = getattr(getattr(army, "player", None), "game", None)
+            except Exception:
+                game = None
+        if game is None:
+            return True
+        owner_id = str(sr.get("spearhead_striker_turn_owner", "") or "")
+        if owner_id:
+            try:
+                current = game.get_current_player()
+            except Exception:
+                current = None
+            if current is None or str(getattr(current, "id", "") or "") != owner_id:
+                return False
+        try:
+            turn = int(sr.get("spearhead_striker_turn", 0) or 0)
+        except Exception:
+            turn = 0
+        if turn:
+            try:
+                if int(getattr(game, "turn", 0) or 0) != turn:
+                    return False
+            except Exception:
+                return False
+        return True
+
     def _murderous_onslaught_no_overwatch_active(self, *, game: Optional['Game'] = None) -> bool:
         sr = getattr(self, "special_rules", None)
         if not isinstance(sr, dict):
@@ -5207,6 +5246,40 @@ class ActionsMovementMixin:
                 return False
         return True
 
+    def _spearhead_striker_no_overwatch_active(self, *, game: Optional['Game'] = None) -> bool:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        if not sr.get("spearhead_striker_no_overwatch"):
+            return False
+        if game is None:
+            try:
+                army = self.get_parent_army()
+                game = getattr(getattr(army, "player", None), "game", None)
+            except Exception:
+                game = None
+        if game is None:
+            return True
+        owner_id = str(sr.get("spearhead_striker_turn_owner", "") or "")
+        if owner_id:
+            try:
+                current = game.get_current_player()
+            except Exception:
+                current = None
+            if current is None or str(getattr(current, "id", "") or "") != owner_id:
+                return False
+        try:
+            turn = int(sr.get("spearhead_striker_turn", 0) or 0)
+        except Exception:
+            turn = 0
+        if turn:
+            try:
+                if int(getattr(game, "turn", 0) or 0) != turn:
+                    return False
+            except Exception:
+                return False
+        return True
+
     def _post_shoot_no_overwatch_active(self, *, game: Optional['Game'] = None) -> bool:
         sr = getattr(self, "special_rules", None)
         if not isinstance(sr, dict):
@@ -5219,6 +5292,8 @@ class ActionsMovementMixin:
         if self._post_shoot_no_overwatch_active(game=game):
             return True
         if self._murderous_onslaught_no_overwatch_active(game=game):
+            return True
+        if self._spearhead_striker_no_overwatch_active(game=game):
             return True
         entry = self._get_wargear_charge_keyword_effects(target_unit, game=game)
         if not entry:

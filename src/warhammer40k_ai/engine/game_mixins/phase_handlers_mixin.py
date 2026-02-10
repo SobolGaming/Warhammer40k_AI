@@ -5262,9 +5262,9 @@ class GamePhaseHandlersMixin:
             unit.special_rules = sr
 
     def _on_phase_start_emperors_children_enhancements(self, player=None, phase=None, **_kwargs) -> None:
-        """Coterie of the Conceited enhancements that trigger at the start of the Shooting phase."""
+        """Emperor's Children enhancement hooks at phase start."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
-        if pname != "SHOOTING_PHASE":
+        if pname not in ("MOVEMENT_PHASE", "SHOOTING_PHASE"):
             return
         if player is None or player is not self.get_current_player():
             return
@@ -5276,7 +5276,13 @@ class GamePhaseHandlersMixin:
         mgr = getattr(army, "emperors_children", None)
         if mgr is None:
             mgr = getattr(army, "emperors_children_detachments", None)
-        if mgr is None or not getattr(mgr, "is_coterie_of_conceited", lambda: False)():
+        if mgr is None:
+            return
+        if pname == "MOVEMENT_PHASE":
+            if getattr(mgr, "is_rapid_evisceration", lambda: False)():
+                self._queue_sublime_prescience_movement_choice(player=player, army=army)
+            return
+        if not getattr(mgr, "is_coterie_of_conceited", lambda: False)():
             return
         game_map = getattr(self, "map", None)
         if game_map is None:
@@ -5371,6 +5377,183 @@ class GamePhaseHandlersMixin:
                     "fail_mortal_wounds": int(max(0, fail_mortal_wounds)),
                 },
             )
+
+    def _queue_sublime_prescience_movement_choice(self, *, player=None, army=None) -> None:
+        if player is None or army is None:
+            return
+
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        owner_id = str(getattr(player, "id", "") or "")
+        if turn <= 0 or not owner_id:
+            return
+
+        queue = getattr(self, "decision_queue", None)
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        def _has_pending_for_source(source_unit_id: str) -> bool:
+            if queue is None or not hasattr(queue, "list"):
+                return False
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "sublime_prescience":
+                    continue
+                if str(ctx.get("source_unit_id", "") or "") != str(source_unit_id or ""):
+                    continue
+                if str(ctx.get("turn_owner", "") or "") != owner_id:
+                    continue
+                if int(ctx.get("turn", 0) or 0) != int(turn or 0):
+                    continue
+                return True
+            return False
+
+        transport_roots: list[Any] = []
+        seen_transport_ids: set[str] = set()
+        for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            tid = str(get_entity_id(root) or "")
+            if tid and tid in seen_transport_ids:
+                continue
+            if tid:
+                seen_transport_ids.add(tid)
+            try:
+                if not root.is_alive():
+                    continue
+            except Exception:
+                continue
+            try:
+                if root.is_embarked:
+                    continue
+            except Exception:
+                pass
+            try:
+                is_transport = bool(getattr(root, "is_transport", False))
+            except Exception:
+                is_transport = False
+            if not is_transport:
+                try:
+                    is_transport = bool(root.has_any_keyword("TRANSPORT"))
+                except Exception:
+                    is_transport = False
+            if not is_transport:
+                continue
+            try:
+                in_strategic = bool(root.is_in_strategic_reserves())
+            except Exception:
+                in_strategic = str(getattr(root, "reserve_status", "") or "") == "strategic_reserves"
+            if not in_strategic:
+                continue
+            transport_roots.append(root)
+
+        if not transport_roots:
+            return
+
+        seen_roots: set[str] = set()
+        for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if root_id and root_id in seen_roots:
+                continue
+            if root_id:
+                seen_roots.add(root_id)
+            try:
+                if not root.is_alive() or not bool(getattr(root, "deployed", True)):
+                    continue
+            except Exception:
+                continue
+            try:
+                if root.is_in_reserves() or root.is_embarked:
+                    continue
+            except Exception:
+                pass
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = [root]
+            if not members:
+                members = [root]
+            members = sorted(list(members), key=_unit_sort_key)
+
+            for source_unit in members:
+                if source_unit is None:
+                    continue
+                source_sr = getattr(source_unit, "special_rules", None)
+                if not isinstance(source_sr, dict) or not source_sr.get("enhancement_sublime_prescience"):
+                    continue
+                source_unit_id = str(get_entity_id(source_unit) or "")
+                if not source_unit_id:
+                    continue
+                try:
+                    used_owner = str(source_sr.get("enhancement_sublime_prescience_turn_owner", "") or "")
+                    used_turn = int(source_sr.get("enhancement_sublime_prescience_turn", 0) or 0)
+                except Exception:
+                    used_owner = ""
+                    used_turn = 0
+                if used_turn and used_turn == int(turn or 0) and (not used_owner or used_owner == owner_id):
+                    continue
+                if _has_pending_for_source(source_unit_id):
+                    continue
+
+                bearer = getattr(source_unit, "_get_enhancement_bearer_model", lambda: None)()
+                if bearer is None or not bool(getattr(bearer, "is_alive", True)):
+                    continue
+                bearer_model_id = str(get_entity_id(bearer) or "")
+
+                options = [DecisionOption.create("None", payload={"action": "skip"})]
+                for transport in sorted(list(transport_roots), key=_unit_sort_key):
+                    transport_id = str(get_entity_id(transport) or "")
+                    if not transport_id:
+                        continue
+                    options.append(
+                        DecisionOption.create(
+                            str(getattr(transport, "name", "Transport") or "Transport"),
+                            payload={"target_unit_id": transport_id},
+                        )
+                    )
+                if len(options) <= 1:
+                    continue
+
+                request = DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    "Sublime Prescience: select a friendly Transport in Strategic Reserves (or None).",
+                    player_id=getattr(player, "id", None),
+                    options=options,
+                    context={
+                        "ability": "sublime_prescience",
+                        "ability_name": "Sublime Prescience",
+                        "phase": "Movement phase",
+                        "optional": True,
+                        "unit_id": source_unit_id,
+                        "source_unit_id": source_unit_id,
+                        "model_id": bearer_model_id,
+                        "turn_owner": owner_id,
+                        "turn": int(turn or 0),
+                    },
+                )
+                self.request_decision(request)
 
     def _on_phase_start_world_eaters_enhancements(self, player=None, phase=None, **_kwargs) -> None:
         """Goretrack Onslaught enhancements that trigger at the start of the Shooting phase."""

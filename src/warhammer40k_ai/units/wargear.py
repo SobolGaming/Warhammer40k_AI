@@ -11305,19 +11305,29 @@ class WargearProfile:
             if not save_result.get("saved", False):
                 t_unit = getattr(target_model, "parent_unit", None)
                 if t_unit is not None and hasattr(t_unit, "get_first_failed_save_damage_zero_sources"):
-                    sources = list(t_unit.get_first_failed_save_damage_zero_sources() or [])
+                    raw_sources = list(t_unit.get_first_failed_save_damage_zero_sources() or [])
                 else:
-                    sources = []
+                    raw_sources = []
+                sources = []
+                for entry in list(raw_sources or []):
+                    if isinstance(entry, dict):
+                        sources.append(dict(entry))
+                    elif entry:
+                        sources.append(
+                            {
+                                "source": str(entry),
+                                "usage_scope": "turn",
+                                "usage_key": "first_failed_save_damage_zero",
+                            }
+                        )
                 if sources:
                     try:
                         root = t_unit.get_attached_unit_root()
                     except Exception:
                         root = t_unit
-                    sr = getattr(root, "special_rules", None)
-                    if not isinstance(sr, dict):
-                        sr = {}
                     owner_id = ""
                     turn = 0
+                    game = None
                     try:
                         army = root.get_parent_army()
                         player = getattr(army, "player", None) if army is not None else None
@@ -11325,26 +11335,100 @@ class WargearProfile:
                         game = getattr(player, "game", None) if player is not None else None
                         turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
                     except Exception:
+                        army = None
                         owner_id = ""
                         turn = 0
-                    used_owner = str(sr.get("first_failed_save_damage_zero_turn_owner", "") or "")
-                    try:
-                        used_turn = int(sr.get("first_failed_save_damage_zero_turn", 0) or 0)
-                    except Exception:
-                        used_turn = 0
-                    already_used = False
-                    if used_turn and turn and used_turn == turn:
-                        if not used_owner or not owner_id or used_owner == owner_id:
-                            already_used = True
-                    if not already_used:
-                        source = str(sources[0] or "First failed save").strip() or "First failed save"
+                        game = None
+
+                    def _normalize_usage_key(value: str) -> str:
+                        key = re.sub(r"[^a-z0-9]+", "_", str(value or "").strip().lower()).strip("_")
+                        return key or "first_failed_save_damage_zero"
+
+                    chosen_entry = None
+                    chosen_root = None
+                    chosen_sr = None
+                    for source_entry in list(sources or []):
+                        source_name = str(source_entry.get("source", "") or "First failed save").strip() or "First failed save"
+                        usage_scope = str(source_entry.get("usage_scope", "turn") or "turn").strip().lower()
+                        usage_key = _normalize_usage_key(
+                            str(source_entry.get("usage_key", "") or "first_failed_save_damage_zero")
+                        )
+                        source_root = root
+                        source_unit_id = str(source_entry.get("source_unit_id", "") or "")
+                        if source_unit_id:
+                            resolved = None
+                            if game is not None:
+                                try:
+                                    registry = getattr(game, "entity_registry", None)
+                                    if registry is not None:
+                                        resolved = registry.get(source_unit_id, kind="unit")
+                                except Exception:
+                                    resolved = None
+                            if resolved is None and army is not None:
+                                for unit in list(getattr(army, "units", []) or []):
+                                    if unit is None:
+                                        continue
+                                    try:
+                                        unit_root = unit.get_attached_unit_root()
+                                    except Exception:
+                                        unit_root = unit
+                                    if unit_root is None:
+                                        continue
+                                    if str(get_entity_id(unit_root) or "") == source_unit_id or str(get_entity_id(unit) or "") == source_unit_id:
+                                        resolved = unit
+                                        break
+                            if resolved is not None:
+                                try:
+                                    source_root = resolved.get_attached_unit_root()
+                                except Exception:
+                                    source_root = resolved
+                        source_sr = getattr(source_root, "special_rules", None)
+                        if not isinstance(source_sr, dict):
+                            source_sr = {}
+
+                        already_used = False
+                        if usage_scope == "battle_round":
+                            try:
+                                used_round = int(source_sr.get(f"{usage_key}_battle_round", 0) or 0)
+                            except Exception:
+                                used_round = 0
+                            if used_round and turn and used_round == turn:
+                                already_used = True
+                        else:
+                            used_owner = str(source_sr.get(f"{usage_key}_turn_owner", "") or "")
+                            try:
+                                used_turn = int(source_sr.get(f"{usage_key}_turn", 0) or 0)
+                            except Exception:
+                                used_turn = 0
+                            if used_turn and turn and used_turn == turn:
+                                if not used_owner or not owner_id or used_owner == owner_id:
+                                    already_used = True
+                        if already_used:
+                            continue
+
+                        chosen_entry = {
+                            "source": source_name,
+                            "usage_scope": usage_scope,
+                            "usage_key": usage_key,
+                        }
+                        chosen_root = source_root
+                        chosen_sr = source_sr
+                        break
+
+                    if chosen_entry is not None and chosen_root is not None and isinstance(chosen_sr, dict):
+                        source = str(chosen_entry.get("source", "") or "First failed save").strip() or "First failed save"
+                        usage_scope = str(chosen_entry.get("usage_scope", "turn") or "turn").strip().lower()
+                        usage_key = _normalize_usage_key(chosen_entry.get("usage_key", "first_failed_save_damage_zero"))
                         attack_instance["force_damage_zero"] = True
                         attack_instance["force_damage_zero_source"] = source
-                        sr["first_failed_save_damage_zero_turn"] = int(turn or 0)
-                        if owner_id:
-                            sr["first_failed_save_damage_zero_turn_owner"] = owner_id
-                        sr["first_failed_save_damage_zero_source"] = source
-                        root.special_rules = sr
+                        if usage_scope == "battle_round":
+                            chosen_sr[f"{usage_key}_battle_round"] = int(turn or 0)
+                        else:
+                            chosen_sr[f"{usage_key}_turn"] = int(turn or 0)
+                            if owner_id:
+                                chosen_sr[f"{usage_key}_turn_owner"] = owner_id
+                        chosen_sr[f"{usage_key}_source"] = source
+                        chosen_root.special_rules = chosen_sr
                         save_result['special_effects'].append(f"{source}: damage set to 0")
         except Exception:
             pass

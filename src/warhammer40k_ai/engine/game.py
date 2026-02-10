@@ -2804,7 +2804,8 @@ class Game(
             pass
         if passenger is transport:
             return False
-        if list(getattr(transport, "transport_passengers", []) or []):
+        allow_existing_passengers = bool(spec.get("allow_existing_passengers", False))
+        if not allow_existing_passengers and list(getattr(transport, "transport_passengers", []) or []):
             return False
         keyword = str(spec.get("keyword", "") or "").strip()
         if keyword and not passenger.has_any_keyword(keyword):

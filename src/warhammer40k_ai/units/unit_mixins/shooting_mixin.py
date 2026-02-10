@@ -3014,6 +3014,61 @@ class ShootingMixin:
                 sr["murderous_onslaught_turn"] = int(turn)
             unit.special_rules = sr
 
+    def _apply_spearhead_striker_disembark_effect(self, *, game=None, current_turn: int = 0) -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return
+        if not self._attached_unit_has_enhancement_flag(
+            "enhancement_spearhead_striker",
+            enhancement_id="000010006003",
+            enhancement_name="spearhead striker",
+        ):
+            return
+        if game is None:
+            try:
+                army = self.get_parent_army()
+                game = getattr(getattr(army, "player", None), "game", None)
+            except Exception:
+                game = None
+        try:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+        except Exception:
+            current_player = None
+        try:
+            owner = str(getattr(current_player, "id", "") or "")
+        except Exception:
+            owner = ""
+        if not owner:
+            try:
+                army = self.get_parent_army()
+                owner = str(getattr(getattr(army, "player", None), "id", "") or "")
+            except Exception:
+                owner = ""
+        try:
+            turn = int(getattr(game, "turn", current_turn) or current_turn)
+        except Exception:
+            turn = int(current_turn or 0)
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        for unit in members:
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["spearhead_striker_no_overwatch"] = True
+            sr["spearhead_striker_charge_reroll"] = True
+            if owner:
+                sr["spearhead_striker_turn_owner"] = owner
+            if turn:
+                sr["spearhead_striker_turn"] = int(turn)
+            unit.special_rules = sr
+
     def _disembark_override_rules(self, *, transport_unit: Optional['Unit'] = None, game: Optional['Game'] = None) -> dict:
         overrides: dict[str, object] = {}
         try:
@@ -3294,6 +3349,7 @@ class ShootingMixin:
                 self.special_rules = sr
                 self._apply_goretrack_onslaught_disembark_effect(game=game, current_turn=current_turn)
                 self._apply_murderous_onslaught_disembark_effect(game=game, current_turn=current_turn)
+                self._apply_spearhead_striker_disembark_effect(game=game, current_turn=current_turn)
 
                 # Battle-shock until next Command phase
                 if not self.is_battle_shocked():
@@ -3342,6 +3398,7 @@ class ShootingMixin:
         self.special_rules = sr
         self._apply_goretrack_onslaught_disembark_effect(game=game, current_turn=current_turn)
         self._apply_murderous_onslaught_disembark_effect(game=game, current_turn=current_turn)
+        self._apply_spearhead_striker_disembark_effect(game=game, current_turn=current_turn)
 
         # Apply moved/charge restrictions depending on cause
         if destroyed_transport:
@@ -3564,6 +3621,7 @@ class ShootingMixin:
         self.special_rules = sr
         self._apply_goretrack_onslaught_disembark_effect(game=game, current_turn=current_turn)
         self._apply_murderous_onslaught_disembark_effect(game=game, current_turn=current_turn)
+        self._apply_spearhead_striker_disembark_effect(game=game, current_turn=current_turn)
 
         if destroyed_transport:
             self.round_state.disembarked_from_destroyed_transport = True

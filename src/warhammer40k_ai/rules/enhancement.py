@@ -292,6 +292,10 @@ class Enhancement:
             is_mercurial_host = bool(ec_mgr and ec_mgr.is_mercurial_host())
         except Exception:
             is_mercurial_host = False
+        try:
+            is_rapid_evisceration = bool(ec_mgr and ec_mgr.is_rapid_evisceration())
+        except Exception:
+            is_rapid_evisceration = False
         is_court_or_mercurial_host = bool(is_court_of_the_phoenician or is_mercurial_host)
         ck_mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
         try:
@@ -829,6 +833,40 @@ class Enhancement:
                 }
             )
             unit.special_rules["advance_no_roll_effects"] = existing_effects
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "sublime prescience" or enh_id == "000010006002":
+            if not is_rapid_evisceration:
+                return
+            unit.special_rules["enhancement_sublime_prescience"] = True
+            unit.special_rules["enhancement_sublime_prescience_round_bonus"] = 1
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "spearhead striker" or enh_id == "000010006003":
+            if not is_rapid_evisceration:
+                return
+            unit.special_rules["enhancement_spearhead_striker"] = True
+            # Keep reroll conditional on disembark trigger; parser may set an unconditional flag.
+            unit.special_rules.pop("enhancement_charge_reroll", None)
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "accomplished tactician" or enh_id == "000010006004":
+            if not is_rapid_evisceration:
+                return
+            unit.special_rules["enhancement_accomplished_tactician"] = True
+            unit.special_rules["enhancement_accomplished_tactician_range"] = 9
+            unit.special_rules["enhancement_accomplished_tactician_embark_range"] = 6
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "heretek adept" or enh_id == "000010006005":
+            if not is_rapid_evisceration:
+                return
+            unit.special_rules["enhancement_heretek_adept"] = True
+            unit.special_rules["enhancement_heretek_adept_range"] = 6
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 

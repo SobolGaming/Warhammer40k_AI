@@ -3821,30 +3821,327 @@ class GameShootingFightHandlersMixin:
         if callable(trigger_fn):
             trigger_fn(self, phase_name=phase_name, trigger="fight")
 
-    def _on_unit_shooting_resolved_emperors_children(self, attacker_unit=None, **_kwargs) -> None:
+    def _queue_accomplished_tactician_after_enemy_shooting(self, *, attacker_root=None, hits_by_target=None) -> None:
+        if attacker_root is None or not hits_by_target:
+            return
+        if not self.is_shooting_phase():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+
+        attacker_army = attacker_root.get_parent_army() if hasattr(attacker_root, "get_parent_army") else None
+        attacker_player = getattr(attacker_army, "player", None) if attacker_army is not None else None
+        if attacker_player is None:
+            return
+        if attacker_player is not self.get_current_player():
+            return
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        if turn <= 0:
+            return
+        turn_owner = str(getattr(attacker_player, "id", "") or "")
+        if not turn_owner:
+            return
+
+        from ...utility.aura_utils import model_within_range_of_unit, unit_wholly_within_range_of_unit
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        hit_roots_by_player: dict[Any, list[Any]] = {}
+        seen_hits: dict[str, set[str]] = {}
+        for target_unit, hits in list((hits_by_target or {}).items()):
+            if target_unit is None or int(hits or 0) <= 0:
+                continue
+            try:
+                target_root = target_unit.get_attached_unit_root()
+            except Exception:
+                target_root = target_unit
+            if target_root is None:
+                continue
+            target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+            target_player = getattr(target_army, "player", None) if target_army is not None else None
+            if target_player is None or target_player is attacker_player:
+                continue
+            pid = str(getattr(target_player, "id", "") or "")
+            tid = str(get_entity_id(target_root) or "")
+            if not pid or not tid:
+                continue
+            seen = seen_hits.setdefault(pid, set())
+            if tid in seen:
+                continue
+            seen.add(tid)
+            hit_roots_by_player.setdefault(target_player, []).append(target_root)
+
+        if not hit_roots_by_player:
+            return
+
+        queue = getattr(self, "decision_queue", None)
+
+        def _has_pending_for_source(source_unit_id: str) -> bool:
+            if queue is None or not hasattr(queue, "list"):
+                return False
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "accomplished_tactician":
+                    continue
+                if str(ctx.get("source_unit_id", "") or "") != str(source_unit_id or ""):
+                    continue
+                if str(ctx.get("turn_owner", "") or "") != turn_owner:
+                    continue
+                if int(ctx.get("turn", 0) or 0) != int(turn or 0):
+                    continue
+                return True
+            return False
+
+        for defender_player, hit_roots in list(hit_roots_by_player.items()):
+            if defender_player is None:
+                continue
+            defender_army = defender_player.get_army()
+            if defender_army is None:
+                continue
+            mgr = self._get_emperors_children_manager(defender_army)
+            if mgr is None or not getattr(mgr, "is_rapid_evisceration", lambda: False)():
+                continue
+
+            transport_roots: list[Any] = []
+            seen_transport_ids: set[str] = set()
+            for unit in sorted(list(getattr(defender_army, "units", []) or []), key=_unit_sort_key):
+                if unit is None:
+                    continue
+                try:
+                    transport_root = unit.get_attached_unit_root()
+                except Exception:
+                    transport_root = unit
+                if transport_root is None:
+                    continue
+                transport_id = str(get_entity_id(transport_root) or "")
+                if transport_id and transport_id in seen_transport_ids:
+                    continue
+                if transport_id:
+                    seen_transport_ids.add(transport_id)
+                try:
+                    if not transport_root.is_alive() or not bool(getattr(transport_root, "deployed", True)):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    if transport_root.is_in_reserves() or transport_root.is_embarked:
+                        continue
+                except Exception:
+                    pass
+                try:
+                    is_transport = bool(getattr(transport_root, "is_transport", False))
+                except Exception:
+                    is_transport = False
+                if not is_transport:
+                    try:
+                        is_transport = bool(transport_root.has_any_keyword("TRANSPORT"))
+                    except Exception:
+                        is_transport = False
+                if not is_transport:
+                    continue
+                transport_roots.append(transport_root)
+
+            if not transport_roots:
+                continue
+
+            try:
+                sorted_hit_roots = sorted(list(hit_roots), key=_unit_sort_key)
+            except Exception:
+                sorted_hit_roots = list(hit_roots or [])
+
+            seen_source_roots: set[str] = set()
+            for unit in sorted(list(getattr(defender_army, "units", []) or []), key=_unit_sort_key):
+                if unit is None:
+                    continue
+                try:
+                    source_root = unit.get_attached_unit_root()
+                except Exception:
+                    source_root = unit
+                if source_root is None:
+                    continue
+                source_root_id = str(get_entity_id(source_root) or "")
+                if source_root_id and source_root_id in seen_source_roots:
+                    continue
+                if source_root_id:
+                    seen_source_roots.add(source_root_id)
+                try:
+                    if not source_root.is_alive() or not bool(getattr(source_root, "deployed", True)):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    if source_root.is_in_reserves() or source_root.is_embarked:
+                        continue
+                except Exception:
+                    pass
+                try:
+                    members = list(source_root.get_attached_unit_members() or [])
+                except Exception:
+                    members = [source_root]
+                if not members:
+                    members = [source_root]
+                try:
+                    members = sorted(list(members), key=_unit_sort_key)
+                except Exception:
+                    members = list(members)
+
+                for source_unit in list(members or []):
+                    if source_unit is None:
+                        continue
+                    source_sr = getattr(source_unit, "special_rules", None)
+                    if not isinstance(source_sr, dict) or not source_sr.get("enhancement_accomplished_tactician"):
+                        continue
+                    source_unit_id = str(get_entity_id(source_unit) or "")
+                    if not source_unit_id:
+                        continue
+                    try:
+                        used_owner = str(source_sr.get("enhancement_accomplished_tactician_turn_owner", "") or "")
+                        used_turn = int(source_sr.get("enhancement_accomplished_tactician_turn", 0) or 0)
+                    except Exception:
+                        used_owner = ""
+                        used_turn = 0
+                    if used_turn and used_turn == int(turn or 0) and (not used_owner or used_owner == turn_owner):
+                        continue
+                    if _has_pending_for_source(source_unit_id):
+                        continue
+
+                    bearer_model = getattr(source_unit, "_get_enhancement_bearer_model", lambda: None)()
+                    if bearer_model is None or not bool(getattr(bearer_model, "is_alive", True)):
+                        continue
+                    bearer_model_id = str(get_entity_id(bearer_model) or "")
+                    try:
+                        select_range = int(source_sr.get("enhancement_accomplished_tactician_range", 9) or 9)
+                    except Exception:
+                        select_range = 9
+                    try:
+                        embark_range = int(source_sr.get("enhancement_accomplished_tactician_embark_range", 6) or 6)
+                    except Exception:
+                        embark_range = 6
+                    if select_range <= 0 or embark_range <= 0:
+                        continue
+
+                    options = [DecisionOption.create("None", payload={"action": "skip"})]
+                    seen_pairs: set[tuple[str, str]] = set()
+                    for passenger_root in list(sorted_hit_roots or []):
+                        if passenger_root is None:
+                            continue
+                        if passenger_root.get_parent_army() is not defender_army:
+                            continue
+                        try:
+                            if not passenger_root.is_alive() or not bool(getattr(passenger_root, "deployed", True)):
+                                continue
+                        except Exception:
+                            continue
+                        try:
+                            if passenger_root.is_in_reserves() or passenger_root.is_embarked:
+                                continue
+                        except Exception:
+                            pass
+                        if not getattr(mgr, "is_emperors_children_unit", lambda _u: False)(passenger_root):
+                            continue
+                        if not model_within_range_of_unit(
+                            bearer_model,
+                            passenger_root,
+                            float(select_range),
+                            use_attached_aggregate=True,
+                        ):
+                            continue
+                        passenger_id = str(get_entity_id(passenger_root) or "")
+                        if not passenger_id:
+                            continue
+                        for transport_root in list(transport_roots or []):
+                            if transport_root is None or transport_root is passenger_root:
+                                continue
+                            transport_id = str(get_entity_id(transport_root) or "")
+                            if not transport_id:
+                                continue
+                            pair_key = (passenger_id, transport_id)
+                            if pair_key in seen_pairs:
+                                continue
+                            if not unit_wholly_within_range_of_unit(
+                                transport_root,
+                                passenger_root,
+                                float(embark_range),
+                                use_attached_aggregate=True,
+                            ):
+                                continue
+                            try:
+                                if not transport_root.can_transport(passenger_root):
+                                    continue
+                            except Exception:
+                                continue
+                            seen_pairs.add(pair_key)
+                            options.append(
+                                DecisionOption.create(
+                                    f"{getattr(passenger_root, 'name', 'Unit')} -> {getattr(transport_root, 'name', 'Transport')}",
+                                    payload={
+                                        "target_unit_id": passenger_id,
+                                        "transport_unit_id": transport_id,
+                                    },
+                                )
+                            )
+
+                    if len(options) <= 1:
+                        continue
+
+                    request = DecisionRequest.create(
+                        DECISION_CHOOSE_QUARRY,
+                        "Accomplished Tactician: select a hit friendly unit and transport (or None).",
+                        player_id=getattr(defender_player, "id", None),
+                        options=options,
+                        context={
+                            "ability": "accomplished_tactician",
+                            "ability_name": "Accomplished Tactician",
+                            "phase": "Opponent Shooting phase",
+                            "optional": True,
+                            "source_unit_id": source_unit_id,
+                            "unit_id": source_unit_id,
+                            "model_id": bearer_model_id,
+                            "range": int(select_range),
+                            "embark_range": int(embark_range),
+                            "turn_owner": turn_owner,
+                            "turn": int(turn or 0),
+                        },
+                    )
+                    self.request_decision(request)
+
+    def _on_unit_shooting_resolved_emperors_children(self, attacker_unit=None, hits_by_target=None, **_kwargs) -> None:
         if attacker_unit is None:
             return
         root = attacker_unit.get_attached_unit_root() if hasattr(attacker_unit, "get_attached_unit_root") else attacker_unit
+        if root is None:
+            return
         army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
         mgr = self._get_emperors_children_manager(army)
-        if mgr is None:
-            return
-        if not mgr.resolve_pending_favoured_champions(root, game=self):
-            return
-        from ...utility.event_bus import append_action
+        if mgr is not None and mgr.resolve_pending_favoured_champions(root, game=self):
+            from ...utility.event_bus import append_action
 
-        message = f"{INTERNAL_RIVALRIES_NAME}: {getattr(root, 'name', 'Unit')} are now Favoured Champions."
-        for player in list(getattr(self, "players", []) or []):
-            if player is None:
-                continue
-            append_action(player, message)
-        if getattr(self, "event_system", None) is not None:
-            self.event_system.publish(
-                "emperors_children_favoured_champions_updated",
-                game=self,
-                manager=mgr,
-                unit=root,
-            )
+            message = f"{INTERNAL_RIVALRIES_NAME}: {getattr(root, 'name', 'Unit')} are now Favoured Champions."
+            for player in list(getattr(self, "players", []) or []):
+                if player is None:
+                    continue
+                append_action(player, message)
+            if getattr(self, "event_system", None) is not None:
+                self.event_system.publish(
+                    "emperors_children_favoured_champions_updated",
+                    game=self,
+                    manager=mgr,
+                    unit=root,
+                )
+
+        self._queue_accomplished_tactician_after_enemy_shooting(
+            attacker_root=root,
+            hits_by_target=hits_by_target,
+        )
 
     def _queue_dark_blessings_for_targets(self, *, target_units=None) -> None:
         if not target_units:

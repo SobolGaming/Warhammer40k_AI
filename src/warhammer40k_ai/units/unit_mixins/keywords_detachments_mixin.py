@@ -3036,28 +3036,75 @@ class KeywordsDetachmentsMixin:
             root = self.get_attached_unit_root()
         except Exception:
             root = self
+        total_bonus = 0
         try:
             rule = root.get_strategic_reserves_round_bonus_rule()
         except Exception:
             rule = None
-        if not rule:
-            return 0
+        if rule:
+            try:
+                started = bool(getattr(root, "_started_in_reserves", False))
+            except Exception:
+                started = False
+            if started:
+                try:
+                    in_strategic = bool(getattr(root, "is_in_strategic_reserves", lambda: False)())
+                except Exception:
+                    in_strategic = False
+                if in_strategic:
+                    try:
+                        total_bonus += int(rule.get("round_bonus", 1) or 0)
+                    except Exception:
+                        pass
+
         try:
-            started = bool(getattr(root, "_started_in_reserves", False))
+            sr = getattr(root, "special_rules", None)
         except Exception:
-            started = False
-        if not started:
-            return 0
-        try:
-            if not bool(getattr(root, "is_in_strategic_reserves", lambda: False)()):
-                return 0
-        except Exception:
-            return 0
-        try:
-            bonus = int(rule.get("round_bonus", 1) or 0)
-        except Exception:
-            bonus = 0
-        return max(0, bonus)
+            sr = None
+        if isinstance(sr, dict) and bool(sr.get("enhancement_sublime_prescience_active")):
+            try:
+                in_strategic = bool(getattr(root, "is_in_strategic_reserves", lambda: False)())
+            except Exception:
+                in_strategic = False
+            if in_strategic:
+                active = True
+                try:
+                    army = root.get_parent_army()
+                except Exception:
+                    army = None
+                try:
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                except Exception:
+                    game = None
+                owner_id = str(sr.get("enhancement_sublime_prescience_turn_owner", "") or "")
+                try:
+                    turn = int(sr.get("enhancement_sublime_prescience_turn", 0) or 0)
+                except Exception:
+                    turn = 0
+                expires_phase = str(sr.get("enhancement_sublime_prescience_expires_phase", "") or "").strip().upper()
+                if game is not None:
+                    try:
+                        current_player = getattr(game, "get_current_player", lambda: None)()
+                    except Exception:
+                        current_player = None
+                    current_owner = str(getattr(current_player, "id", "") or "")
+                    try:
+                        current_turn = int(getattr(game, "turn", 0) or 0)
+                    except Exception:
+                        current_turn = 0
+                    phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    if owner_id and current_owner and owner_id != current_owner:
+                        active = False
+                    if active and turn and current_turn and turn != current_turn:
+                        active = False
+                    if active and expires_phase and phase_name and expires_phase != phase_name:
+                        active = False
+                if active:
+                    try:
+                        total_bonus += int(sr.get("enhancement_sublime_prescience_round_bonus", 1) or 0)
+                    except Exception:
+                        pass
+        return max(0, int(total_bonus or 0))
 
     def get_strategic_reserves_setup_turn(self, *, game=None, current_turn: Optional[int] = None) -> int:
         if current_turn is None:

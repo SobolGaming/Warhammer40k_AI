@@ -2312,6 +2312,140 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
     payload = _option_payload(request, result)
     unit_val = payload.get("target_unit_id", payload.get("unit_id", payload.get("unit")))
     chosen = resolve_unit(game, unit_val)
+    if str(ctx.get("ability", "") or "") == "sublime_prescience":
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None or chosen is None:
+            return None
+        try:
+            if not bool(getattr(chosen, "is_in_strategic_reserves", lambda: False)()):
+                return None
+        except Exception:
+            return None
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict) or not source_sr.get("enhancement_sublime_prescience"):
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            try:
+                player = source_unit.get_parent_army().player
+            except Exception:
+                player = None
+        owner_id = str(ctx.get("turn_owner", "") or getattr(player, "id", "") or "")
+        try:
+            turn = int(ctx.get("turn", 0) or getattr(game, "turn", 0) or 0)
+        except Exception:
+            turn = int(getattr(game, "turn", 0) or 0)
+        try:
+            used_owner = str(source_sr.get("enhancement_sublime_prescience_turn_owner", "") or "")
+            used_turn = int(source_sr.get("enhancement_sublime_prescience_turn", 0) or 0)
+        except Exception:
+            used_owner = ""
+            used_turn = 0
+        if used_turn and used_turn == int(turn or 0) and (not used_owner or not owner_id or used_owner == owner_id):
+            return None
+        try:
+            round_bonus = int(source_sr.get("enhancement_sublime_prescience_round_bonus", 1) or 1)
+        except Exception:
+            round_bonus = 1
+        if round_bonus <= 0:
+            round_bonus = 1
+
+        target_sr = getattr(chosen, "special_rules", None)
+        if not isinstance(target_sr, dict):
+            target_sr = {}
+        target_sr["enhancement_sublime_prescience_active"] = True
+        target_sr["enhancement_sublime_prescience_turn"] = int(turn or 0)
+        target_sr["enhancement_sublime_prescience_round_bonus"] = int(round_bonus)
+        target_sr["enhancement_sublime_prescience_expires_phase"] = "MOVEMENT_PHASE"
+        target_sr["enhancement_sublime_prescience_source"] = str(ctx.get("ability_name", "") or "Sublime Prescience")
+        target_sr["enhancement_sublime_prescience_source_unit_id"] = str(get_entity_id(source_unit) or "")
+        if owner_id:
+            target_sr["enhancement_sublime_prescience_turn_owner"] = owner_id
+        chosen.special_rules = target_sr
+
+        source_sr["enhancement_sublime_prescience_turn"] = int(turn or 0)
+        if owner_id:
+            source_sr["enhancement_sublime_prescience_turn_owner"] = owner_id
+        source_unit.special_rules = source_sr
+        try:
+            _log_action_for_players(
+                game,
+                player,
+                "Sublime Prescience: "
+                f"{getattr(chosen, 'name', 'Transport')} treats the current battle round as +{int(round_bonus)} this phase for Strategic Reserves setup.",
+            )
+        except Exception:
+            pass
+        return None
+    if str(ctx.get("ability", "") or "") == "accomplished_tactician":
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        transport = resolve_unit(game, payload.get("transport_unit_id") or ctx.get("transport_unit_id"))
+        passenger = chosen
+        if source_unit is None or transport is None or passenger is None:
+            return None
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict) or not source_sr.get("enhancement_accomplished_tactician"):
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            try:
+                player = source_unit.get_parent_army().player
+            except Exception:
+                player = None
+        owner_id = str(ctx.get("turn_owner", "") or "")
+        if not owner_id:
+            try:
+                owner_id = str(getattr(game.get_current_player(), "id", "") or "")
+            except Exception:
+                owner_id = ""
+        try:
+            turn = int(ctx.get("turn", 0) or getattr(game, "turn", 0) or 0)
+        except Exception:
+            turn = int(getattr(game, "turn", 0) or 0)
+        try:
+            used_owner = str(source_sr.get("enhancement_accomplished_tactician_turn_owner", "") or "")
+            used_turn = int(source_sr.get("enhancement_accomplished_tactician_turn", 0) or 0)
+        except Exception:
+            used_owner = ""
+            used_turn = 0
+        if used_turn and used_turn == int(turn or 0) and (not used_owner or not owner_id or used_owner == owner_id):
+            return None
+        try:
+            embark_range = int(ctx.get("embark_range", source_sr.get("enhancement_accomplished_tactician_embark_range", 6)) or 6)
+        except Exception:
+            embark_range = 6
+        if embark_range <= 0:
+            embark_range = 6
+        ability_name = str(ctx.get("ability_name", "") or "Accomplished Tactician").strip() or "Accomplished Tactician"
+        resolve_fn = getattr(game, "resolve_end_of_fight_embark", None)
+        if not callable(resolve_fn):
+            return None
+        embarked = bool(
+            resolve_fn(
+                transport,
+                passenger,
+                {
+                    "source": ability_name,
+                    "range": int(embark_range),
+                    "allow_existing_passengers": True,
+                },
+            )
+        )
+        if not embarked:
+            return None
+        source_sr["enhancement_accomplished_tactician_turn"] = int(turn or 0)
+        if owner_id:
+            source_sr["enhancement_accomplished_tactician_turn_owner"] = owner_id
+        source_unit.special_rules = source_sr
+        try:
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {getattr(passenger, 'name', 'Unit')} embarked in {getattr(transport, 'name', 'Transport')}.",
+            )
+        except Exception:
+            pass
+        return None
     if str(ctx.get("ability", "") or "") == "monarch_of_the_hunt":
         source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
         if source_unit is not None and chosen is not None:

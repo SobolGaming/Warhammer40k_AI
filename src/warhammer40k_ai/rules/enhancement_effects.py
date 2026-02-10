@@ -321,6 +321,13 @@ def parse_enhancement_effects(description: str) -> List[EnhancementEffectSpec]:
             )
 
     charge_conditional = False
+    if re.search(
+        r"each\s+time\s+the\s+bearer'?s\s+unit\s+disembarks?\s+from\s+a\s+transport",
+        r,
+        flags=re.IGNORECASE,
+    ):
+        # Conditional on a disembark trigger; avoid granting unconditional charge re-roll support.
+        charge_conditional = True
     # Re-roll Charge rolls if target is within objective range.
     if re.search(
         r"bearer'?s\s+unit\s+declares\s+a\s+charge.*?objective\s+marker.*?re-?roll\s+the\s+charge\s+roll",

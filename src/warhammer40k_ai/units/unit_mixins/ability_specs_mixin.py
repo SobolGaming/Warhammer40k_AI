@@ -5573,8 +5573,8 @@ class AbilitySpecsMixin:
                     break
         return int(count)
 
-    def get_first_failed_save_damage_zero_sources(self) -> list[str]:
-        """Return ability source names that set the first failed save's damage to 0 (once per turn)."""
+    def get_first_failed_save_damage_zero_sources(self) -> list[dict]:
+        """Return structured sources that can set a failed save's damage to 0."""
         try:
             root = self.get_attached_unit_root()
         except Exception:
@@ -5584,8 +5584,8 @@ class AbilitySpecsMixin:
         if isinstance(cache, dict) and cache_key in cache:
             return list(cache.get(cache_key) or [])
 
-        sources: list[str] = []
-        seen: set[str] = set()
+        sources: list[dict] = []
+        seen_local: set[str] = set()
 
         def _matches(text: str) -> bool:
             if not text:
@@ -5610,10 +5610,16 @@ class AbilitySpecsMixin:
                 if _matches(desc or name or ""):
                     src = str(name or "First failed save").strip() or "First failed save"
                     key = src.lower()
-                    if key in seen:
+                    if key in seen_local:
                         continue
-                    seen.add(key)
-                    sources.append(src)
+                    seen_local.add(key)
+                    sources.append(
+                        {
+                            "source": src,
+                            "usage_scope": "turn",
+                            "usage_key": "first_failed_save_damage_zero",
+                        }
+                    )
 
         try:
             models = list(root.get_attached_unit_models() or [])
@@ -5624,10 +5630,126 @@ class AbilitySpecsMixin:
                 if _matches(desc or name or ""):
                     src = str(name or "First failed save").strip() or "First failed save"
                     key = src.lower()
-                    if key in seen:
+                    if key in seen_local:
                         continue
-                    seen.add(key)
-                    sources.append(src)
+                    seen_local.add(key)
+                    sources.append(
+                        {
+                            "source": src,
+                            "usage_scope": "turn",
+                            "usage_key": "first_failed_save_damage_zero",
+                        }
+                    )
+
+        try:
+            is_vehicle = bool(root.has_any_keyword("VEHICLE"))
+        except Exception:
+            try:
+                is_vehicle = bool(root.has_keyword("VEHICLE"))
+            except Exception:
+                is_vehicle = False
+        if is_vehicle:
+            try:
+                army = root.get_parent_army()
+            except Exception:
+                army = None
+            ec_mgr = getattr(army, "emperors_children", None) if army is not None else None
+            if ec_mgr is None and army is not None:
+                ec_mgr = getattr(army, "emperors_children_detachments", None)
+            try:
+                is_ec_vehicle = bool(root.has_any_keyword("EMPEROR'S CHILDREN"))
+            except Exception:
+                is_ec_vehicle = False
+            if not is_ec_vehicle and ec_mgr is not None:
+                try:
+                    is_ec_vehicle = bool(ec_mgr.is_emperors_children_unit(root))
+                except Exception:
+                    is_ec_vehicle = False
+            if is_ec_vehicle:
+                from ...utility.aura_utils import distance_between_models_bases_3d
+
+                try:
+                    target_models = list(root.get_attached_unit_models() or [])
+                except Exception:
+                    target_models = list(getattr(root, "models", []) or [])
+                target_models = [m for m in list(target_models or []) if bool(getattr(m, "is_alive", True))]
+
+                if target_models and army is not None:
+                    try:
+                        army_units = list(getattr(army, "units", []) or [])
+                    except Exception:
+                        army_units = []
+                    seen_source_roots: set[str] = set()
+                    heretek_entries: list[dict] = []
+                    for unit in list(army_units or []):
+                        if unit is None:
+                            continue
+                        try:
+                            source_root = unit.get_attached_unit_root()
+                        except Exception:
+                            source_root = unit
+                        if source_root is None:
+                            continue
+                        source_root_id = str(get_entity_id(source_root) or "")
+                        if source_root_id and source_root_id in seen_source_roots:
+                            continue
+                        if source_root_id:
+                            seen_source_roots.add(source_root_id)
+                        try:
+                            if not source_root.is_alive() or not bool(getattr(source_root, "deployed", True)):
+                                continue
+                        except Exception:
+                            continue
+                        try:
+                            if source_root.is_in_reserves() or source_root.is_embarked:
+                                continue
+                        except Exception:
+                            pass
+                        try:
+                            members = list(source_root.get_attached_unit_members() or [])
+                        except Exception:
+                            members = [source_root]
+                        if not members:
+                            members = [source_root]
+                        for source_unit in list(members or []):
+                            if source_unit is None:
+                                continue
+                            source_sr = getattr(source_unit, "special_rules", None)
+                            if not isinstance(source_sr, dict) or not source_sr.get("enhancement_heretek_adept"):
+                                continue
+                            source_bearer = getattr(source_unit, "_get_enhancement_bearer_model", lambda: None)()
+                            if source_bearer is None or not bool(getattr(source_bearer, "is_alive", True)):
+                                continue
+                            try:
+                                range_value = float(source_sr.get("enhancement_heretek_adept_range", 6) or 6)
+                            except Exception:
+                                range_value = 6.0
+                            if range_value <= 0:
+                                continue
+                            in_range = False
+                            for target_model in list(target_models or []):
+                                try:
+                                    if float(distance_between_models_bases_3d(source_bearer, target_model)) <= float(range_value) + 1e-6:
+                                        in_range = True
+                                        break
+                                except Exception:
+                                    continue
+                            if not in_range:
+                                continue
+                            source_unit_id = str(get_entity_id(source_unit) or "")
+                            if not source_unit_id:
+                                continue
+                            heretek_entries.append(
+                                {
+                                    "source": "Heretek Adept",
+                                    "usage_scope": "battle_round",
+                                    "usage_key": f"heretek_adept:{source_unit_id}",
+                                    "source_unit_id": source_unit_id,
+                                }
+                            )
+                    if heretek_entries:
+                        heretek_entries.sort(key=lambda entry: str(entry.get("source_unit_id", "") or ""))
+                        sources.extend(heretek_entries)
 
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}
