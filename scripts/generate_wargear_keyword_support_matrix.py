@@ -158,6 +158,7 @@ def _keyword_support(canon: str, examples: Set[str]) -> Tuple[str, str]:
         "precision": "Allows allocating a successful wound to a visible CHARACTER in an Attached unit.",
         "psychic": "Tags Psychic attacks; conditional defenses (FNP/Invulnerable) check this keyword.",
         "conversion": "Unmodified successful hits of 4+ become critical hits when the target is beyond the Conversion distance.",
+        "c'tan power": "Powers of the C'tan selection limits are enforced when declaring shots.",
         # Ork-specific keywords
         "bubblechukka": "Random profile selection via D6 roll (1-2: big bubble, 3-4: wobbly bubble, 5-6: dense bubble).",
         "dead choppy": "+1 Attacks for each additional dread klaw equipped.",

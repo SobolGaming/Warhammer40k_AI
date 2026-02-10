@@ -3,8 +3,6 @@
 Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 
 > Note: Boarding Actions detachment filtering is not applicable here (wargear keywords are not detachment-scoped in Wahapedia data).
->
-> Note: Ability-driven keyword grants are supported separately (e.g., objective-target and half-range clauses), including weapon-specific lists like “this model’s X and Y have [KEYWORD] while within half range.”
 
 ## Legend
 
@@ -54,11 +52,11 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <td bgcolor="#d4edda">Random profile selection via D6 roll (1-2: big bubble, 3-4: wobbly bubble, 5-6: dense bubble).</td>
 </tr>
 <tr>
-<td bgcolor="#f8d7da"><code>c'tan power</code></td>
-<td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
-<td bgcolor="#f8d7da">3</td>
-<td bgcolor="#f8d7da">c'tan power</td>
-<td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
+<td bgcolor="#d4edda"><code>c'tan power</code></td>
+<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
+<td bgcolor="#d4edda">3</td>
+<td bgcolor="#d4edda">c'tan power</td>
+<td bgcolor="#d4edda">Powers of the C'tan selection limits are enforced when declaring shots.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>conversion</code></td>
@@ -152,11 +150,11 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <td bgcolor="#d4edda">Critical hits auto-wound.</td>
 </tr>
 <tr>
-<td bgcolor="#d4edda"><code>linked fire</code></td>
-<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
-<td bgcolor="#d4edda">1</td>
-<td bgcolor="#d4edda">linked fire</td>
-<td bgcolor="#d4edda">Allows measuring range and visibility from another friendly FIRE PRISM unit. When used, weapon Attacks characteristic becomes 1.</td>
+<td bgcolor="#f8d7da"><code>linked fire</code></td>
+<td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
+<td bgcolor="#f8d7da">1</td>
+<td bgcolor="#f8d7da">linked fire</td>
+<td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>melta</code></td>
@@ -173,11 +171,11 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <td bgcolor="#d4edda">Enforced: each model can use a ONE SHOT weapon once per battle.</td>
 </tr>
 <tr>
-<td bgcolor="#d4edda"><code>overcharge</code></td>
-<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
-<td bgcolor="#d4edda">1</td>
-<td bgcolor="#d4edda">overcharge</td>
-<td bgcolor="#d4edda">Hazardous tests for this profile apply a -2 modifier to the roll result.</td>
+<td bgcolor="#f8d7da"><code>overcharge</code></td>
+<td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
+<td bgcolor="#f8d7da">1</td>
+<td bgcolor="#f8d7da">overcharge</td>
+<td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>pistol</code></td>
@@ -187,11 +185,11 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <td bgcolor="#d4edda">Engaged shooting + pistol-vs-other-ranged choice enforced (10e).</td>
 </tr>
 <tr>
-<td bgcolor="#d4edda"><code>plasma warhead</code></td>
-<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
-<td bgcolor="#d4edda">2</td>
-<td bgcolor="#d4edda">plasma warhead</td>
-<td bgcolor="#d4edda">Requires Remained Stationary, Deathstrike marker placed, no Designate/Adjust this phase. Hits all units within 6" of marker (3D distance). ONE SHOT.</td>
+<td bgcolor="#f8d7da"><code>plasma warhead</code></td>
+<td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
+<td bgcolor="#f8d7da">2</td>
+<td bgcolor="#f8d7da">plasma warhead</td>
+<td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>precision</code></td>
@@ -208,11 +206,11 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <td bgcolor="#d4edda">Tags Psychic attacks; conditional defenses (FNP/Invulnerable) check this keyword.</td>
 </tr>
 <tr>
-<td bgcolor="#d4edda"><code>psychic assassin</code></td>
-<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
-<td bgcolor="#d4edda">1</td>
-<td bgcolor="#d4edda">psychic assassin</td>
-<td bgcolor="#d4edda">When targeting a unit with the PSYKER keyword, this weapon's Attacks characteristic becomes 6.</td>
+<td bgcolor="#f8d7da"><code>psychic assassin</code></td>
+<td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
+<td bgcolor="#f8d7da">1</td>
+<td bgcolor="#f8d7da">psychic assassin</td>
+<td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>rapid fire</code></td>
@@ -222,11 +220,11 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <td bgcolor="#d4edda">Adds attacks at half range (supports dice values like D3/D6+X).</td>
 </tr>
 <tr>
-	<td bgcolor="#d4edda"><code>reverberating summons</code></td>
-	<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
-	<td bgcolor="#d4edda">2</td>
-	<td bgcolor="#d4edda">Reverberating Summons</td>
-	<td bgcolor="#d4edda">Each time a model is destroyed by this weapon, you can return 1 destroyed Plaguebearer model to a friendly Plaguebearers unit within 12&quot; of the bearer.</td>
+<td bgcolor="#f8d7da"><code>reverberating summons</code></td>
+<td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
+<td bgcolor="#f8d7da">2</td>
+<td bgcolor="#f8d7da">Reverberating summons</td>
+<td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>snagged</code></td>

@@ -12351,6 +12351,10 @@ class WargearProfile:
         """Check if weapon has Psychic Assassin keyword."""
         return 'psychic assassin' in [keyword.lower() for keyword in self.get_keywords()]
 
+    def is_ctan_power(self) -> bool:
+        """Check if weapon has C'tan Power keyword."""
+        return "c'tan power" in [keyword.lower() for keyword in self.get_keywords()]
+
     def can_shoot_plasma_warhead(
         self,
         attacker: 'Model',

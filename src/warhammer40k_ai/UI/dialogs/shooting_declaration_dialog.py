@@ -409,7 +409,61 @@ class ShootingDeclarationDialog(BaseDialog):
                 can_shoot, _reason = can_shoot_fn(models[0], out_of_phase=self.out_of_phase)
                 if not can_shoot:
                     return False
+        if not self._can_add_ctan_power_weapon(weapon_profile):
+            return False
         return True
+
+    def _is_ctan_power_profile(self, weapon_profile) -> bool:
+        checker = getattr(self.unit, "_is_ctan_power_profile", None)
+        if callable(checker):
+            return bool(checker(weapon_profile))
+        return False
+
+    def _ctan_power_selection_limit(self) -> int:
+        getter = getattr(self.unit, "get_ctan_power_selection_limit", None)
+        if callable(getter):
+            return int(getter() or 0)
+        return 0
+
+    def _ctan_power_declaration_keys(self) -> set[str]:
+        keys = set()
+        key_getter = getattr(self.unit, "_ctan_power_profile_key", None)
+        if not callable(key_getter):
+            return keys
+        for decl in list(self.weapon_declarations or []):
+            profile = decl.get("weapon_profile")
+            if not self._is_ctan_power_profile(profile):
+                continue
+            keys.add(str(key_getter(profile)))
+        return keys
+
+    def _can_add_ctan_power_weapon(self, weapon_profile) -> bool:
+        if not self._is_ctan_power_profile(weapon_profile):
+            return True
+        limit = self._ctan_power_selection_limit()
+        if limit <= 0:
+            return True
+        key_getter = getattr(self.unit, "_ctan_power_profile_key", None)
+        if not callable(key_getter):
+            return True
+        key = str(key_getter(weapon_profile))
+        selected = self._ctan_power_declaration_keys()
+        if key in selected:
+            return True
+        return len(selected) < limit
+
+    def _show_ctan_limit_error(self) -> None:
+        limit = self._ctan_power_selection_limit()
+        message = f"Powers of the C'tan: select up to {int(limit)} different C'tan Powers weapons."
+        print(f"ERROR: {message}")
+        try:
+            if self.game_view is not None:
+                self.game_view._mission_popup = {
+                    "title": "Powers of the C'tan",
+                    "body": message,
+                }
+        except Exception:
+            pass
 
     def _try_start_deathstrike(self) -> bool:
         """Open Deathstrike Missile action dialog (Designate/Adjust/None)."""
@@ -1353,6 +1407,10 @@ class ShootingDeclarationDialog(BaseDialog):
         """Select a weapon and enter targeting mode"""
         print(f"INFO: select_weapon_for_targeting called with {weapon_profile.parent_wargear.name} #{weapon_instance}")
 
+        if not self._can_add_ctan_power_weapon(weapon_profile):
+            self._show_ctan_limit_error()
+            return
+
         # Plasma Warhead: no target selection, resolve from marker
         if hasattr(weapon_profile, 'is_plasma_warhead') and weapon_profile.is_plasma_warhead():
             self._add_plasma_warhead_declaration(weapon_profile, weapon_instance=weapon_instance)
@@ -1379,6 +1437,9 @@ class ShootingDeclarationDialog(BaseDialog):
     def select_weapon_group_for_targeting(self, weapon_group_info):
         """Select a weapon group and enter targeting mode"""
         print(f"INFO: select_weapon_group_for_targeting called with {weapon_group_info['profile'].parent_wargear.name} (x{weapon_group_info['count']})")
+        if not self._can_add_ctan_power_weapon(weapon_group_info['profile']):
+            self._show_ctan_limit_error()
+            return
         if hasattr(weapon_group_info['profile'], 'is_plasma_warhead') and weapon_group_info['profile'].is_plasma_warhead():
             self._add_plasma_warhead_group_declarations(weapon_group_info)
             return

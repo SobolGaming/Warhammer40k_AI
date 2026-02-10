@@ -97,6 +97,7 @@ def _validate_declare_shots(game: object, request: DecisionRequest, result: Deci
     declarations = result.payload.get("declarations")
     if not isinstance(declarations, list) or not declarations:
         return ("Shooting declaration requires declarations list.",)
+    ctan_profiles = []
     force_target_id = str(request.context.get("force_target_unit_id", "") or "")
     out_of_phase = bool(request.context.get("out_of_phase", False))
     for decl in declarations:
@@ -114,6 +115,9 @@ def _validate_declare_shots(game: object, request: DecisionRequest, result: Deci
         if profile_name not in profiles:
             return ("Declaration weapon profile not found.",)
         profile = profiles.get(profile_name)
+        is_ctan_power = bool(getattr(unit, "_is_ctan_power_profile", lambda _p: False)(profile))
+        if is_ctan_power:
+            ctan_profiles.append(profile)
         is_plasma_warhead = bool(getattr(profile, "is_plasma_warhead", lambda: False)())
         target_id = str(decl.get("target_unit_id", "") or "")
         if not is_plasma_warhead:
@@ -251,6 +255,12 @@ def _validate_declare_shots(game: object, request: DecisionRequest, result: Deci
                 game_map = getattr(game, "map", None)
                 if not linked_fire_origin_is_visible(shooting_unit, origin_unit, game_map=game_map):
                     return ("Linked Fire origin must be visible to the bearer unit.",)
+
+    validate_ctan = getattr(unit, "validate_ctan_power_selection", None)
+    if callable(validate_ctan):
+        ok, reason = validate_ctan([{"weapon_profile": profile} for profile in ctan_profiles])
+        if not ok:
+            return (str(reason or "Invalid C'tan Power selection."),)
 
     return ()
 

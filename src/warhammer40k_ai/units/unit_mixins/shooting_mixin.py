@@ -142,6 +142,11 @@ class ShootingMixin:
         except Exception:
             pass
 
+        ctan_ok, ctan_reason = self.validate_ctan_power_selection(weapon_declarations)
+        if not ctan_ok:
+            print(f"{self.name}: {ctan_reason}")
+            return False
+
         print(f"{self.name} executing {len(weapon_declarations)} shooting declarations...")
 
         # Detect interactive dice roll mode (server-authoritative roll decisions).
@@ -453,7 +458,171 @@ class ShootingMixin:
             pass
 
         return successful_attacks > 0
-    
+
+    @staticmethod
+    def _ctan_power_parse_number_token(token: object) -> Optional[int]:
+        raw = str(token or "").strip().lower()
+        if not raw:
+            return None
+        if raw.isdigit():
+            return int(raw)
+        words = {
+            "one": 1,
+            "two": 2,
+            "three": 3,
+            "four": 4,
+            "five": 5,
+            "six": 6,
+        }
+        return words.get(raw)
+
+    def _is_ctan_power_profile(self, profile) -> bool:
+        if profile is None:
+            return False
+        is_ctan = getattr(profile, "is_ctan_power", None)
+        if callable(is_ctan):
+            return bool(is_ctan())
+        keywords = list(getattr(profile, "get_keywords", lambda: [])() or [])
+        lowered = [str(keyword or "").lower() for keyword in keywords]
+        return "c'tan power" in lowered
+
+    def _ctan_power_profile_key(self, profile) -> str:
+        parent = getattr(profile, "parent_wargear", None)
+        if parent is not None:
+            parent_id = str(getattr(parent, "id", "") or getattr(parent, "_id", "")).strip()
+            if parent_id:
+                return f"wargear:{parent_id}"
+            parent_name = str(getattr(parent, "name", "") or "").strip().lower()
+            if parent_name:
+                return f"wargear_name:{parent_name}"
+        return f"profile_name:{str(getattr(profile, 'name', '') or '').strip().lower()}"
+
+    def _has_powers_of_ctan_ability(self) -> bool:
+        cache = getattr(self, "_ability_cache", None)
+        cache_key = "powers_of_ctan_ability"
+        if isinstance(cache, dict) and cache_key in cache:
+            return bool(cache[cache_key])
+
+        def _normalize(text: object) -> str:
+            norm = str(text or "").replace("\u2019", "'").lower()
+            norm = re.sub(r"[^a-z0-9]+", " ", norm)
+            return re.sub(r"\s+", " ", norm).strip()
+
+        def _is_powers_of_ctan(text: object) -> bool:
+            norm = _normalize(text)
+            return "powers of the c tan" in norm
+
+        members = [self]
+        get_members = getattr(self, "get_attached_unit_members", None)
+        if callable(get_members):
+            members = list(get_members() or []) or [self]
+        found = False
+        for member in members:
+            for ability in list(getattr(member, "possible_abilities", []) or []):
+                name = ability if isinstance(ability, str) else getattr(ability, "name", "")
+                desc = "" if isinstance(ability, str) else getattr(ability, "description", "")
+                if _is_powers_of_ctan(name) or _is_powers_of_ctan(desc):
+                    found = True
+                    break
+            if found:
+                break
+            for ability in list(getattr(member, "abilities", []) or []):
+                name = ability if isinstance(ability, str) else getattr(ability, "name", "")
+                desc = "" if isinstance(ability, str) else getattr(ability, "description", "")
+                if _is_powers_of_ctan(name) or _is_powers_of_ctan(desc):
+                    found = True
+                    break
+            if found:
+                break
+            datasheet = getattr(member, "_datasheet", None)
+            for ability in list(getattr(datasheet, "datasheets_abilities", []) or []):
+                if isinstance(ability, dict):
+                    name = str(ability.get("name", "") or "")
+                    desc = str(ability.get("description", "") or "")
+                else:
+                    name = str(getattr(ability, "name", "") or "")
+                    desc = str(getattr(ability, "description", "") or "")
+                if _is_powers_of_ctan(name) or _is_powers_of_ctan(desc):
+                    found = True
+                    break
+            if found:
+                break
+
+        if not isinstance(cache, dict):
+            cache = {}
+        cache[cache_key] = bool(found)
+        self._ability_cache = cache
+        return bool(found)
+
+    def _ctan_power_active_wounded_limit(self) -> Optional[int]:
+        model = None
+        for candidate in list(getattr(self, "models", []) or []):
+            if bool(getattr(candidate, "is_alive", False)):
+                model = candidate
+                break
+        if model is None:
+            return None
+
+        current_wounds = int(getattr(model, "wounds", 0) or 0)
+        if current_wounds <= 0:
+            return None
+
+        descriptions = []
+        desc = getattr(self, "damaged_profile_desc", None)
+        if isinstance(desc, str) and desc.strip():
+            descriptions.append(desc)
+        datasheet = getattr(self, "_datasheet", None)
+        ds_desc = getattr(datasheet, "damaged_description", None) if datasheet is not None else None
+        if isinstance(ds_desc, str) and ds_desc.strip():
+            descriptions.append(ds_desc)
+
+        for raw_desc in descriptions:
+            text = str(raw_desc or "").replace("\u2019", "'").lower()
+            range_match = re.search(r"while this model has\s*(\d+)\s*-\s*(\d+)\s*wounds remaining", text)
+            if range_match is None:
+                continue
+            low = int(range_match.group(1))
+            high = int(range_match.group(2))
+            if not (low <= current_wounds <= high):
+                continue
+            select_match = re.search(
+                r"can only select\s+(\d+|one|two|three|four|five)\s+of\s+(?:the\s+)?c[' ]?tan powers weapons",
+                text,
+            )
+            if select_match is None:
+                continue
+            parsed = self._ctan_power_parse_number_token(select_match.group(1))
+            if parsed is not None:
+                return int(parsed)
+        return None
+
+    def get_ctan_power_selection_limit(self) -> int:
+        if not self._has_powers_of_ctan_ability():
+            return 0
+        wounded_limit = self._ctan_power_active_wounded_limit()
+        if wounded_limit is not None and wounded_limit > 0:
+            return int(wounded_limit)
+        return 2
+
+    def validate_ctan_power_selection(self, weapon_declarations: List[dict]) -> tuple[bool, str]:
+        limit = self.get_ctan_power_selection_limit()
+        if limit <= 0:
+            return True, ""
+        selected: dict[str, object] = {}
+        for declaration in list(weapon_declarations or []):
+            profile = declaration.get("weapon_profile")
+            if not self._is_ctan_power_profile(profile):
+                continue
+            key = self._ctan_power_profile_key(profile)
+            if key not in selected:
+                selected[key] = profile
+        if len(selected) <= limit:
+            return True, ""
+        return (
+            False,
+            f"Powers of the C'tan: select up to {int(limit)} different C'tan Powers weapons before resolving shooting.",
+        )
+
 
     def _validate_shooting_declaration(self, weapon_profile, target_unit, models_with_weapon, game_map, *, linked_fire_origin_unit=None, linked_fire_mode=None) -> dict:
         """Validate a shooting declaration"""

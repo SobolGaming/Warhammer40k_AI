@@ -798,6 +798,7 @@ def _keyword_support(canon: str, examples: Sequence[str]) -> Tuple[str, str]:
         "conversion": "Unmodified successful hits of 4+ become critical hits when the target is beyond the Conversion distance.",
         "linked fire": "Linked Fire origin selection supported; range/LOS measured from origin and Attacks=1 override applied.",
         "reverberating summons": "Weapon ability: on destroying a model, return 1 Plaguebearer model to a friendly unit within 12\".",
+        "c'tan power": "Powers of the C'tan selection limits are enforced when declaring shots.",
         # Ork-specific keywords
         "bubblechukka": "Random profile selection via D6 roll (1-2: big bubble, 3-4: wobbly bubble, 5-6: dense bubble).",
         "dead choppy": "+1 Attacks for each additional dread klaw equipped.",
@@ -2417,6 +2418,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("NEC", "VANGUARD PROTOCOLS"): ("Partial", "Scouts 8\" applied without attached-unit restriction."),
         ("NEC", "Relentless Combatants"): ("Supported", "Re-roll Charge rolls. Charge-after-Fall-Back eligibility."),
         ("NEC", "Shadowloom"): ("Supported", "Stealth."),
+        ("NEC", "Powers of the C'tan"): (
+            "Supported",
+            "When selected to shoot, C'tan Power weapon declarations are capped to two distinct weapons (one while in the damaged bracket).",
+        ),
         ("NEC", "Gloom Prism (Aura)"): ("Partial", "Feel No Pain vs Psychic (and mortal where listed) applies to bearer only; aura not propagated."),
         ("NEC", "Nullstone Field Generator (Aura)"): ("Partial", "Feel No Pain vs mortal/psychic applies to bearer only; aura not propagated."),
         ("ORK", "Full Throttle"): ("Supported", "Charge-after-Advance and charge-after-Fall-Back eligibility."),
