@@ -2444,9 +2444,24 @@ class RulesParsingMixin:
             root = self.get_attached_unit_root()
         except Exception:
             root = self
-        sr = getattr(root, "special_rules", None)
-        effects = sr.get("advance_no_roll_effects") if isinstance(sr, dict) else None
-        if not isinstance(effects, list) or not effects:
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        try:
+            members = sorted(members, key=lambda u: str(get_entity_id(u) or ""))
+        except Exception:
+            members = list(members)
+        effects: list[dict] = []
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            member_effects = sr.get("advance_no_roll_effects") if isinstance(sr, dict) else None
+            if not isinstance(member_effects, list) or not member_effects:
+                continue
+            effects.extend([entry for entry in member_effects if isinstance(entry, dict)])
+        if not effects:
             return None
 
         phase_name = ""

@@ -882,6 +882,51 @@ class Player:
             return bool(fn(self.game))
         return False
 
+    def _target_unit_can_use_empyric_suffusion_heroic_intervention(self, target_unit) -> bool:
+        if target_unit is None:
+            return False
+        parent = self._target_unit_parent_army(target_unit)
+        if parent is not None and parent is not self.get_army():
+            return False
+        if not self._unit_has_keyword(target_unit, "SLAANESH"):
+            return False
+        br = self._battle_round()
+        if br <= 0:
+            return False
+        if int(self._ability_used_battle_round.get("EMPYRIC_SUFFUSION_HEROIC_INTERVENTION", 0) or 0) == br:
+            return False
+        army = self.get_army()
+        if army is None:
+            return False
+        from warhammer40k_ai.utility.aura_utils import model_within_range_of_unit
+
+        get_target_root = getattr(target_unit, "get_attached_unit_root", None)
+        target_root = get_target_root() if callable(get_target_root) else target_unit
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict) or not sr.get("enhancement_empyric_suffusion"):
+                continue
+            if not self._unit_is_alive_or_unknown(unit):
+                continue
+            try:
+                if not bool(getattr(unit, "deployed", True)):
+                    continue
+            except Exception:
+                pass
+            try:
+                if unit.is_in_reserves() or unit.is_embarked:
+                    continue
+            except Exception:
+                pass
+            bearer = getattr(unit, "_get_enhancement_bearer_model", lambda: None)()
+            if bearer is None or not bool(getattr(bearer, "is_alive", True)):
+                continue
+            if model_within_range_of_unit(bearer, target_root, 6.0, use_attached_aggregate=True):
+                return True
+        return False
+
     def _preview_faultless_opportunist_discount(self, *, stratagem=None, target_unit=None) -> int:
         if stratagem is None or target_unit is None:
             return 0
@@ -942,6 +987,17 @@ class Player:
         if name != "heroic intervention":
             return 0
         if not self._target_unit_can_use_snarling_protector_heroic_intervention(target_unit):
+            return 0
+        base = int(getattr(stratagem, "cp_cost", 0) or 0)
+        return max(0, base)
+
+    def _preview_empyric_suffusion_heroic_intervention_discount(self, *, stratagem=None, target_unit=None) -> int:
+        if stratagem is None or target_unit is None:
+            return 0
+        name = str(getattr(stratagem, "name", "") or "").strip().lower()
+        if name != "heroic intervention":
+            return 0
+        if not self._target_unit_can_use_empyric_suffusion_heroic_intervention(target_unit):
             return 0
         base = int(getattr(stratagem, "cp_cost", 0) or 0)
         return max(0, base)
@@ -1140,6 +1196,26 @@ class Player:
             ):
                 discount = base
                 reasons.append("Guardians of the Machine: Heroic Intervention for 0CP.")
+                return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
+
+        empyric = self._preview_empyric_suffusion_heroic_intervention_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if empyric:
+            ctx = {
+                "ability_name": "Empyric Suffusion",
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_preview_optional_ability(
+                "EMPYRIC_SUFFUSION_HEROIC_INTERVENTION",
+                ctx,
+                assume=assume_optional_discounts,
+            ):
+                discount = base
+                reasons.append("Empyric Suffusion: Heroic Intervention for 0CP.")
                 return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
 
         prophetic = self._preview_prophetic_sentinels_discount(
@@ -1443,6 +1519,48 @@ class Player:
                     "discount": base,
                     "cost": cost,
                     "reasons": ["Guardians of the Machine: Heroic Intervention for 0CP."],
+                    "increase": increase,
+                    "increase_reasons": increase_reasons,
+                }
+        empyric = self._preview_empyric_suffusion_heroic_intervention_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if empyric:
+            ctx = {
+                "ability_name": "Empyric Suffusion",
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_use_optional_ability("EMPYRIC_SUFFUSION_HEROIC_INTERVENTION", ctx):
+                cost = 0
+                increase = 0
+                increase_reasons: list[str] = []
+                opponent = self._get_opponent_player()
+                if opponent is not None:
+                    inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                        target_unit=target_unit,
+                        stratagem=stratagem,
+                        current_cost=cost,
+                    )
+                    increase = int(inc_info.get("increase", 0) or 0)
+                    increase_reasons = list(inc_info.get("reasons", []) or [])
+                    if increase:
+                        cost = max(0, cost + increase)
+                self._pending_stratagem_cp_increase = {
+                    "increase": int(increase or 0),
+                    "reasons": increase_reasons,
+                    "stratagem_name": getattr(stratagem, "name", None) or "",
+                }
+                br = self._battle_round()
+                if br > 0:
+                    self._ability_used_battle_round["EMPYRIC_SUFFUSION_HEROIC_INTERVENTION"] = br
+                return {
+                    "base": base,
+                    "discount": base,
+                    "cost": cost,
+                    "reasons": ["Empyric Suffusion: Heroic Intervention for 0CP."],
                     "increase": increase,
                     "increase_reasons": increase_reasons,
                 }

@@ -2933,6 +2933,7 @@ class GameReactiveDecisionsMixin:
             "resource_transmutation",
             "oathbound_speculator",
             "dead_reckoning",
+            "possessed_blade_fight",
         ):
             return
         selected = None
@@ -3253,6 +3254,67 @@ class GameReactiveDecisionsMixin:
                     yield_points=int(getattr(pe, "yield_points", 0) or 0),
                     reason="Dead Reckoning",
                 )
+            return
+
+        if ability_key == "possessed_blade_fight":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or ctx.get("source_unit_id") or "")
+            model_id = str(payload.get("model_id") or ctx.get("model_id") or "")
+            if not unit_id or not model_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            model = self._resolve_model_by_id(model_id)
+            if unit is None or model is None:
+                return
+            if not bool(getattr(model, "is_alive", True)):
+                return
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict) or not sr.get("enhancement_possessed_blade"):
+                return
+            bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "")
+            if bearer_id and bearer_id != model_id:
+                return
+            get_mgr = getattr(self, "_get_emperors_children_manager", None)
+            if callable(get_mgr):
+                try:
+                    army = unit.get_parent_army()
+                except Exception:
+                    army = None
+                mgr = get_mgr(army)
+                if mgr is None or not getattr(mgr, "is_carnival_of_excess", lambda: False)():
+                    return
+            selected_weapon = str(sr.get("enhancement_possessed_blade_weapon_name", "") or "").strip()
+            if not selected_weapon:
+                return
+            weapon_name = str(payload.get("weapon_name") or ctx.get("weapon_name") or selected_weapon).strip()
+            if weapon_name and hasattr(unit, "_weapon_name_matches"):
+                if not unit._weapon_name_matches([selected_weapon], weapon_name):
+                    return
+            phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+            if not phase_name:
+                phase_name = str(ctx.get("phase", "") or "").strip().upper()
+            if not phase_name:
+                phase_name = "FIGHT_PHASE"
+            player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+            if player is None:
+                try:
+                    player = unit.get_parent_army().player
+                except Exception:
+                    player = None
+            owner_id = str(getattr(player, "id", "") or "")
+            try:
+                turn = int(getattr(self, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            sr["enhancement_possessed_blade_fight_active"] = True
+            sr["enhancement_possessed_blade_fight_turn"] = int(turn)
+            sr["enhancement_possessed_blade_fight_owner"] = owner_id
+            sr["enhancement_possessed_blade_fight_phase"] = phase_name
+            sr["enhancement_possessed_blade_active_weapon_name"] = selected_weapon
+            sr["enhancement_possessed_blade_active_model_id"] = model_id
+            sr["enhancement_possessed_blade_source"] = (
+                str(ctx.get("ability_name", "") or "Possessed Blade").strip() or "Possessed Blade"
+            )
+            unit.special_rules = sr
             return
 
         if ability_key == "possessed_lord":

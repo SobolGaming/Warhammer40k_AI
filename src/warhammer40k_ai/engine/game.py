@@ -4510,64 +4510,141 @@ class Game(
             if mgr is None:
                 continue
             mgr.on_battle_round_start(self)
-            if not getattr(mgr, "is_coterie_of_conceited", lambda: False)():
-                continue
-            if not getattr(mgr, "warlord_on_battlefield", lambda: False)():
-                continue
-            if not bool(getattr(self, "is_authoritative", True)):
-                continue
+            if bool(getattr(self, "is_authoritative", True)) and br == 1:
+                if getattr(mgr, "is_carnival_of_excess", lambda: False)():
+                    queue = getattr(self, "decision_queue", None)
+                    pending = list(queue.list() or []) if queue is not None else []
 
-            army_id = get_entity_id(army)
-            existing = [
-                req
-                for req in self.decision_queue.list()
-                if req.decision_type == DECISION_CHOOSE_PLEDGE
-                and str(req.context.get("army_id", "") or "") == army_id
-            ]
-            if existing:
-                continue
+                    def _has_pending_possessed_blade_choice(model_id: str) -> bool:
+                        for req in pending:
+                            if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                                continue
+                            ctx = dict(getattr(req, "context", {}) or {})
+                            if str(ctx.get("ability", "") or "") != "possessed_blade":
+                                continue
+                            if str(ctx.get("model_id", "") or "") != str(model_id):
+                                continue
+                            return True
+                        return False
 
-            alive_enemies = [
-                u
-                for u in self.get_enemy_units(player)
-                if hasattr(u, "is_alive") and bool(u.is_alive())
-            ]
-            max_value = max(1, len(alive_enemies))
-            default_value = int(getattr(mgr, "pledge_target", 0) or 0)
-            if default_value <= 0 or default_value > max_value:
-                default_value = 1
+                    units = list(getattr(army, "units", []) or []) if army is not None else []
+                    try:
+                        units = sorted(units, key=lambda u: str(get_entity_id(u) or ""))
+                    except Exception:
+                        units = list(units)
+                    for unit in units:
+                        sr = getattr(unit, "special_rules", None)
+                        if not isinstance(sr, dict) or not sr.get("enhancement_possessed_blade"):
+                            continue
+                        selected_weapon = str(sr.get("enhancement_possessed_blade_weapon_name", "") or "").strip()
+                        if selected_weapon:
+                            continue
+                        bearer = getattr(unit, "_get_enhancement_bearer_model", lambda: None)()
+                        if bearer is None or not bool(getattr(bearer, "is_alive", True)):
+                            continue
+                        unit_id = str(get_entity_id(unit) or "")
+                        model_id = str(get_entity_id(bearer) or "")
+                        if not unit_id or not model_id:
+                            continue
+                        if _has_pending_possessed_blade_choice(model_id):
+                            continue
+                        weapon_names: list[str] = []
+                        for wargear in list(getattr(bearer, "wargear", []) or []):
+                            if wargear is None:
+                                continue
+                            is_melee = bool(getattr(wargear, "is_melee", lambda: False)())
+                            if not is_melee:
+                                continue
+                            weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                            if weapon_name and weapon_name not in weapon_names:
+                                weapon_names.append(weapon_name)
+                        if not weapon_names:
+                            continue
+                        weapon_names.sort(key=lambda name: name.lower())
+                        options = [
+                            DecisionOption.create(
+                                weapon_name,
+                                payload={
+                                    "weapon_name": weapon_name,
+                                    "unit_id": unit_id,
+                                    "model_id": model_id,
+                                },
+                            )
+                            for weapon_name in weapon_names
+                        ]
+                        request = DecisionRequest.create(
+                            DECISION_CHOOSE_QUARRY,
+                            "Possessed Blade: select one melee weapon equipped by the bearer.",
+                            player_id=player.id,
+                            options=options,
+                            context={
+                                "ability": "possessed_blade",
+                                "ability_name": "Possessed Blade",
+                                "phase": "Start of battle",
+                                "unit_id": unit_id,
+                                "model_id": model_id,
+                            },
+                        )
+                        self.request_decision(request)
+                        pending.append(request)
 
-            options = [
-                DecisionOption.create(
-                    label=str(value),
-                    payload={"pledge_value": int(value), "army_id": army_id},
+            if getattr(mgr, "is_coterie_of_conceited", lambda: False)():
+                if not getattr(mgr, "warlord_on_battlefield", lambda: False)():
+                    continue
+                if not bool(getattr(self, "is_authoritative", True)):
+                    continue
+
+                army_id = get_entity_id(army)
+                existing = [
+                    req
+                    for req in self.decision_queue.list()
+                    if req.decision_type == DECISION_CHOOSE_PLEDGE
+                    and str(req.context.get("army_id", "") or "") == army_id
+                ]
+                if existing:
+                    continue
+
+                alive_enemies = [
+                    u
+                    for u in self.get_enemy_units(player)
+                    if hasattr(u, "is_alive") and bool(u.is_alive())
+                ]
+                max_value = max(1, len(alive_enemies))
+                default_value = int(getattr(mgr, "pledge_target", 0) or 0)
+                if default_value <= 0 or default_value > max_value:
+                    default_value = 1
+
+                options = [
+                    DecisionOption.create(
+                        label=str(value),
+                        payload={"pledge_value": int(value), "army_id": army_id},
+                    )
+                    for value in range(1, max_value + 1)
+                ]
+                context = {
+                    "army_id": army_id,
+                    "battle_round": br,
+                    "max_value": max_value,
+                    "ability_name": PLEDGES_TO_THE_DARK_PRINCE_NAME,
+                }
+                request = DecisionRequest.create(
+                    DECISION_CHOOSE_PLEDGE,
+                    "Pledges to the Dark Prince: select your pledge value.",
+                    player_id=player.id,
+                    options=options,
+                    context=context,
                 )
-                for value in range(1, max_value + 1)
-            ]
-            context = {
-                "army_id": army_id,
-                "battle_round": br,
-                "max_value": max_value,
-                "ability_name": PLEDGES_TO_THE_DARK_PRINCE_NAME,
-            }
-            request = DecisionRequest.create(
-                DECISION_CHOOSE_PLEDGE,
-                "Pledges to the Dark Prince: select your pledge value.",
-                player_id=player.id,
-                options=options,
-                context=context,
-            )
-            self.request_decision(request)
-            if getattr(self, "event_system", None) is not None:
-                self.event_system.publish(
-                    "emperors_children_pledge_prompt",
-                    player=player,
-                    game=self,
-                    battle_round=br,
-                    max_value=max_value,
-                    default_value=default_value,
-                    manager=mgr,
-                )
+                self.request_decision(request)
+                if getattr(self, "event_system", None) is not None:
+                    self.event_system.publish(
+                        "emperors_children_pledge_prompt",
+                        player=player,
+                        game=self,
+                        battle_round=br,
+                        max_value=max_value,
+                        default_value=default_value,
+                        manager=mgr,
+                    )
 
     def _on_battle_round_started_start_of_battle_keyword_rerolls(
         self,

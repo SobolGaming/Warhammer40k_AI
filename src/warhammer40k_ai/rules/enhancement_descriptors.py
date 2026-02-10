@@ -255,6 +255,57 @@ _COTERIE_OF_CONCEITED_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _COTERIE_OF_CONCEITED_DESCRIPTORS.values()
 }
 
+_CARNIVAL_OF_EXCESS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010010002": EnhancementToolDescriptor(
+        enhancement_id="000010010002",
+        name="Empyric Suffusion",
+        timing="when_targeting_friendly_unit_with_heroic_intervention",
+        target="friendly_slaanesh_unit_within_range_of_bearer",
+        duration="instant",
+        effect="heroic_intervention_cp_set_zero",
+        range_in=6.0,
+        effect_params={"usage_limit": "battle_round"},
+    ),
+    "000010010003": EnhancementToolDescriptor(
+        enhancement_id="000010010003",
+        name="Dark Blessings",
+        timing="after_enemy_selects_targets",
+        target="bearer",
+        duration="until_end_of_phase",
+        effect="set_temporary_invulnerable_save",
+        once_per_battle=True,
+        effect_params={"invulnerable_save": 3},
+    ),
+    "000010010004": EnhancementToolDescriptor(
+        enhancement_id="000010010004",
+        name="Possessed Blade",
+        timing="start_of_battle_and_when_selected_to_fight",
+        target="bearer_selected_melee_weapon",
+        duration="constant_and_until_end_of_fight_activation",
+        effect="selected_weapon_attacks_bonus_and_fight_activation_damage_devastating_hazardous",
+        effect_params={"attacks_bonus": 1, "fight_activation_damage_bonus": 1},
+    ),
+    "000010010005": EnhancementToolDescriptor(
+        enhancement_id="000010010005",
+        name="Warp Walker",
+        timing="passive_on_move_and_advance",
+        target="bearer_unit",
+        duration="constant",
+        effect="advance_no_roll_and_move_through_enemy_models",
+        effect_params={
+            "advance_distance_bonus": 6,
+            "move_types": ("move", "advance", "fall_back"),
+            "can_move_within_engagement_range": True,
+            "cannot_end_in_engagement_range": True,
+            "auto_pass_desperate_escape": True,
+        },
+    ),
+}
+
+_CARNIVAL_OF_EXCESS_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _CARNIVAL_OF_EXCESS_DESCRIPTORS.values()
+}
+
 _DAEMONIC_INCURSION_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008438002": EnhancementToolDescriptor(
         enhancement_id="000008438002",
@@ -529,6 +580,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _COTERIE_OF_CONCEITED_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _CARNIVAL_OF_EXCESS_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _DAEMONIC_INCURSION_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -556,6 +610,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _POSSESSED_SLAUGHTERBAND_BY_NAME.get(key)
         or _VESSELS_OF_WRATH_BY_NAME.get(key)
         or _COTERIE_OF_CONCEITED_BY_NAME.get(key)
+        or _CARNIVAL_OF_EXCESS_BY_NAME.get(key)
         or _DAEMONIC_INCURSION_BY_NAME.get(key)
         or _PLAGUE_LEGION_BY_NAME.get(key)
         or _SCINTILLATING_LEGION_BY_NAME.get(key)

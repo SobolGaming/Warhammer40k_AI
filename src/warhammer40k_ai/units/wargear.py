@@ -388,6 +388,77 @@ class WargearProfile:
         attacker_id = str(getattr(attacker, "id", getattr(attacker, "_id", "")) or "")
         return attacker_id == str(bearer_id)
 
+    @staticmethod
+    def _normalize_weapon_name_key(value: str) -> str:
+        return re.sub(r"[^a-z0-9]+", "", str(value or "").strip().lower())
+
+    def _current_weapon_name(self) -> str:
+        name = str(getattr(getattr(self, "parent_wargear", None), "name", "") or "").strip()
+        if name:
+            return name
+        return str(getattr(self, "name", "") or "").strip()
+
+    def _weapon_name_matches_for_attacker(self, attacker: 'Model', weapon_name: str) -> bool:
+        candidate = self._current_weapon_name()
+        if not candidate:
+            return False
+        target_name = str(weapon_name or "").strip()
+        if not target_name:
+            return False
+        unit = getattr(attacker, "parent_unit", None)
+        if unit is not None and hasattr(unit, "_weapon_name_matches"):
+            return bool(unit._weapon_name_matches([target_name], candidate))
+        return self._normalize_weapon_name_key(candidate) == self._normalize_weapon_name_key(target_name)
+
+    def _get_possessed_blade_state(self, attacker: 'Model') -> Optional[dict]:
+        unit = getattr(attacker, "parent_unit", None)
+        if unit is None:
+            return None
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        try:
+            members = sorted(members, key=lambda u: str(get_entity_id(u) or ""))
+        except Exception:
+            members = list(members)
+        try:
+            attacker_id = str(get_entity_id(attacker) or "")
+        except ValueError:
+            attacker_id = str(getattr(attacker, "id", getattr(attacker, "_id", "")) or "")
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not sr.get("enhancement_possessed_blade"):
+                continue
+            if not self._attacker_is_enhancement_bearer(attacker, sr):
+                continue
+            weapon_name = str(sr.get("enhancement_possessed_blade_weapon_name", "") or "").strip()
+            if not weapon_name:
+                continue
+            weapon_matches = self._weapon_name_matches_for_attacker(attacker, weapon_name)
+            active = bool(sr.get("enhancement_possessed_blade_fight_active"))
+            if active:
+                active_model_id = str(sr.get("enhancement_possessed_blade_active_model_id", "") or "")
+                if active_model_id and attacker_id and active_model_id != attacker_id:
+                    active = False
+                active_weapon_name = str(sr.get("enhancement_possessed_blade_active_weapon_name", "") or "").strip()
+                if active and active_weapon_name and not self._weapon_name_matches_for_attacker(attacker, active_weapon_name):
+                    active = False
+            return {
+                "weapon_name": weapon_name,
+                "weapon_matches": bool(weapon_matches),
+                "attacks_bonus": int(sr.get("enhancement_possessed_blade_attacks_bonus", 1) or 1),
+                "active": bool(active),
+                "active_damage_bonus": 1,
+            }
+        return None
+
     def _radiant_champion_extra_mortal_wounds(self, attacker: 'Model') -> int:
         unit = getattr(attacker, "parent_unit", None)
         if unit is None:
@@ -2207,6 +2278,15 @@ class WargearProfile:
                     attack_result.attacks_special_modifiers.append(
                         f"Enhancement bearer +{shadow_extra}A (Shadow of Chaos)"
                     )
+            possessed_blade = self._get_possessed_blade_state(attacker)
+            if possessed_blade and possessed_blade.get("weapon_matches", False):
+                pb_bonus = int(possessed_blade.get("attacks_bonus", 0) or 0)
+                if pb_bonus:
+                    atk_mods.append(
+                        Modifier(ModifierOp.ADD, int(pb_bonus), source="enhancement:possessed_blade_attacks_add")
+                    )
+                    weapon_label = str(possessed_blade.get("weapon_name", "") or "selected melee weapon").strip()
+                    attack_result.attacks_special_modifiers.append(f"Possessed Blade +{pb_bonus}A ({weapon_label})")
         try:
             if self.parent_wargear and self.parent_wargear.is_melee() and not self.is_extra_attacks():
                 bonus = int(
@@ -3288,6 +3368,13 @@ class WargearProfile:
             and callable(getattr(parent_wargear, "is_ranged", None))
             and parent_wargear.is_ranged()
         )
+        possessed_blade_hazardous = False
+        if is_melee_weapon:
+            possessed_blade = self._get_possessed_blade_state(attacker)
+            if possessed_blade and possessed_blade.get("active", False) and possessed_blade.get("weapon_matches", False):
+                hazardous_active = True
+                possessed_blade_hazardous = True
+                attack_result.attacks_special_modifiers.append("Possessed Blade: [HAZARDOUS] (active)")
         if isinstance(sr, dict) and sr.get("pain_melee_hazardous_non_character"):
             if is_melee_weapon and not bool(getattr(attacker, "is_character", False)):
                 hazardous_active = True
@@ -3417,6 +3504,11 @@ class WargearProfile:
                 # If somehow no eligible model found, fall back to the attacker model.
                 if not eligible:
                     eligible = [attacker]
+                elif possessed_blade_hazardous:
+                    attacker_entity_id = str(get_entity_id(attacker) or "")
+                    seen_ids = {str(get_entity_id(model) or "") for model in list(eligible or [])}
+                    if attacker_entity_id and attacker_entity_id not in seen_ids:
+                        eligible.append(attacker)
 
                 chosen = choose_hazardous_failure_model(
                     root_unit,
@@ -5095,6 +5187,14 @@ class WargearProfile:
             if is_melee and isinstance(sr, dict) and sr.get("enhancement_the_stave_abominus"):
                 if self._attacker_is_enhancement_bearer(attacker, sr):
                     _set_bonus_sustained_dice("D3", "The Stave Abominus")
+                    attack_instance["bonus_devastating_wounds"] = True
+        except Exception:
+            pass
+        try:
+            is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+            if is_melee:
+                possessed_blade = self._get_possessed_blade_state(attacker)
+                if possessed_blade and possessed_blade.get("active", False) and possessed_blade.get("weapon_matches", False):
                     attack_instance["bonus_devastating_wounds"] = True
         except Exception:
             pass
@@ -11736,6 +11836,14 @@ class WargearProfile:
                     Modifier(ModifierOp.ADD, int(bearer_d_bonus), source="enhancement:bearer_melee_damage_add")
                 )
                 damage_result['special_effects'].append(f"Enhancement bearer +{bearer_d_bonus}D (melee)")
+            possessed_blade = self._get_possessed_blade_state(attacker)
+            if possessed_blade and possessed_blade.get("active", False) and possessed_blade.get("weapon_matches", False):
+                pb_damage = int(possessed_blade.get("active_damage_bonus", 0) or 0)
+                if pb_damage:
+                    damage_mods.append(
+                        Modifier(ModifierOp.ADD, int(pb_damage), source="enhancement:possessed_blade_damage_add")
+                    )
+                    damage_result['special_effects'].append(f"Possessed Blade +{pb_damage}D (active)")
         if self.parent_wargear and self.parent_wargear.is_melee():
             sr = self._unit_special_rules(attacker)
             if isinstance(sr, dict) and sr.get("enhancement_archslaughterer"):

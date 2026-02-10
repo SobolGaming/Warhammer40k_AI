@@ -1405,26 +1405,74 @@ def get_validation_rules(
                     types.add(str(item))
         return types
 
+    warp_walker_move_types: set[str] = set()
+    warp_walker_auto_pass_desperate_escape = False
+    if moving_unit is not None:
+        try:
+            members = list(getattr(moving_unit, "get_attached_unit_members", lambda: [])() or [])
+        except Exception:
+            members = []
+        if not members:
+            members = [moving_unit]
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not sr.get("enhancement_warp_walker"):
+                continue
+            configured = _coerce_move_types(sr.get("enhancement_warp_walker_move_types"))
+            if configured:
+                warp_walker_move_types.update(configured)
+            else:
+                warp_walker_move_types.update({"move", "advance", "fall_back"})
+            if bool(sr.get("enhancement_warp_walker_auto_pass_desperate_escape", False)):
+                warp_walker_auto_pass_desperate_escape = True
+
     phase_move_types: set[str] = set()
     phase_move_terrain_only_types: set[str] = set()
     phase_engagement_types: set[str] = set()
     phase_move_block_titanic_types: set[str] = set()
     auto_pass_desperate_escape = False
+    sr_sources: list[dict] = []
+    seen_sr_ids: set[int] = set()
     try:
         sr = getattr(moving_unit, "special_rules", None)
-        if isinstance(sr, dict):
-            phase_move_types = _coerce_move_types(sr.get("bearer_unit_phase_move_types"))
-            phase_move_terrain_only_types = _coerce_move_types(sr.get("bearer_unit_phase_move_terrain_only_types"))
-            phase_engagement_types = _coerce_move_types(sr.get("bearer_unit_phase_move_engagement_types"))
-            phase_move_block_titanic_types = _coerce_move_types(sr.get("bearer_unit_phase_move_block_titanic_types"))
-            phase_move_types.update(_coerce_move_types(sr.get("titanic_phase_move_types")))
-            phase_engagement_types.update(_coerce_move_types(sr.get("titanic_phase_move_engagement_types")))
-            phase_move_block_titanic_types.update(_coerce_move_types(sr.get("titanic_phase_move_block_titanic_types")))
-            auto_pass_desperate_escape = bool(sr.get("bearer_unit_auto_pass_desperate_escape"))
     except Exception:
-        pass
+        sr = None
+    if isinstance(sr, dict):
+        sr_sources.append(sr)
+        seen_sr_ids.add(id(sr))
+    if moving_unit is not None:
+        try:
+            members = list(getattr(moving_unit, "get_attached_unit_members", lambda: [])() or [])
+        except Exception:
+            members = []
+        for member in members:
+            msr = getattr(member, "special_rules", None)
+            if not isinstance(msr, dict):
+                continue
+            if id(msr) in seen_sr_ids:
+                continue
+            seen_sr_ids.add(id(msr))
+            sr_sources.append(msr)
+    for sr in sr_sources:
+        phase_move_types.update(_coerce_move_types(sr.get("bearer_unit_phase_move_types")))
+        phase_move_terrain_only_types.update(_coerce_move_types(sr.get("bearer_unit_phase_move_terrain_only_types")))
+        phase_engagement_types.update(_coerce_move_types(sr.get("bearer_unit_phase_move_engagement_types")))
+        phase_move_block_titanic_types.update(_coerce_move_types(sr.get("bearer_unit_phase_move_block_titanic_types")))
+        phase_move_types.update(_coerce_move_types(sr.get("titanic_phase_move_types")))
+        phase_engagement_types.update(_coerce_move_types(sr.get("titanic_phase_move_engagement_types")))
+        phase_move_block_titanic_types.update(_coerce_move_types(sr.get("titanic_phase_move_block_titanic_types")))
+        if bool(sr.get("bearer_unit_auto_pass_desperate_escape")):
+            auto_pass_desperate_escape = True
 
     move_tag = _movement_type_tag(movement_type)
+    if move_tag and move_tag in warp_walker_move_types:
+        base_rules['can_move_through_enemy_models'] = True
+        if move_tag in ("move", "advance", "fall_back"):
+            base_rules['cannot_move_within_engagement_range'] = False
+            base_rules['cannot_end_in_engagement_range'] = True
+        if warp_walker_auto_pass_desperate_escape and move_tag == "fall_back":
+            base_rules['check_desperate_escape'] = False
+
     if move_tag and move_tag in phase_move_types:
         base_rules['can_move_through_enemy_models'] = True
         base_rules['can_move_through_friendly_models'] = True

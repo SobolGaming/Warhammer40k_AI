@@ -280,6 +280,10 @@ class Enhancement:
             is_coterie_of_conceited = bool(ec_mgr and ec_mgr.is_coterie_of_conceited())
         except Exception:
             is_coterie_of_conceited = False
+        try:
+            is_carnival_of_excess = bool(ec_mgr and ec_mgr.is_carnival_of_excess())
+        except Exception:
+            is_carnival_of_excess = False
         ck_mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
         try:
             is_infernal_lance = bool(ck_mgr and ck_mgr.is_infernal_lance())
@@ -738,6 +742,54 @@ class Enhancement:
             if not is_coterie_of_conceited:
                 return
             unit.special_rules["enhancement_pledge_of_unholy_fortune"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "empyric suffusion" or enh_id == "000010010002":
+            if not is_carnival_of_excess:
+                return
+            unit.special_rules["enhancement_empyric_suffusion"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "dark blessings" or enh_id == "000010010003":
+            if not is_carnival_of_excess:
+                return
+            unit.special_rules["enhancement_dark_blessings"] = True
+            unit.special_rules["enhancement_dark_blessings_invulnerable_save"] = 3
+            unit.special_rules["enhancement_dark_blessings_once_key"] = "dark_blessings"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "possessed blade" or enh_id == "000010010004":
+            if not is_carnival_of_excess:
+                return
+            unit.special_rules["enhancement_possessed_blade"] = True
+            unit.special_rules["enhancement_possessed_blade_attacks_bonus"] = 1
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "warp walker" or enh_id == "000010010005":
+            if not is_carnival_of_excess:
+                return
+            unit.special_rules["enhancement_warp_walker"] = True
+            unit.special_rules["enhancement_warp_walker_advance_distance"] = 6
+            unit.special_rules["enhancement_warp_walker_move_types"] = ["move", "advance", "fall_back"]
+            unit.special_rules["enhancement_warp_walker_auto_pass_desperate_escape"] = True
+            existing_effects = list(unit.special_rules.get("advance_no_roll_effects", []) or [])
+            existing_effects = [
+                entry
+                for entry in existing_effects
+                if not (isinstance(entry, dict) and str(entry.get("tag", "") or "") == "enhancement:warp_walker")
+            ]
+            existing_effects.append(
+                {
+                    "distance": 6,
+                    "source": "Warp Walker",
+                    "tag": "enhancement:warp_walker",
+                }
+            )
+            unit.special_rules["advance_no_roll_effects"] = existing_effects
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 

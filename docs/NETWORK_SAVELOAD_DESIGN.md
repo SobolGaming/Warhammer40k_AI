@@ -167,6 +167,7 @@ Deployment / Pre-battle:
 - nurgles_gift_plague_dialog: CHOOSE_PLAGUE {choice_id} (context `army_id`) (Declare Battle Formations)
 - daemonic_allegiance_dialog: CHOOSE_DAEMONIC_ALLEGIANCE {unit_id, keyword}
 - start_of_battle_keyword_dialog: CHOOSE_START_OF_BATTLE_KEYWORD {keyword} (context `model_id`, `unit_id`, `ability_name`, `ability_key`)
+- possessed_blade_weapon_dialog: CHOOSE_QUARRY {weapon_name} (context `ability="possessed_blade"`, `unit_id`, `model_id`, `ability_name`)
 - scout_choice_dialog: SCOUT_MOVE {unit_id, destination}
 - floor_selection_dialog: SELECT_FLOOR {unit_id, floor_id}
 - deployment_placement_dialog: MOVE_UNIT {unit_id, model_positions} (context `placement_kind="deployment"`, engine finalizes deployment + advances deployment turn)
@@ -255,6 +256,7 @@ Shooting:
 - cruel_amusement_dialog: CHOOSE_CRUEL_AMUSEMENT {choice} (context `unit_id`, `model_id`, `weapon_name`, `ability_name`)
 - master_of_magicks_dialog: CHOOSE_MASTER_OF_MAGICKS {choice} (context `unit_id`, `model_id`, `weapon_name`, `ability_name`)
 - hand_of_asuryan_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="hand_of_asuryan"`, `unit_id`, `model_id`, `weapon_name`, `ability_name`)
+- dark_blessings_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="start_any_phase_invulnerable_save"`, `unit_id`, `model_id`, `buff_key`, `invuln`; triggered after enemy target selection in Shooting/Fight)
 - malefic_surge_diabolic_power_dialog: CHOOSE_MALEFIC_SURGE_ABILITY {choice | skip} (context `ability="malefic_surge"`, `unit_id`, `trigger="shooting"`)
 - malefic_surge_unnatural_fortitude_dialog: CHOOSE_MALEFIC_SURGE_ABILITY {choice | skip} (context `ability="malefic_surge"`, `unit_id`, `trigger="targeted_shooting"`)
 - maggot_maws_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="maggot_maws"`, `source_unit_id`, `model_id`, `range`)
@@ -315,6 +317,7 @@ Fight:
 - sacrificial_dagger_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="sacrificial_dagger"`, `unit_id`, `model_id`, `ability_name`, `phase`)
 - sweeping_advance_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="sweeping_advance"`, `unit_id`, `model_id`, `ability_key`)
 - daemonic_patrons_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="daemonic_patrons"`, `unit_id`)
+- possessed_blade_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="possessed_blade_fight"`, `unit_id`, `model_id`, `weapon_name`)
 - daemonic_patrons_loss_dialog: ALLOCATE_DAMAGE {model_id} (context `selection_kind="daemonic_patrons_loss"`, `unit_id`, `ability_name`)
 - malefic_surge_diabolic_power_fight_dialog: CHOOSE_MALEFIC_SURGE_ABILITY {choice | skip} (context `ability="malefic_surge"`, `unit_id`, `trigger="fight"`)
 - malefic_surge_unnatural_fortitude_fight_dialog: CHOOSE_MALEFIC_SURGE_ABILITY {choice | skip} (context `ability="malefic_surge"`, `unit_id`, `trigger="targeted_fight"`)

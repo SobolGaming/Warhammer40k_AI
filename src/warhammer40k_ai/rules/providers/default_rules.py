@@ -346,6 +346,8 @@ def build_default_rule_providers() -> List[RuleProvider]:
             subscriptions=[
                 ("battle_round_started", "_on_battle_round_started_emperors_children"),
                 ("unit_destroyed", "_on_unit_destroyed_emperors_children"),
+                ("shooting_targets_selected", "_on_shooting_targets_selected_emperors_children"),
+                ("fight_targets_selected", "_on_fight_targets_selected_emperors_children"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_emperors_children"),
                 ("fight_attacks_resolved", "_on_fight_attacks_resolved_emperors_children"),
                 ("fight_unit_selected", "_on_fight_unit_selected_emperors_children"),

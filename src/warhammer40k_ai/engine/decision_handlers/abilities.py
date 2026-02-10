@@ -1916,6 +1916,82 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         except Exception:
             pass
         return None
+    if ability == "possessed_blade":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, payload.get("unit_id") or ctx.get("unit_id") or ctx.get("source_unit_id"))
+        if source_unit is None:
+            return None
+        model = resolve_model(game, payload.get("model_id") or ctx.get("model_id"))
+        if model is None or not bool(getattr(model, "is_alive", True)):
+            return None
+        sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(sr, dict) or not sr.get("enhancement_possessed_blade"):
+            return None
+        bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "")
+        model_id = str(get_entity_id(model) or "")
+        if bearer_id and model_id and bearer_id != model_id:
+            return None
+        weapon_name = str(payload.get("weapon_name") or ctx.get("weapon_name") or "").strip()
+        if not weapon_name:
+            return None
+
+        melee_weapon_names: list[str] = []
+        for wargear in list(getattr(model, "wargear", []) or []):
+            if wargear is None:
+                continue
+            if not bool(getattr(wargear, "is_melee", lambda: False)()):
+                continue
+            name = str(getattr(wargear, "name", "") or "").strip()
+            if name and name not in melee_weapon_names:
+                melee_weapon_names.append(name)
+        if not melee_weapon_names:
+            return None
+        melee_weapon_names.sort(key=lambda name: name.lower())
+
+        selected_weapon = ""
+        if hasattr(source_unit, "_weapon_name_matches"):
+            for candidate in melee_weapon_names:
+                if source_unit._weapon_name_matches([candidate], weapon_name):
+                    selected_weapon = candidate
+                    break
+        else:
+            normalized = str(weapon_name).strip().lower()
+            for candidate in melee_weapon_names:
+                if str(candidate).strip().lower() == normalized:
+                    selected_weapon = candidate
+                    break
+        if not selected_weapon:
+            return None
+
+        sr["enhancement_possessed_blade_weapon_name"] = selected_weapon
+        for key in (
+            "enhancement_possessed_blade_fight_active",
+            "enhancement_possessed_blade_fight_turn",
+            "enhancement_possessed_blade_fight_owner",
+            "enhancement_possessed_blade_fight_phase",
+            "enhancement_possessed_blade_active_weapon_name",
+            "enhancement_possessed_blade_active_model_id",
+            "enhancement_possessed_blade_source",
+        ):
+            sr.pop(key, None)
+        source_unit.special_rules = sr
+
+        try:
+            player = getattr(getattr(source_unit, "get_parent_army", lambda: None)(), "player", None)
+        except Exception:
+            player = None
+        try:
+            ability_name = str(ctx.get("ability_name", "") or "Possessed Blade").strip() or "Possessed Blade"
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {getattr(model, 'name', 'Model')} selected {selected_weapon}.",
+            )
+        except Exception:
+            pass
+        return None
     if ability == "risen_rubricae":
         if is_skip_choice(request, result):
             return None

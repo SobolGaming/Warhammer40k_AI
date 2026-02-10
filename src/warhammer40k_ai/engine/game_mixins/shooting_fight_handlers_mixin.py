@@ -3846,10 +3846,127 @@ class GameShootingFightHandlersMixin:
                 unit=root,
             )
 
+    def _queue_dark_blessings_for_targets(self, *, target_units=None) -> None:
+        if not target_units:
+            return
+        phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+        if phase_name not in ("SHOOTING_PHASE", "FIGHT_PHASE"):
+            return
+        seen_instance: set[str] = set()
+        for target in list(target_units or []):
+            if target is None:
+                continue
+            try:
+                target_root = target.get_attached_unit_root()
+            except Exception:
+                target_root = target
+            if target_root is None:
+                continue
+            try:
+                members = list(target_root.get_attached_unit_members() or [])
+            except Exception:
+                members = [target_root]
+            if not members:
+                members = [target_root]
+            try:
+                members = sorted(members, key=lambda u: str(get_entity_id(u)))
+            except Exception:
+                members = list(members)
+            for member in members:
+                if member is None:
+                    continue
+                sr = getattr(member, "special_rules", None)
+                if not isinstance(sr, dict) or not sr.get("enhancement_dark_blessings"):
+                    continue
+                bearer = getattr(member, "_get_enhancement_bearer_model", lambda: None)()
+                if bearer is None or not bool(getattr(bearer, "is_alive", True)):
+                    continue
+                once_key = str(sr.get("enhancement_dark_blessings_once_key", "") or "dark_blessings").strip().lower()
+                if getattr(bearer, "has_used_once_per_battle", lambda _k: False)(once_key):
+                    continue
+                try:
+                    army = member.get_parent_army()
+                except Exception:
+                    army = None
+                ec_mgr = self._get_emperors_children_manager(army)
+                if ec_mgr is None or not getattr(ec_mgr, "is_carnival_of_excess", lambda: False)():
+                    continue
+                player = getattr(army, "player", None) if army is not None else None
+                if player is None:
+                    continue
+                unit_id = str(get_entity_id(member) or "")
+                model_id = str(get_entity_id(bearer) or "")
+                if not unit_id or not model_id:
+                    continue
+                instance_key = f"{model_id}:{once_key}:{phase_name}"
+                if instance_key in seen_instance:
+                    continue
+                seen_instance.add(instance_key)
+                invuln = int(sr.get("enhancement_dark_blessings_invulnerable_save", 3) or 3)
+                message = f"Use Dark Blessings for {getattr(bearer, 'name', 'Model')}?"
+                self._queue_optional_ability_confirmation(
+                    player=player,
+                    ability_key="start_any_phase_invulnerable_save",
+                    ability_name="Dark Blessings",
+                    message=message,
+                    context={
+                        "ability_name": "Dark Blessings",
+                        "phase": phase_name.replace("_", " ").title(),
+                        "unit": getattr(member, "name", "") or "",
+                        "unit_id": unit_id,
+                        "model": getattr(bearer, "name", "") or "",
+                        "model_id": model_id,
+                        "buff_key": once_key,
+                        "invuln": int(invuln),
+                    },
+                    payload={
+                        "unit_id": unit_id,
+                        "model_id": model_id,
+                        "buff_key": once_key,
+                        "invuln": int(invuln),
+                    },
+                    instance_key=instance_key,
+                )
+
+    def _on_shooting_targets_selected_emperors_children(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None or not target_units:
+            return
+        self._queue_dark_blessings_for_targets(target_units=target_units)
+
+    def _on_fight_targets_selected_emperors_children(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None or not target_units:
+            return
+        self._queue_dark_blessings_for_targets(target_units=target_units)
+
     def _on_fight_attacks_resolved_emperors_children(self, unit=None, **_kwargs) -> None:
         if unit is None:
             return
         root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        for member in list(members or []):
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if not sr.get("enhancement_possessed_blade_fight_active"):
+                continue
+            for key in (
+                "enhancement_possessed_blade_fight_active",
+                "enhancement_possessed_blade_fight_turn",
+                "enhancement_possessed_blade_fight_owner",
+                "enhancement_possessed_blade_fight_phase",
+                "enhancement_possessed_blade_active_weapon_name",
+                "enhancement_possessed_blade_active_model_id",
+                "enhancement_possessed_blade_source",
+            ):
+                sr.pop(key, None)
+            member.special_rules = sr
         army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
         mgr = self._get_emperors_children_manager(army)
         if mgr is None:
@@ -3874,6 +3991,70 @@ class GameShootingFightHandlersMixin:
     def _on_fight_unit_selected_emperors_children(self, unit=None, **_kwargs) -> None:
         if unit is None:
             return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        try:
+            members = sorted(members, key=lambda u: str(get_entity_id(u)))
+        except Exception:
+            members = list(members)
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not sr.get("enhancement_possessed_blade"):
+                continue
+            weapon_name = str(sr.get("enhancement_possessed_blade_weapon_name", "") or "").strip()
+            if not weapon_name:
+                continue
+            bearer = getattr(member, "_get_enhancement_bearer_model", lambda: None)()
+            if bearer is None or not bool(getattr(bearer, "is_alive", True)):
+                continue
+            if sr.get("enhancement_possessed_blade_fight_active"):
+                continue
+            try:
+                army = member.get_parent_army()
+            except Exception:
+                army = None
+            ec_mgr = self._get_emperors_children_manager(army)
+            if ec_mgr is None or not getattr(ec_mgr, "is_carnival_of_excess", lambda: False)():
+                continue
+            player = getattr(army, "player", None) if army is not None else None
+            if player is None:
+                continue
+            unit_id = str(get_entity_id(member) or "")
+            model_id = str(get_entity_id(bearer) or "")
+            if not unit_id or not model_id:
+                continue
+            self._queue_optional_ability_confirmation(
+                player=player,
+                ability_key="possessed_blade_fight",
+                ability_name="Possessed Blade",
+                message=f"Use Possessed Blade for {getattr(bearer, 'name', 'Model')}?",
+                context={
+                    "ability_name": "Possessed Blade",
+                    "phase": "Fight phase",
+                    "unit": getattr(member, "name", "") or "",
+                    "unit_id": unit_id,
+                    "model": getattr(bearer, "name", "") or "",
+                    "model_id": model_id,
+                    "weapon_name": weapon_name,
+                },
+                payload={
+                    "unit_id": unit_id,
+                    "model_id": model_id,
+                    "weapon_name": weapon_name,
+                },
+                instance_key=f"{model_id}:possessed_blade:{int(getattr(self, 'turn', 0) or 0)}",
+            )
+
         try:
             army = unit.get_parent_army()
         except Exception:
