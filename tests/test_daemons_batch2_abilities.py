@@ -152,6 +152,48 @@ class TestDaemonsBatch2Abilities(unittest.TestCase):
         self.assertEqual(move_pen, -2)
         self.assertEqual(oc_pen, -1)
 
+    def test_virulent_blessing_death_guard_wording_grants_damage_bonus(self):
+        army = Army("Death Guard", detachment_type="Other")
+        army.faction_id = "DG"
+        ability_desc = (
+            "At the start of the Fight phase, you can select one enemy unit within 24\" and visible to this model. "
+            "Until the end of the phase, each time an attack made by a Plague Legions model is allocated to a model "
+            "in that unit, add 1 to the Damage characteristic of that attack."
+        )
+        ability = Ability("Virulent Blessing (Psychic)", "DG", ability_desc, "Datasheet", "")
+        source = self._make_unit("Rotigus", army, abilities=[ability])
+        source_model = self._make_model("Rotigus", source, x=0.0, y=0.0)
+        source.models = [source_model]
+
+        target = self._make_unit("Enemy", army)
+        target.models = [self._make_model("Enemy", target, x=2.0, y=0.0)]
+
+        attacker = self._make_unit("Plague Unit", army)
+        attacker.keywords = ["PLAGUE LEGIONS"]
+        attacker.has_any_keyword = lambda kw: str(kw).strip().upper() in {
+            str(k).strip().upper() for k in attacker.keywords
+        }
+
+        specs = source.model_start_fight_phase_target_attack_bonus_specs(source_model)
+        self.assertEqual(len(specs), 1)
+        spec = specs[0]
+        self.assertEqual(spec["range"], 24)
+        self.assertTrue(spec["requires_visibility"])
+        self.assertEqual(spec["keyword"], "plague legions")
+        self.assertEqual(spec["damage_bonus"], 1)
+
+        target.apply_fight_phase_target_attack_bonus(
+            owner_id="p1",
+            turn=2,
+            source="Virulent Blessing (Psychic)",
+            keyword=spec["keyword"],
+            attack_type=spec["attack_type"],
+            damage_bonus=spec["damage_bonus"],
+        )
+        game = SimpleNamespace(phase=SimpleNamespace(name="FIGHT_PHASE"), turn=2)
+        bonuses = target.get_fight_phase_target_attack_bonuses(attacker, game=game, attack_type="melee")
+        self.assertEqual(int(bonuses.get("damage_bonus", 0) or 0), 1)
+
     def test_nurgles_rot_selection_applies_toughness_penalty_and_cleanup(self):
         army = Army("Chaos Daemons", detachment_type="Other")
         army.faction_id = "CD"

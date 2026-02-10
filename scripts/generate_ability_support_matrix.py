@@ -1837,6 +1837,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Start of Fight: select a visible enemy within 24\"; NURGLE LEGIONES DAEMONICA attacks allocated to that unit gain +1 Damage until end of phase.",
         ),
+        ("DG", "Virulent Blessing (Psychic)"): (
+            "Supported",
+            "Start of Fight: select a visible enemy within 24\"; PLAGUE LEGIONS attacks allocated to that unit gain +1 Damage until end of phase.",
+        ),
         ("CD", "Altered Reality (Psychic)"): (
             "Supported",
             "Once per battle round, after a hit/wound/save roll for this model, change the result to a 6.",
