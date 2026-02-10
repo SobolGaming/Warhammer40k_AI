@@ -2298,6 +2298,331 @@ class KeywordsDetachmentsMixin:
             return False
         return True
 
+    def _unit_is_dire_avengers_or_guardians(self, unit) -> bool:
+        if unit is None:
+            return False
+        has_any = getattr(unit, "has_any_keyword", None)
+        if callable(has_any):
+            try:
+                if bool(has_any("DIRE AVENGERS")) or bool(has_any("DIRE AVENGER")):
+                    return True
+                if bool(has_any("GUARDIANS")) or bool(has_any("GUARDIAN")):
+                    return True
+            except Exception:
+                pass
+        name = str(getattr(unit, "name", "") or "").strip().lower()
+        return "dire avenger" in name or "guardian" in name
+
+    def _unit_is_storm_guardians(self, unit) -> bool:
+        if unit is None:
+            return False
+        has_any = getattr(unit, "has_any_keyword", None)
+        if callable(has_any):
+            try:
+                if bool(has_any("STORM GUARDIANS")):
+                    return True
+            except Exception:
+                pass
+        name = str(getattr(unit, "name", "") or "").strip().lower()
+        return "storm guardian" in name
+
+    def _guardian_battlehost_overwatch_source_unit(self):
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return None, None
+        if not self._unit_is_dire_avengers_or_guardians(root):
+            return None, None
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if not sr.get("enhancement_protector_of_paths"):
+                continue
+            attached_to = getattr(member, "attached_to", None)
+            if attached_to is None:
+                continue
+            try:
+                attached_root = attached_to.get_attached_unit_root()
+            except Exception:
+                attached_root = attached_to
+            if attached_root is not root:
+                continue
+            get_bearer = getattr(member, "_get_enhancement_bearer_model", None)
+            bearer = get_bearer() if callable(get_bearer) else None
+            if bearer is None:
+                continue
+            if not bool(getattr(bearer, "is_alive", True)):
+                continue
+            return member, sr
+        return None, None
+
+    def get_protector_of_paths_overwatch_rule(self) -> Optional[dict]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "protector_of_paths_overwatch_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        source_unit, source_sr = root._guardian_battlehost_overwatch_source_unit()
+        rule = None
+        if source_unit is not None and isinstance(source_sr, dict):
+            try:
+                base_threshold = int(source_sr.get("enhancement_protector_of_paths_base_threshold", 5) or 5)
+            except Exception:
+                base_threshold = 5
+            try:
+                controlled_threshold = int(source_sr.get("enhancement_protector_of_paths_controlled_threshold", 4) or 4)
+            except Exception:
+                controlled_threshold = 4
+            source = "Protector of the Paths"
+            enhancement = getattr(source_unit, "enhancement", None)
+            if enhancement is not None:
+                source = str(getattr(enhancement, "name", "") or source).strip() or source
+            rule = {
+                "source": source,
+                "ability_key": "protector_of_paths_overwatch",
+                "stratagems": ("OVERWATCH", "FIRE OVERWATCH"),
+                "limit": "battle_round",
+                "base_threshold": int(max(2, base_threshold)),
+                "controlled_threshold": int(max(2, controlled_threshold)),
+            }
+            try:
+                leader_id = get_entity_id(source_unit)
+            except Exception:
+                leader_id = None
+            if leader_id:
+                rule["leader_id"] = str(leader_id)
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def _protector_of_paths_battle_round_key(self, game=None) -> str:
+        if game is None:
+            try:
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+            except Exception:
+                game = None
+        try:
+            br = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            br = 0
+        return str(br)
+
+    def protector_of_paths_used_this_battle_round(self, game=None) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        key = self._protector_of_paths_battle_round_key(game)
+        if not key:
+            return False
+        return str(sr.get("protector_of_paths_used_battle_round", "") or "") == key
+
+    def mark_protector_of_paths_used(self, game=None, *, source: str = "", stratagem_name: str = "") -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["protector_of_paths_used_battle_round"] = self._protector_of_paths_battle_round_key(game)
+        if source:
+            sr["protector_of_paths_used_source"] = str(source or "").strip()
+        if stratagem_name:
+            sr["protector_of_paths_used_stratagem"] = str(stratagem_name or "").strip()
+        root.special_rules = sr
+
+    def can_use_protector_of_paths_overwatch(self, game=None, *, stratagem_name: str = "") -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        try:
+            if not root.is_alive() or not getattr(root, "deployed", False):
+                return False
+        except Exception:
+            return False
+        try:
+            if root.is_in_reserves():
+                return False
+        except Exception:
+            pass
+        try:
+            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
+        rule = root.get_protector_of_paths_overwatch_rule()
+        if not rule:
+            return False
+        if root.protector_of_paths_used_this_battle_round(game):
+            return False
+        name_u = str(stratagem_name or "").strip().upper()
+        allowed = {str(v or "").strip().upper() for v in list(rule.get("stratagems", ()) or ()) if str(v or "").strip()}
+        if name_u and allowed and name_u not in allowed:
+            return False
+        return True
+
+    def get_protector_of_paths_overwatch_hit_threshold(self, *, enemy_unit=None, game=None) -> int:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        rule = root.get_protector_of_paths_overwatch_rule()
+        if not rule:
+            return 0
+        try:
+            base_threshold = int(rule.get("base_threshold", 0) or 0)
+        except Exception:
+            base_threshold = 0
+        if base_threshold <= 0:
+            return 0
+        try:
+            controlled_threshold = int(rule.get("controlled_threshold", 0) or 0)
+        except Exception:
+            controlled_threshold = 0
+        if controlled_threshold <= 0:
+            return int(base_threshold)
+        game_map = None
+        try:
+            game_obj = game
+            if game_obj is None:
+                game_obj = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
+            game_map = getattr(game_obj, "map", None) if game_obj is not None else None
+        except Exception:
+            game_map = None
+        try:
+            within_controlled = bool(root._within_controlled_objective_range(game_map))
+        except Exception:
+            within_controlled = False
+        if within_controlled:
+            return int(controlled_threshold)
+        return int(base_threshold)
+
+    def _guardian_battlehost_breath_source_unit(self):
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return None, None
+        if not self._unit_is_storm_guardians(root):
+            return None, None
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if not sr.get("enhancement_breath_of_vaul"):
+                continue
+            attached_to = getattr(member, "attached_to", None)
+            if attached_to is None:
+                continue
+            try:
+                attached_root = attached_to.get_attached_unit_root()
+            except Exception:
+                attached_root = attached_to
+            if attached_root is not root:
+                continue
+            get_bearer = getattr(member, "_get_enhancement_bearer_model", None)
+            bearer = get_bearer() if callable(get_bearer) else None
+            if bearer is None:
+                continue
+            if not bool(getattr(bearer, "is_alive", True)):
+                continue
+            return member, sr
+        return None, None
+
+    def can_use_breath_of_vaul_flamer_attacks_reroll(self, *, model=None, weapon_name: str = "") -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        source_unit, source_sr = root._guardian_battlehost_breath_source_unit()
+        if source_unit is None or not isinstance(source_sr, dict):
+            return False
+        if model is not None:
+            if not bool(getattr(model, "is_alive", True)):
+                return False
+            parent = getattr(model, "parent_unit", None)
+            if parent is None:
+                return False
+            try:
+                parent_root = parent.get_attached_unit_root()
+            except Exception:
+                parent_root = parent
+            if parent_root is not root:
+                return False
+        names = [str(v or "").strip() for v in list(source_sr.get("enhancement_breath_of_vaul_flamer_weapon_names", []) or []) if str(v or "").strip()]
+        if not names:
+            names = ["flamer"]
+        weapon = str(weapon_name or "").strip()
+        if not weapon:
+            return False
+        if hasattr(root, "_weapon_name_matches"):
+            return bool(root._weapon_name_matches(names, weapon))
+        wlow = weapon.lower()
+        return any(str(name).lower() in wlow for name in names)
+
+    def can_use_breath_of_vaul_fusion_damage_reroll(self, *, model=None, weapon_name: str = "") -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        source_unit, source_sr = root._guardian_battlehost_breath_source_unit()
+        if source_unit is None or not isinstance(source_sr, dict):
+            return False
+        if model is not None:
+            if not bool(getattr(model, "is_alive", True)):
+                return False
+            parent = getattr(model, "parent_unit", None)
+            if parent is None:
+                return False
+            try:
+                parent_root = parent.get_attached_unit_root()
+            except Exception:
+                parent_root = parent
+            if parent_root is not root:
+                return False
+        names = [str(v or "").strip() for v in list(source_sr.get("enhancement_breath_of_vaul_fusion_weapon_names", []) or []) if str(v or "").strip()]
+        if not names:
+            names = ["fusion gun"]
+        weapon = str(weapon_name or "").strip()
+        if not weapon:
+            return False
+        if hasattr(root, "_weapon_name_matches"):
+            return bool(root._weapon_name_matches(names, weapon))
+        wlow = weapon.lower()
+        return any(str(name).lower() in wlow for name in names)
+
     def get_snarling_protector_heroic_intervention_rule(self) -> Optional[dict]:
         """
         Return rule info for abilities like:

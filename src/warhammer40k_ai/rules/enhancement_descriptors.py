@@ -202,6 +202,58 @@ _VESSELS_OF_WRATH_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _VESSELS_OF_WRATH_DESCRIPTORS.values()
 }
 
+_AELDARI_GUARDIAN_BATTLEHOST_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009911002": EnhancementToolDescriptor(
+        enhancement_id="000009911002",
+        name="Craftworld's Champion",
+        timing="passive",
+        target="bearer",
+        duration="constant",
+        effect="bearer_objective_control_set",
+        effect_params={"objective_control": 5},
+    ),
+    "000009911003": EnhancementToolDescriptor(
+        enhancement_id="000009911003",
+        name="Ethereal Pathway",
+        timing="deploy_armies_step_start",
+        target="friendly_guardians_units",
+        duration="during_deployment",
+        effect="grant_infiltrators_to_selected_units",
+        effect_params={"max_units": 2, "keyword": "GUARDIANS", "optional": True},
+    ),
+    "000009911004": EnhancementToolDescriptor(
+        enhancement_id="000009911004",
+        name="Protector of the Paths",
+        timing="overwatch_targeting",
+        target="bearer_unit",
+        duration="battle_round",
+        effect="overwatch_zero_cp_and_hit_threshold_bonus_while_leading",
+        effect_params={
+            "base_overwatch_hit_threshold": 5,
+            "controlled_objective_hit_threshold": 4,
+            "limit": "battle_round",
+            "required_bodyguard_keywords": ("DIRE AVENGERS", "GUARDIANS"),
+        },
+    ),
+    "000009911005": EnhancementToolDescriptor(
+        enhancement_id="000009911005",
+        name="Breath of Vaul",
+        timing="passive_while_leading",
+        target="bearer_unit",
+        duration="constant",
+        effect="flamer_attack_count_and_fusion_damage_rerolls",
+        effect_params={
+            "required_bodyguard_keyword": "STORM GUARDIANS",
+            "flamer_weapon_names": ("flamer",),
+            "fusion_weapon_names": ("fusion gun",),
+        },
+    ),
+}
+
+_AELDARI_GUARDIAN_BATTLEHOST_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _AELDARI_GUARDIAN_BATTLEHOST_DESCRIPTORS.values()
+}
+
 _SLAANESHS_CHOSEN_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010018002": EnhancementToolDescriptor(
         enhancement_id="000010018002",
@@ -630,6 +682,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _VESSELS_OF_WRATH_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _AELDARI_GUARDIAN_BATTLEHOST_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SLAANESHS_CHOSEN_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -665,6 +720,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _CULT_OF_BLOOD_BY_NAME.get(key)
         or _POSSESSED_SLAUGHTERBAND_BY_NAME.get(key)
         or _VESSELS_OF_WRATH_BY_NAME.get(key)
+        or _AELDARI_GUARDIAN_BATTLEHOST_BY_NAME.get(key)
         or _SLAANESHS_CHOSEN_BY_NAME.get(key)
         or _COTERIE_OF_CONCEITED_BY_NAME.get(key)
         or _CARNIVAL_OF_EXCESS_BY_NAME.get(key)

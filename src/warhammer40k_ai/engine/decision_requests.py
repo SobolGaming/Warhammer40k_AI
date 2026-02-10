@@ -98,6 +98,20 @@ def _unit_is_battleline(unit: object) -> bool:
     return False
 
 
+def _unit_is_guardians(unit: object) -> bool:
+    if unit is None:
+        return False
+    has_any = getattr(unit, "has_any_keyword", None)
+    if callable(has_any):
+        try:
+            if bool(has_any("GUARDIANS")) or bool(has_any("GUARDIAN")):
+                return True
+        except Exception:
+            pass
+    name = str(getattr(unit, "name", "") or "").strip().lower()
+    return "guardian" in name
+
+
 def _unique_army_root_units(units: Iterable[object]) -> list[object]:
     roots: dict[str, object] = {}
     for unit in _iter_units(units):
@@ -469,6 +483,134 @@ def build_risen_rubricae_requests(
                 "ability_name": "Risen Rubricae",
                 "source_unit_id": source_id,
                 "enhancement_id": "000010205002",
+            },
+        )
+        requests.append(request)
+        if queue_requests and hasattr(game, "request_decision"):
+            game.request_decision(request)
+            pending_by_source.add(source_id)
+
+    return requests
+
+
+def build_ethereal_pathway_requests(
+    game: object,
+    units: Iterable[object],
+    *,
+    queue_requests: bool = True,
+) -> List[DecisionRequest]:
+    all_units = _iter_units(units)
+    requests: List[DecisionRequest] = []
+    if not all_units:
+        return requests
+
+    pending_by_source: set[str] = set()
+    queue = getattr(game, "decision_queue", None)
+    if queue is not None and hasattr(queue, "list"):
+        for req in list(queue.list() or []):
+            if getattr(req, "decision_type", None) != DECISION_CHOOSE_QUARRY:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "") != "ethereal_pathway":
+                continue
+            source_id = str(ctx.get("source_unit_id", "") or "")
+            if source_id:
+                pending_by_source.add(source_id)
+
+    source_units = [
+        u for u in all_units
+        if _unit_has_enhancement(
+            u,
+            flag_key="enhancement_ethereal_pathway",
+            enhancement_id="000009911003",
+            enhancement_name="Ethereal Pathway",
+        )
+    ]
+    source_units.sort(key=lambda u: str(get_entity_id(u) or ""))
+
+    for source_unit in source_units:
+        source_id = str(get_entity_id(source_unit) or "")
+        if not source_id:
+            continue
+        if source_id in pending_by_source:
+            continue
+        if _unit_has_special_rule_flag(source_unit, "enhancement_ethereal_pathway_used"):
+            continue
+
+        try:
+            source_army = source_unit.get_parent_army()
+        except Exception:
+            source_army = None
+        if source_army is None:
+            continue
+        mgr = getattr(source_army, "aeldari_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_guardian_battlehost", lambda: False)()):
+            continue
+
+        army_units = [
+            u for u in all_units
+            if getattr(u, "get_parent_army", lambda: None)() is source_army
+        ]
+        roots = _unique_army_root_units(army_units)
+        guardians = [u for u in roots if _unit_is_guardians(u)]
+        guardians.sort(key=lambda u: str(get_entity_id(u) or ""))
+        if not guardians:
+            continue
+
+        options: List[DecisionOption] = [
+            DecisionOption.create(
+                "None",
+                payload={
+                    "action": "skip",
+                    "source_unit_id": source_id,
+                    "selected_unit_ids": [],
+                    "selection_kind": "none",
+                },
+            )
+        ]
+        for unit in guardians:
+            unit_id = str(get_entity_id(unit) or "")
+            if not unit_id:
+                continue
+            options.append(
+                DecisionOption.create(
+                    str(getattr(unit, "name", "Unit") or "Unit"),
+                    payload={
+                        "source_unit_id": source_id,
+                        "selected_unit_ids": [unit_id],
+                        "selection_kind": "one_guardians_unit",
+                    },
+                )
+            )
+        for first, second in combinations(guardians, 2):
+            first_id = str(get_entity_id(first) or "")
+            second_id = str(get_entity_id(second) or "")
+            if not first_id or not second_id:
+                continue
+            label = f"{getattr(first, 'name', 'Unit')} + {getattr(second, 'name', 'Unit')}"
+            options.append(
+                DecisionOption.create(
+                    label,
+                    payload={
+                        "source_unit_id": source_id,
+                        "selected_unit_ids": [first_id, second_id],
+                        "selection_kind": "two_guardians_units",
+                    },
+                )
+            )
+
+        if len(options) <= 1:
+            continue
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Ethereal Pathway: select up to two Guardians units to gain Infiltrators.",
+            player_id=_player_id_for_unit(source_unit),
+            options=options,
+            context={
+                "ability": "ethereal_pathway",
+                "ability_name": "Ethereal Pathway",
+                "source_unit_id": source_id,
+                "enhancement_id": "000009911003",
             },
         )
         requests.append(request)

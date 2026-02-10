@@ -248,6 +248,10 @@ class Enhancement:
         except Exception:
             is_aspect_host = False
         try:
+            is_guardian_battlehost = bool(ae_mgr and ae_mgr.is_guardian_battlehost())
+        except Exception:
+            is_guardian_battlehost = False
+        try:
             is_virulent_vectorium = bool(dg_mgr and dg_mgr.is_virulent_vectorium())
         except Exception:
             is_virulent_vectorium = False
@@ -366,6 +370,70 @@ class Enhancement:
             unit.special_rules["enhancement_psychic_destroyer_damage_bonus"] = int(
                 unit.special_rules.get("enhancement_psychic_destroyer_damage_bonus", 0) or 0
             ) + 1
+
+        if name == "craftworld's champion" or enh_id == "000009911002":
+            if not is_guardian_battlehost:
+                return
+            unit.special_rules["enhancement_craftworlds_champion"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            try:
+                params = dict(getattr(desc, "effect_params", {}) or {})
+            except Exception:
+                params = {}
+            try:
+                oc_value = int(params.get("objective_control", 5) or 5)
+            except Exception:
+                oc_value = 5
+            unit.special_rules["enhancement_craftworlds_champion_objective_control"] = int(max(1, oc_value))
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "ethereal pathway" or enh_id == "000009911003":
+            if not is_guardian_battlehost:
+                return
+            unit.special_rules["enhancement_ethereal_pathway"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "protector of the paths" or enh_id == "000009911004":
+            if not is_guardian_battlehost:
+                return
+            unit.special_rules["enhancement_protector_of_paths"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            try:
+                params = dict(getattr(desc, "effect_params", {}) or {})
+            except Exception:
+                params = {}
+            try:
+                base_threshold = int(params.get("base_overwatch_hit_threshold", 5) or 5)
+            except Exception:
+                base_threshold = 5
+            try:
+                controlled_threshold = int(params.get("controlled_objective_hit_threshold", 4) or 4)
+            except Exception:
+                controlled_threshold = 4
+            unit.special_rules["enhancement_protector_of_paths_base_threshold"] = int(max(2, base_threshold))
+            unit.special_rules["enhancement_protector_of_paths_controlled_threshold"] = int(max(2, controlled_threshold))
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "breath of vaul" or enh_id == "000009911005":
+            if not is_guardian_battlehost:
+                return
+            unit.special_rules["enhancement_breath_of_vaul"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            try:
+                params = dict(getattr(desc, "effect_params", {}) or {})
+            except Exception:
+                params = {}
+            flamer_names = tuple(str(v or "").strip() for v in list(params.get("flamer_weapon_names", ("flamer",))) if str(v or "").strip())
+            fusion_names = tuple(str(v or "").strip() for v in list(params.get("fusion_weapon_names", ("fusion gun",))) if str(v or "").strip())
+            if flamer_names:
+                unit.special_rules["enhancement_breath_of_vaul_flamer_weapon_names"] = list(flamer_names)
+            if fusion_names:
+                unit.special_rules["enhancement_breath_of_vaul_fusion_weapon_names"] = list(fusion_names)
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 
         if name == "lord of forbidden lore" or enh_id == "000010193002":
             if not is_grand_coven:

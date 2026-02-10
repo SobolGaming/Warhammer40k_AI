@@ -1711,9 +1711,50 @@ class GameSetupDeploymentReservesMixin:
 
         print("INFO: Battle formations declared")
 
+    def _apply_ethereal_pathway_declarations(self) -> None:
+        """Queue Ethereal Pathway unit selections at the start of Deploy Armies."""
+        players = list(self.players or [])
+        if not players:
+            return
+        pending_source_ids: set[str] = set()
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            from ..decision_kinds import DECISION_CHOOSE_QUARRY
+
+            for req in list(queue.list() or []):
+                if getattr(req, "decision_type", None) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "ethereal_pathway":
+                    continue
+                source_id = str(ctx.get("source_unit_id", "") or "")
+                if source_id:
+                    pending_source_ids.add(source_id)
+
+        from ..decision_requests import build_ethereal_pathway_requests
+
+        for player in players:
+            if player is None:
+                raise RuntimeError("Ethereal Pathway declarations require players.")
+            army = player.get_army()
+            if army is None:
+                raise RuntimeError(f"Ethereal Pathway declarations require an army for {player.name}.")
+            units = list(getattr(army, "units", []) or [])
+            requests = build_ethereal_pathway_requests(self, units, queue_requests=False)
+            for req in list(requests or []):
+                source_id = str(getattr(req, "context", {}).get("source_unit_id", "") or "")
+                if source_id and source_id in pending_source_ids:
+                    continue
+                self.request_decision(req)
+                if source_id:
+                    pending_source_ids.add(source_id)
+
     def execute_deploy_armies_phase(self, manual_phases: bool = False, decision_makers: dict = None) -> None:
         """Phase 6: Deploy Armies - Execute the deployment phase."""
         print("DEPLOY ARMIES: Starting deployment sequence...")
+
+        # Aeldari: Ethereal Pathway selections are made at the start of this step.
+        self._apply_ethereal_pathway_declarations()
         
         # Check if we have local players that need UI-based deployment
         has_local_players = any(getattr(player, "has_control", lambda: False)() for player in self.players)

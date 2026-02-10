@@ -2294,6 +2294,71 @@ class WargearProfile:
                                         )
             except Exception:
                 pass
+            # Aeldari: Breath of Vaul - while leading Storm Guardians, flamer attack-count rolls can be re-rolled.
+            try:
+                already_rerolled = any(
+                    "re-rolled attacks" in str(reason or "").lower()
+                    for reason in list(attack_result.attacks_special_modifiers or [])
+                )
+                if (
+                    not already_rerolled
+                    and roll_value is None
+                    and isinstance(self.attacks, Count)
+                    and self.attacks.ctype.name == "DICE"
+                ):
+                    unit = getattr(attacker, "parent_unit", None)
+                    weapon_name = ""
+                    if getattr(self, "parent_wargear", None) is not None:
+                        weapon_name = str(getattr(self.parent_wargear, "name", "") or "")
+                    if not weapon_name:
+                        weapon_name = str(getattr(self, "name", "") or "")
+                    can_use = False
+                    if unit is not None and hasattr(unit, "can_use_breath_of_vaul_flamer_attacks_reroll"):
+                        can_use = bool(
+                            unit.can_use_breath_of_vaul_flamer_attacks_reroll(
+                                model=attacker,
+                                weapon_name=weapon_name,
+                            )
+                        )
+                    if can_use:
+                        do_reroll = False
+                        game = None
+                        player = None
+                        try:
+                            army = unit.get_parent_army()
+                            player = getattr(army, "player", None) if army is not None else None
+                            game = getattr(player, "game", None) if player is not None else None
+                        except Exception:
+                            game = None
+                            player = None
+                        provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None) if game is not None else None
+                        reason = "Breath of Vaul"
+                        if provider is not None:
+                            do_reroll = bool(
+                                provider(
+                                    player=player,
+                                    unit=unit,
+                                    roll_type="attacks",
+                                    value=num_attacks,
+                                    dice=dice_rolls,
+                                    reason=reason,
+                                )
+                            )
+                        else:
+                            try:
+                                avg = float(self.attacks.stat_average())
+                                do_reroll = float(num_attacks) < avg
+                            except Exception:
+                                do_reroll = False
+                        if do_reroll:
+                            new_num, new_rolls = _reroll_attacks()
+                            num_attacks = new_num
+                            dice_rolls = list(new_rolls or [])
+                            attack_result.attacks_special_modifiers.append(
+                                f"{reason}: re-rolled attacks"
+                            )
+            except Exception:
+                pass
         else:
             num_attacks = self.attacks or 0
             attack_result.attacks_rolled = num_attacks
@@ -11835,6 +11900,65 @@ class WargearProfile:
                             )
                             damage_result['reroll'] = new_val
                             damage_result['reroll_of_one'] = 1
+        except Exception:
+            pass
+
+        # Aeldari: Breath of Vaul - while leading Storm Guardians, fusion-gun damage rolls can be re-rolled.
+        try:
+            if rerolls_allowed and isinstance(self.damage, DiceCollection) and "reroll" not in damage_result:
+                unit = getattr(attacker, "parent_unit", None)
+                weapon_name = ""
+                if getattr(self, "parent_wargear", None) is not None:
+                    weapon_name = str(getattr(self.parent_wargear, "name", "") or "")
+                if not weapon_name:
+                    weapon_name = str(getattr(self, "name", "") or "")
+                can_use = False
+                if unit is not None and hasattr(unit, "can_use_breath_of_vaul_fusion_damage_reroll"):
+                    can_use = bool(
+                        unit.can_use_breath_of_vaul_fusion_damage_reroll(
+                            model=attacker,
+                            weapon_name=weapon_name,
+                        )
+                    )
+                if can_use:
+                    do_reroll = False
+                    try:
+                        game = unit.get_parent_army().player.game
+                        player = unit.get_parent_army().player
+                        is_human = bool(getattr(player, "has_control", lambda: False)())
+                        provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                    except Exception:
+                        is_human = False
+                        provider = None
+                        player = None
+                    reason = "Breath of Vaul"
+                    if is_human and callable(provider):
+                        try:
+                            do_reroll = bool(provider(
+                                player=player,
+                                unit=unit,
+                                roll_type="damage",
+                                value=damage_value,
+                                dice=damage_result.get("damage_dice_rolls", None),
+                                reason=reason,
+                            ))
+                        except Exception:
+                            do_reroll = False
+                    else:
+                        try:
+                            avg = float(self.damage.stat_average())
+                            do_reroll = float(damage_value) < avg
+                        except Exception:
+                            do_reroll = False
+                    if do_reroll:
+                        new_val, new_rolls = _reroll_damage()
+                        damage_value = new_val
+                        damage_result['damage_dice_rolls'] = new_rolls
+                        damage_result['damage_rolled'] = new_val
+                        damage_result.setdefault('special_effects', []).append(
+                            f"{reason}: re-roll Damage roll"
+                        )
+                        damage_result['reroll'] = new_val
         except Exception:
             pass
 
