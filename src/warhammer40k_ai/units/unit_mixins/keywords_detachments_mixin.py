@@ -591,6 +591,58 @@ class KeywordsDetachmentsMixin:
         has finished making its attacks, and is then removed from play."
         """
         cache_key = f"melee_fight_on_death_after_attacks:{get_entity_id(model) if model is not None else 'unit'}"
+
+        # Temporary effect hook: Boon of Death (Mortarion).
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("boon_of_death_active"):
+                phase_name = ""
+                current_turn = 0
+                try:
+                    army = self.get_parent_army()
+                except Exception:
+                    army = None
+                try:
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                except Exception:
+                    game = None
+                if game is not None:
+                    try:
+                        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    except Exception:
+                        phase_name = ""
+                    try:
+                        current_turn = int(getattr(game, "turn", 0) or 0)
+                    except Exception:
+                        current_turn = 0
+                try:
+                    marked_turn = int(sr.get("boon_of_death_turn", 0) or 0)
+                except Exception:
+                    marked_turn = 0
+                if phase_name == "FIGHT_PHASE" and (not (marked_turn and current_turn and marked_turn != current_turn)):
+                    source = str(sr.get("boon_of_death_source", "") or "Boon of Death").strip() or "Boon of Death"
+                    try:
+                        threshold = int(sr.get("boon_of_death_threshold", 2) or 2)
+                    except Exception:
+                        threshold = 2
+                    return {
+                        "threshold": max(2, min(6, int(threshold))),
+                        "source": source,
+                    }
+                if phase_name and phase_name != "FIGHT_PHASE":
+                    for key in (
+                        "boon_of_death_active",
+                        "boon_of_death_owner",
+                        "boon_of_death_turn",
+                        "boon_of_death_source",
+                        "boon_of_death_threshold",
+                        "boon_of_death_expires_phase",
+                    ):
+                        sr.pop(key, None)
+                    self.special_rules = sr
+        except Exception:
+            pass
+
         if cache_key in getattr(self, "_ability_cache", {}):
             return self._ability_cache[cache_key]
 
@@ -1472,6 +1524,141 @@ class KeywordsDetachmentsMixin:
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
         self._ability_cache["guns_blazing"] = bool(found)
+        return bool(found)
+
+    def has_lord_of_the_death_guard(self) -> bool:
+        """Check if the unit has the Lord of the Death Guard datasheet ability."""
+        if "lord_of_the_death_guard" in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache["lord_of_the_death_guard"])
+        found, _ = self._find_ability_with_patterns(["lord of the death guard"])
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache["lord_of_the_death_guard"] = bool(found)
+        return bool(found)
+
+    def has_boon_of_death(self) -> bool:
+        """Check if the unit has the Boon of Death datasheet ability."""
+        if "boon_of_death" in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache["boon_of_death"])
+        found, _ = self._find_ability_with_patterns(["boon of death"])
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache["boon_of_death"] = bool(found)
+        return bool(found)
+
+    def has_inflamed_reprisal(self) -> bool:
+        """Check if the unit has the Inflamed Reprisal datasheet ability."""
+        if "inflamed_reprisal" in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache["inflamed_reprisal"])
+        found, _ = self._find_ability_with_patterns(["inflamed reprisal"])
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache["inflamed_reprisal"] = bool(found)
+        return bool(found)
+
+    def has_diseased_influence(self) -> bool:
+        """Check if the unit has the Diseased Influence datasheet ability."""
+        if "diseased_influence" in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache["diseased_influence"])
+        found, _ = self._find_ability_with_patterns(["diseased influence"])
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache["diseased_influence"] = bool(found)
+        return bool(found)
+
+    def has_explosive_blight(self) -> bool:
+        """Check if the unit has the Explosive Blight datasheet ability."""
+        if "explosive_blight" in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache["explosive_blight"])
+        found, _ = self._find_ability_with_patterns(["explosive blight"])
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache["explosive_blight"] = bool(found)
+        return bool(found)
+
+    def _lord_of_death_guard_turn_key(self, game=None) -> str:
+        if game is None:
+            try:
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+            except Exception:
+                game = None
+        try:
+            br = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            br = 0
+        try:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+        except Exception:
+            current_player = None
+        owner_id = str(getattr(current_player, "id", "") or "")
+        owner_name = str(getattr(current_player, "name", "") or "")
+        owner = owner_id or owner_name
+        return f"{br}:{owner}"
+
+    def lord_of_death_guard_used_this_turn(self, game=None) -> bool:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        key = self._lord_of_death_guard_turn_key(game)
+        return str(sr.get("lord_of_death_guard_used_turn_key", "")) == key
+
+    def mark_lord_of_death_guard_used(self, game=None, *, ability_name: str = "") -> None:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["lord_of_death_guard_used_turn_key"] = self._lord_of_death_guard_turn_key(game)
+        if ability_name:
+            sr["lord_of_death_guard_used_source"] = str(ability_name).strip()
+        self.special_rules = sr
+
+    def can_use_lord_of_death_guard(self, game=None) -> bool:
+        if not self.has_lord_of_the_death_guard():
+            return False
+        try:
+            if not self.is_alive() or not bool(getattr(self, "deployed", False)):
+                return False
+        except Exception:
+            return False
+        try:
+            if self.is_in_reserves():
+                return False
+        except Exception:
+            pass
+        try:
+            if bool(getattr(self, "is_embarked", False)) or bool(getattr(self, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
+        return not self.lord_of_death_guard_used_this_turn(game)
+
+    def has_lethal_ichor(self) -> bool:
+        """Check if the unit has the Lethal Ichor datasheet ability."""
+        if "lethal_ichor" in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache["lethal_ichor"])
+        found, _ = self._find_ability_with_patterns(["lethal ichor"])
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache["lethal_ichor"] = bool(found)
+        return bool(found)
+
+    def has_curse_of_the_walking_pox(self) -> bool:
+        """Check if the unit has the Curse of the Walking Pox datasheet ability."""
+        if "curse_of_the_walking_pox" in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache["curse_of_the_walking_pox"])
+        found, _ = self._find_ability_with_patterns(["curse of the walking pox"])
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache["curse_of_the_walking_pox"] = bool(found)
+        return bool(found)
+
+    def has_extraction_of_fresh_disease(self) -> bool:
+        """Check if the unit has the Extraction of Fresh Disease datasheet ability."""
+        if "extraction_of_fresh_disease" in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache["extraction_of_fresh_disease"])
+        found, _ = self._find_ability_with_patterns(["extraction of fresh disease"])
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache["extraction_of_fresh_disease"] = bool(found)
         return bool(found)
 
     def has_brazen_fury(self) -> bool:

@@ -2122,6 +2122,63 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_start_fight_phase_inflamed_infections_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: at the start of the Fight phase, select one engaged enemy unit.
+        Until phase end, this model scores critical hits on a lower unmodified Hit roll threshold
+        against that unit (typically 5+, or 4+ while that unit is Below Half-strength).
+        """
+        if model is None:
+            return []
+        cache_key = f"model_start_fight_phase_inflamed_infections:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, int]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"'s\b", "s", normalized)
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            if "start of the fight phase" not in normalized:
+                continue
+            if "within engagement range of this model" not in normalized:
+                continue
+            if "scores a critical hit" not in normalized:
+                continue
+            if "hit roll of 5" not in normalized:
+                continue
+            threshold = 5
+            threshold_below_half = 5
+            if "below half strength" in normalized:
+                if "hit roll of 4" in normalized or "or 4 if" in normalized:
+                    threshold_below_half = 4
+            source = str(name or "Inflamed Infections").strip() or "Inflamed Infections"
+            key = (source.lower(), int(threshold), int(threshold_below_half))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "threshold": int(threshold),
+                    "threshold_below_half": int(threshold_below_half),
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_start_fight_phase_melee_attacks_strength_boost_specs(
         self,
         model: Optional['Model'] = None,

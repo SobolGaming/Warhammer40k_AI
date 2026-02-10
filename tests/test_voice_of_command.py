@@ -74,10 +74,10 @@ class _UnitStub:
     def _get_unit_attack_roll_rules(self):
         return []
 
-    def get_unit_hit_reroll_modifiers(self, attack_type: str, *, target=None) -> dict:
+    def get_unit_hit_reroll_modifiers(self, attack_type: str, *, target=None, attacker_model=None) -> dict:
         from warhammer40k_ai.units.unit import Unit
 
-        return Unit.get_unit_hit_reroll_modifiers(self, attack_type, target=target)
+        return Unit.get_unit_hit_reroll_modifiers(self, attack_type, target=target, attacker_model=attacker_model)
 
     def get_unit_wound_reroll_modifiers(self, attack_type: str, *, target=None) -> dict:
         from warhammer40k_ai.units.unit import Unit

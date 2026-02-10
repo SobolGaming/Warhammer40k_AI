@@ -5347,6 +5347,1022 @@ class GameShootingFightHandlersMixin:
         )
         self.request_decision(request)
 
+    def _iter_unique_army_roots(self, army) -> list:
+        if army is None:
+            return []
+        roots: dict[str, Any] = {}
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            rid = str(get_entity_id(root) or "")
+            if not rid:
+                continue
+            roots[rid] = root
+        out = list(roots.values())
+        try:
+            out.sort(key=lambda u: str(get_entity_id(u) or ""))
+        except Exception:
+            pass
+        return out
+
+    def _unit_is_active_for_reactive_trigger(self, unit) -> bool:
+        if unit is None:
+            return False
+        if not bool(getattr(unit, "is_alive", lambda: False)()):
+            return False
+        if not bool(getattr(unit, "deployed", True)):
+            return False
+        try:
+            if unit.is_in_reserves() or unit.is_embarked:
+                return False
+        except Exception:
+            pass
+        return True
+
+    def _unit_is_death_guard(self, unit) -> bool:
+        if unit is None:
+            return False
+        has_any = getattr(unit, "has_any_keyword", None)
+        if callable(has_any):
+            try:
+                if bool(has_any("DEATH GUARD")):
+                    return True
+            except Exception:
+                pass
+        has_kw = getattr(unit, "has_keyword", None)
+        if callable(has_kw):
+            try:
+                if bool(has_kw("DEATH GUARD")):
+                    return True
+            except Exception:
+                pass
+        return str(getattr(unit, "faction", "") or "").strip().upper() == "DEATH GUARD"
+
+    def _unit_is_engaged_with_enemy(self, unit) -> bool:
+        if unit is None:
+            return False
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return False
+        try:
+            enemies = list(game_map.get_enemy_units(unit) or [])
+        except Exception:
+            enemies = []
+        seen: set[str] = set()
+        for enemy in enemies:
+            if enemy is None:
+                continue
+            try:
+                enemy_root = enemy.get_attached_unit_root()
+            except Exception:
+                enemy_root = enemy
+            if enemy_root is None or not bool(getattr(enemy_root, "is_alive", lambda: False)()):
+                continue
+            eid = str(get_entity_id(enemy_root) or "")
+            if eid and eid in seen:
+                continue
+            if eid:
+                seen.add(eid)
+            try:
+                if game_map.is_within_engagement_range(unit, enemy_root):
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def _on_fight_targets_selected_boon_of_death(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None or not target_units:
+            return
+        if not self.is_fight_phase():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return
+
+        try:
+            attacker_root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = attacking_unit
+        if attacker_root is None:
+            return
+        attacker_army = attacker_root.get_parent_army()
+        attacker_player = getattr(attacker_army, "player", None) if attacker_army is not None else None
+
+        try:
+            from ...utility.aura_utils import unit_within_range_of_unit
+        except Exception:
+            return
+
+        target_roots: list[Any] = []
+        seen_targets: set[str] = set()
+        for target in list(target_units or []):
+            if target is None:
+                continue
+            try:
+                target_root = target.get_attached_unit_root()
+            except Exception:
+                target_root = target
+            if target_root is None:
+                continue
+            tid = str(get_entity_id(target_root) or "")
+            if not tid or tid in seen_targets:
+                continue
+            seen_targets.add(tid)
+            if not self._unit_is_active_for_reactive_trigger(target_root):
+                continue
+            if attacker_army is not None and target_root.get_parent_army() is attacker_army:
+                continue
+            target_roots.append(target_root)
+        if not target_roots:
+            return
+
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+
+        queue = getattr(self, "decision_queue", None)
+
+        for player in list(getattr(self, "players", []) or []):
+            if player is None:
+                continue
+            if attacker_player is not None and player is attacker_player:
+                continue
+            army = self._get_player_army(player)
+            if army is None:
+                continue
+            for source_root in list(self._iter_unique_army_roots(army) or []):
+                if source_root is None:
+                    continue
+                if not self._unit_is_active_for_reactive_trigger(source_root):
+                    continue
+                if not bool(getattr(source_root, "has_boon_of_death", lambda: False)()):
+                    continue
+                if not bool(getattr(source_root, "can_use_lord_of_death_guard", lambda **_k: False)(game=self)):
+                    continue
+
+                source_id = str(get_entity_id(source_root) or "")
+                attacker_id = str(get_entity_id(attacker_root) or "")
+                if not source_id or not attacker_id:
+                    continue
+                already_pending = False
+                if queue is not None and hasattr(queue, "list"):
+                    for req in list(queue.list() or []):
+                        if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                            continue
+                        ctx = dict(getattr(req, "context", {}) or {})
+                        if str(ctx.get("ability", "") or "") != "boon_of_death":
+                            continue
+                        if str(ctx.get("source_unit_id", "") or "") != source_id:
+                            continue
+                        if str(ctx.get("attacker_unit_id", "") or "") != attacker_id:
+                            continue
+                        if int(ctx.get("turn", 0) or 0) != int(turn or 0):
+                            continue
+                        already_pending = True
+                        break
+                if already_pending:
+                    continue
+
+                candidates: list[Any] = []
+                for target_root in list(target_roots or []):
+                    if target_root.get_parent_army() is not army:
+                        continue
+                    if not self._unit_is_death_guard(target_root):
+                        continue
+                    try:
+                        if unit_within_range_of_unit(source_root, target_root, 6.0, use_attached_aggregate=True):
+                            candidates.append(target_root)
+                    except Exception:
+                        continue
+                if not candidates:
+                    continue
+
+                try:
+                    candidates.sort(key=lambda u: str(get_entity_id(u) or ""))
+                except Exception:
+                    pass
+
+                options = [DecisionOption.create("None", payload={"action": "skip"})]
+                for cand in candidates:
+                    options.append(
+                        DecisionOption.create(
+                            str(getattr(cand, "name", "Unit") or "Unit"),
+                            payload={"target_unit_id": get_entity_id(cand)},
+                        )
+                    )
+                if len(options) <= 1:
+                    continue
+
+                request = DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    "Boon of Death: select a friendly unit to affect (or None).",
+                    player_id=getattr(player, "id", None),
+                    options=options,
+                    context={
+                        "ability": "boon_of_death",
+                        "ability_name": "Boon of Death",
+                        "source_unit_id": source_id,
+                        "attacker_unit_id": attacker_id,
+                        "turn": int(turn or 0),
+                        "optional": True,
+                    },
+                )
+                self.request_decision(request)
+
+    def _on_shooting_targets_selected_inflamed_reprisal(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None or not target_units:
+            return
+        if not self.is_shooting_phase():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+
+        try:
+            attacker_root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = attacking_unit
+        if attacker_root is None:
+            return
+        attacker_army = attacker_root.get_parent_army()
+        attacker_player = getattr(attacker_army, "player", None) if attacker_army is not None else None
+
+        try:
+            from ...utility.aura_utils import unit_within_range_of_unit
+        except Exception:
+            return
+
+        targeted_roots: list[Any] = []
+        seen_targets: set[str] = set()
+        for target in list(target_units or []):
+            if target is None:
+                continue
+            try:
+                target_root = target.get_attached_unit_root()
+            except Exception:
+                target_root = target
+            if target_root is None:
+                continue
+            tid = str(get_entity_id(target_root) or "")
+            if not tid or tid in seen_targets:
+                continue
+            seen_targets.add(tid)
+            if not self._unit_is_active_for_reactive_trigger(target_root):
+                continue
+            if attacker_army is not None and target_root.get_parent_army() is attacker_army:
+                continue
+            targeted_roots.append(target_root)
+        if not targeted_roots:
+            return
+
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+
+        queue = getattr(self, "decision_queue", None)
+
+        for player in list(getattr(self, "players", []) or []):
+            if player is None:
+                continue
+            if attacker_player is not None and player is attacker_player:
+                continue
+            army = self._get_player_army(player)
+            if army is None:
+                continue
+            for source_root in list(self._iter_unique_army_roots(army) or []):
+                if source_root is None:
+                    continue
+                if not self._unit_is_active_for_reactive_trigger(source_root):
+                    continue
+                if not bool(getattr(source_root, "has_inflamed_reprisal", lambda: False)()):
+                    continue
+                if not bool(getattr(source_root, "can_use_lord_of_death_guard", lambda **_k: False)(game=self)):
+                    continue
+
+                source_id = str(get_entity_id(source_root) or "")
+                attacker_id = str(get_entity_id(attacker_root) or "")
+                if not source_id or not attacker_id:
+                    continue
+                already_pending = False
+                if queue is not None and hasattr(queue, "list"):
+                    for req in list(queue.list() or []):
+                        if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                            continue
+                        ctx = dict(getattr(req, "context", {}) or {})
+                        if str(ctx.get("ability", "") or "") != "inflamed_reprisal":
+                            continue
+                        if str(ctx.get("source_unit_id", "") or "") != source_id:
+                            continue
+                        if str(ctx.get("attacker_unit_id", "") or "") != attacker_id:
+                            continue
+                        if int(ctx.get("turn", 0) or 0) != int(turn or 0):
+                            continue
+                        already_pending = True
+                        break
+                if already_pending:
+                    continue
+
+                candidates: list[Any] = []
+                for target_root in list(targeted_roots or []):
+                    if target_root.get_parent_army() is not army:
+                        continue
+                    if not self._unit_is_death_guard(target_root):
+                        continue
+                    if bool(getattr(target_root, "is_battle_shocked", lambda: False)()):
+                        continue
+                    try:
+                        if not unit_within_range_of_unit(source_root, target_root, 6.0, use_attached_aggregate=True):
+                            continue
+                    except Exception:
+                        continue
+                    candidates.append(target_root)
+                if not candidates:
+                    continue
+
+                try:
+                    candidates.sort(key=lambda u: str(get_entity_id(u) or ""))
+                except Exception:
+                    pass
+                options = [DecisionOption.create("None", payload={"action": "skip"})]
+                for cand in candidates:
+                    options.append(
+                        DecisionOption.create(
+                            str(getattr(cand, "name", "Unit") or "Unit"),
+                            payload={"target_unit_id": get_entity_id(cand)},
+                        )
+                    )
+                if len(options) <= 1:
+                    continue
+
+                request = DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    "Inflamed Reprisal: select a friendly unit to shoot back after attacks resolve (or None).",
+                    player_id=getattr(player, "id", None),
+                    options=options,
+                    context={
+                        "ability": "inflamed_reprisal",
+                        "ability_name": "Inflamed Reprisal",
+                        "source_unit_id": source_id,
+                        "attacker_unit_id": attacker_id,
+                        "turn": int(turn or 0),
+                        "optional": True,
+                    },
+                )
+                self.request_decision(request)
+
+    def _on_unit_shooting_resolved_inflamed_reprisal(self, attacker_unit=None, **_kwargs) -> None:
+        if attacker_unit is None:
+            return
+        pending = getattr(self, "_inflamed_reprisal_pending", None)
+        if not isinstance(pending, list) or not pending:
+            return
+        try:
+            attacker_root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = attacker_unit
+        if attacker_root is None:
+            return
+        attacker_id = str(get_entity_id(attacker_root) or "")
+        if not attacker_id:
+            return
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+
+        queue = getattr(self, "decision_queue", None)
+        pending_shot_units: set[str] = set()
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_DECLARE_SHOTS:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if not bool(ctx.get("inflamed_reprisal_flow", False)):
+                    continue
+                uid = str(ctx.get("unit_id", "") or "")
+                if uid:
+                    pending_shot_units.add(uid)
+
+        remaining: list[dict] = []
+        for entry in list(pending or []):
+            if not isinstance(entry, dict):
+                continue
+            try:
+                entry_turn = int(entry.get("turn", 0) or 0)
+            except Exception:
+                entry_turn = 0
+            if entry_turn != int(turn or 0):
+                continue
+            if str(entry.get("attacker_unit_id", "") or "") != attacker_id:
+                remaining.append(entry)
+                continue
+
+            selected = self._resolve_unit_by_id(entry.get("selected_unit_id"))
+            if selected is None:
+                continue
+            try:
+                selected_root = selected.get_attached_unit_root()
+            except Exception:
+                selected_root = selected
+            if selected_root is None or not self._unit_is_active_for_reactive_trigger(selected_root):
+                continue
+            selected_id = str(get_entity_id(selected_root) or "")
+            if not selected_id:
+                continue
+            if selected_id in pending_shot_units:
+                continue
+            if bool(getattr(selected_root, "is_battle_shocked", lambda: False)()):
+                continue
+            if not self._setup_reactive_can_shoot_target(selected_root, attacker_root):
+                continue
+
+            player = getattr(selected_root.get_parent_army(), "player", None)
+            if player is None:
+                continue
+            ability_name = str(entry.get("ability_name", "") or "Inflamed Reprisal").strip() or "Inflamed Reprisal"
+            request = self._queue_setup_reactive_shooting_decision(
+                player=player,
+                unit=selected_root,
+                target_unit=attacker_root,
+                source=ability_name,
+            )
+            if request is None:
+                continue
+            request.context["inflamed_reprisal_flow"] = True
+            request.context["inflamed_reprisal_source"] = ability_name
+            request.context["inflamed_reprisal_enemy_unit_id"] = attacker_id
+            request.context["inflamed_reprisal_unit_id"] = selected_id
+            pending_shot_units.add(selected_id)
+        self._inflamed_reprisal_pending = remaining
+
+    def _on_unit_move_ended_diseased_influence(self, unit=None, action: str | None = None, **_kwargs) -> None:
+        if unit is None:
+            return
+        if str(action or "").strip().lower() not in ("move", "advance", "fall_back"):
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return
+
+        try:
+            moving_root = unit.get_attached_unit_root()
+        except Exception:
+            moving_root = unit
+        if moving_root is None or not self._unit_is_active_for_reactive_trigger(moving_root):
+            return
+        moving_army = moving_root.get_parent_army()
+        moving_player = getattr(moving_army, "player", None) if moving_army is not None else None
+
+        try:
+            from ...utility.aura_utils import unit_within_range_of_unit
+        except Exception:
+            return
+
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+
+        queue = getattr(self, "decision_queue", None)
+
+        for player in list(getattr(self, "players", []) or []):
+            if player is None:
+                continue
+            if moving_player is not None and player is moving_player:
+                continue
+            army = self._get_player_army(player)
+            if army is None:
+                continue
+            army_roots = list(self._iter_unique_army_roots(army) or [])
+            if not army_roots:
+                continue
+            for source_root in list(army_roots):
+                if source_root is None:
+                    continue
+                if not self._unit_is_active_for_reactive_trigger(source_root):
+                    continue
+                if not bool(getattr(source_root, "has_diseased_influence", lambda: False)()):
+                    continue
+                if not bool(getattr(source_root, "can_use_lord_of_death_guard", lambda **_k: False)(game=self)):
+                    continue
+                source_id = str(get_entity_id(source_root) or "")
+                moving_id = str(get_entity_id(moving_root) or "")
+                if not source_id or not moving_id:
+                    continue
+                already_pending = False
+                if queue is not None and hasattr(queue, "list"):
+                    for req in list(queue.list() or []):
+                        if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                            continue
+                        ctx = dict(getattr(req, "context", {}) or {})
+                        if str(ctx.get("ability", "") or "") != "diseased_influence":
+                            continue
+                        if str(ctx.get("source_unit_id", "") or "") != source_id:
+                            continue
+                        if str(ctx.get("moving_unit_id", "") or "") != moving_id:
+                            continue
+                        if int(ctx.get("turn", 0) or 0) != int(turn or 0):
+                            continue
+                        already_pending = True
+                        break
+                if already_pending:
+                    continue
+
+                candidates: list[Any] = []
+                for cand in list(army_roots):
+                    if cand is None:
+                        continue
+                    if cand.get_parent_army() is not army:
+                        continue
+                    if not self._unit_is_active_for_reactive_trigger(cand):
+                        continue
+                    if not self._unit_is_death_guard(cand):
+                        continue
+                    if self._unit_is_engaged_with_enemy(cand):
+                        continue
+                    try:
+                        in_trigger = unit_within_range_of_unit(moving_root, cand, 9.0, use_attached_aggregate=True)
+                        in_source = unit_within_range_of_unit(source_root, cand, 6.0, use_attached_aggregate=True)
+                    except Exception:
+                        continue
+                    if in_trigger and in_source:
+                        candidates.append(cand)
+                if not candidates:
+                    continue
+                try:
+                    candidates.sort(key=lambda u: str(get_entity_id(u) or ""))
+                except Exception:
+                    pass
+                options = [DecisionOption.create("None", payload={"action": "skip"})]
+                for cand in candidates:
+                    options.append(
+                        DecisionOption.create(
+                            str(getattr(cand, "name", "Unit") or "Unit"),
+                            payload={"target_unit_id": get_entity_id(cand)},
+                        )
+                    )
+                if len(options) <= 1:
+                    continue
+
+                request = DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    "Diseased Influence: select a friendly unit to move up to 5\" (or None).",
+                    player_id=getattr(player, "id", None),
+                    options=options,
+                    context={
+                        "ability": "diseased_influence",
+                        "ability_name": "Diseased Influence",
+                        "source_unit_id": source_id,
+                        "moving_unit_id": moving_id,
+                        "turn": int(turn or 0),
+                        "optional": True,
+                    },
+                )
+                self.request_decision(request)
+
+    def _queue_curse_of_walking_pox_decision(self, source_unit, *, phase_name: str, ability_name: str) -> None:
+        if source_unit is None:
+            return
+        try:
+            root = source_unit.get_attached_unit_root()
+        except Exception:
+            root = source_unit
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        try:
+            pending = int(sr.get("curse_of_walking_pox_pending_kills", 0) or 0)
+        except Exception:
+            pending = 0
+        if pending <= 0:
+            return
+        destroyed = list(getattr(root, "models_lost", []) or [])
+        poxwalker_destroyed = []
+        for model in destroyed:
+            if model is None:
+                continue
+            has_any = getattr(model, "has_any_keyword", None)
+            has_kw = getattr(model, "has_keyword", None)
+            is_poxwalker = False
+            if callable(has_any):
+                try:
+                    is_poxwalker = bool(has_any("POXWALKER"))
+                except Exception:
+                    is_poxwalker = False
+            if not is_poxwalker and callable(has_kw):
+                try:
+                    is_poxwalker = bool(has_kw("POXWALKER"))
+                except Exception:
+                    is_poxwalker = False
+            if is_poxwalker:
+                poxwalker_destroyed.append(model)
+        max_returns = min(int(pending), len(poxwalker_destroyed))
+        if max_returns <= 0:
+            sr["curse_of_walking_pox_pending_kills"] = 0
+            root.special_rules = sr
+            return
+        player = getattr(root.get_parent_army(), "player", None)
+        if player is None:
+            return
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        source_id = str(get_entity_id(root) or "")
+        if not source_id:
+            return
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "curse_of_walking_pox":
+                    continue
+                if str(ctx.get("source_unit_id", "") or "") != source_id:
+                    continue
+                if int(ctx.get("turn", 0) or 0) != int(turn or 0):
+                    continue
+                return
+
+        options = [DecisionOption.create("None", payload={"action": "skip", "returns": 0})]
+        for count in range(1, int(max_returns) + 1):
+            label = f"Return {int(count)} model" + ("s" if int(count) != 1 else "")
+            options.append(DecisionOption.create(label, payload={"returns": int(count)}))
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{ability_name}: return up to {int(max_returns)} destroyed Poxwalker model(s) (or None).",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={
+                "ability": "curse_of_walking_pox",
+                "ability_name": ability_name,
+                "source_unit_id": source_id,
+                "unit_id": source_id,
+                "max_returns": int(max_returns),
+                "turn_owner": str(getattr(player, "id", "") or ""),
+                "turn": int(turn or 0),
+                "phase": str(phase_name or ""),
+                "optional": True,
+            },
+        )
+        self.request_decision(request)
+
+    def _on_model_destroyed_curse_of_the_walking_pox(
+        self,
+        attacker_model=None,
+        attacker_unit=None,
+        target_model=None,
+        target_unit=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None and attacker_model is not None:
+            attacker_unit = getattr(attacker_model, "parent_unit", None)
+        if attacker_unit is None or target_unit is None or target_model is None:
+            return
+        try:
+            attacker_root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = attacker_unit
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        if attacker_root is None or target_root is None:
+            return
+        if attacker_root.get_parent_army() == target_root.get_parent_army():
+            return
+        if not bool(getattr(attacker_root, "has_curse_of_the_walking_pox", lambda: False)()):
+            return
+
+        try:
+            if bool(getattr(target_model, "has_any_keyword", lambda *_a, **_k: False)("MONSTER")):
+                return
+            if bool(getattr(target_model, "has_any_keyword", lambda *_a, **_k: False)("VEHICLE")):
+                return
+        except Exception:
+            pass
+        try:
+            if bool(getattr(target_root, "has_any_keyword", lambda *_a, **_k: False)("MONSTER")):
+                return
+            if bool(getattr(target_root, "has_any_keyword", lambda *_a, **_k: False)("VEHICLE")):
+                return
+        except Exception:
+            pass
+
+        is_poxwalker_attack = False
+        if attacker_model is not None:
+            has_any = getattr(attacker_model, "has_any_keyword", None)
+            has_kw = getattr(attacker_model, "has_keyword", None)
+            if callable(has_any):
+                try:
+                    is_poxwalker_attack = bool(has_any("POXWALKER"))
+                except Exception:
+                    is_poxwalker_attack = False
+            if not is_poxwalker_attack and callable(has_kw):
+                try:
+                    is_poxwalker_attack = bool(has_kw("POXWALKER"))
+                except Exception:
+                    is_poxwalker_attack = False
+        sr = getattr(attacker_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        is_eater_plague = bool(sr.get("curse_of_walking_pox_count_eater_plague", False))
+        if not is_poxwalker_attack and not is_eater_plague:
+            return
+        try:
+            pending = int(sr.get("curse_of_walking_pox_pending_kills", 0) or 0)
+        except Exception:
+            pending = 0
+        sr["curse_of_walking_pox_pending_kills"] = int(max(0, pending + 1))
+        attacker_root.special_rules = sr
+
+    def _on_unit_shooting_resolved_curse_of_the_walking_pox(self, attacker_unit=None, **_kwargs) -> None:
+        if attacker_unit is None:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            root = attacker_unit
+        if root is None:
+            return
+        if not bool(getattr(root, "has_curse_of_the_walking_pox", lambda: False)()):
+            return
+        self._queue_curse_of_walking_pox_decision(
+            root,
+            phase_name="SHOOTING_PHASE",
+            ability_name="Curse of the Walking Pox",
+        )
+
+    def _on_fight_sequence_complete_curse_of_the_walking_pox(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        if not self.is_fight_phase():
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        if not bool(getattr(root, "has_curse_of_the_walking_pox", lambda: False)()):
+            return
+        self._queue_curse_of_walking_pox_decision(
+            root,
+            phase_name="FIGHT_PHASE",
+            ability_name="Curse of the Walking Pox",
+        )
+
+    def _on_fight_sequence_complete_lethal_ichor(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        if not self.is_fight_phase():
+            return
+        try:
+            attacker_root = unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = unit
+        if attacker_root is None:
+            return
+        attacker_id = str(get_entity_id(attacker_root) or "")
+        if not attacker_id:
+            return
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return
+        try:
+            from ...utility.event_bus import append_dice
+        except Exception:
+            append_dice = None
+
+        for enemy in list(game_map.get_enemy_units(attacker_root) or []):
+            if enemy is None:
+                continue
+            try:
+                enemy_root = enemy.get_attached_unit_root()
+            except Exception:
+                enemy_root = enemy
+            if enemy_root is None:
+                continue
+            if not bool(getattr(enemy_root, "has_lethal_ichor", lambda: False)()):
+                continue
+            sr = getattr(enemy_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            allocations = sr.get("lethal_ichor_allocations")
+            if not isinstance(allocations, dict):
+                continue
+            try:
+                num_allocations = int(allocations.get(attacker_id, 0) or 0)
+            except Exception:
+                num_allocations = 0
+            if num_allocations <= 0:
+                continue
+            num_allocations = max(0, min(6, int(num_allocations)))
+            successes = 0
+            rolls: list[int] = []
+            for _ in range(int(num_allocations)):
+                try:
+                    roll = int(get_roll("D6") or 0)
+                except Exception:
+                    roll = 0
+                rolls.append(int(roll))
+                if int(roll) >= 4:
+                    successes += 1
+            player = getattr(enemy_root.get_parent_army(), "player", None)
+            source_name = str(sr.get("lethal_ichor_source", "") or "Lethal Ichor").strip() or "Lethal Ichor"
+            if callable(append_dice) and player is not None:
+                append_dice(
+                    player,
+                    f"{source_name}: {int(num_allocations)} roll(s) vs {getattr(attacker_root, 'name', 'Unit')} -> {', '.join(str(r) for r in rolls)}",
+                )
+            if int(successes) > 0:
+                try:
+                    enemy_root._apply_mortal_wounds_to_unit(
+                        attacker_root,
+                        int(successes),
+                        game_map=game_map,
+                        attacker_unit=enemy_root,
+                    )
+                except Exception:
+                    pass
+            allocations.pop(attacker_id, None)
+            if allocations:
+                sr["lethal_ichor_allocations"] = allocations
+            else:
+                sr.pop("lethal_ichor_allocations", None)
+                sr.pop("lethal_ichor_source", None)
+            enemy_root.special_rules = sr
+
+    def _on_unit_destroyed_explosive_blight(
+        self,
+        unit=None,
+        destroyed_by_unit=None,
+        destroyed_by_model=None,
+        last_model=None,
+        **_kwargs,
+    ) -> None:
+        if unit is None or destroyed_by_unit is None:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            attacker_root = destroyed_by_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = destroyed_by_unit
+        try:
+            target_root = unit.get_attached_unit_root()
+        except Exception:
+            target_root = unit
+        if attacker_root is None or target_root is None:
+            return
+        if attacker_root.get_parent_army() == target_root.get_parent_army():
+            return
+        if not bool(getattr(attacker_root, "has_explosive_blight", lambda: False)()):
+            return
+        if destroyed_by_model is None:
+            return
+        center_model = last_model if last_model is not None else destroyed_by_model
+        if center_model is None:
+            return
+        try:
+            from ...rules.nurgles_gift import NurglesGiftManager
+        except Exception:
+            NurglesGiftManager = None
+        afflicted_bonus = 0
+        if NurglesGiftManager is not None:
+            try:
+                afflicted_bonus = 1 if NurglesGiftManager.get_afflicted_plague_for_unit(target_root, game=self, game_map=self.map) is not None else 0
+            except Exception:
+                afflicted_bonus = 0
+        try:
+            roll = int(get_roll("D6") or 0)
+        except Exception:
+            roll = 0
+        total = int(roll) + int(afflicted_bonus)
+        if int(total) < 5:
+            return
+        attacker_player = getattr(attacker_root.get_parent_army(), "player", None)
+        owner_id = str(getattr(attacker_player, "id", "") or "")
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        try:
+            from ...utility.aura_utils import distance_between_models_bases_3d
+        except Exception:
+            return
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for enemy in list(getattr(self.map, "units", []) or []):
+            if enemy is None:
+                continue
+            try:
+                enemy_root = enemy.get_attached_unit_root()
+            except Exception:
+                enemy_root = enemy
+            if enemy_root is None:
+                continue
+            eid = str(get_entity_id(enemy_root) or "")
+            if not eid or eid in seen:
+                continue
+            seen.add(eid)
+            if enemy_root.get_parent_army() is attacker_root.get_parent_army():
+                continue
+            if not self._unit_is_active_for_reactive_trigger(enemy_root):
+                continue
+            if enemy_root is target_root:
+                continue
+            in_range = False
+            target_models = list(getattr(enemy_root, "get_attached_unit_models", lambda: [])() or [])
+            for em in list(target_models):
+                if em is None or not getattr(em, "is_alive", True):
+                    continue
+                try:
+                    if float(distance_between_models_bases_3d(center_model, em)) <= 6.0 + 1e-6:
+                        in_range = True
+                        break
+                except Exception:
+                    continue
+            if in_range:
+                candidates.append(enemy_root)
+        if not candidates:
+            return
+        for cand in list(candidates):
+            sr = getattr(cand, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["post_shoot_afflicted_active"] = True
+            sr["post_shoot_afflicted_owner"] = owner_id
+            sr["post_shoot_afflicted_turn"] = int(turn or 0)
+            sr["post_shoot_afflicted_source"] = "Explosive Blight"
+            cand.special_rules = sr
+
+    def _on_unit_destroyed_extraction_of_fresh_disease(
+        self,
+        unit=None,
+        destroyed_by_unit=None,
+        destroyed_by_weapon_profile=None,
+        **_kwargs,
+    ) -> None:
+        if unit is None or destroyed_by_unit is None:
+            return
+        try:
+            attacker_root = destroyed_by_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = destroyed_by_unit
+        try:
+            target_root = unit.get_attached_unit_root()
+        except Exception:
+            target_root = unit
+        if attacker_root is None or target_root is None:
+            return
+        if attacker_root.get_parent_army() == target_root.get_parent_army():
+            return
+        wp = destroyed_by_weapon_profile
+        pw = getattr(wp, "parent_wargear", None)
+        if wp is None or pw is None or not bool(getattr(pw, "is_melee", lambda: False)()):
+            return
+
+        try:
+            members = list(attacker_root.get_attached_unit_members() or [])
+        except Exception:
+            members = [attacker_root]
+        if not members:
+            members = [attacker_root]
+
+        for member in list(members):
+            if member is None:
+                continue
+            if not bool(getattr(member, "has_extraction_of_fresh_disease", lambda: False)()):
+                continue
+            for model in list(getattr(member, "models", []) or []):
+                if model is None or not getattr(model, "is_alive", True):
+                    continue
+                if bool(getattr(model, "_extraction_of_fresh_disease_applied", False)):
+                    continue
+                try:
+                    current = int(getattr(model, "_objective_control", getattr(model, "objective_control", 0)) or 0)
+                except Exception:
+                    current = 0
+                model._objective_control = int(current + 6)
+                model._extraction_of_fresh_disease_applied = True
+
     def _on_shooting_targets_selected_blood_surge(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:
             return

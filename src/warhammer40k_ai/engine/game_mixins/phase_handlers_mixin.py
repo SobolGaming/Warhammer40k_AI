@@ -2356,6 +2356,158 @@ class GamePhaseHandlersMixin:
                     )
                     self.request_decision(request)
 
+    def _on_phase_start_inflamed_infections(self, player=None, phase=None, **_kwargs) -> None:
+        """Fight phase start: optional Inflamed Infections target selection."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "FIGHT_PHASE":
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+        from ...utility.aura_utils import model_within_engagement_range_of_unit
+
+        pending_models = set()
+        try:
+            queue = getattr(self, "decision_queue", None)
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                        continue
+                    ctx = dict(getattr(req, "context", {}) or {})
+                    if str(ctx.get("ability", "") or "") != "inflamed_infections":
+                        continue
+                    mid = str(ctx.get("model_id", "") or "")
+                    if mid:
+                        pending_models.add(mid)
+        except Exception:
+            pending_models = set()
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        def _model_sort_key(m):
+            try:
+                return str(get_entity_id(m))
+            except Exception:
+                return str(getattr(m, "name", "") or "")
+
+        for p in list(getattr(self, "players", []) or []):
+            if p is None:
+                continue
+            army = p.get_army()
+            if army is None:
+                continue
+            for unit in sorted(list(army.units or []), key=_unit_sort_key):
+                if unit is None:
+                    continue
+                if not unit.is_alive() or not getattr(unit, "deployed", True):
+                    continue
+                try:
+                    if unit.is_in_reserves() or unit.is_embarked:
+                        continue
+                except Exception:
+                    pass
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None or not root.is_alive():
+                    continue
+                try:
+                    models = list(root.get_attached_unit_models() or [])
+                except Exception:
+                    models = list(getattr(root, "models", []) or [])
+                if not models:
+                    continue
+                for model in sorted([m for m in models if getattr(m, "is_alive", True)], key=_model_sort_key):
+                    model_id = str(get_entity_id(model) or "")
+                    if model_id and model_id in pending_models:
+                        continue
+                    model_owner = getattr(model, "parent_unit", None)
+                    if model_owner is None:
+                        model_owner = root
+                    spec_fn = getattr(model_owner, "model_start_fight_phase_inflamed_infections_specs", None)
+                    if not callable(spec_fn):
+                        continue
+                    specs = spec_fn(model) or []
+                    if not specs:
+                        continue
+                    spec = specs[0]
+                    ability_name = str(spec.get("source", "") or "Inflamed Infections").strip() or "Inflamed Infections"
+                    try:
+                        threshold = int(spec.get("threshold", 5) or 5)
+                    except Exception:
+                        threshold = 5
+                    try:
+                        threshold_below_half = int(spec.get("threshold_below_half", threshold) or threshold)
+                    except Exception:
+                        threshold_below_half = threshold
+
+                    candidates = []
+                    seen_enemy = set()
+                    for enemy in list(game_map.get_enemy_units(root) or []):
+                        if enemy is None:
+                            continue
+                        try:
+                            enemy_root = enemy.get_attached_unit_root()
+                        except Exception:
+                            enemy_root = enemy
+                        if enemy_root is None or not enemy_root.is_alive():
+                            continue
+                        try:
+                            if not getattr(enemy_root, "deployed", True):
+                                continue
+                            if enemy_root.is_in_reserves() or enemy_root.is_embarked:
+                                continue
+                        except Exception:
+                            pass
+                        eid = str(get_entity_id(enemy_root) or "")
+                        if not eid or eid in seen_enemy:
+                            continue
+                        seen_enemy.add(eid)
+                        if not model_within_engagement_range_of_unit(model, enemy_root):
+                            continue
+                        candidates.append(enemy_root)
+                    if not candidates:
+                        continue
+                    try:
+                        candidates = sorted(candidates, key=_unit_sort_key)
+                    except Exception:
+                        pass
+
+                    options = [
+                        DecisionOption.create("None", payload={"action": "skip"}),
+                    ]
+                    for cand in candidates:
+                        options.append(
+                            DecisionOption.create(
+                                str(getattr(cand, "name", "Unit") or "Unit"),
+                                payload={"target_unit_id": get_entity_id(cand)},
+                            )
+                        )
+                    request = DecisionRequest.create(
+                        DECISION_CHOOSE_QUARRY,
+                        f"{ability_name}: select a target (or None).",
+                        player_id=getattr(p, "id", None),
+                        options=options,
+                        context={
+                            "ability": "inflamed_infections",
+                            "ability_name": ability_name,
+                            "source_unit_id": get_entity_id(root),
+                            "attacker_unit_id": get_entity_id(root),
+                            "model_id": model_id,
+                            "crit_hit_threshold": int(max(2, min(6, threshold))),
+                            "crit_hit_threshold_below_half": int(max(2, min(6, threshold_below_half))),
+                            "optional": True,
+                        },
+                    )
+                    self.request_decision(request)
+
     def _on_phase_start_fight_phase_target_attack_bonus(self, player=None, phase=None, **_kwargs) -> None:
         """Fight phase start: select an enemy unit to mark for attack bonuses (e.g., Blood Throne, The Eternal Dance)."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

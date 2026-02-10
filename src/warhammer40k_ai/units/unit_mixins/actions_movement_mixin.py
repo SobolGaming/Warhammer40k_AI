@@ -2600,7 +2600,7 @@ class ActionsMovementMixin:
                     return ""
         return choice
 
-    def get_unit_hit_reroll_modifiers(self, attack_type: str, *, target=None) -> dict:
+    def get_unit_hit_reroll_modifiers(self, attack_type: str, *, target=None, attacker_model=None) -> dict:
         """
         Return unit-level hit modifiers for this attached unit, parsed via attack_roll_parser.
         """
@@ -2789,6 +2789,59 @@ class ActionsMovementMixin:
                                 )
                                 source = str(sr.get("post_shoot_crit_hit_threshold_source", "") or "Post-shoot crit bonus").strip()
                                 crit_hit_reasons.append(f"{source}: critical hit on {int(thresh_val)}+")
+        except Exception:
+            pass
+
+        # Inflamed Infections: selected model scores critical hits on 5+ (or 4+ vs Below Half-strength) against marked target.
+        try:
+            if target is not None and attacker_model is not None:
+                game_local = None
+                try:
+                    game_local = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
+                except Exception:
+                    game_local = None
+                target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+                tsr = getattr(target_root, "special_rules", None)
+                if isinstance(tsr, dict) and tsr.get("inflamed_infections_active"):
+                    exp_phase = str(tsr.get("inflamed_infections_expires_phase", "") or "").strip().upper()
+                    phase_name = str(getattr(getattr(game_local, "phase", None), "name", "") or "").strip().upper()
+                    if not exp_phase or exp_phase == phase_name:
+                        try:
+                            marked_turn = int(tsr.get("inflamed_infections_turn", 0) or 0)
+                        except Exception:
+                            marked_turn = 0
+                        try:
+                            current_turn = int(getattr(game_local, "turn", 0) or 0)
+                        except Exception:
+                            current_turn = 0
+                        if not (marked_turn and current_turn and marked_turn != current_turn):
+                            owner_id = str(tsr.get("inflamed_infections_owner", "") or "")
+                            try:
+                                attacker_owner = str(getattr(getattr(root.get_parent_army(), "player", None), "id", "") or "")
+                            except Exception:
+                                attacker_owner = ""
+                            if owner_id and attacker_owner == owner_id:
+                                source_model_id = str(tsr.get("inflamed_infections_model_id", "") or "")
+                                attacker_model_id = str(get_entity_id(attacker_model) or "")
+                                if source_model_id and attacker_model_id and source_model_id == attacker_model_id:
+                                    try:
+                                        threshold = int(tsr.get("inflamed_infections_crit_hit_threshold", 5) or 5)
+                                    except Exception:
+                                        threshold = 5
+                                    is_below_half = False
+                                    try:
+                                        is_below_half = bool(getattr(target_root, "is_below_half_strength", lambda: False)())
+                                    except Exception:
+                                        is_below_half = False
+                                    if is_below_half:
+                                        try:
+                                            threshold = int(tsr.get("inflamed_infections_crit_hit_threshold_below_half", 4) or 4)
+                                        except Exception:
+                                            threshold = 4
+                                    threshold = max(2, min(6, int(threshold)))
+                                    crit_hit_threshold = threshold if crit_hit_threshold is None else min(int(crit_hit_threshold), threshold)
+                                    source = str(tsr.get("inflamed_infections_source", "") or "Inflamed Infections").strip() or "Inflamed Infections"
+                                    crit_hit_reasons.append(f"{source}: critical hit on {int(threshold)}+")
         except Exception:
             pass
 

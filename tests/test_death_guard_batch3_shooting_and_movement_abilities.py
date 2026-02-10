@@ -719,3 +719,535 @@ def test_horrifying_visage_select_one_decision_and_apply():
 
     assert enemy_a._tests == [2]
     assert int(getattr(enemy_a, "special_rules", {}).get("battle_shock_test_modifier", 0) or 0) == -1
+
+
+def test_lord_of_the_death_guard_boon_of_death_applies_and_is_once_per_turn():
+    game, dg_army, enemy_army, dg_player, _enemy_player = _build_game()
+    source = _make_unit(
+        "Mortarion",
+        "dg-mortarion",
+        faction_name="Death Guard",
+        faction_keywords=["DEATH GUARD"],
+        keywords=["MONSTER", "CHARACTER"],
+        abilities=[
+            {"name": "Lord of the Death Guard", "description": "Once per turn, this model can use one of the Lord of the Death Guard abilities (see left).", "type": "Datasheet", "parameter": ""},
+            {"name": "Boon of Death", "description": "In your opponent's Fight phase, after an enemy unit has selected its targets, select one friendly DEATH GUARD unit within 6\" of this model selected as a target of one or more of those attacks. Until the end of the phase, each time a model in that unit is destroyed by a melee attack, if that model has not fought this phase, roll one D6: on a 2+, do not remove it from play; that destroyed model can fight after the attacking unit has finished making its attacks, and is then removed from play.", "type": "Datasheet", "parameter": ""},
+        ],
+    )
+    friendly = _make_unit(
+        "Plague Marines",
+        "dg-friendly",
+        faction_name="Death Guard",
+        faction_keywords=["DEATH GUARD"],
+        keywords=["INFANTRY"],
+    )
+    enemy_attacker = _make_unit(
+        "Enemy Attacker",
+        "en-attacker",
+        faction_name="Enemy",
+        faction_keywords=["ENEMY"],
+        keywords=["INFANTRY"],
+    )
+    dg_army.add_unit(source)
+    dg_army.add_unit(friendly)
+    enemy_army.add_unit(enemy_attacker)
+    _deploy(source, friendly, enemy_attacker)
+    game.map.units = [source, friendly, enemy_attacker]
+    game.rebuild_entity_registry()
+
+    source.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+    friendly.models[0].set_location(2.0, 0.0, 0.0, 0.0)
+    enemy_attacker.models[0].set_location(2.5, 0.0, 0.0, 0.0)
+
+    game.turn = 2
+    game.phase = BattleRoundPhases.FIGHT_PHASE
+    game.current_player_index = 1
+
+    game._on_fight_targets_selected_boon_of_death(attacking_unit=enemy_attacker, target_units=[friendly])
+    request = next(
+        r
+        for r in list(game.decision_queue.list() or [])
+        if str(getattr(r, "decision_type", "")) == DECISION_CHOOSE_QUARRY
+        and str((getattr(r, "context", {}) or {}).get("ability", "")) == "boon_of_death"
+    )
+    option = next(
+        opt for opt in list(request.options or []) if str((opt.payload or {}).get("target_unit_id", "")) == str(friendly._id)
+    )
+    cmd_result = resolve_decision_command(game, request, option.option_id, player_id=dg_player.id)
+    assert bool(getattr(cmd_result, "ok", False)) is True
+
+    sr = getattr(friendly, "special_rules", {})
+    assert bool(sr.get("boon_of_death_active")) is True
+    assert source.lord_of_death_guard_used_this_turn(game=game) is True
+
+    game._on_fight_targets_selected_boon_of_death(attacking_unit=enemy_attacker, target_units=[friendly])
+    pending = [
+        r
+        for r in list(game.decision_queue.list() or [])
+        if str((getattr(r, "context", {}) or {}).get("ability", "")) == "boon_of_death"
+    ]
+    assert pending == []
+
+
+def test_lord_of_the_death_guard_boon_of_death_invalid_option_is_rejected():
+    game, dg_army, enemy_army, dg_player, _enemy_player = _build_game()
+    source = _make_unit(
+        "Mortarion",
+        "dg-mortarion",
+        faction_name="Death Guard",
+        faction_keywords=["DEATH GUARD"],
+        keywords=["MONSTER", "CHARACTER"],
+        abilities=[
+            {"name": "Lord of the Death Guard", "description": "Once per turn, this model can use one of the Lord of the Death Guard abilities (see left).", "type": "Datasheet", "parameter": ""},
+            {"name": "Boon of Death", "description": "Reactive boon.", "type": "Datasheet", "parameter": ""},
+        ],
+    )
+    friendly = _make_unit(
+        "Plague Marines",
+        "dg-friendly",
+        faction_name="Death Guard",
+        faction_keywords=["DEATH GUARD"],
+        keywords=["INFANTRY"],
+    )
+    enemy_attacker = _make_unit(
+        "Enemy Attacker",
+        "en-attacker",
+        faction_name="Enemy",
+        faction_keywords=["ENEMY"],
+        keywords=["INFANTRY"],
+    )
+    dg_army.add_unit(source)
+    dg_army.add_unit(friendly)
+    enemy_army.add_unit(enemy_attacker)
+    _deploy(source, friendly, enemy_attacker)
+    game.map.units = [source, friendly, enemy_attacker]
+    game.rebuild_entity_registry()
+
+    source.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+    friendly.models[0].set_location(2.0, 0.0, 0.0, 0.0)
+    enemy_attacker.models[0].set_location(2.5, 0.0, 0.0, 0.0)
+
+    game.turn = 2
+    game.phase = BattleRoundPhases.FIGHT_PHASE
+    game.current_player_index = 1
+
+    game._on_fight_targets_selected_boon_of_death(attacking_unit=enemy_attacker, target_units=[friendly])
+    request = next(
+        r
+        for r in list(game.decision_queue.list() or [])
+        if str((getattr(r, "context", {}) or {}).get("ability", "")) == "boon_of_death"
+    )
+    cmd_result = resolve_decision_command(game, request, "invalid-option-id", player_id=dg_player.id)
+    assert bool(getattr(cmd_result, "ok", False)) is False
+    assert source.lord_of_death_guard_used_this_turn(game=game) is False
+
+
+def test_inflamed_infections_queues_and_marks_target():
+    game, dg_army, enemy_army, dg_player, _enemy_player = _build_game()
+    source = _make_unit(
+        "Plague Surgeon",
+        "dg-surgeon",
+        faction_name="Death Guard",
+        faction_keywords=["DEATH GUARD"],
+        keywords=["INFANTRY", "CHARACTER"],
+        abilities=[
+            {
+                "name": "Inflamed Infections",
+                "description": (
+                    "At the start of the Fight phase, you can select one enemy unit within Engagement Range of this model. "
+                    "Until the end of the phase, each time this model makes an attack that targets that unit, an unmodified "
+                    "Hit roll of 5+ scores a Critical Hit (or 4+ if that unit is Below Half-strength)."
+                ),
+                "type": "Datasheet",
+                "parameter": "",
+            }
+        ],
+    )
+    enemy = _make_unit(
+        "Enemy Unit",
+        "en-unit",
+        faction_name="Enemy",
+        faction_keywords=["ENEMY"],
+        keywords=["INFANTRY"],
+    )
+    dg_army.add_unit(source)
+    enemy_army.add_unit(enemy)
+    _deploy(source, enemy)
+    game.map.units = [source, enemy]
+    game.rebuild_entity_registry()
+
+    source.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+    enemy.models[0].set_location(1.0, 0.0, 0.0, 0.0)
+
+    game.turn = 2
+    game.phase = BattleRoundPhases.FIGHT_PHASE
+    game.current_player_index = 0
+
+    game._on_phase_start_inflamed_infections(player=dg_player, phase=game.phase)
+    request = next(
+        r
+        for r in list(game.decision_queue.list() or [])
+        if str((getattr(r, "context", {}) or {}).get("ability", "")) == "inflamed_infections"
+    )
+    choice = next(
+        opt for opt in list(request.options or []) if str((opt.payload or {}).get("target_unit_id", "")) == str(enemy._id)
+    )
+    cmd_result = resolve_decision_command(game, request, choice.option_id, player_id=dg_player.id)
+    assert bool(getattr(cmd_result, "ok", False)) is True
+
+    sr = getattr(enemy, "special_rules", {})
+    assert bool(sr.get("inflamed_infections_active")) is True
+    assert int(sr.get("inflamed_infections_crit_hit_threshold", 0) or 0) == 5
+    assert int(sr.get("inflamed_infections_crit_hit_threshold_below_half", 0) or 0) == 4
+
+
+def test_diseased_influence_queues_reactive_move():
+    game, dg_army, enemy_army, dg_player, _enemy_player = _build_game()
+    source = _make_unit(
+        "Mortarion",
+        "dg-mortarion",
+        faction_name="Death Guard",
+        faction_keywords=["DEATH GUARD"],
+        keywords=["MONSTER", "CHARACTER"],
+        abilities=[
+            {"name": "Lord of the Death Guard", "description": "Once per turn, this model can use one of the Lord of the Death Guard abilities (see left).", "type": "Datasheet", "parameter": ""},
+            {"name": "Diseased Influence", "description": "Reactive move.", "type": "Datasheet", "parameter": ""},
+        ],
+    )
+    friendly = _make_unit(
+        "Death Guard Unit",
+        "dg-friendly",
+        faction_name="Death Guard",
+        faction_keywords=["DEATH GUARD"],
+        keywords=["INFANTRY"],
+    )
+    mover = _make_unit(
+        "Enemy Mover",
+        "en-mover",
+        faction_name="Enemy",
+        faction_keywords=["ENEMY"],
+        keywords=["INFANTRY"],
+    )
+    dg_army.add_unit(source)
+    dg_army.add_unit(friendly)
+    enemy_army.add_unit(mover)
+    _deploy(source, friendly, mover)
+    game.map.units = [source, friendly, mover]
+    game.rebuild_entity_registry()
+
+    source.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+    friendly.models[0].set_location(3.0, 0.0, 0.0, 0.0)
+    mover.models[0].set_location(8.0, 0.0, 0.0, 0.0)
+    game.map.get_enemy_units = lambda unit: [mover] if unit is friendly else []
+    game.map.is_within_engagement_range = lambda _a, _b: False
+
+    game.turn = 2
+    game.phase = BattleRoundPhases.MOVEMENT_PHASE
+    game.current_player_index = 1
+
+    game._on_unit_move_ended_diseased_influence(unit=mover, action="move")
+    request = next(
+        r
+        for r in list(game.decision_queue.list() or [])
+        if str((getattr(r, "context", {}) or {}).get("ability", "")) == "diseased_influence"
+    )
+    choice = next(
+        opt for opt in list(request.options or []) if str((opt.payload or {}).get("target_unit_id", "")) == str(friendly._id)
+    )
+
+    captured = {}
+
+    def _capture_reactive_move(**kwargs):
+        captured.update(kwargs)
+
+    game._queue_reactive_move_movement_decision = _capture_reactive_move
+    cmd_result = resolve_decision_command(game, request, choice.option_id, player_id=dg_player.id)
+    assert bool(getattr(cmd_result, "ok", False)) is True
+    assert captured.get("unit") is friendly
+    assert int(captured.get("max_distance", 0) or 0) == 5
+    assert str(captured.get("kind", "")) == "diseased_influence"
+    assert source.lord_of_death_guard_used_this_turn(game=game) is True
+
+
+def test_inflamed_reprisal_triggers_reactive_shooting_after_enemy_resolves():
+    game, dg_army, enemy_army, dg_player, _enemy_player = _build_game()
+    source = _make_unit(
+        "Mortarion",
+        "dg-mortarion",
+        faction_name="Death Guard",
+        faction_keywords=["DEATH GUARD"],
+        keywords=["MONSTER", "CHARACTER"],
+        abilities=[
+            {"name": "Lord of the Death Guard", "description": "Once per turn, this model can use one of the Lord of the Death Guard abilities (see left).", "type": "Datasheet", "parameter": ""},
+            {"name": "Inflamed Reprisal", "description": "Reactive shooting.", "type": "Datasheet", "parameter": ""},
+        ],
+    )
+    friendly = _make_unit(
+        "Death Guard Unit",
+        "dg-friendly",
+        faction_name="Death Guard",
+        faction_keywords=["DEATH GUARD"],
+        keywords=["INFANTRY"],
+    )
+    enemy_attacker = _make_unit(
+        "Enemy Shooter",
+        "en-attacker",
+        faction_name="Enemy",
+        faction_keywords=["ENEMY"],
+        keywords=["INFANTRY"],
+    )
+    dg_army.add_unit(source)
+    dg_army.add_unit(friendly)
+    enemy_army.add_unit(enemy_attacker)
+    _deploy(source, friendly, enemy_attacker)
+    game.map.units = [source, friendly, enemy_attacker]
+    game.rebuild_entity_registry()
+
+    source.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+    friendly.models[0].set_location(2.0, 0.0, 0.0, 0.0)
+    enemy_attacker.models[0].set_location(8.0, 0.0, 0.0, 0.0)
+
+    game.turn = 2
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.current_player_index = 1
+
+    game._on_shooting_targets_selected_inflamed_reprisal(attacking_unit=enemy_attacker, target_units=[friendly])
+    request = next(
+        r
+        for r in list(game.decision_queue.list() or [])
+        if str((getattr(r, "context", {}) or {}).get("ability", "")) == "inflamed_reprisal"
+    )
+    choice = next(
+        opt for opt in list(request.options or []) if str((opt.payload or {}).get("target_unit_id", "")) == str(friendly._id)
+    )
+    cmd_result = resolve_decision_command(game, request, choice.option_id, player_id=dg_player.id)
+    assert bool(getattr(cmd_result, "ok", False)) is True
+
+    game._setup_reactive_can_shoot_target = lambda _u, _t: True
+    captured = {}
+
+    def _queue_reactive_shoot(*, player, unit, target_unit, source):
+        captured["player"] = player
+        captured["unit"] = unit
+        captured["target_unit"] = target_unit
+        captured["source"] = source
+        return SimpleNamespace(context={})
+
+    game._queue_setup_reactive_shooting_decision = _queue_reactive_shoot
+    game._on_unit_shooting_resolved_inflamed_reprisal(attacker_unit=enemy_attacker)
+
+    assert captured.get("unit") is friendly
+    assert captured.get("target_unit") is enemy_attacker
+    assert str(captured.get("source", "")) == "Inflamed Reprisal"
+
+
+def test_curse_of_walking_pox_tracks_kills_and_returns_models():
+    game, dg_army, enemy_army, dg_player, _enemy_player = _build_game()
+    source = _make_unit(
+        "Poxwalkers",
+        "dg-pox",
+        faction_name="Death Guard",
+        faction_keywords=["DEATH GUARD"],
+        keywords=["INFANTRY", "POXWALKER"],
+        abilities=[
+            {
+                "name": "Curse of the Walking Pox",
+                "description": "Each time a model in this unit destroys an enemy model, return destroyed Poxwalkers.",
+                "type": "Datasheet",
+                "parameter": "",
+            }
+        ],
+    )
+    enemy = _make_unit(
+        "Enemy Unit",
+        "en-unit",
+        faction_name="Enemy",
+        faction_keywords=["ENEMY"],
+        keywords=["INFANTRY"],
+    )
+    dg_army.add_unit(source)
+    enemy_army.add_unit(enemy)
+    _deploy(source, enemy)
+    game.map.units = [source, enemy]
+    game.rebuild_entity_registry()
+
+    game.turn = 2
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.current_player_index = 0
+
+    source_model = source.models[0]
+    target_model = enemy.models[0]
+    game._on_model_destroyed_curse_of_the_walking_pox(
+        attacker_model=source_model,
+        attacker_unit=source,
+        target_model=target_model,
+        target_unit=enemy,
+    )
+    assert int(getattr(source, "special_rules", {}).get("curse_of_walking_pox_pending_kills", 0) or 0) == 1
+
+    destroyed_model = SimpleNamespace(
+        has_any_keyword=lambda kw: str(kw or "").strip().upper() == "POXWALKER",
+        has_keyword=lambda kw: str(kw or "").strip().upper() == "POXWALKER",
+    )
+    source.models_lost = [destroyed_model]
+    source.return_destroyed_bodyguard_models = lambda count, **_kwargs: int(count)
+
+    game._on_unit_shooting_resolved_curse_of_the_walking_pox(attacker_unit=source)
+    request = next(
+        r
+        for r in list(game.decision_queue.list() or [])
+        if str((getattr(r, "context", {}) or {}).get("ability", "")) == "curse_of_walking_pox"
+    )
+    option = next(opt for opt in list(request.options or []) if int((opt.payload or {}).get("returns", 0) or 0) == 1)
+    cmd_result = resolve_decision_command(game, request, option.option_id, player_id=dg_player.id)
+    assert bool(getattr(cmd_result, "ok", False)) is True
+    assert int(getattr(source, "special_rules", {}).get("curse_of_walking_pox_pending_kills", 0) or 0) == 0
+
+
+def test_lethal_ichor_applies_mortals_after_fight_sequence():
+    game, dg_army, enemy_army, _dg_player, _enemy_player = _build_game()
+    defender = _make_unit(
+        "Chaos Spawn",
+        "dg-spawn",
+        faction_name="Death Guard",
+        faction_keywords=["DEATH GUARD"],
+        keywords=["BEAST"],
+        abilities=[{"name": "Lethal Ichor", "description": "When attacks are allocated, roll and deal mortals.", "type": "Datasheet", "parameter": ""}],
+    )
+    attacker = _make_unit(
+        "Enemy Attacker",
+        "en-attacker",
+        faction_name="Enemy",
+        faction_keywords=["ENEMY"],
+        keywords=["INFANTRY"],
+    )
+    dg_army.add_unit(defender)
+    enemy_army.add_unit(attacker)
+    _deploy(defender, attacker)
+    game.map.units = [defender, attacker]
+    game.rebuild_entity_registry()
+    game.map.get_enemy_units = lambda unit: [defender] if unit is attacker else [attacker]
+
+    game.turn = 2
+    game.phase = BattleRoundPhases.FIGHT_PHASE
+    game.current_player_index = 1
+
+    attacker_id = str(attacker._id)
+    defender.special_rules["lethal_ichor_allocations"] = {attacker_id: 3}
+    defender.special_rules["lethal_ichor_source"] = "Lethal Ichor"
+    applied = []
+    defender._apply_mortal_wounds_to_unit = lambda unit, amount, **_kw: applied.append((unit, int(amount)))
+
+    rolls = iter([4, 2, 5])
+    with patch("warhammer40k_ai.engine.game_mixins.shooting_fight_handlers_mixin.get_roll", side_effect=lambda _spec: next(rolls)):
+        game._on_fight_sequence_complete_lethal_ichor(unit=attacker)
+
+    assert applied == [(attacker, 2)]
+    assert "lethal_ichor_allocations" not in getattr(defender, "special_rules", {})
+
+
+def test_explosive_blight_marks_nearby_enemy_units_as_afflicted():
+    game, dg_army, enemy_army, _dg_player, _enemy_player = _build_game()
+    attacker = _make_unit(
+        "Foetid Bloat-drone with Heavy Blight Launcher",
+        "dg-drone",
+        faction_name="Death Guard",
+        faction_keywords=["DEATH GUARD"],
+        keywords=["VEHICLE"],
+        abilities=[{"name": "Explosive Blight", "description": "Destroyed unit explosion afflicts nearby enemies.", "type": "Datasheet", "parameter": ""}],
+    )
+    destroyed = _make_unit(
+        "Destroyed Unit",
+        "en-destroyed",
+        faction_name="Enemy",
+        faction_keywords=["ENEMY"],
+        keywords=["INFANTRY"],
+    )
+    nearby = _make_unit(
+        "Nearby Enemy",
+        "en-nearby",
+        faction_name="Enemy",
+        faction_keywords=["ENEMY"],
+        keywords=["INFANTRY"],
+    )
+    far = _make_unit(
+        "Far Enemy",
+        "en-far",
+        faction_name="Enemy",
+        faction_keywords=["ENEMY"],
+        keywords=["INFANTRY"],
+    )
+    dg_army.add_unit(attacker)
+    enemy_army.add_unit(destroyed)
+    enemy_army.add_unit(nearby)
+    enemy_army.add_unit(far)
+    _deploy(attacker, destroyed, nearby, far)
+    game.map.units = [attacker, destroyed, nearby, far]
+    game.rebuild_entity_registry()
+
+    attacker.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+    destroyed.models[0].set_location(4.0, 0.0, 0.0, 0.0)
+    nearby.models[0].set_location(7.0, 0.0, 0.0, 0.0)
+    far.models[0].set_location(20.0, 0.0, 0.0, 0.0)
+
+    game.turn = 2
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.current_player_index = 0
+
+    with patch("warhammer40k_ai.engine.game_mixins.shooting_fight_handlers_mixin.get_roll", return_value=5), patch(
+        "warhammer40k_ai.rules.nurgles_gift.NurglesGiftManager.get_afflicted_plague_for_unit",
+        return_value=None,
+    ):
+        game._on_unit_destroyed_explosive_blight(
+            unit=destroyed,
+            destroyed_by_unit=attacker,
+            destroyed_by_model=attacker.models[0],
+            last_model=destroyed.models[0],
+        )
+
+    assert bool(getattr(nearby, "special_rules", {}).get("post_shoot_afflicted_active")) is True
+    assert bool(getattr(far, "special_rules", {}).get("post_shoot_afflicted_active", False)) is False
+
+
+def test_extraction_of_fresh_disease_increases_oc_once_per_model():
+    game, dg_army, enemy_army, _dg_player, _enemy_player = _build_game()
+    attacker = _make_unit(
+        "Biologus Putrifier",
+        "dg-putrifier",
+        faction_name="Death Guard",
+        faction_keywords=["DEATH GUARD"],
+        keywords=["INFANTRY", "CHARACTER"],
+        abilities=[{"name": "Extraction of Fresh Disease", "description": "Once per battle, gain +6 OC after melee kill.", "type": "Datasheet", "parameter": ""}],
+    )
+    enemy = _make_unit(
+        "Enemy Unit",
+        "en-unit",
+        faction_name="Enemy",
+        faction_keywords=["ENEMY"],
+        keywords=["INFANTRY"],
+    )
+    dg_army.add_unit(attacker)
+    enemy_army.add_unit(enemy)
+    _deploy(attacker, enemy)
+    game.map.units = [attacker, enemy]
+    game.rebuild_entity_registry()
+
+    wp = SimpleNamespace(parent_wargear=SimpleNamespace(is_melee=lambda: True))
+    model = attacker.models[0]
+    start_oc = int(getattr(model, "_objective_control", getattr(model, "objective_control", 0)) or 0)
+
+    game._on_unit_destroyed_extraction_of_fresh_disease(
+        unit=enemy,
+        destroyed_by_unit=attacker,
+        destroyed_by_weapon_profile=wp,
+    )
+    first_oc = int(getattr(model, "_objective_control", getattr(model, "objective_control", 0)) or 0)
+    assert first_oc == start_oc + 6
+
+    game._on_unit_destroyed_extraction_of_fresh_disease(
+        unit=enemy,
+        destroyed_by_unit=attacker,
+        destroyed_by_weapon_profile=wp,
+    )
+    second_oc = int(getattr(model, "_objective_control", getattr(model, "objective_control", 0)) or 0)
+    assert second_oc == first_oc

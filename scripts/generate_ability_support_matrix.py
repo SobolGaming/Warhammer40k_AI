@@ -2433,6 +2433,50 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("DG", "Tocsin of Misery (Aura)"): ("Supported", "Opponent Command phase: below Starting Strength enemies within 9\" test Battle-shock; PSYKER targets take the test at -1."),
         ("DG", "Unholy Resilience"): ("Supported", "First destruction each battle round can return at end of phase on 2+ with remaining wounds, once per battle."),
         ("DG", "Shroud of Disease"): ("Supported", "Leading: attached unit can only be targeted by ranged attacks within 18\"."),
+        ("DG", "Boon of Death"): (
+            "Supported",
+            "Opponent Fight phase reaction: once per turn, choose a friendly DEATH GUARD unit within 6\" that was selected as a melee target; that unit gains melee fight-on-death on 2+ until end of phase.",
+        ),
+        ("DG", "Diseased Influence"): (
+            "Supported",
+            "Opponent Movement phase reaction: once per turn after an enemy ends a Normal/Advance/Fall Back move within 9\", choose a friendly DEATH GUARD unit within 6\" (not engaged) to make a reactive Normal move up to 5\".",
+        ),
+        ("DG", "Explosive Blight"): (
+            "Supported",
+            "After this model destroys an enemy unit in Shooting, roll D6 (+1 if destroyed unit is Afflicted); on 5+, other enemy units within 6\" become Afflicted until your next turn.",
+        ),
+        ("DG", "Extraction of Fresh Disease"): (
+            "Supported",
+            "Once per battle, when this model's melee weapon destroys an enemy unit, that model gains +6 Objective Control for the rest of the battle.",
+        ),
+        ("DG", "Icon of Despair (Aura)"): (
+            "Supported",
+            "Enemy units within 6\" of the bearer have Leadership worsened by 1.",
+        ),
+        ("DG", "Inflamed Infections"): (
+            "Supported",
+            "Start of Fight phase: optional engaged enemy selection (with None) for the model; that model scores critical hits on 5+ (or 4+ while target is Below Half-strength) against the chosen unit until phase end.",
+        ),
+        ("DG", "Inflamed Reprisal"): (
+            "Supported",
+            "Opponent Shooting phase reaction: once per turn, choose a friendly DEATH GUARD unit within 6\" and not Battle-shocked that was targeted by the attacker; after attacks resolve, it can shoot that attacker out of phase.",
+        ),
+        ("DG", "Lethal Ichor"): (
+            "Supported",
+            "Fight phase: each time a melee attack is allocated to this unit, track allocations (max 6) by attacker; after attacker resolves, roll D6 per allocation and deal 1 mortal wound per 4+ to the attacker.",
+        ),
+        ("DG", "Curse of the Walking Pox"): (
+            "Supported",
+            "Track enemy model kills by POXWALKER attacks (and Eater Plague where applicable) and offer an end-of-sequence optional return count selection to return destroyed Poxwalker Bodyguard models.",
+        ),
+        ("DG", "Lord of the Death Guard"): (
+            "Supported",
+            "Mortarion once-per-turn gate for Boon of Death, Inflamed Reprisal, and Diseased Influence with deterministic turn ownership tracking.",
+        ),
+        ("DG", "DEPLOYMENT"): (
+            "Supported",
+            "Miasmic Malignifier deployment is represented by standard fortification setup in the engine; the two-piece terrain representation is abstracted to a single fortification unit for gameplay effects.",
+        ),
         ("DRU", "ARCHON'S RETINUE"): ("Partial", "Scouts 7\" applied without leader/attachment restriction (affects unit)."),
         ("DRU", "Blur of Blades"): ("Supported", "Leading: unit gains Fights First."),
         ("DRU", "Blur of Movement"): ("Supported", "Charge-after-Advance eligibility."),
@@ -2717,6 +2761,10 @@ def _datasheet_ability_support_by_name_faction_datasheet() -> Dict[Tuple[str, st
         ("GC", "Psychic Spoor", "000001569"): (
             "Supported",
             "BR1 prey selection; attacks vs prey can re-roll Hit and Wound rolls (no re-pick on destruction).",
+        ),
+        ("DG", "DEPLOYMENT", "000002462"): (
+            "Supported",
+            "Miasmic Malignifier deployment is represented by standard fortification setup in the engine; the two-piece terrain representation is abstracted to a single fortification unit for gameplay effects.",
         ),
     }
     out: Dict[Tuple[str, str, str], Tuple[str, str]] = {}

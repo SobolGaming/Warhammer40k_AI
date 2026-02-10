@@ -2143,6 +2143,94 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         if game is not None and hasattr(game, "request_decision"):
             game.request_decision(req)
         return None
+    if ability == "curse_of_walking_pox":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        try:
+            root = source_unit.get_attached_unit_root()
+        except Exception:
+            root = source_unit
+        if root is None:
+            return None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        try:
+            pending = int(sr.get("curse_of_walking_pox_pending_kills", 0) or 0)
+        except Exception:
+            pending = 0
+        if pending <= 0:
+            return None
+
+        if is_skip_choice(request, result):
+            sr["curse_of_walking_pox_pending_kills"] = 0
+            root.special_rules = sr
+            return None
+
+        try:
+            requested_returns = int(payload.get("returns", payload.get("return_models", 0)) or 0)
+        except Exception:
+            requested_returns = 0
+        if requested_returns <= 0:
+            try:
+                requested_returns = int(ctx.get("max_returns", 0) or 0)
+            except Exception:
+                requested_returns = 0
+        requested_returns = max(0, min(int(requested_returns), int(pending)))
+
+        destroyed = list(getattr(root, "models_lost", []) or [])
+        poxwalker_destroyed = []
+        for model in destroyed:
+            if model is None:
+                continue
+            is_poxwalker = False
+            try:
+                is_poxwalker = bool(getattr(model, "has_any_keyword", lambda *_a, **_k: False)("POXWALKER"))
+            except Exception:
+                is_poxwalker = False
+            if not is_poxwalker:
+                try:
+                    is_poxwalker = bool(getattr(model, "has_keyword", lambda *_a, **_k: False)("POXWALKER"))
+                except Exception:
+                    is_poxwalker = False
+            if not is_poxwalker:
+                continue
+            poxwalker_destroyed.append(model)
+
+        available = len(poxwalker_destroyed)
+        returns = max(0, min(int(requested_returns), int(available)))
+        returned = 0
+        if returns > 0:
+            try:
+                returned = int(
+                    root.return_destroyed_bodyguard_models(
+                        int(returns),
+                        game_map=getattr(game, "map", None),
+                        chosen_models=list(poxwalker_destroyed[:returns]),
+                        placement_source="curse_of_walking_pox",
+                    )
+                    or 0
+                )
+            except Exception:
+                returned = 0
+        sr["curse_of_walking_pox_pending_kills"] = 0
+        root.special_rules = sr
+        try:
+            player = getattr(root.get_parent_army(), "player", None)
+        except Exception:
+            player = None
+        ability_name = str(ctx.get("ability_name", "") or "Curse of the Walking Pox").strip() or "Curse of the Walking Pox"
+        try:
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: returned {int(returned)} Poxwalker model(s) to {getattr(root, 'name', 'Unit')}.",
+            )
+        except Exception:
+            pass
+        return None
     if is_skip_choice(request, result):
         return None
     payload = _option_payload(request, result)
@@ -3960,6 +4048,12 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         if callable(append_dice) and player is not None:
             append_dice(player, f"{ability_name} mortal wounds: {int(mortal)}")
         if mortal > 0 and source_root is not None and recipient is not None:
+            sr_source = getattr(source_root, "special_rules", None)
+            if not isinstance(sr_source, dict):
+                sr_source = {}
+            had_marker = bool(sr_source.get("curse_of_walking_pox_count_eater_plague", False))
+            sr_source["curse_of_walking_pox_count_eater_plague"] = True
+            source_root.special_rules = sr_source
             try:
                 source_root._apply_mortal_wounds_to_unit(
                     recipient,
@@ -3969,6 +4063,13 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 )
             except Exception:
                 pass
+            finally:
+                if not had_marker:
+                    sr_source = getattr(source_root, "special_rules", None)
+                    if not isinstance(sr_source, dict):
+                        sr_source = {}
+                    sr_source.pop("curse_of_walking_pox_count_eater_plague", None)
+                    source_root.special_rules = sr_source
         try:
             rname = str(getattr(recipient, "name", "Unit") or "Unit")
             if recipient is source_root:
@@ -4471,6 +4572,217 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             try:
                 tname = str(getattr(target_root, "name", "Unit") or "Unit")
                 _log_action_for_players(game, player, f"{ability_name}: {tname} marked (re-roll Wound rolls of 1).")
+            except Exception:
+                pass
+    if str(ctx.get("ability", "") or "") == "inflamed_infections":
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("attacker_unit_id") or ctx.get("unit_id"))
+        if source_unit is not None and chosen is not None:
+            try:
+                source_root = source_unit.get_attached_unit_root()
+            except Exception:
+                source_root = source_unit
+            try:
+                target_root = chosen.get_attached_unit_root()
+            except Exception:
+                target_root = chosen
+            try:
+                player = getattr(getattr(source_root, "get_parent_army", lambda: None)(), "player", None)
+            except Exception:
+                player = None
+            owner_id = str(getattr(player, "id", "") or "")
+            try:
+                turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            ability_name = str(ctx.get("ability_name", "") or "Inflamed Infections").strip() or "Inflamed Infections"
+            model_id = str(ctx.get("model_id", "") or "")
+            try:
+                threshold = int(ctx.get("crit_hit_threshold", 5) or 5)
+            except Exception:
+                threshold = 5
+            try:
+                threshold_below_half = int(ctx.get("crit_hit_threshold_below_half", threshold) or threshold)
+            except Exception:
+                threshold_below_half = threshold
+            threshold = max(2, min(6, int(threshold)))
+            threshold_below_half = max(2, min(6, int(threshold_below_half)))
+            sr = getattr(target_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["inflamed_infections_active"] = True
+            sr["inflamed_infections_owner"] = owner_id
+            sr["inflamed_infections_turn"] = int(turn or 0)
+            sr["inflamed_infections_source"] = ability_name
+            sr["inflamed_infections_model_id"] = model_id
+            sr["inflamed_infections_crit_hit_threshold"] = int(threshold)
+            sr["inflamed_infections_crit_hit_threshold_below_half"] = int(threshold_below_half)
+            sr["inflamed_infections_expires_phase"] = "FIGHT_PHASE"
+            target_root.special_rules = sr
+            try:
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"{ability_name}: {getattr(target_root, 'name', 'Unit')} marked for critical hits on {int(threshold)}+ ({int(threshold_below_half)}+ while Below Half-strength).",
+                )
+            except Exception:
+                pass
+    if str(ctx.get("ability", "") or "") == "boon_of_death":
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is not None and chosen is not None:
+            try:
+                source_root = source_unit.get_attached_unit_root()
+            except Exception:
+                source_root = source_unit
+            try:
+                target_root = chosen.get_attached_unit_root()
+            except Exception:
+                target_root = chosen
+            try:
+                player = getattr(getattr(source_root, "get_parent_army", lambda: None)(), "player", None)
+            except Exception:
+                player = None
+            owner_id = str(getattr(player, "id", "") or "")
+            try:
+                turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            ability_name = str(ctx.get("ability_name", "") or "Boon of Death").strip() or "Boon of Death"
+            sr = getattr(target_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["boon_of_death_active"] = True
+            sr["boon_of_death_owner"] = owner_id
+            sr["boon_of_death_turn"] = int(turn or 0)
+            sr["boon_of_death_source"] = ability_name
+            sr["boon_of_death_threshold"] = 2
+            sr["boon_of_death_expires_phase"] = "FIGHT_PHASE"
+            target_root.special_rules = sr
+            try:
+                mark_used = getattr(source_root, "mark_lord_of_death_guard_used", None)
+                if callable(mark_used):
+                    mark_used(game=game, ability_name=ability_name)
+            except Exception:
+                pass
+            try:
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"{ability_name}: {getattr(target_root, 'name', 'Unit')} can fight on death on 2+ this phase.",
+                )
+            except Exception:
+                pass
+    if str(ctx.get("ability", "") or "") == "inflamed_reprisal":
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is not None and chosen is not None:
+            try:
+                source_root = source_unit.get_attached_unit_root()
+            except Exception:
+                source_root = source_unit
+            try:
+                chosen_root = chosen.get_attached_unit_root()
+            except Exception:
+                chosen_root = chosen
+            attacker_unit = resolve_unit(game, ctx.get("attacker_unit_id"))
+            try:
+                attacker_root = attacker_unit.get_attached_unit_root() if attacker_unit is not None else None
+            except Exception:
+                attacker_root = attacker_unit
+            if attacker_root is None:
+                return None
+            try:
+                player = getattr(getattr(source_root, "get_parent_army", lambda: None)(), "player", None)
+            except Exception:
+                player = None
+            ability_name = str(ctx.get("ability_name", "") or "Inflamed Reprisal").strip() or "Inflamed Reprisal"
+            try:
+                turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            pending = getattr(game, "_inflamed_reprisal_pending", None)
+            if not isinstance(pending, list):
+                pending = []
+            entry = {
+                "turn": int(turn or 0),
+                "source_unit_id": str(get_entity_id(source_root) or ""),
+                "selected_unit_id": str(get_entity_id(chosen_root) or ""),
+                "attacker_unit_id": str(get_entity_id(attacker_root) or ""),
+                "ability_name": ability_name,
+            }
+            duplicate = False
+            for existing in list(pending or []):
+                if not isinstance(existing, dict):
+                    continue
+                if str(existing.get("turn", "")) != str(entry.get("turn", "")):
+                    continue
+                if str(existing.get("source_unit_id", "")) != str(entry.get("source_unit_id", "")):
+                    continue
+                if str(existing.get("selected_unit_id", "")) != str(entry.get("selected_unit_id", "")):
+                    continue
+                if str(existing.get("attacker_unit_id", "")) != str(entry.get("attacker_unit_id", "")):
+                    continue
+                duplicate = True
+                break
+            if not duplicate:
+                pending.append(entry)
+            game._inflamed_reprisal_pending = pending
+            try:
+                mark_used = getattr(source_root, "mark_lord_of_death_guard_used", None)
+                if callable(mark_used):
+                    mark_used(game=game, ability_name=ability_name)
+            except Exception:
+                pass
+            try:
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"{ability_name}: {getattr(chosen_root, 'name', 'Unit')} will shoot after {getattr(attacker_root, 'name', 'Unit')} finishes its attacks.",
+                )
+            except Exception:
+                pass
+    if str(ctx.get("ability", "") or "") == "diseased_influence":
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is not None and chosen is not None:
+            try:
+                source_root = source_unit.get_attached_unit_root()
+            except Exception:
+                source_root = source_unit
+            try:
+                chosen_root = chosen.get_attached_unit_root()
+            except Exception:
+                chosen_root = chosen
+            moving_unit = resolve_unit(game, ctx.get("moving_unit_id"))
+            try:
+                player = getattr(getattr(source_root, "get_parent_army", lambda: None)(), "player", None)
+            except Exception:
+                player = None
+            ability_name = str(ctx.get("ability_name", "") or "Diseased Influence").strip() or "Diseased Influence"
+            try:
+                queue_move = getattr(game, "_queue_reactive_move_movement_decision", None)
+                if callable(queue_move):
+                    queue_move(
+                        player=player,
+                        unit=chosen_root,
+                        max_distance=5,
+                        kind="diseased_influence",
+                        movement_type="reactive",
+                        source=ability_name,
+                        moving_unit=moving_unit,
+                        allow_skip=True,
+                    )
+            except Exception:
+                pass
+            try:
+                mark_used = getattr(source_root, "mark_lord_of_death_guard_used", None)
+                if callable(mark_used):
+                    mark_used(game=game, ability_name=ability_name)
+            except Exception:
+                pass
+            try:
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"{ability_name}: {getattr(chosen_root, 'name', 'Unit')} can make a Normal move of up to 5\".",
+                )
             except Exception:
                 pass
     if str(ctx.get("ability", "") or "") == "misfortune":

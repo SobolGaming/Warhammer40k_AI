@@ -3120,6 +3120,56 @@ class WargearProfile:
                 continue
             wound_instance["_allocated_model"] = target_model
 
+            # Lethal Ichor: count melee attacks allocated to this unit's models (max 6 per attacking unit).
+            try:
+                is_melee_attack = bool(
+                    getattr(self, "parent_wargear", None) is not None
+                    and callable(getattr(self.parent_wargear, "is_melee", None))
+                    and self.parent_wargear.is_melee()
+                )
+            except Exception:
+                is_melee_attack = False
+            if is_melee_attack:
+                try:
+                    attacker_unit = getattr(attacker, "parent_unit", None)
+                except Exception:
+                    attacker_unit = None
+                if attacker_unit is not None and target_model is not None:
+                    try:
+                        target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+                    except Exception:
+                        target_root = target
+                    if target_root is not None:
+                        try:
+                            same_army = target_root.get_parent_army() == attacker_unit.get_parent_army()
+                        except Exception:
+                            same_army = True
+                        if not same_army and bool(getattr(target_root, "has_lethal_ichor", lambda: False)()):
+                            try:
+                                attacker_root = (
+                                    attacker_unit.get_attached_unit_root()
+                                    if hasattr(attacker_unit, "get_attached_unit_root")
+                                    else attacker_unit
+                                )
+                            except Exception:
+                                attacker_root = attacker_unit
+                            attacker_id = str(get_entity_id(attacker_root) or "")
+                            if attacker_id:
+                                sr = getattr(target_root, "special_rules", None)
+                                if not isinstance(sr, dict):
+                                    sr = {}
+                                allocations = sr.get("lethal_ichor_allocations")
+                                if not isinstance(allocations, dict):
+                                    allocations = {}
+                                try:
+                                    current = int(allocations.get(attacker_id, 0) or 0)
+                                except Exception:
+                                    current = 0
+                                allocations[attacker_id] = int(min(6, max(0, current + 1)))
+                                sr["lethal_ichor_allocations"] = allocations
+                                sr["lethal_ichor_source"] = str(sr.get("lethal_ichor_source", "") or "Lethal Ichor")
+                                target_root.special_rules = sr
+
             # INDIRECT FIRE: if no target models were visible at selection time, the target gains Benefit of Cover
             # (unless the weapon ignores cover). This stacks with terrain evaluation but is not cumulative (+1 max).
             try:
@@ -5644,7 +5694,7 @@ class WargearProfile:
             lead_mods = None
         try:
             unit = attacker.parent_unit
-            unit_hit_mods = unit.get_unit_hit_reroll_modifiers(attack_type, target=target)
+            unit_hit_mods = unit.get_unit_hit_reroll_modifiers(attack_type, target=target, attacker_model=attacker)
             if isinstance(unit_hit_mods, dict) and int(unit_hit_mods.get("hit", 0) or 0):
                 bonus = int(unit_hit_mods.get("hit", 0) or 0)
                 _add_hit_mod(bonus, list(unit_hit_mods.get("hit_reasons", ()) or ()))
