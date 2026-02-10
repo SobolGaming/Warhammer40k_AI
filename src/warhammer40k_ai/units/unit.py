@@ -1702,8 +1702,9 @@ class Unit(
         re.IGNORECASE,
     )
     _ATTACK_TARGET_KEYWORD_BONUS_RE = re.compile(
-        r"each\s+time\s+(?:this\s+(?:model|unit)|a\s+model\s+in\s+this\s+unit)\s+makes\s+(?:a|an)\s+(?:(?P<atype>melee|ranged)\s+)?attack\s+"
-        r"that\s+targets\s+(?:an?\s+)?(?:enemy\s+)?(?P<target>[^,]+?)\s+unit(?:,|\s+).*?that\s+attack\s+has\s+(?P<kw_section>.+?)\s+abilit",
+        r"each\s+time\s+(?:this\s+(?:model|unit)|a\s+model\s+in\s+(?:this\s+unit|that\s+unit|the\s+bearer'?s\s+unit))\s+makes\s+"
+        r"(?:a|an)\s+(?:(?P<atype>melee|ranged)\s+)?attack\s+that\s+targets\s+(?P<target_clause>.+?)(?:,|\s+)that\s+attack\s+has\s+"
+        r"(?P<kw_section>.+?)\s+abilit",
         re.IGNORECASE,
     )
     _ATTACK_TARGET_HALF_RANGE_KEYWORD_RE = re.compile(
@@ -2066,7 +2067,7 @@ class Unit(
         re.IGNORECASE,
     )
     _POST_SHOOT_AFFLICTED_RE = re.compile(
-        r"in your shooting phase each time this (?:model|unit) is selected to shoot after this (?:model|unit) has shot "
+        r"in your shooting phase (?:each time this (?:model|unit) is selected to shoot )?after this (?:model|unit) has shot "
         r"select one enemy unit hit by one or more of those attacks until the start of your next turn that enemy unit is afflicted",
         re.IGNORECASE,
     )
@@ -2150,8 +2151,9 @@ class Unit(
         re.IGNORECASE,
     )
     _POST_SHOOT_AP_BONUS_RE = re.compile(
-        r"in your shooting phase after this (?:unit|model) has shot select one enemy unit hit by one or more of those attacks "
-        r"until the end of the phase each time a friendly (?P<keyword>[a-z0-9 ]+?) unit makes an (?:(?P<atype>ranged|melee) )?attack "
+        r"in your shooting phase after this (?:unit|model) has shot select one enemy unit "
+        r"(?:(?P<exclude>excluding monsters and vehicles) )?hit by one or more of those attacks "
+        r"until the end of the phase each time a friendly (?P<keyword>[a-z0-9 ]+?) unit makes (?:a|an) (?:(?P<atype>ranged|melee) )?attack "
         r"that targets that enemy unit improve the armou?r penetration characteristic of that attack by (?P<val>\d+)"
         r"(?: the same enemy unit can only be affected by this ability once per (?:turn|phase)| each unit can only be selected for this ability once per turn)?",
         re.IGNORECASE,

@@ -1518,6 +1518,7 @@ class AbilitySpecsMixin:
             - attack_type: str (any|ranged|melee)
             - value: int (AP improvement)
             - limit_scope: Optional[str] ("turn"|"phase")
+            - exclude_monster_vehicle: bool
         """
         try:
             root = self.get_attached_unit_root()
@@ -1535,7 +1536,7 @@ class AbilitySpecsMixin:
             members = [root]
 
         specs: list[dict] = []
-        seen: set[tuple[str, str, str, int]] = set()
+        seen: set[tuple[str, str, str, int, bool]] = set()
         for unit in members:
             if unit is None:
                 continue
@@ -1562,13 +1563,14 @@ class AbilitySpecsMixin:
                     value = 0
                 if value <= 0:
                     continue
+                exclude_mv = bool(m.group("exclude"))
                 limit_scope = None
                 if "once per turn" in normalized:
                     limit_scope = "turn"
                 elif "once per phase" in normalized:
                     limit_scope = "phase"
                 source = str(name or "Post-shoot AP bonus").strip() or "Post-shoot AP bonus"
-                key = (source.lower(), keyword, attack_type, int(value))
+                key = (source.lower(), keyword, attack_type, int(value), bool(exclude_mv))
                 if key in seen:
                     continue
                 seen.add(key)
@@ -1579,6 +1581,7 @@ class AbilitySpecsMixin:
                         "attack_type": attack_type,
                         "value": int(value),
                         "limit_scope": limit_scope,
+                        "exclude_monster_vehicle": bool(exclude_mv),
                     }
                 )
 

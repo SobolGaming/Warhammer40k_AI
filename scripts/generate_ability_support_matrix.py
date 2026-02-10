@@ -2834,7 +2834,10 @@ def _classify_ability_base(
     command_phase_regain_wound_support = _command_phase_regain_wound_support(description)
     start_shooting_phase_visible_battleshock_support = _start_shooting_phase_visible_battleshock_support(description)
     post_shoot_battleshock_support = _post_shoot_battleshock_support(description)
+    post_shoot_afflicted_support = _post_shoot_afflicted_support(description)
     post_shoot_shoot_again_support = _post_shoot_shoot_again_support(description)
+    post_shoot_disembark_wound_reroll_support = _post_shoot_disembark_wound_reroll_support(description)
+    post_shoot_ap_bonus_support = _post_shoot_ap_bonus_support(description)
     post_shoot_infantry_mortal_support = _post_shoot_infantry_mortal_wounds_battleshock_support(description)
     post_shoot_wracking_agonies_support = _post_shoot_wracking_agonies_support(description)
     post_shoot_suppression_support = _post_shoot_suppression_support(description)
@@ -2898,6 +2901,7 @@ def _classify_ability_base(
     fight_within_3_support = _fight_within_3_support(description)
     allocated_damage_reduction_support = _allocated_damage_reduction_support(description)
     ranged_ignore_bs_hit_support = _ranged_ignore_bs_hit_modifiers_support(description)
+    ignore_skill_and_hit_modifiers_support = _ignore_skill_and_hit_modifiers_support(description)
     ranged_targeting_restriction_support = _ranged_targeting_restriction_support(description)
 
     if battlesuit_support_system_support:
@@ -2916,6 +2920,8 @@ def _classify_ability_base(
         return hazardous_test_modifier_support
     if ranged_ignore_bs_hit_support:
         return ranged_ignore_bs_hit_support
+    if ignore_skill_and_hit_modifiers_support:
+        return ignore_skill_and_hit_modifiers_support
     if ranged_targeting_restriction_support:
         return ranged_targeting_restriction_support
     if fight_phase_below_starting_strength_fight_first_support:
@@ -3059,8 +3065,14 @@ def _classify_ability_base(
         return start_shooting_phase_visible_battleshock_support
     if post_shoot_battleshock_support:
         return post_shoot_battleshock_support
+    if post_shoot_afflicted_support:
+        return post_shoot_afflicted_support
     if post_shoot_shoot_again_support:
         return post_shoot_shoot_again_support
+    if post_shoot_disembark_wound_reroll_support:
+        return post_shoot_disembark_wound_reroll_support
+    if post_shoot_ap_bonus_support:
+        return post_shoot_ap_bonus_support
     if post_shoot_infantry_mortal_support:
         return post_shoot_infantry_mortal_support
     if post_shoot_wracking_agonies_support:
@@ -3503,16 +3515,24 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
     if m:
         scope = (m.group(1) or "").strip().lower()
         val = m.group(2)
+        has_lance = bool(
+            re.search(
+                r"(?:(melee|ranged)\s+)?weapons?\s+equipped\s+by\s+models\s+in\s+(?:the\s+bearer'?s\s+unit|that\s+unit).*?lance",
+                low,
+                flags=re.IGNORECASE,
+            )
+        )
+        kw_text = f"Sustained Hits {val} and Lance" if has_lance else f"Sustained Hits {val}"
         if scope:
             if leading_prefix:
-                notes.append(f"{leading_prefix}{scope} weapons gain Sustained Hits {val}.")
+                notes.append(f"{leading_prefix}{scope} weapons gain {kw_text}.")
             else:
-                notes.append(f"Bearer's unit {scope} weapons gain Sustained Hits {val}.")
+                notes.append(f"Bearer's unit {scope} weapons gain {kw_text}.")
         else:
             if leading_prefix:
-                notes.append(f"{leading_prefix}weapons gain Sustained Hits {val}.")
+                notes.append(f"{leading_prefix}weapons gain {kw_text}.")
             else:
-                notes.append(f"Bearer's unit weapons gain Sustained Hits {val}.")
+                notes.append(f"Bearer's unit weapons gain {kw_text}.")
 
     m = re.search(
         r"add\s+(\d+)\s*\"?\s+to\s+the\s+range\s+characteristic\s+of\s+melta\s+weapons?\s+equipped\s+by\s+models\s+in\s+"
@@ -3631,6 +3651,7 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         rf"{lead_prefix}{unit_ref} has (?:a|the)? [1-6] invulnerable save",
         rf"{lead_prefix}models? in {unit_ref} have the deep strike ability",
         rf"{lead_prefix}(?:melee |ranged )?weapons equipped by models in {unit_ref} have the sustained hits \d+ ability",
+        rf"{lead_prefix}(?:melee |ranged )?weapons equipped by models in {unit_ref} have the sustained hits \d+ and lance abilities",
         rf"{lead_prefix}add \d+ to the range characteristic of melta weapons equipped by models in {unit_ref}",
         rf"{lead_prefix}(?:melee |ranged )?(?:weapons equipped by models in|attacks made by models in) {unit_ref} .* ignores cover(?: ability)?",
         rf"{lead_prefix}each time (?:a|an) (?:melee |ranged )?attack targets {unit_ref} subtract 1 from the hit roll",
@@ -4006,20 +4027,58 @@ def _weapon_keyword_grant_support(description: str) -> Optional[Tuple[str, str]]
     if not sentences:
         return None
     lead_prefix = r"(?:while this model is leading a unit )?"
+
+    def _parse_keyword_labels(text_value: str) -> List[str]:
+        normalized = re.sub(r"\s+", " ", str(text_value or "")).strip().lower()
+        if not normalized:
+            return []
+        labels: List[str] = []
+        patterns_local = (
+            r"anti [a-z0-9 \-]+ \d+",
+            r"sustained hits (?:d3|d6|\d+)",
+            r"devastating wounds",
+            r"ignores cover",
+            r"twin linked",
+            r"twin-linked",
+            r"lethal hits",
+            r"precision",
+            r"lance",
+            r"heavy",
+        )
+        for pat in patterns_local:
+            for m in re.finditer(pat, normalized, flags=re.IGNORECASE):
+                token = str(m.group(0) or "").strip().lower().replace("twin linked", "twin-linked")
+                if not token:
+                    continue
+                label = _attack_keyword_label_from_text(token)
+                if label and label not in labels:
+                    labels.append(label)
+        return labels
+
+    def _join_labels(labels: List[str]) -> str:
+        values = [str(v or "").strip() for v in labels if str(v or "").strip()]
+        if not values:
+            return ""
+        if len(values) == 1:
+            return values[0]
+        if len(values) == 2:
+            return f"{values[0]} and {values[1]}"
+        return f"{', '.join(values[:-1])}, and {values[-1]}"
+
     patterns = [
         (
             rf"{lead_prefix}(?:(?P<scope>melee|ranged) )?weapons equipped by models in "
-            r"(?:the bearers unit|that unit|this unit) have the (?P<keyword>[a-z0-9 ]+) ability",
+            r"(?:the bearers unit|that unit|this unit) (?:have|gain) (?:the )?(?P<kw_section>[a-z0-9 \-]+?) abil(?:ity|ities)",
             "unit",
         ),
         (
-            rf"{lead_prefix}(?:the )?(?:bearers|this models) (?:(?P<scope>melee|ranged) )?weapons have the "
-            r"(?P<keyword>[a-z0-9 ]+) ability",
+            rf"{lead_prefix}(?:the )?(?:bearers|this models) (?:(?P<scope>melee|ranged) )?weapons "
+            r"(?:have|has|gain) (?:the )?(?P<kw_section>[a-z0-9 \-]+?) abil(?:ity|ies)",
             "bearer",
         ),
         (
-            rf"{lead_prefix}(?:(?P<scope>melee|ranged) )?weapons equipped by this model have the "
-            r"(?P<keyword>[a-z0-9 ]+) ability",
+            rf"{lead_prefix}(?:(?P<scope>melee|ranged) )?weapons equipped by this model (?:have|gain) "
+            r"(?:the )?(?P<kw_section>[a-z0-9 \-]+?) abil(?:ity|ies)",
             "model",
         ),
     ]
@@ -4032,10 +4091,9 @@ def _weapon_keyword_grant_support(description: str) -> Optional[Tuple[str, str]]
             m = re.fullmatch(pattern, sentence)
             if not m:
                 continue
-            kw = m.group("keyword") or ""
-            label = _attack_keyword_label_from_text(kw)
-            if not label:
-                unsupported.append(kw)
+            labels = _parse_keyword_labels(m.group("kw_section") or "")
+            if not labels:
+                unsupported.append(str(m.group("kw_section") or ""))
                 continue
             scope = (m.group("scope") or "").strip().lower()
             scope_text = "weapons"
@@ -4043,12 +4101,16 @@ def _weapon_keyword_grant_support(description: str) -> Optional[Tuple[str, str]]
                 scope_text = "melee weapons"
             elif scope == "ranged":
                 scope_text = "ranged weapons"
+            label_text = _join_labels(labels)
+            if not label_text:
+                unsupported.append(str(m.group("kw_section") or ""))
+                continue
             if kind == "unit":
-                notes.append(f"{prefix}Unit {scope_text} gain {label}.")
+                notes.append(f"{prefix}Unit {scope_text} gain {label_text}.")
             elif kind == "bearer":
-                notes.append(f"{prefix}Bearer's {scope_text} gain {label}.")
+                notes.append(f"{prefix}Bearer's {scope_text} gain {label_text}.")
             else:
-                notes.append(f"{prefix}Model {scope_text} gain {label}.")
+                notes.append(f"{prefix}Model {scope_text} gain {label_text}.")
     if not notes and not unsupported:
         return None
     if unsupported:
@@ -4221,6 +4283,37 @@ def _ranged_ignore_bs_hit_modifiers_support(description: str) -> Optional[Tuple[
     return ("Supported", "Ranged attacks: ignore any or all modifiers to Ballistic Skill and Hit roll.")
 
 
+def _ignore_skill_and_hit_modifiers_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    if "ignore any or all modifiers" not in norm:
+        return None
+    if "hit roll" not in norm:
+        return None
+    has_bs = "ballistic skill" in norm
+    has_ws = "weapon skill" in norm
+    if not (has_bs or has_ws):
+        return None
+    leading = norm.startswith("while this model is leading a unit")
+    prefix = "Leading: " if leading else ""
+    if "ranged attack" in norm or "ranged weapon" in norm:
+        scope = "Ranged attacks"
+    elif "melee attack" in norm or "melee weapon" in norm:
+        scope = "Melee attacks"
+    else:
+        scope = "Attacks"
+    skills: List[str] = []
+    if has_bs:
+        skills.append("Ballistic Skill")
+    if has_ws:
+        skills.append("Weapon Skill")
+    skill_text = " and ".join(skills)
+    return ("Supported", f"{prefix}{scope}: ignore any or all modifiers to {skill_text} and Hit roll modifiers.")
+
+
 def _ranged_targeting_restriction_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -4283,9 +4376,10 @@ def _target_keyword_attack_keyword_support(description: str) -> Optional[Tuple[s
     norm = _norm_rules_text(description)
     if not norm:
         return None
+    lead_prefix = r"(?:while this model is leading a unit )?"
     pattern = (
-        r"each time (?:this (?:model|unit)|a model in this unit) makes a (?:(?P<scope>melee|ranged) )?attack "
-        r"that targets (?:an? )?(?:enemy )?(?P<target>[a-z0-9 ]+?) unit that attack has (?:the )?(?P<keyword>[a-z0-9 ]+) ability"
+        rf"{lead_prefix}each time (?:this (?:model|unit)|a model in this unit|a model in that unit) makes (?:a|an) (?:(?P<scope>melee|ranged) )?attack "
+        r"that targets (?P<target_clause>.+?) that attack has (?:the )?(?P<keyword>[a-z0-9 ]+) ability"
     )
     m = re.fullmatch(pattern, norm)
     if not m:
@@ -4293,11 +4387,19 @@ def _target_keyword_attack_keyword_support(description: str) -> Optional[Tuple[s
     label = _attack_keyword_label_from_text(m.group("keyword") or "")
     if not label:
         return None
-    target_raw = str(m.group("target") or "").strip()
+    target_raw = str(m.group("target_clause") or "").strip()
     if not target_raw:
         return None
-    target_raw = re.sub(r"\bunits?\b", "", target_raw).strip()
-    target_raw = target_raw.replace("enemy ", "")
+    target_raw = re.sub(r"^(?:an?|the)\s+", "", target_raw)
+    target_raw = re.sub(r"^enemy\s+", "", target_raw)
+    if target_raw.startswith("unit that is "):
+        target_raw = target_raw[len("unit that is "):].strip()
+    elif target_raw.startswith("unit that are "):
+        target_raw = target_raw[len("unit that are "):].strip()
+    elif target_raw.endswith(" unit"):
+        target_raw = target_raw[:-5].strip()
+    if not target_raw:
+        target_raw = "unit"
     parts = [p.strip() for p in re.split(r"\s+(?:or|and)\s+", target_raw) if p.strip()]
     if parts:
         target_label = "/".join(p.upper() for p in parts)
@@ -5038,6 +5140,13 @@ def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         notes.append("Leading: unit ranged weapons gain Lethal Hits.")
     elif lethal_any:
         notes.append("Leading: unit weapons gain Lethal Hits.")
+    crit_hit_match = re.search(
+        r"a critical hit is scored on an unmodified hit roll of (\d)\+?(?: instead of only a 6)?",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if crit_hit_match:
+        notes.append(f"Leading: attacks score Critical Hits on unmodified {crit_hit_match.group(1)}+.")
 
     fight_first_match = re.search(
         r"(?:models in that unit|that unit)\s+(?:has|have)\s+(?:the\s+)?fights?\s+first\s+ability",
@@ -5138,6 +5247,7 @@ def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         rf"{lead_prefix}add \d+ to the wound roll(?: as well)? if the target is battle shocked",
         rf"{lead_prefix}if the target is battle shocked add \d+ to the wound roll",
         rf"{lead_prefix}models in that unit have (?:a|the)?\s*\d+ invulnerable save",
+        rf"{lead_prefix}(?:in addition )?each time a model in that unit makes an attack a critical hit is scored on an unmodified hit roll of \d\+?(?: instead of only a 6)?",
         rf"{lead_prefix}.*reroll .*hit roll.* of 1.*",
         rf"{lead_prefix}.*reroll .*wound roll.* of 1.*",
     ]
@@ -5946,14 +6056,108 @@ def _post_shoot_no_cover_support(description: str) -> Optional[Tuple[str, str]]:
     if not norm:
         return None
     pattern = (
-        r"in your shooting phase after this unit has shot select one enemy unit hit by one or more of those attacks made with "
-        r"(?:a|an|the) (?P<weapon>[a-z0-9 ]+) until the end of the phase that enemy unit cannot have the benefit of cover"
+        r"in your shooting phase after this (?P<subject>model|unit) has shot select one enemy unit "
+        r"(?:that was )?hit by one or more of those attacks "
+        r"(?:made with (?:a|an|the|its) (?P<weapon>[a-z0-9 ]+) )?"
+        r"until the (?P<duration>end of the phase|start of your next shooting phase) "
+        r"that (?:enemy )?unit cannot have the benefit of cover"
     )
     m = re.fullmatch(pattern, norm)
     if not m:
         return None
-    weapon = (m.group("weapon") or "weapon").strip()
-    return ("Supported", f"After shooting: select a hit enemy unit hit by {weapon}; it cannot gain Benefit of Cover until phase end.")
+    weapon = str(m.group("weapon") or "").strip()
+    duration = str(m.group("duration") or "").strip().lower()
+    if "start of your next shooting phase" in duration:
+        if weapon:
+            return (
+                "Supported",
+                f"After shooting: select a hit enemy unit hit by {weapon}; it cannot gain Benefit of Cover until your next Shooting phase.",
+            )
+        return (
+            "Supported",
+            "After shooting: select a hit enemy unit; it cannot gain Benefit of Cover until your next Shooting phase.",
+        )
+    if weapon:
+        return ("Supported", f"After shooting: select a hit enemy unit hit by {weapon}; it cannot gain Benefit of Cover until phase end.")
+    return ("Supported", "After shooting: select a hit enemy unit; it cannot gain Benefit of Cover until phase end.")
+
+
+def _post_shoot_disembark_wound_reroll_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"in your shooting phase after this model has shot select one enemy unit "
+        r"(?:(?:that was )?hit by one or more of those attacks|it scored one or more hits against this phase) "
+        r"until the end of the phase each time a friendly model that disembarked from this transport this turn makes an attack "
+        r"that targets that enemy unit you can reroll the wound roll"
+    )
+    if not re.fullmatch(pattern, norm):
+        return None
+    return (
+        "Supported",
+        "After shooting: select a hit enemy unit; friendly models disembarked from this TRANSPORT this turn re-roll Wound rolls against it until phase end.",
+    )
+
+
+def _post_shoot_afflicted_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"in your shooting phase (?:each time this (?:model|unit) is selected to shoot )?after this (?:model|unit) has shot "
+        r"select one enemy unit hit by one or more of those attacks until the start of your next turn that enemy unit is afflicted"
+    )
+    if not re.fullmatch(pattern, norm):
+        return None
+    return (
+        "Supported",
+        "Post-shoot selection: choose a hit enemy unit; it is marked Afflicted until the start of your next turn.",
+    )
+
+
+def _post_shoot_ap_bonus_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"in your shooting phase after this (?:model|unit) has shot select one enemy unit "
+        r"(?:excluding monsters and vehicles )?hit by one or more of those attacks "
+        r"until the end of the phase each time a friendly (?P<keyword>[a-z0-9 ]+?) unit makes (?:a|an) "
+        r"(?:(?P<atype>ranged|melee) )?attack that targets that enemy unit improve the armour penetration characteristic "
+        r"of that attack by (?P<val>\d+)(?: the same enemy unit can only be affected by this ability once per (?:turn|phase)"
+        r"| each unit can only be selected for this ability once per turn)?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    keyword = str(m.group("keyword") or "").strip().upper()
+    atype = str(m.group("atype") or "").strip().lower()
+    try:
+        val = int(m.group("val") or 0)
+    except Exception:
+        val = 0
+    if val <= 0:
+        return None
+    scope = "attacks"
+    if atype == "ranged":
+        scope = "ranged attacks"
+    elif atype == "melee":
+        scope = "melee attacks"
+    note = f"After shooting: select a hit enemy unit; friendly {keyword} {scope} against it gain AP +{val} until phase end."
+    if "excluding monsters and vehicles" in norm:
+        note = f"After shooting: select a hit enemy unit (not MONSTER/VEHICLE); friendly {keyword} {scope} against it gain AP +{val} until phase end."
+    if "once per turn" in norm:
+        note += " Target limit: once per turn."
+    elif "once per phase" in norm:
+        note += " Target limit: once per phase."
+    return ("Supported", note)
 
 
 def _post_shoot_snare_support(description: str) -> Optional[Tuple[str, str]]:

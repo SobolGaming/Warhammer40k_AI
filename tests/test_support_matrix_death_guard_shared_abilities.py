@@ -49,11 +49,20 @@ class TestSupportMatrixDeathGuardSharedAbilities(unittest.TestCase):
     def test_death_guard_shared_abilities_are_supported(self):
         gsm = self._seed_support_maps()
         expected_supported = (
+            "Barrage of Filth",
             "Death's Heads",
             "Deluge of Nurgle (Aura)",
             "Diseased Cover",
+            "Foul Infusion",
+            "Fire Support",
+            "Gift of Contagion (Psychic)",
             "Grotesque Regeneration",
+            "Hail of Corrosive Disease",
+            "Infused with the Blessings of Nurgle",
+            "Malicious Calculations",
             "Nurgle's Rot (Psychic)",
+            "Tank Hunters",
+            "Vector of Disease",
             "Virulent Blessing (Psychic)",
         )
         for ability_name in expected_supported:

@@ -144,6 +144,55 @@ class TestPostShootNoCover(unittest.TestCase):
         profile._hit_target_with_tracking(target_unit, attacker_model, attack_instance, roll_value=4, allow_rerolls=False)
         self.assertTrue(attack_instance.get("ignores_cover", False))
 
+    def test_post_shoot_no_cover_model_any_weapon_marks_target(self):
+        army = Army("Death Guard", detachment_type="Other")
+        army.faction_id = "DG"
+        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army.faction_id = "SM"
+
+        player = Player("Player", PlayerControl.REMOTE, army=army)
+        enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+        game.phase = BattleRoundPhases.SHOOTING_PHASE
+        game.current_player_index = 0
+
+        ability_desc = (
+            "In your Shooting phase, after this model has shot, select one enemy unit hit by one or more of those attacks. "
+            "Until the end of the phase, that unit cannot have the Benefit of Cover."
+        )
+        ability = Ability("Barrage of Filth", "DG", ability_desc, "Datasheet", "")
+
+        attacker_unit = self._make_unit("Defiler", army, abilities=[ability], faction_keywords=["DEATH GUARD"])
+        attacker_model = self._make_model("Defiler", attacker_unit)
+        attacker_unit.models = [attacker_model]
+        army.units = [attacker_unit]
+
+        target_unit = self._make_unit("Target", enemy_army)
+        target_model = self._make_model("Target", target_unit)
+        target_model.set_location(6.0, 0.0, 0.0, 0.0)
+        target_unit.models = [target_model]
+        enemy_army.units = [target_unit]
+
+        game.rebuild_entity_registry()
+
+        game._on_unit_shooting_resolved_post_shoot_no_cover(
+            attacker_unit=attacker_unit,
+            hits_by_target={target_unit: 1},
+            hit_models_by_target_weapon={},
+        )
+
+        pending = game.decision_queue.list()
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        self.assertEqual(request.decision_type, DECISION_CHOOSE_QUARRY)
+        self.assertEqual((request.context or {}).get("ability"), "post_shoot_no_cover")
+
+        resolve_decision_command(game, request, request.options[0].option_id, player_id=player.id)
+
+        sr = getattr(target_unit, "special_rules", {}) or {}
+        self.assertTrue(bool(sr.get("post_shoot_no_cover_active")))
+
 
 if __name__ == "__main__":
     unittest.main()

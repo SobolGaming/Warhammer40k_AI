@@ -2315,6 +2315,35 @@ class ActionsMovementMixin:
             kw = str(keyword or "").strip()
             if not kw:
                 return False
+            kw_norm = kw.lower()
+            if kw_norm == "afflicted":
+                try:
+                    sr = getattr(target, "special_rules", None)
+                    if isinstance(sr, dict) and bool(sr.get("post_shoot_afflicted_active")):
+                        return True
+                except Exception:
+                    pass
+                try:
+                    from ...rules.nurgles_gift import NurglesGiftManager
+                except Exception:
+                    return False
+                try:
+                    source_army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
+                except Exception:
+                    source_army = None
+                try:
+                    source_player = getattr(source_army, "player", None) if source_army is not None else None
+                except Exception:
+                    source_player = None
+                try:
+                    game = getattr(source_player, "game", None)
+                except Exception:
+                    game = None
+                game_map = getattr(game, "map", None) if game is not None else None
+                try:
+                    return bool(NurglesGiftManager.get_afflicted_plague_for_unit(target, game=game, game_map=game_map) is not None)
+                except Exception:
+                    return False
             try:
                 return bool(target.has_keyword(kw.upper()))
             except Exception:

@@ -229,6 +229,8 @@ def _parse_condition(text: str) -> Optional[AttackRollCondition]:
         return AttackRollCondition(target_below_starting_strength=True)
     if re.fullmatch(r"that enemy unit is (?:also )?below half[- ]strength", t):
         return AttackRollCondition(target_below_half_strength=True)
+    if re.fullmatch(r"that (?:enemy )?unit is afflicted", t):
+        return AttackRollCondition(target_keywords_any=("afflicted",))
 
     if re.fullmatch(
         r"(?:the target of that attack|that attack) targets (?:a|an)?\s*unit within range of (?:an|one or more) objective marker(?:s)?",
@@ -373,6 +375,10 @@ def _parse_target_clause(text: str) -> Optional[AttackRollCondition]:
         return AttackRollCondition(target_can_fly=True)
     if re.fullmatch(r"unit that cannot fly", t):
         return AttackRollCondition(target_can_fly=False)
+    if re.fullmatch(r"(?:an? )?afflicted unit", t):
+        return AttackRollCondition(target_keywords_any=("afflicted",))
+    if re.fullmatch(r"unit that is afflicted", t):
+        return AttackRollCondition(target_keywords_any=("afflicted",))
     if re.fullmatch(r"character (?:unit|model)", t):
         return AttackRollCondition(target_keywords_any=("character",))
     if re.fullmatch(r"monster or vehicle unit", t):
@@ -535,7 +541,8 @@ def _parse_effect_clause(text: str) -> Optional[AttackRollEffect]:
         )
 
     m = re.fullmatch(
-        r"(?:a successful|an) unmodified (?P<roll>hit|wound) roll of (?P<thresh>\d)\+ scores a critical (?P<ctype>hit|wound)",
+        r"(?:a successful|an) unmodified (?P<roll>hit|wound) roll of (?P<thresh>\d)\+ scores a critical (?P<ctype>hit|wound)"
+        r"(?:,? instead of only a 6)?",
         clause,
     )
     if m:
@@ -546,7 +553,8 @@ def _parse_effect_clause(text: str) -> Optional[AttackRollEffect]:
             condition=condition,
         )
     m = re.fullmatch(
-        r"a critical (?P<ctype>hit|wound) is scored on an unmodified (?P<roll>hit|wound) roll of (?P<thresh>\d)\+",
+        r"a critical (?P<ctype>hit|wound) is scored on an unmodified (?P<roll>hit|wound) roll of (?P<thresh>\d)\+"
+        r"(?:,? instead of only a 6)?",
         clause,
     )
     if m:
@@ -566,6 +574,16 @@ def parse_attack_roll_text(text: str) -> Optional[AttackRollRule]:
     Returns None unless the text is fully consumed.
     """
     norm = _normalize_text(text)
+    if not norm:
+        return None
+    norm = re.sub(
+        r"^(?:in|during) your [a-z' ]+ phase[,;:]?\s*",
+        "",
+        norm,
+        flags=re.IGNORECASE,
+    )
+    norm = re.sub(r"^in addition[,;:]?\s*", "", norm, flags=re.IGNORECASE)
+    norm = norm.strip()
     if not norm:
         return None
 
@@ -599,6 +617,8 @@ def parse_attack_roll_text(text: str) -> Optional[AttackRollRule]:
                     return None
                 leading_contains_condition = cond
                 norm = rest
+
+    norm = re.sub(r"^in addition[,;:]?\s*", "", norm, flags=re.IGNORECASE).strip()
 
     m = re.match(r"^(?:while|if)\s+([^,]+),\s*(.+)$", norm, flags=re.IGNORECASE)
     if m:

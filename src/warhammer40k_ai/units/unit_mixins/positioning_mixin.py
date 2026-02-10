@@ -1549,6 +1549,22 @@ class PositioningMixin:
             except Exception:
                 pass
 
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            for ab, _leader in root._iter_attached_leader_leading_abilities():
+                try:
+                    aname = str(getattr(ab, "name", "") or "")
+                    adesc = str(getattr(ab, "description", "") or "")
+                except Exception:
+                    aname = ""
+                    adesc = ""
+                entries.append((aname, adesc))
+        except Exception:
+            pass
+
         rules: list[dict] = []
         seen: set[tuple] = set()
 
@@ -1556,13 +1572,20 @@ class PositioningMixin:
             cleaned = self._normalize_rules_text(value or "")
             cleaned = cleaned.replace("\u2019", "'").replace("\u0192?T", "'")
             cleaned = cleaned.lower()
+            if "afflicted" in cleaned:
+                return ("AFFLICTED",)
             cleaned = cleaned.replace("enemy ", "")
+            cleaned = cleaned.replace("that is ", "")
+            cleaned = cleaned.replace("that are ", "")
             cleaned = re.sub(r"\bunit\b", "", cleaned)
             cleaned = cleaned.replace("&", " and ")
             cleaned = re.sub(r"\s+(and|or)\s+", ",", cleaned, flags=re.IGNORECASE)
             parts = [p.strip(" .") for p in cleaned.split(",") if p.strip(" .")]
             keywords: list[str] = []
             for part in parts:
+                if not part:
+                    continue
+                part = re.sub(r"^(?:an?|the)\s+", "", part, flags=re.IGNORECASE).strip()
                 if not part:
                     continue
                 norm = self._normalize_keyword_phrase(part) or part.strip().upper()
@@ -1572,6 +1595,40 @@ class PositioningMixin:
                 if up not in keywords:
                     keywords.append(up)
             return tuple(keywords)
+
+        def _parse_bonus_keywords(value: str) -> list[str]:
+            section = str(value or "").strip()
+            if not section:
+                return []
+            bracketed = [k.strip() for k in re.findall(r"\[([^\]]+)\]", section) if str(k or "").strip()]
+            if bracketed:
+                return bracketed
+            normalized = self._normalize_rules_text(section)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            candidates: list[str] = []
+            patterns = (
+                r"anti-[a-z0-9 \-]+\s+\d\+",
+                r"sustained hits\s+(?:d3|d6|\d+)",
+                r"devastating wounds",
+                r"ignores cover",
+                r"twin linked",
+                r"twin-linked",
+                r"lethal hits",
+                r"precision",
+                r"lance",
+                r"heavy",
+            )
+            for pat in patterns:
+                for m in re.finditer(pat, normalized, flags=re.IGNORECASE):
+                    token = str(m.group(0) or "").strip()
+                    if not token:
+                        continue
+                    token = token.replace("twin linked", "twin-linked")
+                    token = re.sub(r"\s+", " ", token).strip().upper()
+                    if token and token not in candidates:
+                        candidates.append(token)
+            return candidates
         for name, desc in entries:
             text = self._normalize_rules_text(desc or name or "")
             if not text:
@@ -1618,15 +1675,17 @@ class PositioningMixin:
                     }
                 )
             for match in self._ATTACK_TARGET_KEYWORD_BONUS_RE.finditer(text):
-                target_raw = str(match.group("target") or "").strip()
+                target_raw = str(match.groupdict().get("target_clause") or match.groupdict().get("target") or "").strip()
                 target_keywords = _parse_target_keywords(target_raw)
+                if (not target_keywords) and ("afflicted" in target_raw.lower()):
+                    target_keywords = ("AFFLICTED",)
                 if not target_keywords:
                     continue
                 atype = str(match.group("atype") or "").strip().lower()
                 if atype not in ("melee", "ranged"):
                     atype = "any"
                 kw_section = str(match.group("kw_section") or "")
-                bonus_keywords = [k.strip() for k in re.findall(r"\[([^\]]+)\]", kw_section) if str(k or "").strip()]
+                bonus_keywords = _parse_bonus_keywords(kw_section)
                 if not bonus_keywords:
                     continue
                 for bonus_kw in bonus_keywords:
@@ -1642,6 +1701,58 @@ class PositioningMixin:
                             "target_keywords_any": target_keywords,
                         }
                     )
+
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        leading_weapon_keywords_re = re.compile(
+            r"^(?:(?P<atype>melee|ranged)\s+)?weapons equipped by models in that unit have (?P<kw_section>.+?) abilit(?:y|ies)$",
+            re.IGNORECASE,
+        )
+        try:
+            for ab, _leader in root._iter_attached_leader_leading_abilities():
+                try:
+                    source_name = str(getattr(ab, "name", "") or "Leading ability").strip() or "Leading ability"
+                    source_desc = str(getattr(ab, "description", "") or source_name)
+                except Exception:
+                    source_name = "Leading ability"
+                    source_desc = source_name
+                normalized = self._normalize_rules_text(source_desc or "")
+                if not normalized:
+                    continue
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                try:
+                    rest = self._LEADING_ABILITY_PREFIX_RE.sub("", normalized, count=1).strip(" ,:;-")
+                except Exception:
+                    rest = normalized
+                if not rest:
+                    continue
+                sentences = [s.strip() for s in re.split(r"[.;]\s*", rest) if s.strip()]
+                for sentence in sentences:
+                    m = leading_weapon_keywords_re.fullmatch(sentence)
+                    if not m:
+                        continue
+                    atype = str(m.group("atype") or "").strip().lower()
+                    if atype not in ("melee", "ranged"):
+                        atype = "any"
+                    keywords = _parse_bonus_keywords(str(m.group("kw_section") or ""))
+                    if not keywords:
+                        continue
+                    for keyword in keywords:
+                        key = ("leading_unit_weapon_kw", atype, keyword.strip().lower(), source_name.lower())
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        rules.append(
+                            {
+                                "attack_type": atype,
+                                "keyword": keyword.strip(),
+                                "source": source_name,
+                            }
+                        )
+        except Exception:
+            pass
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
@@ -1931,6 +2042,43 @@ class PositioningMixin:
             return bonuses
         return {}
 
+    def _target_is_afflicted_for_attack_bonuses(self, target, *, game_map=None) -> bool:
+        if target is None:
+            return False
+        try:
+            sr = getattr(target, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get("post_shoot_afflicted_active")):
+                return True
+        except Exception:
+            pass
+        try:
+            from ...rules.nurgles_gift import NurglesGiftManager
+        except Exception:
+            return False
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            source_army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        except Exception:
+            source_army = None
+        try:
+            source_player = getattr(source_army, "player", None) if source_army is not None else None
+        except Exception:
+            source_player = None
+        try:
+            game = getattr(source_player, "game", None)
+        except Exception:
+            game = None
+        gm = game_map
+        if gm is None and game is not None:
+            gm = getattr(game, "map", None)
+        try:
+            return bool(NurglesGiftManager.get_afflicted_plague_for_unit(target, game=game, game_map=gm) is not None)
+        except Exception:
+            return False
+
     def get_model_weapon_keyword_bonuses(
         self,
         *,
@@ -2129,6 +2277,8 @@ class PositioningMixin:
             key = str(val or "").strip()
             if not key:
                 return False
+            if key.lower() == "afflicted":
+                return self._target_is_afflicted_for_attack_bonuses(target, game_map=game_map)
             try:
                 return bool(target.has_keyword(key.upper()))
             except Exception:
@@ -2175,6 +2325,8 @@ class PositioningMixin:
             key = str(val or "").strip()
             if not key:
                 return False
+            if key.lower() == "afflicted":
+                return self._target_is_afflicted_for_attack_bonuses(target, game_map=game_map)
             try:
                 return bool(target.has_keyword(key.upper()))
             except Exception:

@@ -242,6 +242,26 @@ class GameShootingFightHandlersMixin:
                 return False
             return True
 
+        def _is_monster_or_vehicle(unit) -> bool:
+            if unit is None:
+                return False
+            try:
+                return bool(unit.has_any_keyword("MONSTER")) or bool(unit.has_any_keyword("VEHICLE"))
+            except Exception:
+                return False
+
+        def _is_monster_or_vehicle(unit) -> bool:
+            if unit is None:
+                return False
+            try:
+                return bool(unit.has_keyword("MONSTER") or unit.has_keyword("VEHICLE"))
+            except Exception:
+                pass
+            try:
+                return bool(unit.has_any_keyword("MONSTER") or unit.has_any_keyword("VEHICLE"))
+            except Exception:
+                return False
+
         def _model_hit_target(model, target) -> bool:
             if not isinstance(hit_models_by_target, dict):
                 return True
@@ -1950,6 +1970,14 @@ class GameShootingFightHandlersMixin:
                 return False
             return True
 
+        def _is_monster_or_vehicle(unit) -> bool:
+            if unit is None:
+                return False
+            try:
+                return bool(unit.has_any_keyword("MONSTER")) or bool(unit.has_any_keyword("VEHICLE"))
+            except Exception:
+                return False
+
         def _target_already_selected(unit, owner_id: str, turn: int, scope: str, phase_name: str) -> bool:
             if unit is None or not scope:
                 return False
@@ -1998,6 +2026,7 @@ class GameShootingFightHandlersMixin:
             except Exception:
                 ap_bonus = 0
             limit_scope = str(spec.get("limit_scope", "") or "").strip().lower()
+            exclude_mv = bool(spec.get("exclude_monster_vehicle", False))
             if not keyword or ap_bonus <= 0:
                 continue
             candidates: list[Any] = []
@@ -2007,6 +2036,8 @@ class GameShootingFightHandlersMixin:
                 if int(hits or 0) <= 0:
                     continue
                 if not _is_enemy_unit(target_unit):
+                    continue
+                if exclude_mv and _is_monster_or_vehicle(target_unit):
                     continue
                 if limit_scope and _target_already_selected(target_unit, owner_id, turn, limit_scope, phase_name):
                     continue

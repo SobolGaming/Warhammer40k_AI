@@ -145,6 +145,62 @@ class TestPostShootApBonus(unittest.TestCase):
         )
         self.assertEqual(len(game.decision_queue.list()), 0)
 
+    def test_post_shoot_ap_bonus_excludes_monster_vehicle_candidates(self):
+        army = Army("Death Guard", detachment_type="Other")
+        army.faction_id = "DG"
+        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army.faction_id = "SM"
+
+        player = Player("Player", PlayerControl.REMOTE, army=army)
+        enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+        game.phase = BattleRoundPhases.SHOOTING_PHASE
+        game.current_player_index = 0
+
+        ability_desc = (
+            "In your Shooting phase, after this model has shot, select one enemy unit (excluding MONSTERS and VEHICLES) "
+            "hit by one or more of those attacks. Until the end of the phase, each time a friendly Death Guard unit makes "
+            "a ranged attack that targets that enemy unit, improve the Armour Penetration characteristic of that attack by 1. "
+            "The same enemy unit can only be affected by this ability once per phase."
+        )
+        ability = Ability("Hail of Corrosive Disease", "DG", ability_desc, "Datasheet", "")
+
+        attacker_unit = self._make_unit("Chaos Predator Destructor", army, abilities=[ability], faction_keywords=["DEATH GUARD"])
+        attacker_model = self._make_model("Predator", attacker_unit)
+        attacker_unit.models = [attacker_model]
+        army.units = [attacker_unit]
+
+        infantry_target = self._make_unit("Infantry Target", enemy_army, keywords=["INFANTRY"])
+        infantry_target.models = [self._make_model("Infantry", infantry_target)]
+
+        monster_target = self._make_unit("Monster Target", enemy_army, keywords=["MONSTER"])
+        monster_target.models = [self._make_model("Monster", monster_target)]
+
+        vehicle_target = self._make_unit("Vehicle Target", enemy_army, keywords=["VEHICLE"])
+        vehicle_target.models = [self._make_model("Vehicle", vehicle_target)]
+
+        enemy_army.units = [infantry_target, monster_target, vehicle_target]
+        game.rebuild_entity_registry()
+
+        game._on_unit_shooting_resolved_post_shoot_ap_bonus(
+            attacker_unit=attacker_unit,
+            hits_by_target={
+                infantry_target: 1,
+                monster_target: 1,
+                vehicle_target: 1,
+            },
+        )
+
+        pending = game.decision_queue.list()
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        self.assertEqual(request.decision_type, DECISION_CHOOSE_QUARRY)
+        option_ids = {str((opt.payload or {}).get("target_unit_id", "")) for opt in list(request.options or [])}
+        self.assertIn(str(infantry_target._id), option_ids)
+        self.assertNotIn(str(monster_target._id), option_ids)
+        self.assertNotIn(str(vehicle_target._id), option_ids)
+
 
 if __name__ == "__main__":
     unittest.main()
