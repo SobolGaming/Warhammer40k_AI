@@ -5261,6 +5261,117 @@ class GamePhaseHandlersMixin:
             sr["enhancement_fierce_conqueror_enemy_models"] = int(enemy_models)
             unit.special_rules = sr
 
+    def _on_phase_start_emperors_children_enhancements(self, player=None, phase=None, **_kwargs) -> None:
+        """Coterie of the Conceited enhancements that trigger at the start of the Shooting phase."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "SHOOTING_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = player.get_army()
+        if army is None:
+            raise RuntimeError(f"Emperor's Children enhancement hooks require an army for {player.name}.")
+        mgr = getattr(army, "emperors_children", None)
+        if mgr is None:
+            mgr = getattr(army, "emperors_children_detachments", None)
+        if mgr is None or not getattr(mgr, "is_coterie_of_conceited", lambda: False)():
+            return
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            raise RuntimeError("Emperor's Children enhancement hooks require a game map.")
+
+        enemy_roots = self._collect_enemy_unit_roots(player)
+        if not enemy_roots:
+            return
+
+        from ...utility.entity_ids import get_entity_id
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        def _model_sort_key(m):
+            try:
+                return str(get_entity_id(m))
+            except Exception:
+                return str(getattr(m, "name", "") or "")
+
+        enemy_roots.sort(key=_unit_sort_key)
+        for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            if not getattr(unit, "is_alive", lambda: False)():
+                continue
+            if not getattr(unit, "deployed", True):
+                continue
+            try:
+                if unit.is_in_reserves() or unit.is_embarked:
+                    continue
+            except Exception:
+                pass
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict) or not sr.get("enhancement_pledge_of_mortal_pain"):
+                continue
+            bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "")
+            if not bearer_id:
+                continue
+            try:
+                models = list(unit.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(unit, "models", []) or [])
+            bearer_model = None
+            for model in sorted(list(models or []), key=_model_sort_key):
+                if str(get_entity_id(model) or "") != bearer_id:
+                    continue
+                if not getattr(model, "is_alive", True):
+                    continue
+                bearer_model = model
+                break
+            if bearer_model is None:
+                continue
+            try:
+                range_value = int(sr.get("enhancement_pledge_of_mortal_pain_range", 12) or 12)
+            except Exception:
+                range_value = 12
+            if range_value <= 0:
+                continue
+            candidates = self._visible_enemy_candidates_for_model(
+                source_unit=unit,
+                model=bearer_model,
+                enemy_roots=enemy_roots,
+                range_value=float(range_value),
+                game_map=game_map,
+            )
+            if not candidates:
+                continue
+            try:
+                fail_mortal_wounds = int(sr.get("enhancement_pledge_of_mortal_pain_fail_mortal_wounds", 3) or 3)
+            except Exception:
+                fail_mortal_wounds = 3
+            try:
+                test_modifier = int(
+                    sr.get("enhancement_pledge_of_mortal_pain_battleshocked_test_modifier", -2) or -2
+                )
+            except Exception:
+                test_modifier = -2
+            self._queue_start_shooting_phase_visible_battleshock(
+                player=player,
+                source_unit=unit,
+                model=bearer_model,
+                candidates=candidates,
+                spec={
+                    "source": "Pledge of Mortal Pain",
+                    "range": int(range_value),
+                    "use_leadership_test": True,
+                    "leadership_test_modifier_if_battle_shocked": int(test_modifier),
+                    "fail_mortal_wounds": int(max(0, fail_mortal_wounds)),
+                },
+            )
+
     def _on_phase_start_world_eaters_enhancements(self, player=None, phase=None, **_kwargs) -> None:
         """Goretrack Onslaught enhancements that trigger at the start of the Shooting phase."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

@@ -202,6 +202,59 @@ _VESSELS_OF_WRATH_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _VESSELS_OF_WRATH_DESCRIPTORS.values()
 }
 
+_COTERIE_OF_CONCEITED_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010014002": EnhancementToolDescriptor(
+        enhancement_id="000010014002",
+        name="Pledge of Eternal Servitude",
+        timing="on_bearer_destroyed_first_time",
+        target="bearer",
+        duration="end_of_phase",
+        effect="return_on_death_on_leadership_test",
+        effect_params={
+            "leadership_test": True,
+            "return_wounds": "D6",
+            "first_time_only": True,
+            "set_up_not_in_engagement_range": True,
+        },
+    ),
+    "000010014003": EnhancementToolDescriptor(
+        enhancement_id="000010014003",
+        name="Pledge of Dark Glory",
+        timing="passive_while_leading",
+        target="bearer_unit",
+        duration="constant",
+        effect="leadership_and_objective_control_bonus",
+        effect_params={"leadership_bonus": 1, "objective_control_bonus": 1},
+    ),
+    "000010014004": EnhancementToolDescriptor(
+        enhancement_id="000010014004",
+        name="Pledge of Mortal Pain",
+        timing="start_of_shooting_phase",
+        target="enemy_unit_within_range_visible",
+        duration="instant",
+        effect="leadership_test_then_mortal_wounds",
+        range_in=12.0,
+        effect_params={"test_modifier_if_battle_shocked": -2, "mortal_wounds_on_fail": 3},
+    ),
+    "000010014005": EnhancementToolDescriptor(
+        enhancement_id="000010014005",
+        name="Pledge of Unholy Fortune",
+        timing="after_roll_once_per_turn",
+        target="bearer_unit",
+        duration="instant",
+        effect="set_roll_to_unmodified_six",
+        effect_params={
+            "roll_types": ("hit", "wound", "save"),
+            "usage_limit": "turn",
+            "requires_bearer_not_battle_shocked": True,
+        },
+    ),
+}
+
+_COTERIE_OF_CONCEITED_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _COTERIE_OF_CONCEITED_DESCRIPTORS.values()
+}
+
 _DAEMONIC_INCURSION_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008438002": EnhancementToolDescriptor(
         enhancement_id="000008438002",
@@ -473,6 +526,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _VESSELS_OF_WRATH_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _COTERIE_OF_CONCEITED_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _DAEMONIC_INCURSION_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -499,6 +555,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _CULT_OF_BLOOD_BY_NAME.get(key)
         or _POSSESSED_SLAUGHTERBAND_BY_NAME.get(key)
         or _VESSELS_OF_WRATH_BY_NAME.get(key)
+        or _COTERIE_OF_CONCEITED_BY_NAME.get(key)
         or _DAEMONIC_INCURSION_BY_NAME.get(key)
         or _PLAGUE_LEGION_BY_NAME.get(key)
         or _SCINTILLATING_LEGION_BY_NAME.get(key)

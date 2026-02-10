@@ -208,6 +208,9 @@ class Enhancement:
         orks_mgr = getattr(army, "orks_detachments", None) if army is not None else None
         cd_mgr = getattr(army, "chaos_daemons_detachments", None) if army is not None else None
         lov_mgr = getattr(army, "leagues_of_votann_detachments", None) if army is not None else None
+        ec_mgr = getattr(army, "emperors_children_detachments", None) if army is not None else None
+        if ec_mgr is None and army is not None:
+            ec_mgr = getattr(army, "emperors_children", None)
         try:
             is_berzerker_warband = bool(we_mgr and we_mgr.is_berzerker_warband())
         except Exception:
@@ -273,6 +276,10 @@ class Enhancement:
             is_needgaard_oathband = bool(lov_mgr and lov_mgr.is_needgaard_oathband())
         except Exception:
             is_needgaard_oathband = False
+        try:
+            is_coterie_of_conceited = bool(ec_mgr and ec_mgr.is_coterie_of_conceited())
+        except Exception:
+            is_coterie_of_conceited = False
         ck_mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
         try:
             is_infernal_lance = bool(ck_mgr and ck_mgr.is_infernal_lance())
@@ -699,6 +706,40 @@ class Enhancement:
 
         if name == "rise to the challenge" or enh_id == "000010002005":
             unit.special_rules["enhancement_rise_to_challenge"] = True
+
+        if name == "pledge of eternal servitude" or enh_id == "000010014002":
+            if not is_coterie_of_conceited:
+                return
+            unit.special_rules["enhancement_pledge_of_eternal_servitude"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+            refresh_return = getattr(unit, "_refresh_return_on_death_flags", None)
+            if callable(refresh_return):
+                refresh_return()
+
+        if name == "pledge of dark glory" or enh_id == "000010014003":
+            if not is_coterie_of_conceited:
+                return
+            unit.special_rules["enhancement_pledge_of_dark_glory"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "pledge of mortal pain" or enh_id == "000010014004":
+            if not is_coterie_of_conceited:
+                return
+            unit.special_rules["enhancement_pledge_of_mortal_pain"] = True
+            unit.special_rules["enhancement_pledge_of_mortal_pain_range"] = 12
+            unit.special_rules["enhancement_pledge_of_mortal_pain_fail_mortal_wounds"] = 3
+            unit.special_rules["enhancement_pledge_of_mortal_pain_battleshocked_test_modifier"] = -2
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "pledge of unholy fortune" or enh_id == "000010014005":
+            if not is_coterie_of_conceited:
+                return
+            unit.special_rules["enhancement_pledge_of_unholy_fortune"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 
         if name == "adaptive biology" or enh_id == "000008348005":
             unit.special_rules["enhancement_adaptive_biology"] = True

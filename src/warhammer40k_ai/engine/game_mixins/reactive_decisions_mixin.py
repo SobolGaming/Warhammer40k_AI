@@ -1119,6 +1119,17 @@ class GameReactiveDecisionsMixin:
             range_value = int(spec.get("range", 0) or 0)
         except Exception:
             range_value = 0
+        use_leadership_test = bool(spec.get("use_leadership_test", False))
+        try:
+            leadership_test_modifier_if_battle_shocked = int(
+                spec.get("leadership_test_modifier_if_battle_shocked", 0) or 0
+            )
+        except Exception:
+            leadership_test_modifier_if_battle_shocked = 0
+        try:
+            fail_mortal_wounds = int(spec.get("fail_mortal_wounds", 0) or 0)
+        except Exception:
+            fail_mortal_wounds = 0
         ctx = {
             "ability": "start_shooting_phase_visible_battleshock",
             "ability_name": ability_name,
@@ -1130,10 +1141,14 @@ class GameReactiveDecisionsMixin:
             "model": getattr(model, "name", "") or "",
             "model_id": model_id,
             "range": int(range_value),
+            "use_leadership_test": bool(use_leadership_test),
+            "leadership_test_modifier_if_battle_shocked": int(leadership_test_modifier_if_battle_shocked),
+            "fail_mortal_wounds": int(fail_mortal_wounds),
         }
+        test_label = "Leadership test" if use_leadership_test else "Battle-shock test"
         request = DecisionRequest.create(
             DECISION_CHOOSE_START_SHOOTING_BATTLESHOCK_TARGET,
-            f"{ability_name}: select a unit to take a Battle-shock test.",
+            f"{ability_name}: select a unit to take a {test_label}.",
             player_id=getattr(player, "id", None),
             options=options,
             context=ctx,

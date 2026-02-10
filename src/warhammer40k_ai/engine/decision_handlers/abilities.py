@@ -5121,10 +5121,87 @@ def _apply_start_shooting_battleshock_target(game: object, request: DecisionRequ
         ctx.get("ability_name", "") or payload.get("ability_name", "") or "Start of Shooting phase Battle-shock"
     ).strip()
     turn = int(getattr(game, "turn", 0) or 0)
-    try:
-        target_unit.take_battle_shock_test(turn)
-    except Exception:
-        pass
+    use_leadership_test = bool(ctx.get("use_leadership_test", payload.get("use_leadership_test", False)))
+    leadership_test_passed = None
+    mortal_applied = 0
+    if use_leadership_test:
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id") or payload.get("source_unit_id"))
+        try:
+            fail_mortal_wounds = int(ctx.get("fail_mortal_wounds", payload.get("fail_mortal_wounds", 0)) or 0)
+        except Exception:
+            fail_mortal_wounds = 0
+        try:
+            test_modifier = int(
+                ctx.get(
+                    "leadership_test_modifier_if_battle_shocked",
+                    payload.get("leadership_test_modifier_if_battle_shocked", 0),
+                )
+                or 0
+            )
+        except Exception:
+            test_modifier = 0
+        try:
+            target_is_battle_shocked = bool(target_unit.is_battle_shocked())
+        except Exception:
+            target_is_battle_shocked = False
+
+        temp_keys = (
+            "post_shoot_leadership_debuff_active",
+            "post_shoot_leadership_debuff_owner",
+            "post_shoot_leadership_debuff_turn",
+            "post_shoot_leadership_debuff_value",
+            "post_shoot_leadership_debuff_source",
+        )
+        previous_temp: dict[str, object] = {}
+        sr = getattr(target_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        inject_temp_modifier = bool(target_is_battle_shocked and test_modifier)
+        if inject_temp_modifier:
+            for key in temp_keys:
+                if key in sr:
+                    previous_temp[key] = sr.get(key)
+            sr["post_shoot_leadership_debuff_active"] = True
+            sr["post_shoot_leadership_debuff_owner"] = ""
+            sr["post_shoot_leadership_debuff_turn"] = int(turn or 0)
+            sr["post_shoot_leadership_debuff_value"] = int(test_modifier)
+            sr["post_shoot_leadership_debuff_source"] = ability_name
+            target_unit.special_rules = sr
+
+        try:
+            pass_check = getattr(target_unit, "pass_leadership_check", None)
+            if callable(pass_check):
+                leadership_test_passed = bool(pass_check())
+            else:
+                from ...utility.dice import get_roll
+
+                roll = int(get_roll("2D6") or 0)
+                leadership = int(getattr(target_unit, "leadership", 0) or 0)
+                modified_roll = int(roll + (int(test_modifier) if target_is_battle_shocked else 0))
+                leadership_test_passed = bool(modified_roll <= leadership)
+        finally:
+            if inject_temp_modifier:
+                sr_restore = getattr(target_unit, "special_rules", None)
+                if not isinstance(sr_restore, dict):
+                    sr_restore = {}
+                for key in temp_keys:
+                    if key in previous_temp:
+                        sr_restore[key] = previous_temp[key]
+                    else:
+                        sr_restore.pop(key, None)
+                target_unit.special_rules = sr_restore
+
+        if leadership_test_passed is False and int(fail_mortal_wounds or 0) > 0:
+            if source_unit is not None:
+                apply_mortals = getattr(source_unit, "_apply_mortal_wounds_to_unit", None)
+                if callable(apply_mortals):
+                    apply_mortals(target_unit, int(fail_mortal_wounds), game_map=getattr(game, "map", None))
+                    mortal_applied = int(fail_mortal_wounds)
+    else:
+        try:
+            target_unit.take_battle_shock_test(turn)
+        except Exception:
+            pass
     model = resolve_model(game, ctx.get("model_id") or payload.get("model_id"))
     model_name = str(getattr(model, "name", "") or "") if model is not None else ""
     if not model_name:
@@ -5134,7 +5211,20 @@ def _apply_start_shooting_battleshock_target(game: object, request: DecisionRequ
         from ...utility.event_bus import append_action
 
         if player is not None:
-            append_action(player, f"{model_name} used {ability_name} on {target_unit.name}")
+            if use_leadership_test:
+                outcome = "passed" if leadership_test_passed else "failed"
+                if mortal_applied > 0:
+                    append_action(
+                        player,
+                        f"{model_name} used {ability_name} on {target_unit.name} (Leadership test {outcome}; {int(mortal_applied)} mortal wounds).",
+                    )
+                else:
+                    append_action(
+                        player,
+                        f"{model_name} used {ability_name} on {target_unit.name} (Leadership test {outcome}).",
+                    )
+            else:
+                append_action(player, f"{model_name} used {ability_name} on {target_unit.name}")
     except Exception:
         pass
     return target_unit

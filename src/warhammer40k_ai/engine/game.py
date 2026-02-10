@@ -1489,6 +1489,23 @@ class Game(
         if unit is None or model is None:
             return
         spec = payload.get("spec") or {}
+        if bool(spec.get("requires_leadership_test", False)):
+            passed = True
+            pass_for_model = getattr(unit, "pass_leadership_check_for_model", None)
+            if callable(pass_for_model):
+                try:
+                    passed = bool(pass_for_model(model))
+                except Exception:
+                    passed = False
+            else:
+                pass_for_unit = getattr(unit, "pass_leadership_check", None)
+                if callable(pass_for_unit):
+                    try:
+                        passed = bool(pass_for_unit())
+                    except Exception:
+                        passed = False
+            if not passed:
+                return
         roll_min = self._coerce_int(spec.get("roll_min", 2), 2)
         roll = self._coerce_int(get_roll("D6"), 0)
         if roll < roll_min:

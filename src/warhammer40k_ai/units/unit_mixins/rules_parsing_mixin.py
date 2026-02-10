@@ -1129,6 +1129,9 @@ class RulesParsingMixin:
         enhancement_key = re.sub(r"[^a-z0-9]+", "_", enhancement_name).strip("_") if enhancement_name else ""
         bearer_id = self._get_enhancement_bearer_id()
         enhancement_superior_creation = bool(isinstance(sr, dict) and sr.get("enhancement_superior_creation"))
+        enhancement_pledge_of_eternal_servitude = bool(
+            isinstance(sr, dict) and sr.get("enhancement_pledge_of_eternal_servitude")
+        )
 
         seen_entries: set[tuple[str, str]] = set()
         for name, desc in entries:
@@ -1203,6 +1206,19 @@ class RulesParsingMixin:
                 spec["bearer_model_id"] = bearer_id
             specs.append(spec)
 
+        if enhancement_pledge_of_eternal_servitude:
+            specs.append(
+                {
+                    "name": "Pledge of Eternal Servitude",
+                    "roll_min": 1,
+                    "wounds": "d6",
+                    "skip_deadly_demise": False,
+                    "key": "pledge_of_eternal_servitude",
+                    "bearer_model_id": str(bearer_id or ""),
+                    "requires_leadership_test": True,
+                }
+            )
+
         if specs:
             seen: set[tuple] = set()
             deduped: list[dict] = []
@@ -1213,6 +1229,8 @@ class RulesParsingMixin:
                     str(spec.get("wounds", "") or "").strip().lower(),
                     str(spec.get("model_name", "") or "").strip().lower(),
                     bool(spec.get("must_reattach_if_attached", False)),
+                    bool(spec.get("requires_leadership_test", False)),
+                    str(spec.get("bearer_model_id", "") or "").strip(),
                 )
                 if key in seen:
                     continue
@@ -1257,6 +1275,8 @@ class RulesParsingMixin:
                 str(spec.get("wounds", "") or "").strip().lower(),
                 str(spec.get("model_name", "") or "").strip().lower(),
                 bool(spec.get("must_reattach_if_attached", False)),
+                bool(spec.get("requires_leadership_test", False)),
+                str(spec.get("bearer_model_id", "") or "").strip(),
             )
             if key in seen:
                 continue

@@ -349,6 +349,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_emperors_children"),
                 ("fight_attacks_resolved", "_on_fight_attacks_resolved_emperors_children"),
                 ("fight_unit_selected", "_on_fight_unit_selected_emperors_children"),
+                ("phase_start", "_on_phase_start_emperors_children_enhancements"),
             ],
         )
     )

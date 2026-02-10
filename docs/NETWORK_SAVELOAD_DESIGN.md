@@ -263,7 +263,7 @@ Shooting:
 - iron_ambassador_dialog: CHOOSE_QUARRY {spend_yp | skip} (context `ability="iron_ambassador"`, `unit_id`, `source_unit_id`, `model_id`, `turn_owner`, `turn`, `optional=true`)
 - bastion_shield_dialog: CHOOSE_QUARRY {spend_yp | skip} (context `ability="bastion_shield"`, `unit_id`, `source_unit_id`, `source_member_unit_id`, `attacker_unit_id`, `turn_owner`, `turn`, `optional=true`)
 - post_shoot_battleshock_target_dialog: CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET {target_unit_id} (context `attacker_unit_id`, `model_id`, `ability_name`)
-- start_shooting_battleshock_target_dialog: CHOOSE_START_SHOOTING_BATTLESHOCK_TARGET {target_unit_id} (context `source_unit_id`, `model_id`, `ability_name`, `range`)
+- start_shooting_battleshock_target_dialog: CHOOSE_START_SHOOTING_BATTLESHOCK_TARGET {target_unit_id} (context `source_unit_id`, `model_id`, `ability_name`, `range`, optional `use_leadership_test`, `leadership_test_modifier_if_battle_shocked`, `fail_mortal_wounds`; used by abilities including `Pledge of Mortal Pain`)
 - battleshock_clear_target_dialog: CHOOSE_BATTLESHOCK_CLEAR_TARGET {unit_id | skip} (context `source_unit_id`, `model_id`, `ability_name`, `ability_key`, `range`, `phase`)
 - post_shoot_mortal_wounds_target_dialog: CHOOSE_POST_SHOOT_MORTAL_WOUNDS_TARGET {target_unit_id} (context `attacker_unit_id`, `model_id`, `ability_name`, `dice`, `threshold`, `mortal_per_success`)
 - post_shoot_wracked_agonies_target_dialog: CHOOSE_POST_SHOOT_WRACKED_AGONIES_TARGET {target_unit_id} (context `attacker_unit_id`, `model_id`, `ability_name`, `move_penalty`, `charge_penalty`)

@@ -1302,6 +1302,7 @@ class ActionsMovementMixin:
             - leader: Unit (leader)
             - leader_id: str
             - ability_key: str (stable key for per-phase tracking)
+            - usage_limit: "phase" | "turn"
         """
         try:
             root = self.get_attached_unit_root()
@@ -1357,6 +1358,60 @@ class ActionsMovementMixin:
                     "leader": leader,
                     "leader_id": leader_id,
                     "ability_key": ability_key,
+                    "usage_limit": "phase",
+                    "allowed_roll_types": ("hit", "wound", "damage"),
+                }
+            )
+
+        # Enhancement: Pledge of Unholy Fortune (Coterie of the Conceited).
+        # Once per turn, after a hit/wound/save roll for bearer's unit, if bearer is not Battle-shocked,
+        # treat that roll as an unmodified 6.
+        holders = [root]
+        holders.extend(list(getattr(root, "attached_leaders", []) or []))
+        for holder in holders:
+            sr = getattr(holder, "special_rules", None)
+            if not isinstance(sr, dict) or not sr.get("enhancement_pledge_of_unholy_fortune"):
+                continue
+            bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "")
+            if not bearer_id:
+                continue
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = [root]
+            if not members:
+                members = [root]
+            bearer_unit = None
+            for member in members:
+                if member is None:
+                    continue
+                for model in list(getattr(member, "models", []) or []):
+                    if str(get_entity_id(model) or "") != bearer_id:
+                        continue
+                    bearer_unit = member
+                    break
+                if bearer_unit is not None:
+                    break
+            if bearer_unit is None:
+                continue
+            leader_id = str(get_entity_id(bearer_unit) or "")
+            source = "Pledge of Unholy Fortune"
+            source_key = "pledge_of_unholy_fortune"
+            ability_key = f"leading_unmodified_six:{bearer_id}:{source_key}:turn"
+            key = (leader_id, source_key, False, "turn")
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "exclude_support_weapon": False,
+                    "leader": bearer_unit,
+                    "leader_id": leader_id,
+                    "ability_key": ability_key,
+                    "usage_limit": "turn",
+                    "requires_bearer_not_battle_shocked": True,
+                    "allowed_roll_types": ("hit", "wound", "save"),
                 }
             )
 

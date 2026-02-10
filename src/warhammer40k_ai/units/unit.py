@@ -413,6 +413,28 @@ class Unit(
         except Exception:
             pass
 
+        def _enhancement_bearer_is_leading(rule_key: str) -> bool:
+            try:
+                root_unit = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+            except Exception:
+                root_unit = self
+            leaders = list(getattr(root_unit, "attached_leaders", []) or [])
+            for leader in leaders:
+                if leader is None:
+                    continue
+                sr_leader = getattr(leader, "special_rules", None)
+                if not isinstance(sr_leader, dict) or not sr_leader.get(rule_key):
+                    continue
+                bearer_id = str(sr_leader.get("enhancement_bearer_model_id", "") or "")
+                if not bearer_id:
+                    continue
+                for lm in list(getattr(leader, "models", []) or []):
+                    if not getattr(lm, "is_alive", True):
+                        continue
+                    if str(get_entity_id(lm) or "") == bearer_id:
+                        return True
+            return False
+
         # OC: strict "leading" bonus (e.g. Astartes Banner) from attached leaders.
         if ckey == "objective_control":
             try:
@@ -495,6 +517,14 @@ class Unit(
                 _move_pen, oc_pen = get_enemy_aura_move_oc_penalties(self, game_map=game_map)
                 if oc_pen:
                     mods.append(Modifier(ModifierOp.ADD, int(oc_pen), source="aura:enemy_objective_control_penalty"))
+            except Exception:
+                pass
+
+            # Pledge of Dark Glory: while the bearer is leading a unit, improve
+            # Objective Control characteristics of models in that unit by 1.
+            try:
+                if _enhancement_bearer_is_leading("enhancement_pledge_of_dark_glory"):
+                    mods.append(Modifier(ModifierOp.ADD, 1, source="enhancement:pledge_of_dark_glory"))
             except Exception:
                 pass
 
@@ -606,6 +636,12 @@ class Unit(
                                 source=f"ability:bearer_unit_leadership_objective:{source}",
                             )
                         )
+            except Exception:
+                pass
+            try:
+                if _enhancement_bearer_is_leading("enhancement_pledge_of_dark_glory"):
+                    # Leadership is better at lower values, so +1 improvement is a -1 modifier.
+                    mods.append(Modifier(ModifierOp.ADD, -1, source="enhancement:pledge_of_dark_glory"))
             except Exception:
                 pass
 

@@ -3510,6 +3510,28 @@ class WargearProfile:
         owner = str(getattr(current_player, "id", "") or getattr(current_player, "name", "") or "")
         return f"{br}:{pname}:{owner}"
 
+    def _leading_unmodified_six_turn_key(self, unit: Optional['Unit'], game: Optional[object]) -> str:
+        if game is None and unit is not None:
+            try:
+                game = getattr(getattr(unit.get_parent_army(), "player", None), "game", None)
+            except Exception:
+                game = None
+        try:
+            br = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            br = 0
+        try:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+        except Exception:
+            current_player = None
+        if current_player is None and unit is not None:
+            try:
+                current_player = getattr(unit.get_parent_army(), "player", None)
+            except Exception:
+                current_player = None
+        owner = str(getattr(current_player, "id", "") or getattr(current_player, "name", "") or "")
+        return f"{br}:{owner}"
+
     def _maybe_apply_leading_unmodified_six(
         self,
         attacker: 'Model',
@@ -3519,7 +3541,7 @@ class WargearProfile:
         needed: Optional[int] = None,
     ) -> tuple[Optional[int], Optional[str]]:
         """
-        Leading ability: once per phase, set one hit/wound/damage roll for the unit to an unmodified 6.
+        Leading ability: set one hit/wound/damage roll for the unit to an unmodified 6.
         Returns (new_roll_value, decision_str) where decision_str is ability_key or "skip".
         """
         try:
@@ -3571,6 +3593,8 @@ class WargearProfile:
             provider = None
 
         phase_key = self._leading_unmodified_six_phase_key(root, game)
+        turn_key = self._leading_unmodified_six_turn_key(root, game)
+        roll_kind = str(roll_type or "").strip().lower()
         available: list[dict] = []
         for spec in list(specs or []):
             try:
@@ -3578,18 +3602,41 @@ class WargearProfile:
                     continue
             except Exception:
                 pass
+            allowed_roll_types = tuple(str(v or "").strip().lower() for v in list(spec.get("allowed_roll_types", []) or []) if str(v or "").strip())
+            if allowed_roll_types and roll_kind not in allowed_roll_types:
+                continue
+            try:
+                if spec.get("requires_bearer_not_battle_shocked"):
+                    is_bs = False
+                    check_unit = spec.get("leader")
+                    if check_unit is not None and hasattr(check_unit, "is_battle_shocked"):
+                        is_bs = bool(check_unit.is_battle_shocked())
+                    if not is_bs and hasattr(root, "is_battle_shocked"):
+                        is_bs = bool(root.is_battle_shocked())
+                    if is_bs:
+                        continue
+            except Exception:
+                pass
             leader = spec.get("leader")
             ability_key = str(spec.get("ability_key", "") or "")
             if leader is None or not ability_key:
                 continue
+            usage_limit = str(spec.get("usage_limit", "phase") or "phase").strip().lower()
+            if usage_limit not in {"phase", "turn"}:
+                usage_limit = "phase"
             try:
                 sr = getattr(leader, "special_rules", None)
             except Exception:
                 sr = None
             if not isinstance(sr, dict):
                 sr = {}
-            used_map = sr.get("leading_unmodified_six_used_phase_key", {})
-            if isinstance(used_map, dict) and str(used_map.get(ability_key, "")) == str(phase_key):
+            if usage_limit == "turn":
+                used_map = sr.get("leading_unmodified_six_used_turn_key", {})
+                current_key = turn_key
+            else:
+                used_map = sr.get("leading_unmodified_six_used_phase_key", {})
+                current_key = phase_key
+            if isinstance(used_map, dict) and str(used_map.get(ability_key, "")) == str(current_key):
                 continue
             available.append(spec)
 
@@ -3623,6 +3670,7 @@ class WargearProfile:
                     "label": label,
                     "leader_id": str(spec.get("leader_id", "") or ""),
                     "source": source or "Leading ability",
+                    "usage_limit": str(spec.get("usage_limit", "phase") or "phase"),
                 }
             )
 
@@ -3764,11 +3812,19 @@ class WargearProfile:
             sr = None
         if not isinstance(sr, dict):
             sr = {}
-        used_map = sr.get("leading_unmodified_six_used_phase_key", {})
-        if not isinstance(used_map, dict):
-            used_map = {}
-        used_map[decision_key] = str(phase_key or "")
-        sr["leading_unmodified_six_used_phase_key"] = used_map
+        usage_limit = str(spec.get("usage_limit", "phase") or "phase").strip().lower()
+        if usage_limit == "turn":
+            used_map = sr.get("leading_unmodified_six_used_turn_key", {})
+            if not isinstance(used_map, dict):
+                used_map = {}
+            used_map[decision_key] = str(turn_key or "")
+            sr["leading_unmodified_six_used_turn_key"] = used_map
+        else:
+            used_map = sr.get("leading_unmodified_six_used_phase_key", {})
+            if not isinstance(used_map, dict):
+                used_map = {}
+            used_map[decision_key] = str(phase_key or "")
+            sr["leading_unmodified_six_used_phase_key"] = used_map
         leader.special_rules = sr
 
         try:
@@ -11022,6 +11078,19 @@ class WargearProfile:
                 )
             except Exception:
                 pass
+
+        # Leading ability: optionally set save roll to an unmodified 6 when supported.
+        new_roll, decision = self._maybe_apply_leading_unmodified_six(
+            target_model,
+            getattr(target_model, "parent_unit", None),
+            roll_type="save",
+            roll_value=dice_roll,
+            needed=save_value,
+        )
+        if new_roll is not None and int(new_roll) != int(dice_roll):
+            dice_roll = int(new_roll)
+            save_result['roll'] = dice_roll
+            save_result['special_effects'].append("Leading ability: set roll to 6")
 
         # Model ability: once per battle, optionally set save roll to an unmodified 6.
         new_roll, decision = self._maybe_apply_model_unmodified_six(
