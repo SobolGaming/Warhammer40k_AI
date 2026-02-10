@@ -407,6 +407,7 @@ Note: modifier ignore dialogs are used by abilities like Driven by Ultimate Rage
 - voice_of_command_dialog: ISSUE_ORDER {unit_id, order_id}
 - wrathful_presence_dialog: CHOOSE_WRATHFUL_PRESENCE {choice_id}
 - yes_no_dialog: CONFIRM_YES_NO {choice}
+- extremis_level_threat_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="extremis_level_threat"`, `ability_name`, `army_id`)
 - protector_of_paths_overwatch_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context optional key `PROTECTOR_OF_PATHS_OVERWATCH`, `ability_name`, `stratagem`, `target_unit`, `base_cp_cost`)
 - aspect_shrine_prompt_dialog: CHOOSE_ASPECT {choice_id}
 - leading_unmodified_six_prompt_dialog: USE_LEADING_UNMODIFIED_SIX {ability_key | skip} (context `unit_id`, `attacker_model_id`, `roll_type`, `roll_value`, `ability_keys`)

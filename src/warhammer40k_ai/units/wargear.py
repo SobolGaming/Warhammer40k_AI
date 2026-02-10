@@ -9499,6 +9499,17 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Space Marines: 1st Company Task Force (Extremis-level Threat) full wound rerolls vs Oath target.
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            mgr = getattr(army, "oath_of_moment", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "extremis_level_threat_reroll_wound_applies", None):
+                if mgr.extremis_level_threat_reroll_wound_applies(unit, target):
+                    reroll_full_reasons.append("Extremis-level Threat")
+        except Exception:
+            pass
+
         wound_result["reroll_values"] = list(sorted(reroll_wound_values))
         wound_result["reroll_value_reasons"] = list(reroll_value_reasons)
         wound_result["reroll_full_reasons"] = list(reroll_full_reasons)

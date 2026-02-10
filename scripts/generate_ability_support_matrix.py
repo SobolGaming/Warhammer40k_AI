@@ -335,6 +335,10 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Defend at All Costs": (
             r"each time a dire avenger guardian support weapon or war walker model from your army makes an attack if that models unit and or the target unit are within range of one or more objective markers add \d+ to the hit roll",
         ),
+        "Extremis-level Threat": (
+            r"once per battle in your command phase you can use this ability",
+            r"if you do until the start of your next command phase each time a model from your army with the oath of moment ability makes an attack that targets your oath of moment target you can reroll the wound roll as well",
+        ),
         "Mechanised Murder": (
             r"each time an emperors children model from your army makes an attack if it is a transport model or disembarked from a transport this turn reroll a hit roll of \d+ and reroll a wound roll of \d+",
         ),
@@ -1539,6 +1543,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         ),
         "Get Stuck In": ("Supported", "War Horde: ORKS melee weapons gain Sustained Hits 1."),
         "Combat Doctrines": ("Supported", "Gladius Task Force: select each doctrine once per battle to grant move/charge eligibility."),
+        "Extremis-level Threat": (
+            "Supported",
+            "1st Company Task Force: once per battle optional Command phase activation grants full Wound re-rolls against the current Oath of Moment target until your next Command phase.",
+        ),
         "Mastered Doctrines": (
             "Supported",
             "Blade of Ultramar: up to three Command phase doctrine selections; doctrine reuse requires Marneus Calgar on the battlefield; doctrine effects and Ultramarines-only chapter restriction enforced.",
