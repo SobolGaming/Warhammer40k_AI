@@ -21,7 +21,7 @@ from ..utility.calcs import (
 from ..utility.dice import get_roll, DiceCollection
 from ..utility.attack_roll_parser import AttackRollCondition, AttackRollRule, AttackRollEffect, parse_attack_roll_text
 from .status_effects import StatusEffect, BattleShockEffect
-from ..utility.entity_ids import get_entity_id
+from ..utility.entity_ids import get_entity_id, maybe_entity_id
 import uuid
 import copy
 import re
@@ -530,6 +530,41 @@ class Unit(
                         if sr.get("enhancement_strategic_savant"):
                             mods.append(Modifier(ModifierOp.ADD, 1, source="enhancement:strategic_savant"))
                             break
+
+            # Craftworld's Champion (Guardian Battlehost): bearer has Objective Control 5.
+            try:
+                root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+            except Exception:
+                root = self
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = [root]
+            if not members:
+                members = [root]
+            model_id = str(maybe_entity_id(model) or "")
+            if model_id:
+                for member in members:
+                    sr_member = getattr(member, "special_rules", None)
+                    if not isinstance(sr_member, dict):
+                        continue
+                    if not sr_member.get("enhancement_craftworlds_champion"):
+                        continue
+                    bearer_id = str(sr_member.get("enhancement_bearer_model_id", "") or "")
+                    if bearer_id:
+                        if bearer_id != model_id:
+                            continue
+                    else:
+                        get_bearer = getattr(member, "_get_enhancement_bearer_model", None)
+                        bearer = get_bearer() if callable(get_bearer) else None
+                        if str(maybe_entity_id(bearer) or "") != model_id:
+                            continue
+                    try:
+                        oc_value = int(sr_member.get("enhancement_craftworlds_champion_objective_control", 5) or 5)
+                    except Exception:
+                        oc_value = 5
+                    mods.append(Modifier(ModifierOp.SET, int(max(1, oc_value)), source="enhancement:craftworlds_champion"))
+                    break
 
             # Mandulian Reliquary (Warpbane Task Force): while the bearer's unit is not
             # Battle-shocked, add 3 to the bearer's Objective Control characteristic.

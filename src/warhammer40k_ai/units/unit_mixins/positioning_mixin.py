@@ -4105,6 +4105,19 @@ class PositioningMixin:
                         members = [root]
                     if self in members:
                         found = True
+            if not found and isinstance(rsr, dict) and rsr.get("ethereal_pathway_infiltrators"):
+                if self is root:
+                    found = True
+                else:
+                    members = []
+                    try:
+                        members = list(root.get_attached_unit_members() or [])
+                    except Exception:
+                        members = []
+                    if not members:
+                        members = [root]
+                    if self in members:
+                        found = True
         except Exception:
             found = False
         if not found:

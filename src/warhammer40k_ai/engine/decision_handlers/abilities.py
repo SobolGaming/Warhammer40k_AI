@@ -2115,6 +2115,129 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         except Exception:
             pass
         return None
+    if ability == "ethereal_pathway":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, payload.get("source_unit_id") or ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict):
+            source_sr = {}
+        has_enhancement = bool(source_sr.get("enhancement_ethereal_pathway"))
+        if not has_enhancement:
+            enhancement = getattr(source_unit, "enhancement", None)
+            enh_id = str(getattr(enhancement, "id", "") or "")
+            enh_name = str(getattr(enhancement, "name", "") or "").strip().lower()
+            has_enhancement = enh_id == "000009911003" or enh_name == "ethereal pathway"
+        if not has_enhancement:
+            return None
+        try:
+            source_army = source_unit.get_parent_army()
+        except Exception:
+            source_army = None
+
+        selected_vals = payload.get("selected_unit_ids")
+        if not isinstance(selected_vals, list):
+            selected_vals = []
+        if not selected_vals:
+            one_target = payload.get("target_unit_id") or payload.get("unit_id")
+            if one_target:
+                selected_vals = [one_target]
+
+        selected_roots = []
+        seen: set[str] = set()
+        for val in list(selected_vals or []):
+            unit = resolve_unit(game, val)
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            if source_army is not None:
+                try:
+                    if root.get_parent_army() is not source_army:
+                        continue
+                except Exception:
+                    continue
+            root_id = str(get_entity_id(root) or "")
+            if not root_id or root_id in seen:
+                continue
+            seen.add(root_id)
+            selected_roots.append(root)
+
+        def _is_guardians(unit_obj) -> bool:
+            has_any = getattr(unit_obj, "has_any_keyword", None)
+            if callable(has_any):
+                try:
+                    if bool(has_any("GUARDIANS")) or bool(has_any("GUARDIAN")):
+                        return True
+                except Exception:
+                    pass
+            name = str(getattr(unit_obj, "name", "") or "").strip().lower()
+            return "guardian" in name
+
+        skipped = is_skip_choice(request, result)
+        if not skipped:
+            if len(selected_roots) > 2:
+                return None
+            if not all(_is_guardians(unit_obj) for unit_obj in selected_roots):
+                return None
+
+        if not skipped:
+            for root in selected_roots:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["ethereal_pathway_infiltrators"] = True
+                sr["ethereal_pathway_source_unit_id"] = str(get_entity_id(source_unit) or "")
+                root.special_rules = sr
+                try:
+                    members = list(root.get_attached_unit_members() or [])
+                except Exception:
+                    members = []
+                if not members:
+                    members = [root]
+                for member in members:
+                    try:
+                        invalidate = getattr(member, "_invalidate_ability_cache", None)
+                        if callable(invalidate):
+                            invalidate()
+                    except Exception:
+                        continue
+
+        source_sr["enhancement_ethereal_pathway_used"] = True
+        source_unit.special_rules = source_sr
+        try:
+            mark_used = getattr(source_unit, "mark_unit_once_per_battle_used", None)
+            if callable(mark_used):
+                mark_used("ethereal_pathway", ability_name=str(ctx.get("ability_name", "") or "Ethereal Pathway"))
+        except Exception:
+            pass
+
+        try:
+            player = getattr(getattr(source_unit, "get_parent_army", lambda: None)(), "player", None)
+        except Exception:
+            player = None
+        try:
+            if skipped or not selected_roots:
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"Ethereal Pathway: {getattr(source_unit, 'name', 'Unit')} selected none.",
+                )
+            else:
+                names = ", ".join(str(getattr(unit_obj, "name", "Unit") or "Unit") for unit_obj in selected_roots)
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"Ethereal Pathway: {getattr(source_unit, 'name', 'Unit')} selected {names}.",
+                )
+        except Exception:
+            pass
+        return None
     if ability == "cankerblight":
         payload = _option_payload(request, result)
         target_val = payload.get("target_unit_id", payload.get("unit_id", ctx.get("target_unit_id")))

@@ -14,31 +14,66 @@ def _validate_confirm(game: object, request: DecisionRequest, result: DecisionRe
 def _apply_confirm(game: object, request: DecisionRequest, result: DecisionResult) -> None:
     ctx = dict(getattr(request, "context", {}) or {})
     ability = str(ctx.get("ability", "") or "").strip().lower()
-    if ability not in ("hover_mode", "flickering_reality_reroll", "pyrogenesis_flux"):
+    if ability not in ("hover_mode", "flickering_reality_reroll", "pyrogenesis_flux", "extremis_level_threat"):
         return None
 
     unit_id = str(ctx.get("unit_id", "") or "")
     choice = None
     selected_option = None
+    selected_payload = {}
     for opt in list(getattr(request, "options", []) or []):
         if getattr(opt, "option_id", None) == getattr(result, "option_id", None):
             selected_option = opt
             break
     if selected_option is not None:
-        payload = dict(getattr(selected_option, "payload", {}) or {})
-        if "choice" in payload:
-            choice = bool(payload.get("choice"))
+        selected_payload = dict(getattr(selected_option, "payload", {}) or {})
+        if "choice" in selected_payload:
+            choice = bool(selected_payload.get("choice"))
         if not unit_id:
-            unit_id = str(payload.get("unit_id", "") or "")
+            unit_id = str(selected_payload.get("unit_id", "") or "")
         if ability == "pyrogenesis_flux":
-            ctx.setdefault("strength_bonus", payload.get("strength_bonus"))
-            ctx.setdefault("ap_bonus", payload.get("ap_bonus"))
-            ctx.setdefault("base_strength_bonus", payload.get("base_strength_bonus"))
-            ctx.setdefault("flux_strength_bonus", payload.get("flux_strength_bonus"))
-            ctx.setdefault("flux_ap_bonus", payload.get("flux_ap_bonus"))
+            ctx.setdefault("strength_bonus", selected_payload.get("strength_bonus"))
+            ctx.setdefault("ap_bonus", selected_payload.get("ap_bonus"))
+            ctx.setdefault("base_strength_bonus", selected_payload.get("base_strength_bonus"))
+            ctx.setdefault("flux_strength_bonus", selected_payload.get("flux_strength_bonus"))
+            ctx.setdefault("flux_ap_bonus", selected_payload.get("flux_ap_bonus"))
     if choice is None:
         if "choice" in result.payload:
             choice = bool(result.payload.get("choice"))
+
+    if ability == "extremis_level_threat":
+        army_id = str(
+            ctx.get("army_id", "")
+            or selected_payload.get("army_id", "")
+            or result.payload.get("army_id", "")
+            or ""
+        )
+        if choice is None:
+            return None
+        army = None
+        resolver = getattr(game, "_resolve_army_by_id", None)
+        if callable(resolver) and army_id:
+            army = resolver(army_id)
+        if army is None:
+            for player in list(getattr(game, "players", []) or []):
+                if player is None:
+                    continue
+                get_army = getattr(player, "get_army", None)
+                candidate = get_army() if callable(get_army) else getattr(player, "army", None)
+                if candidate is None:
+                    continue
+                candidate_id = str(getattr(candidate, "_id", "") or getattr(candidate, "id", "") or "")
+                if army_id and candidate_id != army_id:
+                    continue
+                army = candidate
+                break
+        if army is None:
+            return None
+        mgr = getattr(army, "oath_of_moment", None)
+        if choice and mgr is not None and hasattr(mgr, "activate_extremis_level_threat"):
+            player = getattr(army, "player", None)
+            mgr.activate_extremis_level_threat(game=game, player=player)
+        return None
 
     if not unit_id:
         return None

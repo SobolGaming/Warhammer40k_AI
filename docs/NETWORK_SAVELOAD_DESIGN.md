@@ -388,6 +388,7 @@ Faction / Detachment / Ability choices:
 - pledge_selection_dialog: CHOOSE_PLEDGE {choice_id} (context `army_id`, `battle_round`, `max_value`, `ability_name="Pledges to the Dark Prince"`)
 - quarry_selection_dialog: CHOOSE_QUARRY {target_unit_id} (context may include `ability`, `ability_name`, `effect_key`, `source_unit_id`, `prey_reroll_hit`, `prey_reroll_wound`, `prey_melee_only`, `prey_keyword`, `prey_repick_on_destroyed`)
 - quarry_selection_dialog (Risen Rubricae): CHOOSE_QUARRY {selected_unit_ids[]} (context `ability="risen_rubricae"`, `ability_name="Risen Rubricae"`, `source_unit_id`, `enhancement_id`)
+- quarry_selection_dialog (Ethereal Pathway): CHOOSE_QUARRY {selected_unit_ids[] | skip} (context `ability="ethereal_pathway"`, `ability_name="Ethereal Pathway"`, `source_unit_id`, `enhancement_id`)
 - modifier_ignore_dialog: CHOOSE_HIT_MODIFIER_IGNORES {choice} (context `attacker_model_id`, `target_unit_id`, `wargear_id`, `profile_name`, `ability_name`)
 - modifier_ignore_dialog: CHOOSE_SKILL_MODIFIER_IGNORES {choice} (context `attacker_model_id`, `target_unit_id`, `wargear_id`, `profile_name`, `ability_name`, `modifier_kind="weapon_skill"`)
 - modifier_ignore_dialog: CHOOSE_MOVE_MODIFIER_IGNORES {choice} (context `unit_id`, `action_type`, `ability_name`)
@@ -406,6 +407,8 @@ Note: modifier ignore dialogs are used by abilities like Driven by Ultimate Rage
 - voice_of_command_dialog: ISSUE_ORDER {unit_id, order_id}
 - wrathful_presence_dialog: CHOOSE_WRATHFUL_PRESENCE {choice_id}
 - yes_no_dialog: CONFIRM_YES_NO {choice}
+- extremis_level_threat_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="extremis_level_threat"`, `ability_name`, `army_id`)
+- protector_of_paths_overwatch_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context optional key `PROTECTOR_OF_PATHS_OVERWATCH`, `ability_name`, `stratagem`, `target_unit`, `base_cp_cost`)
 - aspect_shrine_prompt_dialog: CHOOSE_ASPECT {choice_id}
 - leading_unmodified_six_prompt_dialog: USE_LEADING_UNMODIFIED_SIX {ability_key | skip} (context `unit_id`, `attacker_model_id`, `roll_type`, `roll_value`, `ability_keys`)
 - model_unmodified_six_prompt_dialog: USE_MODEL_UNMODIFIED_SIX {ability_key | skip} (context `unit_id`, `model_id`, `roll_type`, `roll_value`, `ability_keys`)

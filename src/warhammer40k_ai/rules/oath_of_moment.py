@@ -17,10 +17,14 @@ class OathOfMomentManager:
         self.army = army
         self.oathOfMomentTargetUnitId: Optional[str] = None
         self.oathOfMomentTargetName: Optional[str] = None
+        self.extremisLevelThreatActive: bool = False
+        self.extremisLevelThreatUsed: bool = False
         if self.army is not None:
             try:
                 setattr(self.army, "oathOfMomentTargetUnitId", None)
                 setattr(self.army, "oathOfMomentTargetName", None)
+                setattr(self.army, "extremisLevelThreatActive", False)
+                setattr(self.army, "extremisLevelThreatUsed", False)
             except Exception:
                 pass
 
@@ -85,6 +89,17 @@ class OathOfMomentManager:
                 return False
         return False
 
+    def _army_is_1st_company_task_force(self) -> bool:
+        if self.army is None:
+            return False
+        mgr = getattr(self.army, "space_marines_detachments", None)
+        if mgr is None:
+            return False
+        check = getattr(mgr, "is_1st_company_task_force", None)
+        if not callable(check):
+            return False
+        return bool(check())
+
     def wound_bonus_enabled(self) -> bool:
         if not self._army_has_oath():
             return False
@@ -103,6 +118,119 @@ class OathOfMomentManager:
                 setattr(self.army, "oathOfMomentTargetName", None)
             except Exception:
                 pass
+
+    def clear_extremis_level_threat(self) -> None:
+        self.extremisLevelThreatActive = False
+        if self.army is not None:
+            try:
+                setattr(self.army, "extremisLevelThreatActive", False)
+            except Exception:
+                pass
+
+    def _sync_extremis_level_threat_used(self) -> None:
+        if self.army is not None:
+            try:
+                setattr(self.army, "extremisLevelThreatUsed", bool(self.extremisLevelThreatUsed))
+            except Exception:
+                pass
+
+    def can_activate_extremis_level_threat(self) -> bool:
+        if not self._army_has_oath():
+            return False
+        if not self._army_is_1st_company_task_force():
+            return False
+        if bool(self.extremisLevelThreatUsed):
+            return False
+        return True
+
+    def activate_extremis_level_threat(self, *, game=None, player=None) -> bool:
+        if not self.can_activate_extremis_level_threat():
+            return False
+        if game is not None:
+            try:
+                phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            except Exception:
+                phase_name = ""
+            if phase_name and phase_name != "COMMAND_PHASE":
+                return False
+            if player is not None:
+                try:
+                    if getattr(player, "get_army", lambda: None)() is not self.army:
+                        return False
+                except Exception:
+                    return False
+        self.extremisLevelThreatActive = True
+        self.extremisLevelThreatUsed = True
+        if self.army is not None:
+            try:
+                setattr(self.army, "extremisLevelThreatActive", True)
+            except Exception:
+                pass
+        self._sync_extremis_level_threat_used()
+        return True
+
+    def extremis_level_threat_reroll_wound_applies(self, attacker_unit, target_unit) -> bool:
+        if not bool(self.extremisLevelThreatActive):
+            return False
+        return self.can_reroll_hit(attacker_unit, target_unit)
+
+    def _pending_extremis_level_threat_request(self, *, game=None, army_id: str = "") -> bool:
+        queue = getattr(game, "decision_queue", None) if game is not None else None
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "")) != "CONFIRM_YES_NO":
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "") != "extremis_level_threat":
+                continue
+            if army_id and str(ctx.get("army_id", "") or "") != army_id:
+                continue
+            return True
+        return False
+
+    def _queue_extremis_level_threat_prompt(self, *, game=None, player=None) -> None:
+        if game is None or player is None:
+            return
+        if not bool(getattr(game, "is_authoritative", True)):
+            return
+        if not self.can_activate_extremis_level_threat():
+            return
+        try:
+            from ..engine.decision_kinds import DECISION_CONFIRM_YES_NO
+            from ..engine.decisions import DecisionOption, DecisionRequest
+        except Exception:
+            return
+        army_id = get_entity_id(self.army) if self.army is not None else ""
+        if self._pending_extremis_level_threat_request(game=game, army_id=str(army_id or "")):
+            return
+        options = [
+            DecisionOption.create(
+                "Use",
+                payload={"choice": True, "army_id": army_id},
+            ),
+            DecisionOption.create(
+                "Skip",
+                payload={"choice": False, "army_id": army_id},
+            ),
+        ]
+        req = DecisionRequest.create(
+            DECISION_CONFIRM_YES_NO,
+            "Use Extremis-level Threat?",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={
+                "ability": "extremis_level_threat",
+                "ability_name": "Extremis-level Threat",
+                "army_id": army_id,
+                "message": (
+                    "Use Extremis-level Threat now? "
+                    "Until your next Command phase, attacks against your Oath of Moment target can re-roll Wound rolls."
+                ),
+            },
+        )
+        if hasattr(game, "request_decision"):
+            game.request_decision(req)
 
     def set_target(self, unit) -> None:
         if unit is None:
@@ -214,6 +342,7 @@ class OathOfMomentManager:
 
         # Always clear at the start of the Command phase before new selection.
         self.clear_target()
+        self.clear_extremis_level_threat()
 
         if not self._army_has_oath():
             return
@@ -257,3 +386,4 @@ class OathOfMomentManager:
         )
         if hasattr(game, "request_decision"):
             game.request_decision(req)
+        self._queue_extremis_level_threat_prompt(game=game, player=player)

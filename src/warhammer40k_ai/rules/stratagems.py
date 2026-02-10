@@ -1750,6 +1750,14 @@ class StratagemManager(
             return bool(fn(self.game, stratagem_name=stratagem_name))
         return False
 
+    def _unit_can_use_protector_of_paths_overwatch(self, unit, *, stratagem_name: str = "") -> bool:
+        if unit is None:
+            return False
+        fn = getattr(unit, "can_use_protector_of_paths_overwatch", None)
+        if callable(fn):
+            return bool(fn(self.game, stratagem_name=stratagem_name))
+        return False
+
     def _unit_has_snarling_protector_heroic_intervention(self, unit) -> bool:
         if unit is None:
             return False
@@ -1800,11 +1808,20 @@ class StratagemManager(
                     target_unit,
                     stratagem_name="OVERWATCH",
                 )
+                or self._unit_can_use_protector_of_paths_overwatch(
+                    target_unit,
+                    stratagem_name="OVERWATCH",
+                )
             )
         for cand in list(candidates or []):
             if self._unit_can_use_traitor_enforcer_overwatch(cand):
                 return True
             if self._unit_can_use_prophetic_sentinels_stratagem_discount(
+                cand,
+                stratagem_name="OVERWATCH",
+            ):
+                return True
+            if self._unit_can_use_protector_of_paths_overwatch(
                 cand,
                 stratagem_name="OVERWATCH",
             ):
@@ -8762,6 +8779,7 @@ class StratagemManager(
                 logger.error(f"ERROR: Overwatch: {apply_info.get('reason', 'not allowed')}")
                 return False
             traitor_overwatch = bool(apply_info.get("traitor_enforcer_overwatch_use", False))
+            protector_overwatch = bool(apply_info.get("protector_of_paths_overwatch_use", False))
             if self._used_this_turn.get("OVERWATCH", False) and not traitor_overwatch:
                 logger.error("ERROR: Overwatch already used this turn")
                 return False
@@ -8799,11 +8817,19 @@ class StratagemManager(
             out_of_phase = True
             overwatch_threshold = 6
             try:
+                thresholds: list[int] = []
                 get_threshold = getattr(shooter, "get_destroyer_of_futures_overwatch_hit_threshold", None)
                 if callable(get_threshold):
                     threshold = int(get_threshold(enemy_unit=enemy_unit, game=self.game) or 0)
                     if threshold > 0:
-                        overwatch_threshold = int(threshold)
+                        thresholds.append(int(threshold))
+                get_protector_threshold = getattr(shooter, "get_protector_of_paths_overwatch_hit_threshold", None)
+                if callable(get_protector_threshold):
+                    threshold = int(get_protector_threshold(enemy_unit=enemy_unit, game=self.game) or 0)
+                    if threshold > 0:
+                        thresholds.append(int(threshold))
+                if thresholds:
+                    overwatch_threshold = int(min(thresholds))
             except Exception:
                 overwatch_threshold = 6
             try:
@@ -8852,6 +8878,15 @@ class StratagemManager(
                             ability_name=ability_name or "Brutal Example",
                             player=self.player,
                             leader_unit_id=str((shooter.get_traitor_enforcer_overwatch_rule() or {}).get("leader_id", "") or ""),
+                        )
+                    except Exception:
+                        pass
+                if protector_overwatch:
+                    try:
+                        shooter.mark_protector_of_paths_used(
+                            self.game,
+                            source=str(apply_info.get("protector_of_paths_overwatch_source", "") or ""),
+                            stratagem_name=str(getattr(s, "name", "") or ""),
                         )
                     except Exception:
                         pass

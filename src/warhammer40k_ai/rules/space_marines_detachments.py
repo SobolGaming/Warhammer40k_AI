@@ -183,6 +183,11 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Wrath of the Rock")
 
+    def is_1st_company_task_force(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("1st Company Task Force")
+
     def _attached_unit_has_keyword(self, unit, keyword: str) -> bool:
         if unit is None:
             return False

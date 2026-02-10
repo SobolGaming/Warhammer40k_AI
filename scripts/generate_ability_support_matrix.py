@@ -337,6 +337,10 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Defend at All Costs": (
             r"each time a dire avenger guardian support weapon or war walker model from your army makes an attack if that models unit and or the target unit are within range of one or more objective markers add \d+ to the hit roll",
         ),
+        "Extremis-level Threat": (
+            r"once per battle in your command phase you can use this ability",
+            r"if you do until the start of your next command phase each time a model from your army with the oath of moment ability makes an attack that targets your oath of moment target you can reroll the wound roll as well",
+        ),
         "Mechanised Murder": (
             r"each time an emperors children model from your army makes an attack if it is a transport model or disembarked from a transport this turn reroll a hit roll of \d+ and reroll a wound roll of \d+",
         ),
@@ -1541,6 +1545,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         ),
         "Get Stuck In": ("Supported", "War Horde: ORKS melee weapons gain Sustained Hits 1."),
         "Combat Doctrines": ("Supported", "Gladius Task Force: select each doctrine once per battle to grant move/charge eligibility."),
+        "Extremis-level Threat": (
+            "Supported",
+            "1st Company Task Force: once per battle optional Command phase activation grants full Wound re-rolls against the current Oath of Moment target until your next Command phase.",
+        ),
         "Mastered Doctrines": (
             "Supported",
             "Blade of Ultramar: up to three Command phase doctrine selections; doctrine reuse requires Marneus Calgar on the battlefield; doctrine effects and Ultramarines-only chapter restriction enforced.",
@@ -7502,6 +7510,10 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000009769003": "Harmonisation Matrix: Command phase roll D6 if bearer/transport is within a controlled objective; on 3+, gain 1 CP.",
         "000009769004": "Spirit Stone of Raelyth: Lone Operative within 3\" of friendly AELDARI VEHICLE; Command phase select friendly AELDARI VEHICLE within 3\" to regain up to D3 lost wounds.",
         "000009769005": "Guileful Strategist: after deployment select up to three AELDARI VEHICLE units to redeploy; may place them into Strategic Reserves regardless of limits.",
+        "000009911002": "Craftworld's Champion: bearer Objective Control is set to 5.",
+        "000009911003": "Ethereal Pathway: at the start of Deploy Armies, optional single CHOOSE_QUARRY selection grants Infiltrators to up to two friendly Guardians units.",
+        "000009911004": "Protector of the Paths: while leading Dire Avengers/Guardians, Fire Overwatch can be used for 0CP once per battle round; Overwatch hits on 5+ (or 4+ while within a controlled objective).",
+        "000009911005": "Breath of Vaul: while leading Storm Guardians, flamer attack-count rolls and fusion-gun damage rolls can be re-rolled.",
         "000009927002": "Aspect of Murder: bearer melee weapons gain +1 Damage and [Precision].",
         "000009927003": "Mantle of Wisdom: while leading Aspect Warriors, unit gains both Path of the Warrior abilities when selected to shoot or fight.",
         "000009927004": "Shimmerstone: while leading Aspect Warriors, ranged attacks targeting the unit suffer -1 to wound.",
