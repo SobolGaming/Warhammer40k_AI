@@ -150,11 +150,11 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <td bgcolor="#d4edda">Critical hits auto-wound.</td>
 </tr>
 <tr>
-<td bgcolor="#f8d7da"><code>linked fire</code></td>
-<td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
-<td bgcolor="#f8d7da">1</td>
-<td bgcolor="#f8d7da">linked fire</td>
-<td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
+<td bgcolor="#d4edda"><code>linked fire</code></td>
+<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
+<td bgcolor="#d4edda">1</td>
+<td bgcolor="#d4edda">linked fire</td>
+<td bgcolor="#d4edda">Linked Fire origin selection supported; range/LOS measured from origin and Attacks=1 override applied.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>melta</code></td>
@@ -171,11 +171,11 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <td bgcolor="#d4edda">Enforced: each model can use a ONE SHOT weapon once per battle.</td>
 </tr>
 <tr>
-<td bgcolor="#f8d7da"><code>overcharge</code></td>
-<td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
-<td bgcolor="#f8d7da">1</td>
-<td bgcolor="#f8d7da">overcharge</td>
-<td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
+<td bgcolor="#d4edda"><code>overcharge</code></td>
+<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
+<td bgcolor="#d4edda">1</td>
+<td bgcolor="#d4edda">overcharge</td>
+<td bgcolor="#d4edda">Hazardous tests for Overcharge profiles apply a -2 roll modifier (raw failures on 1-3).</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>pistol</code></td>
@@ -185,11 +185,11 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <td bgcolor="#d4edda">Engaged shooting + pistol-vs-other-ranged choice enforced (10e).</td>
 </tr>
 <tr>
-<td bgcolor="#f8d7da"><code>plasma warhead</code></td>
-<td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
-<td bgcolor="#f8d7da">2</td>
-<td bgcolor="#f8d7da">plasma warhead</td>
-<td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
+<td bgcolor="#d4edda"><code>plasma warhead</code></td>
+<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
+<td bgcolor="#d4edda">2</td>
+<td bgcolor="#d4edda">plasma warhead</td>
+<td bgcolor="#d4edda">Marker-based fire workflow supported: declaration rules are validated and attacks resolve from the designated marker.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>precision</code></td>
@@ -206,11 +206,11 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <td bgcolor="#d4edda">Tags Psychic attacks; conditional defenses (FNP/Invulnerable) check this keyword.</td>
 </tr>
 <tr>
-<td bgcolor="#f8d7da"><code>psychic assassin</code></td>
-<td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
-<td bgcolor="#f8d7da">1</td>
-<td bgcolor="#f8d7da">psychic assassin</td>
-<td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
+<td bgcolor="#d4edda"><code>psychic assassin</code></td>
+<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
+<td bgcolor="#d4edda">1</td>
+<td bgcolor="#d4edda">psychic assassin</td>
+<td bgcolor="#d4edda">When targeting a unit with the PSYKER keyword, this weapon's Attacks characteristic becomes 6.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>rapid fire</code></td>
@@ -220,11 +220,11 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <td bgcolor="#d4edda">Adds attacks at half range (supports dice values like D3/D6+X).</td>
 </tr>
 <tr>
-<td bgcolor="#f8d7da"><code>reverberating summons</code></td>
-<td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
-<td bgcolor="#f8d7da">2</td>
-<td bgcolor="#f8d7da">Reverberating summons</td>
-<td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
+<td bgcolor="#d4edda"><code>reverberating summons</code></td>
+<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
+<td bgcolor="#d4edda">2</td>
+<td bgcolor="#d4edda">Reverberating summons</td>
+<td bgcolor="#d4edda">Weapon ability: on destroying a model, return 1 Plaguebearer model to a friendly unit within 12".</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>snagged</code></td>
