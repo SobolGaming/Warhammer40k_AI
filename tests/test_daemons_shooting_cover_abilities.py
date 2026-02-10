@@ -128,6 +128,60 @@ class TestChaosDaemonsShootingCoverAbilities(unittest.TestCase):
         mods = attacker.get_unit_wound_reroll_modifiers("any", target=target)
         self.assertTrue(mods.get("reroll_wound_full"))
 
+    def test_deaths_heads_death_guard_wording_post_shoot_wound_reroll(self):
+        army = Army("Death Guard", detachment_type="Other")
+        army.faction_id = "DG"
+        ability_desc = (
+            "In your Shooting phase, after this unit has shot, select one enemy unit hit by one or more of those attacks. "
+            "Until the end of the turn, each time a friendly Plague Legions unit makes an attack that targets that unit, "
+            "you can re-roll the Wound roll."
+        )
+        ability = Ability("Death's Heads", "DG", ability_desc, "Datasheet", "")
+        attacker = self._make_unit(
+            "Plague Drones",
+            army,
+            abilities=[ability],
+            keywords=["PLAGUE LEGIONS"],
+        )
+        target_army = Army("Target", detachment_type="Other")
+        target_army.faction_id = "TA"
+        target = self._make_unit("Target", target_army)
+        army.units = [attacker]
+        target_army.units = [target]
+
+        player = Player("P1", PlayerControl.REMOTE, army=army)
+        enemy_player = Player("P2", PlayerControl.REMOTE, army=target_army)
+        game = SimpleNamespace(turn=1, get_current_player=lambda: player)
+        player.game = game
+        enemy_player.game = game
+
+        registry = EntityRegistry()
+        registry.register(attacker, kind="unit")
+        registry.register(target, kind="unit")
+        game.entity_registry = registry
+
+        specs = attacker.unit_post_shoot_keyword_wound_reroll_specs()
+        self.assertEqual(len(specs), 1)
+        ctx = {
+            "ability": "post_shoot_keyword_wound_reroll",
+            "ability_name": "Death's Heads",
+            "attacker_unit_id": attacker._id,
+            "keyword_phrase": specs[0]["keyword_phrase"],
+        }
+        options = [DecisionOption.create("Target", payload={"target_unit_id": target._id})]
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Death's Heads",
+            player_id=player.id,
+            options=options,
+            context=ctx,
+        )
+        res = DecisionResult(decision_id=req.decision_id, player_id=player.id, option_id=req.options[0].option_id)
+        _apply_choose_quarry(game, req, res)
+
+        mods = attacker.get_unit_wound_reroll_modifiers("any", target=target)
+        self.assertTrue(mods.get("reroll_wound_full"))
+
     def test_death_hex_roll_success_marks_target(self):
         army = Army("Chaos Space Marines", detachment_type="Other")
         army.faction_id = "CSM"
@@ -232,6 +286,35 @@ class TestChaosDaemonsShootingCoverAbilities(unittest.TestCase):
         fort_ability = Ability("Cover", "CD", fort_desc, "Datasheet", "")
         fort = self._make_unit("Skull Altar", army, abilities=[fort_ability], keywords=["FORTIFICATION"])
         fort_model = self._make_model("Skull Altar", fort, x=5.0, y=0.0, radius=1.0)
+        fort.models = [fort_model]
+
+        attacker = self._make_unit("Attacker", army)
+        attacker_model = self._make_model("Attacker", attacker, x=0.0, y=0.0)
+        attacker.models = [attacker_model]
+
+        target_army = Army("Target", detachment_type="Other")
+        target = self._make_unit("Target", target_army)
+        target_model = self._make_model("Target", target, x=10.0, y=0.0)
+        target.models = [target_model]
+
+        game_map = Map(60, 44)
+        cover_info = game_map.get_benefit_of_cover_from_fortifications(
+            attacking_unit=attacker,
+            target_model=target_model,
+            fortification_units=[fort],
+        )
+        self.assertTrue(cover_info.get("has_benefit_of_cover"))
+
+    def test_diseased_cover_death_guard_wording_detection(self):
+        army = Army("Death Guard", detachment_type="Other")
+        army.faction_id = "DG"
+        fort_desc = (
+            "Each time a ranged attack is allocated to a model, if that model is not fully visible to the attacking unit "
+            "because of this Fortification, that model has the Benefit of Cover against that attack."
+        )
+        fort_ability = Ability("Diseased Cover", "DG", fort_desc, "Datasheet", "")
+        fort = self._make_unit("Miasmic Malignifier", army, abilities=[fort_ability], keywords=["FORTIFICATION"])
+        fort_model = self._make_model("Miasmic Malignifier", fort, x=5.0, y=0.0, radius=1.0)
         fort.models = [fort_model]
 
         attacker = self._make_unit("Attacker", army)

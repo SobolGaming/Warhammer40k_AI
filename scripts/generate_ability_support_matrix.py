@@ -1663,6 +1663,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "End of each phase: each damaged Beasts of Nurgle model regains all lost wounds.",
         ),
+        ("DG", "Grotesque Regeneration"): (
+            "Supported",
+            "End of each phase: each damaged Beasts of Nurgle model regains all lost wounds.",
+        ),
         ("CD", "Chance for Glory"): (
             "Supported",
             "Once per battle, start of Fight phase: improve S/A/AP/D of the bearer's melee weapons by 1 until end of phase.",
@@ -1784,6 +1788,8 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("CD", "Skullmaster\u2019s Fury"): ("Supported", "Charge end: Juggernaut's bladed horns gain [DEVASTATING WOUNDS]."),
         ("CD", "Deluge of Nurgle (Aura)"): ("Supported", "Enemy within 6\" suffers -2 Move and -1 OC."),
         ("CD", "Nurgle\u2019s Rot (Psychic)"): ("Supported", "End of Movement: select enemy within 12\"; -1 Toughness until next Movement."),
+        ("DG", "Deluge of Nurgle (Aura)"): ("Supported", "Enemy within 6\" suffers -2 Move and -1 OC."),
+        ("DG", "Nurgle\u2019s Rot (Psychic)"): ("Supported", "End of Movement: select enemy within 12\"; -1 Toughness until next Movement."),
         ("CD", "Seed the Garden of Nurgle"): ("Supported", "End of Movement: Area Terrain counts as within Shadow of Chaos."),
         ("CD", "Rider of the Immaterial Winds"): ("Supported", "Once per battle: end of opponent turn, enter Strategic Reserves."),
         ("CD", "Blazing Warpfire (Psychic)"): ("Supported", "Leading: unit ranged weapons gain Assault."),
@@ -1796,6 +1802,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Post-shoot: select a hit enemy unit; it cannot gain Benefit of Cover until end of phase.",
         ),
         ("CD", "Death\u2019s Heads"): (
+            "Supported",
+            "Post-shoot: select a hit enemy unit; friendly keyword units re-roll Wound rolls vs that unit until end of turn.",
+        ),
+        ("DG", "Death\u2019s Heads"): (
             "Supported",
             "Post-shoot: select a hit enemy unit; friendly keyword units re-roll Wound rolls vs that unit until end of turn.",
         ),
@@ -1813,6 +1823,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Fortification: if target is not fully visible due to this Fortification, it gains Benefit of Cover against the attack.",
         ),
         ("CD", "Diseased Cover"): (
+            "Supported",
+            "Fortification: if target is not fully visible due to this Fortification, it gains Benefit of Cover against the attack.",
+        ),
+        ("DG", "Diseased Cover"): (
             "Supported",
             "Fortification: if target is not fully visible due to this Fortification, it gains Benefit of Cover against the attack.",
         ),

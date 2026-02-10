@@ -251,6 +251,24 @@ class TestDaemonsBatch2Abilities(unittest.TestCase):
         cleanup_game._on_phase_start_nurgles_rot_cleanup(player=player, phase=phase)
         self.assertFalse(target.special_rules.get("nurgles_rot_active", False))
 
+    def test_nurgles_rot_death_guard_wording_parses(self):
+        army = Army("Death Guard", detachment_type="Other")
+        army.faction_id = "DG"
+        ability_desc = (
+            "At the end of your Movement phase, you can select one enemy unit within 12\" of this model. "
+            "Until the start of your next Movement phase, that unit is rotted. While a unit is rotted, "
+            "subtract 1 from the Toughness characteristic of models in that unit."
+        )
+        ability = Ability("Nurgle's Rot (Psychic)", "DG", ability_desc, "Datasheet", "")
+        source = self._make_unit("Great Unclean One", army, abilities=[ability])
+        source_model = self._make_model("Great Unclean One", source)
+        source.models = [source_model]
+
+        specs = source.model_movement_phase_end_toughness_penalty_specs(source_model)
+        self.assertEqual(len(specs), 1)
+        self.assertEqual(int(specs[0].get("range", 0) or 0), 12)
+        self.assertEqual(int(specs[0].get("penalty", 0) or 0), -1)
+
     def test_seed_the_garden_marks_terrain(self):
         army = Army("Chaos Daemons", detachment_type="Other")
         army.faction_id = "CD"
