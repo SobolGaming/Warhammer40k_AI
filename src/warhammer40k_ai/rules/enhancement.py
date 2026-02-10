@@ -296,6 +296,10 @@ class Enhancement:
             is_rapid_evisceration = bool(ec_mgr and ec_mgr.is_rapid_evisceration())
         except Exception:
             is_rapid_evisceration = False
+        try:
+            is_slaaneshs_chosen = bool(ec_mgr and ec_mgr.is_slaaneshs_chosen())
+        except Exception:
+            is_slaaneshs_chosen = False
         is_court_or_mercurial_host = bool(is_court_of_the_phoenician or is_mercurial_host)
         ck_mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
         try:
@@ -867,6 +871,88 @@ class Enhancement:
                 return
             unit.special_rules["enhancement_heretek_adept"] = True
             unit.special_rules["enhancement_heretek_adept_range"] = 6
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "eager to prove" or enh_id == "000010018002":
+            if not is_slaaneshs_chosen:
+                return
+            unit.special_rules["enhancement_eager_to_prove"] = True
+            unit.special_rules["enhancement_charge_reroll"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            try:
+                params = dict(getattr(desc, "effect_params", {}) or {})
+            except Exception:
+                params = {}
+            try:
+                move_bonus = int(params.get("favoured_move_bonus", 2) or 2)
+            except Exception:
+                move_bonus = 2
+            unit.special_rules["enhancement_eager_to_prove_favoured_move_bonus"] = int(max(0, move_bonus))
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "repulsed by weakness" or enh_id == "000010018003":
+            if not is_slaaneshs_chosen:
+                return
+            unit.special_rules["enhancement_repulsed_by_weakness"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            try:
+                params = dict(getattr(desc, "effect_params", {}) or {})
+            except Exception:
+                params = {}
+            exclude_mv = bool(params.get("exclude_monsters_vehicles", True))
+            try:
+                favoured_penalty = int(params.get("favoured_desperate_escape_penalty", 1) or 1)
+            except Exception:
+                favoured_penalty = 1
+            if exclude_mv:
+                unit.special_rules["enhancement_repulsed_by_weakness_exclude_monster_vehicle"] = True
+                # Keep the generic desperate-escape marker for existing movement hooks.
+                unit.special_rules["enemy_fallback_desperate_escape_exclude_monster_vehicle"] = True
+            unit.special_rules["enhancement_repulsed_by_weakness_favoured_penalty"] = int(max(0, favoured_penalty))
+            # Keep the generic desperate-escape marker for existing movement hooks.
+            unit.special_rules["enemy_fallback_desperate_escape"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "proud and vainglorious" or enh_id == "000010018004":
+            if not is_slaaneshs_chosen:
+                return
+            unit.special_rules["enhancement_proud_and_vainglorious"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            try:
+                params = dict(getattr(desc, "effect_params", {}) or {})
+            except Exception:
+                params = {}
+            try:
+                oc_bonus = int(params.get("favoured_objective_control_bonus", 1) or 1)
+            except Exception:
+                oc_bonus = 1
+            unit.special_rules["enhancement_proud_and_vainglorious_oc_bonus"] = int(max(0, oc_bonus))
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "slayer of champions" or enh_id == "000010018005":
+            if not is_slaaneshs_chosen:
+                return
+            unit.special_rules["enhancement_slayer_of_champions"] = True
+            unit.special_rules["enhancement_bearer_melee_precision"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            try:
+                params = dict(getattr(desc, "effect_params", {}) or {})
+            except Exception:
+                params = {}
+            try:
+                s_bonus = int(params.get("character_target_strength_bonus", 1) or 1)
+            except Exception:
+                s_bonus = 1
+            try:
+                ap_bonus = int(params.get("character_target_ap_bonus", 1) or 1)
+            except Exception:
+                ap_bonus = 1
+            unit.special_rules["enhancement_slayer_of_champions_character_strength_bonus"] = int(max(0, s_bonus))
+            unit.special_rules["enhancement_slayer_of_champions_character_ap_bonus"] = int(max(0, ap_bonus))
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 

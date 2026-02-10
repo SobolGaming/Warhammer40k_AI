@@ -1772,6 +1772,24 @@ class ShootingMixin:
                 leadership_reroll_sources = []
         if not auto_passed:
             try:
+                checker = getattr(self, "_attached_unit_has_active_enhancement", None)
+                has_proud = bool(
+                    callable(checker)
+                    and checker(
+                        "enhancement_proud_and_vainglorious",
+                        enhancement_id="000010018004",
+                        enhancement_name="proud and vainglorious",
+                    )
+                )
+            except Exception:
+                has_proud = False
+            if has_proud:
+                seen = {str(s or "") for s in list(leadership_reroll_sources or [])}
+                source_name = "Proud and Vainglorious"
+                if source_name not in seen:
+                    leadership_reroll_sources.append(source_name)
+        if not auto_passed:
+            try:
                 from ...utility.aura_effects import get_aura_battleshock_test_reroll_sources
                 aura_sources = list(get_aura_battleshock_test_reroll_sources(self, game_map=getattr(game, "map", None)) or [])
             except Exception:

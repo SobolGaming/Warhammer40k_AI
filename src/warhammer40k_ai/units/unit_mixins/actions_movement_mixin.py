@@ -7474,6 +7474,7 @@ class ActionsMovementMixin:
         
         fallback_desperate = False
         fallback_bs_penalty = 0
+        fallback_any_penalty = 0
         if game_map is not None:
             try:
                 enemy_units = list(game_map.get_enemy_units(self) or [])
@@ -7486,24 +7487,115 @@ class ActionsMovementMixin:
                     u for u in list(getattr(game_map, "units", []) or [])
                     if getattr(u, "get_parent_army", lambda: None)() is not unit_army
                 ]
+            seen_enemy_roots: set[str] = set()
             for enemy in enemy_units:
-                sr = getattr(enemy, "special_rules", None)
-                if not isinstance(sr, dict) or not sr.get("enemy_fallback_desperate_escape"):
+                if enemy is None:
                     continue
-                if sr.get("enemy_fallback_desperate_escape_exclude_monster_vehicle"):
+                try:
+                    enemy_root = enemy.get_attached_unit_root()
+                except Exception:
+                    enemy_root = enemy
+                if enemy_root is None:
+                    continue
+                try:
+                    enemy_root_id = str(get_entity_id(enemy_root) or "")
+                except Exception:
+                    enemy_root_id = ""
+                if enemy_root_id and enemy_root_id in seen_enemy_roots:
+                    continue
+                if enemy_root_id:
+                    seen_enemy_roots.add(enemy_root_id)
+                try:
+                    if hasattr(game_map, "is_within_engagement_range") and not game_map.is_within_engagement_range(self, enemy_root):
+                        continue
+                except Exception:
+                    continue
+
+                source_desperate = False
+                source_exclude_mv = False
+                source_bs_penalty = 0
+                try:
+                    members = list(enemy_root.get_attached_unit_members() or [])
+                except Exception:
+                    members = [enemy_root]
+                if not members:
+                    members = [enemy_root]
+                for source_unit in members:
+                    source_sr = getattr(source_unit, "special_rules", None)
+                    if not isinstance(source_sr, dict):
+                        continue
+                    if source_sr.get("enemy_fallback_desperate_escape"):
+                        source_desperate = True
+                        if source_sr.get("enemy_fallback_desperate_escape_exclude_monster_vehicle"):
+                            source_exclude_mv = True
+                        try:
+                            source_bs_penalty = max(
+                                source_bs_penalty,
+                                int(source_sr.get("enemy_fallback_desperate_escape_bs_penalty", 0) or 0),
+                            )
+                        except Exception:
+                            pass
+
+                repulsed_active = False
+                try:
+                    checker = getattr(enemy_root, "_attached_unit_has_active_enhancement", None)
+                    if callable(checker):
+                        repulsed_active = bool(
+                            checker(
+                                "enhancement_repulsed_by_weakness",
+                                enhancement_id="000010018003",
+                                enhancement_name="repulsed by weakness",
+                            )
+                        )
+                except Exception:
+                    repulsed_active = False
+                source_any_penalty = 0
+                if repulsed_active:
+                    source_desperate = True
+                    source_exclude_mv = True
+                    try:
+                        enemy_army = enemy_root.get_parent_army()
+                    except Exception:
+                        enemy_army = None
+                    mgr = getattr(enemy_army, "emperors_children", None) if enemy_army is not None else None
+                    if mgr is None and enemy_army is not None:
+                        mgr = getattr(enemy_army, "emperors_children_detachments", None)
+                    if mgr is not None and bool(getattr(mgr, "is_favoured_champions", lambda _u: False)(enemy_root)):
+                        favoured_penalty = 1
+                        for source_unit in members:
+                            source_sr = getattr(source_unit, "special_rules", None)
+                            if not isinstance(source_sr, dict):
+                                continue
+                            if not source_sr.get("enhancement_repulsed_by_weakness"):
+                                continue
+                            try:
+                                favoured_penalty = max(
+                                    favoured_penalty,
+                                    int(
+                                        source_sr.get(
+                                            "enhancement_repulsed_by_weakness_favoured_penalty",
+                                            1,
+                                        )
+                                        or 1
+                                    ),
+                                )
+                            except Exception:
+                                continue
+                        source_any_penalty = max(source_any_penalty, int(favoured_penalty))
+
+                if not source_desperate:
+                    continue
+                if source_exclude_mv:
                     try:
                         if self.has_any_keyword("MONSTER") or self.has_any_keyword("VEHICLE"):
                             continue
                     except Exception:
                         pass
-                try:
-                    if hasattr(game_map, "is_within_engagement_range") and not game_map.is_within_engagement_range(self, enemy):
-                        continue
-                except Exception:
-                    continue
                 fallback_desperate = True
+                if source_any_penalty:
+                    fallback_any_penalty = max(fallback_any_penalty, int(source_any_penalty))
                 try:
-                    fallback_bs_penalty = max(fallback_bs_penalty, int(sr.get("enemy_fallback_desperate_escape_bs_penalty", 0) or 0))
+                    fallback_bs_penalty = max(fallback_bs_penalty, int(source_bs_penalty or 0))
                 except Exception:
                     pass
 
@@ -7516,8 +7608,10 @@ class ActionsMovementMixin:
                 fortification_escape_exempt = False
         if (is_battleshocked and not fortification_escape_exempt) or fallback_desperate:
             roll_modifier = 0
+            if fallback_desperate and fallback_any_penalty:
+                roll_modifier -= abs(int(fallback_any_penalty))
             if is_battleshocked and fallback_desperate and fallback_bs_penalty:
-                roll_modifier = -abs(int(fallback_bs_penalty))
+                roll_modifier -= abs(int(fallback_bs_penalty))
             models_lost = self.take_desperate_escape_test(
                 game_map,
                 reason="fall back",

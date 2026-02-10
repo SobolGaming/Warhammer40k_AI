@@ -202,6 +202,59 @@ _VESSELS_OF_WRATH_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _VESSELS_OF_WRATH_DESCRIPTORS.values()
 }
 
+_SLAANESHS_CHOSEN_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010018002": EnhancementToolDescriptor(
+        enhancement_id="000010018002",
+        name="Eager to Prove",
+        timing="passive_and_while_favoured_champions",
+        target="bearer_unit",
+        duration="constant_conditional",
+        effect="charge_reroll_and_favoured_move_bonus",
+        effect_params={"charge_reroll": True, "favoured_move_bonus": 2},
+    ),
+    "000010018003": EnhancementToolDescriptor(
+        enhancement_id="000010018003",
+        name="Repulsed by Weakness",
+        timing="enemy_fall_back_within_engagement_range",
+        target="enemy_unit",
+        duration="instant",
+        effect="force_desperate_escape_and_favoured_test_penalty",
+        effect_params={
+            "exclude_monsters_vehicles": True,
+            "favoured_desperate_escape_penalty": 1,
+        },
+    ),
+    "000010018004": EnhancementToolDescriptor(
+        enhancement_id="000010018004",
+        name="Proud and Vainglorious",
+        timing="passive_and_while_favoured_champions",
+        target="bearer_unit",
+        duration="constant_conditional",
+        effect="leadership_battleshock_rerolls_and_favoured_oc_bonus",
+        effect_params={
+            "reroll_tests": ("battle_shock", "leadership"),
+            "favoured_objective_control_bonus": 1,
+        },
+    ),
+    "000010018005": EnhancementToolDescriptor(
+        enhancement_id="000010018005",
+        name="Slayer of Champions",
+        timing="passive",
+        target="bearer_melee_weapons",
+        duration="constant_conditional",
+        effect="bearer_melee_precision_and_character_target_strength_ap_bonus",
+        effect_params={
+            "precision": True,
+            "character_target_strength_bonus": 1,
+            "character_target_ap_bonus": 1,
+        },
+    ),
+}
+
+_SLAANESHS_CHOSEN_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SLAANESHS_CHOSEN_DESCRIPTORS.values()
+}
+
 _COTERIE_OF_CONCEITED_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010014002": EnhancementToolDescriptor(
         enhancement_id="000010014002",
@@ -577,6 +630,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _VESSELS_OF_WRATH_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SLAANESHS_CHOSEN_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _COTERIE_OF_CONCEITED_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -609,6 +665,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _CULT_OF_BLOOD_BY_NAME.get(key)
         or _POSSESSED_SLAUGHTERBAND_BY_NAME.get(key)
         or _VESSELS_OF_WRATH_BY_NAME.get(key)
+        or _SLAANESHS_CHOSEN_BY_NAME.get(key)
         or _COTERIE_OF_CONCEITED_BY_NAME.get(key)
         or _CARNIVAL_OF_EXCESS_BY_NAME.get(key)
         or _DAEMONIC_INCURSION_BY_NAME.get(key)

@@ -780,6 +780,45 @@ class WargearProfile:
         except Exception:
             return False
 
+    def _target_has_character_keyword(self, target: Optional['Unit']) -> bool:
+        if target is None:
+            return False
+        try:
+            root = target.get_attached_unit_root()
+        except Exception:
+            root = target
+        if root is None:
+            return False
+        candidates = [root]
+        try:
+            candidates = list(root.get_attached_unit_members() or [])
+        except Exception:
+            candidates = [root]
+        if not candidates:
+            candidates = [root]
+        for unit in candidates:
+            if unit is None:
+                continue
+            try:
+                is_character = getattr(unit, "is_character", False)
+                if callable(is_character):
+                    is_character = is_character()
+                if bool(is_character):
+                    return True
+            except Exception:
+                pass
+            try:
+                if bool(unit.has_keyword("CHARACTER")):
+                    return True
+            except Exception:
+                pass
+            try:
+                if bool(unit.has_any_keyword("CHARACTER")):
+                    return True
+            except Exception:
+                continue
+        return False
+
     def _target_was_hit_by_thousand_sons_psychic_attack_this_phase(self, attacker: 'Model', target: 'Unit') -> bool:
         if attacker is None or target is None:
             return False
@@ -1386,6 +1425,18 @@ class WargearProfile:
             bearer_bonus = int(sr.get("enhancement_bearer_melee_ap_bonus", 0) or 0)
             if bearer_bonus and self._attacker_is_enhancement_bearer(attacker, sr):
                 ap_val -= bearer_bonus
+            if (
+                isinstance(sr, dict)
+                and sr.get("enhancement_slayer_of_champions")
+                and self._attacker_is_enhancement_bearer(attacker, sr)
+                and self._target_has_character_keyword(target)
+            ):
+                try:
+                    char_ap_bonus = int(sr.get("enhancement_slayer_of_champions_character_ap_bonus", 1) or 1)
+                except Exception:
+                    char_ap_bonus = 1
+                if char_ap_bonus:
+                    ap_val -= int(char_ap_bonus)
         try:
             if self.parent_wargear and self.parent_wargear.is_melee():
                 bonus = int(getattr(attacker, "get_temporary_melee_ap_bonus", lambda: 0)() or 0)
@@ -8361,6 +8412,21 @@ class WargearProfile:
                     strength = strength + shadow_extra
                     wound_result.setdefault("modifiers", []).append(
                         f"+{shadow_extra}S from Enhancement bearer (Shadow of Chaos)"
+                    )
+            if (
+                isinstance(sr, dict)
+                and sr.get("enhancement_slayer_of_champions")
+                and self._attacker_is_enhancement_bearer(attacker, sr)
+                and self._target_has_character_keyword(target)
+            ):
+                try:
+                    char_s_bonus = int(sr.get("enhancement_slayer_of_champions_character_strength_bonus", 1) or 1)
+                except Exception:
+                    char_s_bonus = 1
+                if char_s_bonus:
+                    strength = strength + int(char_s_bonus)
+                    wound_result.setdefault("modifiers", []).append(
+                        f"+{int(char_s_bonus)}S from Slayer of Champions"
                     )
         if (
             self.parent_wargear

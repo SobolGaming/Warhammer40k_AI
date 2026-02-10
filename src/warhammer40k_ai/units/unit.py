@@ -435,6 +435,61 @@ class Unit(
                         return True
             return False
 
+        # Eager to Prove (Slaanesh's Chosen): while the bearer's unit is Favoured Champions,
+        # add to the Move characteristic of models in that unit.
+        if ckey == "movement":
+            try:
+                root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+            except Exception:
+                root = self
+            try:
+                army = root.get_parent_army() if root is not None else None
+            except Exception:
+                army = None
+            try:
+                mgr = getattr(army, "emperors_children", None) if army is not None else None
+                if mgr is None and army is not None:
+                    mgr = getattr(army, "emperors_children_detachments", None)
+            except Exception:
+                mgr = None
+            if mgr is not None and bool(getattr(mgr, "is_favoured_champions", lambda _u: False)(root)):
+                has_eager = False
+                try:
+                    checker = getattr(root, "_attached_unit_has_active_enhancement", None)
+                    if callable(checker):
+                        has_eager = bool(
+                            checker(
+                                "enhancement_eager_to_prove",
+                                enhancement_id="000010018002",
+                                enhancement_name="eager to prove",
+                            )
+                        )
+                except Exception:
+                    has_eager = False
+                if has_eager:
+                    bonus = 0
+                    try:
+                        members = list(root.get_attached_unit_members() or [])
+                    except Exception:
+                        members = [root]
+                    if not members:
+                        members = [root]
+                    for member in members:
+                        sr_member = getattr(member, "special_rules", None)
+                        if not isinstance(sr_member, dict):
+                            continue
+                        if not sr_member.get("enhancement_eager_to_prove"):
+                            continue
+                        try:
+                            bonus = max(
+                                bonus,
+                                int(sr_member.get("enhancement_eager_to_prove_favoured_move_bonus", 2) or 2),
+                            )
+                        except Exception:
+                            continue
+                    if bonus:
+                        mods.append(Modifier(ModifierOp.ADD, int(bonus), source="enhancement:eager_to_prove_favoured"))
+
         # OC: strict "leading" bonus (e.g. Astartes Banner) from attached leaders.
         if ckey == "objective_control":
             try:
@@ -527,6 +582,66 @@ class Unit(
                     mods.append(Modifier(ModifierOp.ADD, 1, source="enhancement:pledge_of_dark_glory"))
             except Exception:
                 pass
+
+            # Proud and Vainglorious (Slaanesh's Chosen): while the bearer's unit is
+            # Favoured Champions, add to Objective Control.
+            try:
+                root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+            except Exception:
+                root = self
+            try:
+                army = root.get_parent_army() if root is not None else None
+            except Exception:
+                army = None
+            try:
+                mgr = getattr(army, "emperors_children", None) if army is not None else None
+                if mgr is None and army is not None:
+                    mgr = getattr(army, "emperors_children_detachments", None)
+            except Exception:
+                mgr = None
+            if mgr is not None and bool(getattr(mgr, "is_favoured_champions", lambda _u: False)(root)):
+                has_proud = False
+                try:
+                    checker = getattr(root, "_attached_unit_has_active_enhancement", None)
+                    if callable(checker):
+                        has_proud = bool(
+                            checker(
+                                "enhancement_proud_and_vainglorious",
+                                enhancement_id="000010018004",
+                                enhancement_name="proud and vainglorious",
+                            )
+                        )
+                except Exception:
+                    has_proud = False
+                if has_proud:
+                    bonus = 0
+                    try:
+                        members = list(root.get_attached_unit_members() or [])
+                    except Exception:
+                        members = [root]
+                    if not members:
+                        members = [root]
+                    for member in members:
+                        sr_member = getattr(member, "special_rules", None)
+                        if not isinstance(sr_member, dict):
+                            continue
+                        if not sr_member.get("enhancement_proud_and_vainglorious"):
+                            continue
+                        try:
+                            bonus = max(
+                                bonus,
+                                int(sr_member.get("enhancement_proud_and_vainglorious_oc_bonus", 1) or 1),
+                            )
+                        except Exception:
+                            continue
+                    if bonus:
+                        mods.append(
+                            Modifier(
+                                ModifierOp.ADD,
+                                int(bonus),
+                                source="enhancement:proud_and_vainglorious_favoured",
+                            )
+                        )
 
         if ckey == "toughness":
             if game_map is None:

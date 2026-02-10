@@ -1051,6 +1051,22 @@ class StateAttachmentMixin:
             reroll_sources = list(root.leading_leadership_reroll_sources() or [])
         except Exception:
             reroll_sources = []
+        try:
+            checker = getattr(root, "_attached_unit_has_active_enhancement", None)
+            has_proud = bool(
+                callable(checker)
+                and checker(
+                    "enhancement_proud_and_vainglorious",
+                    enhancement_id="000010018004",
+                    enhancement_name="proud and vainglorious",
+                )
+            )
+        except Exception:
+            has_proud = False
+        if has_proud:
+            seen_proud = {str(src or "").strip().lower() for src in list(reroll_sources or []) if str(src or "").strip()}
+            if "proud and vainglorious" not in seen_proud:
+                reroll_sources.append("Proud and Vainglorious")
         if extra_reroll_sources:
             seen = {str(src or "").strip().lower() for src in reroll_sources if str(src or "").strip()}
             for src in list(extra_reroll_sources or []):
