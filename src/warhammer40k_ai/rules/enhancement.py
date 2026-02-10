@@ -284,6 +284,15 @@ class Enhancement:
             is_carnival_of_excess = bool(ec_mgr and ec_mgr.is_carnival_of_excess())
         except Exception:
             is_carnival_of_excess = False
+        try:
+            is_court_of_the_phoenician = bool(ec_mgr and ec_mgr.is_court_of_the_phoenician())
+        except Exception:
+            is_court_of_the_phoenician = False
+        try:
+            is_mercurial_host = bool(ec_mgr and ec_mgr.is_mercurial_host())
+        except Exception:
+            is_mercurial_host = False
+        is_court_or_mercurial_host = bool(is_court_of_the_phoenician or is_mercurial_host)
         ck_mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
         try:
             is_infernal_lance = bool(ck_mgr and ck_mgr.is_infernal_lance())
@@ -742,6 +751,36 @@ class Enhancement:
             if not is_coterie_of_conceited:
                 return
             unit.special_rules["enhancement_pledge_of_unholy_fortune"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "steeped in suffering" or enh_id == "000009998002":
+            if not is_court_or_mercurial_host:
+                return
+            unit.special_rules["enhancement_steeped_in_suffering"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "intoxicating musk" or enh_id == "000009998003":
+            if not is_court_or_mercurial_host:
+                return
+            unit.special_rules["enhancement_intoxicating_musk"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "tactical perfection" or enh_id == "000009998004":
+            if not is_court_or_mercurial_host:
+                return
+            unit.special_rules["enhancement_tactical_perfection"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "loathsome dexterity" or enh_id == "000009998005":
+            if not is_court_or_mercurial_host:
+                return
+            unit.special_rules["enhancement_loathsome_dexterity"] = True
+            unit.special_rules["enhancement_loathsome_dexterity_move_types"] = ["move", "advance", "fall_back"]
+            unit.special_rules["enhancement_loathsome_dexterity_auto_pass_desperate_escape"] = True
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 

@@ -1407,6 +1407,8 @@ def get_validation_rules(
 
     warp_walker_move_types: set[str] = set()
     warp_walker_auto_pass_desperate_escape = False
+    loathsome_dexterity_move_types: set[str] = set()
+    loathsome_dexterity_auto_pass_desperate_escape = False
     if moving_unit is not None:
         try:
             members = list(getattr(moving_unit, "get_attached_unit_members", lambda: [])() or [])
@@ -1416,15 +1418,24 @@ def get_validation_rules(
             members = [moving_unit]
         for member in members:
             sr = getattr(member, "special_rules", None)
-            if not isinstance(sr, dict) or not sr.get("enhancement_warp_walker"):
+            if not isinstance(sr, dict):
                 continue
-            configured = _coerce_move_types(sr.get("enhancement_warp_walker_move_types"))
-            if configured:
-                warp_walker_move_types.update(configured)
-            else:
-                warp_walker_move_types.update({"move", "advance", "fall_back"})
-            if bool(sr.get("enhancement_warp_walker_auto_pass_desperate_escape", False)):
-                warp_walker_auto_pass_desperate_escape = True
+            if sr.get("enhancement_warp_walker"):
+                configured = _coerce_move_types(sr.get("enhancement_warp_walker_move_types"))
+                if configured:
+                    warp_walker_move_types.update(configured)
+                else:
+                    warp_walker_move_types.update({"move", "advance", "fall_back"})
+                if bool(sr.get("enhancement_warp_walker_auto_pass_desperate_escape", False)):
+                    warp_walker_auto_pass_desperate_escape = True
+            if sr.get("enhancement_loathsome_dexterity"):
+                configured = _coerce_move_types(sr.get("enhancement_loathsome_dexterity_move_types"))
+                if configured:
+                    loathsome_dexterity_move_types.update(configured)
+                else:
+                    loathsome_dexterity_move_types.update({"move", "advance", "fall_back"})
+                if bool(sr.get("enhancement_loathsome_dexterity_auto_pass_desperate_escape", False)):
+                    loathsome_dexterity_auto_pass_desperate_escape = True
 
     phase_move_types: set[str] = set()
     phase_move_terrain_only_types: set[str] = set()
@@ -1465,12 +1476,15 @@ def get_validation_rules(
             auto_pass_desperate_escape = True
 
     move_tag = _movement_type_tag(movement_type)
-    if move_tag and move_tag in warp_walker_move_types:
+    if move_tag and (move_tag in warp_walker_move_types or move_tag in loathsome_dexterity_move_types):
         base_rules['can_move_through_enemy_models'] = True
         if move_tag in ("move", "advance", "fall_back"):
             base_rules['cannot_move_within_engagement_range'] = False
             base_rules['cannot_end_in_engagement_range'] = True
-        if warp_walker_auto_pass_desperate_escape and move_tag == "fall_back":
+        if (
+            (warp_walker_auto_pass_desperate_escape or loathsome_dexterity_auto_pass_desperate_escape)
+            and move_tag == "fall_back"
+        ):
             base_rules['check_desperate_escape'] = False
 
     if move_tag and move_tag in phase_move_types:

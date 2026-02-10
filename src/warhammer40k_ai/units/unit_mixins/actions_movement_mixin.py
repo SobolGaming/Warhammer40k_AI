@@ -2979,6 +2979,23 @@ class ActionsMovementMixin:
                 mods["reroll_hit_full"] = True
                 reroll_hit_full_reasons.append(f"{source}: re-roll Hit roll")
 
+        # Steeped in Suffering: +1 to hit vs targets below Starting Strength.
+        try:
+            has_steeped = bool(
+                self._attached_unit_has_active_enhancement(
+                    "enhancement_steeped_in_suffering",
+                    enhancement_id="000009998002",
+                    enhancement_name="Steeped in Suffering",
+                )
+            )
+            if has_steeped and target is not None:
+                target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+                if target_root is not None and bool(target_root.is_below_starting_strength()):
+                    mods["hit"] += 1
+                    hit_reasons.append("+1 to hit from Steeped in Suffering (vs targets below Starting Strength)")
+        except Exception:
+            pass
+
         mods["reroll_hit_values"] = tuple(sorted(reroll_hit_values))
         mods["reroll_hit_ones"] = bool(1 in reroll_hit_values)
         mods["crit_hit_threshold"] = crit_hit_threshold
@@ -3508,6 +3525,23 @@ class ActionsMovementMixin:
                             if bonus:
                                 mods["wound"] += int(bonus)
                                 wound_reasons.append(f"{int(bonus):+d} to wound from {source}")
+        except Exception:
+            pass
+
+        # Steeped in Suffering: +1 to wound vs targets below Half-strength.
+        try:
+            has_steeped = bool(
+                self._attached_unit_has_active_enhancement(
+                    "enhancement_steeped_in_suffering",
+                    enhancement_id="000009998002",
+                    enhancement_name="Steeped in Suffering",
+                )
+            )
+            if has_steeped and target is not None:
+                target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+                if target_root is not None and bool(target_root.is_below_half_strength()):
+                    mods["wound"] += 1
+                    wound_reasons.append("+1 to wound from Steeped in Suffering (vs targets below Half-strength)")
         except Exception:
             pass
 

@@ -8838,6 +8838,35 @@ class WargearProfile:
                         wound_result['modifiers'].append(f"{mod} to wound from Power from Pain (defense)")
         except Exception:
             pass
+        # Emperor's Children enhancement: Intoxicating Musk.
+        try:
+            is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+            if is_melee:
+                target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+                has_active_enh = getattr(target_root, "_attached_unit_has_active_enhancement", None)
+                applies = False
+                if callable(has_active_enh):
+                    applies = bool(
+                        has_active_enh(
+                            "enhancement_intoxicating_musk",
+                            enhancement_id="000009998003",
+                            enhancement_name="Intoxicating Musk",
+                        )
+                    )
+                if applies:
+                    try:
+                        tgh = float(target_toughness)
+                    except Exception:
+                        tgh = float(getattr(target_root, "toughness", 0) or 0)
+                    try:
+                        atk_strength = float(strength)
+                    except Exception:
+                        atk_strength = 0.0
+                    if atk_strength > tgh:
+                        dice_modifier -= 1
+                        wound_result["modifiers"].append("-1 to wound from Intoxicating Musk")
+        except Exception:
+            pass
         # Harbingers of Dread: Doom (+1 to wound vs Battle-shocked targets).
         try:
             army = attacker.parent_unit.get_parent_army()

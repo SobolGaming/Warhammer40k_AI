@@ -364,6 +364,106 @@ class PositioningMixin:
                 continue
         return False
 
+    def _attached_unit_has_active_enhancement(
+        self,
+        flag_key: str,
+        *,
+        enhancement_id: str = "",
+        enhancement_name: str = "",
+        require_bearer_alive: bool = True,
+    ) -> bool:
+        """
+        Return True when any attached-unit member has the enhancement and (by default)
+        the bearer model is alive.
+        """
+        if not flag_key and not enhancement_id and not enhancement_name:
+            return False
+
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        norm_name = ""
+        if enhancement_name:
+            try:
+                norm_name = str(enhancement_name or "").strip().lower()
+            except Exception:
+                norm_name = ""
+
+        for unit in members:
+            if unit is None:
+                continue
+
+            matched = False
+            sr = getattr(unit, "special_rules", None)
+            if isinstance(sr, dict) and flag_key and sr.get(flag_key):
+                matched = True
+            if not matched:
+                try:
+                    enh = getattr(unit, "enhancement", None)
+                    if enh is not None:
+                        enh_unit_id = str(getattr(enh, "id", "") or "").strip()
+                        if enhancement_id and enh_unit_id == enhancement_id:
+                            matched = True
+                        elif norm_name:
+                            enh_name = str(getattr(enh, "name", "") or "").strip().lower()
+                            if enh_name == norm_name:
+                                matched = True
+                except Exception:
+                    matched = False
+            if not matched:
+                continue
+
+            if not require_bearer_alive:
+                return True
+
+            bearer_id = ""
+            if isinstance(sr, dict):
+                bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "")
+            if bearer_id:
+                for model in list(getattr(unit, "models", []) or []):
+                    try:
+                        model_id = str(getattr(model, "id", getattr(model, "_id", "")) or "")
+                    except Exception:
+                        model_id = ""
+                    if model_id != bearer_id:
+                        continue
+                    try:
+                        alive_attr = getattr(model, "is_alive", True)
+                        alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                    except Exception:
+                        alive = False
+                    if alive:
+                        return True
+                continue
+
+            get_bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+            if callable(get_bearer):
+                try:
+                    if get_bearer() is not None:
+                        return True
+                    continue
+                except Exception:
+                    continue
+
+            for model in list(getattr(unit, "models", []) or []):
+                try:
+                    alive_attr = getattr(model, "is_alive", True)
+                    alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                except Exception:
+                    alive = False
+                if alive:
+                    return True
+
+        return False
+
     def _is_lord_on_juggernaut(self) -> bool:
         try:
             dsid = str(getattr(getattr(self, "_datasheet", None), "id", "") or "").strip()
@@ -4222,6 +4322,7 @@ class PositioningMixin:
 
         for name, desc in abilities_to_check:
             text = str(desc or "").lower()
+            text = text.replace("\u2019", "'").replace("\u2018", "'")
             if ("after both players have deployed their armies" in text and "redeploy" in text):
                 # Attempt to extract count from "select up to" phrases
                 has_redeploy = True
@@ -4253,6 +4354,13 @@ class PositioningMixin:
                     count = max(count, 3)  # default to 3 if unspecified
                 if "strategic reserves" in text:
                     can_place_in_reserves = True
+                if (
+                    "emperor's children units" in text
+                    or "emperors children units" in text
+                    or "emperor's children unit" in text
+                    or "emperors children unit" in text
+                ):
+                    redeploy_filters = ["EMPEROR'S CHILDREN"]
                 if "aeldari vehicle units" in text or "aeldari vehicle unit" in text:
                     redeploy_filters = ["AELDARI", "VEHICLE"]
                 if "jakhals" in text and "goremongers" in text:
