@@ -5753,6 +5753,29 @@ class WargearProfile:
                     _add_hit_mod(int(bonus), reason)
         except Exception:
             pass
+        # Aeldari: Guardian Battlehost - Defend at All Costs (+1 to hit near objectives).
+        try:
+            unit = attacker.parent_unit
+            army = None
+            game = None
+            game_map = None
+            try:
+                army = unit.get_parent_army()
+                game = getattr(getattr(army, "player", None), "game", None)
+                game_map = getattr(game, "map", None) if game is not None else None
+                if game_map is None:
+                    game_map = self._get_game_map_from_model(attacker)
+            except Exception:
+                game = None
+                game_map = None
+            mgr = getattr(army, "aeldari_detachments", None) if army is not None else None
+            bonus_fn = getattr(mgr, "defend_at_all_costs_hit_bonus", None) if mgr is not None else None
+            if callable(bonus_fn):
+                bonus, reason = bonus_fn(attacker, unit, target, game=game, game_map=game_map)
+                if bonus:
+                    _add_hit_mod(int(bonus), reason)
+        except Exception:
+            pass
         # Adepta Sororitas: The Blood of Martyrs (Hallowed Martyrs).
         unit = getattr(attacker, "parent_unit", None)
         army = (

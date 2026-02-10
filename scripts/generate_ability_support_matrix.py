@@ -332,6 +332,9 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time a model in this unit makes an attack reroll a hit roll of \d+",
             r"each time a model in this unit makes an attack reroll a wound roll of \d+",
         ),
+        "Defend at All Costs": (
+            r"each time a dire avenger guardian support weapon or war walker model from your army makes an attack if that models unit and or the target unit are within range of one or more objective markers add \d+ to the hit roll",
+        ),
         "Mechanised Murder": (
             r"each time an emperors children model from your army makes an attack if it is a transport model or disembarked from a transport this turn reroll a hit roll of \d+ and reroll a wound roll of \d+",
         ),
@@ -1502,6 +1505,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Path of the Warrior": (
             "Supported",
             "Aspect Host: select re-roll Hit 1s or re-roll Wound 1s each time an Aspect Warriors or Avatar of Khaine unit is selected to shoot or fight (until end of phase).",
+        ),
+        "Defend at All Costs": (
+            "Supported",
+            "Guardian Battlehost: Dire Avengers, Guardians, Support Weapon, and War Walker models gain +1 to hit if their unit and/or the target unit is within range of one or more objective markers.",
         ),
         "Pledges to the Dark Prince": (
             "Supported",
