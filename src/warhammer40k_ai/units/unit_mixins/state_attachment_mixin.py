@@ -2,6 +2,28 @@
 
 from ._common import *
 
+_NAMED_UNIT_LIMIT_WORD_TO_INT = {
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "eleven": 11,
+    "twelve": 12,
+}
+
+_NAMED_UNIT_INCLUSION_LIMIT_RE = re.compile(
+    r"\byour\s+army\s+cannot\s+include\s+more\s+than\s+"
+    r"(?P<limit>\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+"
+    r"(?P<unit>.+?)\s+units?\b",
+    re.IGNORECASE,
+)
+
 
 class StateAttachmentMixin:
     def add_model(self, model: Model) -> None:
@@ -2036,6 +2058,60 @@ class StateAttachmentMixin:
         cache[cache_key] = bool(found)
         self._ability_cache = cache
         return bool(found)
+
+    def get_named_unit_inclusion_caps(self) -> list[dict]:
+        """
+        Parse ability text for named unit caps in the form:
+        "your army cannot include more than X <named unit> unit(s)".
+        """
+        cache_key = "named_unit_inclusion_caps"
+        cache = getattr(self, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return [dict(entry) for entry in list(cache.get(cache_key) or [])]
+
+        caps_by_key: dict[str, dict] = {}
+        for name, desc in self._iter_ability_entries_for_rules(model=None):
+            text = self._normalize_rules_text(desc or name or "")
+            if not text:
+                continue
+            normalized = text.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            if not normalized:
+                continue
+
+            for match in _NAMED_UNIT_INCLUSION_LIMIT_RE.finditer(normalized):
+                raw_limit = str(match.group("limit") or "").strip().lower()
+                if not raw_limit:
+                    continue
+                if raw_limit.isdigit():
+                    limit = int(raw_limit)
+                else:
+                    limit = _NAMED_UNIT_LIMIT_WORD_TO_INT.get(raw_limit)
+                if limit is None or int(limit) <= 0:
+                    continue
+
+                raw_unit_name = str(match.group("unit") or "").strip()
+                unit_key = re.sub(r"[^a-z0-9]+", " ", raw_unit_name.lower())
+                unit_key = re.sub(r"\s+", " ", unit_key).strip()
+                if not unit_key:
+                    continue
+
+                existing = caps_by_key.get(unit_key)
+                if existing is None or int(existing.get("limit", 0)) > int(limit):
+                    caps_by_key[unit_key] = {
+                        "unit_key": unit_key,
+                        "unit_name": raw_unit_name,
+                        "limit": int(limit),
+                    }
+
+        caps = [caps_by_key[key] for key in sorted(caps_by_key)]
+        if not isinstance(cache, dict):
+            cache = {}
+        cache[cache_key] = [dict(entry) for entry in caps]
+        self._ability_cache = cache
+        return [dict(entry) for entry in caps]
 
     def _get_crewed_platform_spec(self) -> Optional[dict]:
         """Return parsed crewed platform ability info, or None if not present."""
