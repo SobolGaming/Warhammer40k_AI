@@ -46,6 +46,47 @@ class NurglesGiftManager:
     def __init__(self, army=None):
         self.army = army
         self.active_plague_key: Optional[str] = None
+        self.plaguesurge_active: bool = False
+        self.plaguesurge_bonus: int = 0
+        self.plaguesurge_owner: str = ""
+        self.plaguesurge_turn: int = 0
+        self.plaguesurge_source: str = ""
+
+    def _clear_plaguesurge_state(self) -> None:
+        self.plaguesurge_active = False
+        self.plaguesurge_bonus = 0
+        self.plaguesurge_owner = ""
+        self.plaguesurge_turn = 0
+        self.plaguesurge_source = ""
+
+    def _plaguesurge_bonus_for_current_state(self) -> float:
+        if not bool(self.plaguesurge_active):
+            return 0.0
+        player = getattr(self.army, "player", None) if self.army is not None else None
+        if player is None:
+            return float(int(self.plaguesurge_bonus or 3))
+        owner_id = str(self.plaguesurge_owner or "")
+        player_id = str(getattr(player, "id", "") or "")
+        if owner_id and player_id and owner_id != player_id:
+            self._clear_plaguesurge_state()
+            return 0.0
+        game = getattr(player, "game", None)
+        if game is None:
+            return float(int(self.plaguesurge_bonus or 3))
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        try:
+            used_turn = int(self.plaguesurge_turn or 0)
+        except Exception:
+            used_turn = 0
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        current_player = getattr(game, "get_current_player", lambda: None)()
+        if current_turn > used_turn and current_player is player and phase_name == "COMMAND_PHASE":
+            self._clear_plaguesurge_state()
+            return 0.0
+        return float(int(self.plaguesurge_bonus or 3))
 
     def _army_has_gift(self) -> bool:
         if self.army is None:
@@ -128,7 +169,7 @@ class NurglesGiftManager:
     def get_contagion_range(self, battle_round: int) -> float:
         base = float(nurgles_gift_contagion_range(battle_round))
         bonus = 3.0 if self._army_has_gift_of_poxes_source() else 0.0
-        return float(base + bonus)
+        return float(base + bonus + self._plaguesurge_bonus_for_current_state())
 
     def get_active_plague(self) -> Optional[NurglesPlague]:
         if not self.active_plague_key:

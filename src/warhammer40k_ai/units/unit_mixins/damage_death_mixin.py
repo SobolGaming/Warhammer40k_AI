@@ -783,6 +783,34 @@ class DamageDeathMixin:
             logger.info("Cannot determine position for Deadly Demise")
             return
 
+        putrid_afflicted = False
+        putrid_owner_id = ""
+        putrid_source = "Putrid Detonation"
+        putrid_turn = 0
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("putrid_detonation_active"):
+                putrid_afflicted = True
+                putrid_owner_id = str(sr.get("putrid_detonation_owner", "") or "")
+                putrid_source = str(sr.get("putrid_detonation_source", "") or "Putrid Detonation").strip() or "Putrid Detonation"
+                putrid_turn = int(sr.get("putrid_detonation_turn", 0) or 0)
+        except Exception:
+            putrid_afflicted = False
+            putrid_owner_id = ""
+            putrid_source = "Putrid Detonation"
+            putrid_turn = 0
+        if putrid_afflicted and not putrid_owner_id:
+            try:
+                putrid_owner_id = str(getattr(getattr(self.get_parent_army(), "player", None), "id", "") or "")
+            except Exception:
+                putrid_owner_id = ""
+        if putrid_afflicted and not putrid_turn:
+            try:
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+                putrid_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+            except Exception:
+                putrid_turn = 0
+
         # Find all units within 6 inches of the explosion
         nearby_units = self._get_units_within_range(position, 6.0, game_map)
         if not nearby_units:
@@ -807,6 +835,24 @@ class DamageDeathMixin:
             if models_destroyed > 0:
                 logger.info(f"Deadly Demise destroyed {models_destroyed} model(s) in {target_unit.name}")
 
+            # Virulent Vectorium (Putrid Detonation): enemy units damaged by this explosion become Afflicted.
+            if putrid_afflicted and int(damage_amount or 0) > 0:
+                try:
+                    target_army = target_unit.get_parent_army()
+                    source_army = self.get_parent_army()
+                except Exception:
+                    target_army = None
+                    source_army = None
+                if target_army is not None and source_army is not None and target_army is not source_army:
+                    tsr = getattr(target_unit, "special_rules", None)
+                    if not isinstance(tsr, dict):
+                        tsr = {}
+                    tsr["post_shoot_afflicted_active"] = True
+                    tsr["post_shoot_afflicted_owner"] = putrid_owner_id
+                    tsr["post_shoot_afflicted_turn"] = int(putrid_turn or 0)
+                    tsr["post_shoot_afflicted_source"] = putrid_source
+                    target_unit.special_rules = tsr
+
         logger.info(f"Deadly Demise complete: {total_damage_dealt} total mortal wounds dealt to {len(nearby_units)} unit(s)")
 
     def _trigger_deadly_demise(self, dying_model: Model, game_map: 'Map') -> bool:
@@ -828,21 +874,34 @@ class DamageDeathMixin:
                 damage_expr = str(sr.get("enhancement_violent_demise_damage_dice", "") or "D3+1")
                 damage_dice = DiceCollection.from_string(damage_expr)
 
+        auto_trigger = False
+        try:
+            auto_trigger = bool(getattr(dying_model, "_putrid_detonation_auto_trigger_once", False))
+        except Exception:
+            auto_trigger = False
+        if auto_trigger:
+            try:
+                setattr(dying_model, "_putrid_detonation_auto_trigger_once", False)
+            except Exception:
+                pass
+
         logger.info(f"{self.name} has Deadly Demise {damage_dice} - checking for explosion!")
 
-        # Roll D6 to see if Deadly Demise triggers
-        trigger_roll = get_roll("D6")
-        try:
-            from ...utility.event_bus import append_dice
-            pn = self.get_parent_army().player
-            append_dice(pn, f"Deadly Demise trigger: rolled {trigger_roll} (need {int(trigger_threshold)}+)")
-        except Exception:
-            pass
-        if int(trigger_roll) < int(trigger_threshold):
-            logger.info(f"Deadly Demise trigger roll: {trigger_roll} (needed {int(trigger_threshold)}+) - No explosion!")
-            return False
-
-        logger.info(f"Deadly Demise trigger roll: {trigger_roll} - EXPLOSION! ")
+        # Roll D6 to see if Deadly Demise triggers unless auto-triggered by PUTRID DETONATION.
+        if not auto_trigger:
+            trigger_roll = get_roll("D6")
+            try:
+                from ...utility.event_bus import append_dice
+                pn = self.get_parent_army().player
+                append_dice(pn, f"Deadly Demise trigger: rolled {trigger_roll} (need {int(trigger_threshold)}+)")
+            except Exception:
+                pass
+            if int(trigger_roll) < int(trigger_threshold):
+                logger.info(f"Deadly Demise trigger roll: {trigger_roll} (needed {int(trigger_threshold)}+) - No explosion!")
+                return False
+            logger.info(f"Deadly Demise trigger roll: {trigger_roll} - EXPLOSION! ")
+        else:
+            logger.info("Deadly Demise auto-triggered (Putrid Detonation).")
 
         # Offer CAREEN! if available (Orks War Horde).
         try:

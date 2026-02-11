@@ -128,6 +128,11 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "HALLOWED BEACON",
     "REPELLING SPHERE",
     "SANCTIFIED KILL ZONE",
+    "PLAGUESURGE",
+    "LEECHSPORE ERUPTION",
+    "OVERWHELMING GENEROSITY",
+    "CREEPING BLIGHT",
+    "PUTRID DETONATION",
 }
 
 REACTION_ONLY_STRATAGEM_NAMES = {
@@ -196,6 +201,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "FIRES OF COVENANT",
     "FLAMES OF SANCTITY",
     "REPELLING SPHERE",
+    "PUTRID DETONATION",
 }
 
 
@@ -1063,7 +1069,7 @@ class StratagemManager(
         if names & {"SKULLS FOR THE SKULL THRONE!", "FICKLEFIRE", "GORY DEDICATION"}:
             add("model_destroyed", self._on_model_destroyed)
 
-        if "SUMMONED BY SLAUGHTER" in names:
+        if names & {"SUMMONED BY SLAUGHTER", "PUTRID DETONATION"}:
             add("model_destroyed_before_removal", self._on_model_destroyed_before_removal)
 
         if "FIRE AND FADE" in names:
@@ -2107,6 +2113,11 @@ class StratagemManager(
             "DENIZENS OF THE WARP": "Target: LEGIONES DAEMONICA unit (arriving via Deep Strike)",
             "DRAUGHT OF TERROR": "Target: LEGIONES DAEMONICA unit (not yet shot/fought)",
             "DELIRIUM UNMADE": "Target: up to two TZEENTCH LEGIONES DAEMONICA units (end of opponent Fight phase)",
+            "PLAGUESURGE": "Target: your DEATH GUARD WARLORD",
+            "LEECHSPORE ERUPTION": "Target: wounded DEATH GUARD model; select enemy unit within 3\"",
+            "OVERWHELMING GENEROSITY": "Target: DEATH GUARD CHARACTER unit; mark one visible enemy unit",
+            "CREEPING BLIGHT": "Target: DEATH GUARD INFANTRY unit that has not been selected to shoot",
+            "PUTRID DETONATION": "Target: just-destroyed DEATH GUARD VEHICLE/MONSTER model with Deadly Demise",
             "AGGRESSIVE DISEMBARKATION": "Target: WORLD EATERS RHINO (not moved) + embarked unit",
             "ENDLESS PURSUIT OF VIOLENCE": "Target: WORLD EATERS INFANTRY + friendly Transport within 6\"",
             "FULL-THROTTLE ASSAULT": "Target: WORLD EATERS RHINO (not moved)",
@@ -2622,6 +2633,10 @@ class StratagemManager(
             self._reset_world_eaters_vessels_phase_start_trackers(phase=phase)
         except Exception:
             raise
+        try:
+            self._clear_plaguesurge_bonus_if_expired(player=player, phase=phase)
+        except Exception:
+            raise
 
     def _gilded_champion_detachment_manager(self):
         army = getattr(self.player, "army", None)
@@ -2657,6 +2672,74 @@ class StratagemManager(
         if not has_custodes_kw and root_faction_id != "AC":
             return False
         return True
+
+    def _death_guard_detachment_manager(self):
+        army = getattr(self.player, "army", None)
+        if army is None:
+            return None
+        mgr = getattr(army, "death_guard_detachments", None)
+        if mgr is None or not hasattr(mgr, "is_virulent_vectorium"):
+            return None
+        if not mgr.is_virulent_vectorium():
+            return None
+        return mgr
+
+    @staticmethod
+    def _is_death_guard_unit(unit) -> bool:
+        if unit is None:
+            return False
+        try:
+            return bool(unit.has_any_keyword("DEATH GUARD"))
+        except Exception:
+            return False
+
+    @staticmethod
+    def _is_death_guard_character_unit(unit) -> bool:
+        if unit is None:
+            return False
+        try:
+            return bool(unit.has_any_keyword("DEATH GUARD") and unit.has_any_keyword("CHARACTER"))
+        except Exception:
+            return False
+
+    @staticmethod
+    def _is_death_guard_vehicle_or_monster_unit(unit) -> bool:
+        if unit is None:
+            return False
+        try:
+            if not unit.has_any_keyword("DEATH GUARD"):
+                return False
+            return bool(unit.has_any_keyword("VEHICLE") or unit.has_any_keyword("MONSTER"))
+        except Exception:
+            return False
+
+    def _clear_plaguesurge_bonus_if_expired(self, *, player=None, phase=None) -> None:
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is not self.player:
+            return
+        army = getattr(self.player, "army", None)
+        mgr = getattr(army, "nurgles_gift", None) if army is not None else None
+        if mgr is None or not bool(getattr(mgr, "plaguesurge_active", False)):
+            return
+        try:
+            used_turn = int(getattr(mgr, "plaguesurge_turn", 0) or 0)
+        except Exception:
+            used_turn = 0
+        try:
+            current_turn = int(getattr(self.game, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        if current_turn > used_turn:
+            try:
+                mgr.plaguesurge_active = False
+                mgr.plaguesurge_bonus = 0
+                mgr.plaguesurge_owner = ""
+                mgr.plaguesurge_turn = 0
+                mgr.plaguesurge_source = ""
+            except Exception:
+                raise
 
     def _unleash_lions_detachment_manager(self):
         return self._gilded_champion_detachment_manager()
@@ -3416,8 +3499,50 @@ class StratagemManager(
                                 ):
                                     sr.pop(key, None)
                                 u.special_rules = sr
+                        if isinstance(sr, dict) and sr.get("creeping_blight_active") is True:
+                            exp = str(sr.get("creeping_blight_expires_phase", "") or "").strip().upper()
+                            if not exp or exp == "SHOOTING_PHASE":
+                                for key in (
+                                    "creeping_blight_active",
+                                    "creeping_blight_owner",
+                                    "creeping_blight_turn",
+                                    "creeping_blight_source",
+                                    "creeping_blight_expires_phase",
+                                ):
+                                    sr.pop(key, None)
+                                u.special_rules = sr
                     except Exception:
                         raise
+        except Exception:
+            raise
+        # Virulent Vectorium: clear Overwhelming Generosity target markers at end of Shooting phase.
+        try:
+            phase_name = getattr(phase, "name", None)
+            if phase_name == "SHOOTING_PHASE" and self.game is not None:
+                owner_id = str(getattr(self.player, "id", "") or "")
+                for p in list(getattr(self.game, "players", []) or []):
+                    army = getattr(p, "get_army", lambda: None)()
+                    for u in list(getattr(army, "units", []) or []):
+                        try:
+                            sr = getattr(u, "special_rules", None)
+                            if not isinstance(sr, dict):
+                                continue
+                            if str(sr.get("overwhelming_generosity_owner", "") or "") != owner_id:
+                                continue
+                            if not bool(sr.get("overwhelming_generosity_active")):
+                                continue
+                            for key in (
+                                "overwhelming_generosity_active",
+                                "overwhelming_generosity_owner",
+                                "overwhelming_generosity_turn",
+                                "overwhelming_generosity_source",
+                                "overwhelming_generosity_target_id",
+                                "overwhelming_generosity_expires_phase",
+                            ):
+                                sr.pop(key, None)
+                            u.special_rules = sr
+                        except Exception:
+                            raise
         except Exception:
             raise
         # Clear end-of-phase defensive buffs for Fight phase.
@@ -7846,24 +7971,87 @@ class StratagemManager(
         """
         Faction stratagem reactions that trigger before the destroyed model is removed.
         """
-        # WORLD EATERS (Khorne Daemonkin): SUMMONED BY SLAUGHTER
-        try:
-            s = self.get_by_name("SUMMONED BY SLAUGHTER")
-        except Exception:
-            raise
-        if s is None or unit is None or model is None:
+        if unit is None or model is None:
             return
 
         try:
             root = unit.get_attached_unit_root()
         except Exception:
             raise
+        if root is None:
+            return
+
+        # Death Guard (Virulent Vectorium): PUTRID DETONATION
+        try:
+            s_putrid = self.get_by_name("PUTRID DETONATION")
+        except Exception:
+            raise
+        if s_putrid is not None:
+            try:
+                phase_name = self._current_phase_name or ""
+                has_deadly, _dd_dice = root.has_deadly_demise()
+            except Exception:
+                has_deadly = False
+            if has_deadly:
+                if self._death_guard_detachment_manager() is not None and self._is_death_guard_vehicle_or_monster_unit(root):
+                    try:
+                        if root.get_parent_army().player is self.player:
+                            if s_putrid.can_use(self.player, self.game, phase_name=phase_name):
+                                model_id = str(get_entity_id(model) or "")
+                                already = False
+                                for r in list(self._pending_reactions):
+                                    try:
+                                        if (
+                                            r.get("event") == "model_destroyed_before_removal"
+                                            and r.get("stratagem") == s_putrid.name
+                                            and str(r.get("destroyed_model_id", "") or "") == model_id
+                                        ):
+                                            already = True
+                                            break
+                                    except Exception:
+                                        raise
+                                if not already:
+                                    self._queue_reaction(
+                                        {
+                                            "event": "model_destroyed_before_removal",
+                                            "phase_name": phase_name,
+                                            "stratagem": s_putrid.name,
+                                            "cp_cost": s_putrid.cp_cost,
+                                            "destroyed_unit": root,
+                                            "destroyed_model": model,
+                                            "destroyed_model_id": model_id,
+                                            "unit": root,
+                                            "target_unit": root,
+                                        },
+                                        use_timer=False,
+                                    )
+                    except Exception:
+                        raise
+
+        # WORLD EATERS (Khorne Daemonkin): SUMMONED BY SLAUGHTER
+        try:
+            s = self.get_by_name("SUMMONED BY SLAUGHTER")
+        except Exception:
+            raise
+        if s is None:
+            return
+
         # Trigger only when the last model in the attached unit is destroyed.
         try:
             models = list(root.get_attached_unit_models() or [])
         except Exception:
             raise
-        alive_others = [m for m in models if getattr(m, "is_alive", True) and m is not model]
+        alive_others = []
+        for m in models:
+            if m is model:
+                continue
+            alive_fn = getattr(m, "is_alive", None)
+            if callable(alive_fn):
+                if alive_fn():
+                    alive_others.append(m)
+                continue
+            if alive_fn is None or bool(alive_fn):
+                alive_others.append(m)
         if alive_others:
             return
 
@@ -7932,16 +8120,18 @@ class StratagemManager(
             destroyed_base = copy.deepcopy(getattr(model, "model_base", None))
         except Exception:
             raise
-        self._queue_reaction({
-            "event": "model_destroyed_before_removal",
-            "phase_name": phase_name,
-            "stratagem": s.name,
-            "cp_cost": s.cp_cost,
-            "destroyed_unit": root,
-            "destroyed_model": model,
-            "destroyed_model_base": destroyed_base,
-            "candidates": candidates,
-        })
+        self._queue_reaction(
+            {
+                "event": "model_destroyed_before_removal",
+                "phase_name": phase_name,
+                "stratagem": s.name,
+                "cp_cost": s.cp_cost,
+                "destroyed_unit": root,
+                "destroyed_model": model,
+                "destroyed_model_base": destroyed_base,
+                "candidates": candidates,
+            }
+        )
 
     def _on_unit_destroyed(self, unit=None, last_model=None, **kwargs) -> None:
         """
@@ -12226,6 +12416,570 @@ class StratagemManager(
                 logger.info(f"INFO: LIMB FROM LIMB: {getattr(root, 'name', 'Unit')} gains +1 Strength this phase.")
             else:
                 logger.info(f"INFO: LIMB FROM LIMB: {getattr(root, 'name', 'Unit')} gains +1 AP this phase.")
+            return True
+
+        # Virulent Vectorium: PLAGUESURGE (+3" Contagion Range until start of your next Command phase)
+        if s.name.upper() == "PLAGUESURGE":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            if unit is None:
+                try:
+                    army = self.player.get_army()
+                except Exception:
+                    raise
+                unit = getattr(army, "warlord", None)
+            if unit is None:
+                logger.error("ERROR: PLAGUESURGE: no target unit provided")
+                return False
+            if self._death_guard_detachment_manager() is None:
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            try:
+                if root.get_parent_army().player is not self.player:
+                    logger.error("ERROR: PLAGUESURGE: target is not yours")
+                    return False
+            except Exception:
+                raise
+            if not self._is_death_guard_unit(root):
+                logger.error("ERROR: PLAGUESURGE: target is not DEATH GUARD")
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "command phase":
+                logger.error("ERROR: PLAGUESURGE: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is not self.player:
+                logger.error("ERROR: PLAGUESURGE: not your turn")
+                return False
+            try:
+                army = root.get_parent_army()
+            except Exception:
+                raise
+            warlord = getattr(army, "warlord", None) if army is not None else None
+            if not bool(getattr(root, "is_warlord", False)) and root is not warlord:
+                logger.error("ERROR: PLAGUESURGE: target is not your WARLORD")
+                return False
+            try:
+                if not root.is_alive() or not bool(getattr(root, "deployed", False)) or bool(getattr(root, "is_in_reserves", lambda: False)()):
+                    logger.error("ERROR: PLAGUESURGE: target must be on the battlefield")
+                    return False
+            except Exception:
+                raise
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            ng_mgr = getattr(army, "nurgles_gift", None) if army is not None else None
+            if ng_mgr is None:
+                return False
+            try:
+                ng_mgr.plaguesurge_active = True
+                ng_mgr.plaguesurge_bonus = 3
+                ng_mgr.plaguesurge_owner = str(getattr(self.player, "id", "") or "")
+                ng_mgr.plaguesurge_turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+                ng_mgr.plaguesurge_source = str(s.name or "Plaguesurge")
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            logger.info("INFO: PLAGUESURGE: +3\" Contagion Range until the start of your next Command phase.")
+            return True
+
+        # Virulent Vectorium: LEECHSPORE ERUPTION
+        if s.name.upper() == "LEECHSPORE ERUPTION":
+            source_model = kwargs.get("model") or kwargs.get("target_model")
+            source_unit = kwargs.get("unit") or kwargs.get("target_unit")
+            if source_model is None and source_unit is not None:
+                try:
+                    root = source_unit.get_attached_unit_root()
+                except Exception:
+                    root = source_unit
+                wounded_models = []
+                for m in list(getattr(root, "models", []) or []):
+                    try:
+                        base_wounds = int(getattr(m, "_base_wounds", getattr(m, "base_wounds", 0)) or 0)
+                        current_wounds = int(getattr(m, "wounds", 0) or 0)
+                        is_alive_fn = getattr(m, "is_alive", None)
+                        if callable(is_alive_fn):
+                            is_alive = bool(is_alive_fn())
+                        elif is_alive_fn is None:
+                            is_alive = True
+                        else:
+                            is_alive = bool(is_alive_fn)
+                    except Exception:
+                        continue
+                    if base_wounds > current_wounds and is_alive:
+                        wounded_models.append(m)
+                if len(wounded_models) == 1:
+                    source_model = wounded_models[0]
+            if source_model is None:
+                logger.error("ERROR: LEECHSPORE ERUPTION: missing wounded model")
+                return False
+            if self._death_guard_detachment_manager() is None:
+                return False
+            source_parent = getattr(source_model, "parent_unit", None)
+            if source_parent is None:
+                logger.error("ERROR: LEECHSPORE ERUPTION: model has no parent unit")
+                return False
+            try:
+                source_root = source_parent.get_attached_unit_root()
+            except Exception:
+                source_root = source_parent
+            if source_root is None:
+                return False
+            try:
+                if source_root.get_parent_army().player is not self.player:
+                    logger.error("ERROR: LEECHSPORE ERUPTION: model is not yours")
+                    return False
+            except Exception:
+                raise
+            if not self._is_death_guard_unit(source_root):
+                logger.error("ERROR: LEECHSPORE ERUPTION: model is not DEATH GUARD")
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "command phase":
+                logger.error("ERROR: LEECHSPORE ERUPTION: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is not self.player:
+                logger.error("ERROR: LEECHSPORE ERUPTION: not your turn")
+                return False
+            try:
+                base_wounds = int(getattr(source_model, "_base_wounds", getattr(source_model, "base_wounds", 0)) or 0)
+                current_wounds = int(getattr(source_model, "wounds", 0) or 0)
+            except Exception:
+                base_wounds = 0
+                current_wounds = 0
+            lost_wounds = max(0, int(base_wounds - current_wounds))
+            if lost_wounds <= 0:
+                logger.error("ERROR: LEECHSPORE ERUPTION: model has not lost any wounds")
+                return False
+            game_map = getattr(self.game, "map", None)
+            if game_map is None:
+                logger.error("ERROR: LEECHSPORE ERUPTION: map context unavailable")
+                return False
+            enemy_unit = kwargs.get("enemy_unit") or kwargs.get("target_enemy_unit")
+            try:
+                from ..utility.aura_utils import distance_between_models_bases_3d
+            except Exception:
+                distance_between_models_bases_3d = None
+            candidates = []
+            seen = set()
+            for enemy in list(getattr(game_map, "get_enemy_units", lambda _u: [])(source_root) or []):
+                try:
+                    enemy_root = enemy.get_attached_unit_root()
+                except Exception:
+                    enemy_root = enemy
+                if enemy_root is None:
+                    continue
+                try:
+                    eid = str(get_entity_id(enemy_root) or "")
+                except Exception:
+                    eid = ""
+                if eid and eid in seen:
+                    continue
+                if eid:
+                    seen.add(eid)
+                try:
+                    if not enemy_root.is_alive() or not bool(getattr(enemy_root, "deployed", False)):
+                        continue
+                except Exception:
+                    continue
+                in_range = False
+                for em in list(getattr(enemy_root, "models", []) or []):
+                    if em is None:
+                        continue
+                    is_alive_fn = getattr(em, "is_alive", None)
+                    if callable(is_alive_fn):
+                        is_alive = bool(is_alive_fn())
+                    elif is_alive_fn is None:
+                        is_alive = True
+                    else:
+                        is_alive = bool(is_alive_fn)
+                    if not is_alive:
+                        continue
+                    try:
+                        if distance_between_models_bases_3d is None:
+                            continue
+                        if float(distance_between_models_bases_3d(source_model, em)) <= 3.0 + 1e-6:
+                            in_range = True
+                            break
+                    except Exception:
+                        continue
+                if in_range:
+                    candidates.append(enemy_root)
+            if not candidates:
+                logger.error("ERROR: LEECHSPORE ERUPTION: no enemy unit within 3\"")
+                return False
+            if enemy_unit is None:
+                if len(candidates) == 1:
+                    enemy_unit = candidates[0]
+                else:
+                    logger.error("ERROR: LEECHSPORE ERUPTION: missing enemy target selection")
+                    return False
+            try:
+                enemy_root = enemy_unit.get_attached_unit_root()
+            except Exception:
+                enemy_root = enemy_unit
+            if enemy_root is None or enemy_root not in candidates:
+                logger.error("ERROR: LEECHSPORE ERUPTION: target is not within 3\"")
+                return False
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=source_root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            rolls = []
+            successes = 0
+            for _ in range(int(lost_wounds)):
+                try:
+                    roll = int(dice_module.get_roll("D6") or 0)
+                except Exception:
+                    roll = 0
+                rolls.append(int(roll))
+                if int(roll) >= 5:
+                    successes += 1
+            mortal_wounds = min(6, int(successes))
+            heals = min(6, int(successes), int(lost_wounds))
+            try:
+                from ..utility.event_bus import append_dice
+
+                append_dice(
+                    self.player,
+                    f"Leechspore Eruption: rolled {', '.join(str(r) for r in rolls)} ({int(successes)} success(es))",
+                )
+            except Exception:
+                pass
+            if mortal_wounds > 0:
+                try:
+                    source_root._apply_mortal_wounds_to_unit(
+                        enemy_root,
+                        int(mortal_wounds),
+                        game_map=game_map,
+                        attacker_unit=source_root,
+                    )
+                except Exception:
+                    raise
+            if heals > 0:
+                try:
+                    source_model.heal(int(heals))
+                except Exception:
+                    raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            logger.info(
+                f"INFO: LEECHSPORE ERUPTION: dealt {int(mortal_wounds)} mortal wound(s) to {getattr(enemy_root, 'name', 'enemy')} and healed {int(heals)} wound(s)."
+            )
+            return True
+
+        # Virulent Vectorium: OVERWHELMING GENEROSITY
+        if s.name.upper() == "OVERWHELMING GENEROSITY":
+            source_unit = kwargs.get("unit") or kwargs.get("target_unit")
+            if source_unit is None:
+                logger.error("ERROR: OVERWHELMING GENEROSITY: no source unit provided")
+                return False
+            if self._death_guard_detachment_manager() is None:
+                return False
+            try:
+                source_root = source_unit.get_attached_unit_root()
+            except Exception:
+                source_root = source_unit
+            if source_root is None:
+                return False
+            try:
+                if source_root.get_parent_army().player is not self.player:
+                    logger.error("ERROR: OVERWHELMING GENEROSITY: source unit is not yours")
+                    return False
+            except Exception:
+                raise
+            if not self._is_death_guard_character_unit(source_root):
+                logger.error("ERROR: OVERWHELMING GENEROSITY: source must be a DEATH GUARD CHARACTER unit")
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "shooting phase":
+                logger.error("ERROR: OVERWHELMING GENEROSITY: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is not self.player:
+                logger.error("ERROR: OVERWHELMING GENEROSITY: not your turn")
+                return False
+            game_map = getattr(self.game, "map", None)
+            if game_map is None:
+                logger.error("ERROR: OVERWHELMING GENEROSITY: map context unavailable")
+                return False
+            enemy_unit = kwargs.get("enemy_unit") or kwargs.get("target_enemy_unit")
+            candidates = []
+            seen = set()
+            for enemy in list(getattr(game_map, "get_enemy_units", lambda _u: [])(source_root) or []):
+                try:
+                    enemy_root = enemy.get_attached_unit_root()
+                except Exception:
+                    enemy_root = enemy
+                if enemy_root is None:
+                    continue
+                try:
+                    eid = str(get_entity_id(enemy_root) or "")
+                except Exception:
+                    eid = ""
+                if eid and eid in seen:
+                    continue
+                if eid:
+                    seen.add(eid)
+                try:
+                    if not enemy_root.is_alive() or not bool(getattr(enemy_root, "deployed", False)):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    if not source_root._attacking_unit_has_any_los_to_target_unit(enemy_root, game_map):
+                        continue
+                except Exception:
+                    continue
+                candidates.append(enemy_root)
+            if not candidates:
+                logger.error("ERROR: OVERWHELMING GENEROSITY: no visible enemy targets")
+                return False
+            if enemy_unit is None:
+                if len(candidates) == 1:
+                    enemy_unit = candidates[0]
+                else:
+                    logger.error("ERROR: OVERWHELMING GENEROSITY: missing enemy target selection")
+                    return False
+            try:
+                enemy_root = enemy_unit.get_attached_unit_root()
+            except Exception:
+                enemy_root = enemy_unit
+            if enemy_root is None or enemy_root not in candidates:
+                logger.error("ERROR: OVERWHELMING GENEROSITY: selected target is not visible")
+                return False
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=source_root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                sr = getattr(enemy_root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["overwhelming_generosity_active"] = True
+                sr["overwhelming_generosity_owner"] = str(getattr(self.player, "id", "") or "")
+                sr["overwhelming_generosity_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+                sr["overwhelming_generosity_source"] = str(s.name or "Overwhelming Generosity")
+                sr["overwhelming_generosity_target_id"] = str(get_entity_id(enemy_root) or "")
+                sr["overwhelming_generosity_expires_phase"] = "SHOOTING_PHASE"
+                enemy_root.special_rules = sr
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            logger.info(
+                f"INFO: OVERWHELMING GENEROSITY: marked {getattr(enemy_root, 'name', 'enemy')} for attack-count rerolls this phase."
+            )
+            return True
+
+        # Virulent Vectorium: CREEPING BLIGHT
+        if s.name.upper() == "CREEPING BLIGHT":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            if unit is None:
+                logger.error("ERROR: CREEPING BLIGHT: no target unit provided")
+                return False
+            if self._death_guard_detachment_manager() is None:
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                return False
+            try:
+                if root.get_parent_army().player is not self.player:
+                    logger.error("ERROR: CREEPING BLIGHT: target unit is not yours")
+                    return False
+            except Exception:
+                raise
+            if not self._is_death_guard_unit(root):
+                logger.error("ERROR: CREEPING BLIGHT: target unit is not DEATH GUARD")
+                return False
+            try:
+                if not root.has_any_keyword("INFANTRY"):
+                    logger.error("ERROR: CREEPING BLIGHT: target unit is not INFANTRY")
+                    return False
+            except Exception:
+                raise
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "shooting phase":
+                logger.error("ERROR: CREEPING BLIGHT: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is not self.player:
+                logger.error("ERROR: CREEPING BLIGHT: not your turn")
+                return False
+            try:
+                if bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
+                    logger.error("ERROR: CREEPING BLIGHT: unit has already been selected to shoot")
+                    return False
+            except Exception:
+                raise
+            try:
+                if not root.is_alive() or not bool(getattr(root, "deployed", False)) or bool(getattr(root, "is_in_reserves", lambda: False)()):
+                    logger.error("ERROR: CREEPING BLIGHT: target unit must be on the battlefield")
+                    return False
+            except Exception:
+                raise
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["creeping_blight_active"] = True
+                sr["creeping_blight_owner"] = str(getattr(self.player, "id", "") or "")
+                sr["creeping_blight_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+                sr["creeping_blight_source"] = str(s.name or "Creeping Blight")
+                sr["creeping_blight_expires_phase"] = "SHOOTING_PHASE"
+                root.special_rules = sr
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            logger.info(f"INFO: CREEPING BLIGHT: {getattr(root, 'name', 'Unit')} gains ranged hit/wound rerolls vs Afflicted this phase.")
+            return True
+
+        # Virulent Vectorium: PUTRID DETONATION
+        if s.name.upper() == "PUTRID DETONATION":
+            unit = kwargs.get("unit") or kwargs.get("target_unit") or kwargs.get("destroyed_unit")
+            model = kwargs.get("model") or kwargs.get("target_model") or kwargs.get("destroyed_model")
+            if unit is None or model is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() != "PUTRID DETONATION":
+                        continue
+                    unit = unit or r.get("destroyed_unit") or r.get("unit") or r.get("target_unit")
+                    model = model or r.get("destroyed_model") or r.get("model") or r.get("target_model")
+                    break
+            if unit is None or model is None:
+                logger.error("ERROR: PUTRID DETONATION: missing destroyed model context")
+                return False
+            if self._death_guard_detachment_manager() is None:
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                return False
+            try:
+                if root.get_parent_army().player is not self.player:
+                    logger.error("ERROR: PUTRID DETONATION: target is not yours")
+                    return False
+            except Exception:
+                raise
+            if not self._is_death_guard_vehicle_or_monster_unit(root):
+                logger.error("ERROR: PUTRID DETONATION: target must be a DEATH GUARD VEHICLE or MONSTER")
+                return False
+            try:
+                has_deadly, _dd = root.has_deadly_demise()
+            except Exception:
+                has_deadly = False
+            if not has_deadly:
+                logger.error("ERROR: PUTRID DETONATION: target does not have Deadly Demise")
+                return False
+            try:
+                model_alive_fn = getattr(model, "is_alive", None)
+                model_alive = bool(model_alive_fn()) if callable(model_alive_fn) else bool(model_alive_fn)
+                if model_alive:
+                    logger.error("ERROR: PUTRID DETONATION: target model is not destroyed")
+                    return False
+            except Exception:
+                pass
+            game_map = getattr(self.game, "map", None)
+            if game_map is None:
+                logger.error("ERROR: PUTRID DETONATION: map context unavailable")
+                return False
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["putrid_detonation_active"] = True
+                sr["putrid_detonation_owner"] = str(getattr(self.player, "id", "") or "")
+                sr["putrid_detonation_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+                sr["putrid_detonation_source"] = str(s.name or "Putrid Detonation")
+                sr["putrid_detonation_model_id"] = str(get_entity_id(model) or "")
+                root.special_rules = sr
+                setattr(model, "_putrid_detonation_auto_trigger_once", True)
+                setattr(model, "_skip_deadly_demise_once", True)
+            except Exception:
+                raise
+            try:
+                trigger_fn = getattr(root, "trigger_deadly_demise_manually", None)
+                if callable(trigger_fn):
+                    trigger_fn(model, game_map)
+            except Exception:
+                raise
+            try:
+                sr = getattr(root, "special_rules", None)
+                if isinstance(sr, dict):
+                    for key in (
+                        "putrid_detonation_active",
+                        "putrid_detonation_owner",
+                        "putrid_detonation_turn",
+                        "putrid_detonation_source",
+                        "putrid_detonation_model_id",
+                    ):
+                        sr.pop(key, None)
+                    root.special_rules = sr
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            logger.info(f"INFO: PUTRID DETONATION: {getattr(root, 'name', 'Unit')} automatically triggers Deadly Demise.")
             return True
 
         # Generic: +AP on melee weapons for a unit that charged and has not fought yet (e.g., CRUEL BLADESMAN).

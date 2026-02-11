@@ -2553,6 +2553,89 @@ class WargearProfile:
                             )
             except Exception:
                 pass
+
+            # Virulent Vectorium: Overwhelming Generosity attack-count rerolls vs marked target this phase.
+            try:
+                already_rerolled = any(
+                    "re-rolled attacks" in str(reason or "").lower()
+                    for reason in list(attack_result.attacks_special_modifiers or [])
+                )
+                if (
+                    not already_rerolled
+                    and roll_value is None
+                    and isinstance(self.attacks, Count)
+                    and self.attacks.ctype.name == "DICE"
+                ):
+                    unit = getattr(attacker, "parent_unit", None)
+                    target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+                    if unit is not None and target_root is not None and self.parent_wargear and self.parent_wargear.is_ranged():
+                        tsr = getattr(target_root, "special_rules", None)
+                        if isinstance(tsr, dict) and tsr.get("overwhelming_generosity_active"):
+                            game = None
+                            player_obj = None
+                            attacker_owner = ""
+                            try:
+                                army = unit.get_parent_army()
+                            except Exception:
+                                army = None
+                            if army is not None:
+                                player_obj = getattr(army, "player", None)
+                                game = getattr(player_obj, "game", None) if player_obj is not None else None
+                                attacker_owner = str(getattr(player_obj, "id", "") or "") if player_obj is not None else ""
+                            owner_id = str(tsr.get("overwhelming_generosity_owner", "") or "")
+                            applies = bool(not owner_id or (attacker_owner and attacker_owner == owner_id))
+                            try:
+                                if applies and not bool(unit.has_any_keyword("DEATH GUARD")):
+                                    applies = False
+                            except Exception:
+                                applies = False
+                            target_id = str(tsr.get("overwhelming_generosity_target_id", "") or "")
+                            this_target_id = str(get_entity_id(target_root) or "")
+                            if applies and target_id and this_target_id and target_id != this_target_id:
+                                applies = False
+                            if applies and game is not None:
+                                exp_phase = str(tsr.get("overwhelming_generosity_expires_phase", "") or "").strip().upper()
+                                current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                                if exp_phase and current_phase and exp_phase != current_phase:
+                                    applies = False
+                                try:
+                                    marked_turn = int(tsr.get("overwhelming_generosity_turn", 0) or 0)
+                                except Exception:
+                                    marked_turn = 0
+                                try:
+                                    current_turn = int(getattr(game, "turn", 0) or 0)
+                                except Exception:
+                                    current_turn = 0
+                                if applies and marked_turn and current_turn and marked_turn != current_turn:
+                                    applies = False
+                            if applies:
+                                do_reroll = False
+                                provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None) if game is not None else None
+                                source = str(tsr.get("overwhelming_generosity_source", "") or "Overwhelming Generosity").strip() or "Overwhelming Generosity"
+                                if provider is not None:
+                                    do_reroll = bool(
+                                        provider(
+                                            player=player_obj,
+                                            unit=unit,
+                                            roll_type="attacks",
+                                            value=num_attacks,
+                                            dice=dice_rolls,
+                                            reason=source,
+                                        )
+                                    )
+                                else:
+                                    try:
+                                        avg = float(self.attacks.stat_average())
+                                        do_reroll = float(num_attacks) < avg
+                                    except Exception:
+                                        do_reroll = False
+                                if do_reroll:
+                                    new_num, new_rolls = _reroll_attacks()
+                                    num_attacks = new_num
+                                    dice_rolls = list(new_rolls or [])
+                                    attack_result.attacks_special_modifiers.append(f"{source}: re-rolled attacks")
+            except Exception:
+                pass
         else:
             num_attacks = self.attacks or 0
             attack_result.attacks_rolled = num_attacks

@@ -2167,6 +2167,42 @@ class ActionsMovementMixin:
         root._ability_cache[cache_key] = rules
         return rules
 
+    def _target_is_afflicted(self, target, *, source_unit=None) -> bool:
+        if target is None:
+            return False
+        try:
+            t_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+        except Exception:
+            t_root = target
+        if t_root is None:
+            return False
+        try:
+            sr = getattr(t_root, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get("post_shoot_afflicted_active")):
+                return True
+        except Exception:
+            pass
+        try:
+            from ...rules.nurgles_gift import NurglesGiftManager
+        except Exception:
+            return False
+        source = source_unit or self
+        try:
+            source_root = source.get_attached_unit_root() if hasattr(source, "get_attached_unit_root") else source
+        except Exception:
+            source_root = source
+        try:
+            source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        except Exception:
+            source_army = None
+        source_player = getattr(source_army, "player", None) if source_army is not None else None
+        game = getattr(source_player, "game", None) if source_player is not None else None
+        game_map = getattr(game, "map", None) if game is not None else None
+        try:
+            return bool(NurglesGiftManager.get_afflicted_plague_for_unit(t_root, game=game, game_map=game_map) is not None)
+        except Exception:
+            return False
+
     def _attack_condition_met(self, condition: Optional[AttackRollCondition], *, target=None, source_unit=None) -> bool:
         """Evaluate attack-roll conditions against the current unit/target."""
         if condition is None:
@@ -2374,33 +2410,7 @@ class ActionsMovementMixin:
                 return False
             kw_norm = kw.lower()
             if kw_norm == "afflicted":
-                try:
-                    sr = getattr(target, "special_rules", None)
-                    if isinstance(sr, dict) and bool(sr.get("post_shoot_afflicted_active")):
-                        return True
-                except Exception:
-                    pass
-                try:
-                    from ...rules.nurgles_gift import NurglesGiftManager
-                except Exception:
-                    return False
-                try:
-                    source_army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
-                except Exception:
-                    source_army = None
-                try:
-                    source_player = getattr(source_army, "player", None) if source_army is not None else None
-                except Exception:
-                    source_player = None
-                try:
-                    game = getattr(source_player, "game", None)
-                except Exception:
-                    game = None
-                game_map = getattr(game, "map", None) if game is not None else None
-                try:
-                    return bool(NurglesGiftManager.get_afflicted_plague_for_unit(target, game=game, game_map=game_map) is not None)
-                except Exception:
-                    return False
+                return bool(self._target_is_afflicted(target, source_unit=unit))
             try:
                 return bool(target.has_keyword(kw.upper()))
             except Exception:
@@ -2981,6 +2991,40 @@ class ActionsMovementMixin:
                 mods["reroll_hit_full"] = True
                 reroll_hit_full_reasons.append(f"{source}: re-roll Hit roll")
 
+        # Virulent Vectorium: selected unit gains ranged hit rerolls vs Afflicted targets this phase.
+        try:
+            if atype in ("any", "ranged") and target is not None:
+                sr = getattr(root, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("creeping_blight_active"):
+                    applies = True
+                    owner_id = str(sr.get("creeping_blight_owner", "") or "")
+                    army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+                    player = getattr(army, "player", None) if army is not None else None
+                    attacker_owner = str(getattr(player, "id", "") or "") if player is not None else ""
+                    game_local = getattr(player, "game", None) if player is not None else None
+                    if owner_id and attacker_owner and owner_id != attacker_owner:
+                        applies = False
+                    exp_phase = str(sr.get("creeping_blight_expires_phase", "") or "").strip().upper()
+                    phase_name = str(getattr(getattr(game_local, "phase", None), "name", "") or "").strip().upper()
+                    if applies and exp_phase and phase_name and exp_phase != phase_name:
+                        applies = False
+                    try:
+                        marked_turn = int(sr.get("creeping_blight_turn", 0) or 0)
+                    except Exception:
+                        marked_turn = 0
+                    try:
+                        current_turn = int(getattr(game_local, "turn", 0) or 0)
+                    except Exception:
+                        current_turn = 0
+                    if applies and marked_turn and current_turn and marked_turn != current_turn:
+                        applies = False
+                    if applies and self._target_is_afflicted(target, source_unit=root):
+                        source = str(sr.get("creeping_blight_source", "") or "Creeping Blight").strip() or "Creeping Blight"
+                        mods["reroll_hit_full"] = True
+                        reroll_hit_full_reasons.append(f"{source}: re-roll Hit roll vs Afflicted target")
+        except Exception:
+            pass
+
         # Steeped in Suffering: +1 to hit vs targets below Starting Strength.
         try:
             has_steeped = bool(
@@ -3154,6 +3198,37 @@ class ActionsMovementMixin:
             reroll_wound_full_reasons.append(
                 "Arch Contaminator: re-roll Wound rolls while within a controlled objective"
             )
+
+        # Virulent Vectorium: selected unit gains ranged wound rerolls vs Afflicted targets this phase.
+        try:
+            if atype in ("any", "ranged") and target is not None:
+                sr = getattr(root, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("creeping_blight_active"):
+                    applies = True
+                    owner_id = str(sr.get("creeping_blight_owner", "") or "")
+                    attacker_owner = str(getattr(getattr(army, "player", None), "id", "") or "") if army is not None else ""
+                    if owner_id and attacker_owner and owner_id != attacker_owner:
+                        applies = False
+                    exp_phase = str(sr.get("creeping_blight_expires_phase", "") or "").strip().upper()
+                    phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    if applies and exp_phase and phase_name and exp_phase != phase_name:
+                        applies = False
+                    try:
+                        marked_turn = int(sr.get("creeping_blight_turn", 0) or 0)
+                    except Exception:
+                        marked_turn = 0
+                    try:
+                        current_turn = int(getattr(game, "turn", 0) or 0)
+                    except Exception:
+                        current_turn = 0
+                    if applies and marked_turn and current_turn and marked_turn != current_turn:
+                        applies = False
+                    if applies and self._target_is_afflicted(target, source_unit=root):
+                        source = str(sr.get("creeping_blight_source", "") or "Creeping Blight").strip() or "Creeping Blight"
+                        mods["reroll_wound_full"] = True
+                        reroll_wound_full_reasons.append(f"{source}: re-roll Wound roll vs Afflicted target")
+        except Exception:
+            pass
 
         # Misfortune: this unit's attacks suffer -1 to wound.
         try:
