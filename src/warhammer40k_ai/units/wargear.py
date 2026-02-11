@@ -1813,6 +1813,18 @@ class WargearProfile:
             pass
         try:
             if self.parent_wargear and self.parent_wargear.is_ranged():
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                mgr = getattr(army, "voice_of_command", None) if army is not None else None
+                if mgr is not None and callable(getattr(mgr, "target_weak_spot_ap_bonus", None)):
+                    game_map = self._get_game_map_from_model(attacker)
+                    bonus = int(mgr.target_weak_spot_ap_bonus(unit, target, game_map=game_map) or 0)
+                    if bonus:
+                        ap_val -= int(bonus)
+        except Exception:
+            pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_ranged():
                 _s_bonus, ap_bonus, _reasons = self._ranged_afflicted_strength_ap_bonus(attacker, target)
                 if ap_bonus:
                     ap_val -= int(ap_bonus)
@@ -5937,8 +5949,35 @@ class WargearProfile:
             pass
         
         # Check for target modifiers (like Stealth)
+        target_has_stealth = False
         if hasattr(target, 'has_stealth') and target.has_stealth():
+            target_has_stealth = True
             _add_hit_mod(-1, "-1 from target Stealth")
+        try:
+            if is_ranged and not target_has_stealth:
+                target_army = None
+                try:
+                    get_parent_army = getattr(target, "get_parent_army", None)
+                    if callable(get_parent_army):
+                        target_army = get_parent_army()
+                except Exception:
+                    target_army = None
+                mgr = getattr(target_army, "voice_of_command", None) if target_army is not None else None
+                if mgr is None:
+                    attacker_army = None
+                    attacker_unit = getattr(attacker, "parent_unit", None)
+                    if attacker_unit is not None:
+                        try:
+                            attacker_army = attacker_unit.get_parent_army()
+                        except Exception:
+                            attacker_army = None
+                    mgr = getattr(attacker_army, "voice_of_command", None) if attacker_army is not None else None
+                if mgr is not None and callable(getattr(mgr, "move_to_shadows_hit_penalty", None)):
+                    penalty = int(mgr.move_to_shadows_hit_penalty(target, attack_type="ranged") or 0)
+                    if penalty:
+                        _add_hit_mod(-int(penalty), "-1 from Move to the Shadows")
+        except Exception:
+            pass
         # Warhost: Lightning-Fast Reactions (-1 to hit while active).
         try:
             try:

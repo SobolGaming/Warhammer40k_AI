@@ -310,6 +310,11 @@ class Enhancement:
         except Exception:
             is_slaaneshs_chosen = False
         is_court_or_mercurial_host = bool(is_court_of_the_phoenician or is_mercurial_host)
+        am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+        try:
+            is_grizzled_company = bool(am_mgr and am_mgr.is_grizzled_company())
+        except Exception:
+            is_grizzled_company = False
         ck_mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
         try:
             is_infernal_lance = bool(ck_mgr and ck_mgr.is_infernal_lance())
@@ -342,6 +347,87 @@ class Enhancement:
             bearer = get_bearer()
             if bearer is not None:
                 bearer_id = str(getattr(bearer, "id", getattr(bearer, "_id", "")) or "")
+
+        if name == "abhuman detail" or enh_id == "000010637002":
+            if not is_grizzled_company:
+                return
+            unit.special_rules["enhancement_abhuman_detail"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            try:
+                params = dict(getattr(desc, "effect_params", {}) or {})
+            except Exception:
+                params = {}
+            extra_keywords = [
+                str(v or "").strip().upper()
+                for v in list(params.get("order_target_keyword_add", ("OGRYN",)) or ())
+                if str(v or "").strip()
+            ]
+            extra_names = [
+                str(v or "").strip()
+                for v in list(params.get("attachment_override_unit_names_any", ("Ogryn Squad", "Bullgryn Squad")) or ())
+                if str(v or "").strip()
+            ]
+            if extra_keywords:
+                unit.special_rules["enhancement_abhuman_detail_order_target_keywords"] = extra_keywords
+            if extra_names:
+                unit.special_rules["enhancement_abhuman_detail_attach_unit_names"] = extra_names
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "aquilan eye" or enh_id == "000010637003":
+            if not is_grizzled_company:
+                return
+            unit.special_rules["enhancement_aquilan_eye"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            try:
+                params = dict(getattr(desc, "effect_params", {}) or {})
+            except Exception:
+                params = {}
+            order_key = str(params.get("extra_order_key", "TARGET_WEAK_SPOT") or "TARGET_WEAK_SPOT").strip().upper()
+            try:
+                ap_bonus = int(params.get("extra_order_ap_bonus", 1) or 1)
+            except Exception:
+                ap_bonus = 1
+            try:
+                order_range = float(params.get("extra_order_range", 12.0) or 12.0)
+            except Exception:
+                order_range = 12.0
+            unit.special_rules["enhancement_aquilan_eye_order_key"] = order_key
+            unit.special_rules["enhancement_aquilan_eye_ap_bonus"] = int(max(0, ap_bonus))
+            unit.special_rules["enhancement_aquilan_eye_order_range"] = float(max(0.0, order_range))
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "spec ops veteran" or enh_id == "000010637004":
+            if not is_grizzled_company:
+                return
+            unit.special_rules["enhancement_spec_ops_veteran"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            try:
+                params = dict(getattr(desc, "effect_params", {}) or {})
+            except Exception:
+                params = {}
+            order_key = str(params.get("extra_order_key", "MOVE_TO_SHADOWS") or "MOVE_TO_SHADOWS").strip().upper()
+            unit.special_rules["enhancement_spec_ops_veteran_order_key"] = order_key
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "laud hailer" or enh_id == "000010637005":
+            if not is_grizzled_company:
+                return
+            unit.special_rules["enhancement_laud_hailer"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            try:
+                params = dict(getattr(desc, "effect_params", {}) or {})
+            except Exception:
+                params = {}
+            try:
+                order_range = float(params.get("order_range", 12.0) or 12.0)
+            except Exception:
+                order_range = 12.0
+            unit.special_rules["enhancement_laud_hailer_order_range"] = float(max(0.0, order_range))
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 
         if name == "berzerker glaive" or enh_id == "000008432002":
             if not is_berzerker_warband:

@@ -43,6 +43,8 @@ class _UnitStub:
         self.embarked_in = None
         self.round_state = SimpleNamespace(remained_stationary_this_round=False)
         self.toughness = 4
+        self.is_vehicle = False
+        self.is_monster = False
         self._army = army
         self._force_target_within_objective = False
 
@@ -55,6 +57,9 @@ class _UnitStub:
     def has_any_keyword(self, keyword: str) -> bool:
         kw = str(keyword or "").strip().lower()
         return kw in [str(k or "").strip().lower() for k in (self.keywords or []) + (self.faction_keywords or [])]
+
+    def has_keyword(self, keyword: str) -> bool:
+        return self.has_any_keyword(keyword)
 
     def is_alive(self) -> bool:
         return True
@@ -454,6 +459,180 @@ class TestVoiceOfCommand(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertEqual(int(result.attacks_rolled), 3)
         self.assertTrue(any("First Rank, Fire! Second Rank, Fire! +1A" in s for s in result.attacks_special_modifiers))
+
+    def test_grizzled_enhancement_orders_and_targeting(self):
+        from warhammer40k_ai.rules.voice_of_command import (
+            ORDER_MOVE_TO_SHADOWS,
+            ORDER_TARGET_WEAK_SPOT,
+            VoiceOfCommandManager,
+        )
+
+        orders_text = "This model can issue 1 order to REGIMENT units within 6\"."
+        army = _ArmyStub(detachment_type="Grizzled Company")
+        mgr = VoiceOfCommandManager(army)
+        mgr._army_has_voice = lambda: True
+        army.voice_of_command = mgr
+
+        officer = _UnitStub(
+            "Commissar",
+            keywords=["OFFICER", "COMMISSAR", "ASTRA MILITARUM"],
+            abilities=[_Ability("Voice of Command"), _Ability("Orders", orders_text)],
+            army=army,
+        )
+        officer.special_rules["enhancement_abhuman_detail"] = True
+        officer.special_rules["enhancement_aquilan_eye"] = True
+        officer.special_rules["enhancement_spec_ops_veteran"] = True
+        officer.special_rules["enhancement_laud_hailer"] = True
+        regiment = _UnitStub(
+            "Infantry",
+            keywords=["REGIMENT", "ASTRA MILITARUM"],
+            abilities=[],
+            army=army,
+        )
+        ogryn = _UnitStub(
+            "Ogryn Squad",
+            keywords=["OGRYN", "ASTRA MILITARUM"],
+            abilities=[],
+            army=army,
+        )
+        other = _UnitStub(
+            "Other",
+            keywords=["SQUADRON", "ASTRA MILITARUM"],
+            abilities=[],
+            army=army,
+        )
+        army.units = [officer, regiment, ogryn, other]
+
+        game = SimpleNamespace(turn=1, map=_MapStub([officer, regiment, ogryn, other], distance=11.0))
+        army.player.game = game
+
+        available = [o.key for o in mgr.get_available_orders(officer)]
+        self.assertIn(ORDER_TARGET_WEAK_SPOT.key, available)
+        self.assertIn(ORDER_MOVE_TO_SHADOWS.key, available)
+
+        targets = list(mgr.get_eligible_targets(officer, game=game, order_key=ORDER_TARGET_WEAK_SPOT.key) or [])
+        target_names = {u.name for u in targets}
+        self.assertIn("Infantry", target_names)
+        self.assertIn("Ogryn Squad", target_names)
+        self.assertNotIn("Other", target_names)
+
+    def test_laud_hailer_extends_order_range(self):
+        from warhammer40k_ai.rules.voice_of_command import VoiceOfCommandManager, ORDER_MOVE
+
+        orders_text = "This model can issue 1 order to REGIMENT units within 6\"."
+        army = _ArmyStub(detachment_type="Grizzled Company")
+        mgr = VoiceOfCommandManager(army)
+        mgr._army_has_voice = lambda: True
+        army.voice_of_command = mgr
+
+        officer = _UnitStub(
+            "Officer",
+            keywords=["OFFICER", "ASTRA MILITARUM"],
+            abilities=[_Ability("Voice of Command"), _Ability("Orders", orders_text)],
+            army=army,
+        )
+        target = _UnitStub(
+            "Infantry",
+            keywords=["REGIMENT", "ASTRA MILITARUM"],
+            abilities=[],
+            army=army,
+        )
+        army.units = [officer, target]
+
+        game = SimpleNamespace(turn=1, map=_MapStub([officer, target], distance=9.0))
+        army.player.game = game
+
+        self.assertFalse(mgr.issue_order(game, officer, target, ORDER_MOVE.key, phase_name="COMMAND_PHASE"))
+
+        officer.special_rules["enhancement_laud_hailer"] = True
+        self.assertTrue(mgr.issue_order(game, officer, target, ORDER_MOVE.key, phase_name="COMMAND_PHASE"))
+
+    def test_target_weak_spot_improves_ap_within_12(self):
+        from warhammer40k_ai.rules.voice_of_command import VoiceOfCommandManager, ORDER_TARGET_WEAK_SPOT
+
+        orders_text = "This model can issue 1 order to REGIMENT units within 6\"."
+        army = _ArmyStub(detachment_type="Grizzled Company")
+        mgr = VoiceOfCommandManager(army)
+        mgr._army_has_voice = lambda: True
+        army.voice_of_command = mgr
+
+        officer = _UnitStub(
+            "Officer",
+            keywords=["OFFICER", "ASTRA MILITARUM"],
+            abilities=[_Ability("Voice of Command"), _Ability("Orders", orders_text)],
+            army=army,
+        )
+        officer.special_rules["enhancement_aquilan_eye"] = True
+        shooter = _UnitStub(
+            "Infantry",
+            keywords=["REGIMENT", "ASTRA MILITARUM"],
+            abilities=[],
+            army=army,
+        )
+        target = _UnitStub(
+            "Target",
+            keywords=["INFANTRY"],
+            abilities=[],
+            army=_ArmyStub(faction_id="SM"),
+        )
+        army.units = [officer, shooter]
+        game = SimpleNamespace(turn=1, map=_MapStub([officer, shooter], distance=3.0))
+        army.player.game = game
+
+        self.assertTrue(mgr.issue_order(game, officer, shooter, ORDER_TARGET_WEAK_SPOT.key, phase_name="COMMAND_PHASE"))
+
+        model = _ModelStub("Shooter", shooter, distance=10.0)
+        ranged = self._make_profile(weapon_type="Ranged", skill="4+")
+        game.map._distance = 10.0
+        self.assertEqual(int(ranged.get_effective_ap(model, target)), -1)
+
+        game.map._distance = 13.0
+        self.assertEqual(int(ranged.get_effective_ap(model, target)), 0)
+
+    def test_move_to_shadows_applies_ranged_hit_penalty_only(self):
+        from warhammer40k_ai.rules.voice_of_command import VoiceOfCommandManager, ORDER_MOVE_TO_SHADOWS
+
+        orders_text = "This model can issue 1 order to REGIMENT units within 6\"."
+        army = _ArmyStub(detachment_type="Grizzled Company")
+        mgr = VoiceOfCommandManager(army)
+        mgr._army_has_voice = lambda: True
+        army.voice_of_command = mgr
+
+        officer = _UnitStub(
+            "Officer",
+            keywords=["OFFICER", "ASTRA MILITARUM"],
+            abilities=[_Ability("Voice of Command"), _Ability("Orders", orders_text)],
+            army=army,
+        )
+        officer.special_rules["enhancement_spec_ops_veteran"] = True
+        target = _UnitStub(
+            "Infantry",
+            keywords=["REGIMENT", "ASTRA MILITARUM"],
+            abilities=[],
+            army=army,
+        )
+        enemy_army = _ArmyStub(faction_id="SM")
+        attacker_unit = _UnitStub(
+            "Enemy",
+            keywords=["INFANTRY"],
+            abilities=[],
+            army=enemy_army,
+        )
+        army.units = [officer, target]
+        game = SimpleNamespace(turn=1, map=_MapStub([officer, target], distance=6.0))
+        army.player.game = game
+
+        self.assertTrue(mgr.issue_order(game, officer, target, ORDER_MOVE_TO_SHADOWS.key, phase_name="COMMAND_PHASE"))
+
+        attacker = _ModelStub("Enemy Model", attacker_unit, distance=10.0)
+        ranged = self._make_profile(weapon_type="Ranged", skill="4+")
+        melee = self._make_profile(weapon_type="Melee", skill="4+")
+
+        ranged_hit = ranged._hit_target_with_tracking(target, attacker, {})
+        self.assertTrue(any("Move to the Shadows" in m for m in ranged_hit.get("modifiers", [])))
+
+        melee_hit = melee._hit_target_with_tracking(target, attacker, {})
+        self.assertFalse(any("Move to the Shadows" in m for m in melee_hit.get("modifiers", [])))
 
     def test_ruthless_discipline_adds_order_capacity(self):
         from warhammer40k_ai.rules.voice_of_command import VoiceOfCommandManager

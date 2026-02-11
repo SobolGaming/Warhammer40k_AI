@@ -47,6 +47,16 @@ ORDER_DUTY_HONOUR = Order(
     name="Duty and Honour!",
     summary="Improve Leadership and Objective Control by 1.",
 )
+ORDER_TARGET_WEAK_SPOT = Order(
+    key="TARGET_WEAK_SPOT",
+    name="Target Weak Spot",
+    summary='Ranged attacks vs enemy units within 12" improve AP by 1.',
+)
+ORDER_MOVE_TO_SHADOWS = Order(
+    key="MOVE_TO_SHADOWS",
+    name="Move to the Shadows",
+    summary="Each time a ranged attack targets this unit, it has Stealth for those attacks.",
+)
 
 ORDER_LIST: tuple[Order, ...] = (
     ORDER_MOVE,
@@ -56,7 +66,7 @@ ORDER_LIST: tuple[Order, ...] = (
     ORDER_TAKE_COVER,
     ORDER_DUTY_HONOUR,
 )
-ORDER_BY_KEY = {o.key: o for o in ORDER_LIST}
+ORDER_BY_KEY = {o.key: o for o in (ORDER_LIST + (ORDER_TARGET_WEAK_SPOT, ORDER_MOVE_TO_SHADOWS))}
 
 
 class VoiceOfCommandManager:
@@ -236,6 +246,56 @@ class VoiceOfCommandManager:
         sr["voice_of_command_orders_issued"] = int(value)
         unit.special_rules = sr
 
+    def _unit_has_enhancement_flag(self, unit, flag_key: str) -> bool:
+        if unit is None:
+            return False
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        return bool(sr.get(str(flag_key or "").strip()))
+
+    def _officer_has_abhuman_detail(self, officer_unit) -> bool:
+        return self._unit_has_enhancement_flag(officer_unit, "enhancement_abhuman_detail")
+
+    def _officer_has_aquilan_eye(self, officer_unit) -> bool:
+        return self._unit_has_enhancement_flag(officer_unit, "enhancement_aquilan_eye")
+
+    def _officer_has_spec_ops_veteran(self, officer_unit) -> bool:
+        return self._unit_has_enhancement_flag(officer_unit, "enhancement_spec_ops_veteran")
+
+    def _officer_has_laud_hailer(self, officer_unit) -> bool:
+        return self._unit_has_enhancement_flag(officer_unit, "enhancement_laud_hailer")
+
+    def _get_officer_enhancement_orders(self, officer_unit) -> list[Order]:
+        extra: list[Order] = []
+        if self._officer_has_aquilan_eye(officer_unit):
+            sr = getattr(officer_unit, "special_rules", None)
+            order_key = str(sr.get("enhancement_aquilan_eye_order_key", ORDER_TARGET_WEAK_SPOT.key) or "").strip().upper() if isinstance(sr, dict) else ORDER_TARGET_WEAK_SPOT.key
+            if order_key == ORDER_TARGET_WEAK_SPOT.key:
+                extra.append(ORDER_TARGET_WEAK_SPOT)
+        if self._officer_has_spec_ops_veteran(officer_unit):
+            sr = getattr(officer_unit, "special_rules", None)
+            order_key = str(sr.get("enhancement_spec_ops_veteran_order_key", ORDER_MOVE_TO_SHADOWS.key) or "").strip().upper() if isinstance(sr, dict) else ORDER_MOVE_TO_SHADOWS.key
+            if order_key == ORDER_MOVE_TO_SHADOWS.key:
+                extra.append(ORDER_MOVE_TO_SHADOWS)
+        return extra
+
+    def _officer_order_range(self, officer_unit, *, order_key: str = "") -> float:
+        if self._officer_has_laud_hailer(officer_unit):
+            sr = getattr(officer_unit, "special_rules", None)
+            if isinstance(sr, dict):
+                try:
+                    val = float(sr.get("enhancement_laud_hailer_order_range", 12.0) or 12.0)
+                except Exception:
+                    val = 12.0
+                if val > 0:
+                    return val
+            return 12.0
+        return 6.0
+
+    def get_order_range(self, officer_unit, *, order_key: str = "") -> float:
+        return float(self._officer_order_range(officer_unit, order_key=order_key))
+
     def orders_remaining(self, unit, battle_round: int) -> int:
         count, _, _ = self._parse_orders_profile(unit)
         bonus = 0
@@ -323,6 +383,27 @@ class VoiceOfCommandManager:
 
         _, keywords, _ = self._parse_orders_profile(officer_unit)
         keywords = [k for k in (keywords or []) if k]
+        if self._officer_has_abhuman_detail(officer_unit):
+            sr = getattr(officer_unit, "special_rules", None)
+            extra_keywords = []
+            if isinstance(sr, dict):
+                for kw in list(sr.get("enhancement_abhuman_detail_order_target_keywords", ()) or ()):
+                    text = str(kw or "").strip().upper()
+                    if text:
+                        extra_keywords.append(text)
+            if not extra_keywords:
+                extra_keywords = ["OGRYN"]
+            keywords.extend(extra_keywords)
+        seen_keywords = set()
+        deduped_keywords: list[str] = []
+        for kw in keywords:
+            k = str(kw or "").strip().upper()
+            if not k or k in seen_keywords:
+                continue
+            seen_keywords.add(k)
+            deduped_keywords.append(k)
+        keywords = deduped_keywords
+        max_range = self.get_order_range(officer_unit, order_key=order_key)
 
         out = []
         try:
@@ -358,7 +439,7 @@ class VoiceOfCommandManager:
                 dist = float(game_map.get_distance_between_units(officer_unit, root))
             except Exception:
                 dist = 999.0
-            if dist > 6.0:
+            if dist > float(max_range):
                 continue
             out.append(root)
         return out
@@ -384,12 +465,19 @@ class VoiceOfCommandManager:
         if officer_unit is None:
             return list(ORDER_LIST)
         _, _, allowed = self._parse_orders_profile(officer_unit)
+        enhancement_orders = self._get_officer_enhancement_orders(officer_unit)
         if not allowed:
-            return list(ORDER_LIST)
+            base = list(ORDER_LIST)
+        else:
+            base = [order for order in ORDER_LIST if order.key in allowed]
+        seen = {order.key for order in base}
         out: list[Order] = []
-        for order in ORDER_LIST:
-            if order.key in allowed:
-                out.append(order)
+        out.extend(base)
+        for order in enhancement_orders:
+            if order.key in seen:
+                continue
+            seen.add(order.key)
+            out.append(order)
         return out
 
     def clear_orders_for_player(self, player) -> None:
@@ -470,7 +558,10 @@ class VoiceOfCommandManager:
         if order_key not in ORDER_BY_KEY:
             return False
         allowed = self._parse_orders_profile(officer_unit)[2]
-        if allowed and order_key not in allowed:
+        enhancement_order_keys = {order.key for order in self._get_officer_enhancement_orders(officer_unit)}
+        if order_key in (ORDER_TARGET_WEAK_SPOT.key, ORDER_MOVE_TO_SHADOWS.key) and order_key not in enhancement_order_keys:
+            return False
+        if allowed and order_key not in allowed and order_key not in enhancement_order_keys:
             return False
         try:
             battle_round = int(getattr(game, "turn", 0) or 0)
@@ -511,6 +602,80 @@ class VoiceOfCommandManager:
 
         self._apply_order_to_unit_and_attached(target_unit, order_key, owner_id, source_id)
         return True
+
+    def _attached_unit_has_order_key(self, unit, order_key: str) -> bool:
+        if unit is None:
+            return False
+        order_key = str(order_key or "").strip().upper()
+        if not order_key:
+            return False
+        root = unit
+        try:
+            get_root = getattr(unit, "get_attached_unit_root", None)
+            if callable(get_root):
+                root = get_root()
+        except Exception:
+            root = unit
+        members = []
+        try:
+            get_members = getattr(root, "get_attached_unit_members", None)
+            if callable(get_members):
+                members = list(get_members() or [])
+        except Exception:
+            members = []
+        if not members:
+            members = [root]
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            active_key = str(sr.get("voice_of_command_order_key", "") or "").strip().upper()
+            if active_key == order_key:
+                return True
+        return False
+
+    def target_weak_spot_ap_bonus(self, attacker_unit, target_unit, *, game_map=None) -> int:
+        if attacker_unit is None or target_unit is None:
+            return 0
+        if not self._attached_unit_has_order_key(attacker_unit, ORDER_TARGET_WEAK_SPOT.key):
+            return 0
+        if game_map is None:
+            try:
+                army = attacker_unit.get_parent_army()
+                player = getattr(army, "player", None) if army is not None else None
+                game = getattr(player, "game", None) if player is not None else None
+                game_map = getattr(game, "map", None) if game is not None else None
+            except Exception:
+                game_map = None
+        if game_map is None:
+            return 0
+        attacker_root = attacker_unit
+        target_root = target_unit
+        try:
+            if hasattr(attacker_unit, "get_attached_unit_root"):
+                attacker_root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = attacker_unit
+        try:
+            if hasattr(target_unit, "get_attached_unit_root"):
+                target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        try:
+            dist = float(game_map.get_distance_between_units(attacker_root, target_root))
+        except Exception:
+            dist = 999.0
+        if dist <= 12.0:
+            return 1
+        return 0
+
+    def move_to_shadows_hit_penalty(self, target_unit, *, attack_type: str = "") -> int:
+        atype = str(attack_type or "").strip().lower()
+        if atype != "ranged":
+            return 0
+        if self._attached_unit_has_order_key(target_unit, ORDER_MOVE_TO_SHADOWS.key):
+            return 1
+        return 0
 
     def auto_issue_orders(self, game, player, *, phase_name: str = "", trigger: str = "") -> None:
         """No-op: orders require explicit player selection."""

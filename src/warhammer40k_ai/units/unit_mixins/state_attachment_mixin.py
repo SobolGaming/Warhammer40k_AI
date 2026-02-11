@@ -2563,6 +2563,12 @@ class StateAttachmentMixin:
                 return True
         except Exception:
             pass
+        # Abhuman Detail (Grizzled Company): COMMISSAR bearer can attach to Ogryn/Bullgryn.
+        try:
+            if self._abhuman_detail_can_attach_to(bodyguard):
+                return True
+        except Exception:
+            pass
         # Bodyguard datasheet id must be in leader's allowed attached_to list (IDs)
         allowed = getattr(self, "can_be_attached_to", []) or []
         try:

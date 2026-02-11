@@ -7711,7 +7711,12 @@ class GameView:
 
         order_name = order_label or getattr(order, "name", "Order")
         header = f"{getattr(officer, 'name', 'Officer')} issues {order_name}."
-        subtitle = "Choose an eligible friendly unit within 6\"."
+        try:
+            range_in = float(mgr.get_order_range(officer, order_key=order_key))
+        except Exception:
+            range_in = 6.0
+        range_txt = str(int(range_in)) if abs(float(range_in) - int(range_in)) < 1e-6 else f"{range_in:g}"
+        subtitle = f"Choose an eligible friendly unit within {range_txt}\"."
 
         from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
         from ..engine.decisions import DecisionOption, DecisionRequest

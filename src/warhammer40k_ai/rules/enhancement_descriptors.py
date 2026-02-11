@@ -112,6 +112,62 @@ _CULT_OF_BLOOD_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _CULT_OF_BLOOD_DESCRIPTORS.values()
 }
 
+_GRIZZLED_COMPANY_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010637002": EnhancementToolDescriptor(
+        enhancement_id="000010637002",
+        name="Abhuman Detail",
+        timing="declare_battle_formations",
+        target="bearer",
+        duration="battle_setup_and_order_targeting",
+        effect="add_ogryn_order_targeting_and_attachment_override",
+        effect_params={
+            "order_target_keyword_add": ("OGRYN",),
+            "attachment_override_unit_keywords_any": ("OGRYN",),
+            "attachment_override_unit_names_any": ("Ogryn Squad", "Bullgryn Squad"),
+        },
+    ),
+    "000010637003": EnhancementToolDescriptor(
+        enhancement_id="000010637003",
+        name="Aquilan Eye",
+        timing="when_selecting_order",
+        target="bearer",
+        duration="constant",
+        effect="grant_extra_order_option_target_weak_spot",
+        effect_params={
+            "extra_order_key": "TARGET_WEAK_SPOT",
+            "extra_order_attack_type": "ranged",
+            "extra_order_ap_bonus": 1,
+            "extra_order_range": 12.0,
+        },
+    ),
+    "000010637004": EnhancementToolDescriptor(
+        enhancement_id="000010637004",
+        name="Spec Ops Veteran",
+        timing="when_selecting_order",
+        target="bearer",
+        duration="constant",
+        effect="grant_extra_order_option_move_to_shadows",
+        effect_params={
+            "extra_order_key": "MOVE_TO_SHADOWS",
+            "extra_order_defensive_attack_type": "ranged",
+            "extra_order_grants": ("STEALTH",),
+        },
+    ),
+    "000010637005": EnhancementToolDescriptor(
+        enhancement_id="000010637005",
+        name="Laud Hailer",
+        timing="when_issuing_order",
+        target="bearer",
+        duration="constant",
+        effect="increase_order_range",
+        effect_params={"order_range": 12.0},
+    ),
+}
+
+_GRIZZLED_COMPANY_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _GRIZZLED_COMPANY_DESCRIPTORS.values()
+}
+
 _POSSESSED_SLAUGHTERBAND_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010082002": EnhancementToolDescriptor(
         enhancement_id="000010082002",
@@ -761,6 +817,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _CULT_OF_BLOOD_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _GRIZZLED_COMPANY_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _POSSESSED_SLAUGHTERBAND_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -809,6 +868,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
     return (
         _GORETRACK_ONSLAUGHT_BY_NAME.get(key)
         or _CULT_OF_BLOOD_BY_NAME.get(key)
+        or _GRIZZLED_COMPANY_BY_NAME.get(key)
         or _POSSESSED_SLAUGHTERBAND_BY_NAME.get(key)
         or _VESSELS_OF_WRATH_BY_NAME.get(key)
         or _AELDARI_GUARDIAN_BATTLEHOST_BY_NAME.get(key)
