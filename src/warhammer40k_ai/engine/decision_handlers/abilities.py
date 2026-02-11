@@ -1231,10 +1231,15 @@ def _apply_choose_combat_drugs(game: object, request: DecisionRequest, result: D
     choice = payload.get("choice_key") or payload.get("key")
     battle_round = request.context.get("battle_round")
     applied = None
+    pharmacophex_results = []
     if bool(payload.get("random", False)) or str(choice or "").strip().upper() == "ROLL":
         applied = mgr.roll_combat_drugs(battle_round=battle_round)
     else:
         applied = bool(mgr.select_combat_drug(choice, battle_round=battle_round))
+    if applied:
+        trigger_pharmacophex = getattr(mgr, "trigger_pharmacophex_roll", None)
+        if callable(trigger_pharmacophex):
+            pharmacophex_results = list(trigger_pharmacophex(battle_round=battle_round, game=game) or [])
     try:
         player = getattr(army, "player", None)
         if isinstance(applied, dict):
@@ -1251,6 +1256,32 @@ def _apply_choose_combat_drugs(game: object, request: DecisionRequest, result: D
             label = _option_label(request, result) or str(choice)
             if label:
                 _log_action_for_players(game, player, f"Combat Drugs: {label} (Battle Round {battle_round})")
+        for entry in pharmacophex_results:
+            if not isinstance(entry, dict):
+                continue
+            unit = entry.get("unit")
+            uname = str(getattr(unit, "name", "") or "Unit").strip()
+            selected_name = str(entry.get("selected_name", "") or "").strip()
+            selected_key = str(entry.get("selected_key", "") or "").strip().upper()
+            try:
+                roll = int(entry.get("roll", 0) or 0)
+            except Exception:
+                roll = 0
+            applied_extra = bool(entry.get("applied", False))
+            if not selected_name and selected_key:
+                selected_name = selected_key.title()
+            if applied_extra:
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"Pharmacophex ({uname}): {selected_name or selected_key} (dice: {roll}).",
+                )
+            elif selected_name or selected_key:
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"Pharmacophex ({uname}): {selected_name or selected_key} already active; no additional effect (dice: {roll}).",
+                )
     except Exception:
         pass
     return applied

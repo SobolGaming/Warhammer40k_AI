@@ -254,6 +254,48 @@ _AELDARI_GUARDIAN_BATTLEHOST_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _AELDARI_GUARDIAN_BATTLEHOST_DESCRIPTORS.values()
 }
 
+_SPECTACLE_OF_SPITE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010580002": EnhancementToolDescriptor(
+        enhancement_id="000010580002",
+        name="Pharmacophex",
+        timing="command_phase_start_after_combat_drugs_selection",
+        target="bearer_unit",
+        duration="until_next_command_phase",
+        effect="extra_combat_drug_roll_for_bearer_unit",
+        effect_params={"roll": "D6", "ignore_if_drug_already_active_army_wide": True},
+    ),
+    "000010580003": EnhancementToolDescriptor(
+        enhancement_id="000010580003",
+        name="Chronoshard",
+        timing="start_of_fight_phase",
+        target="bearer_unit",
+        duration="until_end_of_phase",
+        effect="fights_first",
+        once_per_battle=True,
+    ),
+    "000010580004": EnhancementToolDescriptor(
+        enhancement_id="000010580004",
+        name="Periapt of Torments",
+        timing="passive",
+        target="enemy_units_targeting_bearer_unit",
+        duration="constant",
+        effect="prevent_overwatch_against_bearer_unit",
+    ),
+    "000010580005": EnhancementToolDescriptor(
+        enhancement_id="000010580005",
+        name="Morghenna's Curse",
+        timing="passive",
+        target="bearer_melee_weapons",
+        duration="constant",
+        effect="bearer_melee_ap_damage_bonus",
+        effect_params={"ap_bonus": 1, "damage_bonus": 1},
+    ),
+}
+
+_SPECTACLE_OF_SPITE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPECTACLE_OF_SPITE_DESCRIPTORS.values()
+}
+
 _SLAANESHS_CHOSEN_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010018002": EnhancementToolDescriptor(
         enhancement_id="000010018002",
@@ -685,6 +727,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _AELDARI_GUARDIAN_BATTLEHOST_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPECTACLE_OF_SPITE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SLAANESHS_CHOSEN_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -721,6 +766,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _POSSESSED_SLAUGHTERBAND_BY_NAME.get(key)
         or _VESSELS_OF_WRATH_BY_NAME.get(key)
         or _AELDARI_GUARDIAN_BATTLEHOST_BY_NAME.get(key)
+        or _SPECTACLE_OF_SPITE_BY_NAME.get(key)
         or _SLAANESHS_CHOSEN_BY_NAME.get(key)
         or _COTERIE_OF_CONCEITED_BY_NAME.get(key)
         or _CARNIVAL_OF_EXCESS_BY_NAME.get(key)

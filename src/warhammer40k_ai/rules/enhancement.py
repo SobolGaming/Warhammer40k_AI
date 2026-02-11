@@ -315,6 +315,11 @@ class Enhancement:
             is_warpbane_task_force = bool(gk_mgr and gk_mgr.is_warpbane_task_force())
         except Exception:
             is_warpbane_task_force = False
+        dru_mgr = getattr(army, "drukhari_detachments", None) if army is not None else None
+        try:
+            is_spectacle_of_spite = bool(dru_mgr and dru_mgr.is_spectacle_of_spite())
+        except Exception:
+            is_spectacle_of_spite = False
         ts_mgr = getattr(army, "thousand_sons_detachments", None) if army is not None else None
         try:
             is_grand_coven = bool(ts_mgr and ts_mgr.is_grand_coven())
@@ -494,6 +499,41 @@ class Enhancement:
             if not is_rubricae_phalanx:
                 return
             unit.special_rules["enhancement_the_stave_abominus"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "pharmacophex" or enh_id == "000010580002":
+            if not is_spectacle_of_spite:
+                return
+            unit.special_rules["enhancement_pharmacophex"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "chronoshard" or enh_id == "000010580003":
+            if not is_spectacle_of_spite:
+                return
+            unit.special_rules["enhancement_chronoshard"] = True
+            unit.special_rules["enhancement_fight_first_once_per_battle"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "periapt of torments" or enh_id == "000010580004":
+            if not is_spectacle_of_spite:
+                return
+            unit.special_rules["enhancement_periapt_of_torments"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "morghenna's curse" or enh_id == "000010580005":
+            if not is_spectacle_of_spite:
+                return
+            unit.special_rules["enhancement_morghennas_curse"] = True
+            unit.special_rules["enhancement_bearer_melee_ap_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_ap_bonus", 0) or 0
+            ) + 1
+            unit.special_rules["enhancement_bearer_melee_damage_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_damage_bonus", 0) or 0
+            ) + 1
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 

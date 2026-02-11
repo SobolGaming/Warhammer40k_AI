@@ -5487,12 +5487,41 @@ class ActionsMovementMixin:
             return False
         return True
 
+    def _periapt_of_torments_no_overwatch_active(self, *, target_unit: Optional['Unit'] = None) -> bool:
+        try:
+            active = bool(
+                self._attached_unit_has_active_enhancement(
+                    "enhancement_periapt_of_torments",
+                    enhancement_id="000010580004",
+                    enhancement_name="Periapt of Torments",
+                )
+            )
+        except Exception:
+            active = False
+        if not active:
+            return False
+        if target_unit is None:
+            return True
+        try:
+            my_army = self.get_parent_army()
+        except Exception:
+            my_army = None
+        try:
+            target_army = target_unit.get_parent_army()
+        except Exception:
+            target_army = None
+        if my_army is None or target_army is None:
+            return True
+        return my_army is not target_army
+
     def is_overwatch_prevented_against(self, target_unit: 'Unit', *, game: Optional['Game'] = None) -> bool:
         if self._post_shoot_no_overwatch_active(game=game):
             return True
         if self._murderous_onslaught_no_overwatch_active(game=game):
             return True
         if self._spearhead_striker_no_overwatch_active(game=game):
+            return True
+        if self._periapt_of_torments_no_overwatch_active(target_unit=target_unit):
             return True
         entry = self._get_wargear_charge_keyword_effects(target_unit, game=game)
         if not entry:

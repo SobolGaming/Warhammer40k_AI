@@ -121,6 +121,84 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
         except Exception:
             return False
 
+    def _unit_attached_members(self, unit) -> list:
+        if unit is None:
+            return []
+        try:
+            root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+        except Exception:
+            root = unit
+        try:
+            members = list(root.get_attached_unit_members() or []) if hasattr(root, "get_attached_unit_members") else []
+        except Exception:
+            members = []
+        if not members:
+            members = [root]
+        return [m for m in members if m is not None]
+
+    def _unit_has_pharmacophex(self, unit) -> bool:
+        if unit is None:
+            return False
+        try:
+            sr = getattr(unit, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get("enhancement_pharmacophex")):
+                return True
+        except Exception:
+            pass
+        try:
+            enh = getattr(unit, "enhancement", None)
+            if enh is None:
+                return False
+            enh_id = str(getattr(enh, "id", "") or "").strip()
+            enh_name = str(getattr(enh, "name", "") or "").strip().lower()
+            return enh_id == "000010580002" or enh_name == "pharmacophex"
+        except Exception:
+            return False
+
+    def _unit_active_pharmacophex_key(self, unit, *, game=None) -> str:
+        if unit is None:
+            return ""
+        try:
+            sr = getattr(unit, "special_rules", None)
+        except Exception:
+            sr = None
+        if not isinstance(sr, dict):
+            return ""
+        key = str(sr.get("enhancement_pharmacophex_drug_key", "") or "").strip().upper()
+        if key not in COMBAT_DRUG_BY_KEY:
+            return ""
+        if game is None:
+            return key
+        try:
+            marked_round = int(sr.get("enhancement_pharmacophex_round", 0) or 0)
+        except Exception:
+            marked_round = 0
+        if marked_round and int(getattr(game, "turn", 0) or 0) != marked_round:
+            return ""
+        return key
+
+    def get_pharmacophex_combat_drug_key_for_model(self, model, *, game=None) -> str:
+        if model is None:
+            return ""
+        if not self._army_has_combat_drugs():
+            return ""
+        if not self._model_in_army(model):
+            return ""
+        try:
+            unit = getattr(model, "parent_unit", None)
+        except Exception:
+            unit = None
+        if unit is None:
+            return ""
+        members = self._unit_attached_members(unit)
+        for member in members:
+            if not self._unit_has_pharmacophex(member):
+                continue
+            key = self._unit_active_pharmacophex_key(member, game=game)
+            if key:
+                return key
+        return ""
+
     def get_active_combat_drug_keys(self, *, game=None) -> set[str]:
         if not self._army_has_combat_drugs():
             return set()
@@ -137,7 +215,11 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
             return set()
         if not self._model_in_army(model):
             return set()
-        return set(self.combat_drug_active_keys)
+        keys = set(self.combat_drug_active_keys)
+        extra = self.get_pharmacophex_combat_drug_key_for_model(model, game=game)
+        if extra:
+            keys.add(extra)
+        return keys
 
     def get_active_combat_drugs(self, *, game=None) -> list[CombatDrug]:
         keys = self.get_active_combat_drug_keys(game=game)
@@ -195,3 +277,50 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
             except Exception:
                 pass
         return {"rolls": rolls, "selected": selected}
+
+    def trigger_pharmacophex_roll(self, *, battle_round: Optional[int] = None, game=None) -> list[dict]:
+        if not self._army_has_combat_drugs():
+            return []
+        if self.army is None:
+            return []
+        active_army_keys = self.get_active_combat_drug_keys(game=game)
+        out: list[dict] = []
+        units = list(getattr(self.army, "units", []) or [])
+        for unit in units:
+            if unit is None or not self._unit_has_pharmacophex(unit):
+                continue
+            try:
+                if not bool(getattr(unit, "is_alive", lambda: True)()):
+                    continue
+            except Exception:
+                continue
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr.pop("enhancement_pharmacophex_drug_key", None)
+            sr.pop("enhancement_pharmacophex_round", None)
+            sr.pop("enhancement_pharmacophex_roll", None)
+            roll = int(get_roll("D6"))
+            drug = COMBAT_DRUG_BY_ROLL.get(int(roll))
+            selected_key = str(getattr(drug, "key", "") or "").strip().upper() if drug is not None else ""
+            selected_name = str(getattr(drug, "name", "") or "").strip() if drug is not None else ""
+            applied = bool(selected_key and selected_key not in active_army_keys)
+            if applied:
+                sr["enhancement_pharmacophex_drug_key"] = selected_key
+                if battle_round is not None:
+                    try:
+                        sr["enhancement_pharmacophex_round"] = int(battle_round)
+                    except Exception:
+                        pass
+                sr["enhancement_pharmacophex_roll"] = int(roll)
+            unit.special_rules = sr
+            out.append(
+                {
+                    "unit": unit,
+                    "roll": int(roll),
+                    "selected_key": selected_key,
+                    "selected_name": selected_name,
+                    "applied": bool(applied),
+                }
+            )
+        return out
