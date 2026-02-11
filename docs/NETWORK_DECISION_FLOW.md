@@ -184,6 +184,7 @@ simply **presents valid choices** and validates all selections.
 3. **Server validates** eligibility (has not shot, has targets, etc) and queues:
    - target selection (and split‑fire decisions if needed)
    - weapon/profile selection
+   - any required on-selection ability decisions (for example `CHOOSE_DARK_PACT`; in Cabal of Chaos, Dark Pact options include the `empyric_wellspring_choice` payload)
 4. **Client resolves target/weapon choices.**
 5. **Defender reaction window (if applicable)**:
    - If the defender has any reactive abilities/stratagems available on being targeted

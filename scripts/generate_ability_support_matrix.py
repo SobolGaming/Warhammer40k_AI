@@ -334,6 +334,12 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time a model in this unit makes an attack reroll a hit roll of \d+",
             r"each time a model in this unit makes an attack reroll a wound roll of \d+",
         ),
+        "Empyric Wellspring": (
+            r"each time a unit from your army makes a dark pact select one of the following abilities",
+            r"your unit has that ability until the end of the phase",
+            r"while this unit is within 9 of one or more friendly heretic astartes psyker models improve the strength characteristic of ranged weapons equipped by models in this unit by \d+",
+            r"while this unit is within 9 of one or more friendly heretic astartes daemon prince or a heretic astartes daemon prince with wings models improve the armour penetration characteristic of melee weapons equipped by models in this unit by \d+",
+        ),
         "Defend at All Costs": (
             r"each time a dire avenger guardian support weapon or war walker model from your army makes an attack if that models unit and or the target unit are within range of one or more objective markers add \d+ to the hit roll",
         ),
@@ -1502,6 +1508,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         ),
         "Quicksilver Grace": ("Supported", "Mercurial Host: reroll Advance rolls for eligible units."),
         "Exquisite Swordsmanship": ("Supported", "Peerless Bladesmen: on charge choose Lethal or Sustained for melee."),
+        "Empyric Wellspring": (
+            "Supported",
+            "Cabal of Chaos: each time a unit makes a Dark Pact it also selects Leaping Warpflame or Monstrous Manifestation until end of phase; Leaping Warpflame grants +1 Strength to ranged weapons while within 9\" of a friendly HERETIC ASTARTES PSYKER model, and Monstrous Manifestation grants +1 AP to melee weapons while within 9\" of a friendly HERETIC ASTARTES DAEMON PRINCE source.",
+        ),
         "Mechanised Murder": ("Supported", "Rapid Evisceration: reroll Hit/Wound rolls of 1 for eligible units."),
         "Daemonic Empowerment": ("Supported", "Carnival of Excess: empowered units gain Sustained Hits."),
         "Skilled Crews": (

@@ -5920,6 +5920,10 @@ class GamePhaseHandlersMixin:
                 if exp and exp == pname:
                     for k in ("dark_pacts_active", "dark_pacts_choice", "dark_pacts_expires_phase"):
                         sr.pop(k, None)
+                exp = str(sr.get("empyric_wellspring_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in ("empyric_wellspring_choice", "empyric_wellspring_expires_phase", "empyric_wellspring_source"):
+                        sr.pop(k, None)
                 exp = str(sr.get("despoilers_expires_phase", "") or "").strip().upper()
                 if exp and exp == pname:
                     for k in ("despoilers_active", "despoilers_expires_phase", "despoilers_source"):

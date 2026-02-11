@@ -560,8 +560,21 @@ def _validate_choose_dark_pact(game: object, request: DecisionRequest, result: D
     choice = payload.get("choice") or payload.get("choice_key") or payload.get("key")
     if unit_val is None or choice is None:
         return ("Dark Pact requires unit_id and choice.",)
-    if resolve_unit(game, unit_val) is None:
+    unit = resolve_unit(game, unit_val)
+    if unit is None:
         return ("Dark Pact unit not found.",)
+    empyric_choice = payload.get("empyric_wellspring_choice")
+    has_empyric_field = str(empyric_choice or "").strip() != ""
+    requires_empyric = False
+    requires_fn = getattr(unit, "dark_pacts_requires_empyric_wellspring_choice", None)
+    if callable(requires_fn):
+        requires_empyric = bool(requires_fn())
+    if requires_empyric:
+        key = str(empyric_choice or "").strip().upper()
+        if key not in ("LEAPING_WARPFLAME", "MONSTROUS_MANIFESTATION"):
+            return ("Empyric Wellspring selection requires Leaping Warpflame or Monstrous Manifestation.",)
+    elif has_empyric_field:
+        return ("Empyric Wellspring selection is invalid for this unit.",)
     return ()
 
 
@@ -573,12 +586,23 @@ def _apply_choose_dark_pact(game: object, request: DecisionRequest, result: Deci
     if unit is None:
         raise RuntimeError("Dark Pact unit not found.")
     choice = payload.get("choice") or payload.get("choice_key") or payload.get("key")
+    empyric_choice = payload.get("empyric_wellspring_choice")
     phase_name = str(payload.get("phase_name", "") or request.context.get("phase_name", "") or "")
     trigger = str(payload.get("trigger", "") or request.context.get("trigger", "") or "")
     apply_fn = getattr(unit, "apply_dark_pacts_choice", None)
     if not callable(apply_fn):
         raise RuntimeError("Dark Pact apply hook missing.")
-    return bool(apply_fn(game, choice=str(choice), phase_name=phase_name, trigger=trigger))
+    return bool(
+        apply_fn(
+            game,
+            choice=str(choice),
+            phase_name=phase_name,
+            trigger=trigger,
+            empyric_wellspring_choice=(
+                str(empyric_choice).strip().upper() if str(empyric_choice or "").strip() else None
+            ),
+        )
+    )
 
 
 def _validate_choose_path_of_warrior(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:

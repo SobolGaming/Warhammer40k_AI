@@ -1597,6 +1597,14 @@ class WargearProfile:
         except Exception:
             pass
         if self.parent_wargear and self.parent_wargear.is_melee():
+            unit = getattr(attacker, "parent_unit", None)
+            get_bonus = getattr(unit, "get_empyric_wellspring_melee_ap_bonus", None) if unit is not None else None
+            if callable(get_bonus):
+                bonus, _source = get_bonus()
+                bonus = int(bonus or 0)
+                if bonus:
+                    ap_val -= bonus
+        if self.parent_wargear and self.parent_wargear.is_melee():
             from ..utility.aura_effects import get_aura_melee_ap_bonus
             aura_ap, _ = get_aura_melee_ap_bonus(getattr(attacker, "parent_unit", None), self)
             if aura_ap:
@@ -8760,6 +8768,20 @@ class WargearProfile:
                     wound_result.setdefault("modifiers", []).append(
                         f"+{shadow_extra}S from Enhancement bearer (Shadow of Chaos)"
                     )
+        if (
+            self.parent_wargear
+            and getattr(self.parent_wargear, "is_ranged", lambda: False)()
+            and isinstance(strength, int)
+        ):
+            unit = getattr(attacker, "parent_unit", None)
+            get_bonus = getattr(unit, "get_empyric_wellspring_ranged_strength_bonus", None) if unit is not None else None
+            if callable(get_bonus):
+                s_bonus, source = get_bonus()
+                s_bonus = int(s_bonus or 0)
+                if s_bonus:
+                    strength = strength + s_bonus
+                    source_name = str(source or "Empyric Wellspring").strip() or "Empyric Wellspring"
+                    wound_result.setdefault("modifiers", []).append(f"+{s_bonus}S from {source_name}")
         if isinstance(strength, int):
             sr = self._unit_special_rules(attacker)
             psychic_bonus = int(sr.get("enhancement_bearer_psychic_strength_bonus", 0) or 0)

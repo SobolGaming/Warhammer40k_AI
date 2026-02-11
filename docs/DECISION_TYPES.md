@@ -90,7 +90,7 @@ For UI mapping, see `docs/NETWORK_SAVELOAD_DESIGN.md`.
 - `CHOOSE_RITUALS` — Choose rituals.
 - `CHOOSE_CHIVALRIC_OATH` — Choose Chivalric Oath.
 - `CHOOSE_DAEMONIC_ALLEGIANCE` — Choose Daemonic Allegiance.
-- `CHOOSE_DARK_PACT` — Choose Dark Pact.
+- `CHOOSE_DARK_PACT` — Choose Dark Pact (Cabal of Chaos options include `empyric_wellspring_choice`).
 - `CHOOSE_DOCTRINA` — Choose Doctrina Imperative.
 - `CHOOSE_COMBAT_DOCTRINE` — Choose Combat Doctrine.
 - `CHOOSE_GRAND_COVEN` — Choose Grand Coven option.

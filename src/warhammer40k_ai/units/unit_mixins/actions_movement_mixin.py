@@ -5425,6 +5425,184 @@ class ActionsMovementMixin:
                 continue
         return False
 
+    _EMPYRIC_WELLSPRING_CHOICES = ("LEAPING_WARPFLAME", "MONSTROUS_MANIFESTATION")
+
+    def _is_cabal_of_chaos_detachment(self) -> bool:
+        try:
+            army = self.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+        if mgr is None:
+            return False
+        fn = getattr(mgr, "is_cabal_of_chaos", None)
+        if not callable(fn):
+            return False
+        try:
+            return bool(fn())
+        except Exception:
+            return False
+
+    def dark_pacts_requires_empyric_wellspring_choice(self) -> bool:
+        return self._is_cabal_of_chaos_detachment()
+
+    def _current_phase_name_for_rules(self, game=None) -> str:
+        phase_name = ""
+        try:
+            if game is None:
+                army = self.get_parent_army()
+                player = getattr(army, "player", None) if army is not None else None
+                game = getattr(player, "game", None) if player is not None else None
+            phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        except Exception:
+            phase_name = ""
+        return phase_name
+
+    def _active_empyric_wellspring_choice(self, *, game=None) -> str:
+        if not self.dark_pacts_requires_empyric_wellspring_choice():
+            return ""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return ""
+        choice = str(sr.get("empyric_wellspring_choice", "") or "").strip().upper()
+        if choice not in self._EMPYRIC_WELLSPRING_CHOICES:
+            return ""
+        expires_phase = str(sr.get("empyric_wellspring_expires_phase", "") or "").strip().upper()
+        if expires_phase:
+            current_phase = self._current_phase_name_for_rules(game=game)
+            if current_phase and current_phase != expires_phase:
+                return ""
+        return choice
+
+    @staticmethod
+    def _entity_has_keyword_for_empyric(entity, keyword: str) -> bool:
+        kw = str(keyword or "").strip()
+        if entity is None or not kw:
+            return False
+        try:
+            has_any = getattr(entity, "has_any_keyword", None)
+            if callable(has_any) and bool(has_any(kw)):
+                return True
+        except Exception:
+            pass
+        try:
+            has_local = getattr(entity, "has_keyword", None)
+            if callable(has_local) and bool(has_local(kw)):
+                return True
+        except Exception:
+            pass
+        return False
+
+    def _model_matches_empyric_source(self, model, *, choice: str) -> bool:
+        parent_unit = getattr(model, "parent_unit", None)
+        has_heretic_astartes = self._entity_has_keyword_for_empyric(model, "HERETIC ASTARTES") or self._entity_has_keyword_for_empyric(
+            parent_unit, "HERETIC ASTARTES"
+        )
+        if not has_heretic_astartes:
+            return False
+        choice_key = str(choice or "").strip().upper()
+        if choice_key == "LEAPING_WARPFLAME":
+            return self._entity_has_keyword_for_empyric(model, "PSYKER") or self._entity_has_keyword_for_empyric(parent_unit, "PSYKER")
+        if choice_key != "MONSTROUS_MANIFESTATION":
+            return False
+        if (
+            self._entity_has_keyword_for_empyric(model, "DAEMON PRINCE")
+            or self._entity_has_keyword_for_empyric(parent_unit, "DAEMON PRINCE")
+            or self._entity_has_keyword_for_empyric(model, "DAEMON PRINCE WITH WINGS")
+            or self._entity_has_keyword_for_empyric(parent_unit, "DAEMON PRINCE WITH WINGS")
+        ):
+            return True
+        text = f"{getattr(model, 'name', '')} {getattr(parent_unit, 'name', '')}".lower().replace("\u2019", "'")
+        return ("daemon prince with wings" in text) or ("daemon prince" in text)
+
+    def _friendly_empyric_source_within_range(self, *, choice: str, radius: float = 9.0) -> bool:
+        choice_key = str(choice or "").strip().upper()
+        if choice_key not in self._EMPYRIC_WELLSPRING_CHOICES:
+            return False
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        if army is None:
+            return False
+        try:
+            from ...utility.aura_utils import model_within_range_of_unit
+        except Exception:
+            return False
+
+        seen_roots: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            try:
+                source_root = unit.get_attached_unit_root()
+            except Exception:
+                source_root = unit
+            if source_root is None:
+                continue
+            source_id = str(get_entity_id(source_root) or "")
+            if source_id:
+                if source_id in seen_roots:
+                    continue
+                seen_roots.add(source_id)
+            try:
+                if not bool(getattr(source_root, "deployed", True)):
+                    continue
+                if bool(getattr(source_root, "is_embarked", False)):
+                    continue
+                if callable(getattr(source_root, "is_in_reserves", None)) and bool(source_root.is_in_reserves()):
+                    continue
+            except Exception:
+                continue
+            try:
+                if not bool(source_root.is_alive()):
+                    continue
+            except Exception:
+                continue
+            try:
+                source_models = list(source_root.get_attached_unit_models() or [])
+            except Exception:
+                source_models = list(getattr(source_root, "models", []) or [])
+            for model in list(source_models or []):
+                if model is None:
+                    continue
+                if not bool(getattr(model, "is_alive", True)):
+                    continue
+                if not self._model_matches_empyric_source(model, choice=choice_key):
+                    continue
+                try:
+                    if model_within_range_of_unit(model, root, float(radius), use_attached_aggregate=True):
+                        return True
+                except Exception:
+                    continue
+        return False
+
+    def get_empyric_wellspring_ranged_strength_bonus(self, *, game=None) -> tuple[int, str]:
+        choice = self._active_empyric_wellspring_choice(game=game)
+        if choice != "LEAPING_WARPFLAME":
+            return 0, ""
+        if not self._friendly_empyric_source_within_range(choice=choice, radius=9.0):
+            return 0, ""
+        return 1, "Leaping Warpflame"
+
+    def get_empyric_wellspring_melee_ap_bonus(self, *, game=None) -> tuple[int, str]:
+        choice = self._active_empyric_wellspring_choice(game=game)
+        if choice != "MONSTROUS_MANIFESTATION":
+            return 0, ""
+        if not self._friendly_empyric_source_within_range(choice=choice, radius=9.0):
+            return 0, ""
+        return 1, "Monstrous Manifestation"
+
     def has_martial_katah(self) -> bool:
         if "martial_katah" in getattr(self, "_ability_cache", {}):
             return bool(self._ability_cache["martial_katah"])
@@ -5716,7 +5894,15 @@ class ActionsMovementMixin:
         except Exception:
             pass
 
-    def apply_dark_pacts_choice(self, game, *, choice: str, phase_name: str, trigger: str) -> bool:
+    def apply_dark_pacts_choice(
+        self,
+        game,
+        *,
+        choice: str,
+        phase_name: str,
+        trigger: str,
+        empyric_wellspring_choice: Optional[str] = None,
+    ) -> bool:
         trigger_norm = str(trigger or "").strip().lower()
         if trigger_norm not in ("shooting", "fight"):
             return False
@@ -5726,6 +5912,12 @@ class ActionsMovementMixin:
         options = ("LETHAL HITS", "SUSTAINED HITS 1")
         if choice_norm not in options:
             return False
+        empyric_required = self.dark_pacts_requires_empyric_wellspring_choice()
+        empyric_choice_norm = str(empyric_wellspring_choice or "").strip().upper()
+        if empyric_required and empyric_choice_norm not in self._EMPYRIC_WELLSPRING_CHOICES:
+            return False
+        if not empyric_required:
+            empyric_choice_norm = ""
         passed = True
         auto_passed = self._auto_pass_dark_pacts_test()
         if not auto_passed:
@@ -5765,6 +5957,14 @@ class ActionsMovementMixin:
         sr["dark_pacts_active"] = True
         sr["dark_pacts_choice"] = "BOTH" if dark_ascension_active else choice_norm
         sr["dark_pacts_expires_phase"] = phase_key
+        if empyric_required:
+            sr["empyric_wellspring_choice"] = empyric_choice_norm
+            sr["empyric_wellspring_expires_phase"] = phase_key
+            sr["empyric_wellspring_source"] = "Empyric Wellspring"
+        else:
+            sr.pop("empyric_wellspring_choice", None)
+            sr.pop("empyric_wellspring_expires_phase", None)
+            sr.pop("empyric_wellspring_source", None)
         if dark_ascension_active:
             sr["dark_ascension_active"] = True
             sr["dark_ascension_expires_phase"] = phase_key
@@ -5830,26 +6030,64 @@ class ActionsMovementMixin:
                 "Skip Dark Pact",
                 payload={"action": "skip", "unit_id": unit_id, "phase_name": phase_name or "", "trigger": trigger or ""},
             ),
-            DecisionOption.create(
-                "Lethal Hits",
-                payload={"choice": "LETHAL HITS", "unit_id": unit_id, "phase_name": phase_name or "", "trigger": trigger or ""},
-            ),
-            DecisionOption.create(
-                "Sustained Hits 1",
-                payload={
-                    "choice": "SUSTAINED HITS 1",
-                    "unit_id": unit_id,
-                    "phase_name": phase_name or "",
-                    "trigger": trigger or "",
-                },
-            ),
         ]
+        base_choices = (
+            ("LETHAL HITS", "Lethal Hits"),
+            ("SUSTAINED HITS 1", "Sustained Hits 1"),
+        )
+        empyric_required = bool(self.dark_pacts_requires_empyric_wellspring_choice())
+        if empyric_required:
+            empyric_choices = (
+                (
+                    "LEAPING_WARPFLAME",
+                    "Leaping Warpflame",
+                    "While within 9\" of a friendly HERETIC ASTARTES PSYKER model, improve ranged Strength by 1.",
+                ),
+                (
+                    "MONSTROUS_MANIFESTATION",
+                    "Monstrous Manifestation",
+                    "While within 9\" of a friendly HERETIC ASTARTES DAEMON PRINCE model, improve melee AP by 1.",
+                ),
+            )
+            for dark_pact_choice, dark_pact_label in base_choices:
+                for empyric_choice, empyric_label, empyric_summary in empyric_choices:
+                    decision_options.append(
+                        DecisionOption.create(
+                            f"{dark_pact_label} + {empyric_label}",
+                            payload={
+                                "choice": dark_pact_choice,
+                                "empyric_wellspring_choice": empyric_choice,
+                                "summary": f"{dark_pact_label}; {empyric_summary}",
+                                "unit_id": unit_id,
+                                "phase_name": phase_name or "",
+                                "trigger": trigger or "",
+                            },
+                        )
+                    )
+        else:
+            for dark_pact_choice, dark_pact_label in base_choices:
+                decision_options.append(
+                    DecisionOption.create(
+                        dark_pact_label,
+                        payload={
+                            "choice": dark_pact_choice,
+                            "unit_id": unit_id,
+                            "phase_name": phase_name or "",
+                            "trigger": trigger or "",
+                        },
+                    )
+                )
         req = DecisionRequest.create(
             DECISION_CHOOSE_DARK_PACT,
             f"Select Dark Pact for {getattr(self, 'name', 'Unit')}",
             player_id=getattr(player, "id", None),
             options=decision_options,
-            context={"unit_id": unit_id, "phase_name": phase_name or "", "trigger": trigger or ""},
+            context={
+                "unit_id": unit_id,
+                "phase_name": phase_name or "",
+                "trigger": trigger or "",
+                "empyric_wellspring_required": empyric_required,
+            },
         )
         if hasattr(game, "request_decision"):
             game.request_decision(req)

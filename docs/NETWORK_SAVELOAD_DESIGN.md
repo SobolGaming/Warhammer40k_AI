@@ -252,7 +252,7 @@ Shooting:
 - firing_deck_dialog: DECLARE_FIRING_DECK {transport_id, declarations[]}
 - overwatch_shooter_dialog: SELECT_OVERWATCH_SHOOTER {unit_id} (also used for stratagem unit selection; context may include enemy_unit_id)
 - roll_reroll_dialog: REROLL_ROLL {roll_id, reroll_all_or_one, die_index}
-- dark_pacts_dialog: CHOOSE_DARK_PACT {choice | skip} (context `unit_id`, `phase_name`, `trigger`)
+- dark_pacts_dialog: CHOOSE_DARK_PACT {choice, optional `empyric_wellspring_choice` | skip} (context `unit_id`, `phase_name`, `trigger`; Cabal of Chaos requires `empyric_wellspring_choice`)
 - path_of_warrior_dialog: CHOOSE_PATH_OF_WARRIOR {choice_key} (context `unit_id`, `phase_name`, `trigger`)
 - cruel_amusement_dialog: CHOOSE_CRUEL_AMUSEMENT {choice} (context `unit_id`, `model_id`, `weapon_name`, `ability_name`)
 - master_of_magicks_dialog: CHOOSE_MASTER_OF_MAGICKS {choice} (context `unit_id`, `model_id`, `weapon_name`, `ability_name`)
@@ -371,7 +371,7 @@ Faction / Detachment / Ability choices:
 - cabal_of_sorcerers_dialog: CHOOSE_RITUALS {choices[]}
 - code_chivalric_dialog: CHOOSE_CHIVALRIC_OATH {choice_id}
 - daemonic_allegiance_dialog: CHOOSE_DAEMONIC_ALLEGIANCE {choice_id}
-- dark_pacts_dialog: CHOOSE_DARK_PACT {choice_id}
+- dark_pacts_dialog: CHOOSE_DARK_PACT {choice_id} (selected option payload may include `empyric_wellspring_choice` for Cabal of Chaos)
 - doctrina_imperatives_dialog: CHOOSE_DOCTRINA {choice_id}
 - combat_doctrines_dialog: CHOOSE_COMBAT_DOCTRINE {choice_id | skip} (Combat Doctrines / Mastered Doctrines; availability validated by engine)
 - grand_coven_dialog: CHOOSE_GRAND_COVEN {choice_id | skip}
