@@ -1070,22 +1070,67 @@ class Army:
             text = re.sub(r"[^a-z0-9 ]+", " ", str(value or "").lower())
             return re.sub(r"\s+", " ", text).strip()
 
-        restricted = {}
-        for unit in list(getattr(self, "units", []) or []):
+        units = list(getattr(self, "units", []) or [])
+        unit_counts: dict[str, int] = {}
+        display_names: dict[str, str] = {}
+        for unit in units:
             if unit is None:
-                continue
-            has_rule = bool(getattr(unit, "has_unique_model_restriction", lambda: False)())
-            if not has_rule:
                 continue
             key = _norm_name(getattr(unit, "name", ""))
             if not key:
                 continue
-            entry = restricted.setdefault(key, {"name": getattr(unit, "name", "Unknown"), "count": 0})
-            entry["count"] += 1
+            unit_counts[key] = int(unit_counts.get(key, 0)) + 1
+            if key not in display_names:
+                display_names[key] = str(getattr(unit, "name", "") or "Unknown").strip() or "Unknown"
 
-        duplicates = [entry["name"] for entry in restricted.values() if entry.get("count", 0) > 1]
-        if duplicates:
-            raise ArmyValidationError(f"Unique model restriction: {duplicates} included more than once.")
+        restricted_caps: dict[str, dict] = {}
+        for unit in units:
+            if unit is None:
+                continue
+
+            unit_key = _norm_name(getattr(unit, "name", ""))
+            has_rule = bool(getattr(unit, "has_unique_model_restriction", lambda: False)())
+            if has_rule and unit_key:
+                existing = restricted_caps.get(unit_key)
+                if existing is None or int(existing.get("limit", 0)) > 1:
+                    restricted_caps[unit_key] = {
+                        "unit_name": display_names.get(unit_key, str(getattr(unit, "name", "") or "Unknown")),
+                        "limit": 1,
+                    }
+
+            get_caps = getattr(unit, "get_named_unit_inclusion_caps", None)
+            if not callable(get_caps):
+                continue
+            for cap in list(get_caps() or []):
+                cap_key = _norm_name(str(cap.get("unit_key") or cap.get("unit_name") or ""))
+                if not cap_key:
+                    continue
+                try:
+                    cap_limit = int(cap.get("limit"))
+                except (TypeError, ValueError):
+                    continue
+                if cap_limit <= 0:
+                    continue
+                existing = restricted_caps.get(cap_key)
+                if existing is None or int(existing.get("limit", 0)) > cap_limit:
+                    restricted_caps[cap_key] = {
+                        "unit_name": str(cap.get("unit_name") or cap_key).strip(),
+                        "limit": cap_limit,
+                    }
+
+        violations = []
+        for cap_key in sorted(restricted_caps):
+            spec = restricted_caps[cap_key]
+            limit = int(spec.get("limit", 0))
+            count = int(unit_counts.get(cap_key, 0))
+            if count <= limit:
+                continue
+            label = display_names.get(cap_key, str(spec.get("unit_name") or cap_key).strip() or "Unknown")
+            violations.append(f"{label} ({count}/{limit})")
+
+        if violations:
+            joined = ", ".join(violations)
+            raise ArmyValidationError(f"Unique model restriction: {joined}.")
 
     def validate_ynnari_epic_hero_restrictions(self) -> None:
         def _norm_name(value: str) -> str:

@@ -57,3 +57,65 @@ def test_unique_model_restriction_allows_single_instance():
     army.add_unit(unit)
 
     army.validate_unique_model_restrictions()
+
+
+def test_named_unit_restriction_blocks_duplicates_with_word_limit():
+    ability = {
+        "name": "Captain of the Company",
+        "description": "Your army cannot include more than one Captain Sicarius unit.",
+        "type": "Datasheet",
+        "parameter": "",
+    }
+    army = Army("Space Marines", "Detachment", points_limit=2000)
+    unit1 = make_unit("Captain Sicarius", abilities=[ability])
+    unit2 = make_unit("Captain Sicarius", abilities=[ability])
+    army.add_unit(unit1)
+    army.add_unit(unit2)
+
+    with pytest.raises(ArmyValidationError):
+        army.validate_unique_model_restrictions()
+
+
+def test_named_unit_restriction_allows_up_to_digit_limit():
+    ability = {
+        "name": "Captain Cadre",
+        "description": "Your army cannot include more than 2 Captain Sicarius units.",
+        "type": "Datasheet",
+        "parameter": "",
+    }
+    army = Army("Space Marines", "Detachment", points_limit=2000)
+    army.add_unit(make_unit("Captain Sicarius", abilities=[ability]))
+    army.add_unit(make_unit("Captain Sicarius", abilities=[ability]))
+
+    army.validate_unique_model_restrictions()
+
+
+def test_named_unit_restriction_blocks_when_above_digit_limit():
+    ability = {
+        "name": "Captain Cadre",
+        "description": "Your army cannot include more than 2 Captain Sicarius units.",
+        "type": "Datasheet",
+        "parameter": "",
+    }
+    army = Army("Space Marines", "Detachment", points_limit=2000)
+    army.add_unit(make_unit("Captain Sicarius", abilities=[ability]))
+    army.add_unit(make_unit("Captain Sicarius", abilities=[ability]))
+    army.add_unit(make_unit("Captain Sicarius", abilities=[ability]))
+
+    with pytest.raises(ArmyValidationError):
+        army.validate_unique_model_restrictions()
+
+
+def test_named_unit_restriction_blocks_duplicates_with_digit_one_singular():
+    ability = {
+        "name": "Captain Cadre",
+        "description": "Your army cannot include more than 1 Captain Sicarius unit.",
+        "type": "Datasheet",
+        "parameter": "",
+    }
+    army = Army("Space Marines", "Detachment", points_limit=2000)
+    army.add_unit(make_unit("Captain Sicarius", abilities=[ability]))
+    army.add_unit(make_unit("Captain Sicarius", abilities=[ability]))
+
+    with pytest.raises(ArmyValidationError):
+        army.validate_unique_model_restrictions()

@@ -2872,6 +2872,7 @@ def _classify_ability_base(
 
     desc_support = _warlord_enhancement_restriction_support(description)
     unique_model_support = _unique_model_restriction_support(description)
+    inspiring_commander_support = _inspiring_commander_support(description)
     chapter_restriction_support = None
     if description:
         if "RESTRICTIONS" not in description.upper():
@@ -2882,6 +2883,8 @@ def _classify_ability_base(
         return desc_support
     if unique_model_support:
         return unique_model_support
+    if inspiring_commander_support:
+        return inspiring_commander_support
     if chapter_restriction_support:
         return chapter_restriction_support
     closest_m_veh_support = _closest_monster_vehicle_reroll_support(description)
@@ -3329,7 +3332,10 @@ def _warlord_enhancement_restriction_support(description: str) -> Optional[Tuple
     norm = _norm_rules_text(description)
     if not norm:
         return None
-    warlord_clause = r"(?:this|that|the)?\s*(?:unit|model|models|bearer)?\s*(?:cannot be your|none of these models can be your)\s+warlord"
+    warlord_clause = (
+        r"(?:this|that|the)?\s*(?:unit|model|models|bearer)?\s*"
+        r"(?:cannot be(?: selected as)? your|none of these models can be(?: selected as)? your)\s+warlord"
+    )
     enh_clause = r"(?:this|that|the)?\s*(?:unit|model|models|bearer)?\s*(?:cannot\s+)?be given (?:an?\s+)?enhancements?"
     pattern = rf"(?:{warlord_clause}(?:\s+(?:and|or)\s+{enh_clause})?|{enh_clause}(?:\s+(?:and|or)\s+{warlord_clause})?)"
     if not re.fullmatch(pattern, norm):
@@ -3363,10 +3369,37 @@ def _unique_model_restriction_support(description: str) -> Optional[Tuple[str, s
     norm = _norm_rules_text(description)
     if not norm:
         return None
-    pattern = r"(?:unless otherwise stated )?you cannot include more than one of this (?:model|unit) in your army"
-    if not re.fullmatch(pattern, norm):
+    this_model_pattern = r"(?:unless otherwise stated )?you cannot include more than one of this (?:model|unit) in your army"
+    if re.fullmatch(this_model_pattern, norm):
+        return ("Supported", "Army validation enforces unique inclusion for this model.")
+
+    named_unit_pattern = (
+        r"your army cannot include more than "
+        r"(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve) "
+        r".+ units?"
+    )
+    if re.fullmatch(named_unit_pattern, norm):
+        return ("Supported", "Army validation enforces named-unit inclusion caps.")
+    return None
+
+
+def _inspiring_commander_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
         return None
-    return ("Supported", "Army validation enforces unique inclusion for this model.")
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"if you include this model in your army until the end of the battle "
+        r"non character models in .+ units? from your army have an objective control "
+        r"characteristic of \d+ while they are not battle shocked"
+    )
+    if re.fullmatch(pattern, norm):
+        return (
+            "Supported",
+            "Army-wide named-unit Objective Control set parsed (non-CHARACTER models only; disabled while the target unit is Battle-shocked).",
+        )
+    return None
 
 
 def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:

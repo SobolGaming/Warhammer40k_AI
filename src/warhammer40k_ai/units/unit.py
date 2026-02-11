@@ -501,11 +501,75 @@ class Unit(
                     for ab in (getattr(leader, "possible_abilities", []) or []):
                         desc = str(getattr(ab, "description", "") or "").replace("\u2019", "'")
                         if desc and ("leading a unit" in desc.lower()) and ("objective control characteristic" in desc.lower()):
-                            import re
                             if re.search(r"add\s+1\s+to\s+the\s+objective\s+control\s+characteristic", desc, flags=re.IGNORECASE):
                                 mods.append(Modifier(ModifierOp.ADD, 1, source="ability:leading_oc_add_1"))
                 except Exception:
                     continue
+
+            # Inspiring Commander: while included in your army, named units gain
+            # a fixed Objective Control value for non-CHARACTER models while not Battle-shocked.
+            try:
+                root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+            except Exception:
+                root = self
+            try:
+                unit_name = str(getattr(root, "name", "") or getattr(self, "name", "") or "")
+            except Exception:
+                unit_name = str(getattr(self, "name", "") or "")
+            normalize_name = getattr(root, "normalize_unit_name_for_rules", None)
+            if not callable(normalize_name):
+                normalize_name = getattr(self, "normalize_unit_name_for_rules", None)
+            if callable(normalize_name):
+                recipient_unit_key = str(normalize_name(unit_name) or "").strip()
+            else:
+                recipient_unit_key = re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", unit_name.lower())).strip()
+            if recipient_unit_key and not self.is_battle_shocked():
+                is_character_model = False
+                try:
+                    is_character_model = bool(getattr(model, "is_character", False))
+                except Exception:
+                    is_character_model = False
+                if not is_character_model:
+                    try:
+                        has_any = getattr(model, "has_any_keyword", None)
+                        if callable(has_any):
+                            is_character_model = bool(has_any("CHARACTER"))
+                    except Exception:
+                        pass
+                if not is_character_model:
+                    try:
+                        army = root.get_parent_army() if root is not None else self.get_parent_army()
+                    except Exception:
+                        army = None
+                    try:
+                        army_units = list(getattr(army, "units", []) or []) if army is not None else []
+                    except Exception:
+                        army_units = []
+                    for source_unit in army_units:
+                        if source_unit is None:
+                            continue
+                        get_specs = getattr(source_unit, "get_inspiring_commander_specs", None)
+                        if not callable(get_specs):
+                            continue
+                        for spec in list(get_specs() or []):
+                            try:
+                                target_keys = [str(v or "") for v in list(spec.get("target_unit_keys") or [])]
+                            except Exception:
+                                target_keys = []
+                            if recipient_unit_key not in target_keys:
+                                continue
+                            try:
+                                set_value = int(spec.get("objective_control"))
+                            except (TypeError, ValueError):
+                                continue
+                            source_name = str(spec.get("source") or "Inspiring Commander").strip() or "Inspiring Commander"
+                            mods.append(
+                                Modifier(
+                                    ModifierOp.SET,
+                                    int(set_value),
+                                    source=f"ability:inspiring_commander:{source_name}",
+                                )
+                            )
 
             # Strategic Savant (Aspect Host): +1 OC while leading Aspect Warriors.
             try:
@@ -1630,7 +1694,10 @@ class Unit(
         cache[cache_key] = deduped
         return deduped
 
-    _CANNOT_BE_WARLORD_RE = re.compile(r"\bcannot be your\s+warlord\b", re.IGNORECASE)
+    _CANNOT_BE_WARLORD_RE = re.compile(
+        r"\bcannot be(?: selected as)? your\s+warlord\b",
+        re.IGNORECASE,
+    )
     _CANNOT_BE_GIVEN_ENHANCEMENTS_RE = re.compile(r"\bcannot be given\s+(?:an?\s+)?enhancements?\b", re.IGNORECASE)
     _BEARER_UNIT_CHARGE_BONUS_RE = re.compile(
         r"add\s+(\d+)\s+to\s+charge\s+rolls?\s+made\s+for\s+(?:the\s+bearer'?s\s+unit|this\s+unit|this\s+model'?s\s+unit)",

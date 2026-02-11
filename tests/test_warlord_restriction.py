@@ -72,6 +72,26 @@ class TestWarlordRestriction(unittest.TestCase):
         army.select_warlord(unit)
         self.assertTrue(unit.is_warlord)
 
+    def test_cannot_be_selected_as_warlord_rule_blocks_selection(self):
+        from warhammer40k_ai.roster.army import Army, ArmyValidationError
+
+        abilities = [
+            {
+                "name": "Loyal Protector",
+                "description": "This model cannot be selected as your Warlord.",
+                "type": "Abilities",
+                "parameter": "",
+            }
+        ]
+        unit = _make_unit("Protector", abilities=abilities)
+        army = Army("Test", "Detachment")
+        army.faction_id = "TS"
+        army.add_unit(unit)
+
+        self.assertTrue(unit.special_rules.get("cannot_be_warlord"))
+        with self.assertRaises(ArmyValidationError):
+            army.select_warlord(unit)
+
 
 if __name__ == "__main__":
     unittest.main()
