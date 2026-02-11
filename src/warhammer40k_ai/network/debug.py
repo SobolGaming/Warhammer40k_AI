@@ -29,6 +29,6 @@ def log_network(event: str, **fields: Any) -> None:
             continue
         parts.append(f"{key}={_shorten(val)}")
     if parts:
-        logger.info(f"[network] {event} " + " ".join(parts))
+        logger.debug(f"[network] {event} " + " ".join(parts))
     else:
-        logger.info(f"[network] {event}")
+        logger.debug(f"[network] {event}")

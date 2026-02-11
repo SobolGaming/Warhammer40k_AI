@@ -22,17 +22,18 @@ from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.engine.deployment import HumanDeploymentDecisionMaker
 
 
-def setup_logging() -> logging.Logger:
+def setup_logging(log_level) -> logging.Logger:
     """Configure logging for UI play."""
+    print(f"Setting up logging at level {log_level}")
     root_logger = logging.getLogger()
-    root_logger.setLevel(logging.INFO)
+    root_logger.setLevel(logging._nameToLevel(log_level))
 
     for handler in root_logger.handlers[:]:
         root_logger.removeHandler(handler)
 
     formatter = logging.Formatter("%(message)s")
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
+    console_handler.setLevel(logging._nameToLevel(log_level))
     console_handler.setFormatter(formatter)
     root_logger.addHandler(console_handler)
 
@@ -255,9 +256,18 @@ def main() -> None:
         action="store_true",
         help="Require SPACE key to advance phases",
     )
+    parser.add_argument(
+        "-l",
+        "--log",
+        dest="log_level",
+        help="Set the logging level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        default="INFO",
+    )
+
 
     args = parser.parse_args()
-    setup_logging()
+    setup_logging(args.log_level)
 
     player_configs = {
         "player1_army_file": args.player1_army,
