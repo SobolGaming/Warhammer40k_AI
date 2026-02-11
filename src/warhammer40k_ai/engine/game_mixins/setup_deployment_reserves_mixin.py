@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from ._shared import *  # noqa: F401,F403
+import logging
+logger = logging.getLogger(__name__)
 
 
 class GameSetupDeploymentReservesMixin:
@@ -199,7 +201,7 @@ class GameSetupDeploymentReservesMixin:
 
     def complete_deployment_phase(self, manual_phases: bool = False) -> None:
         """Auto-deployment disabled; units must be deployed via UI/controller."""
-        print("WARN: Auto-deployment disabled; deploy units via UI/controller.")
+        logger.warning("WARN: Auto-deployment disabled; deploy units via UI/controller.")
         self.waiting_for_deployment_input = True
         return
 
@@ -255,7 +257,7 @@ class GameSetupDeploymentReservesMixin:
         )
 
         if not model_positions:
-            print(f"DEBUG: Infiltrate - no model positions found for {unit.name} at candidate ({x:.1f}, {y:.1f})")
+            logger.debug(f"DEBUG: Infiltrate - no model positions found for {unit.name} at candidate ({x:.1f}, {y:.1f})")
             return False
 
         # CRITICAL: Validate that all models are actually within deployment zone after positioning
@@ -267,10 +269,8 @@ class GameSetupDeploymentReservesMixin:
             for model, position in zip(unit.models, model_positions):
                 model_x, model_y = position[0], position[1]
                 if not self.is_position_wholly_in_deployment_zone(model_x, model_y, model.model_base, player_id):
-                    print(
-                        "CRITICAL: Auto-deployment validation failed - "
-                        f"{unit.name} {model.name} at ({model_x:.1f}, {model_y:.1f}) extends outside deployment zone"
-                    )
+                    logger.error("CRITICAL: Auto-deployment validation failed - "
+                        f"{unit.name} {model.name} at ({model_x:.1f}, {model_y:.1f}) extends outside deployment zone")
                     return False
 
         # Unit position is now determined by model positions
@@ -561,10 +561,8 @@ class GameSetupDeploymentReservesMixin:
                 # Check if any part of the model is in enemy deployment zone
                 if self.is_position_in_enemy_deployment_zone(model_x, model_y, player_id):
                     model_name = getattr(model, 'name', 'model')
-                    print(
-                        f"DEBUG: Infiltrate - {unit.name} {model_name} at ({model_x:.1f}, {model_y:.1f}) "
-                        "is inside enemy deployment zone"
-                    )
+                    logger.debug(f"DEBUG: Infiltrate - {unit.name} {model_name} at ({model_x:.1f}, {model_y:.1f}) "
+                        "is inside enemy deployment zone")
                     return False
 
                 # Check 9" distance to enemy deployment zone (from model edge)
@@ -572,20 +570,16 @@ class GameSetupDeploymentReservesMixin:
                 distance_to_enemy_zone = self.get_distance_to_enemy_deployment_zone(model_x, model_y, player_id)
                 if distance_to_enemy_zone - base_radius < 9.0:
                     model_name = getattr(model, 'name', 'model')
-                    print(
-                        f"DEBUG: Infiltrate - {unit.name} {model_name} too close to enemy zone: "
-                        f"edge_distance={distance_to_enemy_zone:.2f}\" base_radius={base_radius:.2f}\" < 9\""
-                    )
+                    logger.debug(f"DEBUG: Infiltrate - {unit.name} {model_name} too close to enemy zone: "
+                        f"edge_distance={distance_to_enemy_zone:.2f}\" base_radius={base_radius:.2f}\" < 9\"")
                     return False
 
                 # Check 9" distance to enemy models (from model edge)
                 distance_to_enemy_models = self.get_distance_to_enemy_models(model_x, model_y, player_id)
                 if distance_to_enemy_models - base_radius < 9.0:
                     model_name = getattr(model, 'name', 'model')
-                    print(
-                        f"DEBUG: Infiltrate - {unit.name} {model_name} too close to enemy models: "
-                        f"edge_distance={distance_to_enemy_models:.2f}\" base_radius={base_radius:.2f}\" < 9\""
-                    )
+                    logger.debug(f"DEBUG: Infiltrate - {unit.name} {model_name} too close to enemy models: "
+                        f"edge_distance={distance_to_enemy_models:.2f}\" base_radius={base_radius:.2f}\" < 9\"")
                     return False
                 # RUINS validation: cannot start/end overlapping walls/floors
                 model_z = position[2] if len(position) > 2 else 0.0
@@ -596,10 +590,8 @@ class GameSetupDeploymentReservesMixin:
                     model_name = getattr(model, 'name', 'model')
                     reason = ruins_validation.get('reason', 'unknown')
                     floor_level = ruins_validation.get('floor_level', '?')
-                    print(
-                        f"DEBUG: Infiltrate - RUINS validation failed for {unit.name} {model_name}: "
-                        f"{reason} (floor {floor_level})"
-                    )
+                    logger.debug(f"DEBUG: Infiltrate - RUINS validation failed for {unit.name} {model_name}: "
+                        f"{reason} (floor {floor_level})")
                     return False
 
             return True
@@ -624,10 +616,8 @@ class GameSetupDeploymentReservesMixin:
                 # Check if this model would be wholly within the deployment zone
                 if not self.is_position_wholly_in_deployment_zone(model_x, model_y, model.model_base, player_id):
                     model_name = getattr(model, 'name', 'model')
-                    print(
-                        f"DEBUG: Zone check failed for {unit.name} {model_name} at "
-                        f"({model_x:.1f}, {model_y:.1f}) in player '{player_id}' zone"
-                    )
+                    logger.debug(f"DEBUG: Zone check failed for {unit.name} {model_name} at "
+                        f"({model_x:.1f}, {model_y:.1f}) in player '{player_id}' zone")
                     return False
 
                 # Check RUINS terrain placement rules
@@ -636,10 +626,8 @@ class GameSetupDeploymentReservesMixin:
                 )
                 if not ruins_validation['valid']:
                     model_name = getattr(model, 'name', 'model')
-                    print(
-                        f"DEBUG: RUINS validation failed for {unit.name} {model_name}: "
-                        f"{ruins_validation['reason']}"
-                    )
+                    logger.debug(f"DEBUG: RUINS validation failed for {unit.name} {model_name}: "
+                        f"{ruins_validation['reason']}")
                     return False
             return True
 
@@ -1388,11 +1376,11 @@ class GameSetupDeploymentReservesMixin:
             else:
                 role = "Player"
 
-            print(f"Setup complete! {first_turn_player.name} ({role}) goes first")
+            logger.info(f"Setup complete! {first_turn_player.name} ({role}) goes first")
             return True
         else:
             self.setup_phase = SetupPhase(next_phase_value)
-            print(f"Advanced to setup phase: {self.setup_phase.name}")
+            logger.info(f"Advanced to setup phase: {self.setup_phase.name}")
             return False
 
     def advance_setup_phase(self) -> bool:
@@ -1418,7 +1406,7 @@ class GameSetupDeploymentReservesMixin:
         player2_muster: "ArmyMusterRequest" = None,
     ) -> None:
         """Phase 1: Muster Armies - Load army lists for both players."""
-        print("MUSTER ARMIES: Loading army lists...")
+        logger.info("MUSTER ARMIES: Loading army lists...")
         
         if player1_muster is None or player2_muster is None:
             stored = getattr(self, "army_muster_requests", {}) or {}
@@ -1465,8 +1453,8 @@ class GameSetupDeploymentReservesMixin:
             
             player1_units = len(self.players[0].get_army().units)
             player2_units = len(self.players[1].get_army().units)
-            print(f"{self.players[0].name}: {player1_units} units loaded from {player1_army_file}")
-            print(f"{self.players[1].name}: {player2_units} units loaded from {player2_army_file}")
+            logger.info(f"{self.players[0].name}: {player1_units} units loaded from {player1_army_file}")
+            logger.info(f"{self.players[1].name}: {player2_units} units loaded from {player2_army_file}")
             for player in list(self.players[:2]):
                 if player is None:
                     raise RuntimeError("Missing player during mustering.")
@@ -1480,18 +1468,18 @@ class GameSetupDeploymentReservesMixin:
                     continue
                 army.resolve_daemonic_allegiances(player=player, game=self)
         else:
-            print("Not enough players loaded")
+            logger.info("Not enough players loaded")
 
         # Armies and units are now populated; rebuild the entity registry for decision resolution.
         self.rebuild_entity_registry()
 
     def execute_select_mission_objectives_phase(self) -> None:
         """Phase 2: Select Mission Objectives - Choose mission and objectives."""
-        print("SELECT MISSION OBJECTIVES: Setting up mission...")
+        logger.info("SELECT MISSION OBJECTIVES: Setting up mission...")
         
         # Set up available commands for high-level strategy
         self.commands = ["attack", "defend", "move"]
-        print(f"Commands configured: {self.commands}")
+        logger.info(f"Commands configured: {self.commands}")
         
         # Store selected mission info for use in CREATE_BATTLEFIELD phase
         # This will be set by the UI when the mission selection dialog is used
@@ -1503,12 +1491,12 @@ class GameSetupDeploymentReservesMixin:
                 "deployment": "Crucible of Battle",   
                 "layout": 1  # Valid layout for this combination
             }
-            print(f"Using default mission: {self.selected_mission_info}")
+            logger.info(f"Using default mission: {self.selected_mission_info}")
         else:
-            print(f"Mission selected: {self.selected_mission_info}")
+            logger.info(f"Mission selected: {self.selected_mission_info}")
         
         # Mission objectives will be placed during CREATE_BATTLEFIELD phase
-        print("Mission framework configured")
+        logger.info("Mission framework configured")
 
         # Imperial Knights: Code Chivalric selection (end of Read Mission Objectives step).
         for player in list(self.players or []):
@@ -1526,7 +1514,7 @@ class GameSetupDeploymentReservesMixin:
 
     def execute_create_battlefield_phase(self, mission_name: str = None) -> None:
         """Phase 3: Create Battlefield - Set up map, terrain, deployment zones, and objectives."""
-        print("CREATE BATTLEFIELD: Setting up battlefield...")
+        logger.info("CREATE BATTLEFIELD: Setting up battlefield...")
         
         # Use selected mission info if available, otherwise use provided mission_name or default
         if hasattr(self, 'selected_mission_info'):
@@ -1540,14 +1528,14 @@ class GameSetupDeploymentReservesMixin:
         
         # 1. Create the Map (already done in __init__)
         battlefield_width, battlefield_height = self.get_battlefield_size()
-        print(f"Map created: {battlefield_width}\" x {battlefield_height}\"")
+        logger.info(f"Map created: {battlefield_width}\" x {battlefield_height}\"")
         
         # 2. Terrain features based on selected terrain layout
         from ...battlefield.terrain_layouts import instantiate_layout
         terrain_features = instantiate_layout(terrain_layout)
         if terrain_features:
             self.map.add_terrain_features(terrain_features)
-            print(f"Terrain layout {terrain_layout} placed: {len(terrain_features)} features")
+            logger.info(f"Terrain layout {terrain_layout} placed: {len(terrain_features)} features")
             # Debug: print RUINS footprints for verification
             from ...battlefield.map import TerrainType
             from ...utility.constants import RUINS_FLOOR_HEIGHT
@@ -1555,7 +1543,7 @@ class GameSetupDeploymentReservesMixin:
                 if getattr(tf, 'terrain_type', None) == TerrainType.RUINS:
                     coords = list(tf.footprint.exterior.coords)[:-1]
                     pairs = [(round(float(x), 2), round(float(y), 2)) for (x, y) in coords]
-                    print(f"   - RUINS #{idx+1} footprint: {pairs}")
+                    logger.info(f"   - RUINS #{idx+1} footprint: {pairs}")
                     # Floors detail (ground=0, first=1, second=2)
                     floors = getattr(tf, 'floors', []) or []
                     for fl in floors:
@@ -1565,9 +1553,9 @@ class GameSetupDeploymentReservesMixin:
                         if hasattr(poly, 'exterior'):
                             fcoords = list(poly.exterior.coords)[:-1]
                             fpairs = [(round(float(x), 2), round(float(y), 2)) for (x, y) in fcoords]
-                            print(f"      - Floor L{level} (elev {elev:.1f}\"): {fpairs}")
+                            logger.info(f"      - Floor L{level} (elev {elev:.1f}\"): {fpairs}")
         else:
-            print(f"Terrain layout {terrain_layout} has no registered features")
+            logger.info(f"Terrain layout {terrain_layout} has no registered features")
         
         # 3. Set up mission-based deployment zones and objectives
         from ..deployment import DeploymentManager
@@ -1586,19 +1574,19 @@ class GameSetupDeploymentReservesMixin:
                 # Assign to second player as attacker
                 self.deployment_zones[self.players[1].id] = zone
         
-        print(f"Mission deployment zones created: {deployment_mission}")
+        logger.info(f"Mission deployment zones created: {deployment_mission}")
         
         # 4. Set up mission objectives
         deployment_manager.setup_mission_objectives()
-        print(f"Mission objectives placed: {len(self.objectives)} objectives")
-        print(f"Primary Mission: {primary_mission}")
+        logger.info(f"Mission objectives placed: {len(self.objectives)} objectives")
+        logger.info(f"Primary Mission: {primary_mission}")
 
         # Apply primary-mission setup rules that modify objective markers (Chapter Approved 2025/26).
         self._apply_primary_mission_setup_rules()
 
     def execute_determine_attacker_defender_phase(self) -> None:
         """Phase 4: Determine Attacker and Defender - Roll off to determine roles."""
-        print("DETERMINE ATTACKER AND DEFENDER: Rolling off...")
+        logger.info("DETERMINE ATTACKER AND DEFENDER: Rolling off...")
         
         from ...utility.dice import get_roll
         from ...utility.event_bus import append_dice
@@ -1608,22 +1596,22 @@ class GameSetupDeploymentReservesMixin:
         append_dice(self.players[0], f"First turn roll: {player1_roll}")
         append_dice(self.players[1], f"First turn roll: {player2_roll}")
         
-        print(f"{self.players[0].name} rolled: {player1_roll}")
-        print(f"{self.players[1].name} rolled: {player2_roll}")
+        logger.info(f"{self.players[0].name} rolled: {player1_roll}")
+        logger.info(f"{self.players[1].name} rolled: {player2_roll}")
         
         if player1_roll > player2_roll:
             self.attacker_index = 0
             self.defender_index = 1
-            print(f"{self.players[0].name} is the Attacker")
-            print(f"{self.players[1].name} is the Defender")
+            logger.info(f"{self.players[0].name} is the Attacker")
+            logger.info(f"{self.players[1].name} is the Defender")
         elif player2_roll > player1_roll:
             self.attacker_index = 1
             self.defender_index = 0
-            print(f"{self.players[1].name} is the Attacker")
-            print(f"{self.players[0].name} is the Defender")
+            logger.info(f"{self.players[1].name} is the Attacker")
+            logger.info(f"{self.players[0].name} is the Defender")
         else:
             # Tie - re-roll
-            print("Tie! Re-rolling...")
+            logger.info("Tie! Re-rolling...")
             return self.execute_determine_attacker_defender_phase()
         
         # Set deployment turn to defender (defender deploys first)
@@ -1667,7 +1655,7 @@ class GameSetupDeploymentReservesMixin:
 
     def execute_declare_battle_formations_phase(self) -> None:
         """Phase 5: Declare Battle Formations - Attach leaders, embark in transports, allocate reserves."""
-        print("DECLARE BATTLE FORMATIONS: Validating formations...")
+        logger.info("DECLARE BATTLE FORMATIONS: Validating formations...")
 
         # Hover mode declarations must happen before any other formation steps.
         self._apply_hover_declarations()
@@ -1709,7 +1697,7 @@ class GameSetupDeploymentReservesMixin:
                 continue
             mgr.on_declare_battle_formations_start(game=self)
 
-        print("INFO: Battle formations declared")
+        logger.info("INFO: Battle formations declared")
 
     def _apply_ethereal_pathway_declarations(self) -> None:
         """Queue Ethereal Pathway unit selections at the start of Deploy Armies."""
@@ -1751,7 +1739,7 @@ class GameSetupDeploymentReservesMixin:
 
     def execute_deploy_armies_phase(self, manual_phases: bool = False, decision_makers: dict = None) -> None:
         """Phase 6: Deploy Armies - Execute the deployment phase."""
-        print("DEPLOY ARMIES: Starting deployment sequence...")
+        logger.info("DEPLOY ARMIES: Starting deployment sequence...")
 
         # Aeldari: Ethereal Pathway selections are made at the start of this step.
         self._apply_ethereal_pathway_declarations()
@@ -1762,7 +1750,7 @@ class GameSetupDeploymentReservesMixin:
         if has_local_players and manual_phases:
             # For local players in manual mode, set up deployment state but don't auto-deploy
             # The UI will handle the actual deployment decisions
-            print("INFO: Local deployment mode - use UI to deploy units")
+            logger.info("INFO: Local deployment mode - use UI to deploy units")
             
             # Set up deployment zones if not already done
             if not hasattr(self, 'deployment_zones') or not self.deployment_zones:
@@ -1797,7 +1785,7 @@ class GameSetupDeploymentReservesMixin:
             
             # Mark that we're in deployment phase
             self.waiting_for_deployment_input = False
-            print("INFO: Deployment phase initialized - deploy units through UI")
+            logger.info("INFO: Deployment phase initialized - deploy units through UI")
         
         elif decision_makers:
             # Use the proper deployment manager with decision makers for controller-driven
@@ -1807,7 +1795,7 @@ class GameSetupDeploymentReservesMixin:
             
             # Store deployment results for reference
             self.deployment_results = deployment_results
-            print("INFO: Army deployment complete")
+            logger.info("INFO: Army deployment complete")
         else:
             raise RuntimeError("Deployment requires manual UI or explicit decision_makers.")
 
@@ -1819,9 +1807,9 @@ class GameSetupDeploymentReservesMixin:
         - Players alternate resolving such rules, starting with the Attacker.
         - Redeploy allows selecting a new valid deployment location for eligible units.
         """
-        print("REDEPLOY UNITS: Resolving redeploy abilities...")
+        logger.info("REDEPLOY UNITS: Resolving redeploy abilities...")
         if self.attacker_index is None or self.defender_index is None:
-            print("WARN: Attacker/Defender not set; skipping Redeploy Units phase")
+            logger.warning("WARN: Attacker/Defender not set; skipping Redeploy Units phase")
             return
         state = getattr(self, "_redeploy_state", None)
         if isinstance(state, dict) and state.get("active"):
@@ -1867,7 +1855,7 @@ class GameSetupDeploymentReservesMixin:
                 redeploy_queues[str(getattr(p, "id", "") or "")] = tokens
 
         if not any(redeploy_queues.values()):
-            print("INFO: No units with Redeploy; skipping")
+            logger.info("INFO: No units with Redeploy; skipping")
             return
 
         self._redeploy_state = {
@@ -1927,21 +1915,21 @@ class GameSetupDeploymentReservesMixin:
 
         if not player_id or player_obj is None:
             state["active"] = False
-            print("INFO: Redeploy phase complete")
+            logger.info("INFO: Redeploy phase complete")
             return
 
         state["turn_index"] = turn_idx
         tokens = list(state.get("queues", {}).get(player_id, []) or [])
         if not tokens:
             state["active"] = False
-            print("INFO: Redeploy phase complete")
+            logger.info("INFO: Redeploy phase complete")
             return
         token = tokens[0]
 
         army = player_obj.get_army()
         if army is None:
             state["active"] = False
-            print("INFO: Redeploy phase complete")
+            logger.info("INFO: Redeploy phase complete")
             return
 
         from ...utility.entity_ids import get_entity_id
@@ -2261,7 +2249,7 @@ class GameSetupDeploymentReservesMixin:
 
     def execute_determine_first_turn_order_phase(self) -> None:
         """Phase 7: Determine First Turn Order - Attacker rolls to see who goes first."""
-        print("DETERMINE FIRST TURN ORDER: Rolling for first turn (roll-off)...")
+        logger.info("DETERMINE FIRST TURN ORDER: Rolling for first turn (roll-off)...")
 
         from ...utility.dice import get_roll
         from ...utility.event_bus import append_dice
@@ -2274,17 +2262,17 @@ class GameSetupDeploymentReservesMixin:
             roll2 = get_roll("1D6")
             append_dice(p1, f"First turn roll-off: {roll1}")
             append_dice(p2, f"First turn roll-off: {roll2}")
-            print(f"INFO: {p1.name} rolled: {roll1}")
-            print(f"INFO: {p2.name} rolled: {roll2}")
+            logger.info(f"INFO: {p1.name} rolled: {roll1}")
+            logger.info(f"INFO: {p2.name} rolled: {roll2}")
             if roll1 == roll2:
-                print("INFO: Tie on roll-off - re-rolling...")
+                logger.info("INFO: Tie on roll-off - re-rolling...")
                 continue
             if roll1 > roll2:
                 self.first_turn_player_index = 0
-                print(f"INFO: {p1.name} wins the roll-off and takes the first turn")
+                logger.info(f"INFO: {p1.name} wins the roll-off and takes the first turn")
             else:
                 self.first_turn_player_index = 1
-                print(f"INFO: {p2.name} wins the roll-off and takes the first turn")
+                logger.info(f"INFO: {p2.name} wins the roll-off and takes the first turn")
             break
 
         # Clear deployment actions since deployment phase is now complete
@@ -2292,18 +2280,18 @@ class GameSetupDeploymentReservesMixin:
 
     def execute_resolve_prebattle_rules_phase(self) -> None:
         """Phase 8: Resolve Pre-battle Rules - Resolve any pre-battle rules, abilities, or stratagems."""
-        print("RESOLVE PREBATTLE RULES: Resolving pre-battle rules...")
+        logger.info("RESOLVE PREBATTLE RULES: Resolving pre-battle rules...")
         
         # Handle Scout moves for all players
         self._handle_scout_moves()
 
         # TODO - other pre-battle rules (e.g., Detachment stuff like WE dice rolls, etc.)
         
-        print("INFO: Pre-battle rules resolved")
+        logger.info("INFO: Pre-battle rules resolved")
 
     def _handle_scout_moves(self) -> None:
         """Handle scout moves for all players during pre-battle rules phase."""
-        print("INFO: Processing Scout moves...")
+        logger.info("INFO: Processing Scout moves...")
         
         # Get all units with Scout ability from both players
         scout_units = []
@@ -2315,10 +2303,10 @@ class GameSetupDeploymentReservesMixin:
                         scout_units.append((player, unit, scout_distance))
         
         if not scout_units:
-            print("INFO: No units with Scout ability found")
+            logger.info("INFO: No units with Scout ability found")
             return
         
-        print(f"INFO: Found {len(scout_units)} units with Scout ability")
+        logger.info(f"INFO: Found {len(scout_units)} units with Scout ability")
         
         # Sort units by player (first turn player goes first)
         # During setup phase, use first_turn_player_index instead of current_player_index
@@ -2347,20 +2335,20 @@ class GameSetupDeploymentReservesMixin:
         if has_local_players:
             # For local players, let the UI handle scout moves
             # The PreBattlePhaseHandler will manage the scout move sequence
-            print("INFO: Local scout moves will be handled by UI")
-            print("INFO: Scout phase initialized - use UI to make scout moves")
+            logger.info("INFO: Local scout moves will be handled by UI")
+            logger.info("INFO: Scout phase initialized - use UI to make scout moves")
         else:
             # For games without local control, auto-skip scout moves for now
             # In the future, this could integrate with controller decision making
             for player in players_in_order:
                 if player in scout_units_by_player:
-                    print(f"INFO: {player.name}'s Scout moves:")
+                    logger.info(f"INFO: {player.name}'s Scout moves:")
                     for unit, scout_distance in scout_units_by_player[player]:
-                        print(f"  - {unit.name} (Scout {scout_distance}\")")
-                        print(f"    Skipping scout move (auto-skip for remote-only)")
+                        logger.info(f"  - {unit.name} (Scout {scout_distance}\")")
+                        logger.info(f"    Skipping scout move (auto-skip for remote-only)")
                         unit.scout_move_made = True  # Mark as skipped
             
-            print("INFO: Scout moves processed (auto-skipped for remote-only)")
+            logger.info("INFO: Scout moves processed (auto-skipped for remote-only)")
 
     def _execute_current_setup_phase_impl(self, **kwargs) -> None:
         """Execute the current setup phase with any necessary parameters."""

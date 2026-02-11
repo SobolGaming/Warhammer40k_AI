@@ -4,6 +4,8 @@ from typing import Any, Optional
 
 from ..utility import dice as dice_module
 from ..utility.entity_ids import get_entity_id
+import logging
+logger = logging.getLogger(__name__)
 
 
 class GreyKnightsStratagemMixin:
@@ -637,7 +639,7 @@ class GreyKnightsStratagemMixin:
         if unit is None and len(candidates) == 1:
             unit = candidates[0]
         if unit is None:
-            print("ERROR: SANCTIFIED KILL ZONE: no target unit provided")
+            logger.error("ERROR: SANCTIFIED KILL ZONE: no target unit provided")
             return False
         root = self._gk_root(unit)
         if root is None:
@@ -646,33 +648,33 @@ class GreyKnightsStratagemMixin:
             return False
         phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
         if phase_name not in ("shooting phase", "fight phase"):
-            print("ERROR: SANCTIFIED KILL ZONE: wrong phase")
+            logger.error("ERROR: SANCTIFIED KILL ZONE: wrong phase")
             return False
         active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
         if phase_name == "shooting phase" and active_player is not self.player:
-            print("ERROR: SANCTIFIED KILL ZONE: not your Shooting phase")
+            logger.error("ERROR: SANCTIFIED KILL ZONE: not your Shooting phase")
             return False
         if candidates and root not in candidates:
-            print("ERROR: SANCTIFIED KILL ZONE: target was not selected")
+            logger.error("ERROR: SANCTIFIED KILL ZONE: target was not selected")
             return False
         if not self._gk_owned_by_player(root, self.player):
-            print("ERROR: SANCTIFIED KILL ZONE: target unit is not yours")
+            logger.error("ERROR: SANCTIFIED KILL ZONE: target unit is not yours")
             return False
         if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
             return False
         if self._unit_cannot_be_target_of_stratagem(root):
-            print("ERROR: SANCTIFIED KILL ZONE: target cannot be selected")
+            logger.error("ERROR: SANCTIFIED KILL ZONE: target cannot be selected")
             return False
         mgr = self._get_gk_mgr()
         if mgr is None or not bool(mgr.unit_wholly_within_hallowed_ground(root, game=self.game)):
-            print("ERROR: SANCTIFIED KILL ZONE: target is not wholly within Hallowed Ground")
+            logger.error("ERROR: SANCTIFIED KILL ZONE: target is not wholly within Hallowed Ground")
             return False
         round_state = getattr(root, "round_state", None)
         if phase_name == "shooting phase" and bool(getattr(round_state, "shot_this_round", False)):
-            print("ERROR: SANCTIFIED KILL ZONE: target already shot this phase")
+            logger.error("ERROR: SANCTIFIED KILL ZONE: target already shot this phase")
             return False
         if phase_name == "fight phase" and bool(getattr(round_state, "fought_this_phase", False)):
-            print("ERROR: SANCTIFIED KILL ZONE: target already fought this phase")
+            logger.error("ERROR: SANCTIFIED KILL ZONE: target already fought this phase")
             return False
         if not self._warpbane_spend_cp(stratagem, target_unit=root):
             return False
@@ -687,7 +689,7 @@ class GreyKnightsStratagemMixin:
         sr["sanctified_kill_zone_source"] = stratagem.name
         root.special_rules = sr
         self._warpbane_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
-        print(f"INFO: SANCTIFIED KILL ZONE: {getattr(root, 'name', 'Unit')} gains wound re-roll support until end of phase.")
+        logger.info(f"INFO: SANCTIFIED KILL ZONE: {getattr(root, 'name', 'Unit')} gains wound re-roll support until end of phase.")
         return True
 
     def _use_warpbane_hallowed_beacon(self, stratagem: Any, **kwargs) -> bool:
@@ -696,7 +698,7 @@ class GreyKnightsStratagemMixin:
         if unit is None and len(candidates) == 1:
             unit = candidates[0]
         if unit is None:
-            print("ERROR: HALLOWED BEACON: no target unit provided")
+            logger.error("ERROR: HALLOWED BEACON: no target unit provided")
             return False
         root = self._gk_root(unit)
         if root is None:
@@ -705,42 +707,42 @@ class GreyKnightsStratagemMixin:
             return False
         phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
         if phase_name != "movement phase":
-            print("ERROR: HALLOWED BEACON: wrong phase")
+            logger.error("ERROR: HALLOWED BEACON: wrong phase")
             return False
         active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
         if active_player is not self.player:
-            print("ERROR: HALLOWED BEACON: not your turn")
+            logger.error("ERROR: HALLOWED BEACON: not your turn")
             return False
         if candidates and root not in candidates:
-            print("ERROR: HALLOWED BEACON: target was not selected")
+            logger.error("ERROR: HALLOWED BEACON: target was not selected")
             return False
         if not self._gk_owned_by_player(root, self.player):
-            print("ERROR: HALLOWED BEACON: target unit is not yours")
+            logger.error("ERROR: HALLOWED BEACON: target unit is not yours")
             return False
         if not self._gk_is_alive(root):
             return False
         if self._unit_cannot_be_target_of_stratagem(root):
-            print("ERROR: HALLOWED BEACON: target cannot be selected")
+            logger.error("ERROR: HALLOWED BEACON: target cannot be selected")
             return False
         if not self._is_gk_unit(root):
-            print("ERROR: HALLOWED BEACON: target is not GREY KNIGHTS")
+            logger.error("ERROR: HALLOWED BEACON: target is not GREY KNIGHTS")
             return False
         if not self._is_gk_infantry_unit(root):
-            print("ERROR: HALLOWED BEACON: target is not INFANTRY")
+            logger.error("ERROR: HALLOWED BEACON: target is not INFANTRY")
             return False
         if self._is_gk_terminator_unit(root):
-            print("ERROR: HALLOWED BEACON: TERMINATOR units are excluded")
+            logger.error("ERROR: HALLOWED BEACON: TERMINATOR units are excluded")
             return False
         in_reserves = getattr(root, "is_in_reserves", None)
         if not callable(in_reserves) or not bool(in_reserves()):
-            print("ERROR: HALLOWED BEACON: target is not in Reserves")
+            logger.error("ERROR: HALLOWED BEACON: target is not in Reserves")
             return False
         if str(getattr(root, "reserve_status", "") or "").strip().lower() != "reserves":
-            print("ERROR: HALLOWED BEACON: target is not arriving from Reserves")
+            logger.error("ERROR: HALLOWED BEACON: target is not arriving from Reserves")
             return False
         has_deep_strike = getattr(root, "has_deep_strike", None)
         if not callable(has_deep_strike) or not bool(has_deep_strike()):
-            print("ERROR: HALLOWED BEACON: target lacks Deep Strike")
+            logger.error("ERROR: HALLOWED BEACON: target lacks Deep Strike")
             return False
         if not self._warpbane_spend_cp(stratagem, target_unit=root):
             return False
@@ -755,7 +757,7 @@ class GreyKnightsStratagemMixin:
         sr["hallowed_beacon_source"] = stratagem.name
         root.special_rules = sr
         self._warpbane_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
-        print(f"INFO: HALLOWED BEACON: {getattr(root, 'name', 'Unit')} can Deep Strike at 6\" and must arrive in Hallowed Ground.")
+        logger.info(f"INFO: HALLOWED BEACON: {getattr(root, 'name', 'Unit')} can Deep Strike at 6\" and must arrive in Hallowed Ground.")
         return True
 
     def _use_warpbane_aegis_eternal(self, stratagem: Any, **kwargs) -> bool:
@@ -764,7 +766,7 @@ class GreyKnightsStratagemMixin:
         if unit is None and len(candidates) == 1:
             unit = candidates[0]
         if unit is None:
-            print("ERROR: AEGIS ETERNAL: no target unit provided")
+            logger.error("ERROR: AEGIS ETERNAL: no target unit provided")
             return False
         root = self._gk_root(unit)
         if root is None:
@@ -773,29 +775,29 @@ class GreyKnightsStratagemMixin:
             return False
         phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
         if phase_name != "shooting phase":
-            print("ERROR: AEGIS ETERNAL: wrong phase")
+            logger.error("ERROR: AEGIS ETERNAL: wrong phase")
             return False
         active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
         if active_player is self.player:
-            print("ERROR: AEGIS ETERNAL: not opponent's Shooting phase")
+            logger.error("ERROR: AEGIS ETERNAL: not opponent's Shooting phase")
             return False
         if candidates and root not in candidates:
-            print("ERROR: AEGIS ETERNAL: target was not selected")
+            logger.error("ERROR: AEGIS ETERNAL: target was not selected")
             return False
         target_units = list(kwargs.get("target_units") or [])
         if target_units and root not in [self._gk_root(u) for u in target_units]:
-            print("ERROR: AEGIS ETERNAL: target was not selected as a shooting target")
+            logger.error("ERROR: AEGIS ETERNAL: target was not selected as a shooting target")
             return False
         if not self._gk_owned_by_player(root, self.player):
-            print("ERROR: AEGIS ETERNAL: target unit is not yours")
+            logger.error("ERROR: AEGIS ETERNAL: target unit is not yours")
             return False
         if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
             return False
         if self._unit_cannot_be_target_of_stratagem(root):
-            print("ERROR: AEGIS ETERNAL: target cannot be selected")
+            logger.error("ERROR: AEGIS ETERNAL: target cannot be selected")
             return False
         if not self._is_gk_unit(root) or not self._is_gk_infantry_unit(root):
-            print("ERROR: AEGIS ETERNAL: target must be GREY KNIGHTS INFANTRY")
+            logger.error("ERROR: AEGIS ETERNAL: target must be GREY KNIGHTS INFANTRY")
             return False
         if not self._warpbane_spend_cp(stratagem, target_unit=root):
             return False
@@ -809,7 +811,7 @@ class GreyKnightsStratagemMixin:
         sr["aegis_eternal_source"] = stratagem.name
         root.special_rules = sr
         self._warpbane_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
-        print(f"INFO: AEGIS ETERNAL: {getattr(root, 'name', 'Unit')} gains conditional 4++ in Hallowed Ground.")
+        logger.info(f"INFO: AEGIS ETERNAL: {getattr(root, 'name', 'Unit')} gains conditional 4++ in Hallowed Ground.")
         return True
 
     def _use_warpbane_fires_of_covenant(self, stratagem: Any, **kwargs) -> bool:
@@ -818,7 +820,7 @@ class GreyKnightsStratagemMixin:
         if unit is None and len(candidates) == 1:
             unit = candidates[0]
         if unit is None:
-            print("ERROR: FIRES OF COVENANT: no target unit provided")
+            logger.error("ERROR: FIRES OF COVENANT: no target unit provided")
             return False
         root = self._gk_root(unit)
         if root is None:
@@ -827,25 +829,25 @@ class GreyKnightsStratagemMixin:
             return False
         phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
         if phase_name != "movement phase":
-            print("ERROR: FIRES OF COVENANT: wrong phase")
+            logger.error("ERROR: FIRES OF COVENANT: wrong phase")
             return False
         active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
         if active_player is self.player:
-            print("ERROR: FIRES OF COVENANT: not opponent's Movement phase")
+            logger.error("ERROR: FIRES OF COVENANT: not opponent's Movement phase")
             return False
         if candidates and root not in candidates:
-            print("ERROR: FIRES OF COVENANT: target was not selected")
+            logger.error("ERROR: FIRES OF COVENANT: target was not selected")
             return False
         if not self._gk_owned_by_player(root, self.player):
-            print("ERROR: FIRES OF COVENANT: target unit is not yours")
+            logger.error("ERROR: FIRES OF COVENANT: target unit is not yours")
             return False
         if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
             return False
         if self._unit_cannot_be_target_of_stratagem(root):
-            print("ERROR: FIRES OF COVENANT: target cannot be selected")
+            logger.error("ERROR: FIRES OF COVENANT: target cannot be selected")
             return False
         if not self._is_gk_unit(root) or not self._is_gk_infantry_unit(root):
-            print("ERROR: FIRES OF COVENANT: target must be GREY KNIGHTS INFANTRY")
+            logger.error("ERROR: FIRES OF COVENANT: target must be GREY KNIGHTS INFANTRY")
             return False
         if not self._warpbane_spend_cp(stratagem, target_unit=root):
             return False
@@ -859,7 +861,7 @@ class GreyKnightsStratagemMixin:
         sr["fires_of_covenant_source"] = stratagem.name
         root.special_rules = sr
         self._warpbane_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
-        print(f"INFO: FIRES OF COVENANT: {getattr(root, 'name', 'Unit')} will trigger mortal wound checks this phase.")
+        logger.info(f"INFO: FIRES OF COVENANT: {getattr(root, 'name', 'Unit')} will trigger mortal wound checks this phase.")
         return True
 
     def _use_warpbane_repelling_sphere(self, stratagem: Any, **kwargs) -> bool:
@@ -868,7 +870,7 @@ class GreyKnightsStratagemMixin:
         if unit is None and len(candidates) == 1:
             unit = candidates[0]
         if unit is None:
-            print("ERROR: REPELLING SPHERE: no target unit provided")
+            logger.error("ERROR: REPELLING SPHERE: no target unit provided")
             return False
         root = self._gk_root(unit)
         if root is None:
@@ -877,25 +879,25 @@ class GreyKnightsStratagemMixin:
             return False
         phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
         if phase_name != "charge phase":
-            print("ERROR: REPELLING SPHERE: wrong phase")
+            logger.error("ERROR: REPELLING SPHERE: wrong phase")
             return False
         active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
         if active_player is self.player:
-            print("ERROR: REPELLING SPHERE: not opponent's Charge phase")
+            logger.error("ERROR: REPELLING SPHERE: not opponent's Charge phase")
             return False
         if candidates and root not in candidates:
-            print("ERROR: REPELLING SPHERE: target was not selected")
+            logger.error("ERROR: REPELLING SPHERE: target was not selected")
             return False
         if not self._gk_owned_by_player(root, self.player):
-            print("ERROR: REPELLING SPHERE: target unit is not yours")
+            logger.error("ERROR: REPELLING SPHERE: target unit is not yours")
             return False
         if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
             return False
         if self._unit_cannot_be_target_of_stratagem(root):
-            print("ERROR: REPELLING SPHERE: target cannot be selected")
+            logger.error("ERROR: REPELLING SPHERE: target cannot be selected")
             return False
         if not self._is_gk_unit(root) or not self._is_gk_infantry_unit(root):
-            print("ERROR: REPELLING SPHERE: target must be GREY KNIGHTS INFANTRY")
+            logger.error("ERROR: REPELLING SPHERE: target must be GREY KNIGHTS INFANTRY")
             return False
         if not self._warpbane_spend_cp(stratagem, target_unit=root):
             return False
@@ -909,7 +911,7 @@ class GreyKnightsStratagemMixin:
         sr["repelling_sphere_source"] = stratagem.name
         root.special_rules = sr
         self._warpbane_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
-        print(f"INFO: REPELLING SPHERE: {getattr(root, 'name', 'Unit')} imposes charge roll penalties this phase.")
+        logger.info(f"INFO: REPELLING SPHERE: {getattr(root, 'name', 'Unit')} imposes charge roll penalties this phase.")
         return True
 
     def _use_warpbane_flames_of_sanctity(self, stratagem: Any, **kwargs) -> bool:
@@ -918,7 +920,7 @@ class GreyKnightsStratagemMixin:
         if unit is None and len(candidates) == 1:
             unit = candidates[0]
         if unit is None:
-            print("ERROR: FLAMES OF SANCTITY: no target unit provided")
+            logger.error("ERROR: FLAMES OF SANCTITY: no target unit provided")
             return False
         root = self._gk_root(unit)
         if root is None:
@@ -927,34 +929,34 @@ class GreyKnightsStratagemMixin:
             return False
         phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
         if phase_name != "fight phase":
-            print("ERROR: FLAMES OF SANCTITY: wrong phase")
+            logger.error("ERROR: FLAMES OF SANCTITY: wrong phase")
             return False
         if candidates and root not in candidates:
-            print("ERROR: FLAMES OF SANCTITY: target was not selected")
+            logger.error("ERROR: FLAMES OF SANCTITY: target was not selected")
             return False
         if not self._gk_owned_by_player(root, self.player):
-            print("ERROR: FLAMES OF SANCTITY: target unit is not yours")
+            logger.error("ERROR: FLAMES OF SANCTITY: target unit is not yours")
             return False
         if not self._gk_is_alive(root) or not self._gk_is_on_battlefield(root):
             return False
         if self._unit_cannot_be_target_of_stratagem(root):
-            print("ERROR: FLAMES OF SANCTITY: target cannot be selected")
+            logger.error("ERROR: FLAMES OF SANCTITY: target cannot be selected")
             return False
         if not self._is_purifier_squad_unit(root):
-            print("ERROR: FLAMES OF SANCTITY: target must be a Purifier Squad")
+            logger.error("ERROR: FLAMES OF SANCTITY: target must be a Purifier Squad")
             return False
         if not self._warpbane_spend_cp(stratagem, target_unit=root):
             return False
         game = getattr(self, "game", None)
         game_map = getattr(game, "map", None) if game is not None else None
         if game_map is None:
-            print("ERROR: FLAMES OF SANCTITY: no map context")
+            logger.error("ERROR: FLAMES OF SANCTITY: no map context")
             return False
         get_enemy_units = getattr(game_map, "get_enemy_units", None)
         enemy_units = list(get_enemy_units(root) or []) if callable(get_enemy_units) else []
         if not enemy_units:
             self._warpbane_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
-            print(f"INFO: FLAMES OF SANCTITY: no enemy units within range of {getattr(root, 'name', 'Unit')}.")
+            logger.info(f"INFO: FLAMES OF SANCTITY: no enemy units within range of {getattr(root, 'name', 'Unit')}.")
             return True
         from ..utility.aura_utils import unit_within_range_of_unit
 
@@ -977,5 +979,5 @@ class GreyKnightsStratagemMixin:
             if callable(apply_mortals):
                 apply_mortals(enemy_root, int(mortal_wounds), game_map=game_map)
         self._warpbane_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
-        print(f"INFO: FLAMES OF SANCTITY: resolved mortal wound rolls around {getattr(root, 'name', 'Unit')}.")
+        logger.info(f"INFO: FLAMES OF SANCTITY: resolved mortal wound rolls around {getattr(root, 'name', 'Unit')}.")
         return True

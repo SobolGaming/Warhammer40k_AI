@@ -1,6 +1,8 @@
 """Auto-extracted Unit mixin methods from unit.py."""
 
 from ._common import *
+import logging
+logger = logging.getLogger(__name__)
 
 
 class ActionsMovementMixin:
@@ -31,10 +33,10 @@ class ActionsMovementMixin:
         # If forced to test for being Below Starting Strength, do not also test for being Below Half-strength
         # unless explicitly stated.
         if self.is_below_starting_strength():
-            print(f"{self.name} is below starting strength - taking Battle-Shock test")
+            logger.info(f"{self.name} is below starting strength - taking Battle-Shock test")
             self.take_battle_shock_test(current_turn)
         elif self.is_below_half_strength():
-            print(f"{self.name} is below half strength - taking Battle-Shock test")
+            logger.info(f"{self.name} is below half strength - taking Battle-Shock test")
             self.take_battle_shock_test(current_turn)
 
         return True
@@ -95,19 +97,19 @@ class ActionsMovementMixin:
         # you count as having made a Normal move and cannot move further this turn.
         if getattr(self.round_state, "disembarked_from_moved_transport", False) or getattr(self.round_state, "disembarked_from_destroyed_transport", False):
             if action in (MovementAction.MOVE.value, MovementAction.ADVANCE.value, MovementAction.FALL_BACK.value):
-                print(f"{self.name} cannot move further after disembarking this turn")
+                logger.info(f"{self.name} cannot move further after disembarking this turn")
                 return False
 
         # AIRCRAFT: only Normal moves allowed.
         if bool(getattr(self, "is_aircraft", False)):
             if action in (MovementAction.REMAIN_STATIONARY.value, MovementAction.ADVANCE.value, MovementAction.FALL_BACK.value):
-                print(f"{self.name} cannot {('remain stationary' if action == MovementAction.REMAIN_STATIONARY.value else 'advance' if action == MovementAction.ADVANCE.value else 'fall back')} (AIRCRAFT)")
+                logger.info(f"{self.name} cannot {('remain stationary' if action == MovementAction.REMAIN_STATIONARY.value else 'advance' if action == MovementAction.ADVANCE.value else 'fall back')} (AIRCRAFT)")
                 return False
 
         # If the unit is currently performing a mission Action and moves (excluding pile-in/consolidation handled elsewhere), cancel the Action
         def _cancel_action_due_to_move():
             if getattr(self.round_state, 'performing_action_name', None):
-                print(f"{self.name} moved; cancelling Action '{self.round_state.performing_action_name}'")
+                logger.info(f"{self.name} moved; cancelling Action '{self.round_state.performing_action_name}'")
                 self.round_state.performing_action_name = None
                 self.round_state.action_completes_turn = None
                 self.round_state.action_locked_until_turn_end = False
@@ -137,20 +139,20 @@ class ActionsMovementMixin:
         if action in (MovementAction.MOVE.value, MovementAction.ADVANCE.value, MovementAction.FALL_BACK.value):
             _publish("unit_move_started", unit=self, action=('advance' if action == MovementAction.ADVANCE.value else 'fall_back' if action == MovementAction.FALL_BACK.value else 'move'))
         if action == MovementAction.REMAIN_STATIONARY.value:
-            print(f"{self.name} remains stationary")
+            logger.info(f"{self.name} remains stationary")
             success = self.remain_stationary()
         elif action == MovementAction.MOVE.value:
-            print(f"{self.name} moves to {destination}")
+            logger.info(f"{self.name} moves to {destination}")
             success = self.move(destination, game_map)
             if success:
                 _cancel_action_due_to_move()
         elif action == MovementAction.ADVANCE.value:
-            print(f"{self.name} advances to {destination}")
+            logger.info(f"{self.name} advances to {destination}")
             success = self.advance(destination, game_map)
             if success:
                 _cancel_action_due_to_move()
         elif action == MovementAction.FALL_BACK.value:
-            print(f"{self.name} falls back")
+            logger.info(f"{self.name} falls back")
             # Provide an empty path list for fall back action
             success = self.fall_back(destination, [], game_map)
             if success:
@@ -174,7 +176,7 @@ class ActionsMovementMixin:
 
     def remain_stationary(self) -> bool:
         if bool(getattr(self, "is_aircraft", False)):
-            print(f"{self.name} cannot Remain Stationary (AIRCRAFT)")
+            logger.info(f"{self.name} cannot Remain Stationary (AIRCRAFT)")
             return False
         # Unit explicitly chose to remain stationary, so mark it as such
         self.round_state.remained_stationary_this_round = True
@@ -4327,9 +4329,9 @@ class ActionsMovementMixin:
             roll += int(val)
             try:
                 if val > 0:
-                    print(f"{self.name} advance bonus: +{val}\" ({source})")
+                    logger.info(f"{self.name} advance bonus: +{val}\" ({source})")
                 else:
-                    print(f"{self.name} advance penalty: {val}\" ({source})")
+                    logger.info(f"{self.name} advance penalty: {val}\" ({source})")
             except Exception:
                 pass
         return int(roll)
@@ -6219,11 +6221,11 @@ class ActionsMovementMixin:
                 self.apply_status_effect(BattleShockEffect(current_turn))
         except Exception:
             pass
-        print(f"{self.name} is battle-shocked after moving through tall terrain ({source}).")
+        logger.info(f"{self.name} is battle-shocked after moving through tall terrain ({source}).")
 
     def advance(self, destination: Tuple[float, float, float], game_map: 'Map') -> bool:
         if bool(getattr(self, "is_aircraft", False)):
-            print(f"{self.name} cannot Advance (AIRCRAFT)")
+            logger.info(f"{self.name} cannot Advance (AIRCRAFT)")
             return False
         # Check if unit can advance after arriving from reserves
         if self.arrived_from_reserves_this_turn and not self.can_advance_after_arriving_from_reserves():
@@ -6282,10 +6284,10 @@ class ActionsMovementMixin:
 
         # Straight-line requirement
         if forward_dist <= 1e-6:
-            print(f"{self.name} must move forward (AIRCRAFT)")
+            logger.info(f"{self.name} must move forward (AIRCRAFT)")
             return False
         if abs(side_dist) > 0.25:
-            print(f"{self.name} must move straight forward (AIRCRAFT)")
+            logger.info(f"{self.name} must move straight forward (AIRCRAFT)")
             return False
 
         min_move = 20.0
@@ -6381,9 +6383,9 @@ class ActionsMovementMixin:
             except Exception:
                 pass
             if reason:
-                print(f"{self.name} placed into Strategic Reserves ({reason})")
+                logger.info(f"{self.name} placed into Strategic Reserves ({reason})")
             else:
-                print(f"{self.name} placed into Strategic Reserves")
+                logger.info(f"{self.name} placed into Strategic Reserves")
             return True
 
         # Minimum Move enforcement
@@ -6413,10 +6415,10 @@ class ActionsMovementMixin:
         if game_map is not None:
             for m, nx, ny, _nz in proposed:
                 if game_map.check_collision_with_other_friendly_units(m, (nx, ny)):
-                    print(f"{self.name} cannot move - {m.name} would overlap a friendly model")
+                    logger.info(f"{self.name} cannot move - {m.name} would overlap a friendly model")
                     return False
                 if game_map.check_collision_with_other_enemy_units(m, (nx, ny)):
-                    print(f"{self.name} cannot move - {m.name} would overlap an enemy model")
+                    logger.info(f"{self.name} cannot move - {m.name} would overlap an enemy model")
                     return False
 
             from ...utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
@@ -6432,7 +6434,7 @@ class ActionsMovementMixin:
                         horiz = float(horizontal_distance_between_bases_2d(test_base, em.model_base))
                         vert = float(vertical_distance_between_bases(test_base, em.model_base))
                         if horiz <= ENGAGEMENT_RANGE_HORIZONTAL and vert <= ENGAGEMENT_RANGE_VERTICAL:
-                            print(f"{self.name} cannot end within Engagement Range (AIRCRAFT)")
+                            logger.info(f"{self.name} cannot end within Engagement Range (AIRCRAFT)")
                             return False
 
         final_facing = facing
@@ -6461,11 +6463,9 @@ class ActionsMovementMixin:
                 pivot_note = f", pivot {float(pivot_degrees):.1f}°"
             except (TypeError, ValueError):
                 pivot_note = ""
-        print(
-            f"{self.name} moved from ({start_x:.1f}, {start_y:.1f}) "
+        logger.info(f"{self.name} moved from ({start_x:.1f}, {start_y:.1f}) "
             f"to ({start_x + move_dx:.1f}, {start_y + move_dy:.1f}) "
-            f"- distance: {forward_dist:.1f}\"{pivot_note}"
-        )
+            f"- distance: {forward_dist:.1f}\"{pivot_note}")
         return True
 
     def move(
@@ -6656,10 +6656,10 @@ class ActionsMovementMixin:
                 except Exception:
                     pass
                 self.round_state.advance_roll = advance_roll
-                print(f"Advance roll: {advance_roll}")
+                logger.info(f"Advance roll: {advance_roll}")
             else:
                 advance_roll = self.round_state.advance_roll
-                print(f"Using stored advance roll: {advance_roll}")
+                logger.info(f"Using stored advance roll: {advance_roll}")
             
             if advance_roll is None:
                 logger.error(f"Failed to roll dice for advancing unit {self.name}")
@@ -6679,7 +6679,7 @@ class ActionsMovementMixin:
 
         # Check if destination is within movement range
         if distance_to_destination > movement_range:
-            print(f"{self.name} cannot reach destination {distance_to_destination:.1f}\" away (max {'advance' if advance else 'move'}: {movement_range}\")")
+            logger.info(f"{self.name} cannot reach destination {distance_to_destination:.1f}\" away (max {'advance' if advance else 'move'}: {movement_range}\")")
             return False
 
         # Generate potential positions for models with reduced boundary repulsors for better formation finding
@@ -6688,7 +6688,7 @@ class ActionsMovementMixin:
         
         # Check if formation finding failed
         if potential_positions is None:
-            print(f"{self.name} cannot move - no valid formation found at destination")
+            logger.info(f"{self.name} cannot move - no valid formation found at destination")
             return False
 
         # Use the new individual model pathfinding system
@@ -6713,7 +6713,7 @@ class ActionsMovementMixin:
             
             # Check if this model can reach its destination
             if model_distance > movement_range:
-                print(f"Model {model._id} cannot reach destination {model_distance:.1f}\" away (max: {movement_range}\")")
+                logger.info(f"Model {model._id} cannot reach destination {model_distance:.1f}\" away (max: {movement_range}\")")
                 continue  # Skip this model, don't move it
             
             # Use new optimized pathfinding for individual model movement
@@ -6727,7 +6727,7 @@ class ActionsMovementMixin:
             path_distance = measure_path_distance(path, self, movement_type, game_map)
             
             if path_distance > movement_range:
-                print(f"Model {model._id} path distance {path_distance:.1f}\" exceeds movement {movement_range}\"")
+                logger.info(f"Model {model._id} path distance {path_distance:.1f}\" exceeds movement {movement_range}\"")
                 # Try to move as far as possible along the path
                 last_node = model_start
                 model.last_move_path = [last_node]
@@ -6774,14 +6774,14 @@ class ActionsMovementMixin:
         
         # Check if any movement occurred
         if successful_moves == 0:
-            print(f"{self.name} could not move - no models could reach any valid positions")
+            logger.info(f"{self.name} could not move - no models could reach any valid positions")
             return False
 
         # NEW: Validate unit coherency after all models have moved
         is_coherent, non_coherent_models = process_unit_movement_with_coherency_check(self, model_movements)
         
         if not is_coherent:
-            print(f"{self.name} move rejected: unit coherency would be broken (non-coherent models: {non_coherent_models})")
+            logger.info(f"{self.name} move rejected: unit coherency would be broken (non-coherent models: {non_coherent_models})")
             # ROLLBACK: Restore original positions (movement ending out of coherency is not allowed)
             for i, original_pos in enumerate(original_model_positions):
                 if i < len(self.models):
@@ -6811,7 +6811,7 @@ class ActionsMovementMixin:
                         continue
                     # Check if this model's base overlaps with the enemy model's base
                     if model.model_base.collides_with(enemy_model.model_base):
-                        print(f"{self.name} cannot move - {model.name} would overlap with {enemy_model.name} from {enemy_unit.name}")
+                        logger.info(f"{self.name} cannot move - {model.name} would overlap with {enemy_model.name} from {enemy_unit.name}")
                         # ROLLBACK: Restore original positions
                         for i, original_pos in enumerate(original_model_positions):
                             if i < len(self.models):
@@ -6829,10 +6829,10 @@ class ActionsMovementMixin:
         
         # Provide detailed feedback
         action_name = 'advanced' if advance else 'moved'
-        print(f"{self.name} {action_name} from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
+        logger.info(f"{self.name} {action_name} from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
         
         if successful_moves < len(self.models):
-            print(f" Note: Only {successful_moves}/{len(self.models)} models could move to valid positions")
+            logger.info(f" Note: Only {successful_moves}/{len(self.models)} models could move to valid positions")
 
         logger.info(f"Unit {self.name} {action_name} from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
         self.round_state.advanced_this_round = advance
@@ -6860,11 +6860,11 @@ class ActionsMovementMixin:
         3. Prioritizes achieving engagement range over perfect formations
         """
         if bool(getattr(self, "is_aircraft", False)):
-            print(f"{self.name} cannot declare charges (AIRCRAFT)")
+            logger.info(f"{self.name} cannot declare charges (AIRCRAFT)")
             return False
         # Mission Actions: a unit performing an Action is not eligible to declare a charge
         if getattr(self.round_state, 'action_locked_until_turn_end', False):
-            print(f"{self.name} is performing an Action and cannot declare a charge this turn")
+            logger.info(f"{self.name} is performing an Action and cannot declare a charge this turn")
             return False
         if not self.models:
             logger.error(f"Cannot charge move unit {self.name}: no models in unit")
@@ -6923,23 +6923,23 @@ class ActionsMovementMixin:
         if not targets and target_unit is not None:
             targets = [target_unit]
         if not targets:
-            print(f"ERROR: {self.name} cannot charge without target units.")
+            logger.error(f"ERROR: {self.name} cannot charge without target units.")
             return False
         if any(t is None or not t.is_alive() for t in targets):
-            print(f"ERROR: {self.name} cannot charge - one or more targets are invalid.")
+            logger.error(f"ERROR: {self.name} cannot charge - one or more targets are invalid.")
             return False
         # Charge toward specific target unit (primary)
         all_enemy_models = [model for model in targets[0].models if model.is_alive]
-        print(f"{self.name} charging specifically toward {targets[0].name} ({len(all_enemy_models)} models)")
+        logger.info(f"{self.name} charging specifically toward {targets[0].name} ({len(all_enemy_models)} models)")
         if not all_enemy_models:
-            print(f"{self.name} cannot charge - no alive models in target unit {targets[0].name}")
+            logger.info(f"{self.name} cannot charge - no alive models in target unit {targets[0].name}")
             return False
         
         successful_moves = 0
         
         # FAST PATH FOR SINGLE MODEL UNITS - use pathfinding but skip formation complexity
         if len(self.models) == 1:
-            print(f"{self.name} using single-model charge path")
+            logger.info(f"{self.name} using single-model charge path")
             model = self.models[0]
             model_start = model.get_location()
             
@@ -6954,7 +6954,7 @@ class ActionsMovementMixin:
             
             # Check if within charge distance
             if model_distance > max_charge_distance:
-                print(f"{self.name} cannot reach charge destination {model_distance:.1f}\" away (max: {max_charge_distance}\")")
+                logger.info(f"{self.name} cannot reach charge destination {model_distance:.1f}\" away (max: {max_charge_distance}\")")
                 return False
             
             # Use charge-aware pathfinding for single model (can navigate around obstacles and into engagement range)
@@ -6965,7 +6965,7 @@ class ActionsMovementMixin:
             )
             
             if not pathfinding_result or not pathfinding_result.get('valid'):
-                print(f"{self.name} cannot charge to destination - pathfinding failed (obstacles in way)")
+                logger.error(f"{self.name} cannot charge to destination - pathfinding failed (obstacles in way)")
                 return False
 
             shortest_path = pathfinding_result['path']
@@ -6975,7 +6975,7 @@ class ActionsMovementMixin:
             
             # Check if path is within charge distance
             if path_distance > max_charge_distance:
-                print(f"{self.name} path distance {path_distance:.1f}\" exceeds charge distance {max_charge_distance}\"")
+                logger.info(f"{self.name} path distance {path_distance:.1f}\" exceeds charge distance {max_charge_distance}\"")
                 return False
             
             # Move the model to destination
@@ -6984,11 +6984,11 @@ class ActionsMovementMixin:
             model.set_location(destination[0], destination[1], new_z, new_facing)
             successful_moves = 1
             
-            print(f"{self.name} (single model) charged via pathfinding - distance: {path_distance:.1f}\"")
+            logger.info(f"{self.name} (single model) charged via pathfinding - distance: {path_distance:.1f}\"")
         
         else:
             # COMPLEX PATH FOR MULTI-MODEL UNITS - use formation positioning
-            print(f"{self.name} using multi-model charge path")
+            logger.info(f"{self.name} using multi-model charge path")
             
             # Generate potential positions for models with enhanced pathfinding for charges
             boundary_repulsors = self._get_reduced_boundary_repulsors(game_map)
@@ -7037,7 +7037,7 @@ class ActionsMovementMixin:
                     else:
                         logger.debug(f"Model {model._id} cannot charge to formation position - pathfinding failed")
             else:
-                print(f"{self.name} charge failed - no valid formation found, trying individual positioning")
+                logger.error(f"{self.name} charge failed - no valid formation found, trying individual positioning")
             
             # If formation failed or had limited success, try individual model positioning
             if successful_moves < len(self.models) // 2:  # If less than half succeeded
@@ -7140,7 +7140,7 @@ class ActionsMovementMixin:
         
         # Check if any movement occurred
         if successful_moves == 0:
-            print(f"{self.name} could not charge - no models could reach any valid positions")
+            logger.info(f"{self.name} could not charge - no models could reach any valid positions")
             return False
         
         # CRITICAL VALIDATION: Final check for any overlaps after all models positioned
@@ -7157,7 +7157,7 @@ class ActionsMovementMixin:
                         continue
                     # Check if this model's base overlaps with the friendly model's base
                     if model.model_base.collides_with(friendly_model.model_base):
-                        print(f"{self.name} charge failed - {model.name} would overlap with {friendly_model.name} from {friendly_unit.name}")
+                        logger.error(f"{self.name} charge failed - {model.name} would overlap with {friendly_model.name} from {friendly_unit.name}")
                         # ROLLBACK: Restore original positions
                         for i, original_pos in enumerate(original_model_positions):
                             if i < len(self.models):
@@ -7170,7 +7170,7 @@ class ActionsMovementMixin:
             final_positions = [m.get_location() for m in self.models]
             is_coherent, non_coherent_models = validate_unit_coherency_after_movement(self, final_positions)
             if not is_coherent:
-                print(f"{self.name} charge move rejected: unit coherency would be broken (non-coherent models: {non_coherent_models})")
+                logger.info(f"{self.name} charge move rejected: unit coherency would be broken (non-coherent models: {non_coherent_models})")
                 for i, original_pos in enumerate(original_model_positions):
                     if i < len(self.models):
                         self.models[i].set_location(*original_pos)
@@ -7182,7 +7182,7 @@ class ActionsMovementMixin:
         # Charge targets validation (must engage all targets, avoid non-targets)
         ok, reason = self.validate_charge_end_state(targets, game_map)
         if not ok:
-            print(f"{self.name} charge move rejected: {reason}")
+            logger.info(f"{self.name} charge move rejected: {reason}")
             for i, original_pos in enumerate(original_model_positions):
                 if i < len(self.models):
                     self.models[i].set_location(*original_pos)
@@ -7207,10 +7207,10 @@ class ActionsMovementMixin:
         )
         
         # Provide detailed feedback
-        print(f"{self.name} moved from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
+        logger.info(f"{self.name} moved from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
         
         if successful_moves < len(self.models):
-            print(f" Note: Only {successful_moves}/{len(self.models)} models could move to valid positions")
+            logger.info(f" Note: Only {successful_moves}/{len(self.models)} models could move to valid positions")
         
         # Mark unit as having moved this round
         self.round_state.moved_this_round = True
@@ -7424,9 +7424,9 @@ class ActionsMovementMixin:
         but cannot end within engagement range of any enemy models.
         """
         if bool(getattr(self, "is_aircraft", False)):
-            print(f"{self.name} cannot Fall Back (AIRCRAFT)")
+            logger.info(f"{self.name} cannot Fall Back (AIRCRAFT)")
             return False
-        print(f"{self.name} falls back from combat")
+        logger.info(f"{self.name} falls back from combat")
 
         sources = []
         source_labels = []
@@ -7619,7 +7619,7 @@ class ActionsMovementMixin:
             )
             # Check if unit was wiped out during Desperate Escape Test
             if not self.is_alive():
-                print(f"INFO: {self.name} was completely destroyed during Desperate Escape Test!")
+                logger.info(f"INFO: {self.name} was completely destroyed during Desperate Escape Test!")
                 return False
 
         # Execute Fall Back movement for each model
@@ -7664,7 +7664,7 @@ class ActionsMovementMixin:
         
         # Check if destination is within movement range
         if distance_to_destination > movement_range:
-            print(f"{self.name} cannot reach fall back destination {distance_to_destination:.1f}\" away (max move: {movement_range}\")")
+            logger.info(f"{self.name} cannot reach fall back destination {distance_to_destination:.1f}\" away (max move: {movement_range}\")")
             return False
 
         # Generate potential positions for models with reduced boundary repulsors for better formation finding
@@ -7673,7 +7673,7 @@ class ActionsMovementMixin:
         
         # Check if formation finding failed
         if potential_positions is None:
-            print(f"{self.name} cannot fall back - no valid formation found at destination")
+            logger.info(f"{self.name} cannot fall back - no valid formation found at destination")
             return False
             
         successful_moves = 0
@@ -7694,7 +7694,7 @@ class ActionsMovementMixin:
             
             # Check if this model can reach its destination
             if model_distance > movement_range:
-                print(f"Model {model._id} cannot reach fall back destination {model_distance:.1f}\" away (max: {movement_range}\")")
+                logger.info(f"Model {model._id} cannot reach fall back destination {model_distance:.1f}\" away (max: {movement_range}\")")
                 continue  # Skip this model, don't move it
             
             # Try pathfinding for Fall Back movement using standard pathfinding
@@ -7722,20 +7722,20 @@ class ActionsMovementMixin:
             # New pathfinding does not track enemy models moved over, so this stays empty.
             enemy_models_moved_over = []
             if enemy_models_moved_over and not self.is_titanic and not self.is_flying:
-                print(f" Model {model._id} must take Desperate Escape Test for moving over {len(enemy_models_moved_over)} enemy model(s)")
+                logger.info(f" Model {model._id} must take Desperate Escape Test for moving over {len(enemy_models_moved_over)} enemy model(s)")
                 
                 # Take Desperate Escape Test for this model
                 roll = get_roll("D6")
                 if roll <= 2:
-                    print(f"Model {model._id}: Rolled {roll} on Desperate Escape Test - DESTROYED! ")
+                    logger.info(f"Model {model._id}: Rolled {roll} on Desperate Escape Test - DESTROYED! ")
                     self.remove_model(model, fleed=True, game_map=game_map)
                     continue  # Model is destroyed, don't move it
                 else:
-                    print(f"Model {model._id}: Rolled {roll} on Desperate Escape Test - Survives ")
+                    logger.info(f"Model {model._id}: Rolled {roll} on Desperate Escape Test - Survives ")
                     total_models_moved_over_enemies += 1
             
             if path_distance > movement_range:
-                print(f"Model {model._id} path distance {path_distance:.1f}\" exceeds movement {movement_range}\"")
+                logger.info(f"Model {model._id} path distance {path_distance:.1f}\" exceeds movement {movement_range}\"")
                 # Try to move as far as possible along the path
                 last_node = model_start
                 model.last_move_path = [last_node]
@@ -7780,12 +7780,12 @@ class ActionsMovementMixin:
         
         # Check if any movement occurred
         if successful_moves == 0:
-            print(f"{self.name} could not fall back - no models could reach valid positions")
+            logger.info(f"{self.name} could not fall back - no models could reach valid positions")
             return False
         
         # Check if unit was wiped out during Desperate Escape Tests
         if not self.is_alive():
-            print(f"{self.name} was completely destroyed during Fall Back Desperate Escape Tests!")
+            logger.info(f"{self.name} was completely destroyed during Fall Back Desperate Escape Tests!")
             return False
         
         # CRITICAL VALIDATION: Check for illegal overlaps after fall back
@@ -7802,7 +7802,7 @@ class ActionsMovementMixin:
                         continue
                     # Check if this model's base overlaps with the enemy model's base
                     if model.model_base.collides_with(enemy_model.model_base):
-                        print(f"{self.name} cannot fall back - {model.name} cannot end overlapping with {enemy_model.name} from {enemy_unit.name}")
+                        logger.info(f"{self.name} cannot fall back - {model.name} cannot end overlapping with {enemy_model.name} from {enemy_unit.name}")
                         # For fall back, we don't have original positions stored, so this is a critical error
                         # The fall back move should have been validated during pathfinding
                         return False
@@ -7826,14 +7826,14 @@ class ActionsMovementMixin:
         )
         
         # Provide detailed feedback
-        print(f"{self.name} fell back from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
+        logger.info(f"{self.name} fell back from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
         
         if total_models_moved_over_enemies > 0:
-            print(f" {total_models_moved_over_enemies} model(s) moved over enemy models and survived Desperate Escape Tests")
+            logger.info(f" {total_models_moved_over_enemies} model(s) moved over enemy models and survived Desperate Escape Tests")
         
         if successful_moves < len(self.models):
             remaining_models = len(self.models)
-            print(f" Note: Only {successful_moves} models could fall back to valid positions, {remaining_models} models remain")
+            logger.info(f" Note: Only {successful_moves} models could fall back to valid positions, {remaining_models} models remain")
         
         logger.info(f"Unit {self.name} fell back from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
         self.round_state.fell_back_this_round = True
@@ -7948,7 +7948,7 @@ class ActionsMovementMixin:
             #print(f"{self.name} has_advance_and_charge (cached): {cached_result}")
             return cached_result
 
-        print(f"{self.name} checking for advance and charge abilities...")
+        logger.info(f"{self.name} checking for advance and charge abilities...")
 
         found = False
         if self.has_thrill_seekers():
@@ -8573,7 +8573,7 @@ class ActionsMovementMixin:
         
         # Check if destination is within scout distance
         if distance_to_destination > scout_distance:
-            print(f"{self.name} cannot reach scout destination {distance_to_destination:.1f}\" away (max scout: {scout_distance}\")")
+            logger.info(f"{self.name} cannot reach scout destination {distance_to_destination:.1f}\" away (max scout: {scout_distance}\")")
             return False
         
         # Generate potential positions for models with reduced boundary repulsors for better formation finding
@@ -8582,7 +8582,7 @@ class ActionsMovementMixin:
         
         # Check if formation finding failed
         if potential_positions is None:
-            print(f"{self.name} cannot scout move - no valid formation found at destination")
+            logger.info(f"{self.name} cannot scout move - no valid formation found at destination")
             return False
 
         # Check scout restriction: cannot end within 9" of enemy models (base-to-base closest-point distance).
@@ -8594,7 +8594,7 @@ class ActionsMovementMixin:
             mb = self._create_potential_base(x, y, z, facing, model=self.models[idx])
             for em in enemy_models:
                 if float(distance_between_bases_3d(mb, em.model_base)) < 9.0:
-                    print(f"{self.name} cannot scout move to destination - would end within 9\" of {em.parent_unit.name}")
+                    logger.info(f"{self.name} cannot scout move to destination - would end within 9\" of {em.parent_unit.name}")
                     return False
             
         # BACKUP ORIGINAL POSITIONS - Critical for proper rollback on failure
@@ -8619,7 +8619,7 @@ class ActionsMovementMixin:
             
             # Check if this model can reach its destination
             if model_distance > scout_distance:
-                print(f"Model {model._id} cannot reach scout destination {model_distance:.1f}\" away (max: {scout_distance}\")")
+                logger.info(f"Model {model._id} cannot reach scout destination {model_distance:.1f}\" away (max: {scout_distance}\")")
                 continue  # Skip this model, don't move it
             
             # Use new optimized pathfinding for scout move (individual model movement)
@@ -8646,7 +8646,7 @@ class ActionsMovementMixin:
             path_distance = measure_path_distance(path, self, MovementType.SCOUT, game_map)
             
             if path_distance > scout_distance:
-                print(f"Model {model._id} path distance {path_distance:.1f}\" exceeds scout distance {scout_distance}\"")
+                logger.info(f"Model {model._id} path distance {path_distance:.1f}\" exceeds scout distance {scout_distance}\"")
                 # Try to move as far as possible along the path
                 last_node = model_start
                 model.last_move_path = [last_node]
@@ -8691,7 +8691,7 @@ class ActionsMovementMixin:
         
         # Check if any movement occurred
         if successful_moves == 0:
-            print(f"{self.name} could not scout move - no models could reach valid positions")
+            logger.info(f"{self.name} could not scout move - no models could reach valid positions")
             return False
         
         # NEW: Validate unit coherency after all models have moved (scout moves must maintain coherency)
@@ -8705,7 +8705,7 @@ class ActionsMovementMixin:
         is_coherent, non_coherent_models = validate_unit_coherency_after_movement(self, final_positions)
         
         if not is_coherent:
-            print(f"{self.name} scout move rejected: unit coherency would be broken (non-coherent models: {non_coherent_models})")
+            logger.info(f"{self.name} scout move rejected: unit coherency would be broken (non-coherent models: {non_coherent_models})")
             # ROLLBACK: Restore original positions (movement ending out of coherency is not allowed)
             for i, original_pos in enumerate(original_model_positions):
                 if i < len(self.models):
@@ -8726,7 +8726,7 @@ class ActionsMovementMixin:
                         continue
                     # Check if this model's base overlaps with the enemy model's base
                     if model.model_base.collides_with(enemy_model.model_base):
-                        print(f"{self.name} cannot scout move - {model.name} cannot end overlapping with {enemy_model.name} from {enemy_unit.name}")
+                        logger.info(f"{self.name} cannot scout move - {model.name} cannot end overlapping with {enemy_model.name} from {enemy_unit.name}")
                         # ROLLBACK: Restore original positions
                         for i, original_pos in enumerate(original_model_positions):
                             if i < len(self.models):
@@ -8755,10 +8755,10 @@ class ActionsMovementMixin:
         self.scout_move_made = True
         
         # Provide detailed feedback
-        print(f"{self.name} scout moved from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
+        logger.info(f"{self.name} scout moved from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
         
         if successful_moves < len(self.models):
-            print(f" Note: Only {successful_moves}/{len(self.models)} models could scout move to valid positions")
+            logger.info(f" Note: Only {successful_moves}/{len(self.models)} models could scout move to valid positions")
         
         logger.info(f"Unit {self.name} scout moved from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
         return True

@@ -16,6 +16,8 @@ import pygame
 
 from .base_dialog import BaseDialog, PANEL_BG, PANEL_BORDER, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_ERROR, BUTTON_BG, BUTTON_HOVER
 from .battlefield_point_pick_dialog import BattlefieldPointPickDialog
+import logging
+logger = logging.getLogger(__name__)
 
 
 class DeathstrikeActionDialog(BaseDialog):
@@ -51,7 +53,7 @@ class DeathstrikeActionDialog(BaseDialog):
         self.deathstrike_mgr = getattr(army, "deathstrike", None)
 
         if self.deathstrike_mgr is None or not bool(getattr(unit, "has_plasma_warhead_weapon", lambda: False)()):
-            print("ERROR: Deathstrike: No manager found")
+            logger.error("ERROR: Deathstrike: No manager found")
             self.hide()
             return
         
@@ -65,9 +67,9 @@ class DeathstrikeActionDialog(BaseDialog):
         # Create buttons
         self._create_dialog_buttons()
         
-        print(f"🎯 Deathstrike Action Dialog shown for {unit.name}")
-        print(f"   Can Designate: {self.can_designate} ({self.designate_reason})")
-        print(f"   Can Adjust: {self.can_adjust} ({self.adjust_reason})")
+        logger.info(f"🎯 Deathstrike Action Dialog shown for {unit.name}")
+        logger.info(f"   Can Designate: {self.can_designate} ({self.designate_reason})")
+        logger.info(f"   Can Adjust: {self.can_adjust} ({self.adjust_reason})")
     
     def _create_dialog_buttons(self):
         """Create action buttons."""
@@ -101,7 +103,7 @@ class DeathstrikeActionDialog(BaseDialog):
     def _handle_designate(self) -> bool:
         """Handle Designate Target action."""
         if not self.can_designate:
-            print(f"❌ Cannot Designate Target: {self.designate_reason}")
+            logger.error(f"❌ Cannot Designate Target: {self.designate_reason}")
             return False
         
         self._open_point_picker('designate')
@@ -110,7 +112,7 @@ class DeathstrikeActionDialog(BaseDialog):
     def _handle_adjust(self) -> bool:
         """Handle Adjust Target action."""
         if not self.can_adjust:
-            print(f"❌ Cannot Adjust Target: {self.adjust_reason}")
+            logger.error(f"❌ Cannot Adjust Target: {self.adjust_reason}")
             return False
         
         self._open_point_picker('adjust')
@@ -118,7 +120,7 @@ class DeathstrikeActionDialog(BaseDialog):
     
     def _handle_none(self) -> bool:
         """Handle None (skip) action."""
-        print("ℹ️ Deathstrike: No action taken")
+        logger.info("ℹ️ Deathstrike: No action taken")
         
         # Create and resolve decision
         self._create_and_resolve_decision('none', None)
@@ -158,7 +160,7 @@ class DeathstrikeActionDialog(BaseDialog):
             # Create and resolve decision
             self._create_and_resolve_decision(action, position)
 
-            print(f"✅ Deathstrike marker {action}d at ({x:.1f}\", {y:.1f}\")")
+            logger.info(f"✅ Deathstrike marker {action}d at ({x:.1f}\", {y:.1f}\")")
             self.hide()
             if self.on_complete:
                 self.on_complete()

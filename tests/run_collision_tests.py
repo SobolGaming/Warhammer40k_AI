@@ -12,6 +12,8 @@ Or from project root:
 import sys
 import os
 import subprocess
+import logging
+logger = logging.getLogger(__name__)
 
 def run_collision_tests():
     """Run the collision detection test suite."""
@@ -30,16 +32,17 @@ def run_collision_tests():
         "--color=yes"  # Colored output
     ]
     
-    print("Running collision detection tests...")
-    print("=" * 60)
+    logger.info("Running collision detection tests...")
+    logger.info("=" * 60)
     
     try:
         result = subprocess.run(cmd, check=False)
         return result.returncode
     except Exception as e:
-        print(f"Error running tests: {e}")
+        logger.exception(f"Error running tests: {e}")
         return 1
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     exit_code = run_collision_tests()
     sys.exit(exit_code)

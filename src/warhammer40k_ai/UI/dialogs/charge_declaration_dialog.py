@@ -1,6 +1,8 @@
 import pygame
 from typing import List, Optional, Callable
 from .base_dialog import BaseDialog, PANEL_BG, PANEL_BORDER, BUTTON_BG, BUTTON_HOVER, BUTTON_DISABLED, TEXT_PRIMARY, TEXT_SECONDARY
+import logging
+logger = logging.getLogger(__name__)
 
 # Font sizes
 FONT_LARGE = 18
@@ -98,13 +100,13 @@ class ChargeDeclarationDialog(BaseDialog):
         visible_height = self.height - 240  # Account for header, unit info, and buttons (160 + 240 = 400)
         self.max_scroll = max(0, total_height - visible_height)
         
-        print(f"INFO: ChargeDeclarationDialog shown for {unit.name}")
-        print(f"INFO: Found {len(self.valid_targets)} valid targets")
-        print(f"ERROR: Found {len(self.invalid_targets)} invalid targets")
+        logger.info(f"INFO: ChargeDeclarationDialog shown for {unit.name}")
+        logger.info(f"INFO: Found {len(self.valid_targets)} valid targets")
+        logger.error(f"ERROR: Found {len(self.invalid_targets)} invalid targets")
         
         # Check if unit is eligible to charge
         if not self._is_unit_eligible_to_charge():
-            print(f"ERROR: {unit.name} is not eligible to charge")
+            logger.error(f"ERROR: {unit.name} is not eligible to charge")
             self.hide()
             return
     
@@ -180,18 +182,18 @@ class ChargeDeclarationDialog(BaseDialog):
     def _is_unit_eligible_to_charge(self) -> bool:
         """Check if the unit is eligible to declare a charge."""
         if not self.unit:
-            print(f"ERROR: Charge eligibility check failed: No unit selected")
+            logger.error(f"ERROR: Charge eligibility check failed: No unit selected")
             return False
         try:
             game = getattr(self.game_view, "game", None)
         except Exception:
             game = None
         if game is None:
-            print(f"ERROR: Charge eligibility check failed: No game context")
+            logger.error(f"ERROR: Charge eligibility check failed: No game context")
             return False
         eligible = bool(self.unit.can_declare_charge(game))
         if not eligible:
-            print(f"ERROR: {self.unit.name} is not eligible to charge")
+            logger.error(f"ERROR: {self.unit.name} is not eligible to charge")
         return eligible
 
     def _get_charge_modifiers(self, target):
@@ -339,12 +341,12 @@ class ChargeDeclarationDialog(BaseDialog):
                 if target in self.valid_targets:
                     if target in self.selected_targets:
                         self.selected_targets.remove(target)
-                        print(f"INFO: Deselected charge target: {target.name}")
+                        logger.info(f"INFO: Deselected charge target: {target.name}")
                     else:
                         self.selected_targets.add(target)
-                        print(f"INFO: Selected charge target: {target.name}")
+                        logger.info(f"INFO: Selected charge target: {target.name}")
                 else:
-                    print(f"ERROR: Cannot charge {target.name} - invalid target")
+                    logger.error(f"ERROR: Cannot charge {target.name} - invalid target")
                 return True
         
         return False
@@ -359,9 +361,9 @@ class ChargeDeclarationDialog(BaseDialog):
         
         if success:
             target_names = ", ".join(getattr(t, "name", "Target") for t in targets)
-            print(f"INFO: Charge declared: {self.unit.name} charges {target_names}")
+            logger.info(f"INFO: Charge declared: {self.unit.name} charges {target_names}")
         else:
-            print(f"ERROR: Charge failed: {self.unit.name} could not charge selected targets")
+            logger.error(f"ERROR: Charge failed: {self.unit.name} could not charge selected targets")
         
         self.hide()
     
@@ -584,11 +586,11 @@ class ChargeDeclarationDialog(BaseDialog):
         if button_name == 'declare':
             if self.selected_targets:
                 names = ", ".join(getattr(t, "name", "Target") for t in self.selected_targets)
-                print(f"DEBUG: Declare pressed with selected targets: {names}")
+                logger.debug(f"DEBUG: Declare pressed with selected targets: {names}")
                 self._execute_charge()
                 return True
             else:
-                print("DEBUG: Declare pressed but no target selected")
+                logger.debug("DEBUG: Declare pressed but no target selected")
                 return False
         if button_name == 'cancel':
             self.hide()

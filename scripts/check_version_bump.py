@@ -5,6 +5,8 @@ import argparse
 import subprocess
 import sys
 from typing import Optional, Tuple
+import logging
+logger = logging.getLogger(__name__)
 
 VERSION_PATH = "src/warhammer40k_ai/version.py"
 
@@ -49,23 +51,18 @@ def main() -> None:
 
     if args.staged:
         if not _check_staged():
-            print(
-                "ERROR: Version bump required. Stage changes to src/warhammer40k_ai/version.py "
-                "whenever committing non-version files.",
-                file=sys.stderr,
-            )
+            logger.error("ERROR: Version bump required. Stage changes to src/warhammer40k_ai/version.py "
+                "whenever committing non-version files.")
             sys.exit(1)
         return
 
     ok, bad_commit = _check_range(str(args.range_spec))
     if not ok:
-        print(
-            "ERROR: Version bump required in every commit being pushed. "
-            f"Missing {VERSION_PATH} change in commit {bad_commit}.",
-            file=sys.stderr,
-        )
+        logger.error("ERROR: Version bump required in every commit being pushed. "
+            f"Missing {VERSION_PATH} change in commit {bad_commit}.")
         sys.exit(1)
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     main()

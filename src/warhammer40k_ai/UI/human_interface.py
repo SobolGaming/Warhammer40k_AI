@@ -3,6 +3,8 @@ from typing import Callable, List, Tuple, TYPE_CHECKING
 
 from .panels.reserves_arrival_panel import ReservesArrivalPanel
 from .ui_constants import TILE_SIZE, TEXT_ACCENT, TEXT_PRIMARY, TEXT_SECONDARY
+import logging
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from warhammer40k_ai.units.unit import Unit
@@ -52,7 +54,7 @@ class HumanUIInterface:
         selected_position = None
         position_selected = False
 
-        print(f"Click on the battlefield to place {unit.name}")
+        logger.info(f"Click on the battlefield to place {unit.name}")
         # Compute a bounding box for display only from mission polygons
         try:
             xs, ys = [], []
@@ -61,10 +63,8 @@ class HumanUIInterface:
                     xs.append(float(vx))
                     ys.append(float(vy))
             if xs and ys:
-                print(
-                    f"Deployment zone bounds: X({min(xs):.1f} - {max(xs):.1f}), "
-                    f"Y({min(ys):.1f} - {max(ys):.1f})"
-                )
+                logger.info(f"Deployment zone bounds: X({min(xs):.1f} - {max(xs):.1f}), "
+                    f"Y({min(ys):.1f} - {max(ys):.1f})")
         except Exception:
             pass
 
@@ -86,19 +86,17 @@ class HumanUIInterface:
                     if self.is_position_in_zone(game_x, game_y, deployment_zone):
                         selected_position = (game_x, game_y)
                         position_selected = True
-                        print(f"Unit {unit.name} will be placed at ({game_x:.1f}, {game_y:.1f})")
+                        logger.info(f"Unit {unit.name} will be placed at ({game_x:.1f}, {game_y:.1f})")
                     else:
-                        print(
-                            f"Invalid position ({game_x:.1f}, {game_y:.1f}) - "
-                            "must be within deployment zone"
-                        )
+                        logger.info(f"Invalid position ({game_x:.1f}, {game_y:.1f}) - "
+                            "must be within deployment zone")
 
                 elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                     # Cancel and use center of deployment zone
                     x_center, y_center = self._zone_centroid(deployment_zone)
                     selected_position = (x_center, y_center)
                     position_selected = True
-                    print("Position selection cancelled, using center of deployment zone")
+                    logger.info("Position selection cancelled, using center of deployment zone")
 
             clock.tick(60)
 
@@ -222,15 +220,13 @@ class HumanUIInterface:
         decision_request=None,
     ):
         """Show the fight unit selection dialog for a stage."""
-        print(
-            f"HumanUIInterface.show_fight_unit_selection_dialog called for {stage_name} "
-            f"stage with {len(eligible_units)} units"
-        )
+        logger.info(f"HumanUIInterface.show_fight_unit_selection_dialog called for {stage_name} "
+            f"stage with {len(eligible_units)} units")
         self.fight_unit_selection_dialog.show(stage_name, eligible_units, on_unit_selected, on_cancel, decision_request=decision_request)
 
     def show_melee_weapon_declaration_dialog(self, unit, callback, game_map=None, target_unit=None, decision_request=None):
         """Show the melee weapon declaration dialog for a unit."""
-        print(f"HumanUIInterface.show_melee_weapon_declaration_dialog called for {unit.name}")
+        logger.info(f"HumanUIInterface.show_melee_weapon_declaration_dialog called for {unit.name}")
         # Delegate to the game view's dialog instance to avoid duplicates
         if hasattr(self, 'game_view') and hasattr(self.game_view, 'melee_weapon_declaration_dialog'):
             self.game_view.melee_weapon_declaration_dialog.show(
@@ -241,7 +237,7 @@ class HumanUIInterface:
                 decision_request=decision_request,
             )
         else:
-            print("ERROR: Error: melee_weapon_declaration_dialog not found on game_view")
+            logger.error("ERROR: Error: melee_weapon_declaration_dialog not found on game_view")
             # Call callback with empty declarations to prevent hanging
             if callback:
                 callback([])

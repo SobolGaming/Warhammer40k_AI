@@ -10,6 +10,8 @@ from typing import List, Dict, Optional, Callable
 from warhammer40k_ai.units.unit import Unit
 from .base_dialog import BaseDialog, PANEL_BG, PANEL_BORDER, BUTTON_BG, BUTTON_HOVER, BUTTON_SELECTED, TEXT_PRIMARY, TEXT_SECONDARY
 from ...utility.entity_ids import get_entity_id
+import logging
+logger = logging.getLogger(__name__)
 
 # Enhanced Colors
 PANEL_BG = (50, 50, 50)
@@ -84,7 +86,7 @@ class MeleeWeaponDeclarationDialog(BaseDialog):
         # Initialize weapon selection
         self._initialize_weapon_selection()
         
-        print(f"INFO: MeleeWeaponDeclarationDialog shown for {unit.name}")
+        logger.info(f"INFO: MeleeWeaponDeclarationDialog shown for {unit.name}")
     
     def hide(self):
         """Hide the dialog."""
@@ -113,8 +115,8 @@ class MeleeWeaponDeclarationDialog(BaseDialog):
         if not self.unit:
             return
         
-        print(f"DEBUG: Initializing weapon selection for {self.unit.name}")
-        print(f"DEBUG: Unit has {len(self.unit.models)} models")
+        logger.debug(f"DEBUG: Initializing weapon selection for {self.unit.name}")
+        logger.debug(f"DEBUG: Unit has {len(self.unit.models)} models")
         
         if (
             self.target_unit is not None
@@ -317,7 +319,7 @@ class MeleeWeaponDeclarationDialog(BaseDialog):
                     model_index = button['model_index']
                     if model_index != self.selected_model_index:
                         self.selected_model_index = model_index
-                        print(f"INFO: Selected Model #{model_index + 1}: {button['model'].name}")
+                        logger.info(f"INFO: Selected Model #{model_index + 1}: {button['model'].name}")
                         self._create_model_and_weapon_buttons()  # Refresh UI
                     return True
                     
@@ -409,11 +411,11 @@ class MeleeWeaponDeclarationDialog(BaseDialog):
             models_with_weapons = len(self.model_weapon_selections)
             
             if models_with_weapons < total_models:
-                print(f"WARN: Warning: Only {models_with_weapons}/{total_models} models have weapon selections")
-                print(f"ERROR: Some models may not be able to attack")
+                logger.warning(f"WARN: Warning: Only {models_with_weapons}/{total_models} models have weapon selections")
+                logger.error(f"ERROR: Some models may not be able to attack")
             
-            print(f"INFO: Weapon selection completed with {len(weapon_bundles)} weapon declarations")
-            print(f"INFO: Covering {models_with_weapons}/{total_models} models")
+            logger.info(f"INFO: Weapon selection completed with {len(weapon_bundles)} weapon declarations")
+            logger.info(f"INFO: Covering {models_with_weapons}/{total_models} models")
             option_id = self._option_entries[0]["option_id"] if self._option_entries else ""
             self.callback(option_id, {"weapon_bundles": weapon_bundles})
         self.hide()

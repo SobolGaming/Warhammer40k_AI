@@ -13,6 +13,8 @@ import os
 import sys
 from collections import defaultdict
 from typing import Dict, Iterable, List, Tuple
+import logging
+logger = logging.getLogger(__name__)
 
 SCRIPT_DIR = os.path.abspath(os.path.dirname(__file__))
 if SCRIPT_DIR not in sys.path:
@@ -342,9 +344,10 @@ def main() -> int:
         for count, key, flag in rows:
             f.write(f" | {count:03d} | {flag} | {key} | \n")
 
-    print(f"Wrote {args.output}")
+    logger.info(f"Wrote {args.output}")
     return 0
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     raise SystemExit(main())

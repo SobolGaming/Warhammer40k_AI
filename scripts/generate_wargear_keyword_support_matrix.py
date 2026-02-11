@@ -20,6 +20,8 @@ import os
 import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Set, Tuple
+import logging
+logger = logging.getLogger(__name__)
 
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -287,8 +289,9 @@ def main() -> None:
         raise SystemExit(f"wahapedia_data dir not found at: {WAHA_DIR}")
     counts, examples = _parse_keywords_from_wargear()
     _write_md(counts, examples)
-    print(f"Wrote {OUT_PATH} ({len(counts)} canonical keywords).")
+    logger.info(f"Wrote {OUT_PATH} ({len(counts)} canonical keywords).")
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     main()

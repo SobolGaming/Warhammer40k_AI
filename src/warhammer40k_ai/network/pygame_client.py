@@ -11,6 +11,8 @@ from ..UI.human_interface import HumanUIInterface
 from ..UI.window import create_pygame_screen
 from .client import NetworkClient
 from .game_session import NetworkGameSession, GameUpdate
+import logging
+logger = logging.getLogger(__name__)
 
 
 def _draw_waiting(screen: pygame.Surface, message: str) -> None:
@@ -66,7 +68,7 @@ async def run_pygame_network_client(
         hello_msg = await _wait_control("hello")
         hello_payload = hello_msg.get("payload", {}) if isinstance(hello_msg, dict) else {}
         if not hello_payload.get("ok"):
-            print(f"Version mismatch: {hello_payload.get('errors', [])}")
+            logger.info(f"Version mismatch: {hello_payload.get('errors', [])}")
             return
         await client.send_auth(join_code=join_code, reconnect_token=reconnect_token)
         await _wait_control("auth")

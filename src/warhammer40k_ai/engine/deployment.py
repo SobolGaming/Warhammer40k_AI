@@ -633,17 +633,17 @@ class HumanDeploymentDecisionMaker(DeploymentDecisionMaker):
             
             # Show reserve limits
             limits = army.get_reserve_limits()
-            print(f"\nReserve Limits: {limits['max_units']}/{limits['total_units']} units, {limits['max_points']}/{limits['total_points']} points")
+            logger.info(f"\nReserve Limits: {limits['max_units']}/{limits['total_units']} units, {limits['max_points']}/{limits['total_points']} points")
             
             for unit in army.units:
-                print(f"\n{unit.name} ({len(unit.models)} models, {unit.get_unit_cost()} pts)")
+                logger.info(f"\n{unit.name} ({len(unit.models)} models, {unit.get_unit_cost()} pts)")
 
                 try:
                     if bool(getattr(unit, "must_start_in_reserves", lambda: False)()):
                         reserves_decisions[unit.id] = 'reserves'
                         current_reserve_units += 1
                         current_reserve_points += unit.get_unit_cost()
-                        print(f"{unit.name} forced into Reserves (AIRCRAFT)")
+                        logger.info(f"{unit.name} forced into Reserves (AIRCRAFT)")
                         continue
                 except Exception:
                     pass
@@ -655,56 +655,56 @@ class HumanDeploymentDecisionMaker(DeploymentDecisionMaker):
                 can_add_to_reserves = army.can_add_unit_to_reserves(unit, current_reserve_units, current_reserve_points)
                 
                 if can_use_reserves and can_add_to_reserves:
-                    print("Options: (1) Deploy normally, (2) Standard Reserves, (3) Strategic Reserves")
+                    logger.info("Options: (1) Deploy normally, (2) Standard Reserves, (3) Strategic Reserves")
                     choice = input(f"Choice for {unit.name} [1/2/3]: ").strip()
                     
                     if choice == '2':
                         reserves_decisions[unit.id] = 'reserves'
                         current_reserve_units += 1
                         current_reserve_points += unit.get_unit_cost()
-                        print(f"{unit.name} placed in Standard Reserves")
+                        logger.info(f"{unit.name} placed in Standard Reserves")
                     elif choice == '3':
                         reserves_decisions[unit.id] = 'strategic_reserves'
                         current_reserve_units += 1
                         current_reserve_points += unit.get_unit_cost()
-                        print(f"{unit.name} placed in Strategic Reserves")
+                        logger.info(f"{unit.name} placed in Strategic Reserves")
                     else:
                         reserves_decisions[unit.id] = 'deploy'
-                        print(f"{unit.name} will deploy normally")
+                        logger.info(f"{unit.name} will deploy normally")
                 elif can_use_reserves and not can_add_to_reserves:
-                    print("Cannot add to reserves (limits reached) - Options: (1) Deploy normally")
+                    logger.info("Cannot add to reserves (limits reached) - Options: (1) Deploy normally")
                     choice = input(f"Choice for {unit.name} [1]: ").strip()
                     reserves_decisions[unit.id] = 'deploy'
-                    print(f"{unit.name} will deploy normally")
+                    logger.info(f"{unit.name} will deploy normally")
                 else:
                     if can_add_to_reserves:
-                        print("Options: (1) Deploy normally, (3) Strategic Reserves")
+                        logger.info("Options: (1) Deploy normally, (3) Strategic Reserves")
                         choice = input(f"Choice for {unit.name} [1/3]: ").strip()
                         
                         if choice == '3':
                             reserves_decisions[unit.id] = 'strategic_reserves'
                             current_reserve_units += 1
                             current_reserve_points += unit.get_unit_cost()
-                            print(f"{unit.name} placed in Strategic Reserves")
+                            logger.info(f"{unit.name} placed in Strategic Reserves")
                         else:
                             reserves_decisions[unit.id] = 'deploy'
-                            print(f"{unit.name} will deploy normally")
+                            logger.info(f"{unit.name} will deploy normally")
                     else:
-                        print("Cannot add to reserves (limits reached) - Options: (1) Deploy normally")
+                        logger.info("Cannot add to reserves (limits reached) - Options: (1) Deploy normally")
                         choice = input(f"Choice for {unit.name} [1]: ").strip()
                         reserves_decisions[unit.id] = 'deploy'
-                        print(f"{unit.name} will deploy normally")
+                        logger.info(f"{unit.name} will deploy normally")
                 
                 # Show current reserve status
-                print(f"Current reserves: {current_reserve_units}/{limits['max_units']} units, {current_reserve_points}/{limits['max_points']} points")
+                logger.info(f"Current reserves: {current_reserve_units}/{limits['max_units']} units, {current_reserve_points}/{limits['max_points']} points")
             
             # Final validation
             validation_result = army.validate_reserves_decisions(reserves_decisions)
             if not validation_result['valid']:
-                print(f"Reserve validation failed: {validation_result['errors']}")
+                logger.error(f"Reserve validation failed: {validation_result['errors']}")
                 # Enforce limits
                 reserves_decisions = army.enforce_reserves_limits(reserves_decisions)
-                print("Reserve limits enforced automatically")
+                logger.info("Reserve limits enforced automatically")
             
             return reserves_decisions
     
@@ -715,9 +715,9 @@ class HumanDeploymentDecisionMaker(DeploymentDecisionMaker):
             return self.ui_interface.choose_unit_deployment_position(unit, deployment_zone, already_deployed)
         else:
             # Interactive console-based position selection
-            print(f"\nPlace {unit.name} in deployment zone:")
-            print(f"  X range: {deployment_zone['x_range'][0]:.1f}\" to {deployment_zone['x_range'][1]:.1f}\"")
-            print(f"  Y range: {deployment_zone['y_range'][0]:.1f}\" to {deployment_zone['y_range'][1]:.1f}\"")
+            logger.info(f"\nPlace {unit.name} in deployment zone:")
+            logger.info(f"  X range: {deployment_zone['x_range'][0]:.1f}\" to {deployment_zone['x_range'][1]:.1f}\"")
+            logger.info(f"  Y range: {deployment_zone['y_range'][0]:.1f}\" to {deployment_zone['y_range'][1]:.1f}\"")
             
             x_center = (deployment_zone['x_range'][0] + deployment_zone['x_range'][1]) / 2
             y_center = (deployment_zone['y_range'][0] + deployment_zone['y_range'][1]) / 2
@@ -733,7 +733,7 @@ class HumanDeploymentDecisionMaker(DeploymentDecisionMaker):
                 x = max(deployment_zone['x_range'][0], min(deployment_zone['x_range'][1], x))
                 y = max(deployment_zone['y_range'][0], min(deployment_zone['y_range'][1], y))
                 
-                print(f"{unit.name} positioned at ({x:.1f}, {y:.1f})")
+                logger.info(f"{unit.name} positioned at ({x:.1f}, {y:.1f})")
                 return x, y
                 
             except ValueError:

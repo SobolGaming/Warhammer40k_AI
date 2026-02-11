@@ -1,6 +1,8 @@
 """Auto-extracted Unit mixin methods from unit.py."""
 
 from ._common import *
+import logging
+logger = logging.getLogger(__name__)
 
 
 class DamageDeathMixin:
@@ -259,7 +261,7 @@ class DamageDeathMixin:
                     )
                     try:
                         label = str(spec.get("name") or "Return on Death")
-                        print(f"{label}: {model.name} will attempt to return at end of phase.")
+                        logger.info(f"{label}: {model.name} will attempt to return at end of phase.")
                     except Exception:
                         pass
                 model.mark_used_once_per_battle(
@@ -686,12 +688,12 @@ class DamageDeathMixin:
         except Exception:
             pass
 
-        print(f"{model.name} fights on death into {target_unit.name}")
+        logger.info(f"{model.name} fights on death into {target_unit.name}")
         for profile in melee_profiles:
             try:
                 profile.attack(target_unit, model, game_map=game_map)
             except Exception as e:
-                print(f"Fight on Death attack error: {e}")
+                logger.exception(f"Fight on Death attack error: {e}")
 
         return True
 
@@ -751,7 +753,7 @@ class DamageDeathMixin:
         except Exception:
             pass
 
-        print(f"{model.name} shoots on death into {best_target.name}")
+        logger.info(f"{model.name} shoots on death into {best_target.name}")
         shots_executed = 0
         hit_models_by_target_weapon: dict = {}
         hit_models_by_target_psychic: dict = {}
@@ -771,20 +773,20 @@ class DamageDeathMixin:
                     attack_context=attack_context,
                 )
             except Exception as e:
-                print(f"Shoot on Death attack error: {e}")
+                logger.exception(f"Shoot on Death attack error: {e}")
 
         self._resolve_pending_attack_mortal_wounds(attack_context, best_target, game_map=game_map)
         return shots_executed > 0
 
     def _apply_deadly_demise_explosion(self, *, damage_dice: DiceCollection, position, game_map: 'Map') -> None:
         if not position:
-            print("Cannot determine position for Deadly Demise")
+            logger.info("Cannot determine position for Deadly Demise")
             return
 
         # Find all units within 6 inches of the explosion
         nearby_units = self._get_units_within_range(position, 6.0, game_map)
         if not nearby_units:
-            print("Deadly Demise triggered but no units within 6\" - no damage dealt")
+            logger.info("Deadly Demise triggered but no units within 6\" - no damage dealt")
             return
 
         # Apply damage to each nearby unit
@@ -796,16 +798,16 @@ class DamageDeathMixin:
             else:  # It's a fixed number
                 damage_amount = damage_dice.modifier
 
-            print(f"{target_unit.name} suffers {damage_amount} mortal wounds from Deadly Demise!")
+            logger.info(f"{target_unit.name} suffers {damage_amount} mortal wounds from Deadly Demise!")
 
             # Apply mortal wounds to the target unit
             models_destroyed = self._apply_mortal_wounds_to_unit(target_unit, damage_amount, game_map=game_map)
             total_damage_dealt += damage_amount
 
             if models_destroyed > 0:
-                print(f"Deadly Demise destroyed {models_destroyed} model(s) in {target_unit.name}")
+                logger.info(f"Deadly Demise destroyed {models_destroyed} model(s) in {target_unit.name}")
 
-        print(f"Deadly Demise complete: {total_damage_dealt} total mortal wounds dealt to {len(nearby_units)} unit(s)")
+        logger.info(f"Deadly Demise complete: {total_damage_dealt} total mortal wounds dealt to {len(nearby_units)} unit(s)")
 
     def _trigger_deadly_demise(self, dying_model: Model, game_map: 'Map') -> bool:
         """Trigger Deadly Demise ability when a model is killed.
@@ -826,7 +828,7 @@ class DamageDeathMixin:
                 damage_expr = str(sr.get("enhancement_violent_demise_damage_dice", "") or "D3+1")
                 damage_dice = DiceCollection.from_string(damage_expr)
 
-        print(f"{self.name} has Deadly Demise {damage_dice} - checking for explosion!")
+        logger.info(f"{self.name} has Deadly Demise {damage_dice} - checking for explosion!")
 
         # Roll D6 to see if Deadly Demise triggers
         trigger_roll = get_roll("D6")
@@ -837,12 +839,10 @@ class DamageDeathMixin:
         except Exception:
             pass
         if int(trigger_roll) < int(trigger_threshold):
-            print(
-                f"Deadly Demise trigger roll: {trigger_roll} (needed {int(trigger_threshold)}+) - No explosion!"
-            )
+            logger.info(f"Deadly Demise trigger roll: {trigger_roll} (needed {int(trigger_threshold)}+) - No explosion!")
             return False
 
-        print(f"Deadly Demise trigger roll: {trigger_roll} - EXPLOSION! ")
+        logger.info(f"Deadly Demise trigger roll: {trigger_roll} - EXPLOSION! ")
 
         # Offer CAREEN! if available (Orks War Horde).
         try:
@@ -863,7 +863,7 @@ class DamageDeathMixin:
         # Resolve explosion immediately.
         model_position = dying_model.get_location()
         if not model_position:
-            print(f"Cannot determine position of dying model for Deadly Demise")
+            logger.info(f"Cannot determine position of dying model for Deadly Demise")
             return False
         self._apply_deadly_demise_explosion(damage_dice=damage_dice, position=model_position, game_map=game_map)
         return False

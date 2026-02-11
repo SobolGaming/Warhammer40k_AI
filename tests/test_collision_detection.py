@@ -25,6 +25,8 @@ from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from shapely.geometry import Polygon, Point
+import logging
+logger = logging.getLogger(__name__)
 
 pytestmark = pytest.mark.slow
 
@@ -497,7 +499,7 @@ class TestCollisionDetection:
             # 1. The pathfinding allows movement through enemies (fall back rule)
             # 2. We can detect when Desperate Escape tests would be needed
             if path_through_enemy:
-                print(f"ðŸ” DEBUG: Path goes through enemy - Desperate Escape test would be required")
+                logger.debug(f"ðŸ” DEBUG: Path goes through enemy - Desperate Escape test would be required")
 
             # The Desperate Escape dice rolling would be handled by game logic, not pathfinding
 
@@ -582,8 +584,8 @@ class TestCollisionDetection:
             desperate_escape = result['desperate_escape']
             # Note: In a real test with TITANIC/FLY unit, this would be False
             # For this test unit (no special keywords), it should be True
-            print(f"ðŸ” DEBUG: Desperate Escape required: {desperate_escape.get('required', 'N/A')}")
-            print(f"ðŸ” DEBUG: Reason: {desperate_escape.get('reason', 'N/A')}")
+            logger.debug(f"ðŸ” DEBUG: Desperate Escape required: {desperate_escape.get('required', 'N/A')}")
+            logger.debug(f"ðŸ” DEBUG: Reason: {desperate_escape.get('reason', 'N/A')}")
 
     def test_normal_fall_back_no_desperate_escape(self):
         """Test that normal fall back without going through enemies doesn't require Desperate Escape."""
@@ -805,8 +807,8 @@ class TestCollisionDetection:
             # Try to move through woods to other side
             target_through_woods = (21.0, start_y, 0.0)
 
-            print(f"ðŸ” DEBUG: Testing {keywords[0]} unit - keywords: {unit.keywords}")
-            print(f"ðŸ” DEBUG: is_infantry: {unit.is_infantry}, is_beast: {unit.is_beast}, is_flying: {unit.is_flying}")
+            logger.debug(f"ðŸ” DEBUG: Testing {keywords[0]} unit - keywords: {unit.keywords}")
+            logger.debug(f"ðŸ” DEBUG: is_infantry: {unit.is_infantry}, is_beast: {unit.is_beast}, is_flying: {unit.is_flying}")
 
             result = unified_pathfinding(
                 model=model,
@@ -913,7 +915,7 @@ class TestCollisionDetection:
         # Should not be able to end move on barricade
         # Note: This test depends on the final position validation being implemented
         # For now, we test that movement through is allowed
-        print(f"ðŸ” DEBUG: Movement to barricade center: {result_on_barricade['valid']}")
+        logger.debug(f"ðŸ” DEBUG: Movement to barricade center: {result_on_barricade['valid']}")
 
     def test_debris_traversal_but_cannot_end_on(self):
         """Test that units can traverse DEBRIS_AND_STATUARY but cannot end moves on it."""
@@ -1083,7 +1085,7 @@ class TestCollisionDetection:
         # In this scenario, the path should go through the enemy
         # (In a real game, this would trigger Desperate Escape tests)
         if path_through_enemy:
-            print(f"ðŸ” DEBUG: Desperate Escape test required - model moved through enemy")
+            logger.debug(f"ðŸ” DEBUG: Desperate Escape test required - model moved through enemy")
 
         # The key test: fall back is valid but may require Desperate Escape
         assert result['distance'] <= 6.0, "Fall back distance should be within limit"

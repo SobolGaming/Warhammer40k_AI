@@ -13,6 +13,8 @@ import codecs
 import re
 import unicodedata
 import uuid
+import logging
+logger = logging.getLogger(__name__)
 
 
 # Define custom exception for validation errors
@@ -2058,7 +2060,7 @@ class Army:
         self.validate_dreadblades()
         self.validate_cult_of_dark_gods()
         self.validate_allies()
-        print("Army is valid and ready for battle!")
+        logger.info("Army is valid and ready for battle!")
 
     def get_active_units(self) -> List[Unit]:
         active = []
@@ -2672,7 +2674,7 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
     # Start parsing units at the first section header we recognize (more robust than fixed offsets).
     start_index = _first_section_index(stripped)
 
-    print(f"Parsing army: {faction_keyword} - {detachment_type} ({points_limit} points)")
+    logger.info(f"Parsing army: {faction_keyword} - {detachment_type} ({points_limit} points)")
 
     # Create the Army object
     army = Army(faction=faction_keyword, detachment_type=detachment_type, points_limit=points_limit)
@@ -2681,10 +2683,10 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
     faction_id = get_faction_id_from_name(faction_keyword)
     _assert_supported_faction(faction_keyword, faction_id)
     if faction_id:
-        print(f"Using faction ID: {faction_id} for datasheet lookups")
+        logger.info(f"Using faction ID: {faction_id} for datasheet lookups")
         army.faction_id = faction_id
     else:
-        print(f"Warning: Could not determine faction ID for '{faction_keyword}', using generic lookup")
+        logger.warning(f"Warning: Could not determine faction ID for '{faction_keyword}', using generic lookup")
     army.configure_rule_managers()
 
     current_unit = None
@@ -2732,14 +2734,14 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
             if faction_id:
                 datasheet = waha_helper.get_full_datasheet_info_by_name(unit_name, faction_id=faction_id)
                 if not datasheet:
-                    print(f"Warning: Faction-specific datasheet not found for {unit_name} (faction: {faction_id})")
+                    logger.warning(f"Warning: Faction-specific datasheet not found for {unit_name} (faction: {faction_id})")
             else:
                 datasheet = waha_helper.get_full_datasheet_info_by_name(unit_name)
             
             if datasheet:
                 current_unit = Unit(datasheet)
             else:
-                print(f"Warning: Datasheet not found for {unit_name}")
+                logger.warning(f"Warning: Datasheet not found for {unit_name}")
 
         elif _is_bullet_line(line):
             data = _strip_bullet(line)
@@ -2749,7 +2751,7 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
                 enhancement_name = data.split(':', 1)[1].strip()
                 current_enhancement = waha_helper.get_enhancement_by_name(enhancement_name)
                 if not current_enhancement:
-                    print(f"Warning: Enhancement not found for {enhancement_name}")
+                    logger.warning(f"Warning: Enhancement not found for {enhancement_name}")
             elif data.lower().startswith('daemonic allegiance:'):
                 allegiance = data.split(':', 1)[1].strip()
                 current_unit.daemonic_allegiance = allegiance
@@ -2777,7 +2779,7 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
     if current_unit:
         add_unit_to_army(army, current_unit, current_model_count, current_wargear, current_enhancement, waha_helper, is_warlord)
 
-    print(f"Finished parsing. Total units: {len(army.units)}")
+    logger.info(f"Finished parsing. Total units: {len(army.units)}")
     return army
 
 
@@ -2874,11 +2876,11 @@ def add_unit_to_army(army: Army, unit: Unit, model_count: int, wargear_dict: Dic
                     if matching_ability:
                         unit.add_ability(matching_ability, model_name)
                     else:
-                        print(f"Warning: {gear_name} not found in {unit.name}'s possible wargear or abilities.")
+                        logger.warning(f"Warning: {gear_name} not found in {unit.name}'s possible wargear or abilities.")
                         for gear in unit.possible_wargear:
-                            print(f"  - {gear.name}")
+                            logger.info(f"  - {gear.name}")
                         for ability in unit.possible_abilities:
-                            print(f"  - {ability.name} (Ability Wargear)")
+                            logger.info(f"  - {ability.name} (Ability Wargear)")
 
     # Apply Daemonic Allegiance selection (keyword + wargear) if present.
     unit.apply_daemonic_allegiance_selection()
@@ -2902,22 +2904,22 @@ def add_unit_to_army(army: Army, unit: Unit, model_count: int, wargear_dict: Dic
 if __name__ == "__main__":
     waha_helper = WahaHelper()
     army = parse_army_list("army_lists/warhammer_app_dump.txt", waha_helper)
-    print(f"Parsed army: {army.faction_keyword} - {army.detachment_type}")
-    print(f"Total points: {army.get_total_points()} out of {army.points_limit}")
-    print(f"Number of units: {len(army.units)}")
+    logger.info(f"Parsed army: {army.faction_keyword} - {army.detachment_type}")
+    logger.info(f"Total points: {army.get_total_points()} out of {army.points_limit}")
+    logger.info(f"Number of units: {len(army.units)}")
     for unit in army.units:
-        print(f"- {unit.name} ({unit.get_unit_cost()} points)")
+        logger.info(f"- {unit.name} ({unit.get_unit_cost()} points)")
         for model in unit.models:
-            print(f"  - {model.name} {'(Warlord)' if unit.is_warlord else ''}")
+            logger.info(f"  - {model.name} {'(Warlord)' if unit.is_warlord else ''}")
             for wargear in model.wargear:
                 if wargear:
-                    print(f"    - {wargear.name}")
+                    logger.info(f"    - {wargear.name}")
             if hasattr(model, 'optional_wargear'):
                 for wargear_option in model.optional_wargear:
-                    print(f"    - {model.get_optional_wargear_by_name(wargear_option).name}")
+                    logger.info(f"    - {model.get_optional_wargear_by_name(wargear_option).name}")
             for ability in model.abilities.keys():
                 if ability:
-                    print(f"    - {ability} (Ability Wargear)")
+                    logger.info(f"    - {ability} (Ability Wargear)")
             if unit.enhancement:
-                print(f"    - Enhancement: {unit.enhancement.name}")
+                logger.info(f"    - Enhancement: {unit.enhancement.name}")
     army.validate()
