@@ -69,6 +69,18 @@ def _norm(text: str) -> str:
     return re.sub(r"\s+", " ", t).strip()
 
 
+def _canon_stratagem_name(value: str) -> str:
+    text = str(value or "")
+    text = text.replace("\u2019", "'").replace("\u2018", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    return text.upper()
+
+
+IMPLEMENTED_STRATAGEM_NAMES_CANONICAL = {
+    _canon_stratagem_name(item) for item in IMPLEMENTED_STRATAGEM_NAMES
+}
+
+
 def _norm_rules_text(text: str) -> str:
     t = _strip_html(text or "")
     t = t.replace("\u2019", "'").replace("\u0192?T", "'")
@@ -7673,7 +7685,7 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
 
 
 def _stratagem_support(name: str, description: str = "") -> Tuple[str, str, str]:
-    name_u = (name or "").strip().upper()
+    name_u = _canon_stratagem_name(name)
     notes = {
         "COMMAND RE-ROLL": "Queued on roll; executes reroll callback; once-per-phase rule enforced.",
         "COUNTER-OFFENSIVE": "Fight phase: select a unit to fight next after enemy unit fights.",
@@ -7749,6 +7761,12 @@ def _stratagem_support(name: str, description: str = "") -> Tuple[str, str, str]
         "DEADLY DEBUT": "Fight phase: DRUKHARI unit that charged and has not fought gains melee Lethal Hits; WYCHES units also gain +1 AP on melee weapons until end of phase.",
         "FEIGNED WEAKNESS": "Movement phase: DRUKHARI unit that Fell Back can shoot and charge this turn.",
         "PRETERNATURAL AGILITY": "Start of Movement/Charge phase: WYCH CULT unit can ignore move/advance/charge modifiers this phase and can move through models on Normal/Advance/Charge moves until end of turn.",
+        "BALEFUL BLESSING": "Any phase reaction after a HERETIC ASTARTES unit is allocated a mortal wound: that unit gains Feel No Pain 5+ against mortal wounds until end of phase.",
+        "MUTATION'S CURSE": "Shooting phase: HERETIC ASTARTES PSYKER unit selects one visible enemy within 12\" and deals mortal wounds on a D6 table (1 -> 1, 2-4 -> D3, 5-6 -> 2D3).",
+        "NO REST IN DEATH": "Movement phase: HERETIC ASTARTES unit within 9\" of a friendly Psyker/Daemon Prince source either heals one model by D3+1 or, if BATTLELINE, returns up to D3 destroyed non-CHARACTER models.",
+        "SHROUD OF CHAOS": "Start of opponent Shooting phase: selected HERETIC ASTARTES Psyker/Daemon Prince source projects a 6\" Stealth aura to friendly HERETIC ASTARTES units until end of phase.",
+        "SOULSEEKERS": "Shooting phase: selected HERETIC ASTARTES unit that has not been selected to shoot gains [IGNORES COVER] on ranged weapons until end of phase.",
+        "UNHOLY HASTE": "Charge phase: selected HERETIC ASTARTES INFANTRY unit that has not attempted a charge can declare a charge after Advancing until end of phase.",
         "INCESSANT VIOLENCE": "Fight phase: consolidate up to 6\" if the unit can end in Engagement Range.",
         "UNYIELDING FORMS": "Shooting/Fight phase: NECRONS VEHICLE/MOUNTED (non-TITANIC) targeted unit gets -1 to wound if S>T until end of phase.",
         "MERCILESS RECLAMATION": "Shooting/Fight phase: NECRONS (non-TITANIC) unit not yet acted gets +1 to wound vs targets within objective range.",
@@ -7793,7 +7811,7 @@ def _stratagem_support(name: str, description: str = "") -> Tuple[str, str, str]
         "SANCTIFIED KILL ZONE": "Shooting/Fight phase: targeted GREY KNIGHTS unit wholly within Hallowed Ground gains wound re-rolls (re-roll 1s, or full wound re-rolls for PURIFIER SQUAD) until end of phase.",
     }
 
-    if name_u in IMPLEMENTED_STRATAGEM_NAMES:
+    if name_u in IMPLEMENTED_STRATAGEM_NAMES_CANONICAL:
         return ("Implemented", notes.get(name_u, "Implemented in engine."), name_u)
     spec = parse_defensive_reaction_stratagem(name, description or "")
     if spec:

@@ -9,6 +9,7 @@ from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL
 from ..utility.entity_ids import get_entity_id
 from .stratagems_aeldari import AeldariStratagemMixin
 from .stratagems_chaos_daemons import ChaosDaemonsStratagemMixin
+from .stratagems_chaos_space_marines import ChaosSpaceMarinesStratagemMixin
 from .stratagem_descriptors import get_stratagem_tool_descriptor
 from .stratagems_chaos_knights import ChaosKnightsStratagemMixin
 from .stratagems_necrons import NecronsStratagemMixin
@@ -137,6 +138,12 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "OVERWHELMING GENEROSITY",
     "CREEPING BLIGHT",
     "PUTRID DETONATION",
+    "BALEFUL BLESSING",
+    "MUTATION'S CURSE",
+    "NO REST IN DEATH",
+    "SHROUD OF CHAOS",
+    "SOULSEEKERS",
+    "UNHOLY HASTE",
     "PRETERNATURAL AGILITY",
 }
 
@@ -210,6 +217,8 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "FLAMES OF SANCTITY",
     "REPELLING SPHERE",
     "PUTRID DETONATION",
+    "BALEFUL BLESSING",
+    "SHROUD OF CHAOS",
 }
 
 
@@ -917,6 +926,7 @@ class Stratagem:
 
 
 class StratagemManager(
+    ChaosSpaceMarinesStratagemMixin,
     WorldEatersStratagemMixin,
     GreyKnightsStratagemMixin,
     ChaosKnightsStratagemMixin,
@@ -1083,6 +1093,8 @@ class StratagemManager(
 
         if names & {"SUMMONED BY SLAUGHTER", "PUTRID DETONATION"}:
             add("model_destroyed_before_removal", self._on_model_destroyed_before_removal)
+        if "BALEFUL BLESSING" in names:
+            add("mortal_wound_allocated", self._on_mortal_wound_allocated)
 
         if "FIRE AND FADE" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_fire_and_fade)
@@ -2082,6 +2094,31 @@ class StratagemManager(
                 result["available"] = True
                 result["reason"] = None
                 return result
+        if name_u == "SOULSEEKERS":
+            if self._cabal_soulseekers_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+        if name_u == "UNHOLY HASTE":
+            if self._cabal_unholy_haste_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+        if name_u == "NO REST IN DEATH":
+            if self._cabal_no_rest_in_death_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+        if name_u == "MUTATION'S CURSE":
+            if self._cabal_mutations_curse_source_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+        if name_u == "SHROUD OF CHAOS":
+            if self._cabal_shroud_of_chaos_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
         if stratagem.can_use(self.player, self.game, **context):
             result["available"] = True
             result["reason"] = None
@@ -2119,6 +2156,12 @@ class StratagemManager(
             "DEADLY DEBUT": "Target: DRUKHARI unit that charged and has not fought",
             "FEIGNED WEAKNESS": "Target: DRUKHARI unit that Fell Back",
             "PRETERNATURAL AGILITY": "Target: WYCH CULT unit",
+            "BALEFUL BLESSING": "Target: HERETIC ASTARTES unit after a mortal wound is allocated to it",
+            "MUTATION'S CURSE": "Target: HERETIC ASTARTES PSYKER unit; select one visible enemy unit within 12\"",
+            "NO REST IN DEATH": "Target: HERETIC ASTARTES unit within 9\" of friendly Psyker/Daemon Prince source",
+            "SHROUD OF CHAOS": "Target: HERETIC ASTARTES PSYKER/DAEMON PRINCE source unit",
+            "SOULSEEKERS": "Target: HERETIC ASTARTES unit that has not been selected to shoot",
+            "UNHOLY HASTE": "Target: HERETIC ASTARTES INFANTRY unit that has not been selected to charge",
             "UNBRIDLED CARNAGE": "Target: ORKS unit (not yet fought)",
             "ORKS IS NEVER BEATEN": "Target: ORKS unit (fight on death)",
             "ERE WE GO": "Target: ORKS INFANTRY unit",
@@ -2656,6 +2699,10 @@ class StratagemManager(
             raise
         try:
             self._queue_world_eaters_possessed_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_cabal_of_chaos_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -4073,6 +4120,11 @@ class StratagemManager(
         # World Eaters (Cult of Blood): phase-end cleanup.
         try:
             self._cleanup_world_eaters_cult_phase_end_effects(phase=phase)
+        except Exception:
+            raise
+        # Chaos Space Marines (Cabal of Chaos): phase-end cleanup.
+        try:
+            self._cleanup_cabal_of_chaos_phase_end_effects(phase=phase)
         except Exception:
             raise
         # Chaos Daemons: Warp Surge (expires at end of Charge phase).
@@ -8153,6 +8205,24 @@ class StratagemManager(
             'reroll': reroll,
         })
 
+    def _on_mortal_wound_allocated(
+        self,
+        target_unit=None,
+        attacker_unit=None,
+        target_model=None,
+        phase_name: str = "",
+        **_kwargs,
+    ) -> None:
+        try:
+            self._queue_cabal_of_chaos_mortal_wound_reaction(
+                target_unit=target_unit,
+                attacker_unit=attacker_unit,
+                target_model=target_model,
+                phase_name=phase_name,
+            )
+        except Exception:
+            raise
+
     def _on_model_destroyed(
         self,
         attacker_model=None,
@@ -11169,6 +11239,9 @@ class StratagemManager(
         cult_result = self._use_world_eaters_cult_stratagem(s, **kwargs)
         if cult_result is not None:
             return cult_result
+        cabal_result = self._use_chaos_space_marines_cabal_stratagem(s, **kwargs)
+        if cabal_result is not None:
+            return cabal_result
 
         # Rage-cursed Onslaught: RED WRATH (advance then shoot/charge choice; Red Thirst for both)
         if s.name.upper() == "RED WRATH":
@@ -16967,6 +17040,8 @@ class StratagemManager(
                     trigger_label = "Trigger: roll made"
                 elif r.get("event") == "battle_shock_test_started":
                     trigger_label = "Trigger: battle-shock test"
+                elif r.get("event") == "mortal_wound_allocated":
+                    trigger_label = "Trigger: mortal wound allocated"
                 elif r.get("event") == "phase_end":
                     trigger_label = "Trigger: phase end"
             except Exception:

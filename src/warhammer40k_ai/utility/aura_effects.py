@@ -1821,6 +1821,30 @@ def get_aura_stealth(target_unit, *, game_map=None) -> tuple[bool, tuple[str, ..
     applied_aura_names: set[str] = set()
     reasons: list[str] = []
 
+    # Cabal of Chaos: SHROUD OF CHAOS (Aura) from an affected source unit.
+    explicit_key = _norm_name("Shroud of Chaos (Aura)")
+    if bool(getattr(target_unit, "has_any_keyword", lambda *_a, **_k: False)("HERETIC ASTARTES")):
+        seen_roots: set[str] = set()
+        for source in list(game_map.get_friendly_units(target_unit)):
+            try:
+                root = source.get_attached_unit_root() if hasattr(source, "get_attached_unit_root") else source
+            except Exception:
+                root = source
+            root_key = str(get_entity_id(root) or "")
+            if root_key and root_key in seen_roots:
+                continue
+            if root_key:
+                seen_roots.add(root_key)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict) or not sr.get("shroud_of_chaos_aura_active"):
+                continue
+            if not _unit_within_aura_range(root, target_unit, 6.0):
+                continue
+            if explicit_key not in applied_aura_names:
+                applied_aura_names.add(explicit_key)
+                reasons.append("Aura: Stealth from Shroud of Chaos (Aura)")
+            return True, tuple(reasons)
+
     for source in list(game_map.get_friendly_units(target_unit)):
         for ab in _iter_possible_abilities(source):
             spec = _parse_stealth_aura(ab)

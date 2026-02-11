@@ -563,6 +563,85 @@ _WARPBANE_TASK_FORCE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _WARPBANE_TASK_FORCE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_CABAL_OF_CHAOS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010152002": StratagemToolDescriptor(
+        stratagem_id="000010152002",
+        name="Baleful Blessing",
+        timing="any_phase_after_mortal_wound_allocated",
+        target="heretic_astartes_unit_allocated_mortal_wound",
+        duration="until_end_of_phase",
+        effect="fnp_vs_mortal_wounds",
+        cp_cost=1,
+        effect_params={"fnp": 5},
+    ),
+    "000010152004": StratagemToolDescriptor(
+        stratagem_id="000010152004",
+        name="Mutation's Curse",
+        timing="shooting_phase",
+        target="heretic_astartes_psyker_unit",
+        duration="immediate",
+        effect="visible_enemy_within_range_mortal_wounds",
+        cp_cost=1,
+        range_in=12.0,
+        effect_params={
+            "roll_table": {
+                "1": 1,
+                "2-4": "D3",
+                "5-6": "2D3",
+            }
+        },
+    ),
+    "000010152003": StratagemToolDescriptor(
+        stratagem_id="000010152003",
+        name="No Rest in Death",
+        timing="movement_phase",
+        target="heretic_astartes_unit_within_9_of_psyker_or_daemon_prince_source",
+        duration="immediate",
+        effect="heal_or_return_models",
+        cp_cost=1,
+        range_in=9.0,
+        effect_params={
+            "heal_roll": "D3+1",
+            "battleline_return_roll": "D3",
+            "battleline_excludes_character": True,
+            "choice": ["heal", "return_models"],
+        },
+    ),
+    "000010152007": StratagemToolDescriptor(
+        stratagem_id="000010152007",
+        name="Shroud of Chaos",
+        timing="start_of_opponent_shooting_phase",
+        target="heretic_astartes_psyker_or_daemon_prince_unit",
+        duration="until_end_of_phase",
+        effect="grant_stealth_aura",
+        cp_cost=1,
+        range_in=6.0,
+        effect_params={"aura_target_keyword": "HERETIC ASTARTES"},
+    ),
+    "000010152005": StratagemToolDescriptor(
+        stratagem_id="000010152005",
+        name="Soulseekers",
+        timing="shooting_phase_on_select_to_shoot",
+        target="heretic_astartes_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="ignore_cover",
+        cp_cost=1,
+    ),
+    "000010152006": StratagemToolDescriptor(
+        stratagem_id="000010152006",
+        name="Unholy Haste",
+        timing="charge_phase",
+        target="heretic_astartes_infantry_unit_not_yet_selected_to_charge",
+        duration="until_end_of_phase",
+        effect="charge_after_advance",
+        cp_cost=1,
+    ),
+}
+
+_CABAL_OF_CHAOS_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _CABAL_OF_CHAOS_STRATAGEM_DESCRIPTORS.values()
+}
+
 
 def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> Optional[StratagemToolDescriptor]:
     if stratagem_id:
@@ -590,6 +669,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _WARPBANE_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _CABAL_OF_CHAOS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
     key = _normalize_name(name)
     if not key:
         return None
@@ -602,4 +684,5 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _VESSELS_OF_WRATH_STRATAGEM_BY_NAME.get(key)
         or _CULT_OF_BLOOD_STRATAGEM_BY_NAME.get(key)
         or _WARPBANE_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
+        or _CABAL_OF_CHAOS_STRATAGEM_BY_NAME.get(key)
     )

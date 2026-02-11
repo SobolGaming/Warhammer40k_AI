@@ -13120,6 +13120,40 @@ class WargearProfile:
                 target_model.wounds -= final_damage
             except Exception:
                 pass
+
+        # Stratagem trigger support: publish an event whenever a mortal wound is allocated.
+        if is_mortal:
+            try:
+                target_unit = getattr(target_model, "parent_unit", None)
+                attacker_unit = getattr(attacker, "parent_unit", None)
+                game = None
+                if target_unit is not None:
+                    target_army = target_unit.get_parent_army() if hasattr(target_unit, "get_parent_army") else None
+                    game = getattr(getattr(target_army, "player", None), "game", None)
+                if game is None and attacker_unit is not None:
+                    attacker_army = attacker_unit.get_parent_army() if hasattr(attacker_unit, "get_parent_army") else None
+                    game = getattr(getattr(attacker_army, "player", None), "game", None)
+                if game is not None and hasattr(game, "event_system"):
+                    phase_key = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    phase_name_map = {
+                        "COMMAND_PHASE": "Command phase",
+                        "MOVEMENT_PHASE": "Movement phase",
+                        "SHOOTING_PHASE": "Shooting phase",
+                        "CHARGE_PHASE": "Charge phase",
+                        "FIGHT_PHASE": "Fight phase",
+                    }
+                    phase_name = phase_name_map.get(phase_key, phase_key.title().replace("_", " ")) if phase_key else ""
+                    game.event_system.publish(
+                        "mortal_wound_allocated",
+                        attacker_model=attacker,
+                        attacker_unit=attacker_unit,
+                        target_model=target_model,
+                        target_unit=target_unit,
+                        weapon_profile=self,
+                        phase_name=phase_name,
+                    )
+            except Exception:
+                pass
         
         # Handle model death
         try:
