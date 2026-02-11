@@ -2268,6 +2268,36 @@ class PositioningMixin:
         except Exception:
             pass
         try:
+            if self._attached_unit_has_active_enhancement(
+                "enhancement_mind_blade",
+                enhancement_id="000010151004",
+                enhancement_name="mind blade",
+            ):
+                source = "Mind Blade"
+                try:
+                    root = self.get_attached_unit_root()
+                except Exception:
+                    root = self
+                try:
+                    members = list(root.get_attached_unit_members() or [])
+                except Exception:
+                    members = [root]
+                if not members:
+                    members = [root]
+                for member in members:
+                    sr = getattr(member, "special_rules", None)
+                    if not isinstance(sr, dict):
+                        continue
+                    if not sr.get("enhancement_mind_blade"):
+                        continue
+                    source = str(sr.get("enhancement_mind_blade_source", "") or "").strip() or "Mind Blade"
+                    break
+                rules = list(rules or []) + [
+                    {"attack_type": "melee", "keyword": "LANCE", "source": source}
+                ]
+        except Exception:
+            pass
+        try:
             root = self.get_attached_unit_root()
             sr = getattr(root, "special_rules", None)
             if isinstance(sr, dict) and sr.get("aetherstride_sustained_hits_d3_active"):

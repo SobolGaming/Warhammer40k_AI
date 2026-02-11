@@ -254,6 +254,49 @@ _AELDARI_GUARDIAN_BATTLEHOST_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _AELDARI_GUARDIAN_BATTLEHOST_DESCRIPTORS.values()
 }
 
+_CABAL_OF_CHAOS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010151002": EnhancementToolDescriptor(
+        enhancement_id="000010151002",
+        name="Touched by the Warp",
+        timing="passive",
+        target="bearer",
+        duration="constant",
+        effect="grant_keyword",
+        effect_params={"keyword": "PSYKER"},
+    ),
+    "000010151003": EnhancementToolDescriptor(
+        enhancement_id="000010151003",
+        name="Eyes of Z'desh",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="grant_scouts",
+        effect_params={"scouts_distance": 6},
+    ),
+    "000010151004": EnhancementToolDescriptor(
+        enhancement_id="000010151004",
+        name="Mind Blade",
+        timing="passive",
+        target="bearer_unit_melee_weapons",
+        duration="constant",
+        effect="grant_weapon_keywords",
+        effect_params={"lance": True},
+    ),
+    "000010151005": EnhancementToolDescriptor(
+        enhancement_id="000010151005",
+        name="Infernal Avatar",
+        timing="passive",
+        target="bearer_melee_weapons",
+        duration="constant",
+        effect="bearer_melee_strength_ap_bonus",
+        effect_params={"strength_bonus": 2, "ap_bonus": 1},
+    ),
+}
+
+_CABAL_OF_CHAOS_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _CABAL_OF_CHAOS_DESCRIPTORS.values()
+}
+
 _SPECTACLE_OF_SPITE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010580002": EnhancementToolDescriptor(
         enhancement_id="000010580002",
@@ -727,6 +770,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _AELDARI_GUARDIAN_BATTLEHOST_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _CABAL_OF_CHAOS_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPECTACLE_OF_SPITE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -766,6 +812,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _POSSESSED_SLAUGHTERBAND_BY_NAME.get(key)
         or _VESSELS_OF_WRATH_BY_NAME.get(key)
         or _AELDARI_GUARDIAN_BATTLEHOST_BY_NAME.get(key)
+        or _CABAL_OF_CHAOS_BY_NAME.get(key)
         or _SPECTACLE_OF_SPITE_BY_NAME.get(key)
         or _SLAANESHS_CHOSEN_BY_NAME.get(key)
         or _COTERIE_OF_CONCEITED_BY_NAME.get(key)

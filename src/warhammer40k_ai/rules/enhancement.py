@@ -207,6 +207,7 @@ class Enhancement:
         ac_mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
         orks_mgr = getattr(army, "orks_detachments", None) if army is not None else None
         cd_mgr = getattr(army, "chaos_daemons_detachments", None) if army is not None else None
+        csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
         lov_mgr = getattr(army, "leagues_of_votann_detachments", None) if army is not None else None
         ec_mgr = getattr(army, "emperors_children_detachments", None) if army is not None else None
         if ec_mgr is None and army is not None:
@@ -272,6 +273,10 @@ class Enhancement:
             is_scintillating_legion = bool(cd_mgr and cd_mgr.is_scintillating_legion_detachment())
         except Exception:
             is_scintillating_legion = False
+        try:
+            is_cabal_of_chaos = bool(csm_mgr and csm_mgr.is_cabal_of_chaos())
+        except Exception:
+            is_cabal_of_chaos = False
         try:
             is_hearthband = bool(lov_mgr and lov_mgr.is_hearthband())
         except Exception:
@@ -533,6 +538,53 @@ class Enhancement:
             ) + 1
             unit.special_rules["enhancement_bearer_melee_damage_bonus"] = int(
                 unit.special_rules.get("enhancement_bearer_melee_damage_bonus", 0) or 0
+            ) + 1
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "touched by the warp" or enh_id == "000010151002":
+            if not is_cabal_of_chaos:
+                return
+            unit.special_rules["enhancement_touched_by_the_warp"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+            if bearer is not None:
+                try:
+                    keywords = list(getattr(bearer, "keywords", []) or [])
+                    if "psyker" not in {str(k or "").strip().lower() for k in keywords}:
+                        keywords.append("PSYKER")
+                        bearer.keywords = keywords
+                except Exception:
+                    pass
+
+        if name == "eyes of z'desh" or name == "eyes of z’desh" or enh_id == "000010151003":
+            if not is_cabal_of_chaos:
+                return
+            unit.special_rules["enhancement_eyes_of_zdesh"] = True
+            unit.special_rules["enhancement_scout_distance"] = max(
+                int(unit.special_rules.get("enhancement_scout_distance", 0) or 0),
+                6,
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "mind blade" or enh_id == "000010151004":
+            if not is_cabal_of_chaos:
+                return
+            unit.special_rules["enhancement_mind_blade"] = True
+            unit.special_rules["enhancement_mind_blade_source"] = "Mind Blade"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "infernal avatar" or enh_id == "000010151005":
+            if not is_cabal_of_chaos:
+                return
+            unit.special_rules["enhancement_infernal_avatar"] = True
+            unit.special_rules["enhancement_bearer_melee_strength_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_strength_bonus", 0) or 0
+            ) + 2
+            unit.special_rules["enhancement_bearer_melee_ap_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_ap_bonus", 0) or 0
             ) + 1
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
