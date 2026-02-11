@@ -3361,10 +3361,18 @@ def _unique_model_restriction_support(description: str) -> Optional[Tuple[str, s
     norm = _norm_rules_text(description)
     if not norm:
         return None
-    pattern = r"(?:unless otherwise stated )?you cannot include more than one of this (?:model|unit) in your army"
-    if not re.fullmatch(pattern, norm):
-        return None
-    return ("Supported", "Army validation enforces unique inclusion for this model.")
+    this_model_pattern = r"(?:unless otherwise stated )?you cannot include more than one of this (?:model|unit) in your army"
+    if re.fullmatch(this_model_pattern, norm):
+        return ("Supported", "Army validation enforces unique inclusion for this model.")
+
+    named_unit_pattern = (
+        r"your army cannot include more than "
+        r"(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve) "
+        r".+ units?"
+    )
+    if re.fullmatch(named_unit_pattern, norm):
+        return ("Supported", "Army validation enforces named-unit inclusion caps.")
+    return None
 
 
 def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
