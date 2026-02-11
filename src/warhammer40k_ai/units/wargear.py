@@ -783,6 +783,50 @@ class WargearProfile:
         except Exception:
             return False
 
+    def _world_eaters_cult_monster_titanic_proximity_applies(self, unit: Optional['Unit']) -> bool:
+        if unit is None:
+            return False
+        try:
+            root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+        except Exception:
+            root = unit
+        if root is None:
+            return False
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+        checker = getattr(mgr, "cult_of_blood_within_monster_or_titanic_range", None) if mgr is not None else None
+        if not callable(checker):
+            return False
+        try:
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        except Exception:
+            game = None
+        game_map = getattr(game, "map", None) if game is not None else None
+        try:
+            return bool(checker(root, game_map=game_map))
+        except Exception:
+            return False
+
+    def _world_eaters_cult_bloody_vengeance_applies(self, attacker_unit: Optional['Unit'], target_unit: Optional['Unit']) -> bool:
+        if attacker_unit is None or target_unit is None:
+            return False
+        try:
+            army = attacker_unit.get_parent_army()
+        except Exception:
+            army = None
+        player = getattr(army, "player", None) if army is not None else None
+        stratagems = getattr(player, "stratagems", None) if player is not None else None
+        check = getattr(stratagems, "cult_bloody_vengeance_applies", None) if stratagems is not None else None
+        if not callable(check):
+            return False
+        try:
+            return bool(check(attacker_unit, target_unit))
+        except Exception:
+            return False
+
     def _possessed_daemonic_strength_damage_bonus(
         self,
         attacker: Optional['Model'],
@@ -6727,6 +6771,32 @@ class WargearProfile:
                     reroll_value_reasons.append(f"{source}: re-roll Hit rolls of {shown}")
                 if bool(rule.get("reroll_full", False)):
                     reroll_full_reasons.append(f"{source}: re-roll Hit roll")
+        except Exception:
+            pass
+        # World Eaters (Cult of Blood): Fail Not the Blood God.
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            sr = getattr(unit, "special_rules", None) if unit is not None else None
+            if isinstance(sr, dict) and sr.get("cult_fail_not_blood_god_active"):
+                apply_bonus = True
+                exp = str(sr.get("cult_fail_not_blood_god_expires_phase", "") or "").strip().upper()
+                if exp:
+                    phase_key = self._resolve_phase_key(attacker_unit=unit, target_unit=target)
+                    if phase_key and phase_key != exp:
+                        apply_bonus = False
+                if apply_bonus:
+                    if self._world_eaters_cult_monster_titanic_proximity_applies(unit):
+                        reroll_full_reasons.append("Fail Not the Blood God")
+                    else:
+                        reroll_hit_values.add(1)
+                        reroll_value_reasons.append("Fail Not the Blood God: re-roll Hit roll of 1")
+        except Exception:
+            pass
+        # World Eaters (Cult of Blood): Bloody Vengeance.
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            if self._world_eaters_cult_bloody_vengeance_applies(unit, target):
+                reroll_full_reasons.append("Bloody Vengeance")
         except Exception:
             pass
         # Grey Knights: Hallowed Ground (Warpbane Task Force) hit rerolls.
@@ -12820,6 +12890,22 @@ class WargearProfile:
                 val = int(entry.get("value", 0) or 0)
                 if val:
                     fnp_abilities.append((val, None))
+        except Exception:
+            pass
+        # World Eaters (Cult of Blood): In the Shadow of Brass Idols.
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            sr = getattr(t_unit, "special_rules", None) if t_unit is not None else None
+            if isinstance(sr, dict) and sr.get("cult_shadow_brass_idols_active"):
+                apply_bonus = True
+                exp = str(sr.get("cult_shadow_brass_idols_expires_phase", "") or "").strip().upper()
+                if exp:
+                    phase_key = self._resolve_phase_key(attacker_unit=getattr(attacker, "parent_unit", None), target_unit=t_unit)
+                    if phase_key and phase_key != exp:
+                        apply_bonus = False
+                if apply_bonus:
+                    fnp_value = 5 if self._world_eaters_cult_monster_titanic_proximity_applies(t_unit) else 6
+                    fnp_abilities.append((int(fnp_value), None))
         except Exception:
             pass
 

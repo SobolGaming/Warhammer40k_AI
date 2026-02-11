@@ -29,6 +29,9 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BLESSING OF BURNING BLOOD",
     "BLITZING FIREPOWER",
     "BLOOD OFFERING",
+    "BLOODTHIRSTY HORDE",
+    "BLOODY VENGEANCE",
+    "BRAZEN IDOL",
     "BRAZEN CONTEMPT",
     "DAEMONIC FURY",
     "DAEMONIC STRENGTH",
@@ -36,7 +39,9 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "DEFIANT TO THE LAST",
     "DEATHLESS DUTY",
     "DEATH ECSTASY",
+    "DRAWN TO THE SLAUGHTER",
     "ASPIRE TO INFAMY",
+    "FAIL NOT THE BLOOD GOD",
     "FRENZIED RESILIENCE",
     "GORY DEDICATION",
     "HORRIFYING VIOLENCE",
@@ -106,6 +111,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "FLICKERING REALITY",
     "IMMORTAL FURY",
     "FURY UNLEASHED",
+    "IN THE SHADOW OF BRASS IDOLS",
     "IMPOSSIBLE ECLIPSE",
     "IMMORTAL FURY",
     "PYROGENESIS",
@@ -133,6 +139,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "BERZERKER\u2019S WRATH",
     "BLESSING OF BURNING BLOOD",
     "BLOOD OFFERING",
+    "BLOODY VENGEANCE",
     "BRAZEN CONTEMPT",
     "CUT DOWN THE WEAK",
     "DEFIANT TO THE LAST",
@@ -162,9 +169,11 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "DELIRIUM UNMADE",
     "ENDLESS PURSUIT OF VIOLENCE",
     "FLICKERING REALITY",
+    "IN THE SHADOW OF BRASS IDOLS",
     "THE REALM OF CHAOS",
     "SUMMONED BY SLAUGHTER",
     "THE FOE FORESEEN",
+    "DRAWN TO THE SLAUGHTER",
     "GORY DEDICATION",
     "UNBOUND ARROGANCE",
     "MEET FORCE WITH FORCE",
@@ -1048,7 +1057,7 @@ class StratagemManager(
         if "FIRES OF COVENANT" in names:
             add("unit_set_up", self._on_unit_set_up)
 
-        if names & {"A GRIM WARNING", "BLOOD OFFERING", "UNBOUND ARROGANCE", "TERRIFYING SPECTACLE"}:
+        if names & {"A GRIM WARNING", "BLOOD OFFERING", "BLOODY VENGEANCE", "DRAWN TO THE SLAUGHTER", "UNBOUND ARROGANCE", "TERRIFYING SPECTACLE"}:
             add("unit_destroyed", self._on_unit_destroyed)
 
         if names & {"SKULLS FOR THE SKULL THRONE!", "FICKLEFIRE", "GORY DEDICATION"}:
@@ -1102,6 +1111,7 @@ class StratagemManager(
             "ARMOUR OF CONTEMPT",
             "THE FOE FORESEEN",
             "BRAZEN CONTEMPT",
+            "IN THE SHADOW OF BRASS IDOLS",
             "BLESSING OF BURNING BLOOD",
             "LIGHTNING-FAST REACTIONS",
             "UNYIELDING FORMS",
@@ -1118,6 +1128,7 @@ class StratagemManager(
             "IMMORTAL FURY",
             "ARMOUR OF CONTEMPT",
             "THE FOE FORESEEN",
+            "IN THE SHADOW OF BRASS IDOLS",
             "BLESSING OF BURNING BLOOD",
             "LIGHTNING-FAST REACTIONS",
             "UNYIELDING FORMS",
@@ -1174,7 +1185,9 @@ class StratagemManager(
         }
         phase_end_cleanup_names = {
             "ASPIRE TO INFAMY",
+            "BLOODTHIRSTY HORDE",
             "BRAZEN CONTEMPT",
+            "FAIL NOT THE BLOOD GOD",
             "GO TO GROUND",
             "SMOKESCREEN",
             "BLITZING FIREPOWER",
@@ -1192,6 +1205,7 @@ class StratagemManager(
             "MERCILESS RECLAMATION",
             "DIMENSIONAL TUNNEL",
             "CHRONOSHIFT",
+            "IN THE SHADOW OF BRASS IDOLS",
             "WARP VISION",
             "UNLEASH BALEFIRE",
             "DAEMONIC INVULNERABILITY",
@@ -2104,6 +2118,12 @@ class StratagemManager(
             "IMMORTAL FURY": "Target: WORLD EATERS POSSESSED unit (defensive reaction)",
             "RAPID MANIFESTATION": "Target: EXALTED EIGHTBOUND unit in Reserves",
             "WARP STALKERS": "Target: WORLD EATERS POSSESSED unit (Movement/Charge phase)",
+            "BLOODTHIRSTY HORDE": "Target: JAKHALS or GOREMONGERS unit in Engagement Range (not fought)",
+            "BLOODY VENGEANCE": "Target: your destroyed WORLD EATERS MONSTER/TITANIC unit; mark destroying enemy",
+            "BRAZEN IDOL": "Target: WORLD EATERS MONSTER/TITANIC unit; choose Idol override",
+            "DRAWN TO THE SLAUGHTER": "Target: your destroyed JAKHALS unit (once per battle)",
+            "FAIL NOT THE BLOOD GOD": "Target: JAKHALS or GOREMONGERS unit",
+            "IN THE SHADOW OF BRASS IDOLS": "Target: JAKHALS or GOREMONGERS unit targeted by enemy attacks",
             "ASPIRE TO INFAMY": "Target: KHORNE BERZERKERS or JAKHALS within 8\" of friendly WORLD EATERS CHARACTER",
             "BRAZEN CONTEMPT": "Target: WORLD EATERS unit targeted by attacking enemy unit",
             "GORY DEDICATION": "Target: WORLD EATERS unit that made melee kills this phase",
@@ -3818,6 +3838,11 @@ class StratagemManager(
             self._cleanup_world_eaters_vessels_phase_end_effects(phase=phase)
         except Exception:
             raise
+        # World Eaters (Cult of Blood): phase-end cleanup.
+        try:
+            self._cleanup_world_eaters_cult_phase_end_effects(phase=phase)
+        except Exception:
+            raise
         # Chaos Daemons: Warp Surge (expires at end of Charge phase).
         try:
             phase_name = getattr(phase, "name", None)
@@ -5526,6 +5551,13 @@ class StratagemManager(
             )
         except Exception:
             raise
+        try:
+            self._queue_world_eaters_cult_shooting_reactions(
+                attacking_unit=attacking_unit,
+                target_units=target_units,
+            )
+        except Exception:
+            raise
         # GO TO GROUND
         try:
             s = self.get_by_name("GO TO GROUND")
@@ -6245,6 +6277,13 @@ class StratagemManager(
             return
         try:
             self._queue_world_eaters_possessed_fight_reactions(
+                attacking_unit=attacking_unit,
+                target_units=target_units,
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_world_eaters_cult_fight_reactions(
                 attacking_unit=attacking_unit,
                 target_units=target_units,
             )
@@ -7908,6 +7947,13 @@ class StratagemManager(
         """
         Faction stratagem reactions that trigger when a unit is destroyed.
         """
+        try:
+            self._queue_world_eaters_cult_unit_destroyed_reactions(
+                unit=unit,
+                destroyed_by_unit=kwargs.get("destroyed_by_unit"),
+            )
+        except Exception:
+            raise
         # EMPEROR'S CHILDREN: track units that destroyed enemies in their Fight phase.
         try:
             destroyed_by_unit = kwargs.get("destroyed_by_unit")
@@ -8232,7 +8278,7 @@ class StratagemManager(
         try:
             tgt = _extract_friendly_target_unit_from_kwargs(kwargs)
             name_u = (s.name or "").strip().upper()
-            if name_u not in ("BLOOD OFFERING", "A GRIM WARNING") and _unit_cannot_be_target_of_stratagem(tgt):
+            if name_u not in ("BLOOD OFFERING", "A GRIM WARNING", "BLOODY VENGEANCE", "DRAWN TO THE SLAUGHTER") and _unit_cannot_be_target_of_stratagem(tgt):
                 if name_u == "INSANE BRAVERY":
                     # Only bypass battle-shock restriction, not embarked restriction.
                     try:
@@ -10261,6 +10307,9 @@ class StratagemManager(
         vessels_result = self._use_world_eaters_vessels_stratagem(s, **kwargs)
         if vessels_result is not None:
             return vessels_result
+        cult_result = self._use_world_eaters_cult_stratagem(s, **kwargs)
+        if cult_result is not None:
+            return cult_result
 
         # Rage-cursed Onslaught: RED WRATH (advance then shoot/charge choice; Red Thirst for both)
         if s.name.upper() == "RED WRATH":

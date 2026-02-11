@@ -2792,3 +2792,882 @@ class WorldEatersStratagemMixin:
         self._goretrack_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
         logger.info(f"INFO: PUNISH THE CRAVEN: {getattr(enemy_root, 'name', 'Enemy')} will take Desperate Escape tests when falling back.")
         return True
+
+    def _is_cult_of_blood(self) -> bool:
+        mgr = self._get_world_eaters_mgr()
+        checker = getattr(mgr, "is_cult_of_blood", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
+    @staticmethod
+    def _cult_unit_has_keyword(unit: Any, keyword: str) -> bool:
+        if unit is None:
+            return False
+        key = str(keyword or "").strip()
+        if not key:
+            return False
+        has_keyword = getattr(unit, "has_keyword", None)
+        if callable(has_keyword) and bool(has_keyword(key)):
+            return True
+        has_any_keyword = getattr(unit, "has_any_keyword", None)
+        if callable(has_any_keyword):
+            return bool(has_any_keyword(key))
+        return False
+
+    def _is_jakhals_unit(self, unit: Any) -> bool:
+        root = self._goretrack_root(unit)
+        if root is None:
+            return False
+        if self._cult_unit_has_keyword(root, "JAKHALS"):
+            return True
+        name = self._possessed_normalized_name(root)
+        return "jakhal" in name
+
+    def _is_jakhals_or_goremongers_unit(self, unit: Any) -> bool:
+        root = self._goretrack_root(unit)
+        if root is None:
+            return False
+        if self._is_jakhals_unit(root):
+            return True
+        if self._cult_unit_has_keyword(root, "GOREMONGERS"):
+            return True
+        name = self._possessed_normalized_name(root)
+        return "goremonger" in name
+
+    def _is_cult_monster_or_titanic_unit(self, unit: Any, *, mgr=None) -> bool:
+        root = self._goretrack_root(unit)
+        if root is None:
+            return False
+        if mgr is None:
+            mgr = self._get_world_eaters_mgr()
+        if not self._is_world_eaters_unit(root, mgr=mgr):
+            return False
+        if bool(getattr(root, "is_monster", False)) or bool(getattr(root, "is_titanic", False)):
+            return True
+        if self._cult_unit_has_keyword(root, "MONSTER"):
+            return True
+        if self._cult_unit_has_keyword(root, "TITANIC"):
+            return True
+        return False
+
+    def _cult_on_battlefield(self, unit: Any) -> bool:
+        root = self._goretrack_root(unit)
+        if root is None:
+            return False
+        if not bool(getattr(root, "deployed", False)):
+            return False
+        if self._is_unit_in_reserves(root):
+            return False
+        if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+            return False
+        return True
+
+    def _cult_battlefield_candidates(
+        self,
+        *,
+        require_target_legal: bool = True,
+        require_not_fought: bool = False,
+        require_jakhals_or_goremongers: bool = False,
+        require_monster_or_titanic: bool = False,
+    ) -> list[Any]:
+        if not self._is_cult_of_blood():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        mgr = self._get_world_eaters_mgr()
+        fight_mgr = getattr(self.game, "fight_phase_manager", None) if self.game is not None else None
+        fought_units = set(getattr(fight_mgr, "fought_units", set()) or [])
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._goretrack_root(unit)
+            if root is None:
+                continue
+            uid = self._goretrack_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._is_unit_alive(root):
+                continue
+            if not self._is_world_eaters_unit(root, mgr=mgr):
+                continue
+            if not self._cult_on_battlefield(root):
+                continue
+            if require_target_legal and not self._is_stratagem_target_legal(root):
+                continue
+            if require_not_fought:
+                round_state = getattr(root, "round_state", None)
+                if bool(getattr(round_state, "fought_this_phase", False)):
+                    continue
+                if root in fought_units:
+                    continue
+            if require_jakhals_or_goremongers and not self._is_jakhals_or_goremongers_unit(root):
+                continue
+            if require_monster_or_titanic and not self._is_cult_monster_or_titanic_unit(root, mgr=mgr):
+                continue
+            candidates.append(root)
+        return sorted(candidates, key=self._goretrack_sort_key)
+
+    def _cult_target_from_kwargs(self, stratagem_name: str, kwargs: dict[str, Any]) -> tuple[Any, list[Any], Any]:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        enemy_unit = kwargs.get("enemy_unit") or kwargs.get("attacking_unit") or kwargs.get("attacker_unit")
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != str(stratagem_name or "").strip().upper():
+                    continue
+                unit = reaction.get("unit") or reaction.get("target_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if enemy_unit is None:
+                    enemy_unit = reaction.get("enemy_unit") or reaction.get("attacking_unit") or reaction.get("attacker_unit")
+                break
+        return unit, candidates, enemy_unit
+
+    def _cult_reaction_already_queued(
+        self,
+        *,
+        event_name: str,
+        stratagem_name: str,
+        phase_name: str,
+        enemy_unit: Any = None,
+        target_unit: Any = None,
+    ) -> bool:
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != str(event_name):
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != str(stratagem_name or "").strip().upper():
+                continue
+            if str(reaction.get("phase_name", "") or "").strip().lower() != str(phase_name or "").strip().lower():
+                continue
+            if enemy_unit is not None and reaction.get("enemy_unit") is not enemy_unit and reaction.get("attacking_unit") is not enemy_unit:
+                continue
+            if target_unit is not None:
+                queued_target = reaction.get("target_unit") or reaction.get("unit")
+                if queued_target is not target_unit:
+                    continue
+            return True
+        return False
+
+    def cult_bloody_vengeance_applies(self, attacker_unit: Any, target_unit: Any) -> bool:
+        root = self._goretrack_root(attacker_unit)
+        target_root = self._goretrack_root(target_unit)
+        if root is None or target_root is None:
+            return False
+        if not self._is_jakhals_or_goremongers_unit(root):
+            return False
+        enemy_ids = getattr(self, "_cult_bloody_vengeance_enemy_ids", set())
+        if not isinstance(enemy_ids, set):
+            return False
+        target_id = self._goretrack_sort_key(target_root)
+        return bool(target_id and target_id in enemy_ids)
+
+    def _queue_world_eaters_cult_shooting_reactions(self, *, attacking_unit: Any, target_units: Any) -> None:
+        if attacking_unit is None or not self._is_cult_of_blood():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        if self._goretrack_owned_by_player(attacking_unit, self.player):
+            return
+        get_current_player = getattr(self.game, "get_current_player", None) if self.game is not None else None
+        active_player = get_current_player() if callable(get_current_player) else None
+        if active_player is self.player:
+            return
+        stratagem = self.get_by_name("IN THE SHADOW OF BRASS IDOLS")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(stratagem.cp_cost or 0):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for target in list(target_units or []):
+            root = self._goretrack_root(target)
+            if root is None:
+                continue
+            uid = self._goretrack_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._goretrack_owned_by_player(root, self.player):
+                continue
+            if not self._is_unit_alive(root):
+                continue
+            if not self._cult_on_battlefield(root):
+                continue
+            if not self._is_jakhals_or_goremongers_unit(root):
+                continue
+            if not self._is_stratagem_target_legal(root):
+                continue
+            candidates.append(root)
+        candidates = sorted(candidates, key=self._goretrack_sort_key)
+        if not candidates:
+            return
+        if self._cult_reaction_already_queued(
+            event_name="shooting_targets_selected",
+            stratagem_name=stratagem.name,
+            phase_name="Shooting phase",
+            enemy_unit=attacking_unit,
+        ):
+            return
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacking_unit,
+            "enemy_unit": attacking_unit,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_world_eaters_cult_fight_reactions(self, *, attacking_unit: Any, target_units: Any) -> None:
+        if attacking_unit is None or not self._is_cult_of_blood():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "fight phase":
+            return
+        if self._goretrack_owned_by_player(attacking_unit, self.player):
+            return
+        stratagem = self.get_by_name("IN THE SHADOW OF BRASS IDOLS")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(stratagem.cp_cost or 0):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for target in list(target_units or []):
+            root = self._goretrack_root(target)
+            if root is None:
+                continue
+            uid = self._goretrack_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._goretrack_owned_by_player(root, self.player):
+                continue
+            if not self._is_unit_alive(root):
+                continue
+            if not self._cult_on_battlefield(root):
+                continue
+            if not self._is_jakhals_or_goremongers_unit(root):
+                continue
+            if not self._is_stratagem_target_legal(root):
+                continue
+            candidates.append(root)
+        candidates = sorted(candidates, key=self._goretrack_sort_key)
+        if not candidates:
+            return
+        if self._cult_reaction_already_queued(
+            event_name="fight_targets_selected",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+            enemy_unit=attacking_unit,
+        ):
+            return
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacking_unit,
+            "enemy_unit": attacking_unit,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
+    def _unit_contains_character_member(self, unit: Any) -> bool:
+        root = self._goretrack_root(unit)
+        if root is None:
+            return False
+        if self._cult_unit_has_keyword(root, "CHARACTER"):
+            return True
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        for member in members:
+            if self._cult_unit_has_keyword(member, "CHARACTER"):
+                return True
+        return False
+
+    def _queue_world_eaters_cult_unit_destroyed_reactions(
+        self,
+        *,
+        unit: Any,
+        destroyed_by_unit: Any = None,
+    ) -> None:
+        if unit is None or not self._is_cult_of_blood():
+            return
+        root = self._goretrack_root(unit)
+        enemy_root = self._goretrack_root(destroyed_by_unit)
+        if root is None:
+            return
+        if not self._goretrack_owned_by_player(root, self.player):
+            return
+        if enemy_root is not None and self._goretrack_owned_by_player(enemy_root, self.player):
+            return
+        phase_name = str(getattr(self, "_current_phase_name", "") or "").strip() or "Any phase"
+        mgr = self._get_world_eaters_mgr()
+
+        bloody = self.get_by_name("BLOODY VENGEANCE")
+        if (
+            bloody is not None
+            and enemy_root is not None
+            and int(getattr(self.player, "command_points", 0) or 0) >= int(bloody.cp_cost or 0)
+            and str(bloody.name or "").strip().upper() not in self._used_stratagems_this_phase
+            and self._is_cult_monster_or_titanic_unit(root, mgr=mgr)
+            and not self._is_unit_alive(root)
+            and not self._cult_reaction_already_queued(
+                event_name="unit_destroyed",
+                stratagem_name=bloody.name,
+                phase_name=phase_name,
+                enemy_unit=enemy_root,
+                target_unit=root,
+            )
+        ):
+            self._queue_reaction(
+                {
+                    "event": "unit_destroyed",
+                    "phase_name": phase_name,
+                    "stratagem": bloody.name,
+                    "cp_cost": bloody.cp_cost,
+                    "unit": root,
+                    "target_unit": root,
+                    "enemy_unit": enemy_root,
+                    "candidates": [root],
+                }
+            )
+
+        drawn = self.get_by_name("DRAWN TO THE SLAUGHTER")
+        if drawn is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(drawn.cp_cost or 0):
+            return
+        if str(drawn.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        if bool(getattr(self, "_cult_drawn_to_slaughter_used", False)):
+            return
+        if self._is_unit_alive(root):
+            return
+        if not self._is_jakhals_unit(root):
+            return
+        if self._unit_contains_character_member(root):
+            return
+        if self._cult_reaction_already_queued(
+            event_name="unit_destroyed",
+            stratagem_name=drawn.name,
+            phase_name=phase_name,
+            target_unit=root,
+        ):
+            return
+        self._queue_reaction(
+            {
+                "event": "unit_destroyed",
+                "phase_name": phase_name,
+                "stratagem": drawn.name,
+                "cp_cost": drawn.cp_cost,
+                "unit": root,
+                "target_unit": root,
+                "candidates": [root],
+            }
+        )
+
+    def _cleanup_world_eaters_cult_phase_end_effects(self, *, phase: Any) -> None:
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_name not in ("SHOOTING_PHASE", "FIGHT_PHASE"):
+            return
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._goretrack_root(unit)
+            if root is None:
+                continue
+            uid = self._goretrack_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if phase_name == "FIGHT_PHASE":
+                exp = str(sr.get("cult_bloodthirsty_horde_expires_phase", "") or "").strip().upper()
+                if sr.get("cult_bloodthirsty_horde_active") and (not exp or exp == "FIGHT_PHASE"):
+                    if bool(sr.get("cult_bloodthirsty_horde_added_fight_within_3")):
+                        sr.pop("fight_within_3", None)
+                    if str(sr.get("fight_within_3_active_source", "") or "").strip() == "Bloodthirsty Horde":
+                        sr.pop("fight_within_3_active", None)
+                        sr.pop("fight_within_3_active_source", None)
+                    for key in (
+                        "cult_bloodthirsty_horde_active",
+                        "cult_bloodthirsty_horde_expires_phase",
+                        "cult_bloodthirsty_horde_turn_owner",
+                        "cult_bloodthirsty_horde_turn",
+                        "cult_bloodthirsty_horde_source",
+                        "cult_bloodthirsty_horde_added_fight_within_3",
+                    ):
+                        sr.pop(key, None)
+                exp = str(sr.get("cult_fail_not_blood_god_expires_phase", "") or "").strip().upper()
+                if sr.get("cult_fail_not_blood_god_active") and (not exp or exp == "FIGHT_PHASE"):
+                    for key in (
+                        "cult_fail_not_blood_god_active",
+                        "cult_fail_not_blood_god_expires_phase",
+                        "cult_fail_not_blood_god_turn_owner",
+                        "cult_fail_not_blood_god_turn",
+                        "cult_fail_not_blood_god_source",
+                    ):
+                        sr.pop(key, None)
+            exp = str(sr.get("cult_shadow_brass_idols_expires_phase", "") or "").strip().upper()
+            if sr.get("cult_shadow_brass_idols_active") and (not exp or exp == phase_name):
+                for key in (
+                    "cult_shadow_brass_idols_active",
+                    "cult_shadow_brass_idols_expires_phase",
+                    "cult_shadow_brass_idols_turn_owner",
+                    "cult_shadow_brass_idols_turn",
+                    "cult_shadow_brass_idols_source",
+                ):
+                    sr.pop(key, None)
+            root.special_rules = sr
+
+    def _parse_idol_key(self, value: Any) -> str:
+        text = str(value or "").strip().upper()
+        if not text:
+            return ""
+        text = text.replace("’", "'")
+        text = text.replace("IDOL OF", "").replace("(AURA)", "").strip()
+        if "INFINITE RAGE" in text:
+            return "INFINITE_RAGE"
+        if "BURNING WRATH" in text:
+            return "BURNING_WRATH"
+        if "BLESSED BLOOD" in text:
+            return "BLESSED_BLOOD"
+        if text in {"INFINITE_RAGE", "BURNING_WRATH", "BLESSED_BLOOD"}:
+            return text
+        return ""
+
+    def _clone_drawn_to_slaughter_unit(self, unit: Any) -> Any:
+        if unit is None:
+            return None
+        clone_hook = getattr(unit, "clone_for_cult_ambush", None)
+        if callable(clone_hook):
+            return clone_hook()
+        try:
+            from ..units.unit import Unit as UnitClass
+        except ImportError:
+            return None
+        datasheet = getattr(unit, "_datasheet", None)
+        if datasheet is None:
+            return None
+        count = int(getattr(unit, "starting_model_count", 0) or 0)
+        if count <= 0:
+            count = len(list(getattr(unit, "models", []) or []))
+        if count <= 0:
+            count = len(list(getattr(unit, "models_lost", []) or []))
+        if count <= 0:
+            return None
+        try:
+            new_unit = UnitClass(datasheet, quantity=count, enhancement=getattr(unit, "enhancement", None))
+        except TypeError:
+            new_unit = UnitClass(datasheet, quantity=count)
+        return new_unit
+
+    def _prepare_drawn_to_slaughter_unit(self, unit: Any) -> bool:
+        if unit is None:
+            return False
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return False
+        set_parent = getattr(unit, "set_parent_army", None)
+        if callable(set_parent):
+            set_parent(army)
+        else:
+            unit.parent_army = army
+        set_reserve = getattr(unit, "set_reserve_status", None)
+        if callable(set_reserve):
+            set_reserve("strategic_reserves")
+        else:
+            unit.reserve_status = "strategic_reserves"
+        mark_midgame = getattr(unit, "mark_entered_reserves_midgame", None)
+        if callable(mark_midgame):
+            mark_midgame(game=self.game)
+        unit.deployed = True
+        unit.reserve_turn_deployed = None
+        unit.arrived_from_reserves_this_turn = False
+        if hasattr(army, "add_unit"):
+            army.add_unit(unit)
+        else:
+            army.units.append(unit)
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        if game_map is not None and hasattr(game_map, "units") and unit in game_map.units:
+            game_map.units.remove(unit)
+        return True
+
+    def _use_world_eaters_cult_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "BLOODTHIRSTY HORDE":
+            return self._use_cult_bloodthirsty_horde(stratagem, **kwargs)
+        if name_u == "BLOODY VENGEANCE":
+            return self._use_cult_bloody_vengeance(stratagem, **kwargs)
+        if name_u == "BRAZEN IDOL":
+            return self._use_cult_brazen_idol(stratagem, **kwargs)
+        if name_u == "DRAWN TO THE SLAUGHTER":
+            return self._use_cult_drawn_to_slaughter(stratagem, **kwargs)
+        if name_u == "FAIL NOT THE BLOOD GOD":
+            return self._use_cult_fail_not_the_blood_god(stratagem, **kwargs)
+        if name_u == "IN THE SHADOW OF BRASS IDOLS":
+            return self._use_cult_in_the_shadow_of_brass_idols(stratagem, **kwargs)
+        return None
+
+    def _use_cult_bloodthirsty_horde(self, stratagem: Any, **kwargs) -> bool:
+        unit, candidates, _enemy = self._cult_target_from_kwargs("BLOODTHIRSTY HORDE", kwargs)
+        if unit is None:
+            logger.error("ERROR: BLOODTHIRSTY HORDE: no target unit provided")
+            return False
+        root = self._goretrack_root(unit)
+        if root is None:
+            return False
+        if not self._is_cult_of_blood():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: BLOODTHIRSTY HORDE: wrong phase")
+            return False
+        candidate_ids = self._candidate_ids(candidates)
+        root_id = self._goretrack_sort_key(root)
+        if candidate_ids and root_id not in candidate_ids:
+            logger.error("ERROR: BLOODTHIRSTY HORDE: target was not selected")
+            return False
+        if not self._goretrack_owned_by_player(root, self.player):
+            logger.error("ERROR: BLOODTHIRSTY HORDE: target unit is not yours")
+            return False
+        if not self._is_unit_alive(root) or not self._cult_on_battlefield(root):
+            return False
+        if not self._is_jakhals_or_goremongers_unit(root):
+            logger.error("ERROR: BLOODTHIRSTY HORDE: target must be JAKHALS or GOREMONGERS")
+            return False
+        round_state = getattr(root, "round_state", None)
+        if bool(getattr(round_state, "fought_this_phase", False)):
+            logger.error("ERROR: BLOODTHIRSTY HORDE: target already fought this phase")
+            return False
+        fight_mgr = getattr(self.game, "fight_phase_manager", None) if self.game is not None else None
+        fought_units = set(getattr(fight_mgr, "fought_units", set()) or [])
+        if root in fought_units:
+            logger.error("ERROR: BLOODTHIRSTY HORDE: target already fought this phase")
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: BLOODTHIRSTY HORDE: target cannot be selected")
+            return False
+        game_map = getattr(self.game, "map", None)
+        if game_map is None:
+            return False
+        engaged = False
+        for enemy in list(game_map.get_enemy_units(root) or []):
+            enemy_root = self._goretrack_root(enemy)
+            if enemy_root is None:
+                continue
+            if not self._is_unit_alive(enemy_root):
+                continue
+            if not bool(getattr(enemy_root, "deployed", True)):
+                continue
+            if game_map.is_within_engagement_range(root, enemy_root):
+                engaged = True
+                break
+        if not engaged:
+            logger.error("ERROR: BLOODTHIRSTY HORDE: target must be within Engagement Range of an enemy unit")
+            return False
+        if not self._goretrack_spend_cp(stratagem, target_unit=root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        if not sr.get("fight_within_3"):
+            sr["fight_within_3"] = [{"name": "Bloodthirsty Horde"}]
+            sr["cult_bloodthirsty_horde_added_fight_within_3"] = True
+        sr["fight_within_3_active"] = True
+        sr["fight_within_3_active_source"] = "Bloodthirsty Horde"
+        sr["cult_bloodthirsty_horde_active"] = True
+        sr["cult_bloodthirsty_horde_expires_phase"] = "FIGHT_PHASE"
+        sr["cult_bloodthirsty_horde_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["cult_bloodthirsty_horde_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["cult_bloodthirsty_horde_source"] = stratagem.name
+        root.special_rules = sr
+        self._goretrack_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(f"INFO: BLOODTHIRSTY HORDE: {getattr(root, 'name', 'Unit')} can fight with models within 3\" this phase.")
+        return True
+
+    def _use_cult_bloody_vengeance(self, stratagem: Any, **kwargs) -> bool:
+        unit, candidates, enemy_unit = self._cult_target_from_kwargs("BLOODY VENGEANCE", kwargs)
+        if unit is None:
+            logger.error("ERROR: BLOODY VENGEANCE: no target unit provided")
+            return False
+        if enemy_unit is None:
+            logger.error("ERROR: BLOODY VENGEANCE: missing enemy unit context")
+            return False
+        root = self._goretrack_root(unit)
+        enemy_root = self._goretrack_root(enemy_unit)
+        if root is None or enemy_root is None:
+            return False
+        if not self._is_cult_of_blood():
+            return False
+        candidate_ids = self._candidate_ids(candidates)
+        root_id = self._goretrack_sort_key(root)
+        if candidate_ids and root_id not in candidate_ids:
+            logger.error("ERROR: BLOODY VENGEANCE: target was not selected")
+            return False
+        if not self._goretrack_owned_by_player(root, self.player):
+            logger.error("ERROR: BLOODY VENGEANCE: target unit is not yours")
+            return False
+        if self._goretrack_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: BLOODY VENGEANCE: enemy context is invalid")
+            return False
+        if self._is_unit_alive(root):
+            logger.error("ERROR: BLOODY VENGEANCE: target unit was not destroyed")
+            return False
+        if not self._is_cult_monster_or_titanic_unit(root):
+            logger.error("ERROR: BLOODY VENGEANCE: target must be a WORLD EATERS MONSTER or TITANIC unit")
+            return False
+        enemy_id = self._goretrack_sort_key(enemy_root)
+        if not enemy_id:
+            return False
+        if not self._goretrack_spend_cp(stratagem, target_unit=root):
+            return False
+        if not isinstance(getattr(self, "_cult_bloody_vengeance_enemy_ids", None), set):
+            self._cult_bloody_vengeance_enemy_ids = set()
+        self._cult_bloody_vengeance_enemy_ids.add(enemy_id)
+        self._goretrack_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            f"INFO: BLOODY VENGEANCE: JAKHALS/GOREMONGERS can re-roll Hit rolls against {getattr(enemy_root, 'name', 'Enemy')} for the battle."
+        )
+        return True
+
+    def _use_cult_brazen_idol(self, stratagem: Any, **kwargs) -> bool:
+        unit, candidates, _enemy = self._cult_target_from_kwargs("BRAZEN IDOL", kwargs)
+        if unit is None:
+            logger.error("ERROR: BRAZEN IDOL: no target unit provided")
+            return False
+        root = self._goretrack_root(unit)
+        if root is None:
+            return False
+        if not self._is_cult_of_blood():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "command phase":
+            logger.error("ERROR: BRAZEN IDOL: wrong phase")
+            return False
+        get_current_player = getattr(self.game, "get_current_player", None) if self.game is not None else None
+        active_player = get_current_player() if callable(get_current_player) else None
+        if active_player is not self.player:
+            logger.error("ERROR: BRAZEN IDOL: not your turn")
+            return False
+        if bool(getattr(self, "_cult_brazen_idol_used", False)):
+            logger.error("ERROR: BRAZEN IDOL: already used this battle")
+            return False
+        candidate_ids = self._candidate_ids(candidates)
+        root_id = self._goretrack_sort_key(root)
+        if candidate_ids and root_id not in candidate_ids:
+            logger.error("ERROR: BRAZEN IDOL: target was not selected")
+            return False
+        if not self._goretrack_owned_by_player(root, self.player):
+            logger.error("ERROR: BRAZEN IDOL: target unit is not yours")
+            return False
+        if not self._is_unit_alive(root) or not self._cult_on_battlefield(root):
+            return False
+        if not self._is_cult_monster_or_titanic_unit(root):
+            logger.error("ERROR: BRAZEN IDOL: target must be a WORLD EATERS MONSTER or TITANIC unit")
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: BRAZEN IDOL: target cannot be selected")
+            return False
+        mgr = self._get_world_eaters_mgr()
+        if mgr is None:
+            return False
+        idol_key = self._parse_idol_key(
+            kwargs.get("idol_key")
+            or kwargs.get("ability_key")
+            or kwargs.get("selected_idol")
+            or kwargs.get("idol")
+        )
+        if not idol_key:
+            logger.error("ERROR: BRAZEN IDOL: missing or invalid idol selection")
+            return False
+        abilities = list(getattr(mgr, "get_idols_of_khorne_abilities", lambda: [])() or [])
+        valid_keys = {str(getattr(ab, "key", "") or "").strip().upper() for ab in abilities}
+        if idol_key not in valid_keys:
+            logger.error("ERROR: BRAZEN IDOL: invalid idol selection")
+            return False
+        activate_source = getattr(mgr, "activate_source_idol_of_khorne", None)
+        if not callable(activate_source):
+            return False
+        if not self._goretrack_spend_cp(stratagem, target_unit=root):
+            return False
+        if not activate_source(root, idol_key):
+            logger.error("ERROR: BRAZEN IDOL: failed to activate source idol override")
+            return False
+        self._cult_brazen_idol_used = True
+        self._goretrack_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(f"INFO: BRAZEN IDOL: {getattr(root, 'name', 'Unit')} now projects {idol_key} until your next Command phase.")
+        return True
+
+    def _use_cult_drawn_to_slaughter(self, stratagem: Any, **kwargs) -> bool:
+        unit, candidates, _enemy = self._cult_target_from_kwargs("DRAWN TO THE SLAUGHTER", kwargs)
+        if unit is None:
+            logger.error("ERROR: DRAWN TO THE SLAUGHTER: no target unit provided")
+            return False
+        root = self._goretrack_root(unit)
+        if root is None:
+            return False
+        if not self._is_cult_of_blood():
+            return False
+        if bool(getattr(self, "_cult_drawn_to_slaughter_used", False)):
+            logger.error("ERROR: DRAWN TO THE SLAUGHTER: already used this battle")
+            return False
+        candidate_ids = self._candidate_ids(candidates)
+        root_id = self._goretrack_sort_key(root)
+        if candidate_ids and root_id not in candidate_ids:
+            logger.error("ERROR: DRAWN TO THE SLAUGHTER: target was not selected")
+            return False
+        if not self._goretrack_owned_by_player(root, self.player):
+            logger.error("ERROR: DRAWN TO THE SLAUGHTER: target unit is not yours")
+            return False
+        if self._is_unit_alive(root):
+            logger.error("ERROR: DRAWN TO THE SLAUGHTER: target unit was not destroyed")
+            return False
+        if not self._is_jakhals_unit(root):
+            logger.error("ERROR: DRAWN TO THE SLAUGHTER: target must be a JAKHALS unit")
+            return False
+        if self._unit_contains_character_member(root):
+            logger.error("ERROR: DRAWN TO THE SLAUGHTER: cannot return destroyed CHARACTER units to Attached units")
+            return False
+        cloned = self._clone_drawn_to_slaughter_unit(root)
+        if cloned is None:
+            logger.error("ERROR: DRAWN TO THE SLAUGHTER: failed to clone destroyed unit")
+            return False
+        if not self._goretrack_spend_cp(stratagem, target_unit=root):
+            return False
+        if not self._prepare_drawn_to_slaughter_unit(cloned):
+            logger.error("ERROR: DRAWN TO THE SLAUGHTER: failed to place cloned unit into Strategic Reserves")
+            return False
+        self._cult_drawn_to_slaughter_used = True
+        self._goretrack_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(f"INFO: DRAWN TO THE SLAUGHTER: added {getattr(cloned, 'name', 'Unit')} to Strategic Reserves at Starting Strength.")
+        return True
+
+    def _use_cult_fail_not_the_blood_god(self, stratagem: Any, **kwargs) -> bool:
+        unit, candidates, _enemy = self._cult_target_from_kwargs("FAIL NOT THE BLOOD GOD", kwargs)
+        if unit is None:
+            logger.error("ERROR: FAIL NOT THE BLOOD GOD: no target unit provided")
+            return False
+        root = self._goretrack_root(unit)
+        if root is None:
+            return False
+        if not self._is_cult_of_blood():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: FAIL NOT THE BLOOD GOD: wrong phase")
+            return False
+        candidate_ids = self._candidate_ids(candidates)
+        root_id = self._goretrack_sort_key(root)
+        if candidate_ids and root_id not in candidate_ids:
+            logger.error("ERROR: FAIL NOT THE BLOOD GOD: target was not selected")
+            return False
+        if not self._goretrack_owned_by_player(root, self.player):
+            logger.error("ERROR: FAIL NOT THE BLOOD GOD: target unit is not yours")
+            return False
+        if not self._is_unit_alive(root) or not self._cult_on_battlefield(root):
+            return False
+        if not self._is_jakhals_or_goremongers_unit(root):
+            logger.error("ERROR: FAIL NOT THE BLOOD GOD: target must be JAKHALS or GOREMONGERS")
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: FAIL NOT THE BLOOD GOD: target cannot be selected")
+            return False
+        if not self._goretrack_spend_cp(stratagem, target_unit=root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["cult_fail_not_blood_god_active"] = True
+        sr["cult_fail_not_blood_god_expires_phase"] = "FIGHT_PHASE"
+        sr["cult_fail_not_blood_god_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["cult_fail_not_blood_god_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["cult_fail_not_blood_god_source"] = stratagem.name
+        root.special_rules = sr
+        self._goretrack_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(f"INFO: FAIL NOT THE BLOOD GOD: {getattr(root, 'name', 'Unit')} gains hit re-roll support this phase.")
+        return True
+
+    def _use_cult_in_the_shadow_of_brass_idols(self, stratagem: Any, **kwargs) -> bool:
+        unit, candidates, attacking_unit = self._cult_target_from_kwargs("IN THE SHADOW OF BRASS IDOLS", kwargs)
+        if unit is None:
+            logger.error("ERROR: IN THE SHADOW OF BRASS IDOLS: no target unit provided")
+            return False
+        root = self._goretrack_root(unit)
+        enemy_root = self._goretrack_root(attacking_unit)
+        if root is None:
+            return False
+        if not self._is_cult_of_blood():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in ("shooting phase", "fight phase"):
+            logger.error("ERROR: IN THE SHADOW OF BRASS IDOLS: wrong phase")
+            return False
+        get_current_player = getattr(self.game, "get_current_player", None) if self.game is not None else None
+        active_player = get_current_player() if callable(get_current_player) else None
+        if phase_name == "shooting phase" and active_player is self.player:
+            logger.error("ERROR: IN THE SHADOW OF BRASS IDOLS: not opponent's Shooting phase")
+            return False
+        if enemy_root is None:
+            logger.error("ERROR: IN THE SHADOW OF BRASS IDOLS: missing enemy attacker context")
+            return False
+        if self._goretrack_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: IN THE SHADOW OF BRASS IDOLS: attacker is not enemy")
+            return False
+        candidate_ids = self._candidate_ids(candidates)
+        root_id = self._goretrack_sort_key(root)
+        if candidate_ids and root_id not in candidate_ids:
+            logger.error("ERROR: IN THE SHADOW OF BRASS IDOLS: target was not selected")
+            return False
+        if not self._goretrack_owned_by_player(root, self.player):
+            logger.error("ERROR: IN THE SHADOW OF BRASS IDOLS: target unit is not yours")
+            return False
+        if not self._is_unit_alive(root) or not self._cult_on_battlefield(root):
+            return False
+        if not self._is_jakhals_or_goremongers_unit(root):
+            logger.error("ERROR: IN THE SHADOW OF BRASS IDOLS: target must be JAKHALS or GOREMONGERS")
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: IN THE SHADOW OF BRASS IDOLS: target cannot be selected")
+            return False
+        if not self._goretrack_spend_cp(stratagem, target_unit=root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["cult_shadow_brass_idols_active"] = True
+        sr["cult_shadow_brass_idols_expires_phase"] = "SHOOTING_PHASE" if phase_name == "shooting phase" else "FIGHT_PHASE"
+        sr["cult_shadow_brass_idols_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["cult_shadow_brass_idols_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["cult_shadow_brass_idols_source"] = stratagem.name
+        root.special_rules = sr
+        self._goretrack_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(f"INFO: IN THE SHADOW OF BRASS IDOLS: {getattr(root, 'name', 'Unit')} gains temporary Feel No Pain.")
+        return True

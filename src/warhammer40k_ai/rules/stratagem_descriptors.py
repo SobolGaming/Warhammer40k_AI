@@ -421,6 +421,73 @@ _VESSELS_OF_WRATH_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _VESSELS_OF_WRATH_STRATAGEM_DESCRIPTORS.values()
 }
 
+_CULT_OF_BLOOD_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010075005": StratagemToolDescriptor(
+        stratagem_id="000010075005",
+        name="Bloodthirsty Horde",
+        timing="fight_phase_on_select_to_fight",
+        target="jakhals_or_goremongers_unit_not_yet_fought_in_engagement_range",
+        duration="until_end_of_phase",
+        effect="fight_eligibility_within_3",
+        cp_cost=1,
+        effect_params={"range_in": 3.0, "requires_unit_engagement_range": True},
+    ),
+    "000010075007": StratagemToolDescriptor(
+        stratagem_id="000010075007",
+        name="Brazen Idol",
+        timing="command_phase",
+        target="world_eaters_monster_or_titanic_unit",
+        duration="until_start_of_next_command_phase",
+        effect="source_specific_idol_override",
+        cp_cost=2,
+        effect_params={"idol_choices": ["INFINITE_RAGE", "BURNING_WRATH", "BLESSED_BLOOD"], "once_per_battle": True},
+    ),
+    "000010075002": StratagemToolDescriptor(
+        stratagem_id="000010075002",
+        name="Bloody Vengeance",
+        timing="any_phase_on_friendly_unit_destroyed",
+        target="destroyed_world_eaters_monster_or_titanic_unit",
+        duration="until_end_of_battle",
+        effect="jakhals_goremongers_hit_reroll_vs_destroying_enemy",
+        cp_cost=1,
+        effect_params={"attack_roll": "hit", "applies_to_keywords_any": ["JAKHALS", "GOREMONGERS"]},
+    ),
+    "000010075006": StratagemToolDescriptor(
+        stratagem_id="000010075006",
+        name="Fail Not the Blood God",
+        timing="fight_phase",
+        target="jakhals_or_goremongers_unit",
+        duration="until_end_of_phase",
+        effect="hit_reroll_ones_or_full_if_monster_titanic_proximity",
+        cp_cost=1,
+        effect_params={"base_reroll_values": [1], "full_reroll_if_monster_or_titanic_in_range": True},
+    ),
+    "000010075004": StratagemToolDescriptor(
+        stratagem_id="000010075004",
+        name="In the Shadow of Brass Idols",
+        timing="opponent_shooting_or_fight_phase_after_targets_selected",
+        target="jakhals_or_goremongers_unit_targeted",
+        duration="until_end_of_phase",
+        effect="feel_no_pain_6_or_5_with_monster_titanic_proximity",
+        cp_cost=1,
+        effect_params={"base_fnp": 6, "boosted_fnp": 5},
+    ),
+    "000010075003": StratagemToolDescriptor(
+        stratagem_id="000010075003",
+        name="Drawn to the Slaughter",
+        timing="any_phase_on_friendly_unit_destroyed",
+        target="destroyed_jakhals_unit",
+        duration="immediate",
+        effect="clone_unit_to_strategic_reserves",
+        cp_cost=2,
+        effect_params={"clone_to_starting_strength": True, "once_per_battle": True, "disallow_character_attachment_return": True},
+    ),
+}
+
+_CULT_OF_BLOOD_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _CULT_OF_BLOOD_STRATAGEM_DESCRIPTORS.values()
+}
+
 _WARPBANE_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009778002": StratagemToolDescriptor(
         stratagem_id="000009778002",
@@ -517,6 +584,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _VESSELS_OF_WRATH_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _CULT_OF_BLOOD_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _WARPBANE_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -530,5 +600,6 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _GORETRACK_ONSLAUGHT_STRATAGEM_BY_NAME.get(key)
         or _POSSESSED_SLAUGHTERBAND_STRATAGEM_BY_NAME.get(key)
         or _VESSELS_OF_WRATH_STRATAGEM_BY_NAME.get(key)
+        or _CULT_OF_BLOOD_STRATAGEM_BY_NAME.get(key)
         or _WARPBANE_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
     )

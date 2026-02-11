@@ -90,6 +90,7 @@ class WorldEatersDetachmentManager(DetachmentManagerBase):
         self._blood_tithe_command_phase_key: Optional[tuple] = None
         self.idols_used: set[str] = set()
         self.active_idol_key: Optional[str] = None
+        self._source_idol_overrides: dict[str, str] = {}
         self._idols_command_phase_key: Optional[tuple] = None
         self._vessel_of_wrath_model_ids: set[str] = set()
         self._vessel_of_wrath_round: Optional[int] = None
@@ -489,6 +490,60 @@ class WorldEatersDetachmentManager(DetachmentManagerBase):
             pass
         return float(base)
 
+    @staticmethod
+    def _idol_source_key(source_unit) -> str:
+        if source_unit is None:
+            return ""
+        return str(get_entity_id(source_unit) or "").strip()
+
+    def _source_active_idol_key(self, source_unit) -> Optional[str]:
+        source_key = self._idol_source_key(source_unit)
+        if source_key:
+            override = str(self._source_idol_overrides.get(source_key, "") or "").strip().upper()
+            if override:
+                return override
+        key = str(self.active_idol_key or "").strip().upper()
+        return key or None
+
+    def activate_source_idol_of_khorne(self, source_unit, idol_key: str) -> bool:
+        if not self.is_cult_of_blood():
+            return False
+        key = str(idol_key or "").strip().upper()
+        if key not in {ab.key for ab in IDOLS_OF_KHORNE_ABILITIES}:
+            return False
+        if not self._unit_is_valid_idol_source(source_unit):
+            return False
+        source_key = self._idol_source_key(source_unit)
+        if not source_key:
+            return False
+        self._source_idol_overrides[source_key] = key
+        return True
+
+    def clear_source_idol_overrides(self) -> None:
+        self._source_idol_overrides = {}
+
+    def cult_of_blood_within_monster_or_titanic_range(self, unit, *, game_map=None) -> bool:
+        if unit is None:
+            return False
+        if not self.is_cult_of_blood():
+            return False
+        if not self._unit_is_jakhals_or_goremongers(unit):
+            return False
+        if not hasattr(unit, "get_parent_army"):
+            return False
+        if unit.get_parent_army() is not self.army:
+            return False
+        game_map = self._resolve_game_map(unit=unit, game_map=game_map)
+        if game_map is None:
+            return False
+        for source in list(getattr(game_map, "get_friendly_units", lambda _u: [])(unit) or []):
+            if not self._unit_is_valid_idol_source(source):
+                continue
+            rng = self._idol_range_for_source(source)
+            if unit_within_range_of_unit(source, unit, rng, use_attached_aggregate=True):
+                return True
+        return False
+
     def _idol_sources_for_unit(self, unit, idol_key: str, *, game_map=None) -> list:
         if unit is None:
             return []
@@ -496,8 +551,6 @@ class WorldEatersDetachmentManager(DetachmentManagerBase):
             return []
         key = str(idol_key or "").strip().upper()
         if not key:
-            return []
-        if str(self.active_idol_key or "").strip().upper() != key:
             return []
         if not self._unit_is_jakhals_or_goremongers(unit):
             return []
@@ -511,6 +564,9 @@ class WorldEatersDetachmentManager(DetachmentManagerBase):
         sources = []
         for source in list(getattr(game_map, "get_friendly_units", lambda _u: [])(unit) or []):
             if not self._unit_is_valid_idol_source(source):
+                continue
+            source_idol_key = str(self._source_active_idol_key(source) or "").strip().upper()
+            if source_idol_key != key:
                 continue
             rng = self._idol_range_for_source(source)
             if unit_within_range_of_unit(source, unit, rng, use_attached_aggregate=True):
@@ -919,6 +975,7 @@ class WorldEatersDetachmentManager(DetachmentManagerBase):
 
         if self.is_cult_of_blood():
             self.clear_active_idol_of_khorne()
+            self.clear_source_idol_overrides()
             self.apply_cult_of_blood_battleline_keywords()
             self.prompt_idols_of_khorne_selection(game=game, player=player, timing="command_phase", source="Command phase")
 
