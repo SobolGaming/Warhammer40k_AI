@@ -780,6 +780,72 @@ class WargearProfile:
         except Exception:
             return False
 
+    def _possessed_daemonic_strength_damage_bonus(
+        self,
+        attacker: Optional['Model'],
+        target: Optional['Unit'],
+    ) -> tuple[int, str]:
+        if attacker is None:
+            return (0, "")
+        source_unit = getattr(attacker, "parent_unit", None)
+        if source_unit is None:
+            return (0, "")
+        try:
+            root = source_unit.get_attached_unit_root()
+        except Exception:
+            root = source_unit
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not sr.get("possessed_daemonic_strength_active"):
+            return (0, "")
+        game = None
+        player_id = ""
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        try:
+            player = getattr(army, "player", None) if army is not None else None
+            player_id = str(getattr(player, "id", "") or "")
+            game = getattr(player, "game", None)
+        except Exception:
+            player_id = ""
+            game = None
+        owner = str(sr.get("possessed_daemonic_strength_turn_owner", "") or "")
+        if owner and player_id and owner != player_id:
+            return (0, "")
+        effect_turn = int(sr.get("possessed_daemonic_strength_turn", 0) or 0)
+        if effect_turn and game is not None:
+            if int(getattr(game, "turn", 0) or 0) != effect_turn:
+                return (0, "")
+        exp = str(sr.get("possessed_daemonic_strength_expires_phase", "") or "").strip().upper()
+        if exp and game is not None:
+            cur_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            if cur_phase and cur_phase != exp:
+                return (0, "")
+
+        name = str(getattr(source_unit, "name", "") or "").strip().lower().replace("-", " ")
+        has_any_keyword = getattr(source_unit, "has_any_keyword", None)
+        is_exalted = "exalted eightbound" in name
+        if not is_exalted and callable(has_any_keyword):
+            try:
+                is_exalted = bool(has_any_keyword("EXALTED EIGHTBOUND"))
+            except Exception:
+                is_exalted = False
+        is_eightbound = "eightbound" in name
+        if not is_eightbound and callable(has_any_keyword):
+            try:
+                is_eightbound = bool(has_any_keyword("EIGHTBOUND"))
+            except Exception:
+                is_eightbound = False
+        target_is_monster_vehicle = self._target_has_monster_or_vehicle_keyword(target)
+        if target_is_monster_vehicle:
+            if is_exalted:
+                return (1, "Daemonic Strength")
+            return (0, "")
+        if is_eightbound and not is_exalted:
+            return (1, "Daemonic Strength")
+        return (0, "")
+
     def _target_has_character_keyword(self, target: Optional['Unit']) -> bool:
         if target is None:
             return False
@@ -12368,6 +12434,19 @@ class WargearProfile:
                         damage_result['special_effects'].append(
                             f"+{d_bonus}D vs MONSTER/VEHICLE (melee)"
                         )
+        except Exception:
+            pass
+
+        # World Eaters (Possessed Slaughterband): Daemonic Strength conditional melee damage bonus.
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                t_unit = getattr(target_model, "parent_unit", None)
+                d_bonus, source = self._possessed_daemonic_strength_damage_bonus(attacker, t_unit)
+                if d_bonus:
+                    damage_mods.append(
+                        Modifier(ModifierOp.ADD, int(d_bonus), source="stratagem:daemonic_strength")
+                    )
+                    damage_result['special_effects'].append(f"{source} +{d_bonus}D")
         except Exception:
             pass
 

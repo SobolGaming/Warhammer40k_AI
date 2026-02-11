@@ -1007,3 +1007,652 @@ class WorldEatersStratagemMixin:
         self._goretrack_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
         print(f"INFO: UNRELENTING ADVANCE: {getattr(root, 'name', 'Unit')} can move up to 6\".")
         return True
+
+    def _is_possessed_slaughterband(self) -> bool:
+        mgr = self._get_world_eaters_mgr()
+        checker = getattr(mgr, "is_possessed_slaughterband", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
+    @staticmethod
+    def _possessed_normalized_name(unit: Any) -> str:
+        text = str(getattr(unit, "name", "") or "").strip().lower()
+        return " ".join(text.replace("-", " ").split())
+
+    def _is_exalted_eightbound_unit(self, unit: Any) -> bool:
+        root = self._goretrack_root(unit)
+        if root is None:
+            return False
+        name = self._possessed_normalized_name(root)
+        if "exalted eightbound" in name:
+            return True
+        has_any_keyword = getattr(root, "has_any_keyword", None)
+        if callable(has_any_keyword):
+            try:
+                if bool(has_any_keyword("EXALTED EIGHTBOUND")):
+                    return True
+            except (AttributeError, TypeError, ValueError):
+                return False
+        return False
+
+    def _is_eightbound_unit(self, unit: Any) -> bool:
+        root = self._goretrack_root(unit)
+        if root is None:
+            return False
+        if self._is_exalted_eightbound_unit(root):
+            return True
+        name = self._possessed_normalized_name(root)
+        if "eightbound" in name:
+            return True
+        has_any_keyword = getattr(root, "has_any_keyword", None)
+        if callable(has_any_keyword):
+            try:
+                if bool(has_any_keyword("EIGHTBOUND")):
+                    return True
+            except (AttributeError, TypeError, ValueError):
+                return False
+        return False
+
+    def _is_world_eaters_possessed_unit(self, unit: Any, *, mgr=None) -> bool:
+        root = self._goretrack_root(unit)
+        if root is None:
+            return False
+        if mgr is None:
+            mgr = self._get_world_eaters_mgr()
+        if not self._is_world_eaters_unit(root, mgr=mgr):
+            return False
+        has_keyword = getattr(root, "has_keyword", None)
+        if callable(has_keyword):
+            try:
+                if bool(has_keyword("POSSESSED")):
+                    return True
+            except (AttributeError, TypeError, ValueError):
+                return False
+        has_any_keyword = getattr(root, "has_any_keyword", None)
+        if callable(has_any_keyword):
+            try:
+                return bool(has_any_keyword("POSSESSED"))
+            except (AttributeError, TypeError, ValueError):
+                return False
+        return False
+
+    def _possessed_slaughterband_candidates(
+        self,
+        *,
+        require_on_battlefield: bool = True,
+        require_not_fought: bool = False,
+        require_not_moved: bool = False,
+        require_not_attempted_charge: bool = False,
+        require_in_reserves: bool = False,
+        require_deep_strike: bool = False,
+        require_exalted_eightbound: bool = False,
+    ) -> list[Any]:
+        if not self._is_possessed_slaughterband():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        mgr = self._get_world_eaters_mgr()
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        fight_mgr = getattr(self.game, "fight_phase_manager", None) if self.game is not None else None
+        fought_units = set(getattr(fight_mgr, "fought_units", set()) or [])
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._goretrack_root(unit)
+            if root is None:
+                continue
+            uid = self._goretrack_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._is_unit_alive(root):
+                continue
+            if not self._is_world_eaters_possessed_unit(root, mgr=mgr):
+                continue
+            if require_exalted_eightbound and not self._is_exalted_eightbound_unit(root):
+                continue
+            on_battlefield = bool(getattr(root, "deployed", False)) and not self._is_unit_in_reserves(root)
+            if on_battlefield and (bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None))):
+                on_battlefield = False
+            if require_on_battlefield and not on_battlefield:
+                continue
+            if require_in_reserves and not self._is_unit_in_reserves(root):
+                continue
+            if not self._is_stratagem_target_legal(root):
+                continue
+            if require_not_fought:
+                round_state = getattr(root, "round_state", None)
+                if bool(getattr(round_state, "fought_this_phase", False)):
+                    continue
+                if root in fought_units:
+                    continue
+            if require_not_moved:
+                round_state = getattr(root, "round_state", None)
+                if bool(getattr(round_state, "moved_this_round", False)):
+                    continue
+            if require_not_attempted_charge:
+                round_state = getattr(root, "round_state", None)
+                if bool(getattr(round_state, "attempted_charge_this_round", False)):
+                    continue
+            if require_deep_strike:
+                has_deep_strike = getattr(root, "has_deep_strike", None)
+                if not callable(has_deep_strike):
+                    continue
+                try:
+                    if not bool(has_deep_strike()):
+                        continue
+                except (AttributeError, TypeError, ValueError):
+                    continue
+            candidates.append(root)
+        return sorted(candidates, key=self._goretrack_sort_key)
+
+    def _possessed_reaction_already_queued(
+        self,
+        *,
+        event_name: str,
+        stratagem_name: str,
+        phase_name: str,
+        attacking_unit: Any = None,
+    ) -> bool:
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != str(event_name):
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != str(stratagem_name or "").strip().upper():
+                continue
+            if str(reaction.get("phase_name", "") or "").strip().lower() != str(phase_name or "").strip().lower():
+                continue
+            if attacking_unit is not None and reaction.get("attacking_unit") is not attacking_unit:
+                continue
+            return True
+        return False
+
+    def _queue_world_eaters_possessed_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_possessed_slaughterband():
+            return
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_name != "COMMAND_PHASE":
+            return
+        if player is self.player:
+            return
+        stratagem = self.get_by_name("HORRIFYING VIOLENCE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(stratagem.cp_cost or 0):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        if game_map is None:
+            return
+        candidates: list[Any] = []
+        for root in self._possessed_slaughterband_candidates(require_on_battlefield=True):
+            engaged = False
+            for enemy in list(game_map.get_enemy_units(root) or []):
+                try:
+                    if not getattr(enemy, "is_alive", lambda: True)():
+                        continue
+                except (AttributeError, TypeError, ValueError):
+                    continue
+                if not bool(getattr(enemy, "deployed", True)):
+                    continue
+                try:
+                    if game_map.is_within_engagement_range(root, enemy):
+                        engaged = True
+                        break
+                except (AttributeError, TypeError, ValueError):
+                    continue
+            if engaged:
+                candidates.append(root)
+        if not candidates:
+            return
+        if self._possessed_reaction_already_queued(
+            event_name="phase_start",
+            stratagem_name=stratagem.name,
+            phase_name="Command phase",
+        ):
+            return
+        payload = {
+            "event": "phase_start",
+            "phase": "Command phase",
+            "phase_name": "Command phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_world_eaters_possessed_fight_reactions(self, *, attacking_unit: Any, target_units: Any) -> None:
+        if attacking_unit is None or not self._is_possessed_slaughterband():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "fight phase":
+            return
+        try:
+            if attacking_unit.get_parent_army().player is self.player:
+                return
+        except (AttributeError, TypeError, ValueError):
+            return
+        stratagem = self.get_by_name("IMMORTAL FURY")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(stratagem.cp_cost or 0):
+            return
+        if str(stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        possible = set(self._possessed_slaughterband_candidates(require_on_battlefield=True, require_not_fought=True))
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._goretrack_root(unit)
+            if root is None:
+                continue
+            uid = self._goretrack_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if root in possible:
+                candidates.append(root)
+        candidates = sorted(candidates, key=self._goretrack_sort_key)
+        if not candidates:
+            return
+        if self._possessed_reaction_already_queued(
+            event_name="fight_targets_selected",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+            attacking_unit=attacking_unit,
+        ):
+            return
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacking_unit,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
+    def _possessed_target_from_kwargs(self, stratagem_name: str, kwargs: dict[str, Any]) -> tuple[Any, list[Any], Any]:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit") or kwargs.get("enemy_unit")
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != str(stratagem_name or "").strip().upper():
+                    continue
+                unit = reaction.get("unit") or reaction.get("target_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if attacking_unit is None:
+                    attacking_unit = reaction.get("attacking_unit") or reaction.get("attacker_unit") or reaction.get("enemy_unit")
+                break
+        return unit, candidates, attacking_unit
+
+    def _candidate_ids(self, candidates: list[Any]) -> set[str]:
+        ids: set[str] = set()
+        for candidate in list(candidates or []):
+            root = self._goretrack_root(candidate)
+            uid = self._goretrack_sort_key(root)
+            if uid:
+                ids.add(uid)
+        return ids
+
+    def _use_world_eaters_possessed_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "DAEMONIC STRENGTH":
+            return self._use_possessed_daemonic_strength(stratagem, **kwargs)
+        if name_u == "IMMORTAL FURY":
+            return self._use_possessed_immortal_fury(stratagem, **kwargs)
+        if name_u == "RAPID MANIFESTATION":
+            return self._use_possessed_rapid_manifestation(stratagem, **kwargs)
+        if name_u == "HORRIFYING VIOLENCE":
+            return self._use_possessed_horrifying_violence(stratagem, **kwargs)
+        if name_u == "WARP STALKERS":
+            return self._use_possessed_warp_stalkers(stratagem, **kwargs)
+        return None
+
+    def _use_possessed_daemonic_strength(self, stratagem: Any, **kwargs) -> bool:
+        unit, candidates, _attacking_unit = self._possessed_target_from_kwargs("DAEMONIC STRENGTH", kwargs)
+        if unit is None:
+            print("ERROR: DAEMONIC STRENGTH: no target unit provided")
+            return False
+        root = self._goretrack_root(unit)
+        if root is None:
+            return False
+        if not self._is_possessed_slaughterband():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            print("ERROR: DAEMONIC STRENGTH: wrong phase")
+            return False
+        candidate_ids = self._candidate_ids(candidates)
+        root_id = self._goretrack_sort_key(root)
+        if candidate_ids and root_id not in candidate_ids:
+            print("ERROR: DAEMONIC STRENGTH: target was not selected")
+            return False
+        if not self._goretrack_owned_by_player(root, self.player):
+            print("ERROR: DAEMONIC STRENGTH: target unit is not yours")
+            return False
+        if not self._is_unit_alive(root) or not bool(getattr(root, "deployed", False)):
+            return False
+        if self._is_unit_in_reserves(root):
+            return False
+        if not self._is_world_eaters_possessed_unit(root):
+            print("ERROR: DAEMONIC STRENGTH: target must be a WORLD EATERS POSSESSED unit")
+            return False
+        round_state = getattr(root, "round_state", None)
+        if bool(getattr(round_state, "fought_this_phase", False)):
+            print("ERROR: DAEMONIC STRENGTH: target already fought this phase")
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            print("ERROR: DAEMONIC STRENGTH: target cannot be selected")
+            return False
+        if not self._goretrack_spend_cp(stratagem, target_unit=root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["possessed_daemonic_strength_active"] = True
+        sr["possessed_daemonic_strength_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["possessed_daemonic_strength_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["possessed_daemonic_strength_expires_phase"] = "FIGHT_PHASE"
+        sr["possessed_daemonic_strength_source"] = stratagem.name
+        root.special_rules = sr
+        self._goretrack_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        print(f"INFO: DAEMONIC STRENGTH: {getattr(root, 'name', 'Unit')} gains conditional +1 Damage this phase.")
+        return True
+
+    def _use_possessed_immortal_fury(self, stratagem: Any, **kwargs) -> bool:
+        unit, candidates, attacking_unit = self._possessed_target_from_kwargs("IMMORTAL FURY", kwargs)
+        if unit is None:
+            print("ERROR: IMMORTAL FURY: no target unit provided")
+            return False
+        root = self._goretrack_root(unit)
+        if root is None:
+            return False
+        if not self._is_possessed_slaughterband():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            print("ERROR: IMMORTAL FURY: wrong phase")
+            return False
+        if attacking_unit is not None and self._goretrack_owned_by_player(attacking_unit, self.player):
+            print("ERROR: IMMORTAL FURY: attacker is not enemy")
+            return False
+        candidate_ids = self._candidate_ids(candidates)
+        root_id = self._goretrack_sort_key(root)
+        if candidate_ids and root_id not in candidate_ids:
+            print("ERROR: IMMORTAL FURY: target was not selected")
+            return False
+        if not self._goretrack_owned_by_player(root, self.player):
+            print("ERROR: IMMORTAL FURY: target unit is not yours")
+            return False
+        if not self._is_unit_alive(root) or not bool(getattr(root, "deployed", False)):
+            return False
+        if self._is_unit_in_reserves(root):
+            return False
+        if not self._is_world_eaters_possessed_unit(root):
+            print("ERROR: IMMORTAL FURY: target must be a WORLD EATERS POSSESSED unit")
+            return False
+        round_state = getattr(root, "round_state", None)
+        if bool(getattr(round_state, "fought_this_phase", False)):
+            print("ERROR: IMMORTAL FURY: target already fought this phase")
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            print("ERROR: IMMORTAL FURY: target cannot be selected")
+            return False
+        if not self._goretrack_spend_cp(stratagem, target_unit=root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["immortal_fury_active"] = True
+        sr["immortal_fury_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["immortal_fury_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["immortal_fury_expires_phase"] = "FIGHT_PHASE"
+        sr["immortal_fury_source"] = stratagem.name
+        root.special_rules = sr
+        self._goretrack_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        print(f"INFO: IMMORTAL FURY: {getattr(root, 'name', 'Unit')} can fight on death this phase.")
+        return True
+
+    def _use_possessed_rapid_manifestation(self, stratagem: Any, **kwargs) -> bool:
+        unit, candidates, _attacking_unit = self._possessed_target_from_kwargs("RAPID MANIFESTATION", kwargs)
+        if unit is None:
+            print("ERROR: RAPID MANIFESTATION: no target unit provided")
+            return False
+        root = self._goretrack_root(unit)
+        if root is None:
+            return False
+        if not self._is_possessed_slaughterband():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            print("ERROR: RAPID MANIFESTATION: wrong phase")
+            return False
+        get_current_player = getattr(self.game, "get_current_player", None) if self.game is not None else None
+        active_player = get_current_player() if callable(get_current_player) else None
+        if active_player is not self.player:
+            print("ERROR: RAPID MANIFESTATION: not your turn")
+            return False
+        candidate_ids = self._candidate_ids(candidates)
+        root_id = self._goretrack_sort_key(root)
+        if candidate_ids and root_id not in candidate_ids:
+            print("ERROR: RAPID MANIFESTATION: target was not selected")
+            return False
+        if not self._goretrack_owned_by_player(root, self.player):
+            print("ERROR: RAPID MANIFESTATION: target unit is not yours")
+            return False
+        if not self._is_unit_alive(root):
+            return False
+        if not self._is_world_eaters_possessed_unit(root):
+            print("ERROR: RAPID MANIFESTATION: target must be a WORLD EATERS POSSESSED unit")
+            return False
+        if not self._is_exalted_eightbound_unit(root):
+            print("ERROR: RAPID MANIFESTATION: target must be EXALTED EIGHTBOUND")
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            print("ERROR: RAPID MANIFESTATION: target cannot be selected")
+            return False
+        if not self._is_unit_in_reserves(root):
+            print("ERROR: RAPID MANIFESTATION: target must be in Reserves")
+            return False
+        has_deep_strike = getattr(root, "has_deep_strike", None)
+        if not callable(has_deep_strike) or not bool(has_deep_strike()):
+            print("ERROR: RAPID MANIFESTATION: target lacks Deep Strike")
+            return False
+        turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        can_arrive = getattr(root, "can_arrive_from_reserves", None)
+        if callable(can_arrive) and not bool(can_arrive(turn)):
+            print("ERROR: RAPID MANIFESTATION: target cannot arrive from Reserves this turn")
+            return False
+        if not self._goretrack_spend_cp(stratagem, target_unit=root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["rapid_manifestation_deep_strike_min_distance"] = 6.0
+        sr["rapid_manifestation_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["rapid_manifestation_turn"] = turn
+        sr["rapid_manifestation_expires_phase"] = "MOVEMENT_PHASE"
+        sr["rapid_manifestation_source"] = stratagem.name
+        sr["rapid_manifestation_no_charge_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["rapid_manifestation_no_charge_turn"] = turn
+        root.special_rules = sr
+        self._goretrack_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        print(f"INFO: RAPID MANIFESTATION: {getattr(root, 'name', 'Unit')} can Deep Strike within 6\" and cannot charge this turn.")
+        return True
+
+    def _use_possessed_horrifying_violence(self, stratagem: Any, **kwargs) -> bool:
+        unit, candidates, _attacking_unit = self._possessed_target_from_kwargs("HORRIFYING VIOLENCE", kwargs)
+        if unit is None:
+            print("ERROR: HORRIFYING VIOLENCE: no target unit provided")
+            return False
+        root = self._goretrack_root(unit)
+        if root is None:
+            return False
+        if not self._is_possessed_slaughterband():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "command phase":
+            print("ERROR: HORRIFYING VIOLENCE: wrong phase")
+            return False
+        get_current_player = getattr(self.game, "get_current_player", None) if self.game is not None else None
+        active_player = get_current_player() if callable(get_current_player) else None
+        if active_player is self.player:
+            print("ERROR: HORRIFYING VIOLENCE: not opponent's Command phase")
+            return False
+        candidate_ids = self._candidate_ids(candidates)
+        root_id = self._goretrack_sort_key(root)
+        if candidate_ids and root_id not in candidate_ids:
+            print("ERROR: HORRIFYING VIOLENCE: target was not selected")
+            return False
+        if not self._goretrack_owned_by_player(root, self.player):
+            print("ERROR: HORRIFYING VIOLENCE: target unit is not yours")
+            return False
+        if not self._is_unit_alive(root) or not bool(getattr(root, "deployed", False)):
+            return False
+        if self._is_unit_in_reserves(root):
+            return False
+        if not self._is_world_eaters_possessed_unit(root):
+            print("ERROR: HORRIFYING VIOLENCE: target must be a WORLD EATERS POSSESSED unit")
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            print("ERROR: HORRIFYING VIOLENCE: target cannot be selected")
+            return False
+        game_map = getattr(self.game, "map", None)
+        if game_map is None:
+            return False
+        if not self._goretrack_spend_cp(stratagem, target_unit=root):
+            return False
+        turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        affected: list[Any] = []
+        seen_enemy: set[str] = set()
+        for enemy in list(game_map.get_enemy_units(root) or []):
+            enemy_root = self._goretrack_root(enemy)
+            if enemy_root is None:
+                continue
+            enemy_id = self._goretrack_sort_key(enemy_root)
+            if enemy_id and enemy_id in seen_enemy:
+                continue
+            if enemy_id:
+                seen_enemy.add(enemy_id)
+            if not self._is_unit_alive(enemy_root):
+                continue
+            if not bool(getattr(enemy_root, "deployed", True)):
+                continue
+            try:
+                if not bool(game_map.is_within_engagement_range(root, enemy_root)):
+                    continue
+            except (AttributeError, TypeError, ValueError):
+                continue
+            sr = getattr(enemy_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["battle_shock_test_modifier"] = int(sr.get("battle_shock_test_modifier", 0) or 0) - 1
+            reasons = list(sr.get("battle_shock_test_modifier_reasons", []) or [])
+            reasons.append("Horrifying Violence")
+            sr["battle_shock_test_modifier_reasons"] = reasons
+            enemy_root.special_rules = sr
+            take_test = getattr(enemy_root, "take_battle_shock_test", None)
+            if callable(take_test):
+                take_test(turn)
+            affected.append(enemy_root)
+        self._goretrack_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        print(f"INFO: HORRIFYING VIOLENCE: {len(affected)} enemy unit(s) took Battle-shock tests at -1.")
+        return True
+
+    def _use_possessed_warp_stalkers(self, stratagem: Any, **kwargs) -> bool:
+        unit, candidates, _attacking_unit = self._possessed_target_from_kwargs("WARP STALKERS", kwargs)
+        if unit is None:
+            print("ERROR: WARP STALKERS: no target unit provided")
+            return False
+        root = self._goretrack_root(unit)
+        if root is None:
+            return False
+        if not self._is_possessed_slaughterband():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in ("movement phase", "charge phase"):
+            print("ERROR: WARP STALKERS: wrong phase")
+            return False
+        get_current_player = getattr(self.game, "get_current_player", None) if self.game is not None else None
+        active_player = get_current_player() if callable(get_current_player) else None
+        if active_player is not self.player:
+            print("ERROR: WARP STALKERS: not your turn")
+            return False
+        candidate_ids = self._candidate_ids(candidates)
+        root_id = self._goretrack_sort_key(root)
+        if candidate_ids and root_id not in candidate_ids:
+            print("ERROR: WARP STALKERS: target was not selected")
+            return False
+        if not self._goretrack_owned_by_player(root, self.player):
+            print("ERROR: WARP STALKERS: target unit is not yours")
+            return False
+        if not self._is_unit_alive(root) or not bool(getattr(root, "deployed", False)):
+            return False
+        if self._is_unit_in_reserves(root):
+            return False
+        if not self._is_world_eaters_possessed_unit(root):
+            print("ERROR: WARP STALKERS: target must be a WORLD EATERS POSSESSED unit")
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            print("ERROR: WARP STALKERS: target cannot be selected")
+            return False
+        round_state = getattr(root, "round_state", None)
+        if phase_name == "movement phase" and bool(getattr(round_state, "moved_this_round", False)):
+            print("ERROR: WARP STALKERS: target already moved this phase")
+            return False
+        if phase_name == "charge phase" and bool(getattr(round_state, "attempted_charge_this_round", False)):
+            print("ERROR: WARP STALKERS: target already attempted a charge this phase")
+            return False
+        if not self._goretrack_spend_cp(stratagem, target_unit=root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        move_types = {"move", "advance", "fall_back", "charge"}
+        engagement_types = {"move", "advance", "fall_back"}
+        block_types = {"move", "advance", "fall_back", "charge"}
+
+        current_move_types = set(sr.get("bearer_unit_phase_move_types") or [])
+        added_move_types = sorted([t for t in sorted(move_types) if t not in current_move_types])
+        if added_move_types:
+            current_move_types.update(added_move_types)
+            sr["bearer_unit_phase_move_types"] = sorted(current_move_types)
+            sr["warp_stalkers_added_phase_move_types"] = added_move_types
+
+        current_engagement_types = set(sr.get("bearer_unit_phase_move_engagement_types") or [])
+        added_engagement_types = sorted([t for t in sorted(engagement_types) if t not in current_engagement_types])
+        if added_engagement_types:
+            current_engagement_types.update(added_engagement_types)
+            sr["bearer_unit_phase_move_engagement_types"] = sorted(current_engagement_types)
+            sr["warp_stalkers_added_phase_move_engagement_types"] = added_engagement_types
+
+        current_block_types = set(sr.get("bearer_unit_phase_move_block_monster_vehicle_types") or [])
+        added_block_types = sorted([t for t in sorted(block_types) if t not in current_block_types])
+        if added_block_types:
+            current_block_types.update(added_block_types)
+            sr["bearer_unit_phase_move_block_monster_vehicle_types"] = sorted(current_block_types)
+            sr["warp_stalkers_added_phase_move_block_monster_vehicle_types"] = added_block_types
+
+        if not bool(sr.get("bearer_unit_auto_pass_desperate_escape", False)):
+            sr["warp_stalkers_added_auto_pass_desperate_escape"] = True
+        sr["bearer_unit_auto_pass_desperate_escape"] = True
+        sr["warp_stalkers_active"] = True
+        sr["warp_stalkers_expires_phase"] = "MOVEMENT_PHASE" if phase_name == "movement phase" else "CHARGE_PHASE"
+        sr["warp_stalkers_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["warp_stalkers_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["warp_stalkers_source"] = stratagem.name
+        root.special_rules = sr
+        self._goretrack_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        print(f"INFO: WARP STALKERS: {getattr(root, 'name', 'Unit')} can move through enemy models this phase.")
+        return True

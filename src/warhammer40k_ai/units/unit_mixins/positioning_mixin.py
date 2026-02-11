@@ -147,6 +147,10 @@ class PositioningMixin:
             except Exception:
                 pass
             try:
+                root._resolve_immortal_fury_queue(game_map=game_map)
+            except Exception:
+                pass
+            try:
                 root._resolve_orks_is_never_beaten_queue(game_map=game_map)
             except Exception:
                 pass
@@ -191,6 +195,10 @@ class PositioningMixin:
     def _resolve_deathless_duty_queue(self, game_map: Optional['Map'] = None) -> None:
         """Resolve deferred Deathless Duty fights after an attacker finishes its attacks."""
         self._resolve_deferred_fight_on_death_queue("_deathless_duty_pending_models", game_map=game_map)
+
+    def _resolve_immortal_fury_queue(self, game_map: Optional['Map'] = None) -> None:
+        """Resolve deferred Immortal Fury fights after an attacker finishes its attacks."""
+        self._resolve_deferred_fight_on_death_queue("_immortal_fury_pending_models", game_map=game_map)
 
     def _resolve_orks_is_never_beaten_queue(self, game_map: Optional['Map'] = None) -> None:
         """Resolve deferred Orks Is Never Beaten fights after an attacker finishes its attacks."""
@@ -3446,6 +3454,18 @@ class PositioningMixin:
         except Exception:
             pass
 
+        # Rapid Manifestation: cannot charge until end of turn after 6" Deep Strike option.
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("rapid_manifestation_no_charge_turn_owner"):
+                owner = str(sr.get("rapid_manifestation_no_charge_turn_owner") or "")
+                turn = int(sr.get("rapid_manifestation_no_charge_turn", 0) or 0)
+                if owner and game is not None:
+                    if game.get_current_player().id == owner and int(getattr(game, "turn", 0) or 0) == turn:
+                        return False
+        except Exception:
+            pass
+
         # Fire and Fade: cannot charge until end of turn.
         try:
             sr = getattr(self, "special_rules", None)
@@ -3955,6 +3975,40 @@ class PositioningMixin:
                 denizens_min = 0.0
             if denizens_min > 0:
                 min_dist = denizens_min if min_dist is None else min(min_dist, denizens_min)
+
+        try:
+            rapid_min = float(sr.get("rapid_manifestation_deep_strike_min_distance", 0) or 0)
+        except Exception:
+            rapid_min = 0.0
+        if rapid_min > 0:
+            try:
+                game = None
+                try:
+                    army = root.get_parent_army()
+                except Exception:
+                    army = None
+                try:
+                    game = getattr(getattr(army, "player", None), "game", None)
+                except Exception:
+                    game = None
+                owner_id = str(sr.get("rapid_manifestation_turn_owner", "") or "")
+                turn = int(sr.get("rapid_manifestation_turn", 0) or 0)
+                if game is not None:
+                    cur_turn = int(getattr(game, "turn", 0) or 0)
+                    cur_player = getattr(game, "get_current_player", lambda: None)()
+                    cur_owner = str(getattr(cur_player, "id", "") or "")
+                    pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    exp = str(sr.get("rapid_manifestation_expires_phase", "") or "").strip().upper()
+                    if owner_id and cur_owner and owner_id != cur_owner:
+                        rapid_min = 0.0
+                    elif turn and cur_turn and turn != cur_turn:
+                        rapid_min = 0.0
+                    elif exp and pname and exp != pname:
+                        rapid_min = 0.0
+            except Exception:
+                rapid_min = 0.0
+            if rapid_min > 0:
+                min_dist = rapid_min if min_dist is None else min(min_dist, rapid_min)
 
         try:
             hallowed_beacon_min = float(sr.get("hallowed_beacon_deep_strike_min_distance", 0) or 0)

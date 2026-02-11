@@ -29,12 +29,15 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BLESSING OF BURNING BLOOD",
     "BLITZING FIREPOWER",
     "BLOOD OFFERING",
+    "DAEMONIC RESISTANCE",
     "DAEMONIC FURY",
+    "DAEMONIC STRENGTH",
     "DAEMONTIDE",
     "DEFIANT TO THE LAST",
     "DEATHLESS DUTY",
     "DEATH ECSTASY",
     "FRENZIED RESILIENCE",
+    "HORRIFYING VIOLENCE",
     "FEIGNED RETREAT",
     "FIRE AND FADE",
     "HACK AND SLASH",
@@ -55,6 +58,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "NEW ORDERS",
     "PEERLESS WARRIOR",
     "RAPID INGRESS",
+    "RAPID MANIFESTATION",
     "SKYBORNE SANCTUARY",
     "SMOKESCREEN",
     "SKULLS FOR THE SKULL THRONE!",
@@ -91,14 +95,18 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "DRAUGHT OF TERROR",
     "DELIRIUM UNMADE",
     "ENDLESS PURSUIT OF VIOLENCE",
+    "HORRIFYING VIOLENCE",
     "FATEBORNE NIGHTMARES",
     "FICKLEFIRE",
     "FLICKERING REALITY",
+    "IMMORTAL FURY",
     "FURY UNLEASHED",
     "IMPOSSIBLE ECLIPSE",
+    "IMMORTAL FURY",
     "PYROGENESIS",
     "THE REALM OF CHAOS",
     "WARP SURGE",
+    "WARP STALKERS",
     "AGGRESSIVE DISEMBARKATION",
     "FULL-THROTTLE ASSAULT",
     "SMASH THROUGH",
@@ -1087,6 +1095,7 @@ class StratagemManager(
             "DEATHLESS DUTY",
             "DEATH ECSTASY",
             "FRENZIED RESILIENCE",
+            "IMMORTAL FURY",
             "ARMOUR OF CONTEMPT",
             "THE FOE FORESEEN",
             "BLESSING OF BURNING BLOOD",
@@ -1147,6 +1156,8 @@ class StratagemManager(
             "SMOKESCREEN",
             "BLITZING FIREPOWER",
             "FULL-THROTTLE ASSAULT",
+            "DAEMONIC STRENGTH",
+            "IMMORTAL FURY",
             "LIGHTNING-FAST REACTIONS",
             "DAEMONIC FURY",
             "HACK AND SLASH",
@@ -1169,6 +1180,8 @@ class StratagemManager(
             "PYROGENESIS",
             "DENIZENS OF THE WARP",
             "WARP SURGE",
+            "RAPID MANIFESTATION",
+            "WARP STALKERS",
             "AEGIS ETERNAL",
             "FIRES OF COVENANT",
             "HALLOWED BEACON",
@@ -2061,6 +2074,11 @@ class StratagemManager(
             "FURY UNLEASHED": "Target: WORLD EATERS RHINO (hit) + embarked KHORNE BERZERKERS",
             "SMASH THROUGH": "Target: WORLD EATERS VEHICLE (not moved)",
             "UNRELENTING ADVANCE": "Target: WORLD EATERS VEHICLE (hit)",
+            "DAEMONIC STRENGTH": "Target: WORLD EATERS POSSESSED unit (not fought)",
+            "HORRIFYING VIOLENCE": "Target: WORLD EATERS POSSESSED unit (opponent Command phase)",
+            "IMMORTAL FURY": "Target: WORLD EATERS POSSESSED unit (defensive reaction)",
+            "RAPID MANIFESTATION": "Target: EXALTED EIGHTBOUND unit in Reserves",
+            "WARP STALKERS": "Target: WORLD EATERS POSSESSED unit (Movement/Charge phase)",
             "FATEBORNE NIGHTMARES": "Target: TZEENTCH LEGIONES DAEMONICA unit",
             "FICKLEFIRE": "Target: TZEENTCH LEGIONES DAEMONICA unit (engaged)",
             "FLICKERING REALITY": "Target: TZEENTCH LEGIONES DAEMONICA unit (defensive reaction)",
@@ -2543,6 +2561,10 @@ class StratagemManager(
             raise
         try:
             self._queue_warpbane_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_world_eaters_possessed_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
 
@@ -3650,6 +3672,106 @@ class StratagemManager(
                         sr.pop("goretrack_fury_unleashed_phase_key", None)
                         sr.pop("goretrack_unrelenting_advance_phase_key", None)
                         root.special_rules = sr
+        except Exception:
+            raise
+        # World Eaters (Possessed Slaughterband): phase-end cleanup.
+        try:
+            phase_name = getattr(phase, "name", None)
+            if phase_name in ("MOVEMENT_PHASE", "CHARGE_PHASE", "FIGHT_PHASE"):
+                units = list(getattr(self.player.get_army(), "units", []) or [])
+                seen = set()
+                for unit in units:
+                    try:
+                        root = unit.get_attached_unit_root()
+                    except Exception:
+                        root = unit
+                    if root is None:
+                        continue
+                    try:
+                        uid = get_entity_id(root)
+                    except Exception:
+                        uid = None
+                    if uid and uid in seen:
+                        continue
+                    if uid:
+                        seen.add(uid)
+                    sr = getattr(root, "special_rules", None)
+                    if not isinstance(sr, dict):
+                        continue
+                    if phase_name == "FIGHT_PHASE":
+                        exp = str(sr.get("possessed_daemonic_strength_expires_phase", "") or "").strip().upper()
+                        if sr.get("possessed_daemonic_strength_active") and (not exp or exp == "FIGHT_PHASE"):
+                            for key in (
+                                "possessed_daemonic_strength_active",
+                                "possessed_daemonic_strength_turn_owner",
+                                "possessed_daemonic_strength_turn",
+                                "possessed_daemonic_strength_expires_phase",
+                                "possessed_daemonic_strength_source",
+                            ):
+                                sr.pop(key, None)
+                        exp = str(sr.get("immortal_fury_expires_phase", "") or "").strip().upper()
+                        if sr.get("immortal_fury_active") and (not exp or exp == "FIGHT_PHASE"):
+                            for key in (
+                                "immortal_fury_active",
+                                "immortal_fury_turn_owner",
+                                "immortal_fury_turn",
+                                "immortal_fury_expires_phase",
+                                "immortal_fury_source",
+                            ):
+                                sr.pop(key, None)
+                    if phase_name == "MOVEMENT_PHASE":
+                        exp = str(sr.get("rapid_manifestation_expires_phase", "") or "").strip().upper()
+                        if "rapid_manifestation_deep_strike_min_distance" in sr and (not exp or exp == "MOVEMENT_PHASE"):
+                            for key in (
+                                "rapid_manifestation_deep_strike_min_distance",
+                                "rapid_manifestation_turn_owner",
+                                "rapid_manifestation_turn",
+                                "rapid_manifestation_expires_phase",
+                                "rapid_manifestation_source",
+                            ):
+                                sr.pop(key, None)
+                    if phase_name in ("MOVEMENT_PHASE", "CHARGE_PHASE"):
+                        exp = str(sr.get("warp_stalkers_expires_phase", "") or "").strip().upper()
+                        if sr.get("warp_stalkers_active") and (not exp or exp == phase_name):
+                            added = set(sr.get("warp_stalkers_added_phase_move_types") or [])
+                            if added:
+                                current = list(sr.get("bearer_unit_phase_move_types") or [])
+                                kept = [t for t in current if t not in added]
+                                if kept:
+                                    sr["bearer_unit_phase_move_types"] = kept
+                                else:
+                                    sr.pop("bearer_unit_phase_move_types", None)
+                            added = set(sr.get("warp_stalkers_added_phase_move_engagement_types") or [])
+                            if added:
+                                current = list(sr.get("bearer_unit_phase_move_engagement_types") or [])
+                                kept = [t for t in current if t not in added]
+                                if kept:
+                                    sr["bearer_unit_phase_move_engagement_types"] = kept
+                                else:
+                                    sr.pop("bearer_unit_phase_move_engagement_types", None)
+                            added = set(sr.get("warp_stalkers_added_phase_move_block_monster_vehicle_types") or [])
+                            if added:
+                                current = list(sr.get("bearer_unit_phase_move_block_monster_vehicle_types") or [])
+                                kept = [t for t in current if t not in added]
+                                if kept:
+                                    sr["bearer_unit_phase_move_block_monster_vehicle_types"] = kept
+                                else:
+                                    sr.pop("bearer_unit_phase_move_block_monster_vehicle_types", None)
+                            if bool(sr.get("warp_stalkers_added_auto_pass_desperate_escape")):
+                                sr.pop("bearer_unit_auto_pass_desperate_escape", None)
+                            for key in (
+                                "warp_stalkers_active",
+                                "warp_stalkers_expires_phase",
+                                "warp_stalkers_turn_owner",
+                                "warp_stalkers_turn",
+                                "warp_stalkers_source",
+                                "warp_stalkers_added_phase_move_types",
+                                "warp_stalkers_added_phase_move_engagement_types",
+                                "warp_stalkers_added_phase_move_block_monster_vehicle_types",
+                                "warp_stalkers_added_auto_pass_desperate_escape",
+                            ):
+                                sr.pop(key, None)
+                    root.special_rules = sr
         except Exception:
             raise
         # Chaos Daemons: Warp Surge (expires at end of Charge phase).
@@ -6060,6 +6182,13 @@ class StratagemManager(
             raise
         if owner_player is None or owner_player is self.player:
             return
+        try:
+            self._queue_world_eaters_possessed_fight_reactions(
+                attacking_unit=attacking_unit,
+                target_units=target_units,
+            )
+        except Exception:
+            raise
 
         # FRENZIED RESILIENCE (World Eaters)
         try:
@@ -10057,6 +10186,9 @@ class StratagemManager(
         goretrack_result = self._use_world_eaters_goretrack_stratagem(s, **kwargs)
         if goretrack_result is not None:
             return goretrack_result
+        possessed_result = self._use_world_eaters_possessed_stratagem(s, **kwargs)
+        if possessed_result is not None:
+            return possessed_result
 
         # Rage-cursed Onslaught: RED WRATH (advance then shoot/charge choice; Red Thirst for both)
         if s.name.upper() == "RED WRATH":

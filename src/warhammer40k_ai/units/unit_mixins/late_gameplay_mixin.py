@@ -1464,6 +1464,15 @@ class LateGameplayMixin:
                         "denizens_deep_strike_source",
                     ):
                         sr.pop(key, None)
+                if "rapid_manifestation_deep_strike_min_distance" in sr or "rapid_manifestation_expires_phase" in sr:
+                    for key in (
+                        "rapid_manifestation_deep_strike_min_distance",
+                        "rapid_manifestation_turn_owner",
+                        "rapid_manifestation_turn",
+                        "rapid_manifestation_expires_phase",
+                        "rapid_manifestation_source",
+                    ):
+                        sr.pop(key, None)
                 if "hallowed_beacon_deep_strike_min_distance" in sr or "hallowed_beacon_expires_phase" in sr:
                     for key in (
                         "hallowed_beacon_deep_strike_min_distance",

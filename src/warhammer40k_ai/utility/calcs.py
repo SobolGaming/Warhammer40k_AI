@@ -1441,6 +1441,7 @@ def get_validation_rules(
     phase_move_terrain_only_types: set[str] = set()
     phase_engagement_types: set[str] = set()
     phase_move_block_titanic_types: set[str] = set()
+    phase_move_block_monster_vehicle_types: set[str] = set()
     auto_pass_desperate_escape = False
     sr_sources: list[dict] = []
     seen_sr_ids: set[int] = set()
@@ -1469,6 +1470,7 @@ def get_validation_rules(
         phase_move_terrain_only_types.update(_coerce_move_types(sr.get("bearer_unit_phase_move_terrain_only_types")))
         phase_engagement_types.update(_coerce_move_types(sr.get("bearer_unit_phase_move_engagement_types")))
         phase_move_block_titanic_types.update(_coerce_move_types(sr.get("bearer_unit_phase_move_block_titanic_types")))
+        phase_move_block_monster_vehicle_types.update(_coerce_move_types(sr.get("bearer_unit_phase_move_block_monster_vehicle_types")))
         phase_move_types.update(_coerce_move_types(sr.get("titanic_phase_move_types")))
         phase_engagement_types.update(_coerce_move_types(sr.get("titanic_phase_move_engagement_types")))
         phase_move_block_titanic_types.update(_coerce_move_types(sr.get("titanic_phase_move_block_titanic_types")))
@@ -1496,6 +1498,10 @@ def get_validation_rules(
             base_rules['block_titanic_models'] = True
         elif base_rules.get('block_titanic_models', False):
             base_rules['block_titanic_models'] = False
+        if move_tag in phase_move_block_monster_vehicle_types:
+            base_rules['block_monster_vehicle_models'] = True
+        elif base_rules.get('block_monster_vehicle_models', False):
+            base_rules['block_monster_vehicle_models'] = False
     elif move_tag and move_tag in phase_move_terrain_only_types:
         base_rules['can_move_through_terrain'] = True
 
@@ -2093,6 +2099,45 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
                     other_shape = other_model.model_base.get_base_shape()
                     if test_shape.intersects(other_shape):
                         return {'valid': False, 'reason': 'Position blocked by TITANIC model'}
+                except Exception:
+                    continue
+
+    # Optional rule: cannot move through enemy MONSTER/VEHICLE models.
+    if validation_rules.get('block_monster_vehicle_models', False) and game_map is not None:
+        for unit in list(getattr(game_map, "units", []) or []):
+            if unit is model.parent_unit:
+                continue
+            try:
+                if unit.faction == model.parent_unit.faction:
+                    continue
+            except Exception:
+                continue
+            try:
+                is_monster = bool(getattr(unit, "is_monster", False))
+                is_vehicle = bool(getattr(unit, "is_vehicle", False))
+                has_any_keyword = getattr(unit, "has_any_keyword", None)
+                if callable(has_any_keyword):
+                    is_monster = is_monster or bool(has_any_keyword("MONSTER"))
+                    is_vehicle = is_vehicle or bool(has_any_keyword("VEHICLE"))
+            except Exception:
+                continue
+            if not (is_monster or is_vehicle):
+                continue
+            try:
+                if not unit.is_alive() or not getattr(unit, "deployed", True):
+                    continue
+            except Exception:
+                continue
+            for other_model in list(getattr(unit, "models", []) or []):
+                try:
+                    if not getattr(other_model, "is_alive", True):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    other_shape = other_model.model_base.get_base_shape()
+                    if test_shape.intersects(other_shape):
+                        return {'valid': False, 'reason': 'Position blocked by MONSTER/VEHICLE model'}
                 except Exception:
                     continue
 

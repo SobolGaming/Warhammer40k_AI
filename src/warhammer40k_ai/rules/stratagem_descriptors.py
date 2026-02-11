@@ -276,6 +276,76 @@ _GORETRACK_ONSLAUGHT_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _GORETRACK_ONSLAUGHT_STRATAGEM_DESCRIPTORS.values()
 }
 
+_POSSESSED_SLAUGHTERBAND_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010083002": StratagemToolDescriptor(
+        stratagem_id="000010083002",
+        name="Daemonic Resistance",
+        timing="opponent_shooting_or_fight_phase_after_targets_selected",
+        target="world_eaters_possessed_unit_targeted",
+        duration="until_end_of_phase",
+        effect="wound_roll_penalty",
+        cp_cost=2,
+        effect_params={"wound_modifier": -1},
+    ),
+    "000010083003": StratagemToolDescriptor(
+        stratagem_id="000010083003",
+        name="Daemonic Strength",
+        timing="fight_phase_on_select_to_fight",
+        target="world_eaters_possessed_unit_not_yet_fought",
+        duration="until_end_of_phase",
+        effect="conditional_melee_damage_bonus",
+        cp_cost=1,
+        effect_params={
+            "eightbound_bonus_vs_non_monster_vehicle": 1,
+            "exalted_eightbound_bonus_vs_monster_vehicle": 1,
+        },
+    ),
+    "000010083004": StratagemToolDescriptor(
+        stratagem_id="000010083004",
+        name="Immortal Fury",
+        timing="opponent_fight_phase_after_targets_selected",
+        target="world_eaters_possessed_unit_targeted_not_yet_fought",
+        duration="until_end_of_phase",
+        effect="fight_on_death_after_attacks",
+        cp_cost=2,
+        effect_params={"roll_required": False},
+    ),
+    "000010083005": StratagemToolDescriptor(
+        stratagem_id="000010083005",
+        name="Rapid Manifestation",
+        timing="movement_phase_reinforcements_step",
+        target="exalted_eightbound_unit_arriving_from_deep_strike",
+        duration="this_turn_and_phase",
+        effect="deep_strike_min_distance_override_with_no_charge",
+        cp_cost=1,
+        effect_params={"min_distance": 6, "distance_type": "horizontal", "cannot_charge_this_turn": True},
+    ),
+    "000010083006": StratagemToolDescriptor(
+        stratagem_id="000010083006",
+        name="Warp Stalkers",
+        timing="movement_or_charge_phase_on_select",
+        target="world_eaters_possessed_unit_not_yet_selected",
+        duration="until_end_of_phase",
+        effect="move_through_enemy_except_monster_vehicle",
+        cp_cost=1,
+        effect_params={"auto_pass_desperate_escape": True},
+    ),
+    "000010083007": StratagemToolDescriptor(
+        stratagem_id="000010083007",
+        name="Horrifying Violence",
+        timing="opponent_command_phase_start",
+        target="world_eaters_possessed_unit",
+        duration="immediate",
+        effect="engagement_range_enemy_battleshock_test_modifier",
+        cp_cost=1,
+        effect_params={"battle_shock_test_modifier": -1},
+    ),
+}
+
+_POSSESSED_SLAUGHTERBAND_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _POSSESSED_SLAUGHTERBAND_STRATAGEM_DESCRIPTORS.values()
+}
+
 _WARPBANE_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009778002": StratagemToolDescriptor(
         stratagem_id="000009778002",
@@ -366,6 +436,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _GORETRACK_ONSLAUGHT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _POSSESSED_SLAUGHTERBAND_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _WARPBANE_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -377,5 +450,6 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _DAEMONIC_INCURSION_STRATAGEM_BY_NAME.get(key)
         or _SCINTILLATING_LEGION_STRATAGEM_BY_NAME.get(key)
         or _GORETRACK_ONSLAUGHT_STRATAGEM_BY_NAME.get(key)
+        or _POSSESSED_SLAUGHTERBAND_STRATAGEM_BY_NAME.get(key)
         or _WARPBANE_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
     )
