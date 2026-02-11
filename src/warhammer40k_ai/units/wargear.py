@@ -1763,6 +1763,17 @@ class WargearProfile:
         except Exception:
             pass
         try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            if mgr is not None and callable(getattr(mgr, "raiders_and_reavers_ap_bonus", None)):
+                game_map = self._get_game_map_from_model(attacker)
+                bonus = int(mgr.raiders_and_reavers_ap_bonus(attacker, target, game_map=game_map) or 0)
+                if bonus:
+                    ap_val -= bonus
+        except Exception:
+            pass
+        try:
             if self.parent_wargear and self.parent_wargear.is_ranged():
                 sr = getattr(attacker.parent_unit, "special_rules", None)
                 bonus = int(sr.get("pain_ranged_ap_bonus", 0) or 0) if isinstance(sr, dict) else 0

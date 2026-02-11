@@ -340,6 +340,11 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"while this unit is within 9 of one or more friendly heretic astartes psyker models improve the strength characteristic of ranged weapons equipped by models in this unit by \d+",
             r"while this unit is within 9 of one or more friendly heretic astartes daemon prince or a heretic astartes daemon prince with wings models improve the armour penetration characteristic of melee weapons equipped by models in this unit by \d+",
         ),
+        "Raiders and Reavers": (
+            r"ranged weapons equipped by heretic astartes models from your army have the assault ability and each time a heretic astartes model from your army makes an attack that targets a unit within range of an objective marker improve the armour penetration characteristic of that attack by \d+",
+            r"ranged weapons equipped by heretic astartes models from your army have the assault ability",
+            r"each time a heretic astartes model from your army makes an attack that targets a unit within range of an objective marker improve the armour penetration characteristic of that attack by \d+",
+        ),
         "Defend at All Costs": (
             r"each time a dire avenger guardian support weapon or war walker model from your army makes an attack if that models unit and or the target unit are within range of one or more objective markers add \d+ to the hit roll",
         ),
@@ -1511,6 +1516,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Empyric Wellspring": (
             "Supported",
             "Cabal of Chaos: each time a unit makes a Dark Pact it also selects Leaping Warpflame or Monstrous Manifestation until end of phase; Leaping Warpflame grants +1 Strength to ranged weapons while within 9\" of a friendly HERETIC ASTARTES PSYKER model, and Monstrous Manifestation grants +1 AP to melee weapons while within 9\" of a friendly HERETIC ASTARTES DAEMON PRINCE source.",
+        ),
+        "Raiders and Reavers": (
+            "Supported",
+            "Renegade Raiders: HERETIC ASTARTES ranged weapons count as [ASSAULT], and HERETIC ASTARTES attacks improve AP by 1 when targeting units within range of an objective marker.",
         ),
         "Mechanised Murder": ("Supported", "Rapid Evisceration: reroll Hit/Wound rolls of 1 for eligible units."),
         "Daemonic Empowerment": ("Supported", "Carnival of Excess: empowered units gain Sustained Hits."),
