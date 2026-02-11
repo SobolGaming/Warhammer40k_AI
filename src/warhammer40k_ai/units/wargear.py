@@ -626,45 +626,65 @@ class WargearProfile:
 
         return False
 
-    def _pyrogenesis_bonus(self, attacker: 'Model') -> Tuple[int, int, str]:
-        """Return (strength_bonus, ap_bonus, source) for Pyrogenesis if active."""
+    def _phase_effect_special_rules(
+        self,
+        attacker: 'Model',
+        *,
+        active_key: str,
+        expires_key: str,
+        owner_key: str,
+        turn_key: str,
+    ) -> Optional[dict]:
         try:
             unit = getattr(attacker, "parent_unit", None)
         except Exception:
             unit = None
         if unit is None:
-            return (0, 0, "")
+            return None
         try:
             root = unit.get_attached_unit_root()
         except Exception:
             root = unit
         if root is None:
-            return (0, 0, "")
+            return None
         sr = getattr(root, "special_rules", None)
-        if not isinstance(sr, dict) or not sr.get("pyrogenesis_active"):
-            return (0, 0, "")
+        if not isinstance(sr, dict) or not sr.get(str(active_key or "").strip()):
+            return None
         game = None
         try:
             game = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
         except Exception:
             game = None
-        owner = str(sr.get("pyrogenesis_turn_owner", "") or "")
+        owner = str(sr.get(str(owner_key or "").strip(), "") or "")
         if owner:
             try:
                 unit_owner = str(getattr(root.get_parent_army().player, "id", "") or "")
             except Exception:
                 unit_owner = ""
             if unit_owner and owner != unit_owner:
-                return (0, 0, "")
-        exp = str(sr.get("pyrogenesis_expires_phase", "") or "").strip().upper()
+                return None
+        exp = str(sr.get(str(expires_key or "").strip(), "") or "").strip().upper()
         if exp:
             phase_key = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
             if phase_key and phase_key != exp:
-                return (0, 0, "")
-        turn = int(sr.get("pyrogenesis_turn", 0) or 0)
+                return None
+        turn = int(sr.get(str(turn_key or "").strip(), 0) or 0)
         if turn and game is not None:
             if int(getattr(game, "turn", 0) or 0) != turn:
-                return (0, 0, "")
+                return None
+        return sr
+
+    def _pyrogenesis_bonus(self, attacker: 'Model') -> Tuple[int, int, str]:
+        """Return (strength_bonus, ap_bonus, source) for Pyrogenesis if active."""
+        sr = self._phase_effect_special_rules(
+            attacker,
+            active_key="pyrogenesis_active",
+            expires_key="pyrogenesis_expires_phase",
+            owner_key="pyrogenesis_turn_owner",
+            turn_key="pyrogenesis_turn",
+        )
+        if sr is None:
+            return (0, 0, "")
         try:
             s_bonus = int(sr.get("pyrogenesis_strength_bonus", 0) or 0)
         except Exception:
@@ -675,6 +695,44 @@ class WargearProfile:
             a_bonus = 0
         source = str(sr.get("pyrogenesis_source", "") or "Pyrogenesis").strip() or "Pyrogenesis"
         return (s_bonus, a_bonus, source)
+
+    def _mordian_minute_bonus(self, attacker: 'Model') -> Tuple[int, str]:
+        """Return (strength_bonus, source) for MORDIAN MINUTE if active."""
+        sr = self._phase_effect_special_rules(
+            attacker,
+            active_key="mordian_minute_active",
+            expires_key="mordian_minute_expires_phase",
+            owner_key="mordian_minute_owner",
+            turn_key="mordian_minute_turn",
+        )
+        if sr is None:
+            return (0, "")
+        try:
+            s_bonus = int(sr.get("mordian_minute_strength_bonus", 0) or 0)
+        except Exception:
+            s_bonus = 0
+        source = str(sr.get("mordian_minute_source", "") or "MORDIAN MINUTE").strip() or "MORDIAN MINUTE"
+        return (s_bonus, source)
+
+    def _purging_fire_lethal_hits_active(self, attacker: 'Model') -> bool:
+        """Return True when PURGING FIRE grants lethal hits for this attack."""
+        return self._phase_effect_special_rules(
+            attacker,
+            active_key="purging_fire_active",
+            expires_key="purging_fire_expires_phase",
+            owner_key="purging_fire_owner",
+            turn_key="purging_fire_turn",
+        ) is not None
+
+    def _veteran_sharpshooters_ignores_cover_active(self, attacker: 'Model') -> bool:
+        """Return True when VETERAN SHARPSHOOTERS grants ignores cover for this attack."""
+        return self._phase_effect_special_rules(
+            attacker,
+            active_key="veteran_sharpshooters_active",
+            expires_key="veteran_sharpshooters_expires_phase",
+            owner_key="veteran_sharpshooters_owner",
+            turn_key="veteran_sharpshooters_turn",
+        ) is not None
 
     def _flickering_reality_value(self, target: 'Unit', attacker: 'Model') -> Optional[int]:
         """Return the Flickering Reality hit roll value if active for target."""
@@ -5360,6 +5418,11 @@ class WargearProfile:
             except Exception:
                 pass
             try:
+                if self._veteran_sharpshooters_ignores_cover_active(attacker):
+                    attack_instance["ignores_cover"] = True
+            except Exception:
+                pass
+            try:
                 tsr = getattr(target, "special_rules", None)
                 if isinstance(tsr, dict) and tsr.get("pain_no_cover_active"):
                     attack_instance["ignores_cover"] = True
@@ -5390,6 +5453,11 @@ class WargearProfile:
         bonus_anti_specs = ()
         bonus_precision_on_crit = False
         bonus_precision = False
+        try:
+            if attack_is_ranged and self._purging_fire_lethal_hits_active(attacker):
+                bonus_lethal = True
+        except Exception:
+            pass
 
         def _set_bonus_sustained(value: int, label: str) -> None:
             nonlocal bonus_sustained_value, bonus_sustained_label, bonus_sustained_dice
@@ -5562,6 +5630,11 @@ class WargearProfile:
             bonus_anti_specs = ()
             bonus_precision_on_crit = False
             bonus_precision = False
+        try:
+            if attack_is_ranged and self._purging_fire_lethal_hits_active(attacker):
+                bonus_lethal = True
+        except Exception:
+            pass
 
         # Enhancement: Aspect of Murder grants Precision to bearer melee weapons.
         try:
@@ -8875,6 +8948,14 @@ class WargearProfile:
             if py_s_bonus and isinstance(strength, int):
                 strength = strength + int(py_s_bonus)
                 wound_result.setdefault("modifiers", []).append(f"+{int(py_s_bonus)}S from {py_source}")
+        except Exception:
+            pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_ranged():
+                mm_s_bonus, mm_source = self._mordian_minute_bonus(attacker)
+                if mm_s_bonus and isinstance(strength, int):
+                    strength = strength + int(mm_s_bonus)
+                    wound_result.setdefault("modifiers", []).append(f"+{int(mm_s_bonus)}S from {mm_source}")
         except Exception:
             pass
         # Thousand Sons: Ensorcelled Destruction (+1 Strength vs non-MONSTER/VEHICLE marked by Psychic hits).

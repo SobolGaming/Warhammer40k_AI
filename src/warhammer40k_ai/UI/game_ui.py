@@ -1311,6 +1311,39 @@ class GameView:
             )
         self._request_corrupting_taint_objective = _request_corrupting_taint_objective
 
+        def _request_no_retreat_objective(player, game, candidates, on_chosen):
+            from ..engine.decision_kinds import DECISION_PICK_OBJECTIVE
+            from ..engine.decisions import DecisionOption
+            from ..utility.entity_ids import get_entity_id
+
+            objs = list(candidates or [])
+            if not objs:
+                on_chosen(None)
+                return
+            options = []
+            for idx, obj in enumerate(objs):
+                label = getattr(obj, "name", None) or f"Objective {idx + 1}"
+                try:
+                    loc = getattr(obj, "location", None)
+                    if loc is not None:
+                        label = f"{label} ({float(getattr(loc, 'x', 0.0)):.1f}, {float(getattr(loc, 'y', 0.0)):.1f})"
+                except Exception:
+                    pass
+                options.append(DecisionOption.create(label, payload={"objective_id": get_entity_id(obj)}))
+            _resolve_option_selection_dialog(
+                player=player,
+                options=options,
+                on_chosen=on_chosen,
+                decision_type=DECISION_PICK_OBJECTIVE,
+                prompt="Select an objective marker your unit controls.",
+                title="No Retreat!",
+                header="Select an objective marker to hold.",
+                subtitle="Objective remains under your control until your opponent controls it at the start or end of a phase.",
+                context={"ability": "no_retreat"},
+                allow_skip=True,
+            )
+        self._request_no_retreat_objective = _request_no_retreat_objective
+
         def _request_corrupt_realspace_objective(player, game, candidates, on_chosen):
             from ..engine.decision_kinds import DECISION_PICK_OBJECTIVE
             from ..engine.decisions import DecisionOption
@@ -16849,6 +16882,90 @@ class GameView:
             )
             return
 
+        if name_u in ("MORDIAN MINUTE", "PURGING FIRE", "VETERAN SHARPSHOOTERS") and "unit" not in context and "target_unit" not in context:
+            if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+                candidates = context.get("candidates") or []
+                if not candidates:
+                    getter_name = {
+                        "MORDIAN MINUTE": "_grizzled_mordian_minute_candidates",
+                        "PURGING FIRE": "_grizzled_purging_fire_candidates",
+                        "VETERAN SHARPSHOOTERS": "_grizzled_veteran_sharpshooters_candidates",
+                    }.get(name_u, "")
+                    getter = getattr(manager, getter_name, None)
+                    if callable(getter):
+                        try:
+                            candidates = list(getter() or [])
+                        except Exception:
+                            candidates = []
+                subtitle = {
+                    "MORDIAN MINUTE": "ASTRA MILITARUM INFANTRY with First Rank, Fire! Second Rank, Fire! (not shot)",
+                    "PURGING FIRE": "Ordered ASTRA MILITARUM unit within objective range (not shot)",
+                    "VETERAN SHARPSHOOTERS": "ASTRA MILITARUM unit that has not shot",
+                }.get(name_u, "Select an eligible ASTRA MILITARUM unit.")
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=candidates,
+                    on_chosen=lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt=f"Select {name} unit.",
+                    title=name,
+                    subtitle=subtitle,
+                    enemy_unit=None,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+            return
+
+        if name_u == "NO RETREAT!" and ("objective" not in context and "objective_marker" not in context):
+            if not callable(getattr(self, "_request_no_retreat_objective", None)):
+                return
+
+            unit = context.get("unit") or context.get("target_unit")
+
+            def _pick_objective(chosen_unit):
+                if chosen_unit is None:
+                    logger.info("No Retreat!: no unit selected")
+                    return
+                try:
+                    objective_candidates = list(manager._grizzled_no_retreat_objective_candidates(chosen_unit) or [])
+                except Exception:
+                    objective_candidates = []
+                self._request_no_retreat_objective(
+                    player,
+                    self.game,
+                    objective_candidates,
+                    lambda objective: self._finalize_no_retreat(player, name, context, chosen_unit, objective),
+                )
+
+            if unit is not None:
+                _pick_objective(unit)
+                return
+
+            if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+                candidates = context.get("candidates") or []
+                if not candidates and hasattr(manager, "_grizzled_no_retreat_candidates"):
+                    try:
+                        candidates = list(manager._grizzled_no_retreat_candidates() or [])
+                    except Exception:
+                        candidates = []
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=candidates,
+                    on_chosen=_pick_objective,
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt="Select No Retreat! unit.",
+                    title="No Retreat!",
+                    subtitle="ASTRA MILITARUM unit with Duty and Honour! while within a controlled objective.",
+                    enemy_unit=None,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+            return
+
         if name_u == "PROFANE SYMBIOSIS" and "unit" not in context and "target_unit" not in context:
             if callable(getattr(self, "_request_profane_symbiosis_unit", None)):
                 candidates = context.get("candidates") or []
@@ -17966,6 +18083,26 @@ class GameView:
             logger.info("Corrupting Taint: no objective selected")
             return
         ctx = dict(context)
+        ctx["objective"] = objective
+        ok = manager.use(name, **ctx)
+        if ok:
+            logger.info(f"Used stratagem: {name}")
+        else:
+            logger.info(f"Could not use stratagem: {name}")
+
+    def _finalize_no_retreat(self, player, name: str, context: Dict[str, Any], unit, objective) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if unit is None:
+            logger.info("No Retreat!: no unit selected")
+            return
+        if objective is None:
+            logger.info("No Retreat!: no objective selected")
+            return
+        ctx = dict(context)
+        ctx["unit"] = unit
+        ctx["target_unit"] = unit
         ctx["objective"] = objective
         ok = manager.use(name, **ctx)
         if ok:

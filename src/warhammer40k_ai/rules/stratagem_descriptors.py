@@ -488,6 +488,70 @@ _CULT_OF_BLOOD_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _CULT_OF_BLOOD_STRATAGEM_DESCRIPTORS.values()
 }
 
+_GRIZZLED_COMPANY_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010638007": StratagemToolDescriptor(
+        stratagem_id="000010638007",
+        name="Additional Armour",
+        timing="opponent_shooting_phase_after_targets_selected",
+        target="astra_militarum_unit_targeted",
+        duration="until_attacking_unit_finishes_attacks",
+        effect="ap_worsen",
+        cp_cost=1,
+        effect_params={"ap_worsen": 1},
+    ),
+    "000010638006": StratagemToolDescriptor(
+        stratagem_id="000010638006",
+        name="Mordian Minute",
+        timing="shooting_phase_on_select_to_shoot",
+        target="ordered_astra_militarum_infantry_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="ranged_strength_bonus",
+        cp_cost=1,
+        effect_params={"strength_bonus": 1, "order_key": "FIRST_RANK_FIRE"},
+    ),
+    "000010638005": StratagemToolDescriptor(
+        stratagem_id="000010638005",
+        name="Purging Fire",
+        timing="shooting_phase_on_select_to_shoot",
+        target="ordered_astra_militarum_unit_within_objective_range_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="ranged_lethal_hits",
+        cp_cost=1,
+    ),
+    "000010638004": StratagemToolDescriptor(
+        stratagem_id="000010638004",
+        name="Veteran Sharpshooters",
+        timing="shooting_phase_on_select_to_shoot",
+        target="astra_militarum_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="ignore_cover",
+        cp_cost=1,
+    ),
+    "000010638002": StratagemToolDescriptor(
+        stratagem_id="000010638002",
+        name="Snap To It",
+        timing="start_of_any_phase",
+        target="astra_militarum_officer_unit",
+        duration="immediate",
+        effect="issue_order_as_if_command_phase",
+        cp_cost=1,
+        effect_params={"orders": 1},
+    ),
+    "000010638003": StratagemToolDescriptor(
+        stratagem_id="000010638003",
+        name="No Retreat!",
+        timing="command_phase",
+        target="astra_militarum_unit_with_duty_and_honour_order",
+        duration="until_opponent_controls_start_or_end_of_phase",
+        effect="sticky_objective",
+        cp_cost=1,
+    ),
+}
+
+_GRIZZLED_COMPANY_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _GRIZZLED_COMPANY_STRATAGEM_DESCRIPTORS.values()
+}
+
 _WARPBANE_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009778002": StratagemToolDescriptor(
         stratagem_id="000009778002",
@@ -666,6 +730,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _CULT_OF_BLOOD_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _GRIZZLED_COMPANY_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _WARPBANE_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -683,6 +750,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _POSSESSED_SLAUGHTERBAND_STRATAGEM_BY_NAME.get(key)
         or _VESSELS_OF_WRATH_STRATAGEM_BY_NAME.get(key)
         or _CULT_OF_BLOOD_STRATAGEM_BY_NAME.get(key)
+        or _GRIZZLED_COMPANY_STRATAGEM_BY_NAME.get(key)
         or _WARPBANE_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _CABAL_OF_CHAOS_STRATAGEM_BY_NAME.get(key)
     )

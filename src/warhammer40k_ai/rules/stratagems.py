@@ -8,6 +8,7 @@ from ..utility import dice as dice_module
 from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL
 from ..utility.entity_ids import get_entity_id
 from .stratagems_aeldari import AeldariStratagemMixin
+from .stratagems_astra_militarum import AstraMilitarumStratagemMixin
 from .stratagems_chaos_daemons import ChaosDaemonsStratagemMixin
 from .stratagems_chaos_space_marines import ChaosSpaceMarinesStratagemMixin
 from .stratagem_descriptors import get_stratagem_tool_descriptor
@@ -65,8 +66,11 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "HEROIC INTERVENTION",
     "INSANE BRAVERY",
     "MANOEUVRE AND FIRE",
+    "MORDIAN MINUTE",
     "NEW ORDERS",
+    "NO RETREAT!",
     "PEERLESS WARRIOR",
+    "PURGING FIRE",
     "RAPID INGRESS",
     "RAPID MANIFESTATION",
     "MEET FORCE WITH FORCE",
@@ -81,9 +85,11 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "TANK SHOCK",
     "THE FOE FORESEEN",
     "CUT DOWN THE WEAK",
+    "SNAP TO IT",
     "UNBOUND ARROGANCE",
     "UNLEASH THE LIONS",
     "UNBRIDLED CARNAGE",
+    "VETERAN SHARPSHOOTERS",
     "WEBWAY TUNNEL",
     "UNYIELDING FORMS",
     "MERCILESS RECLAMATION",
@@ -927,6 +933,7 @@ class Stratagem:
 
 class StratagemManager(
     ChaosSpaceMarinesStratagemMixin,
+    AstraMilitarumStratagemMixin,
     WorldEatersStratagemMixin,
     GreyKnightsStratagemMixin,
     ChaosKnightsStratagemMixin,
@@ -2119,6 +2126,47 @@ class StratagemManager(
                 result["available"] = True
                 result["reason"] = None
                 return result
+        if name_u == "MORDIAN MINUTE":
+            if self._grizzled_mordian_minute_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires ordered ASTRA MILITARUM INFANTRY unit (First Rank, Fire! Second Rank, Fire!) that has not shot"
+            return result
+        if name_u == "PURGING FIRE":
+            if self._grizzled_purging_fire_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires ordered ASTRA MILITARUM unit within objective range that has not shot"
+            return result
+        if name_u == "VETERAN SHARPSHOOTERS":
+            if self._grizzled_veteran_sharpshooters_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires ASTRA MILITARUM unit that has not shot"
+            return result
+        if name_u == "SNAP TO IT":
+            if self._grizzled_snap_to_it_officer_candidates(phase_name=phase_name):
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires eligible ASTRA MILITARUM OFFICER that can issue an order"
+            return result
+        if name_u == "NO RETREAT!":
+            target_unit = context.get("target_unit") or context.get("unit")
+            candidate_units = [target_unit] if target_unit is not None else list(self._grizzled_no_retreat_candidates() or [])
+            for candidate in candidate_units:
+                objective_candidates = list(context.get("objective_candidates") or [])
+                if not objective_candidates:
+                    objective_candidates = list(self._grizzled_no_retreat_objective_candidates(candidate) or [])
+                if objective_candidates:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            result["reason"] = "Requires Duty and Honour! unit within a controlled objective marker"
+            return result
         if stratagem.can_use(self.player, self.game, **context):
             result["available"] = True
             result["reason"] = None
@@ -2156,6 +2204,11 @@ class StratagemManager(
             "DEADLY DEBUT": "Target: DRUKHARI unit that charged and has not fought",
             "FEIGNED WEAKNESS": "Target: DRUKHARI unit that Fell Back",
             "PRETERNATURAL AGILITY": "Target: WYCH CULT unit",
+            "MORDIAN MINUTE": "Target: ASTRA MILITARUM INFANTRY unit with First Rank, Fire! Second Rank, Fire! (not shot)",
+            "NO RETREAT!": "Target: ASTRA MILITARUM unit with Duty and Honour!; select controlled objective in range",
+            "PURGING FIRE": "Target: ASTRA MILITARUM unit with an active Order within objective range (not shot)",
+            "SNAP TO IT": "Target: ASTRA MILITARUM OFFICER unit; issue one Order now",
+            "VETERAN SHARPSHOOTERS": "Target: ASTRA MILITARUM unit (not shot)",
             "BALEFUL BLESSING": "Target: HERETIC ASTARTES unit after a mortal wound is allocated to it",
             "MUTATION'S CURSE": "Target: HERETIC ASTARTES PSYKER unit; select one visible enemy unit within 12\"",
             "NO REST IN DEATH": "Target: HERETIC ASTARTES unit within 9\" of friendly Psyker/Daemon Prince source",
@@ -3625,6 +3678,43 @@ class StratagemManager(
                                     "pyrogenesis_turn_owner",
                                     "pyrogenesis_turn",
                                     "pyrogenesis_source",
+                                ):
+                                    sr.pop(key, None)
+                                u.special_rules = sr
+                        if isinstance(sr, dict) and sr.get("mordian_minute_active") is True:
+                            exp = str(sr.get("mordian_minute_expires_phase", "") or "").strip().upper()
+                            if not exp or exp == "SHOOTING_PHASE":
+                                for key in (
+                                    "mordian_minute_active",
+                                    "mordian_minute_strength_bonus",
+                                    "mordian_minute_expires_phase",
+                                    "mordian_minute_owner",
+                                    "mordian_minute_turn",
+                                    "mordian_minute_source",
+                                ):
+                                    sr.pop(key, None)
+                                u.special_rules = sr
+                        if isinstance(sr, dict) and sr.get("purging_fire_active") is True:
+                            exp = str(sr.get("purging_fire_expires_phase", "") or "").strip().upper()
+                            if not exp or exp == "SHOOTING_PHASE":
+                                for key in (
+                                    "purging_fire_active",
+                                    "purging_fire_expires_phase",
+                                    "purging_fire_owner",
+                                    "purging_fire_turn",
+                                    "purging_fire_source",
+                                ):
+                                    sr.pop(key, None)
+                                u.special_rules = sr
+                        if isinstance(sr, dict) and sr.get("veteran_sharpshooters_active") is True:
+                            exp = str(sr.get("veteran_sharpshooters_expires_phase", "") or "").strip().upper()
+                            if not exp or exp == "SHOOTING_PHASE":
+                                for key in (
+                                    "veteran_sharpshooters_active",
+                                    "veteran_sharpshooters_expires_phase",
+                                    "veteran_sharpshooters_owner",
+                                    "veteran_sharpshooters_turn",
+                                    "veteran_sharpshooters_source",
                                 ):
                                     sr.pop(key, None)
                                 u.special_rules = sr
@@ -11242,6 +11332,9 @@ class StratagemManager(
         cabal_result = self._use_chaos_space_marines_cabal_stratagem(s, **kwargs)
         if cabal_result is not None:
             return cabal_result
+        am_result = self._use_astra_militarum_grizzled_stratagem(s, **kwargs)
+        if am_result is not None:
+            return am_result
 
         # Rage-cursed Onslaught: RED WRATH (advance then shoot/charge choice; Red Thirst for both)
         if s.name.upper() == "RED WRATH":

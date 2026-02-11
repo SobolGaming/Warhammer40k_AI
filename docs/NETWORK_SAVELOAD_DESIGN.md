@@ -398,7 +398,7 @@ Note: modifier ignore dialogs are used by abilities like Driven by Ultimate Rage
 - quarry_selection_dialog: CHOOSE_LIMB_FROM_LIMB {choice} (context `unit_id`)
 - quarry_selection_dialog: CHOOSE_RED_WRATH {mode} (context `unit_id`)
 - quarry_selection_dialog: CHOOSE_IMPOSSIBLE_ECLIPSE_ZONE {zone | skip} (context `ability="impossible_eclipse"`, `unit_id`, `ability_name`)
-- quarry_selection_dialog: PICK_OBJECTIVE {objective_id} (context `ability="a_grim_warning"`)
+- quarry_selection_dialog: PICK_OBJECTIVE {objective_id} (context `ability="a_grim_warning"` | `ability="corrupting_taint"` | `ability="corrupt_realspace"` | `ability="no_retreat"`)
 - secondary_discard_dialog: DISCARD_SECONDARY {card_id}
 - shadow_form_dialog: CHOOSE_SHADOW_FORM {choice_id}
 - daemon_primarch_slaanesh_dialog: CHOOSE_DAEMON_PRIMARCH_SLAANESH {choice_id} (context `unit_id`, `opponent_player_id`, `battle_round`, `expires_round`)
