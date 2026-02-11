@@ -24,6 +24,27 @@ _NAMED_UNIT_INCLUSION_LIMIT_RE = re.compile(
     re.IGNORECASE,
 )
 
+_INSPIRING_COMMANDER_OC_SET_RE = re.compile(
+    r"if\s+you\s+include\s+this\s+model\s+in\s+your\s+army\s+until\s+the\s+end\s+of\s+the\s+battle\s+"
+    r"non\s+character\s+models\s+in\s+(?P<units>.+?)\s+units?\s+from\s+your\s+army\s+"
+    r"have\s+an\s+objective\s+control\s+characteristic\s+of\s+(?P<value>\d+)\s+"
+    r"while\s+they\s+are\s+not\s+battle\s+shocked",
+    re.IGNORECASE,
+)
+
+
+def _normalize_unit_name_for_rules(value: str) -> str:
+    text = re.sub(r"[^a-z0-9]+", " ", str(value or "").lower())
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _split_named_unit_list(value: str) -> list[str]:
+    text = re.sub(r"\s+", " ", str(value or "").strip())
+    if not text:
+        return []
+    parts = re.split(r"\s*(?:,|\band\b|\bor\b)\s*", text, flags=re.IGNORECASE)
+    return [re.sub(r"\s+", " ", part).strip() for part in parts if str(part or "").strip()]
+
 
 class StateAttachmentMixin:
     def add_model(self, model: Model) -> None:
@@ -2059,6 +2080,9 @@ class StateAttachmentMixin:
         self._ability_cache = cache
         return bool(found)
 
+    def normalize_unit_name_for_rules(self, value: str) -> str:
+        return _normalize_unit_name_for_rules(value)
+
     def get_named_unit_inclusion_caps(self) -> list[dict]:
         """
         Parse ability text for named unit caps in the form:
@@ -2093,8 +2117,7 @@ class StateAttachmentMixin:
                     continue
 
                 raw_unit_name = str(match.group("unit") or "").strip()
-                unit_key = re.sub(r"[^a-z0-9]+", " ", raw_unit_name.lower())
-                unit_key = re.sub(r"\s+", " ", unit_key).strip()
+                unit_key = _normalize_unit_name_for_rules(raw_unit_name)
                 if not unit_key:
                     continue
 
@@ -2112,6 +2135,85 @@ class StateAttachmentMixin:
         cache[cache_key] = [dict(entry) for entry in caps]
         self._ability_cache = cache
         return [dict(entry) for entry in caps]
+
+    def get_inspiring_commander_specs(self) -> list[dict]:
+        """
+        Parse abilities like:
+        "If you include this model in your army, until the end of the battle,
+        non-CHARACTER models in <named unit> units from your army have an
+        Objective Control characteristic of <N> while they are not Battle-shocked."
+        """
+        cache_key = "inspiring_commander_specs"
+        cache = getattr(self, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return [dict(entry) for entry in list(cache.get(cache_key) or [])]
+
+        specs_by_key: dict[tuple[int, tuple[str, ...]], dict] = {}
+        for ab in list(getattr(self, "possible_abilities", []) or []):
+            if isinstance(ab, str):
+                name = str(ab or "")
+                desc = str(ab or "")
+            else:
+                name = str(getattr(ab, "name", "") or "")
+                desc = str(getattr(ab, "description", "") or "")
+            text = self._normalize_rules_text(desc or name or "")
+            if not text:
+                continue
+            normalized = text.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            if not normalized:
+                continue
+
+            for match in _INSPIRING_COMMANDER_OC_SET_RE.finditer(normalized):
+                try:
+                    oc_value = int(match.group("value"))
+                except (TypeError, ValueError):
+                    continue
+                if oc_value < 0:
+                    continue
+
+                unit_clause = str(match.group("units") or "").strip()
+                if not unit_clause:
+                    continue
+                target_unit_names = _split_named_unit_list(unit_clause)
+                target_unit_keys = sorted(
+                    {
+                        _normalize_unit_name_for_rules(unit_name)
+                        for unit_name in target_unit_names
+                        if _normalize_unit_name_for_rules(unit_name)
+                    }
+                )
+                if not target_unit_keys:
+                    continue
+
+                key = (int(oc_value), tuple(target_unit_keys))
+                existing = specs_by_key.get(key)
+                if existing is None:
+                    source_name = str(name or "Inspiring Commander").strip() or "Inspiring Commander"
+                    specs_by_key[key] = {
+                        "source": source_name,
+                        "objective_control": int(oc_value),
+                        "target_unit_keys": list(target_unit_keys),
+                        "target_unit_names": list(target_unit_names),
+                        "non_character_only": True,
+                        "while_not_battle_shocked": True,
+                    }
+                else:
+                    existing_names = set(str(v or "").strip() for v in list(existing.get("target_unit_names") or []))
+                    for unit_name in target_unit_names:
+                        candidate = str(unit_name or "").strip()
+                        if candidate and candidate not in existing_names:
+                            existing_names.add(candidate)
+                    existing["target_unit_names"] = sorted(existing_names)
+
+        specs = [specs_by_key[key] for key in sorted(specs_by_key, key=lambda item: (item[0], item[1]))]
+        if not isinstance(cache, dict):
+            cache = {}
+        cache[cache_key] = [dict(entry) for entry in specs]
+        self._ability_cache = cache
+        return [dict(entry) for entry in specs]
 
     def _get_crewed_platform_spec(self) -> Optional[dict]:
         """Return parsed crewed platform ability info, or None if not present."""

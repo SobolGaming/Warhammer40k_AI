@@ -2870,6 +2870,7 @@ def _classify_ability_base(
 
     desc_support = _warlord_enhancement_restriction_support(description)
     unique_model_support = _unique_model_restriction_support(description)
+    inspiring_commander_support = _inspiring_commander_support(description)
     chapter_restriction_support = None
     if description:
         if "RESTRICTIONS" not in description.upper():
@@ -2880,6 +2881,8 @@ def _classify_ability_base(
         return desc_support
     if unique_model_support:
         return unique_model_support
+    if inspiring_commander_support:
+        return inspiring_commander_support
     if chapter_restriction_support:
         return chapter_restriction_support
     closest_m_veh_support = _closest_monster_vehicle_reroll_support(description)
@@ -3372,6 +3375,25 @@ def _unique_model_restriction_support(description: str) -> Optional[Tuple[str, s
     )
     if re.fullmatch(named_unit_pattern, norm):
         return ("Supported", "Army validation enforces named-unit inclusion caps.")
+    return None
+
+
+def _inspiring_commander_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"if you include this model in your army until the end of the battle "
+        r"non character models in .+ units? from your army have an objective control "
+        r"characteristic of \d+ while they are not battle shocked"
+    )
+    if re.fullmatch(pattern, norm):
+        return (
+            "Supported",
+            "Army-wide named-unit Objective Control set parsed (non-CHARACTER models only; disabled while the target unit is Battle-shocked).",
+        )
     return None
 
 
