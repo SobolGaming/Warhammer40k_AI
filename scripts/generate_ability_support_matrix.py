@@ -3330,7 +3330,10 @@ def _warlord_enhancement_restriction_support(description: str) -> Optional[Tuple
     norm = _norm_rules_text(description)
     if not norm:
         return None
-    warlord_clause = r"(?:this|that|the)?\s*(?:unit|model|models|bearer)?\s*(?:cannot be your|none of these models can be your)\s+warlord"
+    warlord_clause = (
+        r"(?:this|that|the)?\s*(?:unit|model|models|bearer)?\s*"
+        r"(?:cannot be(?: selected as)? your|none of these models can be(?: selected as)? your)\s+warlord"
+    )
     enh_clause = r"(?:this|that|the)?\s*(?:unit|model|models|bearer)?\s*(?:cannot\s+)?be given (?:an?\s+)?enhancements?"
     pattern = rf"(?:{warlord_clause}(?:\s+(?:and|or)\s+{enh_clause})?|{enh_clause}(?:\s+(?:and|or)\s+{warlord_clause})?)"
     if not re.fullmatch(pattern, norm):

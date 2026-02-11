@@ -1694,7 +1694,10 @@ class Unit(
         cache[cache_key] = deduped
         return deduped
 
-    _CANNOT_BE_WARLORD_RE = re.compile(r"\bcannot be your\s+warlord\b", re.IGNORECASE)
+    _CANNOT_BE_WARLORD_RE = re.compile(
+        r"\bcannot be(?: selected as)? your\s+warlord\b",
+        re.IGNORECASE,
+    )
     _CANNOT_BE_GIVEN_ENHANCEMENTS_RE = re.compile(r"\bcannot be given\s+(?:an?\s+)?enhancements?\b", re.IGNORECASE)
     _BEARER_UNIT_CHARGE_BONUS_RE = re.compile(
         r"add\s+(\d+)\s+to\s+charge\s+rolls?\s+made\s+for\s+(?:the\s+bearer'?s\s+unit|this\s+unit|this\s+model'?s\s+unit)",

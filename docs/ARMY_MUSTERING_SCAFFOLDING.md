@@ -50,6 +50,8 @@ Full unit selection, wargear, enhancements, and roster validation are not implem
 - Army list parsing in the network server (`army_submit`) runs `Army.validate()` on the parsed list.
 - Current validation includes:
   - Epic Hero duplicates (no Epic Hero may appear more than once).
+  - Warlord-ineligible datasheet rules (for example `this model cannot be your warlord`
+    and `this model cannot be selected as your warlord`).
   - Datasheet "one-of" restrictions (`cannot include more than one of this model/unit in your army`).
   - Named unit caps from ability text in the form
     `your army cannot include more than X <named unit> unit(s)` where `X` is numeric or worded.
