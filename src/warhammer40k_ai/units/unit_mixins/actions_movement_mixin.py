@@ -7514,6 +7514,8 @@ class ActionsMovementMixin:
                 source_desperate = False
                 source_exclude_mv = False
                 source_bs_penalty = 0
+                source_any_penalty = 0
+                source_target_enemy_id = ""
                 try:
                     members = list(enemy_root.get_attached_unit_members() or [])
                 except Exception:
@@ -7528,6 +7530,9 @@ class ActionsMovementMixin:
                         source_desperate = True
                         if source_sr.get("enemy_fallback_desperate_escape_exclude_monster_vehicle"):
                             source_exclude_mv = True
+                        target_enemy_id = str(source_sr.get("enemy_fallback_desperate_escape_target_enemy_id", "") or "")
+                        if target_enemy_id:
+                            source_target_enemy_id = target_enemy_id
                         try:
                             source_bs_penalty = max(
                                 source_bs_penalty,
@@ -7535,6 +7540,16 @@ class ActionsMovementMixin:
                             )
                         except Exception:
                             pass
+                        try:
+                            source_any_penalty = max(
+                                source_any_penalty,
+                                int(source_sr.get("enemy_fallback_desperate_escape_penalty", 0) or 0),
+                            )
+                        except Exception:
+                            pass
+
+                if source_target_enemy_id and str(source_target_enemy_id) != str(enemy_root_id):
+                    continue
 
                 repulsed_active = False
                 try:
@@ -7549,7 +7564,6 @@ class ActionsMovementMixin:
                         )
                 except Exception:
                     repulsed_active = False
-                source_any_penalty = 0
                 if repulsed_active:
                     source_desperate = True
                     source_exclude_mv = True

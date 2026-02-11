@@ -346,6 +346,81 @@ _POSSESSED_SLAUGHTERBAND_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _POSSESSED_SLAUGHTERBAND_STRATAGEM_DESCRIPTORS.values()
 }
 
+_VESSELS_OF_WRATH_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009848002": StratagemToolDescriptor(
+        stratagem_id="000009848002",
+        name="Aspire to Infamy",
+        timing="fight_phase_on_select_to_fight",
+        target="khorne_berzerkers_or_jakhals_within_8_of_world_eaters_character_not_yet_fought",
+        duration="until_end_of_phase",
+        effect="non_character_melee_strength_ap_bonus",
+        cp_cost=1,
+        range_in=8.0,
+        effect_params={"strength_bonus": 1, "ap_bonus": 1, "non_character_only": True},
+    ),
+    "000009848003": StratagemToolDescriptor(
+        stratagem_id="000009848003",
+        name="Overshadowed by None",
+        timing="fight_phase_on_select_to_fight",
+        target="world_eaters_infantry_mounted_or_daemon_prince_not_yet_fought",
+        duration="until_end_of_phase",
+        effect="wound_reroll_vs_monster_vehicle",
+        cp_cost=1,
+        effect_params={"attack_type": "melee", "target_keywords_any": ["MONSTER", "VEHICLE"]},
+    ),
+    "000009848007": StratagemToolDescriptor(
+        stratagem_id="000009848007",
+        name="Brazen Contempt",
+        timing="opponent_shooting_phase_after_targets_selected",
+        target="world_eaters_unit_targeted_by_attacking_unit",
+        duration="until_end_of_phase",
+        effect="conditional_wound_roll_penalty",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "ranged",
+            "wound_modifier": -1,
+            "requires_strength_gt_toughness_or_vessel_of_wrath": True,
+        },
+    ),
+    "000009848004": StratagemToolDescriptor(
+        stratagem_id="000009848004",
+        name="Gory Dedication",
+        timing="end_of_fight_phase",
+        target="world_eaters_unit_that_destroyed_enemy_models_with_melee",
+        duration="until_opponent_control_greater_end_of_phase",
+        effect="sticky_objective",
+        cp_cost=1,
+    ),
+    "000009848006": StratagemToolDescriptor(
+        stratagem_id="000009848006",
+        name="Meet Force with Force",
+        timing="opponent_shooting_phase_after_shooting",
+        target="world_eaters_infantry_mounted_or_daemon_prince_that_lost_wounds",
+        duration="immediate",
+        effect="blood_surge_move_d6_with_optional_reroll",
+        cp_cost=1,
+        effect_params={"movement_type": "blood_surge", "distance_roll": "D6", "reroll_if": ["berzerkers", "vessel_of_wrath"]},
+    ),
+    "000009848005": StratagemToolDescriptor(
+        stratagem_id="000009848005",
+        name="Punish the Craven",
+        timing="opponent_movement_phase_on_enemy_selected_to_fall_back",
+        target="world_eaters_infantry_or_daemon_prince_within_engagement_range",
+        duration="until_fall_back_resolved",
+        effect="enemy_fall_back_desperate_escape",
+        cp_cost=1,
+        effect_params={
+            "enemy_exclude_keywords_any": ["MONSTER", "VEHICLE"],
+            "force_desperate_escape": True,
+            "vessel_penalty": -1,
+        },
+    ),
+}
+
+_VESSELS_OF_WRATH_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _VESSELS_OF_WRATH_STRATAGEM_DESCRIPTORS.values()
+}
+
 _WARPBANE_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009778002": StratagemToolDescriptor(
         stratagem_id="000009778002",
@@ -439,6 +514,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _POSSESSED_SLAUGHTERBAND_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _VESSELS_OF_WRATH_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _WARPBANE_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -451,5 +529,6 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _SCINTILLATING_LEGION_STRATAGEM_BY_NAME.get(key)
         or _GORETRACK_ONSLAUGHT_STRATAGEM_BY_NAME.get(key)
         or _POSSESSED_SLAUGHTERBAND_STRATAGEM_BY_NAME.get(key)
+        or _VESSELS_OF_WRATH_STRATAGEM_BY_NAME.get(key)
         or _WARPBANE_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
     )

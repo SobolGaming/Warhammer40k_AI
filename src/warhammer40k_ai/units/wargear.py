@@ -888,6 +888,45 @@ class WargearProfile:
                 continue
         return False
 
+    def _unit_contains_model_keyword(self, unit: Optional['Unit'], keyword: str) -> bool:
+        if unit is None:
+            return False
+        key = str(keyword or "").strip()
+        if not key:
+            return False
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return False
+        contains_fn = getattr(root, "_unit_contains_model_with_keyword", None)
+        if callable(contains_fn):
+            try:
+                return bool(contains_fn(key))
+            except Exception:
+                return False
+        get_models = getattr(root, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+        for model in models:
+            if model is None:
+                continue
+            has_keyword = getattr(model, "has_keyword", None)
+            if callable(has_keyword):
+                try:
+                    if bool(has_keyword(key)):
+                        return True
+                except Exception:
+                    continue
+            has_any_keyword = getattr(model, "has_any_keyword", None)
+            if callable(has_any_keyword):
+                try:
+                    if bool(has_any_keyword(key)):
+                        return True
+                except Exception:
+                    continue
+        return False
+
     def _target_was_hit_by_thousand_sons_psychic_attack_this_phase(self, attacker: 'Model', target: 'Unit') -> bool:
         if attacker is None or target is None:
             return False
@@ -1564,6 +1603,29 @@ class WargearProfile:
                             apply_bonus = False
                     if apply_bonus:
                         ap_val -= bonus
+        except Exception:
+            pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                sr = getattr(attacker.parent_unit, "special_rules", None)
+                is_character_raw = getattr(attacker, "is_character", False)
+                is_character = bool(is_character_raw()) if callable(is_character_raw) else bool(is_character_raw)
+                if isinstance(sr, dict) and sr.get("vessels_aspire_to_infamy_active") and not is_character:
+                    apply_bonus = True
+                    exp = str(sr.get("vessels_aspire_to_infamy_expires_phase", "") or "").strip().upper()
+                    if exp:
+                        try:
+                            army = attacker.parent_unit.get_parent_army()
+                            game = getattr(getattr(army, "player", None), "game", None)
+                            pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                        except Exception:
+                            pname = ""
+                        if pname and pname != exp:
+                            apply_bonus = False
+                    if apply_bonus:
+                        bonus = int(sr.get("vessels_aspire_to_infamy_ap_bonus", 1) or 1)
+                        if bonus:
+                            ap_val -= bonus
         except Exception:
             pass
         try:
@@ -8471,6 +8533,30 @@ class WargearProfile:
             pass
         try:
             if self.parent_wargear and self.parent_wargear.is_melee() and isinstance(strength, int):
+                sr = getattr(attacker.parent_unit, "special_rules", None)
+                is_character_raw = getattr(attacker, "is_character", False)
+                is_character = bool(is_character_raw()) if callable(is_character_raw) else bool(is_character_raw)
+                if isinstance(sr, dict) and sr.get("vessels_aspire_to_infamy_active") and not is_character:
+                    apply_bonus = True
+                    exp = str(sr.get("vessels_aspire_to_infamy_expires_phase", "") or "").strip().upper()
+                    if exp:
+                        try:
+                            army = attacker.parent_unit.get_parent_army()
+                            game = getattr(getattr(army, "player", None), "game", None)
+                            pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                        except Exception:
+                            pname = ""
+                        if pname and pname != exp:
+                            apply_bonus = False
+                    if apply_bonus:
+                        s_bonus = int(sr.get("vessels_aspire_to_infamy_strength_bonus", 1) or 1)
+                        if s_bonus:
+                            strength = strength + s_bonus
+                            wound_result.setdefault("modifiers", []).append(f"+{s_bonus}S from Aspire to Infamy")
+        except Exception:
+            pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee() and isinstance(strength, int):
                 unit = getattr(attacker, "parent_unit", None)
                 bonus_fn = getattr(unit, "get_enhanced_warriors_melee_strength_bonus", None) if unit is not None else None
                 if callable(bonus_fn):
@@ -9309,12 +9395,25 @@ class WargearProfile:
                 attack_type=attack_type,
                 phase_key=phase_key,
             ):
+                apply_entry = True
+                requires_or_keyword = str(
+                    entry.get("requires_strength_gt_toughness_or_unit_contains_keyword", "") or ""
+                ).strip()
                 try:
                     if entry.get("requires_strength_gt_toughness"):
-                        if not (isinstance(strength, int) and isinstance(target_toughness, int) and strength > target_toughness):
-                            continue
+                        apply_entry = bool(
+                            isinstance(strength, int)
+                            and isinstance(target_toughness, int)
+                            and strength > target_toughness
+                        )
+                        if (not apply_entry) and requires_or_keyword:
+                            apply_entry = bool(self._unit_contains_model_keyword(troot, requires_or_keyword))
+                    elif requires_or_keyword:
+                        apply_entry = bool(self._unit_contains_model_keyword(troot, requires_or_keyword))
                 except Exception:
                     pass
+                if not apply_entry:
+                    continue
                 penalty = int(entry.get("value", 0) or 0)
                 if penalty:
                     dice_modifier -= penalty
@@ -9530,6 +9629,23 @@ class WargearProfile:
                 if apply_bonus:
                     if target is not None and bool(getattr(target, "is_battle_shocked", lambda: False)()):
                         reroll_full_reasons.append("Draught of Terror")
+        except Exception:
+            pass
+        # World Eaters (Vessels of Wrath): Overshadowed by None.
+        try:
+            is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+            if is_melee:
+                unit = getattr(attacker, "parent_unit", None)
+                sr = getattr(unit, "special_rules", None) if unit is not None else None
+                if isinstance(sr, dict) and sr.get("vessels_overshadowed_by_none_active"):
+                    apply_bonus = True
+                    exp = str(sr.get("vessels_overshadowed_by_none_expires_phase", "") or "").strip().upper()
+                    if exp:
+                        phase_key = self._resolve_phase_key(attacker_unit=unit, target_unit=target)
+                        if phase_key and phase_key != exp:
+                            apply_bonus = False
+                    if apply_bonus and self._target_has_monster_or_vehicle_keyword(target):
+                        reroll_full_reasons.append("Overshadowed by None")
         except Exception:
             pass
         # Twin-linked grants reroll of wound rolls.

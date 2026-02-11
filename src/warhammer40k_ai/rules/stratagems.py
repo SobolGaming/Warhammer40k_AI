@@ -29,13 +29,16 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BLESSING OF BURNING BLOOD",
     "BLITZING FIREPOWER",
     "BLOOD OFFERING",
+    "BRAZEN CONTEMPT",
     "DAEMONIC FURY",
     "DAEMONIC STRENGTH",
     "DAEMONTIDE",
     "DEFIANT TO THE LAST",
     "DEATHLESS DUTY",
     "DEATH ECSTASY",
+    "ASPIRE TO INFAMY",
     "FRENZIED RESILIENCE",
+    "GORY DEDICATION",
     "HORRIFYING VIOLENCE",
     "FEIGNED RETREAT",
     "FIRE AND FADE",
@@ -58,6 +61,9 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "PEERLESS WARRIOR",
     "RAPID INGRESS",
     "RAPID MANIFESTATION",
+    "MEET FORCE WITH FORCE",
+    "OVERSHADOWED BY NONE",
+    "PUNISH THE CRAVEN",
     "SKYBORNE SANCTUARY",
     "SMOKESCREEN",
     "SKULLS FOR THE SKULL THRONE!",
@@ -127,6 +133,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "BERZERKER\u2019S WRATH",
     "BLESSING OF BURNING BLOOD",
     "BLOOD OFFERING",
+    "BRAZEN CONTEMPT",
     "CUT DOWN THE WEAK",
     "DEFIANT TO THE LAST",
     "DEATHLESS DUTY",
@@ -158,8 +165,11 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "THE REALM OF CHAOS",
     "SUMMONED BY SLAUGHTER",
     "THE FOE FORESEEN",
+    "GORY DEDICATION",
     "UNBOUND ARROGANCE",
+    "MEET FORCE WITH FORCE",
     "FURY UNLEASHED",
+    "PUNISH THE CRAVEN",
     "UNRELENTING ADVANCE",
     "SWIFT AS THE EAGLE",
     "WEBWAY TUNNEL",
@@ -922,6 +932,10 @@ class StratagemManager(
         self._consolidate_move_cache: Dict[str, Optional[Dict[str, Any]]] = {}
         # Track recent shooting targets per attacker (for post-shooting reactions).
         self._recent_shooting_targets: Dict[str, List[Any]] = {}
+        # World Eaters (Vessels of Wrath): per-attacker pre-shot wound snapshots for MEET FORCE WITH FORCE.
+        self._vessels_meet_force_wounds_before: Dict[str, Dict[str, Dict[str, Any]]] = {}
+        # World Eaters (Vessels of Wrath): units that destroyed models with melee attacks this Fight phase.
+        self._vessels_gory_dedication_units: Dict[str, Any] = {}
         self.refresh_available()
         # Per-turn usage limits (e.g., Overwatch once/turn)
         self._used_this_turn: Dict[str, bool] = {
@@ -951,6 +965,10 @@ class StratagemManager(
         self.game = getattr(self.player, "game", None)
         if not isinstance(getattr(self, "_gilded_champion_used_models", None), set):
             self._gilded_champion_used_models = set(getattr(self, "_gilded_champion_used_models", []) or [])
+        if not isinstance(getattr(self, "_vessels_meet_force_wounds_before", None), dict):
+            self._vessels_meet_force_wounds_before = {}
+        if not isinstance(getattr(self, "_vessels_gory_dedication_units", None), dict):
+            self._vessels_gory_dedication_units = {}
         self._defensive_reaction_cache.clear()
         self._charge_melee_ap_cache.clear()
         self._consolidate_move_cache.clear()
@@ -1022,7 +1040,7 @@ class StratagemManager(
         if names & {"EPIC CHALLENGE", "PEERLESS WARRIOR"}:
             add("fight_unit_selected", self._on_fight_unit_selected)
 
-        if names & {"OVERWATCH", "FIRE OVERWATCH", "APOPLECTIC FRENZY"}:
+        if names & {"OVERWATCH", "FIRE OVERWATCH", "APOPLECTIC FRENZY", "PUNISH THE CRAVEN"}:
             add("unit_move_started", self._on_unit_move_started)
 
         if names & {"OVERWATCH", "FIRE OVERWATCH", "TANK SHOCK", "HEROIC INTERVENTION", "FEIGNED RETREAT", "CUT DOWN THE WEAK", "FIRES OF COVENANT"}:
@@ -1033,7 +1051,7 @@ class StratagemManager(
         if names & {"A GRIM WARNING", "BLOOD OFFERING", "UNBOUND ARROGANCE", "TERRIFYING SPECTACLE"}:
             add("unit_destroyed", self._on_unit_destroyed)
 
-        if names & {"SKULLS FOR THE SKULL THRONE!", "FICKLEFIRE"}:
+        if names & {"SKULLS FOR THE SKULL THRONE!", "FICKLEFIRE", "GORY DEDICATION"}:
             add("model_destroyed", self._on_model_destroyed)
 
         if "SUMMONED BY SLAUGHTER" in names:
@@ -1049,6 +1067,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_swift_as_the_eagle)
         if "UNRELENTING ADVANCE" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_unrelenting_advance)
+        if "MEET FORCE WITH FORCE" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_meet_force_with_force)
         if "UNLEASH BALEFIRE" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_unleash_balefire)
         if "FICKLEFIRE" in names:
@@ -1081,6 +1101,7 @@ class StratagemManager(
             "SMOKESCREEN",
             "ARMOUR OF CONTEMPT",
             "THE FOE FORESEEN",
+            "BRAZEN CONTEMPT",
             "BLESSING OF BURNING BLOOD",
             "LIGHTNING-FAST REACTIONS",
             "UNYIELDING FORMS",
@@ -1142,6 +1163,7 @@ class StratagemManager(
             "DELIRIUM UNMADE",
             "ENDLESS PURSUIT OF VIOLENCE",
             "FLAMES OF SANCTITY",
+            "GORY DEDICATION",
             "MURDER-CALL",
             "NEW ORDERS",
             "RAPID INGRESS",
@@ -1151,6 +1173,8 @@ class StratagemManager(
             "PROFANE SYMBIOSIS",
         }
         phase_end_cleanup_names = {
+            "ASPIRE TO INFAMY",
+            "BRAZEN CONTEMPT",
             "GO TO GROUND",
             "SMOKESCREEN",
             "BLITZING FIREPOWER",
@@ -1180,6 +1204,8 @@ class StratagemManager(
             "DENIZENS OF THE WARP",
             "WARP SURGE",
             "RAPID MANIFESTATION",
+            "OVERSHADOWED BY NONE",
+            "PUNISH THE CRAVEN",
             "WARP STALKERS",
             "AEGIS ETERNAL",
             "FIRES OF COVENANT",
@@ -2078,6 +2104,12 @@ class StratagemManager(
             "IMMORTAL FURY": "Target: WORLD EATERS POSSESSED unit (defensive reaction)",
             "RAPID MANIFESTATION": "Target: EXALTED EIGHTBOUND unit in Reserves",
             "WARP STALKERS": "Target: WORLD EATERS POSSESSED unit (Movement/Charge phase)",
+            "ASPIRE TO INFAMY": "Target: KHORNE BERZERKERS or JAKHALS within 8\" of friendly WORLD EATERS CHARACTER",
+            "BRAZEN CONTEMPT": "Target: WORLD EATERS unit targeted by attacking enemy unit",
+            "GORY DEDICATION": "Target: WORLD EATERS unit that made melee kills this phase",
+            "MEET FORCE WITH FORCE": "Target: WORLD EATERS INFANTRY/MOUNTED/DAEMON PRINCE unit that lost wounds",
+            "OVERSHADOWED BY NONE": "Target: WORLD EATERS INFANTRY/MOUNTED/DAEMON PRINCE unit (not fought)",
+            "PUNISH THE CRAVEN": "Target: WORLD EATERS INFANTRY/DAEMON PRINCE unit engaging falling-back enemy",
             "FATEBORNE NIGHTMARES": "Target: TZEENTCH LEGIONES DAEMONICA unit",
             "FICKLEFIRE": "Target: TZEENTCH LEGIONES DAEMONICA unit (engaged)",
             "FLICKERING REALITY": "Target: TZEENTCH LEGIONES DAEMONICA unit (defensive reaction)",
@@ -2564,6 +2596,10 @@ class StratagemManager(
             raise
         try:
             self._queue_world_eaters_possessed_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._reset_world_eaters_vessels_phase_start_trackers(phase=phase)
         except Exception:
             raise
 
@@ -3255,6 +3291,10 @@ class StratagemManager(
             self._cleanup_warpbane_phase_end_effects(phase=phase)
         except Exception:
             raise
+        try:
+            self._queue_world_eaters_vessels_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
         # Clear command-phase battle-shock suppression flags (e.g., Terrifying Spectacle).
         try:
             phase_name = getattr(phase, "name", None)
@@ -3771,6 +3811,11 @@ class StratagemManager(
                             ):
                                 sr.pop(key, None)
                     root.special_rules = sr
+        except Exception:
+            raise
+        # World Eaters (Vessels of Wrath): phase-end cleanup.
+        try:
+            self._cleanup_world_eaters_vessels_phase_end_effects(phase=phase)
         except Exception:
             raise
         # Chaos Daemons: Warp Surge (expires at end of Charge phase).
@@ -4620,6 +4665,7 @@ class StratagemManager(
     def _on_unit_move_started(self, unit, action: str, **kwargs):
         self._maybe_queue_overwatch(unit, action, when='start')
         self._maybe_queue_apoplectic_frenzy(unit, action)
+        self._queue_world_eaters_vessels_move_start_reactions(unit=unit, action=action)
 
     def _on_unit_move_ended(self, unit, action: str, **kwargs):
         self._maybe_queue_overwatch(unit, action, when='end')
@@ -5133,6 +5179,15 @@ class StratagemManager(
         except Exception:
             raise
 
+    def _on_unit_shooting_resolved_meet_force_with_force(self, attacker_unit=None, hits_by_target=None, **_kwargs):
+        try:
+            self._queue_world_eaters_vessels_shooting_resolved_reactions(
+                attacker_unit=attacker_unit,
+                hits_by_target=hits_by_target,
+            )
+        except Exception:
+            raise
+
     def _on_unit_shooting_resolved_unleash_balefire(self, attacker_unit=None, hits_by_target=None, **_kwargs):
         if attacker_unit is None or self.game is None:
             return
@@ -5462,6 +5517,13 @@ class StratagemManager(
             raise
         try:
             self._queue_warpbane_shooting_reactions(attacking_unit=attacking_unit, target_units=target_units)
+        except Exception:
+            raise
+        try:
+            self._queue_world_eaters_vessels_shooting_reactions(
+                attacking_unit=attacking_unit,
+                target_units=target_units,
+            )
         except Exception:
             raise
         # GO TO GROUND
@@ -7537,6 +7599,14 @@ class StratagemManager(
         """
         Faction stratagem reactions that trigger "just after" a model is destroyed.
         """
+        try:
+            self._on_model_destroyed_world_eaters_vessels_gory_dedication(
+                attacker_unit=attacker_unit,
+                target_unit=target_unit,
+                weapon_profile=weapon_profile,
+            )
+        except Exception:
+            raise
         # WORLD EATERS: SKULLS FOR THE SKULL THRONE!
         try:
             s = self.get_by_name("SKULLS FOR THE SKULL THRONE!")
@@ -10188,6 +10258,9 @@ class StratagemManager(
         possessed_result = self._use_world_eaters_possessed_stratagem(s, **kwargs)
         if possessed_result is not None:
             return possessed_result
+        vessels_result = self._use_world_eaters_vessels_stratagem(s, **kwargs)
+        if vessels_result is not None:
+            return vessels_result
 
         # Rage-cursed Onslaught: RED WRATH (advance then shoot/charge choice; Red Thirst for both)
         if s.name.upper() == "RED WRATH":
