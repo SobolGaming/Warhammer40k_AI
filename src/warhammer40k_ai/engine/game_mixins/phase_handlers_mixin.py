@@ -6456,6 +6456,9 @@ class GamePhaseHandlersMixin:
                     if str(sr.get("feigned_retreat_turn_owner", "") or "") == owner_id:
                         for k in ("feigned_retreat_active", "feigned_retreat_turn_owner", "feigned_retreat_turn"):
                             sr.pop(k, None)
+                    if str(sr.get("feigned_weakness_turn_owner", "") or "") == owner_id:
+                        for k in ("feigned_weakness_active", "feigned_weakness_turn_owner", "feigned_weakness_turn"):
+                            sr.pop(k, None)
                     if str(sr.get("manoeuvre_and_fire_turn_owner", "") or "") == owner_id:
                         for k in (
                             "manoeuvre_and_fire_active",

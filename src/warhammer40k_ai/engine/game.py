@@ -7086,6 +7086,9 @@ class Game(
         filt = getattr(charging_unit, "_filter_driven_by_ultimate_rage_roll_modifiers", None)
         if callable(filt):
             modifiers = filt(modifiers, kind="charge")
+        filt = getattr(charging_unit, "_filter_preternatural_agility_roll_modifiers", None)
+        if callable(filt):
+            modifiers = filt(modifiers, kind="charge")
 
         return modifiers
 

@@ -141,6 +141,10 @@ class PositioningMixin:
             except Exception:
                 pass
             try:
+                root._resolve_berserk_fugue_queue(game_map=game_map)
+            except Exception:
+                pass
+            try:
                 root._resolve_hysterical_frenzy_queue(game_map=game_map)
             except Exception:
                 pass
@@ -189,6 +193,10 @@ class PositioningMixin:
     def _resolve_death_ecstasy_queue(self, game_map: Optional['Map'] = None) -> None:
         """Resolve deferred Death Ecstasy fights after an attacker finishes its attacks."""
         self._resolve_deferred_fight_on_death_queue("_death_ecstasy_pending_models", game_map=game_map)
+
+    def _resolve_berserk_fugue_queue(self, game_map: Optional['Map'] = None) -> None:
+        """Resolve deferred Berserk Fugue fights after an attacker finishes its attacks."""
+        self._resolve_deferred_fight_on_death_queue("_berserk_fugue_pending_models", game_map=game_map)
 
     def _resolve_hysterical_frenzy_queue(self, game_map: Optional['Map'] = None) -> None:
         """Resolve deferred Hysterical Frenzy fights after an attacker finishes its attacks."""

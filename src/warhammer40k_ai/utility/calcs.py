@@ -1386,7 +1386,14 @@ def get_validation_rules(
             if isinstance(sr, dict) and sr.get("enhancement_gateways_to_glory"):
                 has_gateways_to_glory = True
                 break
-    if has_gateways_to_glory and movement_type in [MovementType.MOVE, MovementType.ADVANCE, MovementType.CHARGE]:
+    has_preternatural_agility = False
+    try:
+        fn = getattr(moving_unit, "_preternatural_agility_move_through_models_active", None)
+        if callable(fn):
+            has_preternatural_agility = bool(fn())
+    except Exception:
+        has_preternatural_agility = False
+    if (has_gateways_to_glory or has_preternatural_agility) and movement_type in [MovementType.MOVE, MovementType.ADVANCE, MovementType.CHARGE]:
         base_rules['can_move_through_enemy_models'] = True
         base_rules['can_move_through_friendly_models'] = True
         base_rules['can_move_through_terrain'] = True

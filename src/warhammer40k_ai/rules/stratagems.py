@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 IMPLEMENTED_STRATAGEM_NAMES = {
+    "A CHALLENGE MET",
     "A GRIM WARNING",
     "ARMOUR OF CONTEMPT",
     "A WORTHY SKULL",
@@ -33,6 +34,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BLOODY VENGEANCE",
     "BRAZEN IDOL",
     "BRAZEN CONTEMPT",
+    "BERSERK FUGUE",
     "DAEMONIC FURY",
     "DAEMONIC STRENGTH",
     "DAEMONTIDE",
@@ -89,6 +91,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ENDLESS SERVITUDE",
     "REACTIVE REPOSITION",
     "RED WRATH",
+    "DEADLY DEBUT",
+    "FEIGNED WEAKNESS",
     "ORKS IS NEVER BEATEN",
     "ERE WE GO",
     "MOB RULE",
@@ -133,9 +137,11 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "OVERWHELMING GENEROSITY",
     "CREEPING BLIGHT",
     "PUTRID DETONATION",
+    "PRETERNATURAL AGILITY",
 }
 
 REACTION_ONLY_STRATAGEM_NAMES = {
+    "A CHALLENGE MET",
     "A GRIM WARNING",
     "ARMOUR OF CONTEMPT",
     "A WORTHY SKULL",
@@ -146,11 +152,13 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "BLOOD OFFERING",
     "BLOODY VENGEANCE",
     "BRAZEN CONTEMPT",
+    "BERSERK FUGUE",
     "CUT DOWN THE WEAK",
     "DEFIANT TO THE LAST",
     "DEATHLESS DUTY",
     "DEATH ECSTASY",
     "FRENZIED RESILIENCE",
+    "FEIGNED WEAKNESS",
     "FEIGNED RETREAT",
     "COMMAND RE-ROLL",
     "COUNTER-OFFENSIVE",
@@ -951,6 +959,8 @@ class StratagemManager(
         self._vessels_meet_force_wounds_before: Dict[str, Dict[str, Dict[str, Any]]] = {}
         # World Eaters (Vessels of Wrath): units that destroyed models with melee attacks this Fight phase.
         self._vessels_gory_dedication_units: Dict[str, Any] = {}
+        # Drukhari (Spectacle of Spite): enemy units that moved/set up this Movement phase.
+        self._a_challenge_met_enemy_units: Dict[str, Any] = {}
         self.refresh_available()
         # Per-turn usage limits (e.g., Overwatch once/turn)
         self._used_this_turn: Dict[str, bool] = {
@@ -984,6 +994,8 @@ class StratagemManager(
             self._vessels_meet_force_wounds_before = {}
         if not isinstance(getattr(self, "_vessels_gory_dedication_units", None), dict):
             self._vessels_gory_dedication_units = {}
+        if not isinstance(getattr(self, "_a_challenge_met_enemy_units", None), dict):
+            self._a_challenge_met_enemy_units = {}
         self._defensive_reaction_cache.clear()
         self._charge_melee_ap_cache.clear()
         self._consolidate_move_cache.clear()
@@ -1058,9 +1070,9 @@ class StratagemManager(
         if names & {"OVERWATCH", "FIRE OVERWATCH", "APOPLECTIC FRENZY", "PUNISH THE CRAVEN"}:
             add("unit_move_started", self._on_unit_move_started)
 
-        if names & {"OVERWATCH", "FIRE OVERWATCH", "TANK SHOCK", "HEROIC INTERVENTION", "FEIGNED RETREAT", "CUT DOWN THE WEAK", "FIRES OF COVENANT"}:
+        if names & {"OVERWATCH", "FIRE OVERWATCH", "TANK SHOCK", "HEROIC INTERVENTION", "FEIGNED RETREAT", "FEIGNED WEAKNESS", "CUT DOWN THE WEAK", "FIRES OF COVENANT", "A CHALLENGE MET"}:
             add("unit_move_ended", self._on_unit_move_ended)
-        if "FIRES OF COVENANT" in names:
+        if names & {"FIRES OF COVENANT", "A CHALLENGE MET"}:
             add("unit_set_up", self._on_unit_set_up)
 
         if names & {"A GRIM WARNING", "BLOOD OFFERING", "BLOODY VENGEANCE", "DRAWN TO THE SLAUGHTER", "UNBOUND ARROGANCE", "TERRIFYING SPECTACLE"}:
@@ -1127,6 +1139,7 @@ class StratagemManager(
             "AEGIS ETERNAL",
         }
         fight_reaction_names = {
+            "BERSERK FUGUE",
             "DEFIANT TO THE LAST",
             "DEATHLESS DUTY",
             "DEATH ECSTASY",
@@ -1193,6 +1206,8 @@ class StratagemManager(
             "ASPIRE TO INFAMY",
             "BLOODTHIRSTY HORDE",
             "BRAZEN CONTEMPT",
+            "BERSERK FUGUE",
+            "DEADLY DEBUT",
             "FAIL NOT THE BLOOD GOD",
             "GO TO GROUND",
             "SMOKESCREEN",
@@ -1220,6 +1235,7 @@ class StratagemManager(
             "FICKLEFIRE",
             "FLICKERING REALITY",
             "IMPOSSIBLE ECLIPSE",
+            "PRETERNATURAL AGILITY",
             "PYROGENESIS",
             "DENIZENS OF THE WARP",
             "WARP SURGE",
@@ -2097,6 +2113,12 @@ class StratagemManager(
             "INSENSATE RAMPAGE": "Target: DEATH COMPANY unit",
             "LIMB FROM LIMB": "Target: BLOOD ANGELS unit (charged)",
             "RED WRATH": "Target: BLOOD ANGELS unit (advanced)",
+            "A CHALLENGE MET": "Target: WYCH CULT unit; enemy within 9\" that moved or was set up this phase",
+            "ACROBATIC DISPLAY": "Target: WYCH CULT unit targeted by enemy attacks",
+            "BERSERK FUGUE": "Target: WYCH CULT unit targeted by enemy attacks",
+            "DEADLY DEBUT": "Target: DRUKHARI unit that charged and has not fought",
+            "FEIGNED WEAKNESS": "Target: DRUKHARI unit that Fell Back",
+            "PRETERNATURAL AGILITY": "Target: WYCH CULT unit",
             "UNBRIDLED CARNAGE": "Target: ORKS unit (not yet fought)",
             "ORKS IS NEVER BEATEN": "Target: ORKS unit (fight on death)",
             "ERE WE GO": "Target: ORKS INFANTRY unit",
@@ -2584,6 +2606,13 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            if not hasattr(self, "_a_challenge_met_enemy_units"):
+                self._a_challenge_met_enemy_units = {}
+            else:
+                self._a_challenge_met_enemy_units.clear()
+        except Exception:
+            raise
+        try:
             if not hasattr(self, "_heroic_intervention_units_this_phase"):
                 self._heroic_intervention_units_this_phase = set()
             else:
@@ -2672,6 +2701,55 @@ class StratagemManager(
         if not has_custodes_kw and root_faction_id != "AC":
             return False
         return True
+
+    def _drukhari_detachment_manager(self):
+        army = getattr(self.player, "army", None)
+        if army is None:
+            return None
+        mgr = getattr(army, "drukhari_detachments", None)
+        if mgr is None or not hasattr(mgr, "is_spectacle_of_spite"):
+            return None
+        if not mgr.is_spectacle_of_spite():
+            return None
+        return mgr
+
+    def _is_spectacle_of_spite_detachment(self) -> bool:
+        return self._drukhari_detachment_manager() is not None
+
+    @staticmethod
+    def _is_drukhari_unit(unit) -> bool:
+        if unit is None:
+            return False
+        try:
+            return bool(unit.has_any_keyword("DRUKHARI"))
+        except Exception:
+            return False
+
+    @staticmethod
+    def _is_wych_cult_unit(unit) -> bool:
+        if unit is None:
+            return False
+        try:
+            return bool(unit.has_any_keyword("WYCH CULT"))
+        except Exception:
+            return False
+
+    def _track_a_challenge_met_enemy_unit(self, unit) -> None:
+        if unit is None:
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        try:
+            uid = str(get_entity_id(root) or "")
+        except Exception:
+            uid = ""
+        if not uid:
+            return
+        self._a_challenge_met_enemy_units[uid] = root
 
     def _death_guard_detachment_manager(self):
         army = getattr(self.player, "army", None)
@@ -3398,6 +3476,10 @@ class StratagemManager(
             self._queue_world_eaters_vessels_phase_end_reactions(player=player, phase=phase)
         except Exception:
             raise
+        try:
+            self._queue_a_challenge_met_phase_end_reaction(player=player, phase=phase)
+        except Exception:
+            raise
         # Clear command-phase battle-shock suppression flags (e.g., Terrifying Spectacle).
         try:
             phase_name = getattr(phase, "name", None)
@@ -3622,10 +3704,10 @@ class StratagemManager(
                         raise
         except Exception:
             raise
-        # Clear end-of-phase Necrons stratagem buffs (Movement/Shooting/Fight).
+        # Clear end-of-phase Necrons and Drukhari stratagem buffs (Movement/Shooting/Charge/Fight).
         try:
             phase_name = getattr(phase, "name", None)
-            if phase_name in ("MOVEMENT_PHASE", "SHOOTING_PHASE", "FIGHT_PHASE"):
+            if phase_name in ("MOVEMENT_PHASE", "SHOOTING_PHASE", "CHARGE_PHASE", "FIGHT_PHASE"):
                 units = list(getattr(self.player.get_army(), "units", []) or [])
                 seen = set()
                 for unit in units:
@@ -3672,6 +3754,31 @@ class StratagemManager(
                         if sr.get("merciless_reclamation_active") and (not exp or exp == phase_name):
                             sr.pop("merciless_reclamation_active", None)
                             sr.pop("merciless_reclamation_expires_phase", None)
+                    exp = str(sr.get("preternatural_agility_ignore_modifiers_expires_phase", "") or "").strip().upper()
+                    if sr.get("preternatural_agility_ignore_modifiers_active") and (not exp or exp == phase_name):
+                        for key in (
+                            "preternatural_agility_ignore_modifiers_active",
+                            "preternatural_agility_ignore_modifiers_expires_phase",
+                        ):
+                            sr.pop(key, None)
+                    if phase_name == "FIGHT_PHASE":
+                        owner = str(sr.get("preternatural_agility_turn_owner", "") or "")
+                        try:
+                            turn = int(sr.get("preternatural_agility_turn", 0) or 0)
+                        except Exception:
+                            turn = 0
+                        try:
+                            current_turn = int(getattr(self.game, "turn", 0) or 0)
+                        except Exception:
+                            current_turn = 0
+                        if owner and owner == str(getattr(self.player, "id", "") or "") and turn and turn == current_turn:
+                            for key in (
+                                "preternatural_agility_move_through_models_active",
+                                "preternatural_agility_turn_owner",
+                                "preternatural_agility_turn",
+                                "preternatural_agility_source",
+                            ):
+                                sr.pop(key, None)
                     root.special_rules = sr
         except Exception:
             raise
@@ -4054,6 +4161,19 @@ class StratagemManager(
                             sr.pop("frenzied_resilience_active", None)
                             sr.pop("frenzied_resilience_damage_reduction", None)
                             sr.pop("frenzied_resilience_expires_phase", None)
+                        if sr.get("deadly_debut_active") is True:
+                            exp = str(sr.get("deadly_debut_expires_phase", "") or "").strip().upper()
+                            if not exp or exp == "FIGHT_PHASE":
+                                sr.pop("deadly_debut_active", None)
+                                sr.pop("deadly_debut_expires_phase", None)
+                                sr.pop("deadly_debut_source", None)
+                                sr.pop("deadly_debut_melee_ap_bonus", None)
+                        if sr.get("berserk_fugue_active") is True:
+                            exp = str(sr.get("berserk_fugue_expires_phase", "") or "").strip().upper()
+                            if not exp or exp == "FIGHT_PHASE":
+                                sr.pop("berserk_fugue_active", None)
+                                sr.pop("berserk_fugue_expires_phase", None)
+                                sr.pop("berserk_fugue_source", None)
                         u.special_rules = sr
                     except Exception:
                         raise
@@ -4818,15 +4938,18 @@ class StratagemManager(
         self._queue_world_eaters_vessels_move_start_reactions(unit=unit, action=action)
 
     def _on_unit_move_ended(self, unit, action: str, **kwargs):
+        self._track_a_challenge_met_move(unit, action)
         self._maybe_queue_overwatch(unit, action, when='end')
         self._maybe_queue_tank_shock(unit, action)
         self._maybe_queue_heroic_intervention(unit, action)
         self._maybe_queue_feigned_retreat(unit, action)
+        self._maybe_queue_feigned_weakness(unit, action)
         self._maybe_queue_red_wrath(unit, action)
         self._maybe_queue_cut_down_the_weak(unit, action)
         self._process_warpbane_fires_of_covenant_trigger(unit=unit, trigger_kind="move_end", action=action)
 
     def _on_unit_set_up(self, unit, **kwargs):
+        self._track_a_challenge_met_set_up(unit)
         self._process_warpbane_fires_of_covenant_trigger(unit=unit, trigger_kind="set_up")
 
     def _on_unit_shooting_resolved_fire_and_fade(self, attacker_unit=None, **kwargs):
@@ -6759,6 +6882,74 @@ class StratagemManager(
                             self._queue_reaction(payload)
         except Exception:
             raise
+        # Drukhari (Spectacle of Spite): BERSERK FUGUE
+        try:
+            s = self.get_by_name("BERSERK FUGUE")
+            if s and self.player.command_points >= s.cp_cost and (s.name or "").strip().upper() not in self._used_stratagems_this_phase:
+                if self._is_spectacle_of_spite_detachment():
+                    candidates = []
+                    seen = set()
+                    for unit in list(target_units or []):
+                        try:
+                            root = unit.get_attached_unit_root()
+                        except Exception:
+                            root = unit
+                        if root is None:
+                            continue
+                        try:
+                            uid = str(get_entity_id(root) or "")
+                        except Exception:
+                            uid = ""
+                        if uid and uid in seen:
+                            continue
+                        if uid:
+                            seen.add(uid)
+                        try:
+                            if not root.is_alive():
+                                continue
+                        except Exception:
+                            continue
+                        try:
+                            if root.get_parent_army().player is not self.player:
+                                continue
+                        except Exception:
+                            raise
+                        try:
+                            if _unit_cannot_be_target_of_stratagem(root):
+                                continue
+                        except Exception:
+                            raise
+                        if not self._is_wych_cult_unit(root):
+                            continue
+                        candidates.append(root)
+                    if candidates:
+                        already = False
+                        for r in self._pending_reactions:
+                            try:
+                                if (
+                                    r.get("event") == "fight_targets_selected"
+                                    and r.get("stratagem") == s.name
+                                    and r.get("attacking_unit") is attacking_unit
+                                ):
+                                    already = True
+                                    break
+                            except Exception:
+                                raise
+                        if not already:
+                            payload = {
+                                "event": "fight_targets_selected",
+                                "phase_name": "Fight phase",
+                                "stratagem": s.name,
+                                "cp_cost": s.cp_cost,
+                                "attacking_unit": attacking_unit,
+                                "target_units": list(target_units or []),
+                                "candidates": candidates,
+                            }
+                            if len(candidates) == 1:
+                                payload["target_unit"] = candidates[0]
+                            self._queue_reaction(payload)
+        except Exception:
+            raise
         # Adeptus Custodes: DEFIANT TO THE LAST
         try:
             s = self.get_by_name("DEFIANT TO THE LAST")
@@ -7593,6 +7784,217 @@ class StratagemManager(
             "target_unit": unit,
             "action": "fall_back",
         })
+
+    def _track_a_challenge_met_move(self, unit, action: str) -> None:
+        try:
+            if str(action or "").strip().lower() not in ("move", "advance"):
+                return
+            if unit is None or not getattr(unit, "is_alive", lambda: True)():
+                return
+            if not self._is_spectacle_of_spite_detachment():
+                return
+            if (self._current_phase_name or "").strip().lower() != "movement phase":
+                return
+            owner = unit.get_parent_army().player
+            if owner is self.player:
+                return
+        except Exception:
+            raise
+        self._track_a_challenge_met_enemy_unit(unit)
+
+    def _track_a_challenge_met_set_up(self, unit) -> None:
+        try:
+            if unit is None or not getattr(unit, "is_alive", lambda: True)():
+                return
+            if not self._is_spectacle_of_spite_detachment():
+                return
+            if (self._current_phase_name or "").strip().lower() != "movement phase":
+                return
+            owner = unit.get_parent_army().player
+            if owner is self.player:
+                return
+        except Exception:
+            raise
+        self._track_a_challenge_met_enemy_unit(unit)
+
+    def _maybe_queue_feigned_weakness(self, unit, action: str) -> None:
+        try:
+            if str(action or "").strip().lower() != "fall_back":
+                return
+            if unit is None or not getattr(unit, "is_alive", lambda: True)():
+                return
+            owner = unit.get_parent_army().player
+            if owner is not self.player:
+                return
+            if not self._is_spectacle_of_spite_detachment():
+                return
+            if (self._current_phase_name or "").strip().lower() != "movement phase":
+                return
+            active_player = getattr(self.game, "get_current_player", lambda: None)()
+            if active_player is not self.player:
+                return
+            s = self.get_by_name("FEIGNED WEAKNESS")
+            if not s:
+                return
+            if self.player.command_points < s.cp_cost:
+                return
+            if (s.name or "").strip().upper() in self._used_stratagems_this_phase:
+                return
+            if _unit_cannot_be_target_of_stratagem(unit):
+                return
+            if not self._is_drukhari_unit(unit):
+                return
+            if not bool(getattr(getattr(unit, "round_state", None), "fell_back_this_round", False)):
+                return
+        except Exception:
+            raise
+        for r in self._pending_reactions:
+            if r.get("event") == "unit_move_ended" and r.get("stratagem") == s.name and r.get("unit") is unit:
+                return
+        self._queue_reaction({
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": s.name,
+            "cp_cost": s.cp_cost,
+            "unit": unit,
+            "target_unit": unit,
+            "action": "fall_back",
+        })
+
+    def _queue_a_challenge_met_phase_end_reaction(self, *, player=None, phase=None) -> None:
+        try:
+            if not self._is_spectacle_of_spite_detachment():
+                return
+            phase_name = getattr(phase, "name", None)
+            if phase_name != "MOVEMENT_PHASE":
+                return
+            # Trigger at the end of the opponent's Movement phase.
+            if player is self.player:
+                return
+            if (self._current_phase_name or "").strip().lower() != "movement phase":
+                return
+            s = self.get_by_name("A CHALLENGE MET")
+            if not s:
+                return
+            if self.player.command_points < s.cp_cost:
+                return
+            if (s.name or "").strip().upper() in self._used_stratagems_this_phase:
+                return
+            game_map = getattr(self.game, "map", None)
+            if game_map is None:
+                return
+            enemy_units = []
+            for enemy in list(getattr(self, "_a_challenge_met_enemy_units", {}).values() or []):
+                try:
+                    root = enemy.get_attached_unit_root()
+                except Exception:
+                    root = enemy
+                if root is None:
+                    continue
+                try:
+                    if not root.is_alive() or not getattr(root, "deployed", False):
+                        continue
+                except Exception:
+                    continue
+                enemy_units.append(root)
+            if not enemy_units:
+                return
+
+            def _eligible_enemy_targets(friendly_unit):
+                targets = []
+                for enemy_unit in list(enemy_units or []):
+                    try:
+                        dist = float(game_map.get_distance_between_units(friendly_unit, enemy_unit))
+                    except Exception:
+                        continue
+                    if dist > 9.0:
+                        continue
+                    try:
+                        if not friendly_unit.can_declare_charge_against(enemy_unit, self.game, out_of_turn=True):
+                            continue
+                    except Exception:
+                        continue
+                    targets.append(enemy_unit)
+                return targets
+
+            candidates = []
+            enemy_candidates_by_unit: Dict[str, List[Any]] = {}
+            seen = set()
+            for u in list(getattr(self.player.get_army(), "units", []) or []):
+                try:
+                    root = u.get_attached_unit_root()
+                except Exception:
+                    root = u
+                if root is None:
+                    continue
+                try:
+                    uid = str(get_entity_id(root) or "")
+                except Exception:
+                    uid = ""
+                if uid and uid in seen:
+                    continue
+                if uid:
+                    seen.add(uid)
+                try:
+                    if not root.is_alive() or not getattr(root, "deployed", False):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    if getattr(root, "is_in_reserves", lambda: False)():
+                        continue
+                except Exception:
+                    continue
+                try:
+                    if _unit_cannot_be_target_of_stratagem(root):
+                        continue
+                except Exception:
+                    raise
+                if not self._is_wych_cult_unit(root):
+                    continue
+                if not s.can_use(self.player, self.game, phase_name="Movement phase", unit=root, target_unit=root):
+                    continue
+                targets = _eligible_enemy_targets(root)
+                if not targets:
+                    continue
+                candidates.append(root)
+                if uid:
+                    enemy_candidates_by_unit[uid] = targets
+            if not candidates:
+                return
+            for r in list(self._pending_reactions):
+                try:
+                    if (
+                        r.get("event") == "phase_end"
+                        and r.get("stratagem") == s.name
+                        and r.get("phase_name") == "Movement phase"
+                    ):
+                        return
+                except Exception:
+                    raise
+            payload = {
+                "event": "phase_end",
+                "phase_name": "Movement phase",
+                "stratagem": s.name,
+                "cp_cost": s.cp_cost,
+                "candidates": candidates,
+                "enemy_candidates_by_unit": enemy_candidates_by_unit,
+                "enemy_candidates": enemy_units,
+            }
+            if len(candidates) == 1:
+                only = candidates[0]
+                payload["unit"] = only
+                payload["target_unit"] = only
+                try:
+                    only_uid = str(get_entity_id(only) or "")
+                except Exception:
+                    only_uid = ""
+                targets = list(enemy_candidates_by_unit.get(only_uid) or [])
+                if len(targets) == 1:
+                    payload["enemy_unit"] = targets[0]
+            self._queue_reaction(payload, use_timer=False)
+        except Exception:
+            raise
 
     def _maybe_queue_cut_down_the_weak(self, unit, action: str) -> None:
         try:
@@ -9779,6 +10181,150 @@ class StratagemManager(
             logger.info(f"INFO: DEATH ECSTASY: {getattr(root, 'name', 'Unit')} will fight on death after attacks resolve this phase.")
             return True
 
+        # Drukhari (Spectacle of Spite): BERSERK FUGUE
+        if s.name.upper() == "BERSERK FUGUE":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            attacker_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit")
+            candidates = list(kwargs.get("candidates") or kwargs.get("target_units") or [])
+            if unit is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == "BERSERK FUGUE":
+                        unit = unit or r.get("unit") or r.get("target_unit")
+                        attacker_unit = attacker_unit or r.get("attacking_unit")
+                        if not candidates:
+                            candidates = list(r.get("candidates") or r.get("target_units") or [])
+                        break
+            if unit is None:
+                logger.error("ERROR: BERSERK FUGUE: missing target unit context")
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                return False
+            if not self._is_spectacle_of_spite_detachment():
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "fight phase":
+                logger.error("ERROR: BERSERK FUGUE: wrong phase")
+                return False
+            if candidates:
+                try:
+                    if root not in list(candidates or []):
+                        logger.error("ERROR: BERSERK FUGUE: target was not selected by attacker")
+                        return False
+                except Exception:
+                    raise
+            try:
+                if attacker_unit is not None and attacker_unit.get_parent_army().player is self.player:
+                    logger.error("ERROR: BERSERK FUGUE: attacker is not enemy")
+                    return False
+            except Exception:
+                raise
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    logger.error("ERROR: BERSERK FUGUE: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            if not self._is_wych_cult_unit(root):
+                logger.error("ERROR: BERSERK FUGUE: target is not a WYCH CULT unit")
+                return False
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["berserk_fugue_active"] = True
+                sr["berserk_fugue_expires_phase"] = "FIGHT_PHASE"
+                sr["berserk_fugue_source"] = s.name
+                root.special_rules = sr
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            logger.info(f"INFO: BERSERK FUGUE: {getattr(root, 'name', 'Unit')} will fight on death after attacks resolve this phase.")
+            return True
+
+        # Drukhari (Spectacle of Spite): DEADLY DEBUT
+        if s.name.upper() == "DEADLY DEBUT":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            if unit is None:
+                logger.error("ERROR: DEADLY DEBUT: no target unit provided")
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                return False
+            if not self._is_spectacle_of_spite_detachment():
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "fight phase":
+                logger.error("ERROR: DEADLY DEBUT: wrong phase")
+                return False
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    logger.error("ERROR: DEADLY DEBUT: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            if not self._is_drukhari_unit(root):
+                logger.error("ERROR: DEADLY DEBUT: target is not DRUKHARI")
+                return False
+            try:
+                if not bool(getattr(getattr(root, "round_state", None), "charged_this_round", False)):
+                    logger.error("ERROR: DEADLY DEBUT: target did not charge this turn")
+                    return False
+                if bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+                    logger.error("ERROR: DEADLY DEBUT: target has already fought this phase")
+                    return False
+            except Exception:
+                raise
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["deadly_debut_active"] = True
+                sr["deadly_debut_expires_phase"] = "FIGHT_PHASE"
+                sr["deadly_debut_source"] = s.name
+                if self._is_wych_cult_unit(root):
+                    sr["deadly_debut_melee_ap_bonus"] = 1
+                else:
+                    sr.pop("deadly_debut_melee_ap_bonus", None)
+                root.special_rules = sr
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            logger.info(f"INFO: DEADLY DEBUT: {getattr(root, 'name', 'Unit')} gains melee Lethal Hits this phase.")
+            return True
+
         # EMPEROR'S CHILDREN: TERRIFYING SPECTACLE
         if s.name.upper() == "TERRIFYING SPECTACLE":
             unit = kwargs.get("unit") or kwargs.get("target_unit")
@@ -10418,6 +10964,129 @@ class StratagemManager(
                 logger.error("ERROR: Heroic Intervention: charge failed")
             return True
 
+        # Drukhari (Spectacle of Spite): A CHALLENGE MET
+        if s.name.upper() == "A CHALLENGE MET":
+            enemy = kwargs.get("enemy_unit")
+            candidates = list(kwargs.get("candidates") or [])
+            enemy_candidates_by_unit = dict(kwargs.get("enemy_candidates_by_unit") or {})
+            if enemy is None or not candidates:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() != "A CHALLENGE MET":
+                        continue
+                    enemy = enemy or r.get("enemy_unit")
+                    if not candidates:
+                        candidates = list(r.get("candidates") or [])
+                    if not enemy_candidates_by_unit:
+                        enemy_candidates_by_unit = dict(r.get("enemy_candidates_by_unit") or {})
+                    break
+
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            if unit is None and candidates:
+                unit = candidates[0]
+            if unit is None:
+                logger.error("ERROR: A CHALLENGE MET: no eligible unit selected")
+                return False
+            if enemy is None:
+                try:
+                    unit_id = str(get_entity_id(unit.get_attached_unit_root()) or "")
+                except Exception:
+                    unit_id = ""
+                opts = list(enemy_candidates_by_unit.get(unit_id) or [])
+                if not opts:
+                    opts = list(kwargs.get("enemy_candidates") or [])
+                if not opts:
+                    opts = list(getattr(self, "_a_challenge_met_enemy_units", {}).values() or [])
+                if opts:
+                    enemy = opts[0]
+            if enemy is None:
+                logger.error("ERROR: A CHALLENGE MET: no eligible enemy target")
+                return False
+
+            if not self._is_spectacle_of_spite_detachment():
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "movement phase":
+                logger.error("ERROR: A CHALLENGE MET: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is self.player:
+                logger.error("ERROR: A CHALLENGE MET: not opponent's turn")
+                return False
+
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            try:
+                enemy_root = enemy.get_attached_unit_root()
+            except Exception:
+                enemy_root = enemy
+            if root is None or enemy_root is None:
+                return False
+            try:
+                if root.get_parent_army().player is not self.player:
+                    logger.error("ERROR: A CHALLENGE MET: target unit does not belong to player")
+                    return False
+            except Exception:
+                raise
+            try:
+                if enemy_root.get_parent_army().player is self.player:
+                    logger.error("ERROR: A CHALLENGE MET: enemy target is not enemy")
+                    return False
+            except Exception:
+                raise
+            try:
+                enemy_id = str(get_entity_id(enemy_root) or "")
+            except Exception:
+                enemy_id = ""
+            if enemy_id and enemy_id not in set(getattr(self, "_a_challenge_met_enemy_units", {}).keys()):
+                logger.error("ERROR: A CHALLENGE MET: enemy did not move or set up this phase")
+                return False
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    logger.error("ERROR: A CHALLENGE MET: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            if not self._is_wych_cult_unit(root):
+                logger.error("ERROR: A CHALLENGE MET: target is not a WYCH CULT unit")
+                return False
+            try:
+                game_map = getattr(self.game, "map", None)
+                if game_map is None:
+                    return False
+                dist = float(game_map.get_distance_between_units(root, enemy_root))
+                if dist > 9.0:
+                    logger.error("ERROR: A CHALLENGE MET: target enemy is not within 9\"")
+                    return False
+            except Exception:
+                raise
+            try:
+                if not root.can_declare_charge_against(enemy_root, self.game, out_of_turn=True):
+                    logger.error("ERROR: A CHALLENGE MET: target cannot declare charge against enemy")
+                    return False
+            except Exception:
+                raise
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                self.game.attempt_charge(root, enemy_root, out_of_turn=True, count_as_charged=False)
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            return True
+
         # Berzerker Warband: APOPLETIC FRENZY (advance and charge for Khorne Berzerkers)
         if s.name.upper() == "APOPLECTIC FRENZY":
             unit = kwargs.get("unit") or kwargs.get("target_unit")
@@ -10768,6 +11437,143 @@ class StratagemManager(
             except Exception:
                 raise
             logger.info(f"INFO: FEIGNED RETREAT: {getattr(root, 'name', 'Unit')} can shoot and charge after falling back.")
+            return True
+
+        # Drukhari (Spectacle of Spite): FEIGNED WEAKNESS
+        if s.name.upper() == "FEIGNED WEAKNESS":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            if unit is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == "FEIGNED WEAKNESS":
+                        unit = r.get("unit") or r.get("target_unit")
+                        if unit is not None:
+                            kwargs.setdefault("action", r.get("action"))
+                        break
+            if unit is None:
+                logger.error("ERROR: FEIGNED WEAKNESS: no target unit provided")
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            if not self._is_spectacle_of_spite_detachment():
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "movement phase":
+                logger.error("ERROR: FEIGNED WEAKNESS: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is not self.player:
+                logger.error("ERROR: FEIGNED WEAKNESS: not your turn")
+                return False
+            if str(kwargs.get("action", "") or "").strip().lower() not in ("", "fall_back"):
+                logger.error("ERROR: FEIGNED WEAKNESS: invalid trigger")
+                return False
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    logger.error("ERROR: FEIGNED WEAKNESS: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            if not self._is_drukhari_unit(root):
+                return False
+            try:
+                if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+                    return False
+            except Exception:
+                raise
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["feigned_weakness_active"] = True
+                sr["feigned_weakness_turn_owner"] = str(getattr(self.player, "id", "") or "")
+                sr["feigned_weakness_turn"] = int(getattr(self.game, "turn", 0) or 0)
+                root.special_rules = sr
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            logger.info(f"INFO: FEIGNED WEAKNESS: {getattr(root, 'name', 'Unit')} can shoot and charge after falling back.")
+            return True
+
+        # Drukhari (Spectacle of Spite): PRETERNATURAL AGILITY
+        if s.name.upper() == "PRETERNATURAL AGILITY":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            if unit is None:
+                logger.error("ERROR: PRETERNATURAL AGILITY: no target unit provided")
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                return False
+            if not self._is_spectacle_of_spite_detachment():
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            phase_norm = str(phase_name or "").strip().lower()
+            if phase_norm not in ("movement phase", "charge phase"):
+                logger.error("ERROR: PRETERNATURAL AGILITY: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is not self.player:
+                logger.error("ERROR: PRETERNATURAL AGILITY: not your turn")
+                return False
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    logger.error("ERROR: PRETERNATURAL AGILITY: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            if not self._is_wych_cult_unit(root):
+                logger.error("ERROR: PRETERNATURAL AGILITY: target is not a WYCH CULT unit")
+                return False
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                exp_phase = "MOVEMENT_PHASE" if phase_norm == "movement phase" else "CHARGE_PHASE"
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["preternatural_agility_ignore_modifiers_active"] = True
+                sr["preternatural_agility_ignore_modifiers_expires_phase"] = exp_phase
+                sr["preternatural_agility_move_through_models_active"] = True
+                sr["preternatural_agility_turn_owner"] = str(getattr(self.player, "id", "") or "")
+                sr["preternatural_agility_turn"] = int(getattr(self.game, "turn", 0) or 0)
+                sr["preternatural_agility_source"] = s.name
+                root.special_rules = sr
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            logger.info(
+                f"INFO: PRETERNATURAL AGILITY: {getattr(root, 'name', 'Unit')} ignores move/advance/charge modifiers this phase and can move through models this turn."
+            )
             return True
 
         # Warhost: FIRE AND FADE

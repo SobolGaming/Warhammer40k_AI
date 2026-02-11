@@ -94,6 +94,10 @@ class StateAttachmentMixin:
             self._death_ecstasy_pending_models = []
         except Exception:
             pass
+        try:
+            self._berserk_fugue_pending_models = []
+        except Exception:
+            pass
         # Check status effects expiration (with safe defaults)
         for status_effect in list(getattr(self, "status_effects", []) or []):
             try:

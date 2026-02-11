@@ -1195,6 +1195,59 @@ class Unit(
         except Exception:
             pass
 
+        # Drukhari: Preternatural Agility - optional ignore Move modifiers this phase.
+        try:
+            if ckey == "movement":
+                active_fn = getattr(self, "_preternatural_agility_ignore_modifiers_active", None)
+                if callable(active_fn) and bool(active_fn()):
+                    from ..utility.modifier_choice import (
+                        CHOICE_KEEP_ALL,
+                        CHOICE_IGNORE_NEGATIVE,
+                        CHOICE_IGNORE_POSITIVE,
+                        CHOICE_IGNORE_ALL,
+                        filter_numeric_modifiers,
+                    )
+                    try:
+                        choice = str(getattr(self.round_state, "move_modifier_choice", "") or "").strip()
+                    except Exception:
+                        choice = ""
+                    if not choice:
+                        choice = CHOICE_KEEP_ALL
+                    if choice != CHOICE_KEEP_ALL:
+                        kept, ignored = filter_numeric_modifiers(mods, choice, base_val=base_val)
+                        if ignored:
+                            mods = kept
+                            try:
+                                sr = getattr(self, "special_rules", None)
+                                if not isinstance(sr, dict):
+                                    sr = {}
+                                ignored_sources = tuple(sorted(str(getattr(m, "source", "") or "") for m in ignored))
+                                kept_sources = tuple(sorted(str(getattr(m, "source", "") or "") for m in kept))
+                                sig = (ignored_sources, kept_sources, choice)
+                                if sr.get("preternatural_agility_move_mod_signature") != sig:
+                                    sr["preternatural_agility_move_mod_signature"] = sig
+                                    self.special_rules = sr
+                                    from ..utility.event_bus import append_action
+                                    pn = self.get_parent_army().player
+                                    ignored_text = ", ".join(s for s in ignored_sources if s) or "unnamed sources"
+                                    tag = (
+                                        "negative"
+                                        if choice == CHOICE_IGNORE_NEGATIVE
+                                        else "positive"
+                                        if choice == CHOICE_IGNORE_POSITIVE
+                                        else "all"
+                                    )
+                                    msg = f"Preternatural Agility: ignored {tag} Move modifiers ({ignored_text})."
+                                    append_action(pn, msg)
+                                    if kept_sources:
+                                        kept_text = ", ".join(s for s in kept_sources if s)
+                                        if kept_text:
+                                            append_action(pn, f"Preternatural Agility: applied Move modifiers ({kept_text}).")
+                            except Exception:
+                                pass
+        except Exception:
+            pass
+
         # Siege Crawler: ignore all Move characteristic modifiers.
         if ckey == "movement" and bool(getattr(self, "has_siege_crawler", lambda: False)()):
             mods = []

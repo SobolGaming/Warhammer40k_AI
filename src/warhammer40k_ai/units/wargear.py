@@ -1721,6 +1721,31 @@ class WargearProfile:
         except Exception:
             pass
         try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                unit = getattr(attacker, "parent_unit", None)
+                try:
+                    root = unit.get_attached_unit_root() if unit is not None else None
+                except Exception:
+                    root = unit
+                sr = getattr(root, "special_rules", None) if root is not None else None
+                bonus = int(sr.get("deadly_debut_melee_ap_bonus", 0) or 0) if isinstance(sr, dict) else 0
+                if bonus and isinstance(sr, dict) and sr.get("deadly_debut_active"):
+                    apply_bonus = True
+                    exp = str(sr.get("deadly_debut_expires_phase", "") or "").strip().upper()
+                    if exp:
+                        try:
+                            army = root.get_parent_army() if root is not None else None
+                            game = getattr(getattr(army, "player", None), "game", None)
+                            pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                        except Exception:
+                            pname = ""
+                        if pname and pname != exp:
+                            apply_bonus = False
+                    if apply_bonus:
+                        ap_val -= bonus
+        except Exception:
+            pass
+        try:
             sr = getattr(attacker.parent_unit, "special_rules", None)
             if isinstance(sr, dict) and sr.get("draught_of_terror_active"):
                 apply_bonus = True
@@ -8236,6 +8261,31 @@ class WargearProfile:
                 leading_lethal = bool(root.leading_unit_weapons_have_lethal_hits(attack_type=attack_type))
         except Exception:
             leading_lethal = False
+        deadly_debut_lethal = False
+        try:
+            if is_melee:
+                unit = getattr(attacker, "parent_unit", None)
+                try:
+                    root = unit.get_attached_unit_root() if unit is not None else None
+                except Exception:
+                    root = unit
+                sr = getattr(root, "special_rules", None) if root is not None else None
+                if isinstance(sr, dict) and sr.get("deadly_debut_active"):
+                    apply_bonus = True
+                    exp = str(sr.get("deadly_debut_expires_phase", "") or "").strip().upper()
+                    if exp:
+                        try:
+                            army = root.get_parent_army() if root is not None else None
+                            game = getattr(getattr(army, "player", None), "game", None)
+                            pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                        except Exception:
+                            pname = ""
+                        if pname and pname != exp:
+                            apply_bonus = False
+                    if apply_bonus:
+                        deadly_debut_lethal = True
+        except Exception:
+            deadly_debut_lethal = False
 
         pact_lethal = False
         pact_sustained = False
@@ -8434,7 +8484,7 @@ class WargearProfile:
                 attack_instance["bonus_precision"] = True
                 hit_result['special_effects'].append("Precision")
 
-            if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal or martial_katah_lethal or bondsman_lethal or pact_lethal or exquisite_lethal or pain_lethal or leading_lethal or bonus_lethal or malefic_lethal:
+            if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal or martial_katah_lethal or bondsman_lethal or pact_lethal or exquisite_lethal or pain_lethal or leading_lethal or bonus_lethal or malefic_lethal or deadly_debut_lethal:
                 hit_result['special_effects'].append("Lethal Hits")
                 attack_instance['lethal_hit'] = True
             # For Sustained Hits, do not override an existing Sustained Hits X on the weapon.
@@ -8514,7 +8564,7 @@ class WargearProfile:
                 # This includes weapon-native AND unit/ability-based Lethal/Sustained hits
 
                 # Apply Lethal Hits from all sources (same as baseline critical)
-                if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal or martial_katah_lethal or bondsman_lethal or pact_lethal or exquisite_lethal or pain_lethal or leading_lethal or bonus_lethal:
+                if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal or martial_katah_lethal or bondsman_lethal or pact_lethal or exquisite_lethal or pain_lethal or leading_lethal or bonus_lethal or deadly_debut_lethal:
                     hit_result['special_effects'].append("Lethal Hits")
                     attack_instance['lethal_hit'] = True
 

@@ -64,6 +64,7 @@ _UNIT_STATE_EXCLUDE = {
     "_ability_cache",
     "enhancement",
     "_death_ecstasy_pending_models",
+    "_berserk_fugue_pending_models",
     "_deathless_duty_pending_models",
     "_melee_fight_on_death_pending_models",
 }
