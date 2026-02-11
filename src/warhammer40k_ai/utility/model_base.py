@@ -284,36 +284,36 @@ class Base:
 if __name__ == "__main__":
     b = Base(BaseType.CIRCULAR, 32)
     val = b.get_radius()
-    print(f"Radius: {val}")
+    logger.info(f"Radius: {val}")
     assert val == 32.0
 
     b = Base(BaseType.ELLIPTICAL, (60, 35))
     val = b.get_radius(math.radians(90))
-    print(f"Radius: {val}")
+    logger.info(f"Radius: {val}")
     assert val == 35.0
 
     val = b.get_radius(math.radians(45))
-    print(f"Radius: {val}")
+    logger.info(f"Radius: {val}")
     assert val == 42.7549
 
     b.set_facing(math.radians(90))
     val = b.get_radius(math.radians(90))
-    print(f"Radius: {val}")
+    logger.info(f"Radius: {val}")
     assert val == 60.0
 
     b.set_facing(math.radians(315))
     val = b.get_radius(math.radians(45))
-    print(f"Radius: {val}")
+    logger.info(f"Radius: {val}")
     assert val == 35.0
 
     b.set_facing(math.radians(135))
     val = b.get_radius(math.radians(45))
-    print(f"Radius: {val}")
+    logger.info(f"Radius: {val}")
     assert val == 35.0
 
     b.set_facing(math.radians(315))
     val = b.get_radius(math.radians(0))
-    print(f"Radius: {val}")
+    logger.info(f"Radius: {val}")
     assert val == 42.7549
 
     base_1 = Base(BaseType.ELLIPTICAL, (10, 5))
@@ -321,28 +321,28 @@ if __name__ == "__main__":
     base_2 = Base(BaseType.ELLIPTICAL, (10, 5))
     base_2.set_position(40, 0)
     dist = base_1.edge_to_edge_distance(base_2)
-    print(f"Distance: {dist}")
+    logger.info(f"Distance: {dist}")
     assert dist == 10.0
 
     base_1.set_facing(math.radians(45))
     dist = base_1.edge_to_edge_distance(base_2)
-    print(f"Distance: {dist}")
+    logger.info(f"Distance: {dist}")
     assert not dist == 10.0
     assert dist == 13.68
 
     base_1.set_position(40, 0, 20)
     vert_dist = base_1.vertical_distance(base_2)
     dist = base_1.edge_to_edge_distance(base_2)
-    print(f"Vertical Distance: {vert_dist}")
+    logger.info(f"Vertical Distance: {vert_dist}")
     assert vert_dist == 10.0
-    print(f"Distance: {dist}")
+    logger.info(f"Distance: {dist}")
     assert dist == 10.0
 
     base_1.set_position(10, 0, 20)
     base_1.set_facing(math.radians(0))
     vert_dist = base_1.vertical_distance(base_2)
     dist = base_1.edge_to_edge_distance(base_2)
-    print(f"Vertical Distance: {vert_dist}")
+    logger.info(f"Vertical Distance: {vert_dist}")
     assert vert_dist == 10.0
-    print(f"Distance: {dist}")
+    logger.info(f"Distance: {dist}")
     assert dist == 14.14

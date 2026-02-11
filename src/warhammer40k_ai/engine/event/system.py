@@ -1,4 +1,6 @@
 from typing import Callable, Iterable
+import logging
+logger = logging.getLogger(__name__)
 
 
 class EventSystem:
@@ -49,7 +51,7 @@ class EventSystem:
 
     def publish(self, event_name: str, *, _target_groups: Iterable[str] | None = None, **kwargs):
         try:
-            print(f"Event publish: {event_name} -> {kwargs}")
+            logger.info(f"Event publish: {event_name} -> {kwargs}")
         except Exception:
             pass
         lifecycle = getattr(self, "lifecycle", None)
@@ -69,6 +71,6 @@ class EventSystem:
                 callback(**kwargs)
             except Exception as e:
                 try:
-                    print(f"Event callback error for '{event_name}': {e}")
+                    logger.exception(f"Event callback error for '{event_name}': {e}")
                 except Exception:
                     pass

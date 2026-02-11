@@ -17,6 +17,9 @@ from shapely.ops import unary_union
 from shapely.affinity import scale, translate
 
 from typing import TYPE_CHECKING, List, Tuple, Union
+import logging
+logger = logging.getLogger(__name__)
+
 if TYPE_CHECKING:
     from ..engine.game import Game
 
@@ -190,11 +193,11 @@ class Map:
                     vertical_distance <= ENGAGEMENT_RANGE_VERTICAL):
                     source_pos = source_model.get_location()
                     target_pos = target_model.get_location()
-                    print(f"DEBUG: ENGAGEMENT DETECTED!")
-                    print(f"DEBUG: {source_unit.name} model at {source_pos}")
-                    print(f"DEBUG: {target_unit.name} model at {target_pos}")
-                    print(f"DEBUG: Horizontal distance: {horizontal_distance:.2f}\" (limit: {ENGAGEMENT_RANGE_HORIZONTAL}\")")
-                    print(f"DEBUG: Vertical distance: {vertical_distance:.2f}\" (limit: {ENGAGEMENT_RANGE_VERTICAL}\")")
+                    logger.debug(f"DEBUG: ENGAGEMENT DETECTED!")
+                    logger.debug(f"DEBUG: {source_unit.name} model at {source_pos}")
+                    logger.debug(f"DEBUG: {target_unit.name} model at {target_pos}")
+                    logger.debug(f"DEBUG: Horizontal distance: {horizontal_distance:.2f}\" (limit: {ENGAGEMENT_RANGE_HORIZONTAL}\")")
+                    logger.debug(f"DEBUG: Vertical distance: {vertical_distance:.2f}\" (limit: {ENGAGEMENT_RANGE_VERTICAL}\")")
                     return True
         return False
 
@@ -2569,14 +2572,14 @@ class ObjectivePoint:
                         model_base_shape = model.model_base.get_base_shape()
                         if model_base_shape.intersects(objective_area):
                             player_oc[player] += model.objective_control
-                            print(f"INFO: {model.name} (OC: {model.objective_control}) overlaps objective at ({self.x:.1f}, {self.y:.1f})")
+                            logger.info(f"INFO: {model.name} (OC: {model.objective_control}) overlaps objective at ({self.x:.1f}, {self.y:.1f})")
                     except (AttributeError, TypeError, ValueError, GEOSException):
                         # Fallback to distance check if base shape fails
                         distance = get_dist(self.x - model.model_base.x, self.y - model.model_base.y)
                         model_base_radius = getattr(model.model_base, 'get_radius', lambda: 1.0)()
                         if distance <= (self.control_radius + model_base_radius):
                             player_oc[player] += model.objective_control
-                            print(f"INFO: {model.name} (OC: {model.objective_control}) near objective (manual calculation)")
+                            logger.info(f"INFO: {model.name} (OC: {model.objective_control}) near objective (manual calculation)")
 
         # Determine controlling player based on OC values
         if any(oc > 0 for oc in player_oc.values()):
@@ -2646,10 +2649,10 @@ class ObjectivePoint:
         # Debug output
         oc_summary = {player.name: oc for player, oc in player_oc.items() if oc > 0}
         if oc_summary:
-            print(f"ObjectivePoint ({self.x:.1f}, {self.y:.1f}) OC values: {oc_summary} -> controlled by {self.controlling_player.name if self.controlling_player else 'None'}")
+            logger.info(f"ObjectivePoint ({self.x:.1f}, {self.y:.1f}) OC values: {oc_summary} -> controlled by {self.controlling_player.name if self.controlling_player else 'None'}")
         else:
             owner = self.controlling_player.name if self.controlling_player else 'None'
-            print(f"ObjectivePoint ({self.x:.1f}, {self.y:.1f}) controlled by {owner} (no models in range)")
+            logger.info(f"ObjectivePoint ({self.x:.1f}, {self.y:.1f}) controlled by {owner} (no models in range)")
 
 
 class ObjectiveCategory(Enum):

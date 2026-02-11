@@ -1,6 +1,8 @@
 """Auto-extracted Unit mixin methods from unit.py."""
 
 from ._common import *
+import logging
+logger = logging.getLogger(__name__)
 
 
 class DatasheetWargearMixin:
@@ -70,10 +72,8 @@ class DatasheetWargearMixin:
         if key in self._unknown_base_size_warnings:
             return
         self._unknown_base_size_warnings.add(key)
-        print(
-            f"WARNING: {self.name}: base size for '{model_name or 'model'}' is unspecified; "
-            f"using {fallback_desc}."
-        )
+        logger.warning(f"WARNING: {self.name}: base size for '{model_name or 'model'}' is unspecified; "
+            f"using {fallback_desc}.")
 
     def _parse_base_size(
         self,
@@ -933,7 +933,7 @@ class DatasheetWargearMixin:
         try:
             max_cap = getattr(self, "unit_models_maximum", None)
             if isinstance(max_cap, int) and max_cap > 0 and quantity > max_cap:
-                print(f" {self.name} requested size {quantity} exceeds maximum {max_cap}; clamping to {max_cap}.")
+                logger.info(f" {self.name} requested size {quantity} exceeds maximum {max_cap}; clamping to {max_cap}.")
                 quantity = max_cap
         except Exception:
             pass
@@ -1078,7 +1078,7 @@ class DatasheetWargearMixin:
             elif match := re.match(r"^this (?:model|unit) is equipped with: nothing$", entry):
                 continue
             else:
-                print(f"UNKNOWN LOADOUT: {entry}")
+                logger.info(f"UNKNOWN LOADOUT: {entry}")
         if return_optional:
             return starting_wargear, optional_wargear
         return starting_wargear

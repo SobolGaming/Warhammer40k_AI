@@ -7,6 +7,8 @@ from typing import Iterable, Optional
 from ..utility.ability_support import ABILITY_POWER_FROM_PAIN, army_has_ability_id
 from ..utility.dice import get_roll
 from ..utility.entity_ids import get_entity_id
+import logging
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -555,7 +557,7 @@ class PowerFromPainManager:
             return 0
         self.tokens = int(self.tokens or 0) + amount
         try:
-            print(f"Power from Pain: +{amount} token(s) ({reason})")
+            logger.info(f"Power from Pain: +{amount} token(s) ({reason})")
         except Exception:
             pass
         return amount
@@ -571,7 +573,7 @@ class PowerFromPainManager:
             return False
         self.tokens = int(self.tokens or 0) - amount
         try:
-            print(f"Power from Pain: -{amount} token(s) ({reason})")
+            logger.info(f"Power from Pain: -{amount} token(s) ({reason})")
         except Exception:
             pass
         return True
@@ -952,7 +954,7 @@ class PowerFromPainManager:
             except Exception:
                 pass
         try:
-            print(f"Power from Pain: {root.name} removed into Strategic Reserves (Fade Away)")
+            logger.info(f"Power from Pain: {root.name} removed into Strategic Reserves (Fade Away)")
         except Exception:
             pass
         return True

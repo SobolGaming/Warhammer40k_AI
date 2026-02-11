@@ -21,6 +21,8 @@ import os
 import re
 import sys
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+import logging
+logger = logging.getLogger(__name__)
 
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -8649,14 +8651,14 @@ def _build_matrix() -> str:
     datasheets_by_faction = deduped_by_faction
 
     if dedupe_conflicts:
-        print("⚠️ Datasheets with same name but different content detected:")
+        logger.info("⚠️ Datasheets with same name but different content detected:")
         for entry in dedupe_conflicts:
             parts = []
             for item in entry.get("entries", []):
                 sid = item.get("id", "")
                 src = item.get("source", "")
                 parts.append(f"{sid} ({src})" if src else sid)
-            print(f" - {entry.get('name', '')}: {', '.join(parts)}")
+            logger.info(f" - {entry.get('name', '')}: {', '.join(parts)}")
 
     datasheet_support_overrides = _datasheet_support_by_name_faction()
 
@@ -8867,7 +8869,7 @@ def main() -> int:
     content = _build_matrix()
     with open(OUT_PATH, "w", encoding="utf-8") as f:
         f.write(content)
-    print(f"Wrote {OUT_PATH}")
+    logger.info(f"Wrote {OUT_PATH}")
     _cleanup_audit_artifacts()
     return 0
 
@@ -8887,4 +8889,5 @@ def _cleanup_audit_artifacts() -> None:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     raise SystemExit(main())

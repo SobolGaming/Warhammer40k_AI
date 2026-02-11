@@ -183,7 +183,7 @@ class Model:
 
     def add_wargear(self, wargear: Wargear) -> None:
         """Add wargear to the model."""
-        print(f"Appending: {type(wargear)}")
+        logger.info(f"Appending: {type(wargear)}")
         self.wargear.append(wargear)
     
     def add_optional_wargear(self, wargear: str) -> None:
@@ -1679,19 +1679,19 @@ class Model:
                     fnp_roll = get_roll("D6")
                     if fnp_roll >= fnp_value:
                         fnp_saves += 1
-                        print(f"{self.name} Feel No Pain{condition_text} save: rolled {fnp_roll}, needed {fnp_value}+ - SAVED")
+                        logger.info(f"{self.name} Feel No Pain{condition_text} save: rolled {fnp_roll}, needed {fnp_value}+ - SAVED")
                     else:
-                        print(f"{self.name} Feel No Pain{condition_text} save: rolled {fnp_roll}, needed {fnp_value}+ - FAILED")
+                        logger.error(f"{self.name} Feel No Pain{condition_text} save: rolled {fnp_roll}, needed {fnp_value}+ - FAILED")
                 
                 # Reduce damage by the number of successful FNP saves
                 amount -= fnp_saves
                 if fnp_saves > 0:
-                    print(f"{self.name} prevented {fnp_saves} damage with Feel No Pain{condition_text}")
+                    logger.info(f"{self.name} prevented {fnp_saves} damage with Feel No Pain{condition_text}")
             else:
-                print(f"{self.name} has Feel No Pain abilities but none apply to this damage source")
+                logger.info(f"{self.name} has Feel No Pain abilities but none apply to this damage source")
         
         self.wounds -= amount
-        print(f"{self.name} takes {amount} damage. It is {'Alive' if self.is_alive else 'Dead'}")
+        logger.info(f"{self.name} takes {amount} damage. It is {'Alive' if self.is_alive else 'Dead'}")
         excess_damage = 0
         if not self.is_alive:
             self.die(game_map=game_map)
@@ -2221,7 +2221,7 @@ class Model:
         
         # If we can't parse the condition, default to applying the save
         # This is safer than blocking legitimate saves due to parsing issues
-        print(f"WARN: Unknown invulnerable save condition format: '{condition}' - applying save")
+        logger.warning(f"WARN: Unknown invulnerable save condition format: '{condition}' - applying save")
         return True
 
     def failed_saving_throw(self, attack_instance: Dict, attacking_ap: int = 0) -> bool:

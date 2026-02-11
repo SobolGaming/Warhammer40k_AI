@@ -2427,10 +2427,8 @@ class Game(
         else:
             return
 
-        print(
-            f"{ability_name}: {getattr(unit, 'name', 'Unit')} -> "
-            f"{getattr(target_unit, 'name', 'Target')} ({roll_summary}) => {total_mw} mortal wounds"
-        )
+        logger.info(f"{ability_name}: {getattr(unit, 'name', 'Unit')} -> "
+            f"{getattr(target_unit, 'name', 'Target')} ({roll_summary}) => {total_mw} mortal wounds")
 
         if total_mw > 0:
             unit._apply_mortal_wounds_to_unit(target_unit, int(total_mw), game_map=game_map)
@@ -3395,10 +3393,8 @@ class Game(
         total_mw = int(successes * mortal_per)
 
         ability_name = str(spec.get("source", "") or "Fight phase mortals").strip() or "Fight phase mortals"
-        print(
-            f"{ability_name}: {getattr(model, 'name', 'Model')} -> {getattr(target_unit, 'name', 'Target')} "
-            f"(rolls={rolls}) => {total_mw} mortal wounds"
-        )
+        logger.info(f"{ability_name}: {getattr(model, 'name', 'Model')} -> {getattr(target_unit, 'name', 'Target')} "
+            f"(rolls={rolls}) => {total_mw} mortal wounds")
 
         if total_mw > 0:
             unit._apply_mortal_wounds_to_unit(target_unit, total_mw, game_map=getattr(self, "map", None))
@@ -5394,7 +5390,7 @@ class Game(
                 try:
                     if bool(getattr(root, "must_start_in_reserves", lambda: False)()):
                         if decision != "reserves":
-                            print(f"{root.name} must start in Reserves (AIRCRAFT)")
+                            logger.info(f"{root.name} must start in Reserves (AIRCRAFT)")
                         decision = "reserves"
                 except Exception:
                     pass
@@ -5510,9 +5506,9 @@ class Game(
                 dtype = getattr(request, "decision_type", "")
                 pid = getattr(request, "player_id", None)
                 err_list = list(getattr(apply_result, "errors", ()) or ())
-                print(f"ERROR: Decision rejected ({dtype}) for player {pid}: {err_list}")
+                logger.error(f"ERROR: Decision rejected ({dtype}) for player {pid}: {err_list}")
             except Exception:
-                print(f"ERROR: Unexpected Decision Failure for {request} with {apply_result}")
+                logger.exception(f"ERROR: Unexpected Decision Failure for {request} with {apply_result}")
  
         return apply_result
 
@@ -6279,7 +6275,7 @@ class Game(
         after = [getattr(c, 'name', 'Unknown') for c in getattr(current_player, 'active_secondaries', [])]
         newly_drawn = [name for name in after if name not in before]
         if newly_drawn:
-            print(f"{current_player.name} active Secondaries: {', '.join(after)}")
+            logger.info(f"{current_player.name} active Secondaries: {', '.join(after)}")
 
         # Notify active secondaries about start-of-turn (for cards that snapshot start-of-turn state).
         for card in list(getattr(current_player, "active_secondaries", []) or []):
@@ -6304,7 +6300,7 @@ class Game(
                 except Exception:
                     is_below_starting = False
             if is_below_starting:
-                print(f"WARN: {unit.name} is below starting strength - taking Battle-Shock test")
+                logger.warning(f"WARN: {unit.name} is below starting strength - taking Battle-Shock test")
                 unit.take_battle_shock_test(self.turn)
                 uid = get_entity_id(unit)
                 tested_ids.add(uid)
@@ -6317,7 +6313,7 @@ class Game(
                 except Exception:
                     is_below_half = False
             if is_below_half:
-                print(f"WARN: {unit.name} is below half strength - taking Battle-Shock test")
+                logger.warning(f"WARN: {unit.name} is below half strength - taking Battle-Shock test")
                 unit.take_battle_shock_test(self.turn)
                 uid = get_entity_id(unit)
                 tested_ids.add(uid)
@@ -6344,7 +6340,7 @@ class Game(
                     timing="End of Command phase",
                 )
                 if added:
-                    print(f"{current_player.name} scored {added} VP from Primary: {primary.name}")
+                    logger.info(f"{current_player.name} scored {added} VP from Primary: {primary.name}")
 
         # Leagues of Votann: Prioritised Efficiency (Yield Points + mode updates).
         for p in list(getattr(self, "players", []) or []):
@@ -6843,18 +6839,16 @@ class Game(
         individual_dice = list(getattr(charging_unit.round_state, "charge_dice", []) or [])
         charge_roll = self._apply_charge_modifiers(charging_unit, base_charge_roll, target_unit=target_unit)
 
-        print(f"Charge: {charging_unit.name} charging {target_unit.name}")
-        print(f"Charge: Current edge-to-edge distance: {current_distance:.1f}\"")
-        print(f"Charge: Distance needed to achieve <= 1\" edge-to-edge: {distance_needed:.1f}\"")
-        print(f"Charge: Roll {base_charge_roll} (rolled {individual_dice}) (modified: {charge_roll})")
+        logger.info(f"Charge: {charging_unit.name} charging {target_unit.name}")
+        logger.info(f"Charge: Current edge-to-edge distance: {current_distance:.1f}\"")
+        logger.info(f"Charge: Distance needed to achieve <= 1\" edge-to-edge: {distance_needed:.1f}\"")
+        logger.info(f"Charge: Roll {base_charge_roll} (rolled {individual_dice}) (modified: {charge_roll})")
 
         # CRITICAL RULE: If charge roll is insufficient, charge fails and no models move
         if charge_roll < distance_needed:
-            print(
-                f"Charge failed: roll {charge_roll}\" insufficient to reach within 1\" "
-                f"(needed {distance_needed:.1f}\")"
-            )
-            print("Charge failed: no models move")
+            logger.error(f"Charge failed: roll {charge_roll}\" insufficient to reach within 1\" "
+                f"(needed {distance_needed:.1f}\")")
+            logger.error("Charge failed: no models move")
             return False
 
         # Charge roll is sufficient - now attempt the movement
@@ -6881,7 +6875,7 @@ class Game(
                     target_pos = t_pos
 
         if not charging_pos or not target_pos:
-            print("Charge failed: invalid positions")
+            logger.error("Charge failed: invalid positions")
             return False
 
         # CRITICAL: Store original model positions BEFORE attempting movement
@@ -6897,7 +6891,7 @@ class Game(
         # Normalize the direction vector
         distance_to_target = (dx ** 2 + dy ** 2) ** 0.5
         if distance_to_target == 0:
-            print("Charge failed: units are at same position")
+            logger.error("Charge failed: units are at same position")
             return False
 
         dx /= distance_to_target
@@ -6935,18 +6929,14 @@ class Game(
                         pass
                 charging_unit._apply_charge_move_devastating_wounds()
                 charging_unit._apply_charge_move_weapon_keyword_bonuses()
-                print(
-                    f"Charge successful: {charging_unit.name} achieved {final_distance:.1f}\" "
-                    f"edge-to-edge distance with {target_unit.name}"
-                )
+                logger.info(f"Charge successful: {charging_unit.name} achieved {final_distance:.1f}\" "
+                    f"edge-to-edge distance with {target_unit.name}")
                 return True
-            print(
-                f"Charge failed: {charging_unit.name} achieved {final_distance:.1f}\" edge-to-edge "
-                f"distance (not <= 1.0\") with {target_unit.name}"
-            )
+            logger.error(f"Charge failed: {charging_unit.name} achieved {final_distance:.1f}\" edge-to-edge "
+                f"distance (not <= 1.0\") with {target_unit.name}")
             # CRITICAL: Revert all model positions if charge failed to achieve engagement range
             # This ensures that NO MODELS MOVE when a charge fails
-            print("Charge failed: reverting all model positions - no models should move on failed charge")
+            logger.error("Charge failed: reverting all model positions - no models should move on failed charge")
 
             # Restore original positions
             for i, original_pos in enumerate(original_model_positions):
@@ -6956,9 +6946,9 @@ class Game(
             # Unit position is now derived from model positions, no need to restore
 
             return False
-        print("Charge failed: could not move unit")
+        logger.error("Charge failed: could not move unit")
         # CRITICAL: Restore original positions if charge_move failed completely
-        print("Charge failed: reverting all model positions - no models should move on failed charge")
+        logger.error("Charge failed: reverting all model positions - no models should move on failed charge")
 
         # Restore original positions
         for i, original_pos in enumerate(original_model_positions):
@@ -7159,9 +7149,9 @@ class Game(
                 continue
             modified_roll += int(val)
             if val > 0:
-                print(f"Charge bonus: +{val} ({source})")
+                logger.info(f"Charge bonus: +{val} ({source})")
             else:
-                print(f"Charge penalty: {val} ({source})")
+                logger.info(f"Charge penalty: {val} ({source})")
 
         return int(modified_roll)
 

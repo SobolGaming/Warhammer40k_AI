@@ -17,6 +17,9 @@ from warhammer40k_ai.utility.entity_ids import get_entity_id
 from dataclasses import dataclass
 
 from typing import TYPE_CHECKING
+import logging
+logger = logging.getLogger(__name__)
+
 if TYPE_CHECKING:
     from .model import Model
     from .unit import Unit
@@ -2664,7 +2667,7 @@ class WargearProfile:
                 attack_result.attacks_special_modifiers.append(f"Rapid Fire +{rf_bonus} ({rf})")
                 atk_mods.append(Modifier(ModifierOp.ADD, int(rf_bonus), source="weapon:rapid_fire"))
             except Exception as exc:
-                print(f"WARN: Rapid Fire bonus parsing failed for {self.name}: {exc}")
+                logger.warning(f"WARN: Rapid Fire bonus parsing failed for {self.name}: {exc}")
 
         try:
             sr = getattr(attacker.parent_unit, "special_rules", None)
@@ -2777,7 +2780,7 @@ class WargearProfile:
                 if key and key in used:
                     try:
                         wname = getattr(getattr(self, "parent_wargear", None), "name", None) or getattr(self, "name", "Weapon")
-                        print(f"WARN: ONE SHOT already used for {attacker.name}: {wname}")
+                        logger.warning(f"WARN: ONE SHOT already used for {attacker.name}: {wname}")
                     except Exception:
                         pass
                     return
@@ -3424,7 +3427,7 @@ class WargearProfile:
                     if amount <= 0:
                         try:
                             wname = getattr(getattr(self, "parent_wargear", None), "name", None) or getattr(self, "name", "Weapon")
-                            print(f"WARN: {wname} mortal_wound_in_addition set without amount")
+                            logger.warning(f"WARN: {wname} mortal_wound_in_addition set without amount")
                         except Exception:
                             pass
                 if is_mortal_only or amount > 0:
@@ -11643,7 +11646,7 @@ class WargearProfile:
         
         # If we can't parse the condition, default to applying the save
         # This is safer than blocking legitimate saves due to parsing issues
-        print(f"WARN: Unknown invulnerable save condition format: '{condition}' - applying save")
+        logger.warning(f"WARN: Unknown invulnerable save condition format: '{condition}' - applying save")
         return True
 
     def _resolve_wounds_cannot_be_ignored(self, attack_instance: Dict) -> bool:
@@ -12154,7 +12157,7 @@ class WargearProfile:
                 damage_mods.append(Modifier(ModifierOp.ADD, melta_bonus, source="weapon:melta"))
                 damage_result['special_effects'].append(f"Melta +{melta_bonus} ({melta})")
             except Exception as exc:
-                print(f"WARN: Melta bonus parsing failed for {self.name}: {exc}")
+                logger.warning(f"WARN: Melta bonus parsing failed for {self.name}: {exc}")
 
         # Enhancement: improve melee weapons' Damage by X (bearer enhancement).
         try:
@@ -12876,8 +12879,8 @@ class WargearProfile:
 
     def _print_attack_summary(self, result: AttackResult) -> None:
         '''Print comprehensive attack summary.'''
-        print(f"\nATTACK SUMMARY: {result.weapon_name}")
-        print(f"   Attacker: {result.attacker_name} -> Target: {result.target_unit_name}")
+        logger.info(f"\nATTACK SUMMARY: {result.weapon_name}")
+        logger.info(f"   Attacker: {result.attacker_name} -> Target: {result.target_unit_name}")
 
         # Attack generation with dice details
         modifiers_str = f" ({', '.join(result.attacks_special_modifiers)})" if result.attacks_special_modifiers else ""
@@ -12885,9 +12888,7 @@ class WargearProfile:
         if result.attacks_dice_rolls:
             dice_str = ", ".join(map(str, result.attacks_dice_rolls))
             dice_details = f" - rolled: [{dice_str}]"
-        print(
-            f"   Attacks: {result.attacks_rolled} (from {result.attacks_dice_expression}{dice_details}){modifiers_str}"
-        )
+        logger.info(f"   Attacks: {result.attacks_rolled} (from {result.attacks_dice_expression}{dice_details}){modifiers_str}")
 
         # Hit results with needed/rolled format and modifier breakdown
         if result.hit_results:
@@ -12909,9 +12910,7 @@ class WargearProfile:
                 # Fallback for auto-hit or special cases
                 needed_str = "auto-hit"
 
-            print(
-                f"   Hits: {result.total_hits}/{len(result.hit_results)} - {needed_str} - rolled: [{hit_rolls_str}]"
-            )
+            logger.info(f"   Hits: {result.total_hits}/{len(result.hit_results)} - {needed_str} - rolled: [{hit_rolls_str}]")
 
         # Wound results with needed/rolled format and strength comparison
         if result.wound_results:
@@ -12953,9 +12952,7 @@ class WargearProfile:
                 # Fallback
                 needed_str = "auto-fail"
 
-            print(
-                f"   Wounds: {result.total_wounds}/{len(result.wound_results)} - {needed_str} - rolled: [{wound_rolls_str}]"
-            )
+            logger.info(f"   Wounds: {result.total_wounds}/{len(result.wound_results)} - {needed_str} - rolled: [{wound_rolls_str}]")
 
         # Save results with save type and modifiers
         if result.save_results:
@@ -12975,9 +12972,7 @@ class WargearProfile:
                 needed_str = f"needed {first_save['needed']}+ {save_type_str}"
 
             failed_saves = len(result.save_results) - sum(1 for s in result.save_results if s['saved'])
-            print(
-                f"   Saves: {failed_saves}/{len(result.save_results)} failed - {needed_str} - rolled: [{save_rolls_str}]"
-            )
+            logger.error(f"   Saves: {failed_saves}/{len(result.save_results)} failed - {needed_str} - rolled: [{save_rolls_str}]")
 
         # Damage results with Feel No Pain details
         if result.damage_results:
@@ -13005,7 +13000,7 @@ class WargearProfile:
                     )
 
                 damage_summary.append(f"#{i+1}: {damage_info} to {dmg['target_model']}{fnp_info}{effects}{killed}")
-            print(f"   Damage: {result.total_damage_dealt} total - {', '.join(damage_summary)}")
+            logger.info(f"   Damage: {result.total_damage_dealt} total - {', '.join(damage_summary)}")
 
         # Hazardous effects
         if result.hazardous_roll is not None:
@@ -13016,15 +13011,15 @@ class WargearProfile:
                 roll_text = f"{result.hazardous_roll} ({hazard_modifier:+d} -> {modified_hazard_roll})"
             else:
                 roll_text = f"{result.hazardous_roll}"
-            print(f"   Hazardous: Rolled {roll_text} - {hazard_result}")
+            logger.info(f"   Hazardous: Rolled {roll_text} - {hazard_result}")
             if result.hazardous_damage > 0:
-                print(f"      {result.attacker_name} takes {result.hazardous_damage} mortal wounds")
+                logger.info(f"      {result.attacker_name} takes {result.hazardous_damage} mortal wounds")
 
         # Final summary
         if result.models_killed > 0:
-            print(f"   Models eliminated: {result.models_killed}")
+            logger.info(f"   Models eliminated: {result.models_killed}")
 
-        print()  # Empty line for readability
+        logger.info("")  # Empty line for readability
 
     def opponent_wound_allocation(self, target: 'Unit', *, attacker: Optional['Model'] = None, game_map: Optional['Map'] = None) -> Optional['Model']:
         """Allocate wounds to target models (defender chooses only when rules allow)."""
@@ -13511,7 +13506,7 @@ class Wargear:
         selected_profile = first_profile.get_bubblechukka_profile_for_roll(roll)
 
         if selected_profile:
-            print(f"Bubblechukka rolled {roll}: using {selected_profile.name} profile")
+            logger.info(f"Bubblechukka rolled {roll}: using {selected_profile.name} profile")
 
         return selected_profile
 
@@ -13575,10 +13570,10 @@ def parse_option_string(option: str, unit_ref: 'Unit') -> Optional[WargearOption
     parsed_result = parse_alternate_3(option)
     if parsed_result:
         if not parsed_result["original_item"]:
-            print(f" PARSED ADDITIONAL RESULT: {parsed_result}")
+            logger.info(f" PARSED ADDITIONAL RESULT: {parsed_result}")
             return WargearOption(WargearOptionType.ADDITIONAL, parsed_result["original_item"], parsed_result["replacement_options"], parsed_result["model"], parsed_result["model_count"], 1, parsed_result["condition"])
         else:
-            print(f"PARSED REPLACEMENT RESULT: {parsed_result}")
+            logger.info(f"PARSED REPLACEMENT RESULT: {parsed_result}")
             return WargearOption(WargearOptionType.REPLACEMENT, parsed_result["original_item"], parsed_result["replacement_options"], parsed_result["model"], parsed_result["model_count"], 1, parsed_result["condition"])
     return None
 
@@ -13595,12 +13590,12 @@ def parse_option_string2(option: str, unit_ref: 'Unit') -> Optional[WargearOptio
     else:
         model_name_3 = "abcdefghijklmnopqrstuvwxyz"
     if len(unique_model_names) > 3:
-        print(f"WARNING: More than 3 unique model names found: {unique_model_names}")
+        logger.warning(f"WARNING: More than 3 unique model names found: {unique_model_names}")
 
     if any(x in option for x in [" can be equipped with ", " can each be equipped with "]):
         parts = option.split(" be equipped with ")
         if len(parts) != 2:
-            print(f"Invalid wargear option format: {option}")
+            logger.info(f"Invalid wargear option format: {option}")
             return
         parts[0] = parts[0].replace("can each", "").replace("can", "")
 
@@ -13641,7 +13636,7 @@ def parse_option_string2(option: str, unit_ref: 'Unit') -> Optional[WargearOptio
             "original_item": [],
             "replacement_options": [item_description]
         }
-        print(f" PARSED ADDITIONAL RESULT: {parsed_result}")
+        logger.info(f" PARSED ADDITIONAL RESULT: {parsed_result}")
         #return WargearOption(WargearOptionType.ADDITIONAL, parsed_result["original_item"], parsed_result["replacement_options"], parsed_result["model"], parsed_result["model_count"], 1, parsed_result["condition"])
 
     elif any(x in option for x in [" can be replaced with", " can each be replaced with", " can each have their "]):
@@ -13699,8 +13694,8 @@ def parse_option_string2(option: str, unit_ref: 'Unit') -> Optional[WargearOptio
         match = pattern.search(description)
         
         if not match:
-            print(f"DESCRIPTION: {description}")
-            print(f"REPLACEMENT MATCH FAILED - INVALID WARGEAR OPTION: {original_option}")
+            logger.info(f"DESCRIPTION: {description}")
+            logger.error(f"REPLACEMENT MATCH FAILED - INVALID WARGEAR OPTION: {original_option}")
             return None
         
         # Extract the components and include condition in parsed_result
@@ -13766,10 +13761,10 @@ def parse_option_string2(option: str, unit_ref: 'Unit') -> Optional[WargearOptio
             "replacement_options": replacement_options
         }
         #print(f"NOT IMPLEMENTED - WARGEAR ITEM REPLACEMENT: FULL STRING '{option}'")
-        print(f"PARSED REPLACEMENT RESULT: {parsed_result}")
+        logger.info(f"PARSED REPLACEMENT RESULT: {parsed_result}")
         #return WargearOption(WargearOptionType.REPLACEMENT, parsed_result["original_item"], parsed_result["replacement_options"], parsed_result["model"], parsed_result["model_count"], 1, parsed_result["condition"])
     else:
-        print(f"INVALID WARGEAR OPTION: {original_option}")
+        logger.info(f"INVALID WARGEAR OPTION: {original_option}")
         return None
 
 def parse_warger_actor_string(actor_str: str) -> str:
@@ -13978,7 +13973,7 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
         # Debug spam is very noisy during army parsing. Enable manually while developing.
         DEBUG = False
         if DEBUG:
-            print(f"\nDESCRIPTION: {description}")
+            logger.info(f"\nDESCRIPTION: {description}")
         if "(" in description and ")" in description:
             marker_1 = description.find("(")
             marker_2 = description.find(")")
@@ -14187,20 +14182,20 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
             item_limit = Quantity(min=1, max=len(replacement_items))
         else:
             if DEBUG:
-                print(f"UNKNOWN: {line}")
+                logger.info(f"UNKNOWN: {line}")
             unhandled = True
 
         if not called_recursively:
             if DEBUG:
-                print(f"CONDITIONS: {conditions}")
-                print(f"MODEL LIMIT: {model_limit}")
-                print(f"ACTOR: {actor}")
-                print(f"BASE WARGEAR: {items_to_replace}")
-                print(f"ITEM LIMIT: {item_limit}")
+                logger.info(f"CONDITIONS: {conditions}")
+                logger.info(f"MODEL LIMIT: {model_limit}")
+                logger.info(f"ACTOR: {actor}")
+                logger.info(f"BASE WARGEAR: {items_to_replace}")
+                logger.info(f"ITEM LIMIT: {item_limit}")
 
             if is_replacement:
                 if DEBUG:
-                    print(f"REPLACEMENT OPTIONS: {replacement_items}\n")
+                    logger.info(f"REPLACEMENT OPTIONS: {replacement_items}\n")
                 wargear_options.append(WargearOption(
                     WargearOptionType.REPLACEMENT,
                     items_to_replace,
@@ -14212,7 +14207,7 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
                 ))
             else:
                 if DEBUG:
-                    print(f"ITEMS TO ADD: {replacement_items}\n")
+                    logger.info(f"ITEMS TO ADD: {replacement_items}\n")
                 wargear_options.append(WargearOption(
                     WargearOptionType.ADDITIONAL,
                     items_to_replace,
@@ -14225,7 +14220,7 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
 
         if unhandled:
             if DEBUG:
-                print(f"UNHANDLED: {str_list}")
+                logger.info(f"UNHANDLED: {str_list}")
             #raise Exception(f"UNHANDLED: {str_list}")
 
     for conditional in post_conditionals:
@@ -14288,7 +14283,7 @@ def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[Warg
                     # Do not crash the parser for footnotes; keep the raw text as a conditional.
                     # (This will still show up in the matrix as a remaining gap if we don't enforce it.)
                     if DEBUG:
-                        print(f"UNHANDLED POST_CONDITIONAL: {conditional}")
+                        logger.info(f"UNHANDLED POST_CONDITIONAL: {conditional}")
                     option.conditionals.append(conditional[len(f"{search_str} "):].strip() if search_str else conditional.strip())
 
     return wargear_options

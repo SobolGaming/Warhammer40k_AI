@@ -2,6 +2,8 @@ import pygame
 from typing import Callable, Dict, List, Optional, Set
 
 from .base_dialog import BaseDialog, BUTTON_BG, PANEL_BORDER, TEXT_PRIMARY, TEXT_SECONDARY, BUTTON_SELECTED
+import logging
+logger = logging.getLogger(__name__)
 
 
 class FiringDeckDialog(BaseDialog):
@@ -136,14 +138,14 @@ class FiringDeckDialog(BaseDialog):
 
             # Enforce total cap
             if len(self.selected_indices) >= int(self.firing_deck_x or 0):
-                print(f"INFO: Firing Deck: you can select at most {self.firing_deck_x} embarked models.")
+                logger.info(f"INFO: Firing Deck: you can select at most {self.firing_deck_x} embarked models.")
                 return True
 
             # Enforce: one weapon per embarked model
             entry = self.entries[idx]
             m = entry.get("model")
             if m is not None and m.id in self._selected_model_ids():
-                print("ERROR: Firing Deck: that embarked model is already selected (one weapon per model).")
+                logger.error("ERROR: Firing Deck: that embarked model is already selected (one weapon per model).")
                 return True
 
             self.selected_indices.add(idx)

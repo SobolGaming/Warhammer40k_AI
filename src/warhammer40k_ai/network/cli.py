@@ -6,7 +6,36 @@ from pathlib import Path
 
 from .client import NetworkClient
 from .server import NetworkServer
+import logging
+logger = logging.getLogger(__name__)
 
+def setup_logging(log_level) -> logging.Logger:
+    """Configure logging."""
+    print(f"Setting up logging at level {log_level}")
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging._nameToLevel(log_level))
+
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+
+    formatter = logging.Formatter("%(message)s")
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging._nameToLevel(log_level))
+    console_handler.setFormatter(formatter)
+    root_logger.addHandler(console_handler)
+
+    # Suppress noisy modules
+    for module in [
+        "pygame",
+        "warhammer40k_ai.roster.army",
+        "warhammer40k_ai.units.unit",
+        "warhammer40k_ai.units.model",
+        "warhammer40k_ai.engine.game",
+        "warhammer40k_ai.battlefield.map",
+    ]:
+        logging.getLogger(module).setLevel(logging.ERROR)
+
+    return logging.getLogger(__name__)
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Warhammer40k AI network server/client")
@@ -20,6 +49,14 @@ def _build_parser() -> argparse.ArgumentParser:
     server.add_argument("--join-code", help="Optional join code")
     server.add_argument("--ping-interval", type=float, default=20.0)
     server.add_argument("--ping-timeout", type=float, default=20.0)
+    server.add_argument(
+        "-l",
+        "--log",
+        dest="log_level",
+        help="Set the logging level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        default="INFO",
+    )
 
     client = subparsers.add_parser("client", help="Run the network client")
     client.add_argument("--server", required=True, help="Server URI (wss://host:port)")
@@ -31,6 +68,15 @@ def _build_parser() -> argparse.ArgumentParser:
     client.add_argument("--role", choices=["player1", "player2", "spectator"], help="Role selection")
     client.add_argument("--army-file", help="Army list file to submit")
     client.add_argument("--ready", action="store_true", help="Mark ready after submit")
+    client.add_argument(
+        "-l",
+        "--log",
+        dest="log_level",
+        help="Set the logging level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        default="INFO",
+    )
+    
 
     ui_client = subparsers.add_parser("client-ui", help="Run the network client with pygame UI")
     ui_client.add_argument("--server", required=True, help="Server URI (wss://host:port)")
@@ -42,6 +88,14 @@ def _build_parser() -> argparse.ArgumentParser:
     ui_client.add_argument("--role", choices=["player1", "player2", "spectator"], help="Role selection")
     ui_client.add_argument("--army-file", help="Army list file to submit")
     ui_client.add_argument("--ready", action="store_true", help="Mark ready after submit")
+    ui_client.add_argument(
+        "-l",
+        "--log",
+        dest="log_level",
+        help="Set the logging level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        default="INFO",
+    )
 
     return parser
 
@@ -57,7 +111,7 @@ async def _run_server(args: argparse.Namespace) -> None:
         ping_timeout=args.ping_timeout,
     )
     await server.start()
-    print(f"Network server listening on {server.transport.host}:{server.transport.port}")
+    logger.info(f"Network server listening on {server.transport.host}:{server.transport.port}")
     try:
         await server.run()
     finally:
@@ -84,14 +138,14 @@ async def _run_client(args: argparse.Namespace) -> None:
     hello_msg = await _wait_for_control(client, "hello")
     hello_payload = hello_msg.get("payload", {})
     if not hello_payload.get("ok"):
-        print(f"Version mismatch: {hello_payload.get('errors', [])}")
+        logger.info(f"Version mismatch: {hello_payload.get('errors', [])}")
         await client.close()
         return
     await client.send_auth(join_code=args.join_code, reconnect_token=args.reconnect_token)
     auth_msg = await _wait_for_control(client, "auth")
     payload = auth_msg.get("payload", {})
     if not payload.get("ok"):
-        print(f"Auth failed: {payload.get('errors', [])}")
+        logger.error(f"Auth failed: {payload.get('errors', [])}")
         await client.close()
         return
     if args.role:
@@ -105,12 +159,12 @@ async def _run_client(args: argparse.Namespace) -> None:
         await client.send_ready(True)
         await _wait_for_control(client, "ready")
 
-    print("Connected. Listening for updates...")
+    logger.info("Connected. Listening for updates...")
     try:
         while True:
             event = await client.next_message()
             client.handle_message(event)
-            print(f"[{event.category}] {event.message_type}")
+            logger.info(f"[{event.category}] {event.message_type}")
     except asyncio.CancelledError:
         raise
     finally:
@@ -120,6 +174,7 @@ async def _run_client(args: argparse.Namespace) -> None:
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
+    setup_logging(args.log_level)
     if args.mode == "server":
         asyncio.run(_run_server(args))
         return

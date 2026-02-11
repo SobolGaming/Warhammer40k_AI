@@ -23,6 +23,8 @@ from ..ui_utils import (
     draw_generic_icon,
     draw_aspect_shrine_token_icon
 )
+import logging
+logger = logging.getLogger(__name__)
 
 # Font sizes
 FONT_LARGE = 20
@@ -162,53 +164,53 @@ class RosterPane(pygame.sprite.Sprite):
                             if getattr(unit, "is_embarked", False) or getattr(unit, "embarked_in", None) is not None:
                                 t = getattr(unit, "embarked_in", None)
                                 tname = getattr(t, "name", "Transport") if t is not None else "a Transport"
-                                print(f"ERROR: {self.get_unit_display_name(unit)} is embarked in {tname} and cannot be deployed separately.")
+                                logger.error(f"ERROR: {self.get_unit_display_name(unit)} is embarked in {tname} and cannot be deployed separately.")
                                 return
                         except Exception:
                             pass
                         # Check if deployment zones are loaded (deployment has officially started)
                         has_deployment_zones = hasattr(self.game_view.game, 'deployment_zones')
                         zones_exist = self.game_view.game.deployment_zones if has_deployment_zones else None
-                        print(f"DEBUG: has_deployment_zones = {has_deployment_zones}")
-                        print(f"DEBUG: zones_exist = {zones_exist is not None if zones_exist else False}")
+                        logger.debug(f"DEBUG: has_deployment_zones = {has_deployment_zones}")
+                        logger.debug(f"DEBUG: zones_exist = {zones_exist is not None if zones_exist else False}")
 
                         if not has_deployment_zones or not zones_exist:
-                            print(f"INFO: Press SPACE to begin deployment sequence first")
+                            logger.info(f"INFO: Press SPACE to begin deployment sequence first")
                             return
                         
                         # Check if it's this player's turn to deploy
                         can_deploy = self.game_view.game.can_player_deploy_unit(self.player)
-                        print(f"DEBUG: can_player_deploy_unit = {can_deploy}")
+                        logger.debug(f"DEBUG: can_player_deploy_unit = {can_deploy}")
 
                         if not can_deploy:
                             # Not this player's turn - show message
-                            print(f"ERROR: Not {self.player_name}'s turn to deploy")
+                            logger.error(f"ERROR: Not {self.player_name}'s turn to deploy")
                             return
                         
                         # Deployment: only units not in reserves can be placed.
                         try:
                             if getattr(unit, "reserve_status", "deployed") in ("reserves", "strategic_reserves"):
-                                print(f"ERROR: {self.get_unit_display_name(unit)} is in reserves and cannot be deployed during Deployment.")
+                                logger.error(f"ERROR: {self.get_unit_display_name(unit)} is in reserves and cannot be deployed during Deployment.")
                                 return
                         except Exception:
                             pass
                         # Attached leaders deploy with their bodyguard
                         try:
                             if bool(getattr(unit, "is_attached_leader", False)):
-                                print(f"INFO: {self.get_unit_display_name(unit)} is an attached Leader and deploys with its Bodyguard.")
+                                logger.info(f"INFO: {self.get_unit_display_name(unit)} is an attached Leader and deploys with its Bodyguard.")
                                 return
                         except Exception:
                             pass
                         # Joined support artillery models deploy with their bodyguard
                         try:
                             if bool(getattr(unit, "is_joined_support", False)):
-                                print(f"INFO: {self.get_unit_display_name(unit)} is a joined Support Weapon and deploys with its Bodyguard.")
+                                logger.info(f"INFO: {self.get_unit_display_name(unit)} is a joined Support Weapon and deploys with its Bodyguard.")
                                 return
                         except Exception:
                             pass
 
                         # Directly open per-model deployment dialog (no deploy/reserves choice here)
-                        print(f"INFO: Deploying {unit.name} - enabling per-model deployment mode")
+                        logger.info(f"INFO: Deploying {unit.name} - enabling per-model deployment mode")
                         unit.set_reserve_status('deployed')
                         unit.deployed = False  # Ready for deployment but not yet placed
                         self.selected_unit = unit
@@ -227,7 +229,7 @@ class RosterPane(pygame.sprite.Sprite):
                                 self.selected_unit = None
                                 self.game_view.selected_unit = None
                             else:
-                                print(f"INFO: {unit.name} deployment cancelled")
+                                logger.info(f"INFO: {unit.name} deployment cancelled")
 
                             try:
                                 if hasattr(self.game_view, 'deployment_mode_for_selected_unit'):
@@ -235,7 +237,7 @@ class RosterPane(pygame.sprite.Sprite):
                             except Exception:
                                 pass
 
-                        print(f"INFO: Opening per-model deployment dialog for {unit.name}")
+                        logger.info(f"INFO: Opening per-model deployment dialog for {unit.name}")
                         phase_manager = getattr(self.game_view, "phase_manager", None)
                         if phase_manager is not None:
                             phase_manager._request_move_unit_decision(
@@ -293,7 +295,7 @@ class RosterPane(pygame.sprite.Sprite):
                             except Exception:
                                 role = None
                             label = f"{player_obj.name} ({role})" if role else f"{player_obj.name}"
-                        print(f"DEBUG: Active player highlight -> {label or waiting_id}")
+                        logger.debug(f"DEBUG: Active player highlight -> {label or waiting_id}")
                     self.game_view._last_highlighted_player_id = waiting_id
             if self.player is not None and waiting_id and str(self.player.id) == str(waiting_id):
                 header_color = ACTIVE_PLAYER_BG

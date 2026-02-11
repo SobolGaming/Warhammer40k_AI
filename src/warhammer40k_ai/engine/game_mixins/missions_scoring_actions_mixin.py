@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from ._shared import *  # noqa: F401,F403
+import logging
+logger = logging.getLogger(__name__)
 
 
 class GameMissionsScoringActionsMixin:
@@ -479,10 +481,8 @@ class GameMissionsScoringActionsMixin:
                     timing="End of turn",
                 )
                 if added:
-                    print(
-                        f"INFO: {turn_ending_player.name} scored {added} VP (end of turn) from Primary: "
-                        f"{turn_ending_player.primary_mission.name}"
-                    )
+                    logger.info(f"INFO: {turn_ending_player.name} scored {added} VP (end of turn) from Primary: "
+                        f"{turn_ending_player.primary_mission.name}")
 
         # Primary: end-of-opponent's-turn scoring (only for primaries that explicitly do so, e.g. Burden of Trust).
         for p in list(getattr(self, "players", []) or []):
@@ -501,10 +501,8 @@ class GameMissionsScoringActionsMixin:
                         timing="End of opponent turn",
                     )
                     if added:
-                        print(
-                            f"INFO: {p.name} scored {added} VP (opponent turn end) from Primary: "
-                            f"{getattr(prim, 'name', 'Primary')}"
-                        )
+                        logger.info(f"INFO: {p.name} scored {added} VP (opponent turn end) from Primary: "
+                            f"{getattr(prim, 'name', 'Primary')}")
 
         # Secondary: evaluate active cards for BOTH players based on the card's scoring window.
         from ..mission_cards import SecondaryScoringWindow
@@ -547,7 +545,7 @@ class GameMissionsScoringActionsMixin:
                     )
                     if added:
                         total_secondary_vp += added
-                        print(f"INFO: {scoring_player.name} scored {added} VP from Secondary: {card.name}")
+                        logger.info(f"INFO: {scoring_player.name} scored {added} VP from Secondary: {card.name}")
                 if getattr(result, 'achieved', False):
                     achieved.append(card)
 
@@ -654,10 +652,8 @@ class GameMissionsScoringActionsMixin:
                         timing="End of battle round",
                     )
                     if added:
-                        print(
-                            f"INFO: {player.name} scored {added} VP (end of battle round) from Primary: "
-                            f"{player.primary_mission.name}"
-                        )
+                        logger.info(f"INFO: {player.name} scored {added} VP (end of battle round) from Primary: "
+                            f"{player.primary_mission.name}")
 
         # Imperial Knights: Code Chivalric deed completion at end of battle round.
         for p in list(getattr(self, "players", []) or []):
@@ -741,10 +737,8 @@ class GameMissionsScoringActionsMixin:
                         timing="Unit destroyed",
                     )
                     if added:
-                        print(
-                            f"INFO: {player.name} scored {added} VP from Secondary: "
-                            f"{getattr(card, 'name', 'Unknown')} (unit destroyed)"
-                        )
+                        logger.info(f"INFO: {player.name} scored {added} VP from Secondary: "
+                            f"{getattr(card, 'name', 'Unknown')} (unit destroyed)")
 
     def record_model_destroyed(self, model: 'Model') -> None:
         """Record a model destroyed event and incrementally score relevant secondaries that key off models."""
@@ -777,10 +771,8 @@ class GameMissionsScoringActionsMixin:
                         timing="Model destroyed",
                     )
                     if added:
-                        print(
-                            f"INFO: {player.name} scored {added} VP from Secondary: "
-                            f"{getattr(card, 'name', 'Unknown')} (model destroyed)"
-                        )
+                        logger.info(f"INFO: {player.name} scored {added} VP from Secondary: "
+                            f"{getattr(card, 'name', 'Unknown')} (model destroyed)")
 
     def _is_unit_eligible_to_start_action(self, unit: 'Unit') -> Dict[str, Any]:
         # Not if Aircraft
@@ -1430,7 +1422,7 @@ class GameMissionsScoringActionsMixin:
                     vp = 10 if in_opponent_dz else 5
                     # Remove the objective
                     loc.removed = True
-                    print(f"INFO: Scorched Earth burned objective at ({loc.x:.1f}, {loc.y:.1f})")
+                    logger.info(f"INFO: Scorched Earth burned objective at ({loc.x:.1f}, {loc.y:.1f})")
                     # Immediate scoring per mission rules (Any time when burned)
                     details = [
                         f"Burned objective at ({loc.x:.1f}, {loc.y:.1f})",
@@ -1446,7 +1438,7 @@ class GameMissionsScoringActionsMixin:
                         timing="Action: Burn objective",
                     )
                     if added:
-                        print(f"INFO: {actor.name} scored {added} VP for burning objective")
+                        logger.info(f"INFO: {actor.name} scored {added} VP for burning objective")
                 unit.round_state.performing_action_name = None
                 unit.round_state.action_locked_until_turn_end = False
             else:

@@ -1,6 +1,8 @@
 import pygame
 from typing import List
 from .base_dialog import BaseDialog, PANEL_BG, PANEL_BORDER, BUTTON_BG, BUTTON_HOVER, BUTTON_DISABLED, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DISABLED
+import logging
+logger = logging.getLogger(__name__)
 
 
 class ScoutChoiceDialog(BaseDialog):
@@ -42,7 +44,7 @@ class ScoutChoiceDialog(BaseDialog):
     def can_scout(self) -> bool:
         """Check if the unit can make a scout move"""
         if not self.unit:
-            print("DEBUG: can_scout: No unit")
+            logger.debug("DEBUG: can_scout: No unit")
             return False
 
         if self.decision_request is not None:
@@ -58,17 +60,17 @@ class ScoutChoiceDialog(BaseDialog):
         # Check if unit has scout ability
         has_scout, _ = self.unit.has_scout()
         if not has_scout:
-            print(f"DEBUG: can_scout: {self.unit.name} has no scout ability")
+            logger.debug(f"DEBUG: can_scout: {self.unit.name} has no scout ability")
             return False
         
         # Check if unit is deployed (not in reserves)
         if not self.unit.deployed or self.unit.reserve_status != 'deployed':
-            print(f"DEBUG: can_scout: {self.unit.name} not deployed (deployed={self.unit.deployed}, reserve_status={self.unit.reserve_status})")
+            logger.debug(f"DEBUG: can_scout: {self.unit.name} not deployed (deployed={self.unit.deployed}, reserve_status={self.unit.reserve_status})")
             return False
         
         # Check if unit hasn't already made a scout move
         if hasattr(self.unit, 'scout_move_made') and self.unit.scout_move_made:
-            print(f"DEBUG: can_scout: {self.unit.name} already made scout move")
+            logger.debug(f"DEBUG: can_scout: {self.unit.name} already made scout move")
             return False
         
         #print(f"DEBUG: can_scout: {self.unit.name} can scout")

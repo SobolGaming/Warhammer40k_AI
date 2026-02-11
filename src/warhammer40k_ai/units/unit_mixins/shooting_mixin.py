@@ -1,6 +1,8 @@
 """Auto-extracted Unit mixin methods from unit.py."""
 
 from ._common import *
+import logging
+logger = logging.getLogger(__name__)
 
 
 class ShootingMixin:
@@ -20,23 +22,23 @@ class ShootingMixin:
             bool: True if any attacks were successful
         """
         if not weapon_declarations:
-            print(f"{self.name}: No shooting declarations to execute")
+            logger.info(f"{self.name}: No shooting declarations to execute")
             return False
             
         # Check if unit can shoot
         # Mission Actions: a unit performing an Action is not eligible to shoot until that Action completes or end of turn
         if getattr(self.round_state, 'action_locked_until_turn_end', False):
-            print(f"{self.name} is performing an Action and cannot shoot this turn")
+            logger.info(f"{self.name} is performing an Action and cannot shoot this turn")
             return False
         if (not out_of_phase) and self.round_state.shot_this_round:
-            print(f"{self.name} has already shot this round")
+            logger.info(f"{self.name} has already shot this round")
             return False
 
         # Chapter Approved exception: if this unit arrived from reserves via the "base touches edge"
         # Strategic Reserves placement, it cannot shoot this turn.
         try:
             if bool(getattr(self, "_reserves_edge_touch_this_turn", False)) and bool(getattr(self, "arrived_from_reserves_this_turn", False)):
-                print(f"{self.name} cannot shoot this turn (edge-touch Strategic Reserves placement)")
+                logger.info(f"{self.name} cannot shoot this turn (edge-touch Strategic Reserves placement)")
                 return False
         except Exception:
             pass
@@ -50,7 +52,7 @@ class ShootingMixin:
                     break
             
             if not can_shoot_any_weapon:
-                print(f"{self.name} cannot shoot after falling back")
+                logger.info(f"{self.name} cannot shoot after falling back")
                 return False
 
         ficklefire_active = False
@@ -144,10 +146,10 @@ class ShootingMixin:
 
         ctan_ok, ctan_reason = self.validate_ctan_power_selection(weapon_declarations)
         if not ctan_ok:
-            print(f"{self.name}: {ctan_reason}")
+            logger.info(f"{self.name}: {ctan_reason}")
             return False
 
-        print(f"{self.name} executing {len(weapon_declarations)} shooting declarations...")
+        logger.info(f"{self.name} executing {len(weapon_declarations)} shooting declarations...")
 
         # Detect interactive dice roll mode (server-authoritative roll decisions).
         game = None
@@ -356,7 +358,7 @@ class ShootingMixin:
                     linked_fire_mode=linked_fire_mode,
                 )
                 if not validation['valid']:
-                    print(f"{self.name} - {weapon_profile.name}: {validation['reason']}")
+                    logger.info(f"{self.name} - {weapon_profile.name}: {validation['reason']}")
                     continue
 
                 # Execute attacks with this weapon
@@ -417,7 +419,7 @@ class ShootingMixin:
             
         # Report shooting results
         if successful_attacks > 0:
-            print(f"{self.name} completed shooting with {successful_attacks} attacks executed")
+            logger.info(f"{self.name} completed shooting with {successful_attacks} attacks executed")
             try:
                 from ...utility.event_bus import append_action
                 pn = self.get_parent_army().player
@@ -429,9 +431,9 @@ class ShootingMixin:
             for declaration in weapon_declarations:
                 target_unit = declaration['target_unit']
                 if not target_unit.is_alive():
-                    print(f"{target_unit.name} has been destroyed!")
+                    logger.info(f"{target_unit.name} has been destroyed!")
         else:
-            print(f"{self.name} failed to execute any attacks")
+            logger.error(f"{self.name} failed to execute any attacks")
             
         # End attack resolution window(s) and resolve pending separations (now that this unit is done attacking).
         try:
@@ -732,19 +734,19 @@ class ShootingMixin:
         if callable(can_shoot_fn):
             can_shoot, reason = can_shoot_fn(eligible_models[0], out_of_phase=out_of_phase)
             if not can_shoot:
-                print(f"{self.name} - {weapon_profile.name}: {reason}")
+                logger.info(f"{self.name} - {weapon_profile.name}: {reason}")
                 return 0
 
         army = self.get_parent_army()
         deathstrike_mgr = getattr(army, "deathstrike", None)
         if deathstrike_mgr is None:
-            print(f"{self.name} - {weapon_profile.name}: Deathstrike manager missing")
+            logger.info(f"{self.name} - {weapon_profile.name}: Deathstrike manager missing")
             return 0
         from ...utility.entity_ids import get_entity_id
         unit_id = get_entity_id(self)
         marker_pos = deathstrike_mgr.get_marker_position(unit_id)
         if marker_pos is None:
-            print(f"{self.name} - {weapon_profile.name}: No Deathstrike marker")
+            logger.info(f"{self.name} - {weapon_profile.name}: No Deathstrike marker")
             return 0
 
         from ...utility.aura_utils import get_units_within_range_of_point_3d
@@ -760,7 +762,7 @@ class ShootingMixin:
             for model in eligible_models:
                 self._mark_one_shot_used(model, one_shot_key)
             deathstrike_mgr.mark_deathstrike_fired(unit_id)
-            print(f"{self.name} - {weapon_profile.name}: No units within 6\" of marker")
+            logger.info(f"{self.name} - {weapon_profile.name}: No units within 6\" of marker")
             return 0
 
         successful_attacks = 0
@@ -1500,17 +1502,17 @@ class ShootingMixin:
                 if linked_fire_origin_unit is not None and mode == "linked_fire":
                     attacks_override = 1
                     attacks_override_note = "Linked Fire"
-                    print(f"{model.name} attacking with {weapon_display} (Linked Fire from {linked_fire_origin_unit.name})")
+                    logger.info(f"{model.name} attacking with {weapon_display} (Linked Fire from {linked_fire_origin_unit.name})")
                 elif linked_fire_origin_unit is not None and mode == "infernal_puppeteer":
-                    print(f"{model.name} attacking with {weapon_display} (Infernal Puppeteer from {linked_fire_origin_unit.name})")
+                    logger.info(f"{model.name} attacking with {weapon_display} (Infernal Puppeteer from {linked_fire_origin_unit.name})")
                 # Psychic Assassin: apply Attacks=6 override when targeting PSYKER
                 # Only applies if no other override is already set
                 elif active_profile.is_psychic_assassin() and target_unit.has_any_keyword("PSYKER"):
                     attacks_override = 6
                     attacks_override_note = "Psychic Assassin"
-                    print(f"{model.name} attacking with {weapon_display} (Psychic Assassin vs PSYKER)")
+                    logger.info(f"{model.name} attacking with {weapon_display} (Psychic Assassin vs PSYKER)")
                 else:
-                    print(f"{model.name} attacking with {weapon_display}")
+                    logger.info(f"{model.name} attacking with {weapon_display}")
 
                 # Execute the attack using the weapon profile (pass game_map for cover/terrain context)
                 try:
@@ -1594,7 +1596,7 @@ class ShootingMixin:
                     key = getattr(active_profile, "one_shot_key", lambda: "")()
                     self._mark_one_shot_used(model, key)
             except Exception as e:
-                print(f"Error executing attack with {weapon_profile.name}: {e}")
+                logger.exception(f"Error executing attack with {weapon_profile.name}: {e}")
                 # Don't increment successful_attacks if there was an exception
                 
         return successful_attacks
@@ -1602,7 +1604,7 @@ class ShootingMixin:
     # Fight Phase Actions
 
     def pile_in_towards_enemies(self, game_map: 'Map') -> bool:
-        print("WARN: Pile-in requires UI/controlled movement; legacy auto-move removed.")
+        logger.warning("WARN: Pile-in requires UI/controlled movement; legacy auto-move removed.")
         return False
 
     def _is_model_in_base_to_base_contact(self, model: 'Model', enemy_models: List['Model'], game_map: 'Map') -> bool:
@@ -1620,11 +1622,11 @@ class ShootingMixin:
     
 
     def consolidate_towards_enemies(self, game_map: 'Map') -> bool:
-        print("WARN: Consolidate requires UI/controlled movement; legacy auto-move removed.")
+        logger.warning("WARN: Consolidate requires UI/controlled movement; legacy auto-move removed.")
         return False
 
     def auto_blood_surge_move(self, game_map: 'Map', max_distance: float) -> bool:
-        print("WARN: Blood Surge requires UI/controlled movement; legacy auto-move removed.")
+        logger.warning("WARN: Blood Surge requires UI/controlled movement; legacy auto-move removed.")
         return False
 
     def take_battle_shock_test(self, current_turn: int = 1):
@@ -1947,15 +1949,11 @@ class ShootingMixin:
                     dice_note = ""
                 passed = mod_roll <= leadership_value
                 if total_mod:
-                    print(
-                        f"{self.name} Leadership test: {dice_expr} rolled {roll_result}{dice_note} (mod {total_mod:+}) "
-                        f"-> {mod_roll} vs Ld {leadership_value} - {'PASSED' if passed else 'FAILED'}"
-                    )
+                    logger.info(f"{self.name} Leadership test: {dice_expr} rolled {roll_result}{dice_note} (mod {total_mod:+}) "
+                        f"-> {mod_roll} vs Ld {leadership_value} - {'PASSED' if passed else 'FAILED'}")
                 else:
-                    print(
-                        f"{self.name} Leadership test: {dice_expr} rolled {roll_result}{dice_note} "
-                        f"-> {mod_roll} vs Ld {leadership_value} - {'PASSED' if passed else 'FAILED'}"
-                    )
+                    logger.info(f"{self.name} Leadership test: {dice_expr} rolled {roll_result}{dice_note} "
+                        f"-> {mod_roll} vs Ld {leadership_value} - {'PASSED' if passed else 'FAILED'}")
 
                 reroll_sources = []
                 if icon_of_war_reroll_available:
@@ -2009,15 +2007,11 @@ class ShootingMixin:
                                     f"{source_label}: {self.name} re-rolls Battle-shock test ({original_roll} -> {new_roll}).",
                                 )
                             if total_mod:
-                                print(
-                                    f"{self.name} Leadership test re-roll: {dice_expr} rolled {roll_result} (mod {total_mod:+}) "
-                                    f"-> {mod_roll} vs Ld {leadership_value} - {'PASSED' if passed else 'FAILED'}"
-                                )
+                                logger.info(f"{self.name} Leadership test re-roll: {dice_expr} rolled {roll_result} (mod {total_mod:+}) "
+                                    f"-> {mod_roll} vs Ld {leadership_value} - {'PASSED' if passed else 'FAILED'}")
                             else:
-                                print(
-                                    f"{self.name} Leadership test re-roll: {dice_expr} rolled {roll_result} "
-                                    f"-> {mod_roll} vs Ld {leadership_value} - {'PASSED' if passed else 'FAILED'}"
-                                )
+                                logger.info(f"{self.name} Leadership test re-roll: {dice_expr} rolled {roll_result} "
+                                    f"-> {mod_roll} vs Ld {leadership_value} - {'PASSED' if passed else 'FAILED'}")
                         else:
                             if append_action and pn:
                                 append_action(
@@ -2050,7 +2044,7 @@ class ShootingMixin:
         if (not passed) and (not was_battle_shocked):
             battle_shock_effect = BattleShockEffect(int(current_turn))
             self.apply_status_effect(battle_shock_effect)
-            print(f"{self.name} has failed the battle shock test and is battle-shocked!")
+            logger.error(f"{self.name} has failed the battle shock test and is battle-shocked!")
 
         if shadow_ctx is not None:
             try:
@@ -2613,9 +2607,9 @@ class ShootingMixin:
         assert isinstance(game_map, Map)
         if ability:
             ability.activate(self)
-            print(f"{self.name} uses ability: {ability.name}.")
+            logger.info(f"{self.name} uses ability: {ability.name}.")
         else:
-            print(f"{self.name} does not have ability: {ability.name}.")
+            logger.info(f"{self.name} does not have ability: {ability.name}.")
 
     def embark(self, transport_unit: 'Unit', *, game_map: 'Map') -> None:
         """
@@ -2638,22 +2632,22 @@ class ShootingMixin:
             current_player = game.get_current_player()
             if owner and current_player is not None:
                 if current_player.id == owner and int(getattr(game, "turn", 0) or 0) == turn:
-                    print(f"{self.name} cannot embark this turn (Fire and Fade)")
+                    logger.info(f"{self.name} cannot embark this turn (Fire and Fade)")
                     return
 
         try:
             if self.cannot_embark():
-                print(f"{self.name} cannot embark (rule restriction).")
+                logger.info(f"{self.name} cannot embark (rule restriction).")
                 return
         except Exception:
             pass
 
         if self.round_state.disembarked_this_round:
-            print(f"{self.name} cannot embark after disembarking this turn")
+            logger.info(f"{self.name} cannot embark after disembarking this turn")
             return
 
         if not transport_unit.can_transport(self):
-            print(f"{self.name} cannot embark onto {transport_unit.name}.")
+            logger.info(f"{self.name} cannot embark onto {transport_unit.name}.")
             return
 
         # Pre-battle "declare embarked units" support: during setup/deployment, units can start embarked
@@ -2662,14 +2656,14 @@ class ShootingMixin:
             ok = transport_unit.add_passenger(self, game_map=game_map)
             if ok:
                 self._apply_aggressive_deployment_scouts(transport_unit)
-                print(f"{self.name} starts embarked within {transport_unit.name}.")
+                logger.info(f"{self.name} starts embarked within {transport_unit.name}.")
             else:
-                print(f"{self.name} cannot embark onto {transport_unit.name}.")
+                logger.info(f"{self.name} cannot embark onto {transport_unit.name}.")
             return
 
         # Must have actually moved (Normal/Advance/Fall Back) this round (not remain stationary)
         if getattr(self.round_state, "remained_stationary_this_round", False):
-            print(f"{self.name} cannot embark (did not move this phase)")
+            logger.info(f"{self.name} cannot embark (did not move this phase)")
             return
 
         # Must be within 3" with all models
@@ -2681,14 +2675,14 @@ class ShootingMixin:
                     continue
                 d = distance_between_models_bases_3d(m, t_model)
                 if d > 3.0 + 1e-6:
-                    print(f"{self.name} cannot embark: not all models are within 3\" of {transport_unit.name}")
+                    logger.info(f"{self.name} cannot embark: not all models are within 3\" of {transport_unit.name}")
                     return
 
         ok = transport_unit.add_passenger(self, game_map=game_map)
         if ok:
-            print(f"{self.name} embarks onto {transport_unit.name}.")
+            logger.info(f"{self.name} embarks onto {transport_unit.name}.")
         else:
-            print(f"{self.name} cannot embark onto {transport_unit.name}.")
+            logger.info(f"{self.name} cannot embark onto {transport_unit.name}.")
 
     def _find_disembark_positions(
         self,
@@ -3212,7 +3206,7 @@ class ShootingMixin:
             raise RuntimeError("Disembark requires an active game map.")
 
         if self.round_state.embarked_this_round and not destroyed_transport:
-            print(f"ERROR: {self.name} cannot disembark after embarking this turn")
+            logger.error(f"ERROR: {self.name} cannot disembark after embarking this turn")
             return False
 
         if self.round_state.disembarked_this_round:
@@ -3221,7 +3215,7 @@ class ShootingMixin:
         if transport_unit is None:
             transport_unit = self.embarked_in
         if transport_unit is None:
-            print(f"ERROR: {self.name} is not embarked in a transport")
+            logger.error(f"ERROR: {self.name} is not embarked in a transport")
             return False
 
         transport_rules = transport_unit._transport_disembark_rules()
@@ -3252,10 +3246,10 @@ class ShootingMixin:
         if not destroyed_transport:
             if getattr(transport_unit.round_state, "advanced_this_round", False):
                 if not allow_after_advance:
-                    print(f"ERROR: {self.name} cannot disembark: {transport_unit.name} Advanced this turn")
+                    logger.error(f"ERROR: {self.name} cannot disembark: {transport_unit.name} Advanced this turn")
                     return False
             if getattr(transport_unit.round_state, "fell_back_this_round", False):
-                print(f"ERROR: {self.name} cannot disembark: {transport_unit.name} Fell Back this turn")
+                logger.error(f"ERROR: {self.name} cannot disembark: {transport_unit.name} Fell Back this turn")
                 return False
 
 
@@ -3270,7 +3264,7 @@ class ShootingMixin:
             transport_base = getattr(transport_unit, "_last_known_base", None)
 
         if transport_base is None:
-            print(f"ERROR: {self.name} cannot disembark (missing transport position)")
+            logger.error(f"ERROR: {self.name} cannot disembark (missing transport position)")
             return False
 
         # Choose disembark radius
@@ -3305,7 +3299,7 @@ class ShootingMixin:
         if placements is None:
             if destroyed_transport and emergency:
                 # Emergency disembarkation: models that cannot be set up are destroyed (not necessarily the whole unit).
-                print(f"WARN: {self.name} emergency disembarkation: could not place all models within 6\"; destroying any unplaced models")
+                logger.warning(f"WARN: {self.name} emergency disembarkation: could not place all models within 6\"; destroying any unplaced models")
                 alive_models = [m for m in self.models if getattr(m, "is_alive", False)]
                 placed_positions: List[Tuple[float, float, float, float]] = []
                 placed_models: List[Model] = []
@@ -3382,7 +3376,7 @@ class ShootingMixin:
                         m.take_damage(1, is_mortal=True, game_map=game_map)
 
                 return True
-            print(f"ERROR: {self.name} cannot disembark: no valid placement found")
+            logger.error(f"ERROR: {self.name} cannot disembark: no valid placement found")
             return False
 
         # Commit placements (include attached leaders' models if any)
@@ -3394,7 +3388,7 @@ class ShootingMixin:
         if not hasattr(game_map, "place_unit"):
             raise RuntimeError("Disembark requires a game map with place_unit().")
         if not game_map.place_unit(self):
-            print(f"ERROR: {self.name} disembark failed: map placement validation failed")
+            logger.error(f"ERROR: {self.name} disembark failed: map placement validation failed")
             return False
 
         # Remove from transport passengers list
@@ -3584,7 +3578,7 @@ class ShootingMixin:
             raise RuntimeError("Finalize disembark requires an active game map.")
 
         if self.round_state.embarked_this_round and not destroyed_transport:
-            print(f"ERROR: {self.name} cannot disembark after embarking this turn")
+            logger.error(f"ERROR: {self.name} cannot disembark after embarking this turn")
             return False
 
         if self.round_state.disembarked_this_round:
@@ -3593,7 +3587,7 @@ class ShootingMixin:
         if transport_unit is None:
             transport_unit = self.embarked_in
         if transport_unit is None:
-            print(f"ERROR: {self.name} is not embarked in a transport")
+            logger.error(f"ERROR: {self.name} is not embarked in a transport")
             return False
 
         transport_rules = transport_unit._transport_disembark_rules()
@@ -3606,10 +3600,10 @@ class ShootingMixin:
         if not destroyed_transport:
             if getattr(transport_unit.round_state, "advanced_this_round", False):
                 if not allow_after_advance:
-                    print(f"ERROR: {self.name} cannot disembark: {transport_unit.name} Advanced this turn")
+                    logger.error(f"ERROR: {self.name} cannot disembark: {transport_unit.name} Advanced this turn")
                     return False
             if getattr(transport_unit.round_state, "fell_back_this_round", False):
-                print(f"ERROR: {self.name} cannot disembark: {transport_unit.name} Fell Back this turn")
+                logger.error(f"ERROR: {self.name} cannot disembark: {transport_unit.name} Fell Back this turn")
                 return False
 
         if self in game_map.units:
@@ -3618,7 +3612,7 @@ class ShootingMixin:
         if not hasattr(game_map, "place_unit"):
             raise RuntimeError("Finalize disembark requires a game map with place_unit().")
         if not game_map.place_unit(self):
-            print(f"ERROR: {self.name} disembark failed: map placement validation failed")
+            logger.error(f"ERROR: {self.name} disembark failed: map placement validation failed")
             return False
 
         transport_unit.remove_passenger(self)

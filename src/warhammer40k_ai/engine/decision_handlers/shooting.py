@@ -13,6 +13,8 @@ from ..decision_kinds import (
 )
 from ..decisions import DecisionRequest, DecisionResult
 from ._helpers import find_option, get_model, get_unit, get_wargear, validate_option_choice
+import logging
+logger = logging.getLogger(__name__)
 
 
 def _validate_select_weapon(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
@@ -475,10 +477,10 @@ def _apply_deathstrike_action(game: object, request: DecisionRequest, result: De
 
     if action == "designate":
         deathstrike_mgr.place_marker(unit_id, position)
-        print(f"INFO: Deathstrike marker placed at ({position[0]:.1f}, {position[1]:.1f})")
+        logger.info(f"INFO: Deathstrike marker placed at ({position[0]:.1f}, {position[1]:.1f})")
     elif action == "adjust":
         deathstrike_mgr.move_marker(unit_id, position)
-        print(f"INFO: Deathstrike marker moved to ({position[0]:.1f}, {position[1]:.1f})")
+        logger.info(f"INFO: Deathstrike marker moved to ({position[0]:.1f}, {position[1]:.1f})")
 
     return None
 

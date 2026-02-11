@@ -8,6 +8,8 @@ from shapely.affinity import rotate as sh_rotate, translate as sh_translate, sca
 from .map import TerrainFeature, TerrainFactory, RuinsTerrain
 from shapely.geometry import Polygon as _ShPoly
 import math
+import logging
+logger = logging.getLogger(__name__)
 
 
 LongWallSide = Literal['left', 'right', 'top', 'bottom']
@@ -554,6 +556,6 @@ def instantiate_layout(layout_id: int) -> List[TerrainFeature]:
             features.append(feature)
         except Exception as e:
             # Log and continue with other features instead of aborting layout
-            print(f"WARNING: Terrain placement failed for preset {spec.preset}: {e}")
+            logger.warning(f"WARNING: Terrain placement failed for preset {spec.preset}: {e}")
     return features
 

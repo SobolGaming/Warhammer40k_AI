@@ -22,6 +22,8 @@ from dataclasses import dataclass
 from typing import Dict, List, Tuple
 
 from warhammer40k_ai.waha_helper.waha_helper import WahaHelper
+import logging
+logger = logging.getLogger(__name__)
 
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -226,9 +228,10 @@ def main() -> None:
     with open(OUT_PATH, "w", encoding="utf-8") as f:
         f.write("\n".join(lines).rstrip() + "\n")
 
-    print(f"Wrote {OUT_PATH} ({len(pattern_groups)} pattern groups; {total} datasheets).")
+    logger.info(f"Wrote {OUT_PATH} ({len(pattern_groups)} pattern groups; {total} datasheets).")
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     main()
 

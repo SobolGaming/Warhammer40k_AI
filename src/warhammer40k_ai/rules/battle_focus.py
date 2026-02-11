@@ -4,6 +4,8 @@ from typing import Optional
 
 from ..utility.ability_support import ABILITY_BATTLE_FOCUS, army_has_ability_id
 from ..utility.entity_ids import get_entity_id
+import logging
+logger = logging.getLogger(__name__)
 
 
 class BattleFocusManager:
@@ -273,7 +275,7 @@ class BattleFocusManager:
         if bonus:
             self.tokens += int(bonus)
             try:
-                print(f"INFO: Timeless Strategist: +{bonus} Battle Focus token(s)")
+                logger.info(f"INFO: Timeless Strategist: +{bonus} Battle Focus token(s)")
             except Exception:
                 pass
         self._battle_round = int(battle_round or 0)

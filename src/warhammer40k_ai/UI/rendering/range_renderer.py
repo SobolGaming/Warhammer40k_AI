@@ -1,6 +1,8 @@
 import pygame
 
 from ..ui_constants import TILE_SIZE
+import logging
+logger = logging.getLogger(__name__)
 
 
 def draw_individual_model_movement_range(screen: pygame.Surface, model, movement_type: str, max_distance: float, zoom_level: float, offset_x: int, offset_y: int, game_map=None) -> None:
@@ -103,7 +105,7 @@ def draw_pile_in_range(screen: pygame.Surface, model, current_position: tuple, m
     enemy_location = closest_enemy.get_location()
     enemy_position = (enemy_location[0], enemy_location[1])
     
-    print(f"DEBUG: Drawing pile-in range for {model.name} vs closest enemy {closest_enemy.name} at {closest_distance:.2f}\"")
+    logger.debug(f"DEBUG: Drawing pile-in range for {model.name} vs closest enemy {closest_enemy.name} at {closest_distance:.2f}\"")
     
     # Draw the intersection of movement circle and "closer to enemy" area
     draw_pile_in_intersection(screen, current_position[:2], enemy_position, closest_distance, 
