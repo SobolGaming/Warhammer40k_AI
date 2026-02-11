@@ -300,6 +300,40 @@ class TestBloodSurge(unittest.TestCase):
         self.assertEqual(len(pending), 1)
         self.assertEqual(pending[0].decision_type, DECISION_CONFIRM_YES_NO)
 
+    def test_blood_surge_not_offered_to_lone_leader_after_bodyguard_destroyed(self):
+        game, _p1, p2, army1, army2 = self._build_game()
+
+        attacker = self._make_unit("Shooter", army1, blood_surge=False, faction="A")
+        bodyguard = self._make_unit("Berzerkers", army2, blood_surge=True, faction="B")
+        leader = self._make_unit("Leader", army2, blood_surge=False, faction="B")
+        bodyguard.attached_leaders = [leader]
+        leader.attached_to = bodyguard
+        army1.units = [attacker]
+        army2.units = [bodyguard, leader]
+
+        attacker_model = self._make_model("Shooter", attacker, 0.0, 0.0)
+        bodyguard_model = self._make_model("Berzerker", bodyguard, 10.0, 0.0)
+        leader_model = self._make_model("Leader", leader, 10.5, 0.0)
+        attacker.models = [attacker_model]
+        bodyguard.models = [bodyguard_model]
+        leader.models = [leader_model]
+        game.map.units = [attacker, bodyguard]
+
+        game.event_system.publish(
+            "shooting_targets_selected",
+            attacking_unit=attacker,
+            target_units=[bodyguard],
+        )
+        bodyguard.models = []
+        game.event_system.publish(
+            "unit_shooting_resolved",
+            attacker_unit=attacker,
+            hits_by_target={bodyguard: 1},
+        )
+
+        pending = game.decision_queue.list()
+        self.assertEqual(len(pending), 0)
+
     def test_blood_surge_confirm_yes_queues_move(self):
         game, _p1, p2, army1, army2 = self._build_game()
 
@@ -413,3 +447,4 @@ class TestBloodSurge(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

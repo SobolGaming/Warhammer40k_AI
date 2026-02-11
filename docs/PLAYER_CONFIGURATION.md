@@ -65,6 +65,12 @@ Reactive enemy-move D6 triggers (e.g., Loping Speed/Trail Finding) queue:
 Blood Surge queues:
 - `CONFIRM_YES_NO` with `reactive_move_kind="blood_surge"` and `reactive_move_attacker_unit_id`.
 - On acceptance, `MOVE_UNIT` with `movement_type="blood_surge"` and `max_distance`.
+- FAQ handling: if a Blood Surge bodyguard unit is wiped and only an attached Leader remains pending separation,
+  Blood Surge is not offered to that surviving Leader.
+
+Frenzy targeting notes:
+- Frenzy can trigger multiple times in a phase (once per qualifying enemy targeting event).
+- Frenzy fight availability outside Engagement Range uses the 3" Pile In window only in the Fight phase.
 
 Battle Focus reactive maneuvers queue:
 - `SELECT_OVERWATCH_SHOOTER` with context `ability="battle_focus"` and `maneuver="opportunity"` or `"fade_back"`.

@@ -4906,6 +4906,10 @@ class KeywordsDetachmentsMixin:
     def can_blood_surge(self, game=None, game_map=None) -> bool:
         if not self.has_blood_surge():
             return False
+        # FAQ: if the bodyguard unit was wiped and only an attached leader remains
+        # before separation is finalized, the surviving leader cannot use Blood Surge.
+        if len(list(getattr(self, "models", []) or [])) == 0 and list(getattr(self, "attached_leaders", []) or []):
+            return False
         if not self.is_alive() or not getattr(self, "deployed", False):
             return False
         if self.is_battle_shocked():

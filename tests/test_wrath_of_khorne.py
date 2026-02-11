@@ -167,3 +167,47 @@ def test_wrath_of_khorne_model_limit_by_points():
     assert mgr.get_wrath_of_khorne_max_models() == 3
     army.points_limit = 3000
     assert mgr.get_wrath_of_khorne_max_models() == 4
+
+
+def test_reborn_in_blood_does_not_block_wrath_of_khorne_prompt():
+    from warhammer40k_ai.engine.decision_kinds import DECISION_SELECT_VESSEL_OF_WRATH_MODELS
+    from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+    from warhammer40k_ai.roster.player import Player, PlayerControl
+    from warhammer40k_ai.units.ability import Ability
+
+    army = _make_army()
+    player = Player("P1", control=PlayerControl.LOCAL, army=army)
+    game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
+    game.add_player(player)
+
+    candidate = _make_unit(
+        "Chaos Lord",
+        keywords=["CHARACTER"],
+        faction_keywords=["WORLD EATERS"],
+        model_names=["Chaos Lord"],
+    )
+    angron = _make_unit(
+        "Angron",
+        keywords=["CHARACTER", "Epic Hero"],
+        faction_keywords=["WORLD EATERS"],
+        model_names=["Angron"],
+    )
+    angron.possible_abilities = [Ability("Reborn in Blood", "WE", "Reborn in Blood", "Datasheet")]
+    angron.models_lost = list(angron.models)
+    angron.models = []
+
+    army.add_unit(candidate)
+    army.add_unit(angron)
+
+    assert army.schedule_reborn_in_blood(game=game)
+    queued = army.world_eaters_detachments.prompt_wrath_of_khorne_model_selection(
+        game=game,
+        player=player,
+        battle_round=1,
+        source="FAQ",
+    )
+    assert queued
+
+    pending = list(game.decision_queue.list() or [])
+    assert pending
+    assert str(getattr(pending[0], "decision_type", "")) == DECISION_SELECT_VESSEL_OF_WRATH_MODELS

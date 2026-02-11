@@ -146,6 +146,23 @@ class TestSummonedBySlaughter(unittest.TestCase):
         self.assertFalse(ok)
         self.assertTrue(bloodletters.is_in_reserves())
 
+    def test_allows_round_one_if_unit_entered_reserves_after_start(self):
+        player, bloodletters, _victim, game = self._build_env()
+        manager = player.stratagems
+        destroyed_base = SimpleNamespace(x=0.0, y=0.0, z=0.0)
+        game.turn = 1
+        bloodletters.reserve_status = "strategic_reserves"
+        bloodletters._started_in_reserves = False
+        ok = manager.use(
+            "SUMMONED BY SLAUGHTER",
+            unit=bloodletters,
+            destroyed_model_base=destroyed_base,
+            manual_placement=True,
+        )
+        self.assertTrue(ok)
+        self.assertEqual(bloodletters.reserve_status, "deployed")
+        self.assertEqual(bloodletters.reserve_turn_deployed, 1)
+
     def test_once_per_battle_round(self):
         player, bloodletters, _victim, game = self._build_env()
         extra = _TestUnit("Bloodletters Two", keywords=["Bloodletters"])

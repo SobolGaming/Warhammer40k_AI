@@ -7699,7 +7699,7 @@ class GameShootingFightHandlersMixin:
                     continue
         return False
 
-    def _frenzy_can_fight_target(self, unit, target_unit) -> bool:
+    def _frenzy_can_fight_target(self, unit, target_unit, *, phase_name: str | None = None) -> bool:
         if unit is None or target_unit is None:
             return False
         if not getattr(unit, "is_alive", lambda: True)():
@@ -7710,6 +7710,15 @@ class GameShootingFightHandlersMixin:
             return False
         game_map = getattr(self, "map", None)
         if game_map is None:
+            return False
+        pname = str(phase_name or "").strip().upper()
+        if not pname:
+            phase = getattr(self, "phase", None)
+            pname = str(getattr(phase, "name", "") or phase or "").strip().upper()
+        allow_pile_in = "FIGHT" in pname
+        if hasattr(game_map, "is_within_engagement_range") and game_map.is_within_engagement_range(unit, target_unit):
+            return True
+        if not allow_pile_in:
             return False
         try:
             from ...utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
@@ -7743,7 +7752,7 @@ class GameShootingFightHandlersMixin:
         options: list[str] = []
         if self._frenzy_has_eligible_shot(unit, attacker_unit):
             options.append("shoot")
-        if self._frenzy_can_fight_target(unit, attacker_unit):
+        if self._frenzy_can_fight_target(unit, attacker_unit, phase_name=pname):
             options.append("fight")
         return options
 
@@ -7808,7 +7817,7 @@ class GameShootingFightHandlersMixin:
     def _execute_frenzy_fight(self, unit, attacker_unit, *, phase_name: str | None = None) -> bool:
         if unit is None or attacker_unit is None:
             return False
-        if not self._frenzy_can_fight_target(unit, attacker_unit):
+        if not self._frenzy_can_fight_target(unit, attacker_unit, phase_name=phase_name):
             return False
         try:
             from ..fight_phase_manager import FightPhaseManager
