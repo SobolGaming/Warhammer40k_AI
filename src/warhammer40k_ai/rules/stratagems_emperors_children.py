@@ -104,6 +104,11 @@ class EmperorsChildrenStratagemMixin:
         checker = getattr(mgr, "is_rapid_evisceration", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_carnival_of_excess_detachment(self) -> bool:
+        mgr = self._get_emperors_children_mgr()
+        checker = getattr(mgr, "is_carnival_of_excess", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_emperors_children_unit(self, unit: Any) -> bool:
         root = self._ec_root(unit)
         if root is None:
@@ -113,6 +118,22 @@ class EmperorsChildrenStratagemMixin:
         if callable(checker):
             return bool(checker(root))
         return self._ec_has_keyword(root, "EMPEROR'S CHILDREN")
+
+    def _is_legions_of_excess_unit(self, unit: Any) -> bool:
+        root = self._ec_root(unit)
+        if root is None:
+            return False
+        mgr = self._get_emperors_children_mgr()
+        checker = getattr(mgr, "is_legions_of_excess_unit", None) if mgr is not None else None
+        if callable(checker):
+            return bool(checker(root))
+        return self._ec_has_keyword(root, "LEGIONS OF EXCESS")
+
+    def _is_slaanesh_unit(self, unit: Any) -> bool:
+        root = self._ec_root(unit)
+        if root is None:
+            return False
+        return self._ec_has_keyword(root, "SLAANESH")
 
     def _is_emperors_children_daemon_unit(self, unit: Any) -> bool:
         root = self._ec_root(unit)
@@ -150,6 +171,9 @@ class EmperorsChildrenStratagemMixin:
                 return []
         elif det == "slaanesh":
             if not self._is_slaaneshs_chosen_detachment():
+                return []
+        elif det == "carnival":
+            if not self._is_carnival_of_excess_detachment():
                 return []
         else:
             return []
@@ -193,6 +217,97 @@ class EmperorsChildrenStratagemMixin:
                 continue
             candidates.append(root)
         return sorted(candidates, key=self._ec_sort_key)
+
+    def _ec_friendly_battlefield_units(self) -> list[Any]:
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._ec_root(unit)
+            if root is None:
+                continue
+            uid = self._ec_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ec_owned_by_player(root, self.player):
+                continue
+            if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ec_sort_key)
+
+    def _ec_is_within_engagement_range_of_enemy(self, unit: Any) -> bool:
+        root = self._ec_root(unit)
+        if root is None or self.game is None:
+            return False
+        game_map = getattr(self.game, "map", None)
+        if game_map is None:
+            return False
+        enemies = getattr(game_map, "get_enemy_units", None)
+        if not callable(enemies):
+            return False
+        for enemy in list(enemies(root) or []):
+            enemy_root = self._ec_root(enemy)
+            if enemy_root is None:
+                continue
+            if not self._ec_is_alive(enemy_root) or not self._ec_is_on_battlefield(enemy_root):
+                continue
+            try:
+                if bool(game_map.is_within_engagement_range(root, enemy_root)):
+                    return True
+            except (AttributeError, TypeError, ValueError):
+                continue
+        return False
+
+    @staticmethod
+    def _ec_model_missing_wounds(model: Any) -> int:
+        if model is None:
+            return 0
+        base_wounds = int(getattr(model, "_base_wounds", getattr(model, "base_wounds", 0)) or 0)
+        current_wounds = int(getattr(model, "wounds", 0) or 0)
+        return max(0, int(base_wounds - current_wounds))
+
+    def _ec_wounded_models(self, unit: Any) -> list[Any]:
+        root = self._ec_root(unit)
+        if root is None:
+            return []
+        get_models = getattr(root, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else []
+        if not models:
+            models = list(getattr(root, "models", []) or [])
+
+        out: list[Any] = []
+        for model in list(models or []):
+            if model is None:
+                continue
+            alive_attr = getattr(model, "is_alive", True)
+            is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            if not is_alive:
+                continue
+            if self._ec_model_missing_wounds(model) <= 0:
+                continue
+            out.append(model)
+        return sorted(out, key=lambda m: str(get_entity_id(m) or ""))
+
+    def _ec_destroyed_non_character_models(self, unit: Any) -> list[Any]:
+        root = self._ec_root(unit)
+        if root is None:
+            return []
+        destroyed = list(getattr(root, "models_lost", []) or [])
+        out: list[Any] = []
+        for model in list(destroyed or []):
+            if model is None:
+                continue
+            is_character = getattr(model, "is_character", None)
+            if bool(is_character() if callable(is_character) else is_character):
+                continue
+            out.append(model)
+        return sorted(out, key=lambda m: str(get_entity_id(m) or ""))
 
     @staticmethod
     def _ec_total_current_wounds(unit: Any) -> int:
@@ -1402,6 +1517,227 @@ class EmperorsChildrenStratagemMixin:
             payload["target_unit"] = filtered[0]
         self._queue_reaction(payload, use_timer=False)
 
+    def _queue_emperors_children_carnival_shooting_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: Optional[list[Any]],
+    ) -> None:
+        if not self._is_carnival_of_excess_detachment():
+            return
+        if attacking_unit is None or self.game is None:
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        if self._ec_owned_by_player(attacking_unit, self.player):
+            return
+
+        stratagem = self.get_by_name("UNCANNY REACTIONS")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if self._ec_reaction_already_queued(
+            event_name="shooting_targets_selected",
+            stratagem_name=stratagem.name,
+            phase_name="Shooting phase",
+            enemy_unit=attacking_unit,
+        ):
+            return
+
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for target in list(target_units or []):
+            root = self._ec_root(target)
+            if root is None:
+                continue
+            uid = self._ec_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ec_owned_by_player(root, self.player):
+                continue
+            if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            if not self._is_slaanesh_unit(root):
+                continue
+            candidates.append(root)
+        candidates = sorted(candidates, key=self._ec_sort_key)
+        if not candidates:
+            return
+
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacking_unit,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_emperors_children_carnival_unit_destroyed_reactions(
+        self,
+        *,
+        destroyed_unit: Any,
+        destroyed_by_unit: Any,
+    ) -> None:
+        if not self._is_carnival_of_excess_detachment():
+            return
+        if self.game is None or destroyed_by_unit is None:
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "fight phase":
+            return
+        source_root = self._ec_root(destroyed_by_unit)
+        if source_root is None:
+            return
+        if not self._ec_owned_by_player(source_root, self.player):
+            return
+        if not self._ec_is_alive(source_root) or not self._ec_is_on_battlefield(source_root):
+            return
+
+        destroyed_root = self._ec_root(destroyed_unit)
+
+        sustained = self.get_by_name("SUSTAINED BY AGONY")
+        if sustained is not None:
+            if int(getattr(self.player, "command_points", 0) or 0) >= int(getattr(sustained, "cp_cost", 0) or 0):
+                if str(sustained.name or "").strip().upper() not in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+                    if self._is_emperors_children_unit(source_root) and not self._unit_cannot_be_target_of_stratagem(source_root):
+                        already = False
+                        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                            if str(reaction.get("event", "") or "") != "unit_destroyed":
+                                continue
+                            if str(reaction.get("stratagem", "") or "").strip().upper() != "SUSTAINED BY AGONY":
+                                continue
+                            if reaction.get("source_unit") is source_root and reaction.get("destroyed_enemy_unit") is destroyed_root:
+                                already = True
+                                break
+                        if not already:
+                            candidates: list[Any] = []
+                            for friendly in self._ec_friendly_battlefield_units():
+                                if not self._is_legions_of_excess_unit(friendly):
+                                    continue
+                                if self._unit_cannot_be_target_of_stratagem(friendly):
+                                    continue
+                                dist = self._ec_distance_between_units(source_root, friendly)
+                                if dist is None or float(dist) > 6.0 + 1e-6:
+                                    continue
+                                if self._ec_has_keyword(friendly, "DAEMONETTES"):
+                                    if not self._ec_destroyed_non_character_models(friendly):
+                                        continue
+                                elif not self._ec_wounded_models(friendly):
+                                    continue
+                                candidates.append(friendly)
+                            candidates = sorted(candidates, key=self._ec_sort_key)
+                            if candidates:
+                                payload = {
+                                    "event": "unit_destroyed",
+                                    "phase_name": "Fight phase",
+                                    "stratagem": sustained.name,
+                                    "cp_cost": sustained.cp_cost,
+                                    "source_unit": source_root,
+                                    "destroyed_enemy_unit": destroyed_root,
+                                    "candidates": candidates,
+                                }
+                                if len(candidates) == 1:
+                                    payload["target_unit"] = candidates[0]
+                                self._queue_reaction(payload)
+
+        ecstatic = self.get_by_name("ECSTATIC SLAUGHTER")
+        if ecstatic is not None:
+            if int(getattr(self.player, "command_points", 0) or 0) >= int(getattr(ecstatic, "cp_cost", 0) or 0):
+                if str(ecstatic.name or "").strip().upper() not in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+                    if self._is_legions_of_excess_unit(source_root) and not self._unit_cannot_be_target_of_stratagem(source_root):
+                        already = False
+                        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                            if str(reaction.get("event", "") or "") != "unit_destroyed":
+                                continue
+                            if str(reaction.get("stratagem", "") or "").strip().upper() != "ECSTATIC SLAUGHTER":
+                                continue
+                            if reaction.get("source_unit") is source_root and reaction.get("destroyed_enemy_unit") is destroyed_root:
+                                already = True
+                                break
+                        if not already:
+                            candidates: list[Any] = []
+                            for friendly in self._ec_friendly_battlefield_units():
+                                if not self._is_emperors_children_unit(friendly):
+                                    continue
+                                if self._unit_cannot_be_target_of_stratagem(friendly):
+                                    continue
+                                if self._ec_is_within_engagement_range_of_enemy(friendly):
+                                    continue
+                                dist = self._ec_distance_between_units(source_root, friendly)
+                                if dist is None or float(dist) > 6.0 + 1e-6:
+                                    continue
+                                candidates.append(friendly)
+                            candidates = sorted(candidates, key=self._ec_sort_key)
+                            if candidates:
+                                payload = {
+                                    "event": "unit_destroyed",
+                                    "phase_name": "Fight phase",
+                                    "stratagem": ecstatic.name,
+                                    "cp_cost": ecstatic.cp_cost,
+                                    "source_unit": source_root,
+                                    "destroyed_enemy_unit": destroyed_root,
+                                    "candidates": candidates,
+                                }
+                                if len(candidates) == 1:
+                                    payload["target_unit"] = candidates[0]
+                                self._queue_reaction(payload)
+
+    def _queue_emperors_children_carnival_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_carnival_of_excess_detachment():
+            return
+        if player is self.player:
+            return
+        if str(getattr(phase, "name", "") or "").strip().upper() != "FIGHT_PHASE":
+            return
+        stratagem = self.get_by_name("DARK APPARITIONS")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if self._ec_reaction_already_queued(
+            event_name="phase_end",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+        ):
+            return
+
+        candidates: list[Any] = []
+        for friendly in self._ec_friendly_battlefield_units():
+            if not self._ec_has_keyword(friendly, "DAEMONETTES"):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(friendly):
+                continue
+            if self._ec_is_within_engagement_range_of_enemy(friendly):
+                continue
+            candidates.append(friendly)
+        candidates = sorted(candidates, key=self._ec_sort_key)
+        if not candidates:
+            return
+
+        payload = {
+            "event": "phase_end",
+            "phase": "Fight phase",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
     def _queue_emperors_children_slaanesh_shooting_reactions(
         self,
         *,
@@ -2373,6 +2709,604 @@ class EmperorsChildrenStratagemMixin:
             return self._use_slaanesh_refusal_to_be_outdone(stratagem, **kwargs)
         if name_u == "VENGEFUL SURGE":
             return self._use_slaanesh_vengeful_surge(stratagem, **kwargs)
+        return None
+
+    def _use_carnival_sustained_by_agony(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        source_unit = kwargs.get("source_unit") or kwargs.get("destroyed_by_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if target_unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "SUSTAINED BY AGONY":
+                    continue
+                target_unit = reaction.get("target_unit") or reaction.get("unit")
+                source_unit = source_unit or reaction.get("source_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                break
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: SUSTAINED BY AGONY: no LEGIONS OF EXCESS target provided")
+            return False
+
+        source_root = self._ec_resolve_unit_entry(source_unit)
+        target_root = self._ec_resolve_unit_entry(target_unit)
+        if source_root is None:
+            logger.error("ERROR: SUSTAINED BY AGONY: missing source EMPEROR'S CHILDREN unit")
+            return False
+        if target_root is None:
+            return False
+        if not self._is_carnival_of_excess_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: SUSTAINED BY AGONY: wrong phase")
+            return False
+        if not self._ec_owned_by_player(source_root, self.player):
+            logger.error("ERROR: SUSTAINED BY AGONY: source unit is not yours")
+            return False
+        if not self._ec_is_alive(source_root) or not self._ec_is_on_battlefield(source_root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(source_root):
+            logger.error("ERROR: SUSTAINED BY AGONY: source unit cannot be selected")
+            return False
+        if not self._is_emperors_children_unit(source_root):
+            logger.error("ERROR: SUSTAINED BY AGONY: source must be an EMPEROR'S CHILDREN unit")
+            return False
+        if candidates and not self._ec_unit_in_candidates(target_root, candidates):
+            logger.error("ERROR: SUSTAINED BY AGONY: selected target is not currently eligible")
+            return False
+        if not self._ec_owned_by_player(target_root, self.player):
+            logger.error("ERROR: SUSTAINED BY AGONY: selected target unit is not yours")
+            return False
+        if not self._ec_is_alive(target_root) or not self._ec_is_on_battlefield(target_root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(target_root):
+            logger.error("ERROR: SUSTAINED BY AGONY: selected target cannot be selected")
+            return False
+        if not self._is_legions_of_excess_unit(target_root):
+            logger.error("ERROR: SUSTAINED BY AGONY: selected target must be LEGIONS OF EXCESS")
+            return False
+        dist = self._ec_distance_between_units(source_root, target_root)
+        if dist is None or float(dist) > 6.0 + 1e-6:
+            logger.error("ERROR: SUSTAINED BY AGONY: selected target must be within 6\" of source unit")
+            return False
+
+        is_daemonettes = self._ec_has_keyword(target_root, "DAEMONETTES")
+        wounded_models = self._ec_wounded_models(target_root)
+        destroyed_models = self._ec_destroyed_non_character_models(target_root)
+        if is_daemonettes:
+            if not destroyed_models:
+                logger.error("ERROR: SUSTAINED BY AGONY: DAEMONETTES target has no destroyed models to return")
+                return False
+        elif not wounded_models:
+            logger.error("ERROR: SUSTAINED BY AGONY: selected target has no lost wounds to recover")
+            return False
+
+        if not self._court_spend_cp(stratagem, target_unit=source_root, enemy_unit=target_root):
+            return False
+
+        healed = 0
+        returned = 0
+        if is_daemonettes:
+            amount = max(0, int(dice_module.get_roll("D3") or 0)) + 3
+            chosen = kwargs.get("return_models") or kwargs.get("chosen_models")
+            selected_models = list(destroyed_models)
+            if chosen is not None:
+                selected_ids: set[str] = set()
+                filtered: list[Any] = []
+                for entry in list(chosen or []):
+                    entry_id = str(get_entity_id(entry) or entry or "")
+                    if not entry_id or entry_id in selected_ids:
+                        continue
+                    for model in destroyed_models:
+                        if str(get_entity_id(model) or "") == entry_id:
+                            filtered.append(model)
+                            selected_ids.add(entry_id)
+                            break
+                selected_models = filtered
+            returned = int(
+                target_root.return_destroyed_bodyguard_models(
+                    int(amount),
+                    game_map=getattr(self.game, "map", None),
+                    chosen_models=selected_models,
+                    wounds=None,
+                    placement_source=str(stratagem.name or "SUSTAINED BY AGONY"),
+                )
+                or 0
+            )
+        else:
+            heal_amount = 3
+            heal_model = kwargs.get("model") or kwargs.get("target_model")
+            if heal_model is None and wounded_models:
+                heal_model = wounded_models[0]
+            if heal_model is not None:
+                if heal_model not in list(getattr(target_root, "models", []) or []):
+                    logger.error("ERROR: SUSTAINED BY AGONY: selected heal model does not belong to target unit")
+                    return False
+                missing = self._ec_model_missing_wounds(heal_model)
+                if missing > 0:
+                    healed = min(int(heal_amount), int(missing))
+                    heal_fn = getattr(heal_model, "heal", None)
+                    if callable(heal_fn):
+                        heal_fn(int(heal_amount))
+                    else:
+                        base_wounds = int(
+                            getattr(heal_model, "_base_wounds", getattr(heal_model, "base_wounds", 0)) or 0
+                        )
+                        current_wounds = int(getattr(heal_model, "wounds", 0) or 0)
+                        heal_model.wounds = min(base_wounds, current_wounds + int(heal_amount))
+
+        self._court_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SUSTAINED BY AGONY: %s healed=%d returned=%d.",
+            getattr(target_root, "name", "Unit"),
+            int(healed),
+            int(returned),
+        )
+        return True
+
+    def _use_carnival_sycophantic_surge(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: SYCOPHANTIC SURGE: no target unit provided")
+            return False
+
+        root = self._ec_resolve_unit_entry(unit)
+        if root is None:
+            return False
+        if not self._is_carnival_of_excess_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "charge phase":
+            logger.error("ERROR: SYCOPHANTIC SURGE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: SYCOPHANTIC SURGE: not your turn")
+            return False
+        if candidates and not self._ec_unit_in_candidates(root, candidates):
+            logger.error("ERROR: SYCOPHANTIC SURGE: target is not currently eligible")
+            return False
+        if not self._ec_owned_by_player(root, self.player):
+            logger.error("ERROR: SYCOPHANTIC SURGE: target unit is not yours")
+            return False
+        if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: SYCOPHANTIC SURGE: target cannot be selected")
+            return False
+        if not self._is_legions_of_excess_unit(root):
+            logger.error("ERROR: SYCOPHANTIC SURGE: target must be LEGIONS OF EXCESS")
+            return False
+
+        original_sr = dict(getattr(root, "special_rules", {}) or {})
+        sr = dict(original_sr)
+        sr["carnival_sycophantic_surge_active"] = True
+        sr["carnival_sycophantic_surge_charge_after_advance"] = True
+        sr["carnival_sycophantic_surge_charge_after_fall_back"] = True
+        sr["carnival_sycophantic_surge_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["carnival_sycophantic_surge_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["carnival_sycophantic_surge_expires_phase"] = "CHARGE_PHASE"
+        sr["carnival_sycophantic_surge_source"] = str(stratagem.name or "SYCOPHANTIC SURGE")
+        root.special_rules = sr
+
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        if game_map is None:
+            root.special_rules = original_sr
+            return False
+
+        enemy_candidates: list[Any] = []
+        seen: set[str] = set()
+        for enemy in list(game_map.get_enemy_units(root) or []):
+            enemy_root = self._ec_root(enemy)
+            if enemy_root is None:
+                continue
+            eid = self._ec_sort_key(enemy_root)
+            if eid and eid in seen:
+                continue
+            if eid:
+                seen.add(eid)
+            if not self._ec_is_alive(enemy_root) or not self._ec_is_on_battlefield(enemy_root):
+                continue
+            if not self._ec_enemy_within_engagement_of_friendly(enemy_root):
+                continue
+            try:
+                if not root.can_declare_charge_against(enemy_root, self.game, out_of_turn=False):
+                    continue
+            except (AttributeError, TypeError, ValueError):
+                continue
+            enemy_candidates.append(enemy_root)
+        enemy_candidates = sorted(enemy_candidates, key=self._ec_sort_key)
+        if not enemy_candidates:
+            root.special_rules = original_sr
+            logger.error(
+                "ERROR: SYCOPHANTIC SURGE: no eligible charge target is within Engagement Range of a friendly EMPEROR'S CHILDREN unit"
+            )
+            return False
+
+        selected_enemy = kwargs.get("enemy_unit") or kwargs.get("target_enemy_unit")
+        if selected_enemy is not None:
+            selected_root = self._ec_resolve_unit_entry(selected_enemy)
+            if selected_root is None or not self._ec_unit_in_candidates(selected_root, enemy_candidates):
+                root.special_rules = original_sr
+                logger.error("ERROR: SYCOPHANTIC SURGE: selected enemy does not satisfy target condition")
+                return False
+
+        if not self._court_spend_cp(stratagem, target_unit=root):
+            root.special_rules = original_sr
+            return False
+
+        self._court_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: SYCOPHANTIC SURGE: %s can charge after Advancing/Falling Back this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_carnival_uncanny_reactions(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        enemy_unit = kwargs.get("attacking_unit") or kwargs.get("enemy_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "UNCANNY REACTIONS":
+                    continue
+                unit = reaction.get("target_unit") or reaction.get("unit")
+                enemy_unit = enemy_unit or reaction.get("attacking_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: UNCANNY REACTIONS: no target unit provided")
+            return False
+
+        root = self._ec_resolve_unit_entry(unit)
+        enemy_root = self._ec_resolve_unit_entry(enemy_unit)
+        if root is None:
+            return False
+        if not self._is_carnival_of_excess_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: UNCANNY REACTIONS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: UNCANNY REACTIONS: not opponent's Shooting phase")
+            return False
+        if candidates and not self._ec_unit_in_candidates(root, candidates):
+            logger.error("ERROR: UNCANNY REACTIONS: target is not currently eligible")
+            return False
+        if not self._ec_owned_by_player(root, self.player):
+            logger.error("ERROR: UNCANNY REACTIONS: target unit is not yours")
+            return False
+        if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: UNCANNY REACTIONS: target cannot be selected")
+            return False
+        if not self._is_slaanesh_unit(root):
+            logger.error("ERROR: UNCANNY REACTIONS: target must have the SLAANESH keyword")
+            return False
+        if enemy_root is not None and self._ec_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: UNCANNY REACTIONS: attacker is not enemy")
+            return False
+
+        if not self._court_spend_cp(stratagem, target_unit=root, enemy_unit=enemy_root):
+            return False
+
+        entry = {
+            "value": 1,
+            "attack_type": "any",
+            "expires_phase": "SHOOTING_PHASE",
+            "source": str(stratagem.name or "UNCANNY REACTIONS"),
+        }
+        self._append_defensive_effect(root, "defensive_hit_mods", entry)
+        self._court_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: UNCANNY REACTIONS: %s gains -1 to be hit until end of phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_carnival_ecstatic_slaughter(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        source_unit = kwargs.get("source_unit") or kwargs.get("destroyed_by_unit")
+        enemy_unit = kwargs.get("enemy_unit") or kwargs.get("target_enemy_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "ECSTATIC SLAUGHTER":
+                    continue
+                unit = reaction.get("target_unit") or reaction.get("unit")
+                source_unit = source_unit or reaction.get("source_unit")
+                enemy_unit = enemy_unit or reaction.get("enemy_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: ECSTATIC SLAUGHTER: no EMPEROR'S CHILDREN charge unit provided")
+            return False
+
+        source_root = self._ec_resolve_unit_entry(source_unit)
+        target_root = self._ec_resolve_unit_entry(unit)
+        enemy_root = self._ec_resolve_unit_entry(enemy_unit)
+        if source_root is None:
+            logger.error("ERROR: ECSTATIC SLAUGHTER: missing LEGIONS OF EXCESS source unit")
+            return False
+        if target_root is None:
+            return False
+        if not self._is_carnival_of_excess_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: ECSTATIC SLAUGHTER: wrong phase")
+            return False
+        if not self._ec_owned_by_player(source_root, self.player):
+            logger.error("ERROR: ECSTATIC SLAUGHTER: source unit is not yours")
+            return False
+        if not self._ec_is_alive(source_root) or not self._ec_is_on_battlefield(source_root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(source_root):
+            logger.error("ERROR: ECSTATIC SLAUGHTER: source unit cannot be selected")
+            return False
+        if not self._is_legions_of_excess_unit(source_root):
+            logger.error("ERROR: ECSTATIC SLAUGHTER: source must be LEGIONS OF EXCESS")
+            return False
+        if candidates and not self._ec_unit_in_candidates(target_root, candidates):
+            logger.error("ERROR: ECSTATIC SLAUGHTER: selected charge unit is not currently eligible")
+            return False
+        if not self._ec_owned_by_player(target_root, self.player):
+            logger.error("ERROR: ECSTATIC SLAUGHTER: selected charge unit is not yours")
+            return False
+        if not self._ec_is_alive(target_root) or not self._ec_is_on_battlefield(target_root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(target_root):
+            logger.error("ERROR: ECSTATIC SLAUGHTER: selected charge unit cannot be selected")
+            return False
+        if not self._is_emperors_children_unit(target_root):
+            logger.error("ERROR: ECSTATIC SLAUGHTER: selected charge unit must be EMPEROR'S CHILDREN")
+            return False
+        if self._ec_is_within_engagement_range_of_enemy(target_root):
+            logger.error("ERROR: ECSTATIC SLAUGHTER: selected charge unit must not be within Engagement Range")
+            return False
+        dist = self._ec_distance_between_units(source_root, target_root)
+        if dist is None or float(dist) > 6.0 + 1e-6:
+            logger.error("ERROR: ECSTATIC SLAUGHTER: selected charge unit must be within 6\" of source unit")
+            return False
+
+        if self.game is None:
+            return False
+        game_map = getattr(self.game, "map", None)
+        if game_map is None:
+            return False
+
+        enemy_candidates: list[Any] = []
+        seen: set[str] = set()
+        for enemy in list(game_map.get_enemy_units(target_root) or []):
+            enemy_candidate = self._ec_root(enemy)
+            if enemy_candidate is None:
+                continue
+            eid = self._ec_sort_key(enemy_candidate)
+            if eid and eid in seen:
+                continue
+            if eid:
+                seen.add(eid)
+            if not self._ec_is_alive(enemy_candidate) or not self._ec_is_on_battlefield(enemy_candidate):
+                continue
+            try:
+                if not target_root.can_declare_charge_against(enemy_candidate, self.game, out_of_turn=True):
+                    continue
+            except (AttributeError, TypeError, ValueError):
+                continue
+            enemy_candidates.append(enemy_candidate)
+        enemy_candidates = sorted(enemy_candidates, key=self._ec_sort_key)
+        if not enemy_candidates:
+            logger.error("ERROR: ECSTATIC SLAUGHTER: no eligible enemy charge target")
+            return False
+        if enemy_root is None and len(enemy_candidates) == 1:
+            enemy_root = enemy_candidates[0]
+        if enemy_root is None:
+            logger.error("ERROR: ECSTATIC SLAUGHTER: missing enemy charge target")
+            return False
+        if not self._ec_unit_in_candidates(enemy_root, enemy_candidates):
+            logger.error("ERROR: ECSTATIC SLAUGHTER: selected enemy charge target is not eligible")
+            return False
+
+        if not self._court_spend_cp(stratagem, target_unit=source_root, enemy_unit=enemy_root):
+            return False
+
+        ok = False
+        try:
+            ok = bool(self.game.attempt_charge(target_root, enemy_root, out_of_turn=True))
+        except (AttributeError, TypeError, ValueError):
+            ok = False
+
+        self._court_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        if not ok:
+            logger.error("ERROR: ECSTATIC SLAUGHTER: charge failed")
+        return True
+
+    def _use_carnival_violent_crescendo(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: VIOLENT CRESCENDO: no target unit provided")
+            return False
+
+        root = self._ec_resolve_unit_entry(unit)
+        if root is None:
+            return False
+        if not self._is_carnival_of_excess_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: VIOLENT CRESCENDO: wrong phase")
+            return False
+        if candidates and not self._ec_unit_in_candidates(root, candidates):
+            logger.error("ERROR: VIOLENT CRESCENDO: target is not currently eligible")
+            return False
+        if not self._ec_owned_by_player(root, self.player):
+            logger.error("ERROR: VIOLENT CRESCENDO: target unit is not yours")
+            return False
+        if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: VIOLENT CRESCENDO: target cannot be selected")
+            return False
+        if not self._is_slaanesh_unit(root):
+            logger.error("ERROR: VIOLENT CRESCENDO: target must have the SLAANESH keyword")
+            return False
+        if not (
+            self._ec_has_keyword(root, "BEAST")
+            or self._ec_has_keyword(root, "BEASTS")
+            or self._ec_has_keyword(root, "INFANTRY")
+            or self._ec_has_keyword(root, "MOUNTED")
+        ):
+            logger.error("ERROR: VIOLENT CRESCENDO: target must be BEASTS, INFANTRY, or MOUNTED")
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+            logger.error("ERROR: VIOLENT CRESCENDO: target has already been selected to fight this phase")
+            return False
+
+        if not self._court_spend_cp(stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        current_pile = float(sr.get("bearer_unit_pile_in_distance_override", 0.0) or 0.0)
+        current_cons = float(sr.get("stratagem_consolidate_distance_override", 0.0) or 0.0)
+        sr["bearer_unit_pile_in_distance_override"] = max(current_pile, 6.0)
+        sr["stratagem_consolidate_distance_override"] = max(current_cons, 6.0)
+        sr["stratagem_choreographer_of_war_source"] = str(stratagem.name or "VIOLENT CRESCENDO")
+        sr["carnival_violent_crescendo_active"] = True
+        sr["carnival_violent_crescendo_expires_phase"] = "FIGHT_PHASE"
+        sr["carnival_violent_crescendo_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["carnival_violent_crescendo_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["carnival_violent_crescendo_source"] = str(stratagem.name or "VIOLENT CRESCENDO")
+        root.special_rules = sr
+        ability_cache = getattr(root, "_ability_cache", None)
+        if isinstance(ability_cache, dict):
+            ability_cache.pop("choreographer_of_war_source", None)
+
+        self._court_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: VIOLENT CRESCENDO: %s gets 6\" pile-in/consolidate with closest-enemy-unit movement rules this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_carnival_dark_apparitions(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "DARK APPARITIONS":
+                    continue
+                unit = reaction.get("target_unit") or reaction.get("unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: DARK APPARITIONS: no target unit provided")
+            return False
+
+        root = self._ec_resolve_unit_entry(unit)
+        if root is None:
+            return False
+        if not self._is_carnival_of_excess_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: DARK APPARITIONS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: DARK APPARITIONS: not opponent's Fight phase")
+            return False
+        if candidates and not self._ec_unit_in_candidates(root, candidates):
+            logger.error("ERROR: DARK APPARITIONS: target is not currently eligible")
+            return False
+        if not self._ec_owned_by_player(root, self.player):
+            logger.error("ERROR: DARK APPARITIONS: target unit is not yours")
+            return False
+        if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: DARK APPARITIONS: target cannot be selected")
+            return False
+        if not self._ec_has_keyword(root, "DAEMONETTES"):
+            logger.error("ERROR: DARK APPARITIONS: target must be a DAEMONETTES unit")
+            return False
+        if self._ec_is_within_engagement_range_of_enemy(root):
+            logger.error("ERROR: DARK APPARITIONS: target must not be within Engagement Range of enemy units")
+            return False
+        if not self._court_spend_cp(stratagem, target_unit=root):
+            return False
+        if not self._ec_place_unit_into_strategic_reserves(root):
+            logger.error("ERROR: DARK APPARITIONS: failed to place target into Strategic Reserves")
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["dark_apparitions_temp_deep_strike"] = True
+        sr["dark_apparitions_deep_strike_min_distance"] = 6.0
+        sr["dark_apparitions_requires_emperors_children_within"] = 9.0
+        sr["dark_apparitions_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["dark_apparitions_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["dark_apparitions_expires_phase"] = "MOVEMENT_PHASE"
+        sr["dark_apparitions_source"] = str(stratagem.name or "DARK APPARITIONS")
+        root.special_rules = sr
+        ability_cache = getattr(root, "_ability_cache", None)
+        if isinstance(ability_cache, dict):
+            ability_cache.pop("deep_strike", None)
+
+        self._court_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: DARK APPARITIONS: %s entered Strategic Reserves and may Deep Strike at >6\" in your next Movement phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_emperors_children_carnival_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None:
+            return None
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "SUSTAINED BY AGONY":
+            return self._use_carnival_sustained_by_agony(stratagem, **kwargs)
+        if name_u == "SYCOPHANTIC SURGE":
+            return self._use_carnival_sycophantic_surge(stratagem, **kwargs)
+        if name_u == "UNCANNY REACTIONS":
+            return self._use_carnival_uncanny_reactions(stratagem, **kwargs)
+        if name_u == "ECSTATIC SLAUGHTER":
+            return self._use_carnival_ecstatic_slaughter(stratagem, **kwargs)
+        if name_u == "VIOLENT CRESCENDO":
+            return self._use_carnival_violent_crescendo(stratagem, **kwargs)
+        if name_u == "DARK APPARITIONS":
+            return self._use_carnival_dark_apparitions(stratagem, **kwargs)
         return None
 
     def _court_effective_cp_cost(self, stratagem: Any, *, target_unit: Any = None, enemy_unit: Any = None) -> int:
@@ -4373,6 +5307,65 @@ class EmperorsChildrenStratagemMixin:
                         "rapid_ceaseless_onslaught_source",
                     ):
                         sr.pop(key, None)
+
+            if phase_name == "CHARGE_PHASE" and bool(sr.get("carnival_sycophantic_surge_active")):
+                exp = str(sr.get("carnival_sycophantic_surge_expires_phase", "") or "").strip().upper()
+                if not exp or exp == "CHARGE_PHASE":
+                    owner_id = str(sr.get("carnival_sycophantic_surge_turn_owner", "") or "")
+                    current_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+                    current_owner = str(getattr(current_player, "id", "") or "")
+                    if not owner_id or not current_owner or owner_id == current_owner:
+                        for key in (
+                            "carnival_sycophantic_surge_active",
+                            "carnival_sycophantic_surge_charge_after_advance",
+                            "carnival_sycophantic_surge_charge_after_fall_back",
+                            "carnival_sycophantic_surge_turn_owner",
+                            "carnival_sycophantic_surge_turn",
+                            "carnival_sycophantic_surge_expires_phase",
+                            "carnival_sycophantic_surge_source",
+                        ):
+                            sr.pop(key, None)
+
+            if phase_name == "FIGHT_PHASE" and bool(sr.get("carnival_violent_crescendo_active")):
+                exp = str(sr.get("carnival_violent_crescendo_expires_phase", "") or "").strip().upper()
+                if not exp or exp == "FIGHT_PHASE":
+                    for key in (
+                        "carnival_violent_crescendo_active",
+                        "carnival_violent_crescendo_expires_phase",
+                        "carnival_violent_crescendo_owner",
+                        "carnival_violent_crescendo_turn",
+                        "carnival_violent_crescendo_source",
+                    ):
+                        sr.pop(key, None)
+                    source_name = str(sr.get("stratagem_choreographer_of_war_source", "") or "").strip().upper()
+                    if source_name == "VIOLENT CRESCENDO":
+                        sr.pop("stratagem_choreographer_of_war_source", None)
+                        sr.pop("bearer_unit_pile_in_distance_override", None)
+                        sr.pop("stratagem_consolidate_distance_override", None)
+                        ability_cache = getattr(root, "_ability_cache", None)
+                        if isinstance(ability_cache, dict):
+                            ability_cache.pop("choreographer_of_war_source", None)
+
+            if phase_name == "MOVEMENT_PHASE" and bool(sr.get("dark_apparitions_temp_deep_strike")):
+                exp = str(sr.get("dark_apparitions_expires_phase", "") or "").strip().upper()
+                if not exp or exp == "MOVEMENT_PHASE":
+                    owner_id = str(sr.get("dark_apparitions_turn_owner", "") or "")
+                    current_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+                    current_owner = str(getattr(current_player, "id", "") or "")
+                    if not owner_id or (current_owner and owner_id == current_owner):
+                        for key in (
+                            "dark_apparitions_temp_deep_strike",
+                            "dark_apparitions_deep_strike_min_distance",
+                            "dark_apparitions_requires_emperors_children_within",
+                            "dark_apparitions_turn_owner",
+                            "dark_apparitions_turn",
+                            "dark_apparitions_expires_phase",
+                            "dark_apparitions_source",
+                        ):
+                            sr.pop(key, None)
+                        ability_cache = getattr(root, "_ability_cache", None)
+                        if isinstance(ability_cache, dict):
+                            ability_cache.pop("deep_strike", None)
 
             if phase_name == "FIGHT_PHASE" and bool(sr.get("devoted_duellists_active")):
                 exp = str(sr.get("devoted_duellists_expires_phase", "") or "").strip().upper()

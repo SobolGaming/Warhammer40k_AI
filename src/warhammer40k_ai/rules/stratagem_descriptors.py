@@ -908,6 +908,79 @@ _COURT_OF_THE_PHOENICIAN_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _COURT_OF_THE_PHOENICIAN_STRATAGEM_DESCRIPTORS.values()
 }
 
+_CARNIVAL_OF_EXCESS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010011002": StratagemToolDescriptor(
+        stratagem_id="000010011002",
+        name="Sustained by Agony",
+        timing="fight_phase_on_friendly_emperors_children_destroy_enemy_unit",
+        target="emperors_children_source_and_legions_of_excess_unit_within_6",
+        duration="immediate",
+        effect="heal_or_return_models",
+        cp_cost=1,
+        range_in=6.0,
+        effect_params={"heal_amount": 3, "daemonettes_return_roll": "D3+3"},
+    ),
+    "000010011003": StratagemToolDescriptor(
+        stratagem_id="000010011003",
+        name="Ecstatic Slaughter",
+        timing="fight_phase_on_friendly_legions_of_excess_destroy_enemy_unit",
+        target="legions_of_excess_source_and_emperors_children_unit_within_6_not_engaged",
+        duration="immediate",
+        effect="out_of_turn_charge",
+        cp_cost=1,
+        range_in=6.0,
+        effect_params={"out_of_turn": True},
+    ),
+    "000010011004": StratagemToolDescriptor(
+        stratagem_id="000010011004",
+        name="Violent Crescendo",
+        timing="fight_phase_on_select_to_fight",
+        target="slaanesh_beasts_infantry_mounted_unit_not_yet_fought",
+        duration="until_end_of_phase",
+        effect="pile_in_and_consolidate_override_with_closest_enemy_unit_rule",
+        cp_cost=2,
+        effect_params={"pile_in_distance": 6, "consolidate_distance": 6, "closest_enemy_unit_rule": True},
+    ),
+    "000010011005": StratagemToolDescriptor(
+        stratagem_id="000010011005",
+        name="Sycophantic Surge",
+        timing="charge_phase",
+        target="legions_of_excess_unit",
+        duration="until_end_of_phase",
+        effect="charge_after_advance_or_fall_back_with_target_condition",
+        cp_cost=1,
+        effect_params={"requires_at_least_one_target_engaged_with_friendly_emperors_children": True},
+    ),
+    "000010011006": StratagemToolDescriptor(
+        stratagem_id="000010011006",
+        name="Uncanny Reactions",
+        timing="opponent_shooting_phase_after_targets_selected",
+        target="slaanesh_unit_targeted_by_attacker",
+        duration="until_end_of_phase",
+        effect="hit_roll_penalty",
+        cp_cost=1,
+        effect_params={"hit_modifier": -1},
+    ),
+    "000010011007": StratagemToolDescriptor(
+        stratagem_id="000010011007",
+        name="Dark Apparitions",
+        timing="end_of_opponent_fight_phase",
+        target="daemonettes_unit_not_engaged",
+        duration="until_next_movement_phase_reinforcements_step",
+        effect="enter_strategic_reserves_with_temp_deep_strike",
+        cp_cost=2,
+        effect_params={
+            "deep_strike_min_distance": 6,
+            "distance_type": "horizontal",
+            "requires_friendly_emperors_children_wholly_within": 9,
+        },
+    ),
+}
+
+_CARNIVAL_OF_EXCESS_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _CARNIVAL_OF_EXCESS_STRATAGEM_DESCRIPTORS.values()
+}
+
 _COTERIE_OF_THE_CONCEITED_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010015005": StratagemToolDescriptor(
         stratagem_id="000010015005",
@@ -1152,6 +1225,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _COURT_OF_THE_PHOENICIAN_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _CARNIVAL_OF_EXCESS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _COTERIE_OF_THE_CONCEITED_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -1178,6 +1254,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _CABAL_OF_CHAOS_STRATAGEM_BY_NAME.get(key)
         or _SLAANESHS_CHOSEN_STRATAGEM_BY_NAME.get(key)
         or _COURT_OF_THE_PHOENICIAN_STRATAGEM_BY_NAME.get(key)
+        or _CARNIVAL_OF_EXCESS_STRATAGEM_BY_NAME.get(key)
         or _COTERIE_OF_THE_CONCEITED_STRATAGEM_BY_NAME.get(key)
         or _MERCURIAL_HOST_STRATAGEM_BY_NAME.get(key)
         or _RAPID_EVISCERATION_STRATAGEM_BY_NAME.get(key)

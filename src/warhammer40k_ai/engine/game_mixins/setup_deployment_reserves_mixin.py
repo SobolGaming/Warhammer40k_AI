@@ -962,6 +962,25 @@ class GameSetupDeploymentReservesMixin:
                     if loc:
                         m.set_location(*loc)
                 return False
+        if battlefield_edge is None:
+            valid_dark_apparitions = True
+            try:
+                checker = getattr(unit, "is_dark_apparitions_arrival_valid", None)
+                if callable(checker):
+                    valid_dark_apparitions = bool(
+                        checker(
+                            prospective,
+                            game=self,
+                            game_map=self.map,
+                        )
+                    )
+            except Exception:
+                valid_dark_apparitions = False
+            if not valid_dark_apparitions:
+                for m, loc in zip(unit.models, snapshot):
+                    if loc:
+                        m.set_location(*loc)
+                return False
 
         min_enemy_distance = float(self._warp_rifts_min_distance(unit) or 9.0)
         for m, loc in zip(unit.models, snapshot):

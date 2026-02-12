@@ -1485,6 +1485,21 @@ class LateGameplayMixin:
                         "hallowed_beacon_source",
                     ):
                         sr.pop(key, None)
+                if (
+                    sr.get("dark_apparitions_temp_deep_strike") is True
+                    or "dark_apparitions_deep_strike_min_distance" in sr
+                    or "dark_apparitions_requires_emperors_children_within" in sr
+                ):
+                    for key in (
+                        "dark_apparitions_temp_deep_strike",
+                        "dark_apparitions_deep_strike_min_distance",
+                        "dark_apparitions_requires_emperors_children_within",
+                        "dark_apparitions_turn_owner",
+                        "dark_apparitions_turn",
+                        "dark_apparitions_expires_phase",
+                        "dark_apparitions_source",
+                    ):
+                        sr.pop(key, None)
                 if sr.get("umbralefic_crystal_temp_deep_strike") is True or "umbralefic_crystal_must_arrive_turn" in sr:
                     for key in (
                         "umbralefic_crystal_temp_deep_strike",

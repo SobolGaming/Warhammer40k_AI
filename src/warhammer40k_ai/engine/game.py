@@ -6470,6 +6470,13 @@ class Game(
                 return None
             if not charging_unit.can_declare_charge_against(tgt, self, out_of_turn=True):
                 return None
+        sycophantic_active_fn = getattr(charging_unit, "_carnival_sycophantic_surge_active_for_charge", None)
+        sycophantic_target_fn = getattr(charging_unit, "_carnival_sycophantic_target_condition_met", None)
+        if callable(sycophantic_active_fn) and bool(sycophantic_active_fn(game=self)):
+            if not callable(sycophantic_target_fn):
+                return None
+            if not any(bool(sycophantic_target_fn(tgt, self)) for tgt in list(targets or [])):
+                return None
 
         if not out_of_turn and getattr(charging_unit.round_state, "advanced_this_round", False):
             try:

@@ -854,6 +854,27 @@ def _evaluate_reserves_arrival_positions(
             override = None
         if override:
             min_enemy_distance = min(float(min_enemy_distance), float(override))
+        try:
+            checker = getattr(unit, "is_dark_apparitions_arrival_valid", None)
+            if callable(checker):
+                if not bool(
+                    checker(
+                        prospective,
+                        game=game,
+                        game_map=game_map,
+                    )
+                ):
+                    return {
+                        "errors": [
+                            "Dark Apparitions: reserves Deep Strike setup must be wholly within 9\" of one or more friendly EMPEROR'S CHILDREN units."
+                        ]
+                    }
+        except Exception:
+            return {
+                "errors": [
+                    "Dark Apparitions: reserves Deep Strike setup validation failed."
+                ]
+            }
 
     try:
         from ...utility.aura_utils import horizontal_distance_between_bases_2d

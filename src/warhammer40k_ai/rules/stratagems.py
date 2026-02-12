@@ -174,6 +174,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "CATALYTIC STIMULUS",
     "CLOSE-QUARTERS EXCRUCIATION",
     "CONTEMPTUOUS DISREGARD",
+    "DARK APPARITIONS",
+    "ECSTATIC SLAUGHTER",
     "EUPHORIC INSPIRATION",
     "MUTATION'S CURSE",
     "NO REST IN DEATH",
@@ -181,11 +183,15 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SHROUD OF CHAOS",
     "SINUOUS BREACH",
     "SOULSEEKERS",
+    "SUSTAINED BY AGONY",
+    "SYCOPHANTIC SURGE",
+    "UNCANNY REACTIONS",
     "HONOUR THE PRINCE",
     "UNHOLY HASTE",
     "PROTECTION OF THE DARK PRINCE",
     "UNSHAKEABLE OPPONENTS",
     "PRETERNATURAL AGILITY",
+    "VIOLENT CRESCENDO",
     "VIOLENT EXCESS",
 }
 
@@ -266,7 +272,11 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "BALEFUL BLESSING",
     "CATALYTIC STIMULUS",
     "DIABOLIC MAJESTY",
+    "DARK APPARITIONS",
+    "ECSTATIC SLAUGHTER",
     "HEIGHTENED JEALOUSY",
+    "SUSTAINED BY AGONY",
+    "UNCANNY REACTIONS",
     "VENGEFUL SURGE",
     "CAPRICIOUS REACTIONS",
     "COMBAT STIMMS",
@@ -1154,7 +1164,7 @@ class StratagemManager(
         if names & {"FIRES OF COVENANT", "A CHALLENGE MET"}:
             add("unit_set_up", self._on_unit_set_up)
 
-        if names & {"A GRIM WARNING", "BLOOD OFFERING", "BLOODY VENGEANCE", "DRAWN TO THE SLAUGHTER", "HEIGHTENED JEALOUSY", "ONTO THE NEXT", "UNBOUND ARROGANCE", "TERRIFYING SPECTACLE", "DIVINE INTERVENTION"}:
+        if names & {"A GRIM WARNING", "BLOOD OFFERING", "BLOODY VENGEANCE", "DRAWN TO THE SLAUGHTER", "HEIGHTENED JEALOUSY", "ONTO THE NEXT", "UNBOUND ARROGANCE", "TERRIFYING SPECTACLE", "DIVINE INTERVENTION", "SUSTAINED BY AGONY", "ECSTATIC SLAUGHTER"}:
             add("unit_destroyed", self._on_unit_destroyed)
 
         if names & {"SKULLS FOR THE SKULL THRONE!", "FICKLEFIRE", "GORY DEDICATION"}:
@@ -1232,6 +1242,7 @@ class StratagemManager(
             "AEGIS ETERNAL",
             "CONTEMPTUOUS DISREGARD",
             "REACTIVE DISEMBARKATION",
+            "UNCANNY REACTIONS",
             "VENGEFUL SURGE",
         }
         fight_reaction_names = {
@@ -1291,6 +1302,7 @@ class StratagemManager(
 
         phase_end_trigger_names = {
             "CRUEL RAIDERS",
+            "DARK APPARITIONS",
             "DELIRIUM UNMADE",
             "ENDLESS PURSUIT OF VIOLENCE",
             "FLAMES OF SANCTITY",
@@ -1366,10 +1378,13 @@ class StratagemManager(
             "PRIDEFUL SUPERIORITY",
             "REFUSAL TO BE OUTDONE",
             "SINUOUS BREACH",
+            "SYCOPHANTIC SURGE",
             "HONOUR THE PRINCE",
             "UNSHAKEABLE OPPONENTS",
             "VENGEFUL SURGE",
+            "VIOLENT CRESCENDO",
             "VIOLENT EXCESS",
+            "DARK APPARITIONS",
         }
         needs_phase_end = bool(
             (names & phase_end_trigger_names)
@@ -2331,8 +2346,10 @@ class StratagemManager(
             "CLOSE-QUARTERS EXCRUCIATION": "Target: EMPEROR'S CHILDREN unit that has not been selected to shoot",
             "COMBAT STIMMS": "Target: EMPEROR'S CHILDREN INFANTRY unit selected as an enemy fight attack target",
             "CONTEMPTUOUS DISREGARD": "Target: EMPEROR'S CHILDREN unit selected as an enemy attack target",
+            "DARK APPARITIONS": "Target: DAEMONETTES unit not within Engagement Range; enters Strategic Reserves",
             "DYNAMIC BREAKTHROUGH": "Target: EMPEROR'S CHILDREN VEHICLE that has not moved this phase",
             "EMBRACE THE PAIN": "Target: EMPEROR'S CHILDREN INFANTRY unit (Fight phase start)",
+            "ECSTATIC SLAUGHTER": "Target: LEGIONS OF EXCESS unit that destroyed an enemy and one EMPEROR'S CHILDREN unit within 6\"",
             "EUPHORIC INSPIRATION": "Target: EMPEROR'S CHILDREN DAEMON unit",
             "MARTIAL PERFECTION": "Target: EMPEROR'S CHILDREN unit selected to fight (not fought)",
             "MUTATION'S CURSE": "Target: HERETIC ASTARTES PSYKER unit; select one visible enemy unit within 12\"",
@@ -2348,8 +2365,12 @@ class StratagemManager(
             "SHROUD OF CHAOS": "Target: HERETIC ASTARTES PSYKER/DAEMON PRINCE source unit",
             "SINUOUS BREACH": "Target: EMPEROR'S CHILDREN DAEMON unit (not yet moved/charged)",
             "SOULSEEKERS": "Target: HERETIC ASTARTES unit that has not been selected to shoot",
+            "SUSTAINED BY AGONY": "Target: EMPEROR'S CHILDREN source that destroyed an enemy; select LEGIONS OF EXCESS unit within 6\"",
+            "SYCOPHANTIC SURGE": "Target: LEGIONS OF EXCESS unit; can charge after Advancing/Falling Back this phase",
+            "UNCANNY REACTIONS": "Target: SLAANESH unit targeted by the attacking enemy unit's shooting",
             "HONOUR THE PRINCE": "Target: EMPEROR'S CHILDREN INFANTRY unit not yet selected to move",
             "VENGEFUL SURGE": "Target: EMPEROR'S CHILDREN CHARACTER unit targeted by enemy shooting attacks",
+            "VIOLENT CRESCENDO": "Target: SLAANESH BEASTS/INFANTRY/MOUNTED unit not yet selected to fight",
             "VIOLENT EXCESS": "Target: EMPEROR'S CHILDREN unit selected to fight (not fought)",
             "UNSHAKEABLE OPPONENTS": "Target: EMPEROR'S CHILDREN unit (start of your Command phase)",
             "UNHOLY HASTE": "Target: HERETIC ASTARTES INFANTRY unit that has not been selected to charge",
@@ -3740,6 +3761,10 @@ class StratagemManager(
             raise
         try:
             self._queue_emperors_children_rapid_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_emperors_children_carnival_phase_end_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -6169,6 +6194,13 @@ class StratagemManager(
             raise
         try:
             self._queue_emperors_children_rapid_shooting_reactions(
+                attacking_unit=attacking_unit,
+                target_units=target_units,
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_emperors_children_carnival_shooting_reactions(
                 attacking_unit=attacking_unit,
                 target_units=target_units,
             )
@@ -9031,6 +9063,13 @@ class StratagemManager(
             )
         except Exception:
             raise
+        try:
+            self._queue_emperors_children_carnival_unit_destroyed_reactions(
+                destroyed_unit=unit,
+                destroyed_by_unit=kwargs.get("destroyed_by_unit"),
+            )
+        except Exception:
+            raise
         # EMPEROR'S CHILDREN: track units that destroyed enemies in their Fight phase.
         try:
             destroyed_by_unit = kwargs.get("destroyed_by_unit")
@@ -11666,6 +11705,9 @@ class StratagemManager(
         ec_rapid_result = self._use_emperors_children_rapid_stratagem(s, **kwargs)
         if ec_rapid_result is not None:
             return ec_rapid_result
+        ec_carnival_result = self._use_emperors_children_carnival_stratagem(s, **kwargs)
+        if ec_carnival_result is not None:
+            return ec_carnival_result
         ec_coterie_result = self._use_emperors_children_coterie_stratagem(s, **kwargs)
         if ec_coterie_result is not None:
             return ec_coterie_result

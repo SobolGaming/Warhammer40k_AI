@@ -2838,6 +2838,42 @@ class PositioningMixin:
         except Exception:
             root = self
         cache_key = "choreographer_of_war_source"
+        try:
+            sr = getattr(root, "special_rules", None)
+            if isinstance(sr, dict):
+                stratagem_source = str(sr.get("stratagem_choreographer_of_war_source", "") or "").strip()
+                if stratagem_source:
+                    active = True
+                    exp_phase = str(sr.get("carnival_violent_crescendo_expires_phase", "") or "").strip().upper()
+                    owner_id = str(sr.get("carnival_violent_crescendo_owner", "") or "")
+                    effect_turn = int(sr.get("carnival_violent_crescendo_turn", 0) or 0)
+                    game = None
+                    try:
+                        army = root.get_parent_army()
+                    except Exception:
+                        army = None
+                    try:
+                        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    except Exception:
+                        game = None
+                    if game is not None:
+                        cur_player = getattr(game, "get_current_player", lambda: None)()
+                        cur_owner = str(getattr(cur_player, "id", "") or "")
+                        cur_turn = int(getattr(game, "turn", 0) or 0)
+                        cur_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                        if owner_id and cur_owner and owner_id != cur_owner:
+                            active = False
+                        if effect_turn and cur_turn and effect_turn != cur_turn:
+                            active = False
+                        if exp_phase and cur_phase and exp_phase != cur_phase:
+                            active = False
+                    if active:
+                        if not hasattr(root, "_ability_cache"):
+                            root._ability_cache = {}
+                        root._ability_cache[cache_key] = stratagem_source
+                        return str(stratagem_source or "")
+        except Exception:
+            pass
         cache = getattr(root, "_ability_cache", None)
         if isinstance(cache, dict) and cache_key in cache:
             return str(cache.get(cache_key) or "")
@@ -3800,10 +3836,18 @@ class PositioningMixin:
         getter = getattr(game, "get_max_charge_distance", None)
         if callable(getter):
             max_distance = float(getter(self, target_unit=None))
+        sycophantic_active_fn = getattr(self, "_carnival_sycophantic_surge_active_for_charge", None)
+        sycophantic_target_fn = getattr(self, "_carnival_sycophantic_target_condition_met", None)
+        sycophantic_active = bool(callable(sycophantic_active_fn) and sycophantic_active_fn(game=game))
+        if sycophantic_active and not callable(sycophantic_target_fn):
+            return False
         for enemy in enemy_units:
             try:
-                if game_map.get_distance_between_units(self, enemy) <= max_distance:
-                    return True
+                if game_map.get_distance_between_units(self, enemy) > max_distance:
+                    continue
+                if sycophantic_active and not bool(sycophantic_target_fn(enemy, game)):
+                    continue
+                return True
             except Exception:
                 continue
         return False
@@ -4015,6 +4059,23 @@ class PositioningMixin:
             if isinstance(sr, dict):
                 if sr.get("bearer_unit_deep_strike") or sr.get("realm_of_chaos_temp_deep_strike"):
                     found = True
+                elif sr.get("dark_apparitions_temp_deep_strike"):
+                    found = True
+                    try:
+                        army = self.get_parent_army()
+                    except Exception:
+                        army = None
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    owner_id = str(sr.get("dark_apparitions_turn_owner", "") or "")
+                    exp_phase = str(sr.get("dark_apparitions_expires_phase", "") or "").strip().upper()
+                    if game is not None:
+                        cur_player = getattr(game, "get_current_player", lambda: None)()
+                        cur_owner = str(getattr(cur_player, "id", "") or "")
+                        cur_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                        if owner_id and cur_owner and owner_id != cur_owner:
+                            found = False
+                        elif exp_phase and cur_phase and exp_phase != cur_phase:
+                            found = False
                 elif sr.get("umbralefic_crystal_temp_deep_strike"):
                     found = True
                     try:
@@ -4268,7 +4329,210 @@ class PositioningMixin:
             if hallowed_beacon_min > 0:
                 min_dist = hallowed_beacon_min if min_dist is None else min(min_dist, hallowed_beacon_min)
 
+        try:
+            dark_apparitions_min = float(sr.get("dark_apparitions_deep_strike_min_distance", 0) or 0)
+        except Exception:
+            dark_apparitions_min = 0.0
+        if dark_apparitions_min > 0:
+            try:
+                game = None
+                try:
+                    army = root.get_parent_army()
+                except Exception:
+                    army = None
+                try:
+                    game = getattr(getattr(army, "player", None), "game", None)
+                except Exception:
+                    game = None
+                owner_id = str(sr.get("dark_apparitions_turn_owner", "") or "")
+                if game is not None:
+                    cur_player = getattr(game, "get_current_player", lambda: None)()
+                    cur_owner = str(getattr(cur_player, "id", "") or "")
+                    pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    exp = str(sr.get("dark_apparitions_expires_phase", "") or "").strip().upper()
+                    if owner_id and cur_owner and owner_id != cur_owner:
+                        dark_apparitions_min = 0.0
+                    elif exp and pname and exp != pname:
+                        dark_apparitions_min = 0.0
+            except Exception:
+                dark_apparitions_min = 0.0
+            if dark_apparitions_min > 0:
+                min_dist = dark_apparitions_min if min_dist is None else min(min_dist, dark_apparitions_min)
+
         return float(min_dist) if min_dist is not None else None
+
+    def get_dark_apparitions_friendly_distance_requirement(self, *, game=None) -> Optional[float]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return None
+        try:
+            required = float(sr.get("dark_apparitions_requires_emperors_children_within", 0) or 0)
+        except Exception:
+            required = 0.0
+        if required <= 0:
+            return None
+        gm = game
+        if gm is None:
+            try:
+                army = root.get_parent_army()
+            except Exception:
+                army = None
+            gm = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        if gm is not None:
+            owner_id = str(sr.get("dark_apparitions_turn_owner", "") or "")
+            exp_phase = str(sr.get("dark_apparitions_expires_phase", "") or "").strip().upper()
+            try:
+                cur_player = getattr(gm, "get_current_player", lambda: None)()
+                cur_owner = str(getattr(cur_player, "id", "") or "")
+            except Exception:
+                cur_owner = ""
+            try:
+                cur_phase = str(getattr(getattr(gm, "phase", None), "name", "") or "").strip().upper()
+            except Exception:
+                cur_phase = ""
+            if owner_id and cur_owner and owner_id != cur_owner:
+                return None
+            if exp_phase and cur_phase and exp_phase != cur_phase:
+                return None
+        return float(required)
+
+    def is_dark_apparitions_arrival_valid(
+        self,
+        prospective_positions: list[tuple[float, float, float, float]],
+        *,
+        game=None,
+        game_map=None,
+    ) -> bool:
+        required = self.get_dark_apparitions_friendly_distance_requirement(game=game)
+        if required is None:
+            return True
+        if not prospective_positions:
+            return False
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        gm = game_map
+        if gm is None and game is not None:
+            gm = getattr(game, "map", None)
+        if gm is None:
+            try:
+                army = root.get_parent_army()
+            except Exception:
+                army = None
+            try:
+                gm = getattr(getattr(getattr(army, "player", None), "game", None), "map", None)
+            except Exception:
+                gm = None
+        if gm is None:
+            return False
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        if army is None:
+            return False
+        player = getattr(army, "player", None)
+        if player is None:
+            return False
+        mgr = getattr(army, "emperors_children", None)
+        checker = getattr(mgr, "is_emperors_children_unit", None) if mgr is not None else None
+
+        def _is_emperors_children_unit(unit_obj) -> bool:
+            if unit_obj is None:
+                return False
+            if callable(checker):
+                try:
+                    return bool(checker(unit_obj))
+                except Exception:
+                    return False
+            try:
+                if unit_obj.has_keyword("EMPEROR'S CHILDREN"):
+                    return True
+            except Exception:
+                pass
+            try:
+                if unit_obj.has_any_keyword("EMPEROR'S CHILDREN"):
+                    return True
+            except Exception:
+                pass
+            return False
+
+        from ...utility.aura_utils import horizontal_distance_between_bases_2d
+
+        unit_id = str(get_entity_id(root) or "")
+        friendly_model_bases: list[Any] = []
+        seen: set[str] = set()
+        for unit_obj in list(getattr(gm, "units", []) or []):
+            try:
+                friendly_root = unit_obj.get_attached_unit_root() if hasattr(unit_obj, "get_attached_unit_root") else unit_obj
+            except Exception:
+                friendly_root = unit_obj
+            if friendly_root is None:
+                continue
+            friendly_id = str(get_entity_id(friendly_root) or "")
+            if friendly_id and friendly_id == unit_id:
+                continue
+            if friendly_id and friendly_id in seen:
+                continue
+            if friendly_id:
+                seen.add(friendly_id)
+            try:
+                if friendly_root.get_parent_army().player is not player:
+                    continue
+            except Exception:
+                continue
+            if not _is_emperors_children_unit(friendly_root):
+                continue
+            try:
+                if not friendly_root.is_alive():
+                    continue
+            except Exception:
+                continue
+            if not bool(getattr(friendly_root, "deployed", False)):
+                continue
+            if str(getattr(friendly_root, "reserve_status", "deployed")) != "deployed":
+                continue
+            if getattr(friendly_root, "embarked_in", None) is not None:
+                continue
+            if bool(getattr(friendly_root, "is_embarked", False)):
+                continue
+            for model in list(getattr(friendly_root, "models", []) or []):
+                if not getattr(model, "is_alive", True):
+                    continue
+                base = getattr(model, "model_base", None)
+                if base is None:
+                    continue
+                friendly_model_bases.append(base)
+        if not friendly_model_bases:
+            return False
+        unit_models = list(getattr(root, "models", []) or [])
+        for idx, (x, y, z, facing) in enumerate(list(prospective_positions or [])):
+            if idx >= len(unit_models):
+                break
+            try:
+                base = root._create_potential_base(x, y, z, facing, model=unit_models[idx])
+            except Exception:
+                return False
+            if base is None:
+                return False
+            within_required = False
+            for friendly_base in list(friendly_model_bases or []):
+                try:
+                    if float(horizontal_distance_between_bases_2d(base, friendly_base)) <= float(required) + 1e-6:
+                        within_required = True
+                        break
+                except Exception:
+                    continue
+            if not within_required:
+                return False
+        return True
 
     def _enemy_is_afflicted_for_deep_strike_distance(
         self,

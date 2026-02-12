@@ -39,6 +39,13 @@ def _validate_declare_charge(game: object, request: DecisionRequest, result: Dec
         for target in targets:
             if not attacker.can_declare_charge_against(target, game, out_of_turn=out_of_turn):
                 return ("Unit cannot declare a charge against one or more targets.",)
+        sycophantic_active_fn = getattr(attacker, "_carnival_sycophantic_surge_active_for_charge", None)
+        sycophantic_target_fn = getattr(attacker, "_carnival_sycophantic_target_condition_met", None)
+        if callable(sycophantic_active_fn) and bool(sycophantic_active_fn(game=game)):
+            if not callable(sycophantic_target_fn):
+                return ("Unit cannot declare this charge (missing target condition validator).",)
+            if not any(bool(sycophantic_target_fn(target, game)) for target in list(targets or [])):
+                return ("At least one charge target must be within Engagement Range of a friendly EMPEROR'S CHILDREN unit.",)
     except Exception:
         return ("Charge validation failed.",)
     return ()

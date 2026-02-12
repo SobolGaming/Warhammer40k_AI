@@ -9099,6 +9099,15 @@ class ActionsMovementMixin:
         except Exception:
             pass
         try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get("carnival_sycophantic_surge_charge_after_advance")):
+                army = self.get_parent_army()
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if self._carnival_sycophantic_surge_active_for_charge(game=game):
+                    return True
+        except Exception:
+            pass
+        try:
             if self._dark_ritual_active():
                 return True
         except Exception:
@@ -9203,6 +9212,15 @@ class ActionsMovementMixin:
         except Exception:
             pass
         try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get("carnival_sycophantic_surge_charge_after_fall_back")):
+                army = self.get_parent_army()
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if self._carnival_sycophantic_surge_active_for_charge(game=game):
+                    return True
+        except Exception:
+            pass
+        try:
             army = self.get_parent_army()
             mgr = getattr(army, "templar_vows", None) if army is not None else None
             if mgr is not None and mgr.can_charge_after_fall_back(self):
@@ -9236,6 +9254,134 @@ class ActionsMovementMixin:
         if not self.has_thrill_seekers():
             return False
         return bool(getattr(self.round_state, "advanced_this_round", False) or getattr(self.round_state, "fell_back_this_round", False))
+
+    def _carnival_sycophantic_surge_active_for_charge(self, *, game=None) -> bool:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        if not bool(sr.get("carnival_sycophantic_surge_active")):
+            return False
+        if not (
+            bool(sr.get("carnival_sycophantic_surge_charge_after_advance"))
+            or bool(sr.get("carnival_sycophantic_surge_charge_after_fall_back"))
+        ):
+            return False
+        gm = game
+        if gm is None:
+            try:
+                army = self.get_parent_army()
+            except Exception:
+                army = None
+            gm = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        if gm is None:
+            return True
+        owner_id = str(sr.get("carnival_sycophantic_surge_turn_owner", "") or "")
+        effect_turn = int(sr.get("carnival_sycophantic_surge_turn", 0) or 0)
+        exp_phase = str(sr.get("carnival_sycophantic_surge_expires_phase", "") or "").strip().upper()
+        try:
+            cur_player = getattr(gm, "get_current_player", lambda: None)()
+            cur_owner = str(getattr(cur_player, "id", "") or "")
+        except Exception:
+            cur_owner = ""
+        try:
+            cur_turn = int(getattr(gm, "turn", 0) or 0)
+        except Exception:
+            cur_turn = 0
+        try:
+            cur_phase = str(getattr(getattr(gm, "phase", None), "name", "") or "").strip().upper()
+        except Exception:
+            cur_phase = ""
+        if owner_id and cur_owner and owner_id != cur_owner:
+            return False
+        if effect_turn and cur_turn and effect_turn != cur_turn:
+            return False
+        if exp_phase and cur_phase and exp_phase != cur_phase:
+            return False
+        return True
+
+    def _carnival_sycophantic_target_condition_met(self, target_unit: 'Unit', game) -> bool:
+        if target_unit is None or game is None:
+            return False
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        if target_root is None:
+            return False
+        game_map = getattr(game, "map", None)
+        if game_map is None:
+            return False
+        try:
+            army = self.get_parent_army()
+        except Exception:
+            army = None
+        if army is None:
+            return False
+        player = getattr(army, "player", None)
+        if player is None:
+            return False
+        mgr = getattr(army, "emperors_children", None)
+        checker = getattr(mgr, "is_emperors_children_unit", None) if mgr is not None else None
+
+        def _is_emperors_children_unit(unit_obj) -> bool:
+            if unit_obj is None:
+                return False
+            if callable(checker):
+                try:
+                    return bool(checker(unit_obj))
+                except Exception:
+                    return False
+            try:
+                if unit_obj.has_keyword("EMPEROR'S CHILDREN"):
+                    return True
+            except Exception:
+                pass
+            try:
+                if unit_obj.has_any_keyword("EMPEROR'S CHILDREN"):
+                    return True
+            except Exception:
+                pass
+            return False
+
+        seen: set[str] = set()
+        for unit_obj in list(getattr(army, "units", []) or []):
+            try:
+                friendly_root = unit_obj.get_attached_unit_root()
+            except Exception:
+                friendly_root = unit_obj
+            if friendly_root is None:
+                continue
+            uid = str(get_entity_id(friendly_root) or "")
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            try:
+                if friendly_root.get_parent_army().player is not player:
+                    continue
+            except Exception:
+                continue
+            if not _is_emperors_children_unit(friendly_root):
+                continue
+            try:
+                if not friendly_root.is_alive():
+                    continue
+            except Exception:
+                continue
+            if not bool(getattr(friendly_root, "deployed", False)):
+                continue
+            if str(getattr(friendly_root, "reserve_status", "deployed")) != "deployed":
+                continue
+            if getattr(friendly_root, "embarked_in", None) is not None:
+                continue
+            if bool(getattr(friendly_root, "is_embarked", False)):
+                continue
+            try:
+                if bool(game_map.is_within_engagement_range(friendly_root, target_root)):
+                    return True
+            except Exception:
+                continue
+        return False
 
     def _thrill_seekers_restriction_reason(self, target_unit: 'Unit', game) -> Optional[str]:
         if not self._thrill_seekers_restrictions_active():
