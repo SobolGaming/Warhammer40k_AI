@@ -714,6 +714,52 @@ class WargearProfile:
         source = str(sr.get("mordian_minute_source", "") or "MORDIAN MINUTE").strip() or "MORDIAN MINUTE"
         return (s_bonus, source)
 
+    def _court_close_quarters_excruciation_bonus(
+        self,
+        attacker: Optional['Model'],
+        target: Optional['Unit'],
+    ) -> Tuple[int, int, str]:
+        """Return (strength_bonus, ap_bonus, source) when CLOSE-QUARTERS EXCRUCIATION applies."""
+        try:
+            is_ranged = bool(self.parent_wargear and self.parent_wargear.is_ranged())
+        except Exception:
+            is_ranged = False
+        if not is_ranged or attacker is None or target is None:
+            return (0, 0, "")
+        sr = self._phase_effect_special_rules(
+            attacker,
+            active_key="court_close_quarters_excruciation_active",
+            expires_key="court_close_quarters_excruciation_expires_phase",
+            owner_key="court_close_quarters_excruciation_owner",
+            turn_key="court_close_quarters_excruciation_turn",
+        )
+        if sr is None:
+            return (0, 0, "")
+        try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            attacker_root = attacker_unit.get_attached_unit_root() if attacker_unit is not None else None
+        except Exception:
+            attacker_root = getattr(attacker, "parent_unit", None)
+        try:
+            target_root = target.get_attached_unit_root()
+        except Exception:
+            target_root = target
+        if attacker_root is None or target_root is None:
+            return (0, 0, "")
+        game_map = self._get_game_map_from_model(attacker)
+        if game_map is None:
+            return (0, 0, "")
+        try:
+            distance = float(game_map.get_distance_between_units(attacker_root, target_root))
+        except Exception:
+            return (0, 0, "")
+        if distance > 12.0 + 1e-6:
+            return (0, 0, "")
+        source = str(
+            sr.get("court_close_quarters_excruciation_source", "") or "CLOSE-QUARTERS EXCRUCIATION"
+        ).strip() or "CLOSE-QUARTERS EXCRUCIATION"
+        return (1, 1, source)
+
     def _purging_fire_lethal_hits_active(self, attacker: 'Model') -> bool:
         """Return True when PURGING FIRE grants lethal hits for this attack."""
         return self._phase_effect_special_rules(
@@ -1854,6 +1900,12 @@ class WargearProfile:
                 bonus = int(mgr.raiders_and_reavers_ap_bonus(attacker, target, game_map=game_map) or 0)
                 if bonus:
                     ap_val -= bonus
+        except Exception:
+            pass
+        try:
+            _s_bonus, ap_bonus, _source = self._court_close_quarters_excruciation_bonus(attacker, target)
+            if ap_bonus:
+                ap_val -= int(ap_bonus)
         except Exception:
             pass
         try:
@@ -9164,6 +9216,19 @@ class WargearProfile:
                     strength = strength + s_bonus
                     source_name = str(source or "Empyric Wellspring").strip() or "Empyric Wellspring"
                     wound_result.setdefault("modifiers", []).append(f"+{s_bonus}S from {source_name}")
+        try:
+            if (
+                self.parent_wargear
+                and getattr(self.parent_wargear, "is_ranged", lambda: False)()
+                and isinstance(strength, int)
+            ):
+                s_bonus, _ap_bonus, source = self._court_close_quarters_excruciation_bonus(attacker, target)
+                if s_bonus:
+                    strength = strength + int(s_bonus)
+                    source_name = str(source or "CLOSE-QUARTERS EXCRUCIATION").strip() or "CLOSE-QUARTERS EXCRUCIATION"
+                    wound_result.setdefault("modifiers", []).append(f"+{int(s_bonus)}S from {source_name}")
+        except Exception:
+            pass
         if isinstance(strength, int):
             sr = self._unit_special_rules(attacker)
             psychic_bonus = int(sr.get("enhancement_bearer_psychic_strength_bonus", 0) or 0)

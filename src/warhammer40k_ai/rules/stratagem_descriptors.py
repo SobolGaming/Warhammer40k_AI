@@ -771,6 +771,75 @@ _CABAL_OF_CHAOS_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _CABAL_OF_CHAOS_STRATAGEM_DESCRIPTORS.values()
 }
 
+_COURT_OF_THE_PHOENICIAN_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010655007": StratagemToolDescriptor(
+        stratagem_id="000010655007",
+        name="Catalytic Stimulus",
+        timing="opponent_shooting_phase_after_shooting_resolved_and_lost_wounds",
+        target="emperors_children_unit_that_lost_wounds",
+        duration="immediate",
+        effect="reactive_stimulus_move_towards_closest_non_aircraft_enemy",
+        cp_cost=1,
+        effect_params={"distance_roll": "D6", "allow_engagement_range": True},
+    ),
+    "000010655005": StratagemToolDescriptor(
+        stratagem_id="000010655005",
+        name="Close-Quarters Excruciation",
+        timing="shooting_phase_on_select_to_shoot",
+        target="emperors_children_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="ranged_strength_and_ap_bonus_within_12",
+        cp_cost=1,
+        range_in=12.0,
+        effect_params={"strength_bonus": 1, "ap_bonus": 1},
+    ),
+    "000010655002": StratagemToolDescriptor(
+        stratagem_id="000010655002",
+        name="Contemptuous Disregard",
+        timing="shooting_or_fight_phase_after_enemy_targets_selected",
+        target="emperors_children_unit_targeted",
+        duration="until_end_of_phase",
+        effect="defensive_wound_penalty_if_strength_gt_toughness",
+        cp_cost=1,
+        effect_params={"wound_roll_modifier": -1, "condition": "attacker_strength_greater_than_target_toughness"},
+    ),
+    "000010655006": StratagemToolDescriptor(
+        stratagem_id="000010655006",
+        name="Euphoric Inspiration",
+        timing="charge_phase_on_declare_charge",
+        target="emperors_children_daemon_unit",
+        duration="until_end_of_phase",
+        effect="grant_charge_reroll_aura",
+        cp_cost=1,
+        range_in=6.0,
+        effect_params={"aura_target_keyword": "EMPEROR'S CHILDREN"},
+    ),
+    "000010655003": StratagemToolDescriptor(
+        stratagem_id="000010655003",
+        name="Prideful Superiority",
+        timing="fight_phase_on_select_to_fight",
+        target="emperors_children_unit_not_yet_fought",
+        duration="until_end_of_phase",
+        effect="reroll_hits_and_wounds_vs_character",
+        cp_cost=2,
+        effect_params={"target_keywords_any": ["CHARACTER"], "reroll_hit_full": True, "reroll_wound_full": True},
+    ),
+    "000010655004": StratagemToolDescriptor(
+        stratagem_id="000010655004",
+        name="Sinuous Breach",
+        timing="movement_or_charge_phase_on_select",
+        target="emperors_children_daemon_unit_not_yet_selected_for_action",
+        duration="until_end_of_phase",
+        effect="move_through_terrain",
+        cp_cost=1,
+        effect_params={"move_types": ["move", "advance", "charge"]},
+    ),
+}
+
+_COURT_OF_THE_PHOENICIAN_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _COURT_OF_THE_PHOENICIAN_STRATAGEM_DESCRIPTORS.values()
+}
+
 
 def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> Optional[StratagemToolDescriptor]:
     if stratagem_id:
@@ -807,6 +876,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _CABAL_OF_CHAOS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _COURT_OF_THE_PHOENICIAN_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
     key = _normalize_name(name)
     if not key:
         return None
@@ -822,4 +894,5 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _HALLOWED_MARTYRS_STRATAGEM_BY_NAME.get(key)
         or _WARPBANE_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _CABAL_OF_CHAOS_STRATAGEM_BY_NAME.get(key)
+        or _COURT_OF_THE_PHOENICIAN_STRATAGEM_BY_NAME.get(key)
     )

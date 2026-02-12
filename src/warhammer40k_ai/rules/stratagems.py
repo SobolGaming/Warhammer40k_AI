@@ -12,6 +12,7 @@ from .stratagems_adepta_sororitas import AdeptaSororitasStratagemMixin
 from .stratagems_astra_militarum import AstraMilitarumStratagemMixin
 from .stratagems_chaos_daemons import ChaosDaemonsStratagemMixin
 from .stratagems_chaos_space_marines import ChaosSpaceMarinesStratagemMixin
+from .stratagems_emperors_children import EmperorsChildrenStratagemMixin
 from .stratagem_descriptors import get_stratagem_tool_descriptor
 from .stratagems_chaos_knights import ChaosKnightsStratagemMixin
 from .stratagems_necrons import NecronsStratagemMixin
@@ -152,9 +153,15 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "CREEPING BLIGHT",
     "PUTRID DETONATION",
     "BALEFUL BLESSING",
+    "CATALYTIC STIMULUS",
+    "CLOSE-QUARTERS EXCRUCIATION",
+    "CONTEMPTUOUS DISREGARD",
+    "EUPHORIC INSPIRATION",
     "MUTATION'S CURSE",
     "NO REST IN DEATH",
+    "PRIDEFUL SUPERIORITY",
     "SHROUD OF CHAOS",
+    "SINUOUS BREACH",
     "SOULSEEKERS",
     "UNHOLY HASTE",
     "PRETERNATURAL AGILITY",
@@ -231,6 +238,8 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "REPELLING SPHERE",
     "PUTRID DETONATION",
     "BALEFUL BLESSING",
+    "CATALYTIC STIMULUS",
+    "CONTEMPTUOUS DISREGARD",
     "DIVINE INTERVENTION",
     "SHROUD OF CHAOS",
     "PRAISE THE FALLEN",
@@ -946,6 +955,7 @@ class Stratagem:
 class StratagemManager(
     AdeptaSororitasStratagemMixin,
     ChaosSpaceMarinesStratagemMixin,
+    EmperorsChildrenStratagemMixin,
     AstraMilitarumStratagemMixin,
     WorldEatersStratagemMixin,
     GreyKnightsStratagemMixin,
@@ -1134,6 +1144,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_ficklefire)
         if "PRAISE THE FALLEN" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_praise_the_fallen)
+        if "CATALYTIC STIMULUS" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_catalytic_stimulus)
 
         if "UNLEASH BALEFIRE" in names and "INSANE BRAVERY" not in names:
             add("battle_shock_test_resolved", self._on_battle_shock_test_resolved)
@@ -1172,9 +1184,11 @@ class StratagemManager(
             "\u2019ARD AS NAILS",
             "DAEMONIC INVULNERABILITY",
             "AEGIS ETERNAL",
+            "CONTEMPTUOUS DISREGARD",
         }
         fight_reaction_names = {
             "BERSERK FUGUE",
+            "CONTEMPTUOUS DISREGARD",
             "DEFIANT TO THE LAST",
             "DEATHLESS DUTY",
             "DEATH ECSTASY",
@@ -1288,6 +1302,10 @@ class StratagemManager(
             "SUFFERING AND SACRIFICE",
             "SPIRIT OF THE MARTYR",
             "DIVINE INTERVENTION",
+            "CLOSE-QUARTERS EXCRUCIATION",
+            "EUPHORIC INSPIRATION",
+            "PRIDEFUL SUPERIORITY",
+            "SINUOUS BREACH",
         }
         needs_phase_end = bool(
             (names & phase_end_trigger_names)
@@ -2237,9 +2255,15 @@ class StratagemManager(
             "SANCTIFIED IMMOLATION": "Target: destroyed ADEPTA SORORITAS VEHICLE model with Deadly Demise",
             "DIVINE INTERVENTION": "Target: destroyed ADEPTA SORORITAS CHARACTER (not Saint Celestine); discard 1-3 Miracle dice",
             "BALEFUL BLESSING": "Target: HERETIC ASTARTES unit after a mortal wound is allocated to it",
+            "CATALYTIC STIMULUS": "Target: EMPEROR'S CHILDREN unit that lost one or more wounds from an enemy shooter",
+            "CLOSE-QUARTERS EXCRUCIATION": "Target: EMPEROR'S CHILDREN unit that has not been selected to shoot",
+            "CONTEMPTUOUS DISREGARD": "Target: EMPEROR'S CHILDREN unit selected as an enemy attack target",
+            "EUPHORIC INSPIRATION": "Target: EMPEROR'S CHILDREN DAEMON unit",
             "MUTATION'S CURSE": "Target: HERETIC ASTARTES PSYKER unit; select one visible enemy unit within 12\"",
             "NO REST IN DEATH": "Target: HERETIC ASTARTES unit within 9\" of friendly Psyker/Daemon Prince source",
+            "PRIDEFUL SUPERIORITY": "Target: EMPEROR'S CHILDREN unit selected to fight (not fought)",
             "SHROUD OF CHAOS": "Target: HERETIC ASTARTES PSYKER/DAEMON PRINCE source unit",
+            "SINUOUS BREACH": "Target: EMPEROR'S CHILDREN DAEMON unit (not yet moved/charged)",
             "SOULSEEKERS": "Target: HERETIC ASTARTES unit that has not been selected to shoot",
             "UNHOLY HASTE": "Target: HERETIC ASTARTES INFANTRY unit that has not been selected to charge",
             "UNBRIDLED CARNAGE": "Target: ORKS unit (not yet fought)",
@@ -4252,6 +4276,11 @@ class StratagemManager(
             self._cleanup_cabal_of_chaos_phase_end_effects(phase=phase)
         except Exception:
             raise
+        # Emperor's Children (Court of the Phoenician): phase-end cleanup.
+        try:
+            self._cleanup_emperors_children_court_phase_end_effects(phase=phase)
+        except Exception:
+            raise
         # Chaos Daemons: Warp Surge (expires at end of Charge phase).
         try:
             phase_name = getattr(phase, "name", None)
@@ -5797,6 +5826,15 @@ class StratagemManager(
         except Exception:
             raise
 
+    def _on_unit_shooting_resolved_catalytic_stimulus(self, attacker_unit=None, hits_by_target=None, **_kwargs):
+        try:
+            self._queue_emperors_children_court_shooting_resolved_reactions(
+                attacker_unit=attacker_unit,
+                hits_by_target=hits_by_target,
+            )
+        except Exception:
+            raise
+
     def _on_unit_shooting_resolved_armour_of_contempt_cleanup(self, attacker_unit=None, **_kwargs) -> None:
         if attacker_unit is None:
             return
@@ -5994,6 +6032,13 @@ class StratagemManager(
             raise
         try:
             self._queue_world_eaters_cult_shooting_reactions(
+                attacking_unit=attacking_unit,
+                target_units=target_units,
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_emperors_children_court_shooting_reactions(
                 attacking_unit=attacking_unit,
                 target_units=target_units,
             )
@@ -6732,6 +6777,13 @@ class StratagemManager(
             raise
         try:
             self._queue_hallowed_martyrs_fight_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=target_units,
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_emperors_children_court_fight_reactions(
                 attacking_unit=attacking_unit,
                 target_units=target_units,
             )
@@ -11402,6 +11454,9 @@ class StratagemManager(
         cabal_result = self._use_chaos_space_marines_cabal_stratagem(s, **kwargs)
         if cabal_result is not None:
             return cabal_result
+        ec_court_result = self._use_emperors_children_court_stratagem(s, **kwargs)
+        if ec_court_result is not None:
+            return ec_court_result
         am_result = self._use_astra_militarum_grizzled_stratagem(s, **kwargs)
         if am_result is not None:
             return am_result

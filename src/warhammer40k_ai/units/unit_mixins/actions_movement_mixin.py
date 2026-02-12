@@ -3073,6 +3073,13 @@ class ActionsMovementMixin:
                     hit_reasons.append("+1 to hit from Steeped in Suffering (vs targets below Starting Strength)")
         except Exception:
             pass
+        try:
+            applies, source = self._court_prideful_superiority_active(target=target)
+            if applies:
+                mods["reroll_hit_full"] = True
+                reroll_hit_full_reasons.append(f"{source}: re-roll Hit roll vs CHARACTER target")
+        except Exception:
+            pass
 
         mods["reroll_hit_values"] = tuple(sorted(reroll_hit_values))
         mods["reroll_hit_ones"] = bool(1 in reroll_hit_values)
@@ -3692,6 +3699,13 @@ class ActionsMovementMixin:
                 if target_root is not None and bool(target_root.is_below_half_strength()):
                     mods["wound"] += 1
                     wound_reasons.append("+1 to wound from Steeped in Suffering (vs targets below Half-strength)")
+        except Exception:
+            pass
+        try:
+            applies, source = self._court_prideful_superiority_active(target=target, game=game)
+            if applies:
+                mods["reroll_wound_full"] = True
+                reroll_wound_full_reasons.append(f"{source}: re-roll Wound roll vs CHARACTER target")
         except Exception:
             pass
 
@@ -5001,6 +5015,143 @@ class ActionsMovementMixin:
                     continue
         return False
 
+    def _court_prideful_superiority_active(self, *, target=None, game=None) -> tuple[bool, str]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None or target is None:
+            return (False, "")
+        try:
+            target_root = target.get_attached_unit_root()
+        except Exception:
+            target_root = target
+        if target_root is None:
+            return (False, "")
+        if not self._entity_has_keyword_for_empyric(target_root, "CHARACTER"):
+            return (False, "")
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("court_prideful_superiority_active")):
+            return (False, "")
+        if game is None:
+            try:
+                army = root.get_parent_army()
+            except Exception:
+                army = None
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        phase_name = self._current_phase_name_for_rules(game=game)
+        if phase_name and phase_name != "FIGHT_PHASE":
+            return (False, "")
+        exp_phase = str(sr.get("court_prideful_superiority_expires_phase", "") or "").strip().upper()
+        if exp_phase and phase_name and exp_phase != phase_name:
+            return (False, "")
+        owner_id = str(sr.get("court_prideful_superiority_owner", "") or "")
+        if owner_id:
+            try:
+                army = root.get_parent_army()
+                player = getattr(army, "player", None) if army is not None else None
+            except Exception:
+                player = None
+            player_id = str(getattr(player, "id", "") or "") if player is not None else ""
+            if player_id and owner_id != player_id:
+                return (False, "")
+        try:
+            marked_turn = int(sr.get("court_prideful_superiority_turn", 0) or 0)
+        except Exception:
+            marked_turn = 0
+        if marked_turn:
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+            except Exception:
+                current_turn = 0
+            if current_turn and current_turn != marked_turn:
+                return (False, "")
+        source = str(sr.get("court_prideful_superiority_source", "") or "PRIDEFUL SUPERIORITY").strip() or "PRIDEFUL SUPERIORITY"
+        return (True, source)
+
+    def _court_euphoric_inspiration_charge_reroll_active(self, *, game=None, game_map=None) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        if not self._entity_has_keyword_for_empyric(root, "EMPEROR'S CHILDREN"):
+            return False
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        if army is None:
+            return False
+        if game is None:
+            game = getattr(getattr(army, "player", None), "game", None)
+        if game_map is None:
+            game_map = getattr(game, "map", None) if game is not None else None
+        if game_map is None:
+            return False
+        phase_name = self._current_phase_name_for_rules(game=game)
+        if phase_name and phase_name != "CHARGE_PHASE":
+            return False
+        current_turn = 0
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        except Exception:
+            current_turn = 0
+        owner_id = str(getattr(getattr(army, "player", None), "id", "") or "")
+
+        seen_sources: set[str] = set()
+        for source in list(getattr(army, "units", []) or []):
+            if source is None:
+                continue
+            try:
+                source_root = source.get_attached_unit_root()
+            except Exception:
+                source_root = source
+            if source_root is None:
+                continue
+            sid = str(get_entity_id(source_root) or "")
+            if sid and sid in seen_sources:
+                continue
+            if sid:
+                seen_sources.add(sid)
+            sr = getattr(source_root, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("court_euphoric_inspiration_aura_active")):
+                continue
+            exp_phase = str(sr.get("court_euphoric_inspiration_expires_phase", "") or "").strip().upper()
+            if exp_phase and phase_name and exp_phase != phase_name:
+                continue
+            sr_owner = str(sr.get("court_euphoric_inspiration_owner", "") or "")
+            if sr_owner and owner_id and sr_owner != owner_id:
+                continue
+            try:
+                marked_turn = int(sr.get("court_euphoric_inspiration_turn", 0) or 0)
+            except Exception:
+                marked_turn = 0
+            if marked_turn and current_turn and marked_turn != current_turn:
+                continue
+            try:
+                if not source_root.is_alive():
+                    continue
+            except Exception:
+                continue
+            if not bool(getattr(source_root, "deployed", False)):
+                continue
+            try:
+                if source_root.is_in_reserves():
+                    continue
+            except Exception:
+                pass
+            if bool(getattr(source_root, "is_embarked", False)) or getattr(source_root, "embarked_in", None) is not None:
+                continue
+            try:
+                distance = float(game_map.get_distance_between_units(root, source_root))
+            except Exception:
+                continue
+            if distance <= 6.0 + 1e-6:
+                return True
+        return False
+
     def can_reroll_charge_roll(self, *, target_unit=None, game_map=None, game=None) -> bool:
         """
         Best-effort detection for abilities that allow re-rolling Charge rolls for this unit/model.
@@ -5027,6 +5178,11 @@ class ActionsMovementMixin:
             pass
         try:
             if self._spearhead_striker_charge_reroll_active(game=game):
+                return True
+        except Exception:
+            pass
+        try:
+            if self._court_euphoric_inspiration_charge_reroll_active(game=game, game_map=game_map):
                 return True
         except Exception:
             pass
