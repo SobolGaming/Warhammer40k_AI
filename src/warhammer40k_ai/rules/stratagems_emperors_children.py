@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
-from ..utility.aura_utils import horizontal_distance_between_bases_2d
+from ..utility.aura_utils import horizontal_distance_between_bases_2d, unit_wholly_within_range_of_unit
 from ..utility import dice as dice_module
 from ..utility.entity_ids import get_entity_id
 
@@ -92,6 +92,11 @@ class EmperorsChildrenStratagemMixin:
     def _is_mercurial_host_detachment(self) -> bool:
         mgr = self._get_emperors_children_mgr()
         checker = getattr(mgr, "is_mercurial_host", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
+    def _is_rapid_evisceration_detachment(self) -> bool:
+        mgr = self._get_emperors_children_mgr()
+        checker = getattr(mgr, "is_rapid_evisceration", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
     def _is_emperors_children_unit(self, unit: Any) -> bool:
@@ -409,6 +414,181 @@ class EmperorsChildrenStratagemMixin:
             if str(get_entity_id(root) or "") == uid:
                 return root
         return None
+
+    @staticmethod
+    def _ec_is_battle_shocked(unit: Any) -> bool:
+        if unit is None:
+            return False
+        checker = getattr(unit, "is_battle_shocked", None)
+        if callable(checker):
+            try:
+                return bool(checker())
+            except (AttributeError, TypeError, ValueError):
+                return False
+        return False
+
+    def _ec_embarked_units(self, transport_unit: Any, *, require_emperors_children: bool = True) -> list[Any]:
+        root_transport = self._ec_root(transport_unit)
+        if root_transport is None:
+            return []
+        passengers = list(getattr(root_transport, "transport_passengers", []) or [])
+        out: list[Any] = []
+        seen: set[str] = set()
+        for passenger in passengers:
+            root = self._ec_root(passenger)
+            if root is None:
+                continue
+            uid = self._ec_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ec_is_alive(root):
+                continue
+            if require_emperors_children and not self._is_emperors_children_unit(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ec_sort_key)
+
+    def _ec_rapid_destroyed_enemy_this_phase(self) -> set[str]:
+        raw = getattr(self, "_ec_rapid_units_destroyed_enemy_this_phase", None)
+        if isinstance(raw, set):
+            return raw
+        raw = set()
+        self._ec_rapid_units_destroyed_enemy_this_phase = raw
+        return raw
+
+    def _track_emperors_children_rapid_destroyed_enemy(self, *, destroyed_by_unit: Any) -> None:
+        if destroyed_by_unit is None or self.game is None:
+            return
+        if not self._is_rapid_evisceration_detachment():
+            return
+        phase_name = str(getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            return
+        try:
+            if destroyed_by_unit.get_parent_army().player is not self.player:
+                return
+        except (AttributeError, TypeError, ValueError):
+            return
+        root = self._ec_root(destroyed_by_unit)
+        if root is None:
+            return
+        if not self._is_emperors_children_unit(root):
+            return
+        rid = self._ec_sort_key(root)
+        if rid:
+            self._ec_rapid_destroyed_enemy_this_phase().add(rid)
+
+    def _ec_rapid_transport_candidates(
+        self,
+        *,
+        require_dedicated: bool = False,
+        require_not_battleshocked: bool = False,
+        require_tormentors_passenger: bool = False,
+    ) -> list[Any]:
+        if not self._is_rapid_evisceration_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._ec_root(unit)
+            if root is None:
+                continue
+            uid = self._ec_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ec_owned_by_player(root, self.player):
+                continue
+            if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            if not self._is_emperors_children_unit(root):
+                continue
+            if not self._ec_has_keyword(root, "TRANSPORT"):
+                continue
+            if require_dedicated and not self._ec_has_keyword(root, "DEDICATED TRANSPORT"):
+                continue
+            if require_not_battleshocked and self._ec_is_battle_shocked(root):
+                continue
+            passengers = self._ec_embarked_units(root, require_emperors_children=True)
+            if require_tormentors_passenger:
+                has_tormentors = False
+                for passenger in passengers:
+                    if self._ec_is_battle_shocked(passenger):
+                        continue
+                    if self._ec_has_keyword(passenger, "TORMENTORS"):
+                        has_tormentors = True
+                        break
+                if not has_tormentors:
+                    continue
+            out.append(root)
+        return sorted(out, key=self._ec_sort_key)
+
+    def _ec_rapid_advance_and_claim_objective_candidates(self, transport_unit: Any) -> list[Any]:
+        root = self._ec_root(transport_unit)
+        if root is None:
+            return []
+        helper = getattr(self, "_corrupting_taint_objective_candidates", None)
+        if callable(helper):
+            try:
+                candidates = list(helper(root) or [])
+            except (AttributeError, TypeError, ValueError):
+                candidates = []
+            if candidates:
+                return sorted(candidates, key=self._ec_sort_key)
+        if self.game is None:
+            return []
+        game_map = getattr(self.game, "map", None)
+        if game_map is None:
+            return []
+        out = []
+        for obj in list(getattr(game_map, "objectives", []) or []):
+            loc = getattr(obj, "location", None)
+            if loc is None or bool(getattr(loc, "removed", False)):
+                continue
+            if getattr(loc, "controlling_player", None) is not self.player:
+                continue
+            checker = getattr(root, "is_within_objective_range", None)
+            if not callable(checker):
+                continue
+            try:
+                if not bool(checker(loc)):
+                    continue
+            except (AttributeError, TypeError, ValueError):
+                continue
+            out.append(obj)
+        return sorted(out, key=self._ec_sort_key)
+
+    def _ec_rapid_onto_next_transport_candidates(self, unit: Any) -> list[Any]:
+        root = self._ec_root(unit)
+        if root is None:
+            return []
+        candidates = self._ec_rapid_transport_candidates()
+        out: list[Any] = []
+        for transport in list(candidates or []):
+            can_transport = getattr(transport, "can_transport", None)
+            if not callable(can_transport) or not bool(can_transport(root)):
+                continue
+            try:
+                if not unit_wholly_within_range_of_unit(
+                    transport,
+                    root,
+                    6.0,
+                    use_attached_aggregate=True,
+                ):
+                    continue
+            except (AttributeError, TypeError, ValueError):
+                continue
+            out.append(transport)
+        return sorted(out, key=self._ec_sort_key)
 
     def _queue_emperors_children_court_shooting_reactions(
         self,
@@ -964,6 +1144,212 @@ class EmperorsChildrenStratagemMixin:
             "stratagem": stratagem.name,
             "cp_cost": stratagem.cp_cost,
             "candidates": filtered,
+        }
+        if len(filtered) == 1:
+            payload["target_unit"] = filtered[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_emperors_children_rapid_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_rapid_evisceration_detachment():
+            return
+        if player is not self.player:
+            return
+        if str(getattr(phase, "name", "") or "").strip().upper() != "COMMAND_PHASE":
+            return
+        stratagem = self.get_by_name("ADVANCE AND CLAIM")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if self._ec_reaction_already_queued(
+            event_name="phase_start",
+            stratagem_name=stratagem.name,
+            phase_name="Command phase",
+        ):
+            return
+
+        candidates = self._ec_rapid_transport_candidates(
+            require_not_battleshocked=True,
+            require_tormentors_passenger=True,
+        )
+        filtered: list[Any] = []
+        objective_candidates_by_unit: dict[Any, list[Any]] = {}
+        for root in list(candidates or []):
+            objectives = self._ec_rapid_advance_and_claim_objective_candidates(root)
+            if not objectives:
+                continue
+            filtered.append(root)
+            objective_candidates_by_unit[root] = list(objectives)
+        filtered = sorted(filtered, key=self._ec_sort_key)
+        if not filtered:
+            return
+
+        payload = {
+            "event": "phase_start",
+            "phase": "Command phase",
+            "phase_name": "Command phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": filtered,
+            "objective_candidates_by_unit": objective_candidates_by_unit,
+        }
+        if len(filtered) == 1:
+            payload["target_unit"] = filtered[0]
+            payload["unit"] = filtered[0]
+            options = list(objective_candidates_by_unit.get(filtered[0], []) or [])
+            if len(options) == 1:
+                payload["objective"] = options[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_emperors_children_rapid_shooting_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: Optional[list[Any]],
+    ) -> None:
+        if not self._is_rapid_evisceration_detachment():
+            return
+        if attacking_unit is None or self.game is None:
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        if self._ec_owned_by_player(attacking_unit, self.player):
+            return
+        stratagem = self.get_by_name("REACTIVE DISEMBARKATION")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for target in list(target_units or []):
+            root = self._ec_root(target)
+            if root is None:
+                continue
+            uid = self._ec_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ec_owned_by_player(root, self.player):
+                continue
+            if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            if not self._is_emperors_children_unit(root):
+                continue
+            if not self._ec_has_keyword(root, "TRANSPORT"):
+                continue
+            if not self._ec_embarked_units(root, require_emperors_children=True):
+                continue
+            candidates.append(root)
+        candidates = sorted(candidates, key=self._ec_sort_key)
+        if not candidates:
+            return
+
+        if self._ec_reaction_already_queued(
+            event_name="shooting_targets_selected",
+            stratagem_name=stratagem.name,
+            phase_name="Shooting phase",
+        ):
+            return
+
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacking_unit,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_emperors_children_rapid_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_rapid_evisceration_detachment():
+            return
+        if str(getattr(phase, "name", "") or "").strip().upper() != "FIGHT_PHASE":
+            return
+
+        onto = self.get_by_name("ONTO THE NEXT")
+        if onto is not None:
+            if int(getattr(self.player, "command_points", 0) or 0) >= int(getattr(onto, "cp_cost", 0) or 0):
+                if str(onto.name or "").strip().upper() not in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+                    if not self._ec_reaction_already_queued(
+                        event_name="phase_end",
+                        stratagem_name=onto.name,
+                        phase_name="Fight phase",
+                    ):
+                        candidates: list[Any] = []
+                        transport_candidates_by_unit: dict[Any, list[Any]] = {}
+                        for unit_id in sorted(self._ec_rapid_destroyed_enemy_this_phase()):
+                            root = self._ec_root(self._resolve_unit_by_id(unit_id))
+                            if root is None:
+                                continue
+                            if not self._ec_owned_by_player(root, self.player):
+                                continue
+                            if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+                                continue
+                            if self._unit_cannot_be_target_of_stratagem(root):
+                                continue
+                            if not self._is_emperors_children_unit(root):
+                                continue
+                            transports = self._ec_rapid_onto_next_transport_candidates(root)
+                            if not transports:
+                                continue
+                            candidates.append(root)
+                            transport_candidates_by_unit[root] = transports
+                        candidates = sorted(candidates, key=self._ec_sort_key)
+                        if candidates:
+                            payload = {
+                                "event": "phase_end",
+                                "phase": "Fight phase",
+                                "phase_name": "Fight phase",
+                                "stratagem": onto.name,
+                                "cp_cost": onto.cp_cost,
+                                "candidates": candidates,
+                                "transport_candidates_by_unit": transport_candidates_by_unit,
+                            }
+                            if len(candidates) == 1:
+                                payload["target_unit"] = candidates[0]
+                            self._queue_reaction(payload, use_timer=False)
+
+        if player is self.player:
+            return
+        outflank = self.get_by_name("OUTFLANKING STRIKE")
+        if outflank is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(outflank, "cp_cost", 0) or 0):
+            return
+        if str(outflank.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if self._ec_reaction_already_queued(
+            event_name="phase_end",
+            stratagem_name=outflank.name,
+            phase_name="Fight phase",
+        ):
+            return
+        candidates = self._ec_rapid_transport_candidates()
+        filtered = [root for root in list(candidates or []) if self._unit_wholly_within_battlefield_edge_distance(root, 9.0)]
+        filtered = sorted(filtered, key=self._ec_sort_key)
+        if not filtered:
+            return
+        dedicated = [root for root in filtered if self._ec_has_keyword(root, "DEDICATED TRANSPORT")]
+        payload = {
+            "event": "phase_end",
+            "phase": "Fight phase",
+            "phase_name": "Fight phase",
+            "stratagem": outflank.name,
+            "cp_cost": outflank.cp_cost,
+            "candidates": filtered,
+            "dedicated_candidates": sorted(dedicated, key=self._ec_sort_key),
         }
         if len(filtered) == 1:
             payload["target_unit"] = filtered[0]
@@ -2165,6 +2551,554 @@ class EmperorsChildrenStratagemMixin:
         )
         return True
 
+    def _use_rapid_dynamic_breakthrough(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: DYNAMIC BREAKTHROUGH: no target unit provided")
+            return False
+        root = self._ec_root(unit)
+        if root is None:
+            return False
+        if not self._is_rapid_evisceration_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: DYNAMIC BREAKTHROUGH: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: DYNAMIC BREAKTHROUGH: not your Movement phase")
+            return False
+        if candidates and not self._ec_unit_in_candidates(root, candidates):
+            logger.error("ERROR: DYNAMIC BREAKTHROUGH: target is not currently eligible")
+            return False
+        if not self._ec_owned_by_player(root, self.player):
+            logger.error("ERROR: DYNAMIC BREAKTHROUGH: target unit is not yours")
+            return False
+        if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: DYNAMIC BREAKTHROUGH: target cannot be selected")
+            return False
+        if not self._is_emperors_children_unit(root) or not self._ec_has_keyword(root, "VEHICLE"):
+            logger.error("ERROR: DYNAMIC BREAKTHROUGH: target must be an EMPEROR'S CHILDREN VEHICLE")
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "moved_this_round", False)):
+            logger.error("ERROR: DYNAMIC BREAKTHROUGH: target has already moved this phase")
+            return False
+        if not self._court_spend_cp(stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        move_types = {"move", "advance", "fall_back"}
+        engagement_types = {"move", "advance", "fall_back"}
+        block_types = {"move", "advance", "fall_back"}
+
+        current_move_types = set(sr.get("bearer_unit_phase_move_types") or [])
+        added_move_types = sorted([t for t in sorted(move_types) if t not in current_move_types])
+        if added_move_types:
+            current_move_types.update(added_move_types)
+            sr["bearer_unit_phase_move_types"] = sorted(current_move_types)
+            sr["rapid_dynamic_breakthrough_added_phase_move_types"] = added_move_types
+
+        current_engagement_types = set(sr.get("bearer_unit_phase_move_engagement_types") or [])
+        added_engagement_types = sorted([t for t in sorted(engagement_types) if t not in current_engagement_types])
+        if added_engagement_types:
+            current_engagement_types.update(added_engagement_types)
+            sr["bearer_unit_phase_move_engagement_types"] = sorted(current_engagement_types)
+            sr["rapid_dynamic_breakthrough_added_phase_move_engagement_types"] = added_engagement_types
+
+        current_block_types = set(sr.get("bearer_unit_phase_move_block_monster_vehicle_types") or [])
+        added_block_types = sorted([t for t in sorted(block_types) if t not in current_block_types])
+        if added_block_types:
+            current_block_types.update(added_block_types)
+            sr["bearer_unit_phase_move_block_monster_vehicle_types"] = sorted(current_block_types)
+            sr["rapid_dynamic_breakthrough_added_phase_move_block_monster_vehicle_types"] = added_block_types
+
+        if not bool(sr.get("bearer_unit_auto_pass_desperate_escape", False)):
+            sr["rapid_dynamic_breakthrough_added_auto_pass_desperate_escape"] = True
+        sr["bearer_unit_auto_pass_desperate_escape"] = True
+        sr["rapid_dynamic_breakthrough_active"] = True
+        sr["rapid_dynamic_breakthrough_expires_phase"] = "MOVEMENT_PHASE"
+        sr["rapid_dynamic_breakthrough_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["rapid_dynamic_breakthrough_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["rapid_dynamic_breakthrough_source"] = str(stratagem.name or "DYNAMIC BREAKTHROUGH")
+        root.special_rules = sr
+
+        self._court_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: DYNAMIC BREAKTHROUGH: %s can move through enemy models and auto-pass Desperate Escape tests this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_rapid_ceaseless_onslaught(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: CEASELESS ONSLAUGHT: no target unit provided")
+            return False
+        root = self._ec_root(unit)
+        if root is None:
+            return False
+        if not self._is_rapid_evisceration_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "charge phase":
+            logger.error("ERROR: CEASELESS ONSLAUGHT: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: CEASELESS ONSLAUGHT: not your Charge phase")
+            return False
+        if candidates and not self._ec_unit_in_candidates(root, candidates):
+            logger.error("ERROR: CEASELESS ONSLAUGHT: target is not currently eligible")
+            return False
+        if not self._ec_owned_by_player(root, self.player):
+            logger.error("ERROR: CEASELESS ONSLAUGHT: target unit is not yours")
+            return False
+        if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: CEASELESS ONSLAUGHT: target cannot be selected")
+            return False
+        if not self._is_emperors_children_unit(root):
+            logger.error("ERROR: CEASELESS ONSLAUGHT: target must be an EMPEROR'S CHILDREN unit")
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "attempted_charge_this_round", False)):
+            logger.error("ERROR: CEASELESS ONSLAUGHT: target has already attempted a charge this phase")
+            return False
+
+        round_state = getattr(root, "round_state", None)
+        if not bool(getattr(round_state, "disembarked_this_round", False)):
+            logger.error("ERROR: CEASELESS ONSLAUGHT: target did not disembark this turn")
+            return False
+        transport_id = str(getattr(round_state, "disembarked_from_transport_id", "") or "")
+        if not transport_id:
+            logger.error("ERROR: CEASELESS ONSLAUGHT: missing disembark transport context")
+            return False
+        transport_root = self._ec_root(self._resolve_unit_by_id(transport_id))
+        if transport_root is None:
+            logger.error("ERROR: CEASELESS ONSLAUGHT: transport context no longer available")
+            return False
+        if not self._ec_owned_by_player(transport_root, self.player):
+            logger.error("ERROR: CEASELESS ONSLAUGHT: disembark transport is not friendly")
+            return False
+        if not self._ec_has_keyword(transport_root, "TRANSPORT"):
+            logger.error("ERROR: CEASELESS ONSLAUGHT: disembark source is not a TRANSPORT")
+            return False
+        transport_state = getattr(transport_root, "round_state", None)
+        moved = bool(getattr(transport_state, "moved_this_round", False))
+        remained = bool(getattr(transport_state, "remained_stationary_this_round", False))
+        advanced = bool(getattr(transport_state, "advanced_this_round", False))
+        fell_back = bool(getattr(transport_state, "fell_back_this_round", False))
+        if not moved or remained or advanced or fell_back:
+            logger.error("ERROR: CEASELESS ONSLAUGHT: transport must have made a Normal move this turn")
+            return False
+        if not self._court_spend_cp(stratagem, target_unit=root):
+            return False
+
+        setattr(round_state, "disembarked_cannot_charge", False)
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["rapid_ceaseless_onslaught_active"] = True
+        sr["rapid_ceaseless_onslaught_expires_phase"] = "CHARGE_PHASE"
+        sr["rapid_ceaseless_onslaught_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["rapid_ceaseless_onslaught_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["rapid_ceaseless_onslaught_source"] = str(stratagem.name or "CEASELESS ONSLAUGHT")
+        root.special_rules = sr
+
+        self._court_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: CEASELESS ONSLAUGHT: %s can declare a charge this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_rapid_reactive_disembarkation(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit") or kwargs.get("transport_unit") or kwargs.get("transport")
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "REACTIVE DISEMBARKATION":
+                    continue
+                unit = reaction.get("unit") or reaction.get("target_unit")
+                attacking_unit = attacking_unit or reaction.get("attacking_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: REACTIVE DISEMBARKATION: no target transport provided")
+            return False
+        root = self._ec_root(unit)
+        attacker_root = self._ec_root(attacking_unit)
+        if root is None:
+            return False
+        if not self._is_rapid_evisceration_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: REACTIVE DISEMBARKATION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: REACTIVE DISEMBARKATION: not opponent's Shooting phase")
+            return False
+        if candidates and not self._ec_unit_in_candidates(root, candidates):
+            logger.error("ERROR: REACTIVE DISEMBARKATION: target is not currently eligible")
+            return False
+        if not self._ec_owned_by_player(root, self.player):
+            logger.error("ERROR: REACTIVE DISEMBARKATION: target unit is not yours")
+            return False
+        if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: REACTIVE DISEMBARKATION: target cannot be selected")
+            return False
+        if not self._is_emperors_children_unit(root) or not self._ec_has_keyword(root, "TRANSPORT"):
+            logger.error("ERROR: REACTIVE DISEMBARKATION: target must be an EMPEROR'S CHILDREN TRANSPORT")
+            return False
+        if attacker_root is not None and self._ec_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: REACTIVE DISEMBARKATION: attacker is not enemy")
+            return False
+        embarked_units = self._ec_embarked_units(root, require_emperors_children=True)
+        if not embarked_units:
+            logger.error("ERROR: REACTIVE DISEMBARKATION: no embarked EMPEROR'S CHILDREN units")
+            return False
+
+        queue_fn = getattr(self.game, "_queue_transport_reactive_disembark_decisions", None) if self.game is not None else None
+        if not callable(queue_fn):
+            logger.error("ERROR: REACTIVE DISEMBARKATION: reactive disembark decision queue unavailable")
+            return False
+        if not self._court_spend_cp(stratagem, target_unit=root, enemy_unit=attacker_root):
+            return False
+        requests = list(
+            queue_fn(
+                player=self.player,
+                transport=root,
+                enemy_unit=attacker_root,
+                ability={"name": str(stratagem.name or "REACTIVE DISEMBARKATION"), "range": 6},
+                trigger="shooting_targets_selected",
+                max_units=1,
+            )
+            or []
+        )
+        if not requests:
+            logger.error("ERROR: REACTIVE DISEMBARKATION: no disembark decision was queued")
+            return False
+
+        self._court_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: REACTIVE DISEMBARKATION: queued disembark decision for one embarked unit in %s.",
+            getattr(root, "name", "Transport"),
+        )
+        return True
+
+    def _use_rapid_advance_and_claim(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit") or kwargs.get("transport_unit") or kwargs.get("transport")
+        objective = kwargs.get("objective") or kwargs.get("objective_marker")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "ADVANCE AND CLAIM":
+                    continue
+                unit = reaction.get("unit") or reaction.get("target_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: ADVANCE AND CLAIM: no target transport provided")
+            return False
+        root = self._ec_root(unit)
+        if root is None:
+            return False
+        if not self._is_rapid_evisceration_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "command phase":
+            logger.error("ERROR: ADVANCE AND CLAIM: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: ADVANCE AND CLAIM: not your Command phase")
+            return False
+        if candidates and not self._ec_unit_in_candidates(root, candidates):
+            logger.error("ERROR: ADVANCE AND CLAIM: target is not currently eligible")
+            return False
+        if not self._ec_owned_by_player(root, self.player):
+            logger.error("ERROR: ADVANCE AND CLAIM: target transport is not yours")
+            return False
+        if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: ADVANCE AND CLAIM: target cannot be selected")
+            return False
+        if not self._is_emperors_children_unit(root) or not self._ec_has_keyword(root, "TRANSPORT"):
+            logger.error("ERROR: ADVANCE AND CLAIM: target must be an EMPEROR'S CHILDREN TRANSPORT")
+            return False
+        if self._ec_is_battle_shocked(root):
+            logger.error("ERROR: ADVANCE AND CLAIM: target transport is Battle-shocked")
+            return False
+        embarked = self._ec_embarked_units(root, require_emperors_children=True)
+        has_tormentors = any(
+            self._ec_has_keyword(passenger, "TORMENTORS") and not self._ec_is_battle_shocked(passenger)
+            for passenger in embarked
+        )
+        if not has_tormentors:
+            logger.error("ERROR: ADVANCE AND CLAIM: no eligible embarked TORMENTORS unit")
+            return False
+
+        objective_candidates = list(kwargs.get("objective_candidates") or [])
+        mapping = kwargs.get("objective_candidates_by_unit")
+        if not objective_candidates and hasattr(mapping, "get"):
+            objective_candidates = list(mapping.get(root) or [])
+        if not objective_candidates:
+            objective_candidates = self._ec_rapid_advance_and_claim_objective_candidates(root)
+        if objective is None and len(objective_candidates) == 1:
+            objective = objective_candidates[0]
+        if objective is None:
+            logger.error("ERROR: ADVANCE AND CLAIM: no objective marker selected")
+            return False
+        if objective_candidates and objective not in objective_candidates:
+            logger.error("ERROR: ADVANCE AND CLAIM: selected objective marker is not eligible")
+            return False
+        loc = getattr(objective, "location", None)
+        if loc is None:
+            logger.error("ERROR: ADVANCE AND CLAIM: objective has no location")
+            return False
+        if not self._court_spend_cp(stratagem, target_unit=root):
+            return False
+        set_sticky = getattr(loc, "set_sticky_control", None)
+        if callable(set_sticky):
+            set_sticky(self.player, source="advance_and_claim")
+        else:
+            loc.sticky_controller = self.player
+            loc.sticky_source = "advance_and_claim"
+            loc.controlling_player = self.player
+
+        self._court_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info("INFO: ADVANCE AND CLAIM: objective remains under your control until sticky control is broken.")
+        return True
+
+    def _use_rapid_onto_the_next(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        transport_unit = kwargs.get("transport_unit") or kwargs.get("transport")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "ONTO THE NEXT":
+                    continue
+                unit = reaction.get("unit") or reaction.get("target_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if transport_unit is None:
+                    transport_unit = reaction.get("transport_unit") or reaction.get("transport")
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: ONTO THE NEXT: no target unit provided")
+            return False
+        root = self._ec_root(unit)
+        if root is None:
+            return False
+        if not self._is_rapid_evisceration_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: ONTO THE NEXT: wrong phase")
+            return False
+        if candidates and not self._ec_unit_in_candidates(root, candidates):
+            logger.error("ERROR: ONTO THE NEXT: target is not currently eligible")
+            return False
+        if not self._ec_owned_by_player(root, self.player):
+            logger.error("ERROR: ONTO THE NEXT: target unit is not yours")
+            return False
+        if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: ONTO THE NEXT: target cannot be selected")
+            return False
+        if not self._is_emperors_children_unit(root):
+            logger.error("ERROR: ONTO THE NEXT: target must be an EMPEROR'S CHILDREN unit")
+            return False
+
+        destroyed_ids = self._ec_rapid_destroyed_enemy_this_phase()
+        if candidates:
+            eligible = True
+        else:
+            eligible = self._ec_sort_key(root) in destroyed_ids
+        if not eligible:
+            logger.error("ERROR: ONTO THE NEXT: target has not destroyed an enemy unit this phase")
+            return False
+
+        transport_candidates = []
+        mapping = kwargs.get("transport_candidates_by_unit")
+        if hasattr(mapping, "get"):
+            transport_candidates = [self._ec_root(t) for t in list(mapping.get(root) or []) if self._ec_root(t) is not None]
+        if not transport_candidates:
+            transport_candidates = self._ec_rapid_onto_next_transport_candidates(root)
+        if transport_unit is None and len(transport_candidates) == 1:
+            transport_unit = transport_candidates[0]
+        if transport_unit is None:
+            logger.error("ERROR: ONTO THE NEXT: no target transport provided")
+            return False
+        transport_root = self._ec_root(transport_unit)
+        if transport_root is None:
+            return False
+        if transport_candidates and not self._ec_unit_in_candidates(transport_root, transport_candidates):
+            logger.error("ERROR: ONTO THE NEXT: selected transport is not eligible")
+            return False
+        if not self._ec_owned_by_player(transport_root, self.player):
+            logger.error("ERROR: ONTO THE NEXT: transport is not yours")
+            return False
+        if not self._ec_is_alive(transport_root) or not self._ec_is_on_battlefield(transport_root):
+            return False
+        if not self._ec_has_keyword(transport_root, "TRANSPORT"):
+            logger.error("ERROR: ONTO THE NEXT: selected unit is not a TRANSPORT")
+            return False
+        can_transport = getattr(transport_root, "can_transport", None)
+        if not callable(can_transport) or not bool(can_transport(root)):
+            logger.error("ERROR: ONTO THE NEXT: selected transport cannot embark the unit")
+            return False
+        if not unit_wholly_within_range_of_unit(
+            transport_root,
+            root,
+            6.0,
+            use_attached_aggregate=True,
+        ):
+            logger.error("ERROR: ONTO THE NEXT: target unit must be wholly within 6\" of the transport")
+            return False
+        if not self._court_spend_cp(stratagem, target_unit=root, enemy_unit=transport_root):
+            return False
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        if not bool(transport_root.add_passenger(root, game_map=game_map)):
+            logger.error("ERROR: ONTO THE NEXT: embark failed")
+            return False
+
+        self._court_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: ONTO THE NEXT: %s embarked within %s.",
+            getattr(root, "name", "Unit"),
+            getattr(transport_root, "name", "Transport"),
+        )
+        return True
+
+    def _use_rapid_outflanking_strike(self, stratagem: Any, **kwargs) -> bool:
+        selected = (
+            kwargs.get("units")
+            or kwargs.get("target_units")
+            or kwargs.get("selected_units")
+            or kwargs.get("unit")
+            or kwargs.get("target_unit")
+        )
+        candidates = list(kwargs.get("candidates") or [])
+        if selected is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "OUTFLANKING STRIKE":
+                    continue
+                selected = (
+                    reaction.get("units")
+                    or reaction.get("target_units")
+                    or reaction.get("selected_units")
+                    or reaction.get("unit")
+                    or reaction.get("target_unit")
+                )
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                break
+        if selected is None and len(candidates) == 1:
+            selected = [candidates[0]]
+        if selected is None:
+            logger.error("ERROR: OUTFLANKING STRIKE: no target transport provided")
+            return False
+        if not isinstance(selected, (list, tuple)):
+            selected = [selected]
+
+        resolved: list[Any] = []
+        seen: set[str] = set()
+        for entry in list(selected or []):
+            root = self._ec_root(self._resolve_unit_by_id(entry) if isinstance(entry, str) else entry)
+            if root is None:
+                continue
+            uid = self._ec_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            resolved.append(root)
+        if not resolved:
+            logger.error("ERROR: OUTFLANKING STRIKE: no valid target transports")
+            return False
+        if len(resolved) > 2:
+            logger.error("ERROR: OUTFLANKING STRIKE: cannot target more than two transports")
+            return False
+
+        if not self._is_rapid_evisceration_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: OUTFLANKING STRIKE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: OUTFLANKING STRIKE: not opponent's Fight phase")
+            return False
+        if candidates and not all(self._ec_unit_in_candidates(root, candidates) for root in resolved):
+            logger.error("ERROR: OUTFLANKING STRIKE: one or more targets are not currently eligible")
+            return False
+        if len(resolved) > 1:
+            if not all(self._ec_has_keyword(root, "DEDICATED TRANSPORT") for root in resolved):
+                logger.error("ERROR: OUTFLANKING STRIKE: selecting two targets requires DEDICATED TRANSPORT units")
+                return False
+
+        for root in list(resolved):
+            if not self._ec_owned_by_player(root, self.player):
+                logger.error("ERROR: OUTFLANKING STRIKE: one or more targets are not yours")
+                return False
+            if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+                return False
+            if self._unit_cannot_be_target_of_stratagem(root):
+                logger.error("ERROR: OUTFLANKING STRIKE: one or more targets cannot be selected")
+                return False
+            if not self._is_emperors_children_unit(root) or not self._ec_has_keyword(root, "TRANSPORT"):
+                logger.error("ERROR: OUTFLANKING STRIKE: targets must be EMPEROR'S CHILDREN TRANSPORT units")
+                return False
+            if not self._unit_wholly_within_battlefield_edge_distance(root, 9.0):
+                logger.error("ERROR: OUTFLANKING STRIKE: each target must be wholly within 9\" of a battlefield edge")
+                return False
+        if not self._court_spend_cp(stratagem, target_unit=resolved[0]):
+            return False
+        for root in list(resolved):
+            if not self._ec_place_unit_into_strategic_reserves(root):
+                logger.error("ERROR: OUTFLANKING STRIKE: failed to place target into Strategic Reserves")
+                return False
+
+        self._court_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info("INFO: OUTFLANKING STRIKE: selected transport units were placed into Strategic Reserves.")
+        return True
+
     def _cleanup_emperors_children_court_phase_end_effects(self, *, phase: Any) -> None:
         phase_name = str(getattr(phase, "name", "") or "").strip().upper()
         if not phase_name:
@@ -2366,6 +3300,60 @@ class EmperorsChildrenStratagemMixin:
                     ):
                         sr.pop(key, None)
 
+            if phase_name == "MOVEMENT_PHASE" and bool(sr.get("rapid_dynamic_breakthrough_active")):
+                exp = str(sr.get("rapid_dynamic_breakthrough_expires_phase", "") or "").strip().upper()
+                if not exp or exp == "MOVEMENT_PHASE":
+                    added = set(sr.get("rapid_dynamic_breakthrough_added_phase_move_types") or [])
+                    if added:
+                        current = list(sr.get("bearer_unit_phase_move_types") or [])
+                        kept = [move_type for move_type in current if move_type not in added]
+                        if kept:
+                            sr["bearer_unit_phase_move_types"] = kept
+                        else:
+                            sr.pop("bearer_unit_phase_move_types", None)
+                    added = set(sr.get("rapid_dynamic_breakthrough_added_phase_move_engagement_types") or [])
+                    if added:
+                        current = list(sr.get("bearer_unit_phase_move_engagement_types") or [])
+                        kept = [move_type for move_type in current if move_type not in added]
+                        if kept:
+                            sr["bearer_unit_phase_move_engagement_types"] = kept
+                        else:
+                            sr.pop("bearer_unit_phase_move_engagement_types", None)
+                    added = set(sr.get("rapid_dynamic_breakthrough_added_phase_move_block_monster_vehicle_types") or [])
+                    if added:
+                        current = list(sr.get("bearer_unit_phase_move_block_monster_vehicle_types") or [])
+                        kept = [move_type for move_type in current if move_type not in added]
+                        if kept:
+                            sr["bearer_unit_phase_move_block_monster_vehicle_types"] = kept
+                        else:
+                            sr.pop("bearer_unit_phase_move_block_monster_vehicle_types", None)
+                    if bool(sr.get("rapid_dynamic_breakthrough_added_auto_pass_desperate_escape")):
+                        sr.pop("bearer_unit_auto_pass_desperate_escape", None)
+                    for key in (
+                        "rapid_dynamic_breakthrough_active",
+                        "rapid_dynamic_breakthrough_expires_phase",
+                        "rapid_dynamic_breakthrough_owner",
+                        "rapid_dynamic_breakthrough_turn",
+                        "rapid_dynamic_breakthrough_source",
+                        "rapid_dynamic_breakthrough_added_phase_move_types",
+                        "rapid_dynamic_breakthrough_added_phase_move_engagement_types",
+                        "rapid_dynamic_breakthrough_added_phase_move_block_monster_vehicle_types",
+                        "rapid_dynamic_breakthrough_added_auto_pass_desperate_escape",
+                    ):
+                        sr.pop(key, None)
+
+            if phase_name == "CHARGE_PHASE" and bool(sr.get("rapid_ceaseless_onslaught_active")):
+                exp = str(sr.get("rapid_ceaseless_onslaught_expires_phase", "") or "").strip().upper()
+                if not exp or exp == "CHARGE_PHASE":
+                    for key in (
+                        "rapid_ceaseless_onslaught_active",
+                        "rapid_ceaseless_onslaught_expires_phase",
+                        "rapid_ceaseless_onslaught_owner",
+                        "rapid_ceaseless_onslaught_turn",
+                        "rapid_ceaseless_onslaught_source",
+                    ):
+                        sr.pop(key, None)
+
             root.special_rules = sr
 
     def _use_emperors_children_court_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
@@ -2384,6 +3372,24 @@ class EmperorsChildrenStratagemMixin:
             return self._use_court_sinuous_breach(stratagem, **kwargs)
         if name_u == "CATALYTIC STIMULUS":
             return self._use_court_catalytic_stimulus(stratagem, **kwargs)
+        return None
+
+    def _use_emperors_children_rapid_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None:
+            return None
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "ADVANCE AND CLAIM":
+            return self._use_rapid_advance_and_claim(stratagem, **kwargs)
+        if name_u == "CEASELESS ONSLAUGHT":
+            return self._use_rapid_ceaseless_onslaught(stratagem, **kwargs)
+        if name_u == "DYNAMIC BREAKTHROUGH":
+            return self._use_rapid_dynamic_breakthrough(stratagem, **kwargs)
+        if name_u == "ONTO THE NEXT":
+            return self._use_rapid_onto_the_next(stratagem, **kwargs)
+        if name_u == "OUTFLANKING STRIKE":
+            return self._use_rapid_outflanking_strike(stratagem, **kwargs)
+        if name_u == "REACTIVE DISEMBARKATION":
+            return self._use_rapid_reactive_disembarkation(stratagem, **kwargs)
         return None
 
     def _use_emperors_children_coterie_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:

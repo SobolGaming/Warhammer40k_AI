@@ -157,6 +157,12 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "CREEPING BLIGHT",
     "CRUEL RAIDERS",
     "PUTRID DETONATION",
+    "ADVANCE AND CLAIM",
+    "CEASELESS ONSLAUGHT",
+    "DYNAMIC BREAKTHROUGH",
+    "ONTO THE NEXT",
+    "OUTFLANKING STRIKE",
+    "REACTIVE DISEMBARKATION",
     "DARK VIGOUR",
     "BALEFUL BLESSING",
     "CATALYTIC STIMULUS",
@@ -259,6 +265,10 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "SHROUD OF CHAOS",
     "DARK VIGOUR",
     "CRUEL RAIDERS",
+    "ADVANCE AND CLAIM",
+    "ONTO THE NEXT",
+    "OUTFLANKING STRIKE",
+    "REACTIVE DISEMBARKATION",
     "PROTECTION OF THE DARK PRINCE",
     "PRAISE THE FALLEN",
     "SANCTIFIED IMMOLATION",
@@ -1134,7 +1144,7 @@ class StratagemManager(
         if names & {"FIRES OF COVENANT", "A CHALLENGE MET"}:
             add("unit_set_up", self._on_unit_set_up)
 
-        if names & {"A GRIM WARNING", "BLOOD OFFERING", "BLOODY VENGEANCE", "DRAWN TO THE SLAUGHTER", "UNBOUND ARROGANCE", "TERRIFYING SPECTACLE", "DIVINE INTERVENTION"}:
+        if names & {"A GRIM WARNING", "BLOOD OFFERING", "BLOODY VENGEANCE", "DRAWN TO THE SLAUGHTER", "ONTO THE NEXT", "UNBOUND ARROGANCE", "TERRIFYING SPECTACLE", "DIVINE INTERVENTION"}:
             add("unit_destroyed", self._on_unit_destroyed)
 
         if names & {"SKULLS FOR THE SKULL THRONE!", "FICKLEFIRE", "GORY DEDICATION"}:
@@ -1207,6 +1217,7 @@ class StratagemManager(
             "DAEMONIC INVULNERABILITY",
             "AEGIS ETERNAL",
             "CONTEMPTUOUS DISREGARD",
+            "REACTIVE DISEMBARKATION",
         }
         fight_reaction_names = {
             "BERSERK FUGUE",
@@ -1275,6 +1286,8 @@ class StratagemManager(
             "WEBWAY TUNNEL",
             "ENDLESS SERVITUDE",
             "PROFANE SYMBIOSIS",
+            "ONTO THE NEXT",
+            "OUTFLANKING STRIKE",
         }
         phase_end_cleanup_names = {
             "ASPIRE TO INFAMY",
@@ -2286,19 +2299,25 @@ class StratagemManager(
             "DIVINE INTERVENTION": "Target: destroyed ADEPTA SORORITAS CHARACTER (not Saint Celestine); discard 1-3 Miracle dice",
             "BALEFUL BLESSING": "Target: HERETIC ASTARTES unit after a mortal wound is allocated to it",
             "ARMOUR OF ABHORRENCE": "Target: EMPEROR'S CHILDREN unit selected as an enemy attack target",
+            "ADVANCE AND CLAIM": "Target: EMPEROR'S CHILDREN TRANSPORT with embarked non-Battle-shocked TORMENTORS; select objective you control within range",
             "CAPRICIOUS REACTIONS": "Target: EMPEROR'S CHILDREN unit selected as an enemy shooting attack target",
             "CATALYTIC STIMULUS": "Target: EMPEROR'S CHILDREN unit that lost one or more wounds from an enemy shooter",
+            "CEASELESS ONSLAUGHT": "Target: EMPEROR'S CHILDREN unit that disembarked this turn from a friendly TRANSPORT that made a Normal move",
             "CLOSE-QUARTERS EXCRUCIATION": "Target: EMPEROR'S CHILDREN unit that has not been selected to shoot",
             "COMBAT STIMMS": "Target: EMPEROR'S CHILDREN INFANTRY unit selected as an enemy fight attack target",
             "CONTEMPTUOUS DISREGARD": "Target: EMPEROR'S CHILDREN unit selected as an enemy attack target",
+            "DYNAMIC BREAKTHROUGH": "Target: EMPEROR'S CHILDREN VEHICLE that has not moved this phase",
             "EMBRACE THE PAIN": "Target: EMPEROR'S CHILDREN INFANTRY unit (Fight phase start)",
             "EUPHORIC INSPIRATION": "Target: EMPEROR'S CHILDREN DAEMON unit",
             "MARTIAL PERFECTION": "Target: EMPEROR'S CHILDREN unit selected to fight (not fought)",
             "MUTATION'S CURSE": "Target: HERETIC ASTARTES PSYKER unit; select one visible enemy unit within 12\"",
             "DARK VIGOUR": "Target: EMPEROR'S CHILDREN unit within 9\" of enemy mover (excluding BEASTS/VEHICLES)",
             "NO REST IN DEATH": "Target: HERETIC ASTARTES unit within 9\" of friendly Psyker/Daemon Prince source",
+            "ONTO THE NEXT": "Target: EMPEROR'S CHILDREN unit that destroyed an enemy this phase; select friendly TRANSPORT within 6\"",
+            "OUTFLANKING STRIKE": "Target: one EMPEROR'S CHILDREN TRANSPORT wholly within 9\" of battlefield edge (or two DEDICATED TRANSPORTS)",
             "PRIDEFUL SUPERIORITY": "Target: EMPEROR'S CHILDREN unit selected to fight (not fought)",
             "PROTECTION OF THE DARK PRINCE": "Target: EMPEROR'S CHILDREN unit when an attack/wound is allocated to one of its models",
+            "REACTIVE DISEMBARKATION": "Target: EMPEROR'S CHILDREN TRANSPORT targeted by enemy shooting attacks; disembark one embarked unit",
             "CRUEL RAIDERS": "Target: EMPEROR'S CHILDREN unit wholly within 9\" of edge and >3\" horizontal from enemies",
             "SHROUD OF CHAOS": "Target: HERETIC ASTARTES PSYKER/DAEMON PRINCE source unit",
             "SINUOUS BREACH": "Target: EMPEROR'S CHILDREN DAEMON unit (not yet moved/charged)",
@@ -2794,6 +2813,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._ec_rapid_destroyed_enemy_this_phase().clear()
+        except Exception:
+            raise
+        try:
             if not hasattr(self, "_a_challenge_met_enemy_units"):
                 self._a_challenge_met_enemy_units = {}
             else:
@@ -2864,6 +2887,10 @@ class StratagemManager(
             raise
         try:
             self._queue_emperors_children_coterie_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_emperors_children_rapid_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
 
@@ -3682,6 +3709,10 @@ class StratagemManager(
             raise
         try:
             self._queue_emperors_children_mercurial_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_emperors_children_rapid_phase_end_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -6096,6 +6127,13 @@ class StratagemManager(
             raise
         try:
             self._queue_emperors_children_mercurial_shooting_reactions(
+                attacking_unit=attacking_unit,
+                target_units=target_units,
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_emperors_children_rapid_shooting_reactions(
                 attacking_unit=attacking_unit,
                 target_units=target_units,
             )
@@ -8925,6 +8963,12 @@ class StratagemManager(
             )
         except Exception:
             raise
+        try:
+            self._track_emperors_children_rapid_destroyed_enemy(
+                destroyed_by_unit=kwargs.get("destroyed_by_unit"),
+            )
+        except Exception:
+            raise
         # EMPEROR'S CHILDREN: track units that destroyed enemies in their Fight phase.
         try:
             destroyed_by_unit = kwargs.get("destroyed_by_unit")
@@ -11554,6 +11598,9 @@ class StratagemManager(
         ec_court_result = self._use_emperors_children_court_stratagem(s, **kwargs)
         if ec_court_result is not None:
             return ec_court_result
+        ec_rapid_result = self._use_emperors_children_rapid_stratagem(s, **kwargs)
+        if ec_rapid_result is not None:
+            return ec_rapid_result
         ec_coterie_result = self._use_emperors_children_coterie_stratagem(s, **kwargs)
         if ec_coterie_result is not None:
             return ec_coterie_result

@@ -1249,6 +1249,8 @@ def _validate_disembark(game: object, request: DecisionRequest, result: Decision
     errors = list(validate_option_choice(request, result))
     if errors:
         return errors
+    if is_skip_choice(request, result):
+        return ()
     opt = find_option(request, result.option_id)
     payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
     unit_id = str(payload.get("unit_id", "") or "")
@@ -1265,6 +1267,13 @@ def _validate_disembark(game: object, request: DecisionRequest, result: Decision
         return ("Disembark transport not found.",)
     model_positions = result.payload.get("model_positions")
     if model_positions is not None:
+        ctx = dict(getattr(request, "context", {}) or {})
+        try:
+            max_distance = float(ctx.get("reactive_disembark_range", 0) or 0)
+        except Exception:
+            max_distance = 0.0
+        if max_distance <= 0:
+            max_distance = 3.0
         errors = validate_model_positions(game, unit, model_positions, context="Disembark")
         if errors:
             return errors
@@ -1288,7 +1297,7 @@ def _validate_disembark(game: object, request: DecisionRequest, result: Decision
                 z,
                 transport_unit=transport,
                 game_map=game_map,
-                max_distance=3.0,
+                max_distance=float(max_distance),
                 require_not_in_engagement=True,
             )
             if not bool(check.get("valid", False)):
@@ -1298,6 +1307,8 @@ def _validate_disembark(game: object, request: DecisionRequest, result: Decision
 
 
 def _apply_disembark(game: object, request: DecisionRequest, result: DecisionResult) -> None:
+    if is_skip_choice(request, result):
+        return None
     opt = find_option(request, result.option_id)
     payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
     unit = get_unit(game, str(payload.get("unit_id", "") or ""))
@@ -1309,6 +1320,11 @@ def _apply_disembark(game: object, request: DecisionRequest, result: DecisionRes
     transport = get_unit(game, str(transport_id or ""))
     if transport is None:
         raise RuntimeError("Disembark: transport missing.")
+    ctx = dict(getattr(request, "context", {}) or {})
+    try:
+        disembark_range = float(ctx.get("reactive_disembark_range", 0) or 0)
+    except Exception:
+        disembark_range = 0.0
     model_positions = result.payload.get("model_positions")
     if model_positions is not None:
         apply_model_positions(game, list(model_positions or []))
@@ -1324,7 +1340,46 @@ def _apply_disembark(game: object, request: DecisionRequest, result: DecisionRes
                 current_turn=getattr(game, "turn", 1),
             )
         )
-    unit.disembark(game_map=getattr(game, "map", None), transport_unit=transport, current_turn=getattr(game, "turn", 1))
+    override_keys = (
+        "stratagem_disembark_override_active",
+        "stratagem_disembark_override_transport_id",
+        "stratagem_disembark_override_max_distance",
+        "stratagem_disembark_override_require_not_in_engagement",
+        "stratagem_disembark_override_source",
+    )
+    had_override = False
+    prev_values: dict[str, object] = {}
+    if disembark_range > 0:
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        for key in override_keys:
+            if key in sr:
+                prev_values[key] = sr.get(key)
+        sr["stratagem_disembark_override_active"] = True
+        sr["stratagem_disembark_override_transport_id"] = str(get_entity_id(transport) or "")
+        sr["stratagem_disembark_override_max_distance"] = float(disembark_range)
+        sr["stratagem_disembark_override_require_not_in_engagement"] = True
+        sr["stratagem_disembark_override_source"] = str(ctx.get("reactive_disembark_source", "") or "Reactive Disembark")
+        unit.special_rules = sr
+        had_override = True
+    try:
+        unit.disembark(
+            game_map=getattr(game, "map", None),
+            transport_unit=transport,
+            current_turn=getattr(game, "turn", 1),
+        )
+    finally:
+        if had_override:
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            for key in override_keys:
+                if key in prev_values:
+                    sr[key] = prev_values[key]
+                else:
+                    sr.pop(key, None)
+            unit.special_rules = sr
     return None
 
 

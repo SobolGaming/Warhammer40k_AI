@@ -5346,6 +5346,7 @@ class GameReactiveDecisionsMixin:
         enemy_unit=None,
         ability: dict | None = None,
         trigger: str | None = None,
+        max_units: int | None = None,
     ) -> list[DecisionRequest]:
         if player is None or transport is None:
             return []
@@ -5370,6 +5371,9 @@ class GameReactiveDecisionsMixin:
             for req in pending
             if str(getattr(req, "context", {}).get("unit_id", "") or "")
         }
+        single_pick = int(max_units or 0) == 1
+        if single_pick and pending:
+            return []
 
         eligible = []
         seen = set()
@@ -5395,10 +5399,55 @@ class GameReactiveDecisionsMixin:
             except Exception:
                 pass
             eligible.append(passenger)
+        eligible = sorted(
+            [u for u in list(eligible or []) if u is not None],
+            key=lambda u: str(maybe_entity_id(u) or ""),
+        )
         if not eligible:
             return []
 
         requests: list[DecisionRequest] = []
+        if single_pick:
+            options = []
+            for passenger in eligible:
+                unit_id = maybe_entity_id(passenger)
+                if not unit_id:
+                    continue
+                options.append(
+                    DecisionOption.create(
+                        getattr(passenger, "name", "Unit"),
+                        payload={"unit_id": unit_id, "transport_id": transport_id},
+                    )
+                )
+            options.append(
+                DecisionOption.create(
+                    "Remain embarked",
+                    payload={"action": "skip", "skip": True},
+                )
+            )
+            ctx = {
+                "transport_id": transport_id,
+                "reactive_disembark": True,
+                "reactive_disembark_source": ability_name,
+                "reactive_disembark_max_units": 1,
+            }
+            if enemy_unit_id:
+                ctx["reactive_disembark_enemy_unit_id"] = enemy_unit_id
+            if rng:
+                ctx["reactive_disembark_range"] = int(rng)
+            if trigger:
+                ctx["reactive_disembark_trigger"] = str(trigger)
+            request = DecisionRequest.create(
+                DECISION_DISEMBARK,
+                f"Select one unit to disembark from {getattr(transport, 'name', 'Transport')}",
+                player_id=getattr(player, "id", None),
+                options=options,
+                context=ctx,
+            )
+            self.request_decision(request)
+            requests.append(request)
+            return requests
+
         for passenger in eligible:
             unit_id = maybe_entity_id(passenger)
             if not unit_id:

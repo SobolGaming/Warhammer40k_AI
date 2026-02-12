@@ -3102,6 +3102,29 @@ class ShootingMixin:
             overrides["require_not_in_engagement"] = not bool(
                 sr.get("goretrack_aggressive_disembark_allow_engagement", True)
             )
+        if isinstance(sr, dict) and sr.get("stratagem_disembark_override_active"):
+            tid = str(sr.get("stratagem_disembark_override_transport_id", "") or "")
+            transport_matches = True
+            if tid and transport_unit is not None:
+                try:
+                    transport_matches = tid == str(get_entity_id(transport_unit) or "")
+                except Exception:
+                    transport_matches = True
+            if transport_matches:
+                try:
+                    distance = float(sr.get("stratagem_disembark_override_max_distance", 0) or 0)
+                except Exception:
+                    distance = 0.0
+                if distance > 0:
+                    overrides["max_distance"] = float(distance)
+                if "stratagem_disembark_override_require_not_in_engagement" in sr:
+                    overrides["require_not_in_engagement"] = bool(
+                        sr.get("stratagem_disembark_override_require_not_in_engagement", True)
+                    )
+                if "stratagem_disembark_override_allow_charge_after_normal_move" in sr:
+                    overrides["allow_charge_after_normal_move"] = bool(
+                        sr.get("stratagem_disembark_override_allow_charge_after_normal_move", False)
+                    )
         try:
             tsr = getattr(transport_unit, "special_rules", None)
         except Exception:

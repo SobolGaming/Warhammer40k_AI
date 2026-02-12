@@ -974,6 +974,74 @@ _MERCURIAL_HOST_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _MERCURIAL_HOST_STRATAGEM_DESCRIPTORS.values()
 }
 
+_RAPID_EVISCERATION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010007003": StratagemToolDescriptor(
+        stratagem_id="000010007003",
+        name="Advance and Claim",
+        timing="command_phase_start",
+        target="emperors_children_transport_with_embarked_tormentors_on_controlled_objective",
+        duration="until_opponent_control_greater_end_of_phase",
+        effect="sticky_objective",
+        cp_cost=1,
+        effect_params={"requires_embarked_keyword": "TORMENTORS"},
+    ),
+    "000010007005": StratagemToolDescriptor(
+        stratagem_id="000010007005",
+        name="Ceaseless Onslaught",
+        timing="charge_phase",
+        target="emperors_children_unit_disembarked_this_turn_from_friendly_transport_that_made_normal_move",
+        duration="until_end_of_phase",
+        effect="allow_charge_after_disembark",
+        cp_cost=1,
+    ),
+    "000010007004": StratagemToolDescriptor(
+        stratagem_id="000010007004",
+        name="Dynamic Breakthrough",
+        timing="movement_phase",
+        target="emperors_children_vehicle_unit_not_yet_moved",
+        duration="until_end_of_phase",
+        effect="move_through_enemy_except_monster_vehicle",
+        cp_cost=1,
+        effect_params={"move_types": ["move", "advance", "fall_back"], "auto_pass_desperate_escape": True},
+    ),
+    "000010007002": StratagemToolDescriptor(
+        stratagem_id="000010007002",
+        name="Onto the Next",
+        timing="end_of_fight_phase",
+        target="emperors_children_unit_that_destroyed_enemy_this_phase_and_transport_within_6",
+        duration="immediate",
+        effect="embark_transport_if_within_6",
+        cp_cost=1,
+        range_in=6.0,
+    ),
+    "000010007007": StratagemToolDescriptor(
+        stratagem_id="000010007007",
+        name="Outflanking Strike",
+        timing="end_of_opponent_fight_phase",
+        target="one_or_two_emperors_children_transport_units_wholly_within_9_of_battlefield_edge",
+        duration="immediate",
+        effect="enter_strategic_reserves",
+        cp_cost=1,
+        range_in=9.0,
+        effect_params={"max_units": 2, "two_targets_require_dedicated_transport": True},
+    ),
+    "000010007006": StratagemToolDescriptor(
+        stratagem_id="000010007006",
+        name="Reactive Disembarkation",
+        timing="opponent_shooting_phase_after_enemy_targets_selected",
+        target="emperors_children_transport_unit_targeted_by_enemy_with_embarked_units",
+        duration="immediate",
+        effect="reactive_disembark_one_unit",
+        cp_cost=1,
+        range_in=6.0,
+        effect_params={"max_units": 1},
+    ),
+}
+
+_RAPID_EVISCERATION_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _RAPID_EVISCERATION_STRATAGEM_DESCRIPTORS.values()
+}
+
 
 def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> Optional[StratagemToolDescriptor]:
     if stratagem_id:
@@ -1019,6 +1087,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _MERCURIAL_HOST_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _RAPID_EVISCERATION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
     key = _normalize_name(name)
     if not key:
         return None
@@ -1037,4 +1108,5 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _COURT_OF_THE_PHOENICIAN_STRATAGEM_BY_NAME.get(key)
         or _COTERIE_OF_THE_CONCEITED_STRATAGEM_BY_NAME.get(key)
         or _MERCURIAL_HOST_STRATAGEM_BY_NAME.get(key)
+        or _RAPID_EVISCERATION_STRATAGEM_BY_NAME.get(key)
     )
