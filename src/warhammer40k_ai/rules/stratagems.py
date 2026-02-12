@@ -46,6 +46,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "DEATHLESS DUTY",
     "DEATH ECSTASY",
     "DRAWN TO THE SLAUGHTER",
+    "EMBRACE THE PAIN",
     "ASPIRE TO INFAMY",
     "FAIL NOT THE BLOOD GOD",
     "FRENZIED RESILIENCE",
@@ -69,6 +70,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "HEROIC INTERVENTION",
     "INSANE BRAVERY",
     "MANOEUVRE AND FIRE",
+    "MARTIAL PERFECTION",
     "MORDIAN MINUTE",
     "NEW ORDERS",
     "NO RETREAT!",
@@ -164,12 +166,15 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SINUOUS BREACH",
     "SOULSEEKERS",
     "UNHOLY HASTE",
+    "PROTECTION OF THE DARK PRINCE",
+    "UNSHAKEABLE OPPONENTS",
     "PRETERNATURAL AGILITY",
 }
 
 REACTION_ONLY_STRATAGEM_NAMES = {
     "A CHALLENGE MET",
     "A GRIM WARNING",
+    "ARMOUR OF ABHORRENCE",
     "ARMOUR OF CONTEMPT",
     "A WORTHY SKULL",
     "APOPLECTIC FRENZY",
@@ -184,6 +189,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "DEFIANT TO THE LAST",
     "DEATHLESS DUTY",
     "DEATH ECSTASY",
+    "EMBRACE THE PAIN",
     "FRENZIED RESILIENCE",
     "FEIGNED WEAKNESS",
     "FEIGNED RETREAT",
@@ -201,6 +207,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "FIRE AND FADE",
     "MURDER-CALL",
     "LIGHTNING-FAST REACTIONS",
+    "MARTIAL PERFECTION",
     "SKULLS FOR THE SKULL THRONE!",
     "SMOKESCREEN",
     "SKYBORNE SANCTUARY",
@@ -242,6 +249,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "CONTEMPTUOUS DISREGARD",
     "DIVINE INTERVENTION",
     "SHROUD OF CHAOS",
+    "PROTECTION OF THE DARK PRINCE",
     "PRAISE THE FALLEN",
     "SANCTIFIED IMMOLATION",
     "SPIRIT OF THE MARTYR",
@@ -513,14 +521,15 @@ def parse_defensive_reaction_stratagem(name: str, description: str) -> Optional[
     if duration is None or rest is None:
         return None
 
+    attack_targets_unit_re = r"(?:your unit|a model in your unit)"
     hit_re = re.compile(
-        r"each time (an|a) (?:(?P<atype>melee|ranged) )?attack targets your unit, subtract 1 from the hit roll"
+        rf"each time (an|a) (?:(?P<atype>melee|ranged) )?attack targets {attack_targets_unit_re}, subtract 1 from the hit roll"
     )
     wound_re = re.compile(
-        r"each time (an|a) (?:(?P<atype>melee|ranged) )?attack targets your unit, subtract 1 from the wound roll"
+        rf"each time (an|a) (?:(?P<atype>melee|ranged) )?attack targets {attack_targets_unit_re}, subtract 1 from the wound roll"
     )
     ap_re = re.compile(
-        r"each time an attack targets your unit, worsen the armour penetration characteristic of that attack by 1"
+        rf"each time an attack targets {attack_targets_unit_re}, worsen the armour penetration characteristic of that attack by 1"
     )
     damage_re = re.compile(
         r"each time (an|a) (?:(?P<atype>melee|ranged) )?attack is allocated to a model in your unit, subtract 1 from the damage characteristic of that attack"
@@ -1104,7 +1113,7 @@ class StratagemManager(
         if "COUNTER-OFFENSIVE" in names:
             add("fight_sequence_complete", self._on_fight_sequence_complete)
 
-        if names & {"EPIC CHALLENGE", "PEERLESS WARRIOR"}:
+        if names & {"EPIC CHALLENGE", "PEERLESS WARRIOR", "MARTIAL PERFECTION"}:
             add("fight_unit_selected", self._on_fight_unit_selected)
 
         if names & {"OVERWATCH", "FIRE OVERWATCH", "APOPLECTIC FRENZY", "PUNISH THE CRAVEN"}:
@@ -1123,8 +1132,10 @@ class StratagemManager(
 
         if names & {"SUMMONED BY SLAUGHTER", "PUTRID DETONATION", "SANCTIFIED IMMOLATION"}:
             add("model_destroyed_before_removal", self._on_model_destroyed_before_removal)
-        if "BALEFUL BLESSING" in names:
+        if names & {"BALEFUL BLESSING", "PROTECTION OF THE DARK PRINCE"}:
             add("mortal_wound_allocated", self._on_mortal_wound_allocated)
+        if "PROTECTION OF THE DARK PRINCE" in names:
+            add("attack_allocated", self._on_attack_allocated)
 
         if "FIRE AND FADE" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_fire_and_fade)
@@ -1303,9 +1314,13 @@ class StratagemManager(
             "SPIRIT OF THE MARTYR",
             "DIVINE INTERVENTION",
             "CLOSE-QUARTERS EXCRUCIATION",
+            "EMBRACE THE PAIN",
             "EUPHORIC INSPIRATION",
+            "MARTIAL PERFECTION",
+            "PROTECTION OF THE DARK PRINCE",
             "PRIDEFUL SUPERIORITY",
             "SINUOUS BREACH",
+            "UNSHAKEABLE OPPONENTS",
         }
         needs_phase_end = bool(
             (names & phase_end_trigger_names)
@@ -2255,16 +2270,21 @@ class StratagemManager(
             "SANCTIFIED IMMOLATION": "Target: destroyed ADEPTA SORORITAS VEHICLE model with Deadly Demise",
             "DIVINE INTERVENTION": "Target: destroyed ADEPTA SORORITAS CHARACTER (not Saint Celestine); discard 1-3 Miracle dice",
             "BALEFUL BLESSING": "Target: HERETIC ASTARTES unit after a mortal wound is allocated to it",
+            "ARMOUR OF ABHORRENCE": "Target: EMPEROR'S CHILDREN unit selected as an enemy attack target",
             "CATALYTIC STIMULUS": "Target: EMPEROR'S CHILDREN unit that lost one or more wounds from an enemy shooter",
             "CLOSE-QUARTERS EXCRUCIATION": "Target: EMPEROR'S CHILDREN unit that has not been selected to shoot",
             "CONTEMPTUOUS DISREGARD": "Target: EMPEROR'S CHILDREN unit selected as an enemy attack target",
+            "EMBRACE THE PAIN": "Target: EMPEROR'S CHILDREN INFANTRY unit (Fight phase start)",
             "EUPHORIC INSPIRATION": "Target: EMPEROR'S CHILDREN DAEMON unit",
+            "MARTIAL PERFECTION": "Target: EMPEROR'S CHILDREN unit selected to fight (not fought)",
             "MUTATION'S CURSE": "Target: HERETIC ASTARTES PSYKER unit; select one visible enemy unit within 12\"",
             "NO REST IN DEATH": "Target: HERETIC ASTARTES unit within 9\" of friendly Psyker/Daemon Prince source",
             "PRIDEFUL SUPERIORITY": "Target: EMPEROR'S CHILDREN unit selected to fight (not fought)",
+            "PROTECTION OF THE DARK PRINCE": "Target: EMPEROR'S CHILDREN unit when an attack/wound is allocated to one of its models",
             "SHROUD OF CHAOS": "Target: HERETIC ASTARTES PSYKER/DAEMON PRINCE source unit",
             "SINUOUS BREACH": "Target: EMPEROR'S CHILDREN DAEMON unit (not yet moved/charged)",
             "SOULSEEKERS": "Target: HERETIC ASTARTES unit that has not been selected to shoot",
+            "UNSHAKEABLE OPPONENTS": "Target: EMPEROR'S CHILDREN unit (start of your Command phase)",
             "UNHOLY HASTE": "Target: HERETIC ASTARTES INFANTRY unit that has not been selected to charge",
             "UNBRIDLED CARNAGE": "Target: ORKS unit (not yet fought)",
             "ORKS IS NEVER BEATEN": "Target: ORKS unit (fight on death)",
@@ -2819,6 +2839,10 @@ class StratagemManager(
             raise
         try:
             self._queue_hallowed_martyrs_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_emperors_children_coterie_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
 
@@ -6706,6 +6730,10 @@ class StratagemManager(
         try:
             _queue_peerless_warrior()
             _queue_epic_challenge()
+            self._queue_emperors_children_coterie_fight_unit_selected_reaction(
+                unit=unit,
+                selecting_player=selecting_player,
+            )
         except Exception:
             raise
         # Adeptus Custodes: PEERLESS WARRIOR
@@ -8419,6 +8447,35 @@ class StratagemManager(
                 attacker_unit=attacker_unit,
                 target_model=target_model,
                 phase_name=phase_name,
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_emperors_children_coterie_protection_reaction(
+                target_unit=target_unit,
+                attacker_unit=attacker_unit,
+                target_model=target_model,
+                phase_name=phase_name,
+                trigger_event="mortal_wound_allocated",
+            )
+        except Exception:
+            raise
+
+    def _on_attack_allocated(
+        self,
+        target_unit=None,
+        attacker_unit=None,
+        target_model=None,
+        phase_name: str = "",
+        **_kwargs,
+    ) -> None:
+        try:
+            self._queue_emperors_children_coterie_protection_reaction(
+                target_unit=target_unit,
+                attacker_unit=attacker_unit,
+                target_model=target_model,
+                phase_name=phase_name,
+                trigger_event="attack_allocated",
             )
         except Exception:
             raise
@@ -11457,6 +11514,9 @@ class StratagemManager(
         ec_court_result = self._use_emperors_children_court_stratagem(s, **kwargs)
         if ec_court_result is not None:
             return ec_court_result
+        ec_coterie_result = self._use_emperors_children_coterie_stratagem(s, **kwargs)
+        if ec_coterie_result is not None:
+            return ec_coterie_result
         am_result = self._use_astra_militarum_grizzled_stratagem(s, **kwargs)
         if am_result is not None:
             return am_result
@@ -17263,6 +17323,8 @@ class StratagemManager(
                     trigger_label = "Trigger: battle-shock test"
                 elif r.get("event") == "mortal_wound_allocated":
                     trigger_label = "Trigger: mortal wound allocated"
+                elif r.get("event") == "attack_allocated":
+                    trigger_label = "Trigger: attack allocated"
                 elif r.get("event") == "phase_end":
                     trigger_label = "Trigger: phase end"
             except Exception:

@@ -840,6 +840,71 @@ _COURT_OF_THE_PHOENICIAN_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _COURT_OF_THE_PHOENICIAN_STRATAGEM_DESCRIPTORS.values()
 }
 
+_COTERIE_OF_THE_CONCEITED_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010015005": StratagemToolDescriptor(
+        stratagem_id="000010015005",
+        name="Martial Perfection",
+        timing="fight_phase_on_select_to_fight",
+        target="emperors_children_unit_not_yet_fought",
+        duration="until_end_of_phase",
+        effect="hit_reroll",
+        cp_cost=1,
+        effect_params={"reroll_hit_full": True},
+    ),
+    "000010015006": StratagemToolDescriptor(
+        stratagem_id="000010015006",
+        name="Unbound Arrogance",
+        timing="any_phase_on_friendly_unit_destroyed",
+        target="emperors_children_unit_that_destroyed_an_enemy",
+        duration="immediate",
+        effect="increase_pledge",
+        cp_cost=1,
+        effect_params={"pledge_delta": 1, "once_per_battle_round": True},
+    ),
+    "000010015003": StratagemToolDescriptor(
+        stratagem_id="000010015003",
+        name="Unshakeable Opponents",
+        timing="command_phase",
+        target="emperors_children_unit",
+        duration="until_end_of_turn",
+        effect="ignore_skill_hit_wound_modifiers",
+        cp_cost=1,
+    ),
+    "000010015002": StratagemToolDescriptor(
+        stratagem_id="000010015002",
+        name="Protection of the Dark Prince",
+        timing="any_phase_after_attack_or_mortal_wound_allocated",
+        target="emperors_children_unit_with_allocated_model",
+        duration="until_end_of_phase",
+        effect="feel_no_pain_with_mortal_bonus",
+        cp_cost=1,
+        effect_params={"fnp": 6, "fnp_vs_mortal": 4},
+    ),
+    "000010015004": StratagemToolDescriptor(
+        stratagem_id="000010015004",
+        name="Embrace the Pain",
+        timing="fight_phase_start",
+        target="emperors_children_infantry_unit",
+        duration="until_end_of_phase",
+        effect="engaged_enemy_target_lock",
+        cp_cost=1,
+    ),
+    "000010015007": StratagemToolDescriptor(
+        stratagem_id="000010015007",
+        name="Armour of Abhorrence",
+        timing="opponent_shooting_or_fight_phase_after_targets_selected",
+        target="emperors_children_unit_targeted",
+        duration="until_attacking_unit_finishes_attacks",
+        effect="ap_worsen",
+        cp_cost=1,
+        effect_params={"ap_worsen": 1},
+    ),
+}
+
+_COTERIE_OF_THE_CONCEITED_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _COTERIE_OF_THE_CONCEITED_STRATAGEM_DESCRIPTORS.values()
+}
+
 
 def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> Optional[StratagemToolDescriptor]:
     if stratagem_id:
@@ -879,6 +944,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _COURT_OF_THE_PHOENICIAN_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _COTERIE_OF_THE_CONCEITED_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
     key = _normalize_name(name)
     if not key:
         return None
@@ -895,4 +963,5 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _WARPBANE_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _CABAL_OF_CHAOS_STRATAGEM_BY_NAME.get(key)
         or _COURT_OF_THE_PHOENICIAN_STRATAGEM_BY_NAME.get(key)
+        or _COTERIE_OF_THE_CONCEITED_STRATAGEM_BY_NAME.get(key)
     )

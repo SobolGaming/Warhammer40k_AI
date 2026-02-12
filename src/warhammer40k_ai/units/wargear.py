@@ -3739,6 +3739,37 @@ class WargearProfile:
             if target_model is None:
                 continue
             wound_instance["_allocated_model"] = target_model
+            try:
+                attacker_unit = getattr(attacker, "parent_unit", None)
+                target_unit = getattr(target_model, "parent_unit", None)
+                game = None
+                if attacker_unit is not None:
+                    attacker_army = attacker_unit.get_parent_army() if hasattr(attacker_unit, "get_parent_army") else None
+                    game = getattr(getattr(attacker_army, "player", None), "game", None)
+                if game is None and target_unit is not None:
+                    target_army = target_unit.get_parent_army() if hasattr(target_unit, "get_parent_army") else None
+                    game = getattr(getattr(target_army, "player", None), "game", None)
+                if game is not None and hasattr(game, "event_system"):
+                    phase_key = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    phase_name_map = {
+                        "COMMAND_PHASE": "Command phase",
+                        "MOVEMENT_PHASE": "Movement phase",
+                        "SHOOTING_PHASE": "Shooting phase",
+                        "CHARGE_PHASE": "Charge phase",
+                        "FIGHT_PHASE": "Fight phase",
+                    }
+                    phase_name = phase_name_map.get(phase_key, phase_key.title().replace("_", " ")) if phase_key else ""
+                    game.event_system.publish(
+                        "attack_allocated",
+                        attacker_model=attacker,
+                        attacker_unit=attacker_unit,
+                        target_model=target_model,
+                        target_unit=target_unit,
+                        weapon_profile=self,
+                        phase_name=phase_name,
+                    )
+            except Exception:
+                pass
 
             # Lethal Ichor: count melee attacks allocated to this unit's models (max 6 per attacking unit).
             try:
@@ -5288,6 +5319,51 @@ class WargearProfile:
         except Exception:
             return False
 
+    def _coterie_unshakeable_opponents_source(self, attacker: 'Model') -> str:
+        unit = getattr(attacker, "parent_unit", None)
+        if unit is None:
+            return ""
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("coterie_unshakeable_opponents_active")):
+            return ""
+
+        game = None
+        try:
+            army = root.get_parent_army()
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        except Exception:
+            game = None
+        if game is not None:
+            try:
+                marked_turn = int(sr.get("coterie_unshakeable_opponents_turn", 0) or 0)
+            except Exception:
+                marked_turn = 0
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                current_turn = 0
+            if marked_turn and current_turn and marked_turn != current_turn:
+                return ""
+            owner_id = str(sr.get("coterie_unshakeable_opponents_turn_owner", "") or "")
+            if owner_id:
+                current_player = getattr(game, "get_current_player", lambda: None)()
+                current_owner = ""
+                if current_player is not None:
+                    try:
+                        current_owner = str(get_entity_id(current_player) or getattr(current_player, "id", ""))
+                    except Exception:
+                        current_owner = str(getattr(current_player, "id", "") or "")
+                if current_owner and current_owner != owner_id:
+                    return ""
+
+        return str(sr.get("coterie_unshakeable_opponents_source", "") or "UNSHAKEABLE OPPONENTS").strip() or "UNSHAKEABLE OPPONENTS"
+
     def _ignore_hit_modifier_rule(self, attacker: 'Model') -> Optional[dict]:
         """
         Detect unit/leader abilities that allow ignoring Hit roll modifiers and,
@@ -5305,6 +5381,15 @@ class WargearProfile:
             root = unit.get_attached_unit_root()
         except Exception:
             root = unit
+
+        coterie_source = self._coterie_unshakeable_opponents_source(attacker)
+        if coterie_source:
+            return {
+                "name": coterie_source,
+                "attack_type": "any",
+                "skill_kinds": {"ballistic", "weapon"},
+                "allow_hit": True,
+            }
 
         try:
             is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
@@ -5389,6 +5474,14 @@ class WargearProfile:
             root = unit.get_attached_unit_root()
         except Exception:
             root = unit
+
+        coterie_source = self._coterie_unshakeable_opponents_source(attacker)
+        if coterie_source:
+            return {
+                "name": coterie_source,
+                "attack_type": "any",
+                "allow_wound": True,
+            }
 
         try:
             is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())

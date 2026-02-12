@@ -83,6 +83,11 @@ class EmperorsChildrenStratagemMixin:
         checker = getattr(mgr, "is_court_of_the_phoenician", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_coterie_of_the_conceited_detachment(self) -> bool:
+        mgr = self._get_emperors_children_mgr()
+        checker = getattr(mgr, "is_coterie_of_conceited", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_emperors_children_unit(self, unit: Any) -> bool:
         root = self._ec_root(unit)
         if root is None:
@@ -101,14 +106,29 @@ class EmperorsChildrenStratagemMixin:
             return False
         return self._ec_has_keyword(root, "DAEMON")
 
+    def _is_emperors_children_infantry_unit(self, unit: Any) -> bool:
+        root = self._ec_root(unit)
+        if root is None:
+            return False
+        return self._is_emperors_children_unit(root) and self._ec_has_keyword(root, "INFANTRY")
+
     def _ec_targetable_units(
         self,
         *,
+        detachment: str = "court",
         require_daemon: bool = False,
+        require_infantry: bool = False,
         require_not_shot: bool = False,
         require_not_fought: bool = False,
     ) -> list[Any]:
-        if not self._is_court_of_the_phoenician_detachment():
+        det = str(detachment or "court").strip().lower()
+        if det == "court":
+            if not self._is_court_of_the_phoenician_detachment():
+                return []
+        elif det == "coterie":
+            if not self._is_coterie_of_the_conceited_detachment():
+                return []
+        else:
             return []
         get_army = getattr(self.player, "get_army", None)
         army = get_army() if callable(get_army) else getattr(self.player, "army", None)
@@ -135,6 +155,8 @@ class EmperorsChildrenStratagemMixin:
             if not self._is_emperors_children_unit(root):
                 continue
             if require_daemon and not self._is_emperors_children_daemon_unit(root):
+                continue
+            if require_infantry and not self._is_emperors_children_infantry_unit(root):
                 continue
             if require_not_shot and bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
                 continue
@@ -186,6 +208,7 @@ class EmperorsChildrenStratagemMixin:
         stratagem_name: str,
         phase_name: str,
         enemy_unit: Any = None,
+        target_unit: Any = None,
     ) -> bool:
         for reaction in list(getattr(self, "_pending_reactions", []) or []):
             if str(reaction.get("event", "") or "") != str(event_name):
@@ -196,6 +219,10 @@ class EmperorsChildrenStratagemMixin:
                 continue
             if enemy_unit is not None and reaction.get("enemy_unit") is not enemy_unit:
                 continue
+            if target_unit is not None:
+                reaction_target = self._ec_root(reaction.get("target_unit") or reaction.get("unit"))
+                if reaction_target is not self._ec_root(target_unit):
+                    continue
             return True
         return False
 
@@ -409,6 +436,159 @@ class EmperorsChildrenStratagemMixin:
         if len(candidates) == 1:
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload)
+
+    def _queue_emperors_children_coterie_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_coterie_of_the_conceited_detachment():
+            return
+        if str(getattr(phase, "name", "") or "").strip().upper() != "FIGHT_PHASE":
+            return
+        stratagem = self.get_by_name("EMBRACE THE PAIN")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if self._ec_reaction_already_queued(
+            event_name="phase_start",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+        ):
+            return
+        candidates = self._ec_targetable_units(detachment="coterie", require_infantry=True)
+        if not candidates:
+            return
+        payload = {
+            "event": "phase_start",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+            payload["unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_emperors_children_coterie_fight_unit_selected_reaction(
+        self,
+        *,
+        unit: Any,
+        selecting_player: Any,
+    ) -> None:
+        if not self._is_coterie_of_the_conceited_detachment():
+            return
+        if selecting_player is not self.player:
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "fight phase":
+            return
+        root = self._ec_root(unit)
+        if root is None:
+            return
+        if not self._ec_owned_by_player(root, self.player):
+            return
+        if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+            return
+        if self._unit_cannot_be_target_of_stratagem(root):
+            return
+        if not self._is_emperors_children_unit(root):
+            return
+        if bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+            return
+        stratagem = self.get_by_name("MARTIAL PERFECTION")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if self._ec_reaction_already_queued(
+            event_name="fight_unit_selected",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+            target_unit=root,
+        ):
+            return
+        self._queue_reaction(
+            {
+                "event": "fight_unit_selected",
+                "phase_name": "Fight phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "target_unit": root,
+                "unit": root,
+                "candidates": [root],
+                "fight_unit_selected": True,
+            },
+            use_timer=False,
+        )
+
+    def _queue_emperors_children_coterie_protection_reaction(
+        self,
+        *,
+        target_unit: Any,
+        attacker_unit: Any = None,
+        target_model: Any = None,
+        phase_name: str = "",
+        trigger_event: str = "",
+    ) -> None:
+        if not self._is_coterie_of_the_conceited_detachment():
+            return
+        root = self._ec_root(target_unit)
+        if root is None:
+            return
+        if not self._ec_owned_by_player(root, self.player):
+            return
+        if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+            return
+        if self._unit_cannot_be_target_of_stratagem(root):
+            return
+        if not self._is_emperors_children_unit(root):
+            return
+        stratagem = self.get_by_name("PROTECTION OF THE DARK PRINCE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        event_name = str(trigger_event or "attack_allocated").strip().lower() or "attack_allocated"
+        if event_name not in {"attack_allocated", "mortal_wound_allocated"}:
+            event_name = "attack_allocated"
+        if not phase_name:
+            phase_name = str(getattr(self, "_current_phase_name", "") or "")
+        if not phase_name:
+            phase_key = str(getattr(getattr(self.game, "phase", None), "name", "") or "").strip().upper()
+            phase_name = {
+                "COMMAND_PHASE": "Command phase",
+                "MOVEMENT_PHASE": "Movement phase",
+                "SHOOTING_PHASE": "Shooting phase",
+                "CHARGE_PHASE": "Charge phase",
+                "FIGHT_PHASE": "Fight phase",
+            }.get(phase_key, phase_key.title().replace("_", " ")) if phase_key else ""
+        if not phase_name:
+            phase_name = "Any phase"
+        if self._ec_reaction_already_queued(
+            event_name=event_name,
+            stratagem_name=stratagem.name,
+            phase_name=phase_name,
+            target_unit=root,
+        ):
+            return
+        payload = {
+            "event": event_name,
+            "phase_name": phase_name,
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "target_unit": root,
+            "unit": root,
+            "attacking_unit": attacker_unit,
+            "target_model": target_model,
+            "candidates": [root],
+            "attack_allocated": bool(event_name == "attack_allocated"),
+            "mortal_wound_allocated": bool(event_name == "mortal_wound_allocated"),
+        }
+        self._queue_reaction(payload, use_timer=False)
 
     def _court_effective_cp_cost(self, stratagem: Any, *, target_unit: Any = None, enemy_unit: Any = None) -> int:
         cp_cost = int(getattr(stratagem, "cp_cost", 0) or 0)
@@ -881,6 +1061,295 @@ class EmperorsChildrenStratagemMixin:
         )
         return True
 
+    def _use_coterie_martial_perfection(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        from_pending = False
+        if unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "MARTIAL PERFECTION":
+                    continue
+                from_pending = True
+                unit = reaction.get("unit") or reaction.get("target_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                kwargs.setdefault("fight_unit_selected", reaction.get("fight_unit_selected"))
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: MARTIAL PERFECTION: no target unit provided")
+            return False
+
+        root = self._ec_root(unit)
+        if root is None:
+            return False
+        if not self._is_coterie_of_the_conceited_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: MARTIAL PERFECTION: wrong phase")
+            return False
+        trigger_name = str(kwargs.get("trigger", "") or "").strip().lower()
+        trigger_flag = bool(kwargs.get("fight_unit_selected", False))
+        if not from_pending and not trigger_flag and trigger_name not in {"fight_unit_selected", "fight_unit"}:
+            logger.error("ERROR: MARTIAL PERFECTION: missing fight-unit-selected trigger context")
+            return False
+        if candidates and not self._ec_unit_in_candidates(root, candidates):
+            logger.error("ERROR: MARTIAL PERFECTION: target is not currently eligible")
+            return False
+        if not self._ec_owned_by_player(root, self.player):
+            logger.error("ERROR: MARTIAL PERFECTION: target unit is not yours")
+            return False
+        if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: MARTIAL PERFECTION: target cannot be selected")
+            return False
+        if not self._is_emperors_children_unit(root):
+            logger.error("ERROR: MARTIAL PERFECTION: target must be an EMPEROR'S CHILDREN unit")
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+            logger.error("ERROR: MARTIAL PERFECTION: target has already fought this phase")
+            return False
+        if not self._court_spend_cp(stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["coterie_martial_perfection_active"] = True
+        sr["coterie_martial_perfection_expires_phase"] = "FIGHT_PHASE"
+        sr["coterie_martial_perfection_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["coterie_martial_perfection_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["coterie_martial_perfection_source"] = str(stratagem.name or "MARTIAL PERFECTION")
+        root.special_rules = sr
+
+        self._court_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: MARTIAL PERFECTION: %s can re-roll Hit rolls this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_coterie_unshakeable_opponents(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: UNSHAKEABLE OPPONENTS: no target unit provided")
+            return False
+
+        root = self._ec_root(unit)
+        if root is None:
+            return False
+        if not self._is_coterie_of_the_conceited_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "command phase":
+            logger.error("ERROR: UNSHAKEABLE OPPONENTS: wrong phase")
+            return False
+        if candidates and not self._ec_unit_in_candidates(root, candidates):
+            logger.error("ERROR: UNSHAKEABLE OPPONENTS: target is not currently eligible")
+            return False
+        if not self._ec_owned_by_player(root, self.player):
+            logger.error("ERROR: UNSHAKEABLE OPPONENTS: target unit is not yours")
+            return False
+        if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: UNSHAKEABLE OPPONENTS: target cannot be selected")
+            return False
+        if not self._is_emperors_children_unit(root):
+            logger.error("ERROR: UNSHAKEABLE OPPONENTS: target must be an EMPEROR'S CHILDREN unit")
+            return False
+        if not self._court_spend_cp(stratagem, target_unit=root):
+            return False
+
+        current_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["coterie_unshakeable_opponents_active"] = True
+        sr["coterie_unshakeable_opponents_expires_phase"] = "FIGHT_PHASE"
+        sr["coterie_unshakeable_opponents_turn_owner"] = str(getattr(current_player, "id", "") or "")
+        sr["coterie_unshakeable_opponents_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["coterie_unshakeable_opponents_source"] = str(stratagem.name or "UNSHAKEABLE OPPONENTS")
+        root.special_rules = sr
+
+        self._court_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: UNSHAKEABLE OPPONENTS: %s can ignore BS/WS/Hit/Wound modifiers until end of turn.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_coterie_protection_of_the_dark_prince(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        from_pending = False
+        if unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "PROTECTION OF THE DARK PRINCE":
+                    continue
+                from_pending = True
+                unit = reaction.get("unit") or reaction.get("target_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                kwargs.setdefault("attack_allocated", reaction.get("attack_allocated"))
+                kwargs.setdefault("mortal_wound_allocated", reaction.get("mortal_wound_allocated"))
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: PROTECTION OF THE DARK PRINCE: no target unit provided")
+            return False
+
+        root = self._ec_root(unit)
+        if root is None:
+            return False
+        if not self._is_coterie_of_the_conceited_detachment():
+            return False
+        if candidates and not self._ec_unit_in_candidates(root, candidates):
+            logger.error("ERROR: PROTECTION OF THE DARK PRINCE: target is not currently eligible")
+            return False
+        if not self._ec_owned_by_player(root, self.player):
+            logger.error("ERROR: PROTECTION OF THE DARK PRINCE: target unit is not yours")
+            return False
+        if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: PROTECTION OF THE DARK PRINCE: target cannot be selected")
+            return False
+        if not self._is_emperors_children_unit(root):
+            logger.error("ERROR: PROTECTION OF THE DARK PRINCE: target must be an EMPEROR'S CHILDREN unit")
+            return False
+        trigger_name = str(kwargs.get("trigger", "") or "").strip().lower()
+        has_attack_trigger = bool(kwargs.get("attack_allocated", False))
+        has_mortal_trigger = bool(kwargs.get("mortal_wound_allocated", False))
+        if (
+            not from_pending
+            and not has_attack_trigger
+            and not has_mortal_trigger
+            and trigger_name not in {"attack_allocated", "mortal_wound_allocated"}
+        ):
+            logger.error("ERROR: PROTECTION OF THE DARK PRINCE: missing allocation trigger context")
+            return False
+        if not self._court_spend_cp(stratagem, target_unit=root):
+            return False
+
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "")
+        phase_key = str(self._phase_key_from_name(phase_name) or "").strip().upper()
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        entries = list(sr.get("bearer_unit_fnp") or [])
+        keep: list[Any] = []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                keep.append(entry)
+                continue
+            if str(entry.get("source_key", "") or "") == "coterie_protection_dark_prince":
+                continue
+            keep.append(entry)
+        base_entry = {
+            "value": 6,
+            "condition": None,
+            "source": str(stratagem.name or "PROTECTION OF THE DARK PRINCE"),
+            "source_key": "coterie_protection_dark_prince",
+            "expires_phase": phase_key,
+        }
+        mortal_entry = {
+            "value": 4,
+            "condition": "against mortal wounds",
+            "source": str(stratagem.name or "PROTECTION OF THE DARK PRINCE"),
+            "source_key": "coterie_protection_dark_prince",
+            "expires_phase": phase_key,
+        }
+        keep.append(base_entry)
+        keep.append(mortal_entry)
+        sr["bearer_unit_fnp"] = keep
+        sr["coterie_protection_dark_prince_active"] = True
+        sr["coterie_protection_dark_prince_expires_phase"] = phase_key
+        sr["coterie_protection_dark_prince_source"] = str(stratagem.name or "PROTECTION OF THE DARK PRINCE")
+        root.special_rules = sr
+
+        self._court_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: PROTECTION OF THE DARK PRINCE: %s gains Feel No Pain 6+ (4+ vs mortal wounds) this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_coterie_embrace_the_pain(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "EMBRACE THE PAIN":
+                    continue
+                unit = reaction.get("unit") or reaction.get("target_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: EMBRACE THE PAIN: no target unit provided")
+            return False
+
+        root = self._ec_root(unit)
+        if root is None:
+            return False
+        if not self._is_coterie_of_the_conceited_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: EMBRACE THE PAIN: wrong phase")
+            return False
+        if candidates and not self._ec_unit_in_candidates(root, candidates):
+            logger.error("ERROR: EMBRACE THE PAIN: target is not currently eligible")
+            return False
+        if not self._ec_owned_by_player(root, self.player):
+            logger.error("ERROR: EMBRACE THE PAIN: target unit is not yours")
+            return False
+        if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: EMBRACE THE PAIN: target cannot be selected")
+            return False
+        if not self._is_emperors_children_infantry_unit(root):
+            logger.error("ERROR: EMBRACE THE PAIN: target must be an EMPEROR'S CHILDREN INFANTRY unit")
+            return False
+        if not self._court_spend_cp(stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["suffering_and_sacrifice_active"] = True
+        sr["suffering_and_sacrifice_expires_phase"] = "FIGHT_PHASE"
+        sr["suffering_and_sacrifice_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["suffering_and_sacrifice_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["suffering_and_sacrifice_source"] = str(stratagem.name or "EMBRACE THE PAIN")
+        root.special_rules = sr
+
+        self._court_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: EMBRACE THE PAIN: enemy units in Engagement Range must target %s this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
     def _cleanup_emperors_children_court_phase_end_effects(self, *, phase: Any) -> None:
         phase_name = str(getattr(phase, "name", "") or "").strip().upper()
         if not phase_name:
@@ -965,6 +1434,78 @@ class EmperorsChildrenStratagemMixin:
                     ):
                         sr.pop(key, None)
 
+            if phase_name == "FIGHT_PHASE" and bool(sr.get("coterie_martial_perfection_active")):
+                exp = str(sr.get("coterie_martial_perfection_expires_phase", "") or "").strip().upper()
+                if not exp or exp == "FIGHT_PHASE":
+                    for key in (
+                        "coterie_martial_perfection_active",
+                        "coterie_martial_perfection_expires_phase",
+                        "coterie_martial_perfection_owner",
+                        "coterie_martial_perfection_turn",
+                        "coterie_martial_perfection_source",
+                    ):
+                        sr.pop(key, None)
+
+            if bool(sr.get("coterie_protection_dark_prince_active")):
+                exp = str(sr.get("coterie_protection_dark_prince_expires_phase", "") or "").strip().upper()
+                if not exp or exp == phase_name:
+                    entries = list(sr.get("bearer_unit_fnp") or [])
+                    kept: list[Any] = []
+                    for entry in entries:
+                        if isinstance(entry, dict) and str(entry.get("source_key", "") or "") == "coterie_protection_dark_prince":
+                            continue
+                        kept.append(entry)
+                    if kept:
+                        sr["bearer_unit_fnp"] = kept
+                    else:
+                        sr.pop("bearer_unit_fnp", None)
+                    for key in (
+                        "coterie_protection_dark_prince_active",
+                        "coterie_protection_dark_prince_expires_phase",
+                        "coterie_protection_dark_prince_source",
+                    ):
+                        sr.pop(key, None)
+
+            if phase_name == "FIGHT_PHASE" and bool(sr.get("coterie_unshakeable_opponents_active")):
+                owner_id = str(sr.get("coterie_unshakeable_opponents_turn_owner", "") or "")
+                if owner_id:
+                    current_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+                    if str(getattr(current_player, "id", "") or "") != owner_id:
+                        root.special_rules = sr
+                        continue
+                try:
+                    effect_turn = int(sr.get("coterie_unshakeable_opponents_turn", 0) or 0)
+                except Exception:
+                    effect_turn = 0
+                try:
+                    current_turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+                except Exception:
+                    current_turn = 0
+                if effect_turn and current_turn and effect_turn != current_turn:
+                    root.special_rules = sr
+                    continue
+                for key in (
+                    "coterie_unshakeable_opponents_active",
+                    "coterie_unshakeable_opponents_expires_phase",
+                    "coterie_unshakeable_opponents_turn_owner",
+                    "coterie_unshakeable_opponents_turn",
+                    "coterie_unshakeable_opponents_source",
+                ):
+                    sr.pop(key, None)
+
+            if phase_name == "FIGHT_PHASE" and bool(sr.get("suffering_and_sacrifice_active")):
+                source = str(sr.get("suffering_and_sacrifice_source", "") or "").strip().upper()
+                exp = str(sr.get("suffering_and_sacrifice_expires_phase", "") or "").strip().upper()
+                if source == "EMBRACE THE PAIN" and (not exp or exp == "FIGHT_PHASE"):
+                    for key in (
+                        "suffering_and_sacrifice_active",
+                        "suffering_and_sacrifice_expires_phase",
+                        "suffering_and_sacrifice_turn_owner",
+                        "suffering_and_sacrifice_turn",
+                        "suffering_and_sacrifice_source",
+                    ):
+                        sr.pop(key, None)
+
             root.special_rules = sr
 
     def _use_emperors_children_court_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
@@ -983,4 +1524,18 @@ class EmperorsChildrenStratagemMixin:
             return self._use_court_sinuous_breach(stratagem, **kwargs)
         if name_u == "CATALYTIC STIMULUS":
             return self._use_court_catalytic_stimulus(stratagem, **kwargs)
+        return None
+
+    def _use_emperors_children_coterie_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None:
+            return None
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "MARTIAL PERFECTION":
+            return self._use_coterie_martial_perfection(stratagem, **kwargs)
+        if name_u == "UNSHAKEABLE OPPONENTS":
+            return self._use_coterie_unshakeable_opponents(stratagem, **kwargs)
+        if name_u == "PROTECTION OF THE DARK PRINCE":
+            return self._use_coterie_protection_of_the_dark_prince(stratagem, **kwargs)
+        if name_u == "EMBRACE THE PAIN":
+            return self._use_coterie_embrace_the_pain(stratagem, **kwargs)
         return None
