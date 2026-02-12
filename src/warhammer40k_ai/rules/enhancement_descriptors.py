@@ -395,6 +395,53 @@ _SPECTACLE_OF_SPITE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPECTACLE_OF_SPITE_DESCRIPTORS.values()
 }
 
+_COURT_OF_THE_PHOENICIAN_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010654002": EnhancementToolDescriptor(
+        enhancement_id="000010654002",
+        name="Tears of the Phoenix",
+        timing="passive",
+        target="bearer_unit_melee_attacks",
+        duration="constant",
+        effect="ignore_melee_ws_hit_wound_modifiers",
+        effect_params={
+            "ignore_weapon_skill_modifiers": True,
+            "ignore_hit_roll_modifiers": True,
+            "ignore_wound_roll_modifiers": True,
+        },
+    ),
+    "000010654003": EnhancementToolDescriptor(
+        enhancement_id="000010654003",
+        name="Exalted Patron",
+        timing="declare_battle_formations",
+        target="bearer",
+        duration="battle_setup_and_constant",
+        effect="bearer_move_bonus_and_attach_to_flawless_blades",
+        effect_params={"move_bonus": 1},
+    ),
+    "000010654004": EnhancementToolDescriptor(
+        enhancement_id="000010654004",
+        name="Soulstain Made Manifest",
+        timing="start_of_fight_phase",
+        target="enemy_unit_within_engagement_range_of_bearer",
+        duration="instant",
+        effect="optional_battleshock_test_with_modifier",
+        effect_params={"test_modifier": -1, "optional": True},
+    ),
+    "000010654005": EnhancementToolDescriptor(
+        enhancement_id="000010654005",
+        name="Spiritsliver",
+        timing="passive",
+        target="bearer_melee_weapons",
+        duration="constant",
+        effect="bearer_melee_strength_attacks_bonus",
+        effect_params={"strength_bonus": 1, "attacks_bonus": 1},
+    ),
+}
+
+_COURT_OF_THE_PHOENICIAN_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _COURT_OF_THE_PHOENICIAN_DESCRIPTORS.values()
+}
+
 _SLAANESHS_CHOSEN_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010018002": EnhancementToolDescriptor(
         enhancement_id="000010018002",
@@ -835,6 +882,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPECTACLE_OF_SPITE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _COURT_OF_THE_PHOENICIAN_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SLAANESHS_CHOSEN_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -874,6 +924,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _AELDARI_GUARDIAN_BATTLEHOST_BY_NAME.get(key)
         or _CABAL_OF_CHAOS_BY_NAME.get(key)
         or _SPECTACLE_OF_SPITE_BY_NAME.get(key)
+        or _COURT_OF_THE_PHOENICIAN_BY_NAME.get(key)
         or _SLAANESHS_CHOSEN_BY_NAME.get(key)
         or _COTERIE_OF_CONCEITED_BY_NAME.get(key)
         or _CARNIVAL_OF_EXCESS_BY_NAME.get(key)

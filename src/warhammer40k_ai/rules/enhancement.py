@@ -1038,6 +1038,44 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 
+        if name == "tears of the phoenix" or enh_id == "000010654002":
+            if not is_court_of_the_phoenician:
+                return
+            unit.special_rules["enhancement_tears_of_the_phoenix"] = True
+            unit.special_rules["enhancement_tears_of_the_phoenix_ignore_weapon_skill_modifiers"] = True
+            unit.special_rules["enhancement_tears_of_the_phoenix_ignore_hit_roll_modifiers"] = True
+            unit.special_rules["enhancement_tears_of_the_phoenix_ignore_wound_roll_modifiers"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "exalted patron" or enh_id == "000010654003":
+            if not is_court_of_the_phoenician:
+                return
+            unit.special_rules["enhancement_exalted_patron"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "soulstain made manifest" or enh_id == "000010654004":
+            if not is_court_of_the_phoenician:
+                return
+            unit.special_rules["enhancement_soulstain_made_manifest"] = True
+            unit.special_rules["enhancement_soulstain_battleshock_test_modifier"] = -1
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "spiritsliver" or enh_id == "000010654005":
+            if not is_court_of_the_phoenician:
+                return
+            unit.special_rules["enhancement_spiritsliver"] = True
+            unit.special_rules["enhancement_bearer_melee_strength_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_strength_bonus", 0) or 0
+            ) + 1
+            unit.special_rules["enhancement_bearer_melee_attacks_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_attacks_bonus", 0) or 0
+            ) + 1
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
         if name == "empyric suffusion" or enh_id == "000010010002":
             if not is_carnival_of_excess:
                 return

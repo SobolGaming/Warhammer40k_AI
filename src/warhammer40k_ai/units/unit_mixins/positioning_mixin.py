@@ -367,6 +367,32 @@ class PositioningMixin:
         self._ability_cache[cache_key] = bool(found)
         return bool(found)
 
+    def has_exalted_patron(self) -> bool:
+        """True if this unit has the Exalted Patron enhancement."""
+        cache_key = "exalted_patron"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache[cache_key])
+        found = False
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("enhancement_exalted_patron"):
+                found = True
+        except Exception:
+            found = False
+        if not found:
+            try:
+                enh = getattr(self, "enhancement", None)
+                name = str(getattr(enh, "name", "") or "").strip().lower()
+                enh_id = str(getattr(enh, "id", "") or "").strip()
+                if name == "exalted patron" or enh_id == "000010654003":
+                    found = True
+            except Exception:
+                found = False
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = bool(found)
+        return bool(found)
+
     def _attached_unit_has_enhancement_flag(
         self,
         flag_key: str,
@@ -701,6 +727,64 @@ class PositioningMixin:
         except Exception:
             name = ""
         return name == "goremongers"
+
+    def _is_lord_exultant(self) -> bool:
+        try:
+            dsid = str(getattr(getattr(self, "_datasheet", None), "id", "") or "").strip()
+        except Exception:
+            dsid = ""
+        if dsid == "000004078":
+            return True
+        try:
+            name = self._normalize_attached_unit_name(getattr(self, "name", ""))
+        except Exception:
+            name = ""
+        return name == "lord exultant"
+
+    def _exalted_patron_bodyguard_allowed(self, bodyguard) -> bool:
+        if bodyguard is None:
+            return False
+        try:
+            dsid = str(getattr(getattr(bodyguard, "_datasheet", None), "id", "") or "").strip()
+        except Exception:
+            dsid = ""
+        if dsid == "000004089":
+            return True
+        try:
+            name = self._normalize_attached_unit_name(getattr(bodyguard, "name", ""))
+        except Exception:
+            name = ""
+        return name == "flawless blades"
+
+    def _exalted_patron_is_bearer(self) -> bool:
+        if not self.has_exalted_patron():
+            return False
+        if not bool(getattr(self, "is_leader", False)):
+            return False
+        if not self._is_lord_exultant():
+            return False
+        try:
+            army = self.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "emperors_children_detachments", None) if army is not None else None
+        if mgr is None:
+            mgr = getattr(army, "emperors_children", None) if army is not None else None
+        if mgr is None:
+            return False
+        try:
+            if not mgr.is_court_of_the_phoenician():
+                return False
+        except Exception:
+            return False
+        return True
+
+    def _exalted_patron_can_attach_to(self, bodyguard) -> bool:
+        if bodyguard is None:
+            return False
+        if not self._exalted_patron_is_bearer():
+            return False
+        return self._exalted_patron_bodyguard_allowed(bodyguard)
 
     def _disciple_of_khorne_active_leaders(self) -> list["Unit"]:
         try:

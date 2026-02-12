@@ -5210,6 +5210,32 @@ class WargearProfile:
             return None
         return str(rule.get("name") or "Ignore modifiers")
 
+    def _tears_of_the_phoenix_ignore_modifiers_active(self, attacker: 'Model') -> bool:
+        unit = getattr(attacker, "parent_unit", None)
+        if unit is None:
+            return False
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        try:
+            has_active = getattr(root, "_attached_unit_has_active_enhancement", None)
+            if callable(has_active):
+                return bool(
+                    has_active(
+                        "enhancement_tears_of_the_phoenix",
+                        enhancement_id="000010654002",
+                        enhancement_name="Tears of the Phoenix",
+                    )
+                )
+        except Exception:
+            pass
+        try:
+            sr = getattr(unit, "special_rules", None)
+            return bool(isinstance(sr, dict) and sr.get("enhancement_tears_of_the_phoenix"))
+        except Exception:
+            return False
+
     def _ignore_hit_modifier_rule(self, attacker: 'Model') -> Optional[dict]:
         """
         Detect unit/leader abilities that allow ignoring Hit roll modifiers and,
@@ -5227,6 +5253,18 @@ class WargearProfile:
             root = unit.get_attached_unit_root()
         except Exception:
             root = unit
+
+        try:
+            is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+        except Exception:
+            is_melee = False
+        if is_melee and self._tears_of_the_phoenix_ignore_modifiers_active(attacker):
+            return {
+                "name": "Tears of the Phoenix",
+                "attack_type": "melee",
+                "skill_kinds": {"weapon"},
+                "allow_hit": True,
+            }
 
         entries = []
         try:
@@ -5271,6 +5309,86 @@ class WargearProfile:
                 "attack_type": attack_type,
                 "skill_kinds": {"ballistic" if has_bs else None, "weapon" if has_ws else None} - {None},
                 "allow_hit": True,
+            }
+        return None
+
+    def _ignore_wound_modifier_rule_name(self, attacker: 'Model') -> Optional[str]:
+        rule = None
+        try:
+            rule = self._ignore_wound_modifier_rule(attacker)
+        except Exception:
+            rule = None
+        if not rule:
+            return None
+        return str(rule.get("name") or "Ignore modifiers")
+
+    def _ignore_wound_modifier_rule(self, attacker: 'Model') -> Optional[dict]:
+        """
+        Detect rules that allow ignoring Wound roll modifiers.
+        Returns:
+            - name: ability name
+            - attack_type: "ranged" | "melee" | "any"
+            - allow_wound: bool
+        """
+        unit = getattr(attacker, "parent_unit", None)
+        if unit is None:
+            return None
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+
+        try:
+            is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+        except Exception:
+            is_melee = False
+        if is_melee and self._tears_of_the_phoenix_ignore_modifiers_active(attacker):
+            return {
+                "name": "Tears of the Phoenix",
+                "attack_type": "melee",
+                "allow_wound": True,
+            }
+
+        entries = []
+        try:
+            for name, desc in root._iter_ability_entries_for_rules():
+                entries.append((name, desc))
+        except Exception:
+            pass
+        try:
+            for ab, _leader in root._iter_attached_leader_leading_abilities():
+                try:
+                    name = str(getattr(ab, "name", "") or "")
+                    desc = str(getattr(ab, "description", "") or "")
+                except Exception:
+                    name = ""
+                    desc = ""
+                entries.append((name, desc))
+        except Exception:
+            pass
+
+        for name, desc in entries:
+            text_src = desc or name or ""
+            try:
+                text = root._normalize_rules_text(text_src)
+            except Exception:
+                text = str(text_src or "")
+            if not text:
+                continue
+            low = text.lower()
+            if "ignore" not in low or "modifier" not in low:
+                continue
+            if "wound roll" not in low:
+                continue
+            attack_type = "any"
+            if ("ranged attack" in low) or ("ranged attacks" in low) or ("ranged weapon" in low):
+                attack_type = "ranged"
+            if ("melee attack" in low) or ("melee attacks" in low) or ("melee weapon" in low):
+                attack_type = "melee" if attack_type == "any" else "any"
+            return {
+                "name": str(name or "Ignore modifiers"),
+                "attack_type": attack_type,
+                "allow_wound": True,
             }
         return None
 
@@ -9777,6 +9895,113 @@ class WargearProfile:
                     wound_result['modifiers'].append(f"-{penalty} to wound from {src}")
         except Exception:
             pass
+
+        from ..utility.modifier_choice import (
+            CHOICE_KEEP_ALL,
+            filter_signed_modifiers,
+            options_for_signed_pairs,
+        )
+
+        def _parse_signed_wound_modifier(reason: str) -> Optional[int]:
+            text = str(reason or "").strip()
+            if not text:
+                return None
+            m = re.search(r"([+-]\d+)\s*to wound", text, flags=re.IGNORECASE)
+            if m:
+                try:
+                    return int(m.group(1))
+                except Exception:
+                    return None
+            m = re.search(r"\b(-?\d+)\s*to wound", text, flags=re.IGNORECASE)
+            if m:
+                try:
+                    return int(m.group(1))
+                except Exception:
+                    return None
+            return None
+
+        parsed_wound_mods: list[tuple[int, str]] = []
+        unparsed_wound_mod_reasons: list[str] = []
+        for reason in list(wound_result.get("modifiers", []) or []):
+            reason_text = str(reason or "").strip()
+            if not reason_text:
+                continue
+            parsed_val = _parse_signed_wound_modifier(reason_text)
+            if parsed_val is None:
+                unparsed_wound_mod_reasons.append(reason_text)
+                continue
+            parsed_wound_mods.append((int(parsed_val), reason_text))
+
+        wound_result["wound_mods"] = list(parsed_wound_mods)
+        wound_result["wound_modifier_options"] = list(options_for_signed_pairs(parsed_wound_mods))
+
+        ignore_wound_rule = None
+        try:
+            ignore_wound_rule = self._ignore_wound_modifier_rule(attacker)
+        except Exception:
+            ignore_wound_rule = None
+        if ignore_wound_rule:
+            try:
+                attack_is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+            except Exception:
+                attack_is_melee = False
+            try:
+                attack_is_ranged = bool(getattr(self.parent_wargear, "is_ranged", lambda: False)())
+            except Exception:
+                attack_is_ranged = False
+            rule_attack_type = str(ignore_wound_rule.get("attack_type") or "any").strip().lower()
+            if rule_attack_type == "ranged" and not attack_is_ranged:
+                ignore_wound_rule = None
+            elif rule_attack_type == "melee" and not attack_is_melee:
+                ignore_wound_rule = None
+
+        if ignore_wound_rule and bool(ignore_wound_rule.get("allow_wound", True)):
+            rule_name = str(ignore_wound_rule.get("name") or "Ignore modifiers").strip() or "Ignore modifiers"
+            parsed_total = sum(int(val) for val, _reason in list(parsed_wound_mods or []))
+            residual_unparsed_total = int(dice_modifier) - int(parsed_total)
+            choice = attack_instance.get("wound_modifier_choice")
+            options = list(wound_result.get("wound_modifier_options", []) or [])
+            if choice is None and roll_value is None:
+                if options:
+                    player = None
+                    game_map = None
+                    try:
+                        army = attacker.parent_unit.get_parent_army()
+                        player = getattr(army, "player", None)
+                        game = getattr(player, "game", None) if player is not None else None
+                        game_map = getattr(game, "map", None) if game is not None else None
+                    except Exception:
+                        player = None
+                        game_map = None
+                    provider = getattr(game_map, "hit_modifier_choice_provider", None) if game_map is not None else None
+                    if callable(provider):
+                        try:
+                            choice = provider(
+                                player=player,
+                                attacker=attacker,
+                                target=target,
+                                weapon_profile=self,
+                                ability_name=f"{rule_name} (Wound roll)",
+                                choices=options,
+                            )
+                        except Exception:
+                            choice = None
+                if choice not in options:
+                    choice = CHOICE_KEEP_ALL
+                attack_instance["wound_modifier_choice"] = choice
+            if choice is None:
+                choice = CHOICE_KEEP_ALL
+            if choice != CHOICE_KEEP_ALL and parsed_wound_mods:
+                kept_mods, ignored_mods = filter_signed_modifiers(parsed_wound_mods, str(choice or CHOICE_KEEP_ALL))
+                dice_modifier = int(residual_unparsed_total) + sum(int(val) for val, _reason in list(kept_mods or []))
+                kept_reasons = [str(reason or "").strip() for _val, reason in list(kept_mods or []) if str(reason or "").strip()]
+                wound_result["modifiers"] = list(unparsed_wound_mod_reasons) + kept_reasons
+                ignored_reasons = [str(reason or "").strip() for _val, reason in list(ignored_mods or []) if str(reason or "").strip()]
+                if ignored_reasons:
+                    ignored_text = ", ".join(ignored_reasons)
+                    wound_result.setdefault("special_effects", []).append(
+                        f"{rule_name}: ignored Wound roll modifiers ({ignored_text})"
+                    )
 
         dice_modifier = min(max(dice_modifier, -1), 1)
 

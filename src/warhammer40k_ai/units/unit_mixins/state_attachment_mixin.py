@@ -2569,6 +2569,12 @@ class StateAttachmentMixin:
                 return True
         except Exception:
             pass
+        # Exalted Patron (Court of the Phoenician): bearer can attach to Flawless Blades.
+        try:
+            if self._exalted_patron_can_attach_to(bodyguard):
+                return True
+        except Exception:
+            pass
         # Bodyguard datasheet id must be in leader's allowed attached_to list (IDs)
         allowed = getattr(self, "can_be_attached_to", []) or []
         try:

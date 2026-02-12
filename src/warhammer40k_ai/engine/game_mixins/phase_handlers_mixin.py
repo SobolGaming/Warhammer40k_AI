@@ -5264,7 +5264,7 @@ class GamePhaseHandlersMixin:
     def _on_phase_start_emperors_children_enhancements(self, player=None, phase=None, **_kwargs) -> None:
         """Emperor's Children enhancement hooks at phase start."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
-        if pname not in ("MOVEMENT_PHASE", "SHOOTING_PHASE"):
+        if pname not in ("MOVEMENT_PHASE", "SHOOTING_PHASE", "FIGHT_PHASE"):
             return
         if player is None or player is not self.get_current_player():
             return
@@ -5277,19 +5277,6 @@ class GamePhaseHandlersMixin:
         if mgr is None:
             mgr = getattr(army, "emperors_children_detachments", None)
         if mgr is None:
-            return
-        if pname == "MOVEMENT_PHASE":
-            if getattr(mgr, "is_rapid_evisceration", lambda: False)():
-                self._queue_sublime_prescience_movement_choice(player=player, army=army)
-            return
-        if not getattr(mgr, "is_coterie_of_conceited", lambda: False)():
-            return
-        game_map = getattr(self, "map", None)
-        if game_map is None:
-            raise RuntimeError("Emperor's Children enhancement hooks require a game map.")
-
-        enemy_roots = self._collect_enemy_unit_roots(player)
-        if not enemy_roots:
             return
 
         from ...utility.entity_ids import get_entity_id
@@ -5305,6 +5292,138 @@ class GamePhaseHandlersMixin:
                 return str(get_entity_id(m))
             except Exception:
                 return str(getattr(m, "name", "") or "")
+
+        if pname == "MOVEMENT_PHASE":
+            if getattr(mgr, "is_rapid_evisceration", lambda: False)():
+                self._queue_sublime_prescience_movement_choice(player=player, army=army)
+            return
+
+        if pname == "FIGHT_PHASE":
+            if not getattr(mgr, "is_court_of_the_phoenician", lambda: False)():
+                return
+            game_map = getattr(self, "map", None)
+            if game_map is None:
+                raise RuntimeError("Emperor's Children enhancement hooks require a game map.")
+
+            from ...utility.aura_utils import model_within_engagement_range_of_unit
+            from ..decision_kinds import DECISION_CHOOSE_QUARRY
+            from ..decisions import DecisionOption, DecisionRequest
+
+            pending_source_ids: set[str] = set()
+            queue = getattr(self, "decision_queue", None)
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                        continue
+                    ctx = dict(getattr(req, "context", {}) or {})
+                    if str(ctx.get("ability", "") or "") != "charge_end_select_one_battleshock":
+                        continue
+                    if str(ctx.get("ability_name", "") or "") != "Soulstain Made Manifest":
+                        continue
+                    source_id = str(ctx.get("source_unit_id", "") or "")
+                    if source_id:
+                        pending_source_ids.add(source_id)
+
+            enemy_roots = self._collect_enemy_unit_roots(player)
+            if not enemy_roots:
+                return
+            enemy_roots.sort(key=_unit_sort_key)
+
+            for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+                if unit is None:
+                    continue
+                if not getattr(unit, "is_alive", lambda: False)():
+                    continue
+                if not getattr(unit, "deployed", True):
+                    continue
+                try:
+                    if unit.is_in_reserves() or unit.is_embarked:
+                        continue
+                except Exception:
+                    pass
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict) or not sr.get("enhancement_soulstain_made_manifest"):
+                    continue
+                source_unit_id = str(get_entity_id(unit) or "")
+                if source_unit_id and source_unit_id in pending_source_ids:
+                    continue
+                bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "")
+                if not bearer_id:
+                    continue
+                try:
+                    models = list(unit.get_attached_unit_models() or [])
+                except Exception:
+                    models = list(getattr(unit, "models", []) or [])
+                bearer_model = None
+                for model in sorted(list(models or []), key=_model_sort_key):
+                    if str(get_entity_id(model) or "") != bearer_id:
+                        continue
+                    if not getattr(model, "is_alive", True):
+                        continue
+                    bearer_model = model
+                    break
+                if bearer_model is None:
+                    continue
+                candidates: list[Any] = []
+                for enemy_root in list(enemy_roots or []):
+                    if enemy_root is None:
+                        continue
+                    try:
+                        if not model_within_engagement_range_of_unit(bearer_model, enemy_root):
+                            continue
+                    except Exception:
+                        continue
+                    candidates.append(enemy_root)
+                if not candidates:
+                    continue
+                options = [DecisionOption.create("None", payload={"action": "skip"})]
+                for enemy_root in sorted(list(candidates), key=_unit_sort_key):
+                    target_id = str(get_entity_id(enemy_root) or "")
+                    if not target_id:
+                        continue
+                    options.append(
+                        DecisionOption.create(
+                            str(getattr(enemy_root, "name", "Unit") or "Unit"),
+                            payload={
+                                "target_unit_id": target_id,
+                                "source_unit_id": source_unit_id,
+                            },
+                        )
+                    )
+                if len(options) <= 1:
+                    continue
+                try:
+                    test_modifier = int(sr.get("enhancement_soulstain_battleshock_test_modifier", -1) or -1)
+                except Exception:
+                    test_modifier = -1
+                request = DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    "Soulstain Made Manifest: select one enemy unit within Engagement Range (or None).",
+                    player_id=getattr(player, "id", None),
+                    options=options,
+                    context={
+                        "ability": "charge_end_select_one_battleshock",
+                        "ability_name": "Soulstain Made Manifest",
+                        "source_unit_id": source_unit_id,
+                        "unit_id": source_unit_id,
+                        "model_id": str(get_entity_id(bearer_model) or ""),
+                        "test_modifier": int(test_modifier),
+                        "phase": "Fight phase",
+                        "optional": True,
+                    },
+                )
+                self.request_decision(request)
+            return
+
+        if not getattr(mgr, "is_coterie_of_conceited", lambda: False)():
+            return
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            raise RuntimeError("Emperor's Children enhancement hooks require a game map.")
+
+        enemy_roots = self._collect_enemy_unit_roots(player)
+        if not enemy_roots:
+            return
 
         enemy_roots.sort(key=_unit_sort_key)
         for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):

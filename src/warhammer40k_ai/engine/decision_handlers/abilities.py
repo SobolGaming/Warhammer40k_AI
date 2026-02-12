@@ -6945,7 +6945,12 @@ def _validate_choose_hit_modifier_ignores(game: object, request: DecisionRequest
         idx = int(attack_index)
     except Exception:
         return ("Attack index must be an integer.",)
-    if idx < 0 or idx >= len(getattr(seq, "attack_instances", []) or []):
+    modifier_kind = str(ctx.get("modifier_kind", "") or "").strip().lower()
+    if modifier_kind == "wound_roll":
+        instances = list(getattr(seq, "hit_instances", []) or [])
+    else:
+        instances = list(getattr(seq, "attack_instances", []) or [])
+    if idx < 0 or idx >= len(instances):
         return ("Attack index out of range.",)
     return ()
 
@@ -6960,6 +6965,7 @@ def _apply_choose_hit_modifier_ignores(game: object, request: DecisionRequest, r
     ctx = dict(getattr(request, "context", {}) or {})
     seq_id = ctx.get("sequence_id")
     attack_index = ctx.get("attack_index")
+    modifier_kind = str(ctx.get("modifier_kind", "") or "").strip().lower()
     if seq_id is not None and attack_index is not None:
         mgr = getattr(game, "attack_manager", None)
         if mgr is not None:
@@ -6973,14 +6979,23 @@ def _apply_choose_hit_modifier_ignores(game: object, request: DecisionRequest, r
                 except Exception:
                     idx = None
                 if idx is not None:
-                    instances = list(getattr(seq, "attack_instances", []) or [])
+                    if modifier_kind == "wound_roll":
+                        instances = list(getattr(seq, "hit_instances", []) or [])
+                    else:
+                        instances = list(getattr(seq, "attack_instances", []) or [])
                     if 0 <= idx < len(instances):
                         try:
-                            instances[idx]["hit_modifier_choice"] = choice
+                            if modifier_kind == "wound_roll":
+                                instances[idx]["wound_modifier_choice"] = choice
+                            else:
+                                instances[idx]["hit_modifier_choice"] = choice
                         except Exception:
                             pass
                         try:
-                            resume = getattr(mgr, "resume_after_hit_modifier_choice", None)
+                            if modifier_kind == "wound_roll":
+                                resume = getattr(mgr, "resume_after_wound_modifier_choice", None)
+                            else:
+                                resume = getattr(mgr, "resume_after_hit_modifier_choice", None)
                             if callable(resume):
                                 resume(game, seq)
                         except Exception:

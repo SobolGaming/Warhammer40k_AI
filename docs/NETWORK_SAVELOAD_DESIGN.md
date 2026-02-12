@@ -313,6 +313,7 @@ Fight:
 - boon_of_death_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="boon_of_death"`, `source_unit_id`, `attacker_unit_id`, `turn`, `optional=true`)
 - blinding_spray_dialog: CHOOSE_QUARRY {model_id | skip} (context `ability="blinding_spray"`, `ability_name`, `phase`, `optional=true`)
 - malign_sacrifice_dialog: CHOOSE_QUARRY {target_unit_id, model_id | skip} (context `ability="malign_sacrifice"`, `source_unit_id`, `ability_name`)
+- soulstain_made_manifest_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="charge_end_select_one_battleshock"`, `ability_name="Soulstain Made Manifest"`, `source_unit_id`, `model_id`, `test_modifier=-1`, `optional=true`)
 - fight_phase_melee_ap_boost_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="fight_phase_melee_ap_boost"`, `unit_id`, `model_id`)
 - chance_for_glory_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="chance_for_glory"`, `unit_id`, `model_id`, `buff_key`, `bonus`)
 - malefic_destruction_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="malefic_destruction"`, `unit_id`, `model_id`, `buff_key`, `weapon_name`, `attacks_bonus`)
@@ -390,11 +391,12 @@ Faction / Detachment / Ability choices:
 - quarry_selection_dialog (Risen Rubricae): CHOOSE_QUARRY {selected_unit_ids[]} (context `ability="risen_rubricae"`, `ability_name="Risen Rubricae"`, `source_unit_id`, `enhancement_id`)
 - quarry_selection_dialog (Ethereal Pathway): CHOOSE_QUARRY {selected_unit_ids[] | skip} (context `ability="ethereal_pathway"`, `ability_name="Ethereal Pathway"`, `source_unit_id`, `enhancement_id`)
 - modifier_ignore_dialog: CHOOSE_HIT_MODIFIER_IGNORES {choice} (context `attacker_model_id`, `target_unit_id`, `wargear_id`, `profile_name`, `ability_name`)
+- modifier_ignore_dialog: CHOOSE_HIT_MODIFIER_IGNORES {choice} (context `attacker_model_id`, `target_unit_id`, `wargear_id`, `profile_name`, `ability_name`, `modifier_kind="wound_roll"`)
 - modifier_ignore_dialog: CHOOSE_SKILL_MODIFIER_IGNORES {choice} (context `attacker_model_id`, `target_unit_id`, `wargear_id`, `profile_name`, `ability_name`, `modifier_kind="weapon_skill"`)
 - modifier_ignore_dialog: CHOOSE_MOVE_MODIFIER_IGNORES {choice} (context `unit_id`, `action_type`, `ability_name`)
 - modifier_ignore_dialog: CHOOSE_ADVANCE_MODIFIER_IGNORES {choice} (context `unit_id`, `ability_name`)
 - modifier_ignore_dialog: CHOOSE_CHARGE_MODIFIER_IGNORES {choice} (context `unit_id`, `target_unit_ids`, `ability_name`)
-Note: modifier ignore dialogs are used by abilities like Driven by Ultimate Rage and Internal Rivalries. They are only requested when applicable modifiers exist, and their options are pruned to the relevant modifier signs.
+Note: modifier ignore dialogs are used by abilities like Driven by Ultimate Rage, Internal Rivalries, and Tears of the Phoenix. They are only requested when applicable modifiers exist, and their options are pruned to the relevant modifier signs.
 - quarry_selection_dialog: CHOOSE_LIMB_FROM_LIMB {choice} (context `unit_id`)
 - quarry_selection_dialog: CHOOSE_RED_WRATH {mode} (context `unit_id`)
 - quarry_selection_dialog: CHOOSE_IMPOSSIBLE_ECLIPSE_ZONE {zone | skip} (context `ability="impossible_eclipse"`, `unit_id`, `ability_name`)
