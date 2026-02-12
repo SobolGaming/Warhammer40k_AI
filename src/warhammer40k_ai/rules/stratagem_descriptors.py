@@ -905,6 +905,75 @@ _COTERIE_OF_THE_CONCEITED_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _COTERIE_OF_THE_CONCEITED_STRATAGEM_DESCRIPTORS.values()
 }
 
+_MERCURIAL_HOST_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009999002": StratagemToolDescriptor(
+        stratagem_id="000009999002",
+        name="Violent Excess",
+        timing="fight_phase_on_select_to_fight",
+        target="emperors_children_unit_not_yet_fought",
+        duration="until_end_of_phase",
+        effect="grant_sustained_hits_melee",
+        cp_cost=1,
+        effect_params={"sustained_hits_value": 1, "attack_type": "melee"},
+    ),
+    "000009999003": StratagemToolDescriptor(
+        stratagem_id="000009999003",
+        name="Combat Stimms",
+        timing="fight_phase_after_enemy_targets_selected",
+        target="emperors_children_infantry_unit_targeted",
+        duration="until_end_of_phase",
+        effect="defensive_wound_penalty",
+        cp_cost=2,
+        effect_params={"wound_roll_modifier": -1},
+    ),
+    "000009999004": StratagemToolDescriptor(
+        stratagem_id="000009999004",
+        name="Honour the Prince",
+        timing="movement_phase_before_select_to_move",
+        target="emperors_children_infantry_unit_not_yet_moved",
+        duration="until_end_of_phase",
+        effect="advance_no_roll_plus_6",
+        cp_cost=1,
+        effect_params={"advance_distance": 6},
+    ),
+    "000009999005": StratagemToolDescriptor(
+        stratagem_id="000009999005",
+        name="Dark Vigour",
+        timing="opponent_movement_phase_after_enemy_move_end",
+        target="emperors_children_unit_within_9_excluding_beasts_vehicles",
+        duration="immediate",
+        effect="reactive_normal_move",
+        cp_cost=1,
+        range_in=9.0,
+        effect_params={"max_distance": 6, "movement_type": "normal"},
+    ),
+    "000009999006": StratagemToolDescriptor(
+        stratagem_id="000009999006",
+        name="Capricious Reactions",
+        timing="opponent_shooting_phase_after_enemy_targets_selected",
+        target="emperors_children_unit_targeted",
+        duration="until_end_of_phase",
+        effect="defensive_hit_penalty",
+        cp_cost=1,
+        effect_params={"hit_roll_modifier": -1},
+    ),
+    "000009999007": StratagemToolDescriptor(
+        stratagem_id="000009999007",
+        name="Cruel Raiders",
+        timing="end_of_opponent_fight_phase",
+        target="emperors_children_unit_wholly_within_9_of_battlefield_edge_and_not_within_3h_enemy",
+        duration="immediate",
+        effect="enter_strategic_reserves",
+        cp_cost=1,
+        range_in=9.0,
+        effect_params={"horizontal_enemy_exclusion_range": 3},
+    ),
+}
+
+_MERCURIAL_HOST_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _MERCURIAL_HOST_STRATAGEM_DESCRIPTORS.values()
+}
+
 
 def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> Optional[StratagemToolDescriptor]:
     if stratagem_id:
@@ -947,6 +1016,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _COTERIE_OF_THE_CONCEITED_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _MERCURIAL_HOST_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
     key = _normalize_name(name)
     if not key:
         return None
@@ -964,4 +1036,5 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _CABAL_OF_CHAOS_STRATAGEM_BY_NAME.get(key)
         or _COURT_OF_THE_PHOENICIAN_STRATAGEM_BY_NAME.get(key)
         or _COTERIE_OF_THE_CONCEITED_STRATAGEM_BY_NAME.get(key)
+        or _MERCURIAL_HOST_STRATAGEM_BY_NAME.get(key)
     )

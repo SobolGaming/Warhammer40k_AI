@@ -152,8 +152,12 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "PLAGUESURGE",
     "LEECHSPORE ERUPTION",
     "OVERWHELMING GENEROSITY",
+    "CAPRICIOUS REACTIONS",
+    "COMBAT STIMMS",
     "CREEPING BLIGHT",
+    "CRUEL RAIDERS",
     "PUTRID DETONATION",
+    "DARK VIGOUR",
     "BALEFUL BLESSING",
     "CATALYTIC STIMULUS",
     "CLOSE-QUARTERS EXCRUCIATION",
@@ -165,10 +169,12 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SHROUD OF CHAOS",
     "SINUOUS BREACH",
     "SOULSEEKERS",
+    "HONOUR THE PRINCE",
     "UNHOLY HASTE",
     "PROTECTION OF THE DARK PRINCE",
     "UNSHAKEABLE OPPONENTS",
     "PRETERNATURAL AGILITY",
+    "VIOLENT EXCESS",
 }
 
 REACTION_ONLY_STRATAGEM_NAMES = {
@@ -246,9 +252,13 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "PUTRID DETONATION",
     "BALEFUL BLESSING",
     "CATALYTIC STIMULUS",
+    "CAPRICIOUS REACTIONS",
+    "COMBAT STIMMS",
     "CONTEMPTUOUS DISREGARD",
     "DIVINE INTERVENTION",
     "SHROUD OF CHAOS",
+    "DARK VIGOUR",
+    "CRUEL RAIDERS",
     "PROTECTION OF THE DARK PRINCE",
     "PRAISE THE FALLEN",
     "SANCTIFIED IMMOLATION",
@@ -1119,7 +1129,7 @@ class StratagemManager(
         if names & {"OVERWATCH", "FIRE OVERWATCH", "APOPLECTIC FRENZY", "PUNISH THE CRAVEN"}:
             add("unit_move_started", self._on_unit_move_started)
 
-        if names & {"OVERWATCH", "FIRE OVERWATCH", "TANK SHOCK", "HEROIC INTERVENTION", "FEIGNED RETREAT", "FEIGNED WEAKNESS", "CUT DOWN THE WEAK", "FIRES OF COVENANT", "A CHALLENGE MET"}:
+        if names & {"OVERWATCH", "FIRE OVERWATCH", "TANK SHOCK", "HEROIC INTERVENTION", "FEIGNED RETREAT", "FEIGNED WEAKNESS", "CUT DOWN THE WEAK", "FIRES OF COVENANT", "A CHALLENGE MET", "DARK VIGOUR"}:
             add("unit_move_ended", self._on_unit_move_ended)
         if names & {"FIRES OF COVENANT", "A CHALLENGE MET"}:
             add("unit_set_up", self._on_unit_set_up)
@@ -1184,6 +1194,7 @@ class StratagemManager(
             "GO TO GROUND",
             "SMOKESCREEN",
             "ARMOUR OF CONTEMPT",
+            "CAPRICIOUS REACTIONS",
             "PRAISE THE FALLEN",
             "THE FOE FORESEEN",
             "BRAZEN CONTEMPT",
@@ -1199,6 +1210,7 @@ class StratagemManager(
         }
         fight_reaction_names = {
             "BERSERK FUGUE",
+            "COMBAT STIMMS",
             "CONTEMPTUOUS DISREGARD",
             "DEFIANT TO THE LAST",
             "DEATHLESS DUTY",
@@ -1251,6 +1263,7 @@ class StratagemManager(
             add("fight_attacks_resolved", self._on_fight_attacks_resolved_armour_of_contempt_cleanup)
 
         phase_end_trigger_names = {
+            "CRUEL RAIDERS",
             "DELIRIUM UNMADE",
             "ENDLESS PURSUIT OF VIOLENCE",
             "FLAMES OF SANCTITY",
@@ -1320,7 +1333,9 @@ class StratagemManager(
             "PROTECTION OF THE DARK PRINCE",
             "PRIDEFUL SUPERIORITY",
             "SINUOUS BREACH",
+            "HONOUR THE PRINCE",
             "UNSHAKEABLE OPPONENTS",
+            "VIOLENT EXCESS",
         }
         needs_phase_end = bool(
             (names & phase_end_trigger_names)
@@ -2271,19 +2286,25 @@ class StratagemManager(
             "DIVINE INTERVENTION": "Target: destroyed ADEPTA SORORITAS CHARACTER (not Saint Celestine); discard 1-3 Miracle dice",
             "BALEFUL BLESSING": "Target: HERETIC ASTARTES unit after a mortal wound is allocated to it",
             "ARMOUR OF ABHORRENCE": "Target: EMPEROR'S CHILDREN unit selected as an enemy attack target",
+            "CAPRICIOUS REACTIONS": "Target: EMPEROR'S CHILDREN unit selected as an enemy shooting attack target",
             "CATALYTIC STIMULUS": "Target: EMPEROR'S CHILDREN unit that lost one or more wounds from an enemy shooter",
             "CLOSE-QUARTERS EXCRUCIATION": "Target: EMPEROR'S CHILDREN unit that has not been selected to shoot",
+            "COMBAT STIMMS": "Target: EMPEROR'S CHILDREN INFANTRY unit selected as an enemy fight attack target",
             "CONTEMPTUOUS DISREGARD": "Target: EMPEROR'S CHILDREN unit selected as an enemy attack target",
             "EMBRACE THE PAIN": "Target: EMPEROR'S CHILDREN INFANTRY unit (Fight phase start)",
             "EUPHORIC INSPIRATION": "Target: EMPEROR'S CHILDREN DAEMON unit",
             "MARTIAL PERFECTION": "Target: EMPEROR'S CHILDREN unit selected to fight (not fought)",
             "MUTATION'S CURSE": "Target: HERETIC ASTARTES PSYKER unit; select one visible enemy unit within 12\"",
+            "DARK VIGOUR": "Target: EMPEROR'S CHILDREN unit within 9\" of enemy mover (excluding BEASTS/VEHICLES)",
             "NO REST IN DEATH": "Target: HERETIC ASTARTES unit within 9\" of friendly Psyker/Daemon Prince source",
             "PRIDEFUL SUPERIORITY": "Target: EMPEROR'S CHILDREN unit selected to fight (not fought)",
             "PROTECTION OF THE DARK PRINCE": "Target: EMPEROR'S CHILDREN unit when an attack/wound is allocated to one of its models",
+            "CRUEL RAIDERS": "Target: EMPEROR'S CHILDREN unit wholly within 9\" of edge and >3\" horizontal from enemies",
             "SHROUD OF CHAOS": "Target: HERETIC ASTARTES PSYKER/DAEMON PRINCE source unit",
             "SINUOUS BREACH": "Target: EMPEROR'S CHILDREN DAEMON unit (not yet moved/charged)",
             "SOULSEEKERS": "Target: HERETIC ASTARTES unit that has not been selected to shoot",
+            "HONOUR THE PRINCE": "Target: EMPEROR'S CHILDREN INFANTRY unit not yet selected to move",
+            "VIOLENT EXCESS": "Target: EMPEROR'S CHILDREN unit selected to fight (not fought)",
             "UNSHAKEABLE OPPONENTS": "Target: EMPEROR'S CHILDREN unit (start of your Command phase)",
             "UNHOLY HASTE": "Target: HERETIC ASTARTES INFANTRY unit that has not been selected to charge",
             "UNBRIDLED CARNAGE": "Target: ORKS unit (not yet fought)",
@@ -3657,6 +3678,10 @@ class StratagemManager(
             raise
         try:
             self._queue_a_challenge_met_phase_end_reaction(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_emperors_children_mercurial_phase_end_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -5177,6 +5202,7 @@ class StratagemManager(
         self._maybe_queue_red_wrath(unit, action)
         self._maybe_queue_cut_down_the_weak(unit, action)
         self._process_warpbane_fires_of_covenant_trigger(unit=unit, trigger_kind="move_end", action=action)
+        self._queue_emperors_children_mercurial_move_end_reactions(unit=unit, action=action)
 
     def _on_unit_set_up(self, unit, **kwargs):
         self._track_a_challenge_met_set_up(unit)
@@ -6068,6 +6094,13 @@ class StratagemManager(
             )
         except Exception:
             raise
+        try:
+            self._queue_emperors_children_mercurial_shooting_reactions(
+                attacking_unit=attacking_unit,
+                target_units=target_units,
+            )
+        except Exception:
+            raise
         # GO TO GROUND
         try:
             s = self.get_by_name("GO TO GROUND")
@@ -6812,6 +6845,13 @@ class StratagemManager(
             raise
         try:
             self._queue_emperors_children_court_fight_reactions(
+                attacking_unit=attacking_unit,
+                target_units=target_units,
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_emperors_children_mercurial_fight_reactions(
                 attacking_unit=attacking_unit,
                 target_units=target_units,
             )
@@ -11517,6 +11557,9 @@ class StratagemManager(
         ec_coterie_result = self._use_emperors_children_coterie_stratagem(s, **kwargs)
         if ec_coterie_result is not None:
             return ec_coterie_result
+        ec_mercurial_result = self._use_emperors_children_mercurial_stratagem(s, **kwargs)
+        if ec_mercurial_result is not None:
+            return ec_mercurial_result
         am_result = self._use_astra_militarum_grizzled_stratagem(s, **kwargs)
         if am_result is not None:
             return am_result

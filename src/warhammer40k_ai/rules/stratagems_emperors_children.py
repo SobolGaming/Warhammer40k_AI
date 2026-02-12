@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
+from ..utility.aura_utils import horizontal_distance_between_bases_2d
 from ..utility import dice as dice_module
 from ..utility.entity_ids import get_entity_id
 
@@ -88,6 +89,11 @@ class EmperorsChildrenStratagemMixin:
         checker = getattr(mgr, "is_coterie_of_conceited", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_mercurial_host_detachment(self) -> bool:
+        mgr = self._get_emperors_children_mgr()
+        checker = getattr(mgr, "is_mercurial_host", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_emperors_children_unit(self, unit: Any) -> bool:
         root = self._ec_root(unit)
         if root is None:
@@ -118,6 +124,7 @@ class EmperorsChildrenStratagemMixin:
         detachment: str = "court",
         require_daemon: bool = False,
         require_infantry: bool = False,
+        require_not_beast_vehicle: bool = False,
         require_not_shot: bool = False,
         require_not_fought: bool = False,
     ) -> list[Any]:
@@ -127,6 +134,9 @@ class EmperorsChildrenStratagemMixin:
                 return []
         elif det == "coterie":
             if not self._is_coterie_of_the_conceited_detachment():
+                return []
+        elif det == "mercurial":
+            if not self._is_mercurial_host_detachment():
                 return []
         else:
             return []
@@ -157,6 +167,12 @@ class EmperorsChildrenStratagemMixin:
             if require_daemon and not self._is_emperors_children_daemon_unit(root):
                 continue
             if require_infantry and not self._is_emperors_children_infantry_unit(root):
+                continue
+            if require_not_beast_vehicle and (
+                self._ec_has_keyword(root, "BEAST")
+                or self._ec_has_keyword(root, "BEASTS")
+                or self._ec_has_keyword(root, "VEHICLE")
+            ):
                 continue
             if require_not_shot and bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
                 continue
@@ -225,6 +241,129 @@ class EmperorsChildrenStratagemMixin:
                     continue
             return True
         return False
+
+    def _ec_distance_between_units(self, source_unit: Any, target_unit: Any) -> Optional[float]:
+        if self.game is None:
+            return None
+        game_map = getattr(self.game, "map", None)
+        if game_map is None:
+            return None
+        get_dist = getattr(game_map, "get_distance_between_units", None)
+        if not callable(get_dist):
+            return None
+        source_root = self._ec_root(source_unit)
+        target_root = self._ec_root(target_unit)
+        if source_root is None or target_root is None:
+            return None
+        try:
+            return float(get_dist(source_root, target_root))
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _ec_horizontal_distance_between_units(source_unit: Any, target_unit: Any) -> Optional[float]:
+        source = source_unit
+        get_root = getattr(source_unit, "get_attached_unit_root", None)
+        if callable(get_root):
+            source = get_root()
+        target = target_unit
+        get_root = getattr(target_unit, "get_attached_unit_root", None)
+        if callable(get_root):
+            target = get_root()
+        if source is None or target is None:
+            return None
+
+        get_source_models = getattr(source, "get_attached_unit_models", None)
+        source_models = list(get_source_models() or []) if callable(get_source_models) else list(getattr(source, "models", []) or [])
+        get_target_models = getattr(target, "get_attached_unit_models", None)
+        target_models = list(get_target_models() or []) if callable(get_target_models) else list(getattr(target, "models", []) or [])
+        if not source_models or not target_models:
+            return None
+
+        best: Optional[float] = None
+        for src_model in source_models:
+            if src_model is None or not bool(getattr(src_model, "is_alive", True)):
+                continue
+            src_base = getattr(src_model, "model_base", None)
+            if src_base is None:
+                continue
+            for tgt_model in target_models:
+                if tgt_model is None or not bool(getattr(tgt_model, "is_alive", True)):
+                    continue
+                tgt_base = getattr(tgt_model, "model_base", None)
+                if tgt_base is None:
+                    continue
+                try:
+                    dist = float(horizontal_distance_between_bases_2d(src_base, tgt_base))
+                except (TypeError, ValueError):
+                    continue
+                if best is None or dist < best:
+                    best = dist
+        return best
+
+    def _ec_has_enemy_within_horizontal_distance(self, unit: Any, max_distance: float) -> bool:
+        root = self._ec_root(unit)
+        if root is None or self.game is None:
+            return False
+        game_map = getattr(self.game, "map", None)
+        if game_map is None:
+            return False
+        get_enemy_units = getattr(game_map, "get_enemy_units", None)
+        if not callable(get_enemy_units):
+            return False
+        try:
+            threshold = float(max_distance)
+        except (TypeError, ValueError):
+            return False
+        if threshold < 0.0:
+            return False
+
+        seen: set[str] = set()
+        for enemy in list(get_enemy_units(root) or []):
+            enemy_root = self._ec_root(enemy)
+            if enemy_root is None:
+                continue
+            eid = self._ec_sort_key(enemy_root)
+            if eid and eid in seen:
+                continue
+            if eid:
+                seen.add(eid)
+            if not self._ec_is_alive(enemy_root) or not self._ec_is_on_battlefield(enemy_root):
+                continue
+            dist = self._ec_horizontal_distance_between_units(root, enemy_root)
+            if dist is not None and float(dist) <= threshold + 1e-6:
+                return True
+        return False
+
+    def _ec_place_unit_into_strategic_reserves(self, unit: Any) -> bool:
+        root = self._ec_root(unit)
+        if root is None:
+            return False
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if not members:
+            members = [root]
+
+        for member in members:
+            if member is None:
+                continue
+            set_reserve_status = getattr(member, "set_reserve_status", None)
+            if callable(set_reserve_status):
+                set_reserve_status("strategic_reserves")
+            else:
+                setattr(member, "reserve_status", "strategic_reserves")
+            mark_midgame = getattr(member, "mark_entered_reserves_midgame", None)
+            if callable(mark_midgame):
+                mark_midgame(game=self.game)
+            if bool(getattr(member, "is_aircraft", False)) and not bool(getattr(member, "hover_mode", False)):
+                setattr(member, "_aircraft_return_turn", int(getattr(self.game, "turn", 0) or 0) + 1 if self.game is not None else 0)
+            member.deployed = True
+            member.reserve_turn_deployed = None
+            member.arrived_from_reserves_this_turn = False
+            if game_map is not None and isinstance(getattr(game_map, "units", None), list) and member in game_map.units:
+                game_map.units.remove(member)
+        return True
 
     def _ec_catalytic_wounds_before(self) -> dict[str, dict[str, int]]:
         raw = getattr(self, "_ec_court_catalytic_wounds_before", None)
@@ -588,6 +727,246 @@ class EmperorsChildrenStratagemMixin:
             "attack_allocated": bool(event_name == "attack_allocated"),
             "mortal_wound_allocated": bool(event_name == "mortal_wound_allocated"),
         }
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_emperors_children_mercurial_shooting_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: Optional[list[Any]],
+    ) -> None:
+        if not self._is_mercurial_host_detachment():
+            return
+        if attacking_unit is None or self.game is None:
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        if self._ec_owned_by_player(attacking_unit, self.player):
+            return
+        stratagem = self.get_by_name("CAPRICIOUS REACTIONS")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if self._ec_reaction_already_queued(
+            event_name="shooting_targets_selected",
+            stratagem_name=stratagem.name,
+            phase_name="Shooting phase",
+            enemy_unit=attacking_unit,
+        ):
+            return
+
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for target in list(target_units or []):
+            root = self._ec_root(target)
+            if root is None:
+                continue
+            uid = self._ec_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ec_owned_by_player(root, self.player):
+                continue
+            if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            if not self._is_emperors_children_unit(root):
+                continue
+            candidates.append(root)
+        candidates = sorted(candidates, key=self._ec_sort_key)
+        if not candidates:
+            return
+
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacking_unit,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_emperors_children_mercurial_fight_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: Optional[list[Any]],
+    ) -> None:
+        if not self._is_mercurial_host_detachment():
+            return
+        if attacking_unit is None or self.game is None:
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "fight phase":
+            return
+        if self._ec_owned_by_player(attacking_unit, self.player):
+            return
+        stratagem = self.get_by_name("COMBAT STIMMS")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if self._ec_reaction_already_queued(
+            event_name="fight_targets_selected",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+            enemy_unit=attacking_unit,
+        ):
+            return
+
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for target in list(target_units or []):
+            root = self._ec_root(target)
+            if root is None:
+                continue
+            uid = self._ec_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ec_owned_by_player(root, self.player):
+                continue
+            if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            if not self._is_emperors_children_infantry_unit(root):
+                continue
+            candidates.append(root)
+        candidates = sorted(candidates, key=self._ec_sort_key)
+        if not candidates:
+            return
+
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacking_unit,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_emperors_children_mercurial_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_mercurial_host_detachment():
+            return
+        if unit is None or self.game is None:
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "movement phase":
+            return
+        action_key = str(action or "").strip().lower()
+        if action_key not in {"move", "advance", "fall_back"}:
+            return
+        enemy_root = self._ec_root(unit)
+        if enemy_root is None:
+            return
+        if self._ec_owned_by_player(enemy_root, self.player):
+            return
+        if not self._ec_is_alive(enemy_root) or not self._ec_is_on_battlefield(enemy_root):
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+
+        stratagem = self.get_by_name("DARK VIGOUR")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if self._ec_reaction_already_queued(
+            event_name="unit_move_ended",
+            stratagem_name=stratagem.name,
+            phase_name="Movement phase",
+            enemy_unit=enemy_root,
+        ):
+            return
+
+        candidates = self._ec_targetable_units(
+            detachment="mercurial",
+            require_not_beast_vehicle=True,
+        )
+        filtered: list[Any] = []
+        for root in list(candidates or []):
+            dist = self._ec_distance_between_units(root, enemy_root)
+            if dist is None:
+                continue
+            if float(dist) > 9.0 + 1e-6:
+                continue
+            filtered.append(root)
+        filtered = sorted(filtered, key=self._ec_sort_key)
+        if not filtered:
+            return
+
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": enemy_root,
+            "action": action_key,
+            "candidates": filtered,
+        }
+        if len(filtered) == 1:
+            payload["target_unit"] = filtered[0]
+        self._queue_reaction(payload)
+
+    def _queue_emperors_children_mercurial_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_mercurial_host_detachment():
+            return
+        if player is self.player:
+            return
+        if str(getattr(phase, "name", "") or "").strip().upper() != "FIGHT_PHASE":
+            return
+        stratagem = self.get_by_name("CRUEL RAIDERS")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if self._ec_reaction_already_queued(
+            event_name="phase_end",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+        ):
+            return
+
+        candidates = self._ec_targetable_units(detachment="mercurial")
+        filtered: list[Any] = []
+        for root in list(candidates or []):
+            if not self._unit_wholly_within_battlefield_edge_distance(root, 9.0):
+                continue
+            if self._ec_has_enemy_within_horizontal_distance(root, 3.0):
+                continue
+            filtered.append(root)
+        filtered = sorted(filtered, key=self._ec_sort_key)
+        if not filtered:
+            return
+
+        payload = {
+            "event": "phase_end",
+            "phase": "Fight phase",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": filtered,
+        }
+        if len(filtered) == 1:
+            payload["target_unit"] = filtered[0]
         self._queue_reaction(payload, use_timer=False)
 
     def _court_effective_cp_cost(self, stratagem: Any, *, target_unit: Any = None, enemy_unit: Any = None) -> int:
@@ -1350,6 +1729,442 @@ class EmperorsChildrenStratagemMixin:
         )
         return True
 
+    def _use_mercurial_capricious_reactions(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "CAPRICIOUS REACTIONS":
+                    continue
+                unit = reaction.get("unit") or reaction.get("target_unit")
+                attacking_unit = attacking_unit or reaction.get("attacking_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: CAPRICIOUS REACTIONS: no target unit provided")
+            return False
+
+        root = self._ec_root(unit)
+        attacker_root = self._ec_root(attacking_unit)
+        if root is None:
+            return False
+        if not self._is_mercurial_host_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: CAPRICIOUS REACTIONS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: CAPRICIOUS REACTIONS: not opponent's Shooting phase")
+            return False
+        if candidates and not self._ec_unit_in_candidates(root, candidates):
+            logger.error("ERROR: CAPRICIOUS REACTIONS: target is not currently eligible")
+            return False
+        if not self._ec_owned_by_player(root, self.player):
+            logger.error("ERROR: CAPRICIOUS REACTIONS: target unit is not yours")
+            return False
+        if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: CAPRICIOUS REACTIONS: target cannot be selected")
+            return False
+        if not self._is_emperors_children_unit(root):
+            logger.error("ERROR: CAPRICIOUS REACTIONS: target must be an EMPEROR'S CHILDREN unit")
+            return False
+        if attacker_root is not None and self._ec_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: CAPRICIOUS REACTIONS: attacker is not enemy")
+            return False
+        if not self._court_spend_cp(stratagem, target_unit=root, enemy_unit=attacker_root):
+            return False
+
+        entry = {
+            "value": 1,
+            "attack_type": "any",
+            "expires_phase": "SHOOTING_PHASE",
+            "source": str(stratagem.name or "CAPRICIOUS REACTIONS"),
+        }
+        self._append_defensive_effect(root, "defensive_hit_mods", entry)
+
+        self._court_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: CAPRICIOUS REACTIONS: %s gains -1 to be hit this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_mercurial_combat_stimms(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "COMBAT STIMMS":
+                    continue
+                unit = reaction.get("unit") or reaction.get("target_unit")
+                attacking_unit = attacking_unit or reaction.get("attacking_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: COMBAT STIMMS: no target unit provided")
+            return False
+
+        root = self._ec_root(unit)
+        attacker_root = self._ec_root(attacking_unit)
+        if root is None:
+            return False
+        if not self._is_mercurial_host_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: COMBAT STIMMS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: COMBAT STIMMS: not opponent's Fight phase")
+            return False
+        if candidates and not self._ec_unit_in_candidates(root, candidates):
+            logger.error("ERROR: COMBAT STIMMS: target is not currently eligible")
+            return False
+        if not self._ec_owned_by_player(root, self.player):
+            logger.error("ERROR: COMBAT STIMMS: target unit is not yours")
+            return False
+        if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: COMBAT STIMMS: target cannot be selected")
+            return False
+        if not self._is_emperors_children_infantry_unit(root):
+            logger.error("ERROR: COMBAT STIMMS: target must be an EMPEROR'S CHILDREN INFANTRY unit")
+            return False
+        if attacker_root is not None and self._ec_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: COMBAT STIMMS: attacker is not enemy")
+            return False
+        if not self._court_spend_cp(stratagem, target_unit=root, enemy_unit=attacker_root):
+            return False
+
+        entry = {
+            "value": 1,
+            "attack_type": "any",
+            "expires_phase": "FIGHT_PHASE",
+            "source": str(stratagem.name or "COMBAT STIMMS"),
+        }
+        self._append_defensive_effect(root, "defensive_wound_mods", entry)
+
+        self._court_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: COMBAT STIMMS: %s gains -1 to be wounded this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_mercurial_violent_excess(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: VIOLENT EXCESS: no target unit provided")
+            return False
+
+        root = self._ec_root(unit)
+        if root is None:
+            return False
+        if not self._is_mercurial_host_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: VIOLENT EXCESS: wrong phase")
+            return False
+        if candidates and not self._ec_unit_in_candidates(root, candidates):
+            logger.error("ERROR: VIOLENT EXCESS: target is not currently eligible")
+            return False
+        if not self._ec_owned_by_player(root, self.player):
+            logger.error("ERROR: VIOLENT EXCESS: target unit is not yours")
+            return False
+        if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: VIOLENT EXCESS: target cannot be selected")
+            return False
+        if not self._is_emperors_children_unit(root):
+            logger.error("ERROR: VIOLENT EXCESS: target must be an EMPEROR'S CHILDREN unit")
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+            logger.error("ERROR: VIOLENT EXCESS: target has already fought this phase")
+            return False
+        if not self._court_spend_cp(stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        current_val = int(sr.get("bearer_unit_sustained_hits_value_melee", 0) or 0)
+        added = current_val < 1
+        if added:
+            sr["bearer_unit_sustained_hits_value_melee"] = 1
+        sr["mercurial_violent_excess_active"] = True
+        sr["mercurial_violent_excess_expires_phase"] = "FIGHT_PHASE"
+        sr["mercurial_violent_excess_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["mercurial_violent_excess_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["mercurial_violent_excess_source"] = str(stratagem.name or "VIOLENT EXCESS")
+        sr["mercurial_violent_excess_added_sustained_melee"] = bool(added)
+        sr["mercurial_violent_excess_prev_sustained_melee"] = int(current_val)
+        root.special_rules = sr
+
+        self._court_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: VIOLENT EXCESS: %s gains Sustained Hits 1 for melee weapons this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_mercurial_honour_the_prince(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: HONOUR THE PRINCE: no target unit provided")
+            return False
+
+        root = self._ec_root(unit)
+        if root is None:
+            return False
+        if not self._is_mercurial_host_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: HONOUR THE PRINCE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: HONOUR THE PRINCE: not your turn")
+            return False
+        if candidates and not self._ec_unit_in_candidates(root, candidates):
+            logger.error("ERROR: HONOUR THE PRINCE: target is not currently eligible")
+            return False
+        if not self._ec_owned_by_player(root, self.player):
+            logger.error("ERROR: HONOUR THE PRINCE: target unit is not yours")
+            return False
+        if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: HONOUR THE PRINCE: target cannot be selected")
+            return False
+        if not self._is_emperors_children_infantry_unit(root):
+            logger.error("ERROR: HONOUR THE PRINCE: target must be an EMPEROR'S CHILDREN INFANTRY unit")
+            return False
+        if bool(getattr(getattr(root, "round_state", None), "moved_this_round", False)):
+            logger.error("ERROR: HONOUR THE PRINCE: target has already been selected to move this phase")
+            return False
+        if not self._court_spend_cp(stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        effect_tag = "stratagem:honour_the_prince"
+        effects = list(sr.get("advance_no_roll_effects", []) or [])
+        effects = [
+            entry
+            for entry in effects
+            if not (isinstance(entry, dict) and str(entry.get("tag", "") or "") == effect_tag)
+        ]
+        effects.append(
+            {
+                "distance": 6,
+                "source": str(stratagem.name or "HONOUR THE PRINCE"),
+                "tag": effect_tag,
+                "expires_phase": "MOVEMENT_PHASE",
+            }
+        )
+        sr["advance_no_roll_effects"] = effects
+        sr["mercurial_honour_the_prince_active"] = True
+        sr["mercurial_honour_the_prince_expires_phase"] = "MOVEMENT_PHASE"
+        sr["mercurial_honour_the_prince_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["mercurial_honour_the_prince_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["mercurial_honour_the_prince_source"] = str(stratagem.name or "HONOUR THE PRINCE")
+        root.special_rules = sr
+
+        self._court_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: HONOUR THE PRINCE: %s adds 6\" to Move when it Advances this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_mercurial_dark_vigour(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        enemy_unit = kwargs.get("enemy_unit") or kwargs.get("moving_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        from_pending = False
+        if unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "DARK VIGOUR":
+                    continue
+                from_pending = True
+                unit = reaction.get("unit") or reaction.get("target_unit")
+                enemy_unit = enemy_unit or reaction.get("enemy_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                kwargs.setdefault("action", reaction.get("action"))
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: DARK VIGOUR: no target unit provided")
+            return False
+
+        root = self._ec_root(unit)
+        enemy_root = self._ec_root(enemy_unit)
+        if root is None:
+            return False
+        if not self._is_mercurial_host_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: DARK VIGOUR: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: DARK VIGOUR: not opponent's Movement phase")
+            return False
+        action_key = str(kwargs.get("action") or kwargs.get("trigger") or "").strip().lower()
+        if action_key and action_key not in {"move", "advance", "fall_back"}:
+            logger.error("ERROR: DARK VIGOUR: invalid trigger action")
+            return False
+        if candidates and not self._ec_unit_in_candidates(root, candidates):
+            logger.error("ERROR: DARK VIGOUR: target is not currently eligible")
+            return False
+        if not self._ec_owned_by_player(root, self.player):
+            logger.error("ERROR: DARK VIGOUR: target unit is not yours")
+            return False
+        if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: DARK VIGOUR: target cannot be selected")
+            return False
+        if not self._is_emperors_children_unit(root):
+            logger.error("ERROR: DARK VIGOUR: target must be an EMPEROR'S CHILDREN unit")
+            return False
+        if self._ec_has_keyword(root, "BEAST") or self._ec_has_keyword(root, "BEASTS") or self._ec_has_keyword(root, "VEHICLE"):
+            logger.error("ERROR: DARK VIGOUR: target cannot be a BEAST/BEASTS/VEHICLE unit")
+            return False
+        if enemy_root is None:
+            logger.error("ERROR: DARK VIGOUR: missing enemy trigger unit")
+            return False
+        if self._ec_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: DARK VIGOUR: trigger unit is not enemy")
+            return False
+        if not self._ec_is_alive(enemy_root) or not self._ec_is_on_battlefield(enemy_root):
+            return False
+        dist = self._ec_distance_between_units(root, enemy_root)
+        if dist is None or float(dist) > 9.0 + 1e-6:
+            logger.error("ERROR: DARK VIGOUR: target must be within 9\" of the enemy unit")
+            return False
+        if not from_pending and not action_key:
+            logger.error("ERROR: DARK VIGOUR: missing movement trigger context")
+            return False
+        if not self._court_spend_cp(stratagem, target_unit=root, enemy_unit=enemy_root):
+            return False
+
+        queue_move = getattr(self.game, "_queue_reactive_move_movement_decision", None) if self.game is not None else None
+        if callable(queue_move):
+            queue_move(
+                player=self.player,
+                unit=root,
+                max_distance=6,
+                kind="dark_vigour",
+                movement_type="reactive",
+                source=stratagem.name,
+                moving_unit=enemy_root,
+            )
+
+        self._court_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: DARK VIGOUR: %s can make a Normal move up to 6\".",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_mercurial_cruel_raiders(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "CRUEL RAIDERS":
+                    continue
+                unit = reaction.get("unit") or reaction.get("target_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: CRUEL RAIDERS: no target unit provided")
+            return False
+
+        root = self._ec_root(unit)
+        if root is None:
+            return False
+        if not self._is_mercurial_host_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: CRUEL RAIDERS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: CRUEL RAIDERS: not opponent's Fight phase")
+            return False
+        if candidates and not self._ec_unit_in_candidates(root, candidates):
+            logger.error("ERROR: CRUEL RAIDERS: target is not currently eligible")
+            return False
+        if not self._ec_owned_by_player(root, self.player):
+            logger.error("ERROR: CRUEL RAIDERS: target unit is not yours")
+            return False
+        if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: CRUEL RAIDERS: target cannot be selected")
+            return False
+        if not self._is_emperors_children_unit(root):
+            logger.error("ERROR: CRUEL RAIDERS: target must be an EMPEROR'S CHILDREN unit")
+            return False
+        if not self._unit_wholly_within_battlefield_edge_distance(root, 9.0):
+            logger.error("ERROR: CRUEL RAIDERS: target must be wholly within 9\" of a battlefield edge")
+            return False
+        if self._ec_has_enemy_within_horizontal_distance(root, 3.0):
+            logger.error("ERROR: CRUEL RAIDERS: target must not be within 3\" horizontally of enemy units")
+            return False
+        if not self._court_spend_cp(stratagem, target_unit=root):
+            return False
+        if not self._ec_place_unit_into_strategic_reserves(root):
+            return False
+
+        self._court_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: CRUEL RAIDERS: %s placed into Strategic Reserves.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
     def _cleanup_emperors_children_court_phase_end_effects(self, *, phase: Any) -> None:
         phase_name = str(getattr(phase, "name", "") or "").strip().upper()
         if not phase_name:
@@ -1506,6 +2321,51 @@ class EmperorsChildrenStratagemMixin:
                     ):
                         sr.pop(key, None)
 
+            if phase_name == "MOVEMENT_PHASE" and bool(sr.get("mercurial_honour_the_prince_active")):
+                exp = str(sr.get("mercurial_honour_the_prince_expires_phase", "") or "").strip().upper()
+                if not exp or exp == "MOVEMENT_PHASE":
+                    effects = list(sr.get("advance_no_roll_effects", []) or [])
+                    kept = [
+                        entry
+                        for entry in effects
+                        if not (
+                            isinstance(entry, dict)
+                            and str(entry.get("tag", "") or "") == "stratagem:honour_the_prince"
+                        )
+                    ]
+                    if kept:
+                        sr["advance_no_roll_effects"] = kept
+                    else:
+                        sr.pop("advance_no_roll_effects", None)
+                    for key in (
+                        "mercurial_honour_the_prince_active",
+                        "mercurial_honour_the_prince_expires_phase",
+                        "mercurial_honour_the_prince_owner",
+                        "mercurial_honour_the_prince_turn",
+                        "mercurial_honour_the_prince_source",
+                    ):
+                        sr.pop(key, None)
+
+            if phase_name == "FIGHT_PHASE" and bool(sr.get("mercurial_violent_excess_active")):
+                exp = str(sr.get("mercurial_violent_excess_expires_phase", "") or "").strip().upper()
+                if not exp or exp == "FIGHT_PHASE":
+                    if bool(sr.get("mercurial_violent_excess_added_sustained_melee")):
+                        prev = int(sr.get("mercurial_violent_excess_prev_sustained_melee", 0) or 0)
+                        if prev > 0:
+                            sr["bearer_unit_sustained_hits_value_melee"] = int(prev)
+                        else:
+                            sr.pop("bearer_unit_sustained_hits_value_melee", None)
+                    for key in (
+                        "mercurial_violent_excess_active",
+                        "mercurial_violent_excess_expires_phase",
+                        "mercurial_violent_excess_owner",
+                        "mercurial_violent_excess_turn",
+                        "mercurial_violent_excess_source",
+                        "mercurial_violent_excess_added_sustained_melee",
+                        "mercurial_violent_excess_prev_sustained_melee",
+                    ):
+                        sr.pop(key, None)
+
             root.special_rules = sr
 
     def _use_emperors_children_court_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
@@ -1538,4 +2398,22 @@ class EmperorsChildrenStratagemMixin:
             return self._use_coterie_protection_of_the_dark_prince(stratagem, **kwargs)
         if name_u == "EMBRACE THE PAIN":
             return self._use_coterie_embrace_the_pain(stratagem, **kwargs)
+        return None
+
+    def _use_emperors_children_mercurial_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None:
+            return None
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "CAPRICIOUS REACTIONS":
+            return self._use_mercurial_capricious_reactions(stratagem, **kwargs)
+        if name_u == "COMBAT STIMMS":
+            return self._use_mercurial_combat_stimms(stratagem, **kwargs)
+        if name_u == "VIOLENT EXCESS":
+            return self._use_mercurial_violent_excess(stratagem, **kwargs)
+        if name_u == "HONOUR THE PRINCE":
+            return self._use_mercurial_honour_the_prince(stratagem, **kwargs)
+        if name_u == "DARK VIGOUR":
+            return self._use_mercurial_dark_vigour(stratagem, **kwargs)
+        if name_u == "CRUEL RAIDERS":
+            return self._use_mercurial_cruel_raiders(stratagem, **kwargs)
         return None
