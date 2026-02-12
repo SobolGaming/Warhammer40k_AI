@@ -8,6 +8,7 @@ from ..utility import dice as dice_module
 from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL
 from ..utility.entity_ids import get_entity_id
 from .stratagems_aeldari import AeldariStratagemMixin
+from .stratagems_adepta_sororitas import AdeptaSororitasStratagemMixin
 from .stratagems_astra_militarum import AstraMilitarumStratagemMixin
 from .stratagems_chaos_daemons import ChaosDaemonsStratagemMixin
 from .stratagems_chaos_space_marines import ChaosSpaceMarinesStratagemMixin
@@ -61,6 +62,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "FIRE OVERWATCH",
     "OVERWATCH",
     "GO TO GROUND",
+    "DIVINE INTERVENTION",
     "GRENADE",
     "GILDED CHAMPION",
     "HEROIC INTERVENTION",
@@ -111,6 +113,11 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "UNLEASH BALEFIRE",
     "WARP VISION",
     "CORRUPT REALSPACE",
+    "PRAISE THE FALLEN",
+    "RIGHTEOUS VENGEANCE",
+    "SANCTIFIED IMMOLATION",
+    "SPIRIT OF THE MARTYR",
+    "SUFFERING AND SACRIFICE",
     "DAEMONIC INVULNERABILITY",
     "DENIZENS OF THE WARP",
     "DRAUGHT OF TERROR",
@@ -224,7 +231,12 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "REPELLING SPHERE",
     "PUTRID DETONATION",
     "BALEFUL BLESSING",
+    "DIVINE INTERVENTION",
     "SHROUD OF CHAOS",
+    "PRAISE THE FALLEN",
+    "SANCTIFIED IMMOLATION",
+    "SPIRIT OF THE MARTYR",
+    "SUFFERING AND SACRIFICE",
 }
 
 
@@ -932,6 +944,7 @@ class Stratagem:
 
 
 class StratagemManager(
+    AdeptaSororitasStratagemMixin,
     ChaosSpaceMarinesStratagemMixin,
     AstraMilitarumStratagemMixin,
     WorldEatersStratagemMixin,
@@ -1092,13 +1105,13 @@ class StratagemManager(
         if names & {"FIRES OF COVENANT", "A CHALLENGE MET"}:
             add("unit_set_up", self._on_unit_set_up)
 
-        if names & {"A GRIM WARNING", "BLOOD OFFERING", "BLOODY VENGEANCE", "DRAWN TO THE SLAUGHTER", "UNBOUND ARROGANCE", "TERRIFYING SPECTACLE"}:
+        if names & {"A GRIM WARNING", "BLOOD OFFERING", "BLOODY VENGEANCE", "DRAWN TO THE SLAUGHTER", "UNBOUND ARROGANCE", "TERRIFYING SPECTACLE", "DIVINE INTERVENTION"}:
             add("unit_destroyed", self._on_unit_destroyed)
 
         if names & {"SKULLS FOR THE SKULL THRONE!", "FICKLEFIRE", "GORY DEDICATION"}:
             add("model_destroyed", self._on_model_destroyed)
 
-        if names & {"SUMMONED BY SLAUGHTER", "PUTRID DETONATION"}:
+        if names & {"SUMMONED BY SLAUGHTER", "PUTRID DETONATION", "SANCTIFIED IMMOLATION"}:
             add("model_destroyed_before_removal", self._on_model_destroyed_before_removal)
         if "BALEFUL BLESSING" in names:
             add("mortal_wound_allocated", self._on_mortal_wound_allocated)
@@ -1119,6 +1132,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_unleash_balefire)
         if "FICKLEFIRE" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_ficklefire)
+        if "PRAISE THE FALLEN" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_praise_the_fallen)
 
         if "UNLEASH BALEFIRE" in names and "INSANE BRAVERY" not in names:
             add("battle_shock_test_resolved", self._on_battle_shock_test_resolved)
@@ -1146,6 +1161,7 @@ class StratagemManager(
             "GO TO GROUND",
             "SMOKESCREEN",
             "ARMOUR OF CONTEMPT",
+            "PRAISE THE FALLEN",
             "THE FOE FORESEEN",
             "BRAZEN CONTEMPT",
             "IN THE SHADOW OF BRASS IDOLS",
@@ -1171,6 +1187,7 @@ class StratagemManager(
             "LIGHTNING-FAST REACTIONS",
             "UNYIELDING FORMS",
             "ORKS IS NEVER BEATEN",
+            "SPIRIT OF THE MARTYR",
             "FLICKERING REALITY",
             "'ARD AS NAILS",
             "\u2019ARD AS NAILS",
@@ -1267,6 +1284,10 @@ class StratagemManager(
             "HALLOWED BEACON",
             "REPELLING SPHERE",
             "SANCTIFIED KILL ZONE",
+            "RIGHTEOUS VENGEANCE",
+            "SUFFERING AND SACRIFICE",
+            "SPIRIT OF THE MARTYR",
+            "DIVINE INTERVENTION",
         }
         needs_phase_end = bool(
             (names & phase_end_trigger_names)
@@ -2209,6 +2230,12 @@ class StratagemManager(
             "PURGING FIRE": "Target: ASTRA MILITARUM unit with an active Order within objective range (not shot)",
             "SNAP TO IT": "Target: ASTRA MILITARUM OFFICER unit; issue one Order now",
             "VETERAN SHARPSHOOTERS": "Target: ASTRA MILITARUM unit (not shot)",
+            "RIGHTEOUS VENGEANCE": "Target: ADEPTA SORORITAS unit that has not fought",
+            "SUFFERING AND SACRIFICE": "Target: ADEPTA SORORITAS INFANTRY or WALKER unit",
+            "SPIRIT OF THE MARTYR": "Target: ADEPTA SORORITAS unit targeted in Fight phase (not fought)",
+            "PRAISE THE FALLEN": "Target: ADEPTA SORORITAS unit that lost models to the enemy shooter",
+            "SANCTIFIED IMMOLATION": "Target: destroyed ADEPTA SORORITAS VEHICLE model with Deadly Demise",
+            "DIVINE INTERVENTION": "Target: destroyed ADEPTA SORORITAS CHARACTER (not Saint Celestine); discard 1-3 Miracle dice",
             "BALEFUL BLESSING": "Target: HERETIC ASTARTES unit after a mortal wound is allocated to it",
             "MUTATION'S CURSE": "Target: HERETIC ASTARTES PSYKER unit; select one visible enemy unit within 12\"",
             "NO REST IN DEATH": "Target: HERETIC ASTARTES unit within 9\" of friendly Psyker/Daemon Prince source",
@@ -2764,6 +2791,10 @@ class StratagemManager(
             raise
         try:
             self._clear_plaguesurge_bonus_if_expired(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_hallowed_martyrs_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
 
@@ -3578,6 +3609,10 @@ class StratagemManager(
             raise
         try:
             self._queue_a_challenge_met_phase_end_reaction(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._resolve_hallowed_martyrs_phase_end(player=player, phase=phase)
         except Exception:
             raise
         # Clear command-phase battle-shock suppression flags (e.g., Terrifying Spectacle).
@@ -5753,6 +5788,15 @@ class StratagemManager(
         sr["ficklefire_pending_mortal_wounds"] = 0
         root.special_rules = sr
 
+    def _on_unit_shooting_resolved_praise_the_fallen(self, attacker_unit=None, hits_by_target=None, **_kwargs):
+        try:
+            self._queue_hallowed_martyrs_shooting_resolved_reactions(
+                attacker_unit=attacker_unit,
+                hits_by_target=hits_by_target,
+            )
+        except Exception:
+            raise
+
     def _on_unit_shooting_resolved_armour_of_contempt_cleanup(self, attacker_unit=None, **_kwargs) -> None:
         if attacker_unit is None:
             return
@@ -5928,6 +5972,13 @@ class StratagemManager(
             atk_key = self._attacker_unit_key(attacking_unit)
             if atk_key:
                 self._recent_shooting_targets[atk_key] = list(target_units or [])
+        except Exception:
+            raise
+        try:
+            self._capture_hallowed_martyrs_praise_the_fallen_targets(
+                attacking_unit=attacking_unit,
+                target_units=target_units,
+            )
         except Exception:
             raise
         try:
@@ -6674,6 +6725,13 @@ class StratagemManager(
             raise
         try:
             self._queue_world_eaters_cult_fight_reactions(
+                attacking_unit=attacking_unit,
+                target_units=target_units,
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_hallowed_martyrs_fight_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=target_units,
             )
@@ -8543,6 +8601,11 @@ class StratagemManager(
         if root is None:
             return
 
+        try:
+            self._queue_hallowed_martyrs_model_destroyed_reactions(unit=root, model=model)
+        except Exception:
+            raise
+
         # Death Guard (Virulent Vectorium): PUTRID DETONATION
         try:
             s_putrid = self.get_by_name("PUTRID DETONATION")
@@ -8703,6 +8766,13 @@ class StratagemManager(
             self._queue_world_eaters_cult_unit_destroyed_reactions(
                 unit=unit,
                 destroyed_by_unit=kwargs.get("destroyed_by_unit"),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_hallowed_martyrs_unit_destroyed_reactions(
+                unit=unit,
+                last_model=last_model,
             )
         except Exception:
             raise
@@ -11335,6 +11405,9 @@ class StratagemManager(
         am_result = self._use_astra_militarum_grizzled_stratagem(s, **kwargs)
         if am_result is not None:
             return am_result
+        as_result = self._use_adepta_sororitas_hallowed_stratagem(s, **kwargs)
+        if as_result is not None:
+            return as_result
 
         # Rage-cursed Onslaught: RED WRATH (advance then shoot/charge choice; Red Thirst for both)
         if s.name.upper() == "RED WRATH":

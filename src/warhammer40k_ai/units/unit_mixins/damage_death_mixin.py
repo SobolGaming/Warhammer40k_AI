@@ -437,6 +437,36 @@ class DamageDeathMixin:
             # Fail-safe: don't break death processing
             pass
 
+        # Adepta Sororitas: Spirit of the Martyr (defer fight-on-death until attacker finishes attacks).
+        try:
+            if game_map is not None:
+                army = self.get_parent_army()
+                game = army.player.game if (army is not None and getattr(army, "player", None) is not None) else None
+                phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                if phase_name == "FIGHT_PHASE":
+                    try:
+                        root = self.get_attached_unit_root()
+                    except Exception:
+                        root = self
+                    sr = getattr(root, "special_rules", None)
+                    if isinstance(sr, dict) and sr.get("spirit_of_martyr_active"):
+                        exp = str(sr.get("spirit_of_martyr_expires_phase", "") or "").strip().upper()
+                        if not exp or exp == phase_name:
+                            try:
+                                if not bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+                                    pending = getattr(root, "_spirit_of_martyr_pending_models", None)
+                                    if not isinstance(pending, list):
+                                        pending = []
+                                    if model not in pending:
+                                        pending.append(model)
+                                    root._spirit_of_martyr_pending_models = pending
+                                    return
+                            except Exception:
+                                pass
+        except Exception:
+            # Fail-safe: don't break death processing
+            pass
+
         # World Eaters (Possessed Slaughterband): Immortal Fury (defer fight-on-death until attacker finishes attacks).
         try:
             if game_map is not None:
@@ -905,19 +935,31 @@ class DamageDeathMixin:
                 damage_dice = DiceCollection.from_string(damage_expr)
 
         auto_trigger = False
+        putrid_auto_trigger = False
+        sanctified_auto_trigger = False
         try:
-            auto_trigger = bool(getattr(dying_model, "_putrid_detonation_auto_trigger_once", False))
+            putrid_auto_trigger = bool(getattr(dying_model, "_putrid_detonation_auto_trigger_once", False))
         except Exception:
-            auto_trigger = False
-        if auto_trigger:
+            putrid_auto_trigger = False
+        try:
+            sanctified_auto_trigger = bool(getattr(dying_model, "_sanctified_immolation_auto_trigger_once", False))
+        except Exception:
+            sanctified_auto_trigger = False
+        auto_trigger = bool(putrid_auto_trigger or sanctified_auto_trigger)
+        if putrid_auto_trigger:
             try:
                 setattr(dying_model, "_putrid_detonation_auto_trigger_once", False)
+            except Exception:
+                pass
+        if sanctified_auto_trigger:
+            try:
+                setattr(dying_model, "_sanctified_immolation_auto_trigger_once", False)
             except Exception:
                 pass
 
         logger.info(f"{self.name} has Deadly Demise {damage_dice} - checking for explosion!")
 
-        # Roll D6 to see if Deadly Demise triggers unless auto-triggered by PUTRID DETONATION.
+        # Roll D6 to see if Deadly Demise triggers unless auto-triggered by a stratagem.
         if not auto_trigger:
             trigger_roll = get_roll("D6")
             try:
@@ -931,7 +973,10 @@ class DamageDeathMixin:
                 return False
             logger.info(f"Deadly Demise trigger roll: {trigger_roll} - EXPLOSION! ")
         else:
-            logger.info("Deadly Demise auto-triggered (Putrid Detonation).")
+            if sanctified_auto_trigger and not putrid_auto_trigger:
+                logger.info("Deadly Demise auto-triggered (Sanctified Immolation).")
+            else:
+                logger.info("Deadly Demise auto-triggered (Putrid Detonation).")
 
         # Offer CAREEN! if available (Orks War Horde).
         try:

@@ -390,6 +390,25 @@ class FightPhaseManager:
     def _get_eligible_targets(self, fighting_unit: Unit) -> List[Unit]:
         """Get all eligible targets for a fighting unit."""
         eligible_targets = []
+
+        def _suffering_and_sacrifice_active(unit: Unit) -> bool:
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("suffering_and_sacrifice_active")):
+                return False
+            expires_phase = str(sr.get("suffering_and_sacrifice_expires_phase", "") or "").strip().upper()
+            if expires_phase and expires_phase != "FIGHT_PHASE":
+                return False
+            try:
+                marker_turn = int(sr.get("suffering_and_sacrifice_turn", 0) or 0)
+            except Exception:
+                marker_turn = 0
+            try:
+                current_turn = int(getattr(self.game, "turn", 0) or 0)
+            except Exception:
+                current_turn = 0
+            if marker_turn and current_turn and marker_turn != current_turn:
+                return False
+            return True
         
         enemy_units = self.game.map.get_enemy_units(fighting_unit)
         seen = set()
@@ -433,7 +452,10 @@ class FightPhaseManager:
                     eligible_targets.append(enemy_root)
             except Exception:
                 continue
-        
+
+        forced_targets = [u for u in list(eligible_targets or []) if _suffering_and_sacrifice_active(u)]
+        if forced_targets:
+            return forced_targets
         return eligible_targets
     
     def _execute_fight_sequence(self, fighting_unit: Unit, target_unit: Unit, current_player: Player, opponent_player: Player, ui_callback=None) -> None:

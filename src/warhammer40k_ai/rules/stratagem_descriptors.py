@@ -552,6 +552,71 @@ _GRIZZLED_COMPANY_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _GRIZZLED_COMPANY_STRATAGEM_DESCRIPTORS.values()
 }
 
+_HALLOWED_MARTYRS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008469004": StratagemToolDescriptor(
+        stratagem_id="000008469004",
+        name="Righteous Vengeance",
+        timing="fight_phase_on_select_to_fight",
+        target="adepta_sororitas_unit_not_yet_fought",
+        duration="until_end_of_phase",
+        effect="melee_hit_reroll_and_conditional_wound_reroll",
+        cp_cost=1,
+        effect_params={"reroll_hit_full": True, "reroll_wound_full_vs_target_below_half_strength": True},
+    ),
+    "000008469003": StratagemToolDescriptor(
+        stratagem_id="000008469003",
+        name="Suffering and Sacrifice",
+        timing="fight_phase_start",
+        target="adepta_sororitas_infantry_or_walker_unit",
+        duration="until_end_of_phase",
+        effect="engaged_enemy_target_lock",
+        cp_cost=1,
+    ),
+    "000008469006": StratagemToolDescriptor(
+        stratagem_id="000008469006",
+        name="Spirit of the Martyr",
+        timing="opponent_fight_phase_after_targets_selected",
+        target="adepta_sororitas_unit_targeted_not_yet_fought",
+        duration="until_end_of_phase",
+        effect="fight_on_death_after_attacks",
+        cp_cost=2,
+        effect_params={"roll_required": False},
+    ),
+    "000008469007": StratagemToolDescriptor(
+        stratagem_id="000008469007",
+        name="Praise the Fallen",
+        timing="opponent_shooting_phase_after_enemy_shoots",
+        target="adepta_sororitas_unit_that_lost_models_to_attacker",
+        duration="immediate",
+        effect="reactive_shooting",
+        cp_cost=1,
+        effect_params={"target_restriction": "enemy_attacker_only"},
+    ),
+    "000008469005": StratagemToolDescriptor(
+        stratagem_id="000008469005",
+        name="Sanctified Immolation",
+        timing="any_phase_before_destroyed_model_removed",
+        target="destroyed_adepta_sororitas_vehicle_model_with_deadly_demise",
+        duration="immediate",
+        effect="auto_trigger_deadly_demise",
+        cp_cost=1,
+    ),
+    "000008469002": StratagemToolDescriptor(
+        stratagem_id="000008469002",
+        name="Divine Intervention",
+        timing="any_phase_on_friendly_character_destroyed",
+        target="destroyed_adepta_sororitas_character_unit_excluding_saint_celestine",
+        duration="end_of_current_phase",
+        effect="return_destroyed_model_with_d3_plus_discarded_wounds",
+        cp_cost=1,
+        effect_params={"miracle_dice_discard_min": 1, "miracle_dice_discard_max": 3, "once_per_unit_per_battle": True},
+    ),
+}
+
+_HALLOWED_MARTYRS_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _HALLOWED_MARTYRS_STRATAGEM_DESCRIPTORS.values()
+}
+
 _WARPBANE_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009778002": StratagemToolDescriptor(
         stratagem_id="000009778002",
@@ -733,6 +798,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _GRIZZLED_COMPANY_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _HALLOWED_MARTYRS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _WARPBANE_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -751,6 +819,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _VESSELS_OF_WRATH_STRATAGEM_BY_NAME.get(key)
         or _CULT_OF_BLOOD_STRATAGEM_BY_NAME.get(key)
         or _GRIZZLED_COMPANY_STRATAGEM_BY_NAME.get(key)
+        or _HALLOWED_MARTYRS_STRATAGEM_BY_NAME.get(key)
         or _WARPBANE_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _CABAL_OF_CHAOS_STRATAGEM_BY_NAME.get(key)
     )

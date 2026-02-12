@@ -16918,6 +16918,115 @@ class GameView:
                 )
             return
 
+        if name_u in ("RIGHTEOUS VENGEANCE", "SUFFERING AND SACRIFICE", "SPIRIT OF THE MARTYR", "PRAISE THE FALLEN") and "unit" not in context and "target_unit" not in context:
+            if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+                candidates = context.get("candidates") or []
+                if not candidates:
+                    getter_name = {
+                        "RIGHTEOUS VENGEANCE": "_hallowed_righteous_vengeance_candidates",
+                        "SUFFERING AND SACRIFICE": "_hallowed_suffering_and_sacrifice_candidates",
+                    }.get(name_u, "")
+                    getter = getattr(manager, getter_name, None)
+                    if callable(getter):
+                        try:
+                            candidates = list(getter() or [])
+                        except Exception:
+                            candidates = []
+                subtitle = {
+                    "RIGHTEOUS VENGEANCE": "ADEPTA SORORITAS unit that has not fought this phase.",
+                    "SUFFERING AND SACRIFICE": "ADEPTA SORORITAS INFANTRY or WALKER unit.",
+                    "SPIRIT OF THE MARTYR": "ADEPTA SORORITAS unit targeted in Fight phase that has not fought.",
+                    "PRAISE THE FALLEN": "ADEPTA SORORITAS unit that lost one or more models to the attacker.",
+                }.get(name_u, "Select an eligible ADEPTA SORORITAS unit.")
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=candidates,
+                    on_chosen=lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt=f"Select {name} unit.",
+                    title=name,
+                    subtitle=subtitle,
+                    enemy_unit=context.get("enemy_unit"),
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+            return
+
+        if name_u == "DIVINE INTERVENTION":
+            has_discard_payload = any(
+                key in context
+                for key in (
+                    "miracle_dice_to_discard",
+                    "discard_miracle_dice_values",
+                    "miracle_dice_discard",
+                    "discard_count",
+                    "miracle_dice_discard_count",
+                )
+            )
+            if not has_discard_payload and callable(getattr(self, "_resolve_option_selection_dialog", None)):
+                from ..engine.decision_kinds import DECISION_CHOOSE_POWER_FROM_PAIN_OPTION
+                from ..engine.decisions import DecisionOption
+
+                pool = list(context.get("miracle_dice_pool") or [])
+                if not pool:
+                    try:
+                        acts_mgr = manager._as_miracle_dice_manager() if hasattr(manager, "_as_miracle_dice_manager") else None
+                        pool = list(getattr(acts_mgr, "miracle_dice", []) or []) if acts_mgr is not None else []
+                    except Exception:
+                        pool = []
+                try:
+                    pool_int = [int(v) for v in list(pool or [])]
+                except Exception:
+                    pool_int = []
+                if not pool_int:
+                    logger.info("Divine Intervention: no Miracle dice available to discard")
+                    return
+
+                from itertools import combinations
+
+                options: list[Any] = []
+                seen: set[tuple[int, ...]] = set()
+                ordered_pool = list(sorted(pool_int))
+                max_pick = min(3, len(ordered_pool))
+                for pick_count in range(1, max_pick + 1):
+                    for idx_combo in combinations(range(len(ordered_pool)), pick_count):
+                        values = tuple(sorted(int(ordered_pool[i]) for i in idx_combo))
+                        if values in seen:
+                            continue
+                        seen.add(values)
+                        label = f"Discard {', '.join(str(v) for v in values)}"
+                        options.append(
+                            DecisionOption.create(
+                                label,
+                                payload={
+                                    "miracle_dice_to_discard": list(values),
+                                    "discard_count": int(len(values)),
+                                },
+                            )
+                        )
+                options.sort(
+                    key=lambda opt: (
+                        int(len((getattr(opt, "payload", {}) or {}).get("miracle_dice_to_discard", []) or [])),
+                        tuple((getattr(opt, "payload", {}) or {}).get("miracle_dice_to_discard", []) or []),
+                    )
+                )
+
+                self._resolve_option_selection_dialog(
+                    player=player,
+                    options=options,
+                    on_chosen=lambda chosen: self._finalize_divine_intervention(player, name, context, chosen),
+                    decision_type=DECISION_CHOOSE_POWER_FROM_PAIN_OPTION,
+                    prompt="Select 1-3 Miracle dice to discard for Divine Intervention.",
+                    title="Divine Intervention",
+                    header="Choose Miracle Dice to discard",
+                    subtitle=f"Available: {', '.join(str(v) for v in ordered_pool)}",
+                    context={"stratagem_name": "DIVINE INTERVENTION"},
+                    allow_skip=True,
+                )
+                return
+
         if name_u == "NO RETREAT!" and ("objective" not in context and "objective_marker" not in context):
             if not callable(getattr(self, "_request_no_retreat_objective", None)):
                 return
@@ -18035,6 +18144,26 @@ class GameView:
         ctx = dict(context)
         ctx["unit"] = unit
         ctx["target_unit"] = unit
+        ok = manager.use(name, **ctx)
+        if ok:
+            logger.info(f"Used stratagem: {name}")
+        else:
+            logger.info(f"Could not use stratagem: {name}")
+
+    def _finalize_divine_intervention(self, player, name: str, context: Dict[str, Any], chosen_option) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if not isinstance(chosen_option, dict):
+            logger.info("Divine Intervention: no Miracle dice discard selected")
+            return
+        values = list(chosen_option.get("miracle_dice_to_discard") or [])
+        if not values:
+            logger.info("Divine Intervention: no Miracle dice discard selected")
+            return
+        ctx = dict(context)
+        ctx["miracle_dice_to_discard"] = list(values)
+        ctx["discard_count"] = int(len(values))
         ok = manager.use(name, **ctx)
         if ok:
             logger.info(f"Used stratagem: {name}")

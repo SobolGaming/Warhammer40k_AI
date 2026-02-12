@@ -153,6 +153,10 @@ class PositioningMixin:
             except Exception:
                 pass
             try:
+                root._resolve_spirit_of_martyr_queue(game_map=game_map)
+            except Exception:
+                pass
+            try:
                 root._resolve_immortal_fury_queue(game_map=game_map)
             except Exception:
                 pass
@@ -205,6 +209,10 @@ class PositioningMixin:
     def _resolve_deathless_duty_queue(self, game_map: Optional['Map'] = None) -> None:
         """Resolve deferred Deathless Duty fights after an attacker finishes its attacks."""
         self._resolve_deferred_fight_on_death_queue("_deathless_duty_pending_models", game_map=game_map)
+
+    def _resolve_spirit_of_martyr_queue(self, game_map: Optional['Map'] = None) -> None:
+        """Resolve deferred Spirit of the Martyr fights after an attacker finishes its attacks."""
+        self._resolve_deferred_fight_on_death_queue("_spirit_of_martyr_pending_models", game_map=game_map)
 
     def _resolve_immortal_fury_queue(self, game_map: Optional['Map'] = None) -> None:
         """Resolve deferred Immortal Fury fights after an attacker finishes its attacks."""

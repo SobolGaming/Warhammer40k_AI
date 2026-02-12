@@ -2804,6 +2804,38 @@ class ActionsMovementMixin:
             reroll_hit_values.add(1)
             reroll_hit_reasons.append("Ruthless Discipline: re-roll Hit rolls of 1 while ordered")
 
+        # Hallowed Martyrs: RIGHTEOUS VENGEANCE (melee hit re-rolls this phase).
+        try:
+            if atype in ("any", "melee"):
+                sr = getattr(root, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("righteous_vengeance_active"):
+                    active = True
+                    owner_id = str(sr.get("righteous_vengeance_turn_owner", "") or "")
+                    source = str(sr.get("righteous_vengeance_source", "") or "RIGHTEOUS VENGEANCE").strip() or "RIGHTEOUS VENGEANCE"
+                    game_local = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    phase_name = str(getattr(getattr(game_local, "phase", None), "name", "") or "").strip().upper()
+                    expires_phase = str(sr.get("righteous_vengeance_expires_phase", "") or "").strip().upper()
+                    if expires_phase and phase_name and expires_phase != phase_name:
+                        active = False
+                    try:
+                        effect_turn = int(sr.get("righteous_vengeance_turn", 0) or 0)
+                    except Exception:
+                        effect_turn = 0
+                    try:
+                        current_turn = int(getattr(game_local, "turn", 0) or 0)
+                    except Exception:
+                        current_turn = 0
+                    if effect_turn and current_turn and effect_turn != current_turn:
+                        active = False
+                    attacker_owner = str(getattr(getattr(army, "player", None), "id", "") or "") if army is not None else ""
+                    if owner_id and attacker_owner and owner_id != attacker_owner:
+                        active = False
+                    if active:
+                        mods["reroll_hit_full"] = True
+                        reroll_hit_full_reasons.append(f"{source}: re-roll Hit roll (melee)")
+        except Exception:
+            pass
+
         # Target debuffs: post-shoot critical hit thresholds (e.g. Whispering Web).
         try:
             if target is not None:
@@ -3198,6 +3230,47 @@ class ActionsMovementMixin:
             reroll_wound_full_reasons.append(
                 "Arch Contaminator: re-roll Wound rolls while within a controlled objective"
             )
+
+        # Hallowed Martyrs: RIGHTEOUS VENGEANCE (melee wound re-rolls vs Below Half-strength targets).
+        try:
+            if atype in ("any", "melee") and target is not None:
+                sr = getattr(root, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("righteous_vengeance_active"):
+                    active = True
+                    owner_id = str(sr.get("righteous_vengeance_turn_owner", "") or "")
+                    source = str(sr.get("righteous_vengeance_source", "") or "RIGHTEOUS VENGEANCE").strip() or "RIGHTEOUS VENGEANCE"
+                    phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+                    expires_phase = str(sr.get("righteous_vengeance_expires_phase", "") or "").strip().upper()
+                    if expires_phase and phase_name and expires_phase != phase_name:
+                        active = False
+                    try:
+                        effect_turn = int(sr.get("righteous_vengeance_turn", 0) or 0)
+                    except Exception:
+                        effect_turn = 0
+                    try:
+                        current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                    except Exception:
+                        current_turn = 0
+                    if effect_turn and current_turn and effect_turn != current_turn:
+                        active = False
+                    attacker_owner = str(getattr(getattr(army, "player", None), "id", "") or "") if army is not None else ""
+                    if owner_id and attacker_owner and owner_id != attacker_owner:
+                        active = False
+                    if active:
+                        target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+                        below_half = False
+                        if target_root is not None:
+                            below_half_fn = getattr(target_root, "is_below_half_strength", None)
+                            if callable(below_half_fn):
+                                try:
+                                    below_half = bool(below_half_fn())
+                                except Exception:
+                                    below_half = False
+                        if below_half:
+                            mods["reroll_wound_full"] = True
+                            reroll_wound_full_reasons.append(f"{source}: re-roll Wound roll vs Below Half-strength target")
+        except Exception:
+            pass
 
         # Virulent Vectorium: selected unit gains ranged wound rerolls vs Afflicted targets this phase.
         try:
