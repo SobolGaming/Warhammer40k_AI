@@ -190,6 +190,43 @@ class TestPostShootDecisions(unittest.TestCase):
         self.assertEqual(target.special_rules.get("post_shoot_leadership_debuff_turn"), 4)
         self.assertEqual(target.special_rules.get("post_shoot_leadership_debuff_value"), -1)
 
+    def test_post_shoot_leadership_debuff_stacks_on_same_target(self):
+        from warhammer40k_ai.engine.decision_dispatcher import dispatch_decision
+        from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET
+        from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
+
+        player = SimpleNamespace(id="P1")
+        army = SimpleNamespace(player=player)
+        attacker = _UnitStub("ATK", "Attacker", army=army)
+        target = _UnitStub("TGT", "Target", army=SimpleNamespace(player=SimpleNamespace(id="P2")))
+        game = _GameStub(units=[attacker, target], models=[], turn=4)
+
+        option = DecisionOption.create("Target", payload={"unit_id": target._id})
+
+        first = DecisionRequest.create(
+            DECISION_CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET,
+            "Select leadership debuff target.",
+            player_id=player.id,
+            options=[option],
+            context={"attacker_unit_id": attacker._id, "ability_name": "Terrifying Crescendo"},
+        )
+        first_result = DecisionResult(decision_id=first.decision_id, player_id=player.id, option_id=option.option_id, payload={})
+        first_apply = dispatch_decision(game, first, first_result)
+        self.assertTrue(first_apply.ok)
+        self.assertEqual(target.special_rules.get("post_shoot_leadership_debuff_value"), -1)
+
+        second = DecisionRequest.create(
+            DECISION_CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET,
+            "Select leadership debuff target.",
+            player_id=player.id,
+            options=[option],
+            context={"attacker_unit_id": attacker._id, "ability_name": "Terrifying Crescendo"},
+        )
+        second_result = DecisionResult(decision_id=second.decision_id, player_id=player.id, option_id=option.option_id, payload={})
+        second_apply = dispatch_decision(game, second, second_result)
+        self.assertTrue(second_apply.ok)
+        self.assertEqual(target.special_rules.get("post_shoot_leadership_debuff_value"), -2)
+
     def test_post_shoot_mortal_wounds_battleshock_applies(self):
         from warhammer40k_ai.engine.decision_dispatcher import dispatch_decision
         from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_POST_SHOOT_MORTAL_WOUNDS_TARGET

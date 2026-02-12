@@ -6244,10 +6244,18 @@ def _apply_post_shoot_leadership_debuff_target(game: object, request: DecisionRe
         sr = getattr(unit, "special_rules", None)
         if not isinstance(sr, dict):
             sr = {}
+        current_val = 0
+        if bool(sr.get("post_shoot_leadership_debuff_active")):
+            current_owner = str(sr.get("post_shoot_leadership_debuff_owner", "") or "")
+            if not current_owner or not owner_id or current_owner == owner_id:
+                try:
+                    current_val = int(sr.get("post_shoot_leadership_debuff_value", 0) or 0)
+                except Exception:
+                    current_val = 0
         sr["post_shoot_leadership_debuff_active"] = True
         sr["post_shoot_leadership_debuff_owner"] = owner_id
         sr["post_shoot_leadership_debuff_turn"] = int(current_turn)
-        sr["post_shoot_leadership_debuff_value"] = -1
+        sr["post_shoot_leadership_debuff_value"] = int(current_val) - 1
         sr["post_shoot_leadership_debuff_source"] = ability_name
         unit.special_rules = sr
 

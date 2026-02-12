@@ -866,6 +866,38 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
         self.assertEqual(int(army.emperors_children.pledge_target or 0), 1)
         self.assertEqual(int(army.emperors_children.unbound_arrogance_used_round or 0), 1)
 
+    def test_unbound_arrogance_works_with_warlord_off_battlefield(self):
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+
+        army = Army("Emperor's Children", detachment_type="Coterie of the Conceited")
+        army.faction_id = "EC"
+        player = Player("P1", PlayerControl.LOCAL, army=army)
+
+        game = SimpleNamespace(
+            turn=1,
+            event_system=SimpleNamespace(subscribe=lambda *args, **kwargs: None),
+        )
+        player.set_game(game)
+        player.command_points = 1
+
+        warlord = _StubUnit("Warlord", army, faction_keywords=["EMPEROR'S CHILDREN"], is_character=True)
+        warlord.is_warlord = True
+        warlord.deployed = False
+        warlord.reserve_status = "reserves"
+        warlord.is_embarked = False
+        warlord.embarked_in = None
+        army.warlord = warlord
+
+        unit = _StubUnit("EC Unit", army, faction_keywords=["EMPEROR'S CHILDREN"])
+        army.units = [warlord, unit]
+        manager = player.stratagems
+        manager._current_phase_name = "Shooting phase"
+
+        ok = manager.use("UNBOUND ARROGANCE", unit=unit, target_unit=unit, phase_name="Shooting phase")
+        self.assertTrue(ok)
+        self.assertEqual(int(army.emperors_children.pledge_target or 0), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

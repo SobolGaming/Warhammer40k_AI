@@ -1534,7 +1534,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
             "Renegade Raiders: HERETIC ASTARTES ranged weapons count as [ASSAULT], and HERETIC ASTARTES attacks improve AP by 1 when targeting units within range of an objective marker.",
         ),
         "Mechanised Murder": ("Supported", "Rapid Evisceration: reroll Hit/Wound rolls of 1 for eligible units."),
-        "Daemonic Empowerment": ("Supported", "Carnival of Excess: empowered units gain Sustained Hits."),
+        "Daemonic Empowerment": (
+            "Supported",
+            "Carnival of Excess: empowered units gain Sustained Hits 1; if a weapon already has Sustained Hits, its unmodified hit rolls of 5+ score Critical Hits.",
+        ),
         "Skilled Crews": (
             "Supported",
             "Armoured Warhost: AELDARI VEHICLE ranged weapons count as [ASSAULT]; AELDARI VEHICLE FLY units can re-roll Advance rolls.",
@@ -6370,7 +6373,7 @@ def _post_shoot_leadership_debuff_support(description: str) -> Optional[Tuple[st
         return None
     return (
         "Supported",
-        "After shooting, pick a hit enemy unit; until your next Shooting phase, it suffers -1 to Battle-shock/Leadership tests.",
+        "After shooting, pick a hit enemy unit; until your next Shooting phase, it suffers -1 to Battle-shock/Leadership tests (stacking with repeated applications).",
     )
 
 

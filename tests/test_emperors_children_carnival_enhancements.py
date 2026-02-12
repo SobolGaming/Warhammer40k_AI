@@ -122,7 +122,7 @@ def _attack_result(profile_name: str = "Test Weapon") -> AttackResult:
     )
 
 
-def _add_melee_weapon(unit: Unit, *, name: str, attacks: int = 2, damage: int = 1):
+def _add_melee_weapon(unit: Unit, *, name: str, attacks: int = 2, damage: int = 1, description: str = ""):
     weapon = Wargear(
         {
             "name": name,
@@ -133,7 +133,7 @@ def _add_melee_weapon(unit: Unit, *, name: str, attacks: int = 2, damage: int = 
             "S": "5",
             "AP": "-1",
             "D": str(int(damage)),
-            "description": "",
+            "description": str(description or ""),
         }
     )
     unit.models[0].wargear = [weapon]
@@ -380,6 +380,69 @@ class TestEmperorsChildrenCarnivalEnhancements(unittest.TestCase):
         fall_back_rules = get_validation_rules(MovementType.FALL_BACK, moving_unit=bodyguard)
         self.assertTrue(bool(fall_back_rules.get("can_move_through_enemy_models")))
         self.assertFalse(bool(fall_back_rules.get("check_desperate_escape", True)))
+
+    def test_daemonic_empowerment_existing_sustained_hits_scores_critical_on_five_plus(self):
+        game, ec_army, enemy_army, player, _enemy_player = _build_game()
+        game.turn = 1
+        game.phase = BattleRoundPhases.FIGHT_PHASE
+
+        attacker = _make_unit(
+            "Attacker",
+            keywords=["INFANTRY", "EMPEROR'S CHILDREN", "HERETIC ASTARTES"],
+        )
+        daemon_ally = _make_unit(
+            "Daemon Ally",
+            keywords=["INFANTRY", "LEGIONS OF EXCESS", "SLAANESH"],
+            faction_keywords=["LEGIONS OF EXCESS"],
+        )
+        target = _make_unit(
+            "Enemy Unit",
+            faction_name="Enemy",
+            faction_keywords=["ENEMY"],
+            keywords=["INFANTRY"],
+        )
+
+        ec_army.add_unit(attacker)
+        ec_army.add_unit(daemon_ally)
+        enemy_army.add_unit(target)
+        attacker.deployed = True
+        daemon_ally.deployed = True
+        target.deployed = True
+        attacker.reserve_status = "deployed"
+        daemon_ally.reserve_status = "deployed"
+        target.reserve_status = "deployed"
+        attacker.embarked_in = None
+        daemon_ally.embarked_in = None
+        target.embarked_in = None
+
+        attacker.models[0].set_location(10.0, 10.0, 0.0, 0.0)
+        daemon_ally.models[0].set_location(14.0, 10.0, 0.0, 0.0)
+        target.models[0].set_location(12.0, 10.0, 0.0, 0.0)
+        game.map.units = [attacker, daemon_ally, target]
+
+        profile = _add_melee_weapon(
+            attacker,
+            name="Pavane Proxy",
+            attacks=1,
+            damage=1,
+            description="sustained hits 3",
+        )
+
+        attack_instance = {}
+        hit_result = profile._hit_target_with_tracking(
+            target,
+            attacker.models[0],
+            attack_instance,
+            roll_value=5,
+            allow_rerolls=False,
+            log_roll=False,
+        )
+
+        self.assertTrue(bool(hit_result.get("hit")))
+        self.assertEqual(int(hit_result.get("crit_threshold", 0) or 0), 5)
+        self.assertTrue(bool(attack_instance.get("crit_hit", False)))
+        self.assertEqual(int(attack_instance.get("sustained_hit", 0) or 0), 3)
+        self.assertTrue(any("Critical hit (5+)" in str(x) for x in list(hit_result.get("special_effects", []) or [])))
 
 
 if __name__ == "__main__":
