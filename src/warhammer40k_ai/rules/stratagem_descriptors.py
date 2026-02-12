@@ -771,6 +771,74 @@ _CABAL_OF_CHAOS_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _CABAL_OF_CHAOS_STRATAGEM_DESCRIPTORS.values()
 }
 
+_SLAANESHS_CHOSEN_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010019002": StratagemToolDescriptor(
+        stratagem_id="000010019002",
+        name="Devoted Duellists",
+        timing="fight_phase_on_select_to_fight",
+        target="emperors_children_character_unit_not_yet_fought",
+        duration="until_end_of_phase",
+        effect="grant_sustained_hits_vs_selected_enemy",
+        cp_cost=1,
+        effect_params={"sustained_hits_value": 1, "attack_type": "melee", "requires_enemy_target": True},
+    ),
+    "000010019003": StratagemToolDescriptor(
+        stratagem_id="000010019003",
+        name="Beautiful Death",
+        timing="opponent_fight_phase_after_enemy_targets_selected",
+        target="emperors_children_character_unit_targeted",
+        duration="until_end_of_phase",
+        effect="fight_on_death_roll",
+        cp_cost=1,
+        effect_params={"roll": "D6", "threshold": 4, "favoured_champions_bonus": 1, "deferred_until_attacker_finishes": True},
+    ),
+    "000010019004": StratagemToolDescriptor(
+        stratagem_id="000010019004",
+        name="Heightened Jealousy",
+        timing="shooting_or_fight_phase_when_favoured_champions_updated_or_enemy_destroyed",
+        target="favoured_champions_emperors_children_character_unit",
+        duration="until_end_of_phase",
+        effect="grant_strength_bonus_to_non_favoured_character_units",
+        cp_cost=1,
+        effect_params={"strength_bonus": 1},
+    ),
+    "000010019005": StratagemToolDescriptor(
+        stratagem_id="000010019005",
+        name="Diabolic Majesty",
+        timing="shooting_or_fight_phase_when_favoured_champions_updated",
+        target="favoured_champions_emperors_children_character_unit",
+        duration="immediate",
+        effect="battle_shock_test_aura",
+        cp_cost=1,
+        range_in=6.0,
+        effect_params={"battle_shock_modifier": -1, "once_per_battle_round": True},
+    ),
+    "000010019006": StratagemToolDescriptor(
+        stratagem_id="000010019006",
+        name="Refusal to Be Outdone",
+        timing="charge_phase",
+        target="emperors_children_character_unit",
+        duration="until_end_of_phase",
+        effect="charge_roll_bonus_vs_selected_enemy_within_engagement",
+        cp_cost=1,
+        effect_params={"charge_roll_bonus": 2},
+    ),
+    "000010019007": StratagemToolDescriptor(
+        stratagem_id="000010019007",
+        name="Vengeful Surge",
+        timing="opponent_shooting_phase_after_enemy_targets_selected",
+        target="emperors_children_character_unit_targeted",
+        duration="immediate_after_attacker_resolves",
+        effect="reactive_surge_move_towards_closest_enemy",
+        cp_cost=1,
+        effect_params={"distance_roll": "D6", "allow_reroll_if_not_favoured_champions": True, "allow_engagement_range": True},
+    ),
+}
+
+_SLAANESHS_CHOSEN_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SLAANESHS_CHOSEN_STRATAGEM_DESCRIPTORS.values()
+}
+
 _COURT_OF_THE_PHOENICIAN_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010655007": StratagemToolDescriptor(
         stratagem_id="000010655007",
@@ -1078,6 +1146,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _CABAL_OF_CHAOS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _SLAANESHS_CHOSEN_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _COURT_OF_THE_PHOENICIAN_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -1105,6 +1176,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _HALLOWED_MARTYRS_STRATAGEM_BY_NAME.get(key)
         or _WARPBANE_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _CABAL_OF_CHAOS_STRATAGEM_BY_NAME.get(key)
+        or _SLAANESHS_CHOSEN_STRATAGEM_BY_NAME.get(key)
         or _COURT_OF_THE_PHOENICIAN_STRATAGEM_BY_NAME.get(key)
         or _COTERIE_OF_THE_CONCEITED_STRATAGEM_BY_NAME.get(key)
         or _MERCURIAL_HOST_STRATAGEM_BY_NAME.get(key)

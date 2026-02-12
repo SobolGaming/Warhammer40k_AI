@@ -94,6 +94,11 @@ class EmperorsChildrenStratagemMixin:
         checker = getattr(mgr, "is_mercurial_host", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_slaaneshs_chosen_detachment(self) -> bool:
+        mgr = self._get_emperors_children_mgr()
+        checker = getattr(mgr, "is_slaaneshs_chosen", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_rapid_evisceration_detachment(self) -> bool:
         mgr = self._get_emperors_children_mgr()
         checker = getattr(mgr, "is_rapid_evisceration", None) if mgr is not None else None
@@ -142,6 +147,9 @@ class EmperorsChildrenStratagemMixin:
                 return []
         elif det == "mercurial":
             if not self._is_mercurial_host_detachment():
+                return []
+        elif det == "slaanesh":
+            if not self._is_slaaneshs_chosen_detachment():
                 return []
         else:
             return []
@@ -426,6 +434,45 @@ class EmperorsChildrenStratagemMixin:
             except (AttributeError, TypeError, ValueError):
                 return False
         return False
+
+    def _ec_attached_has_character(self, unit: Any) -> bool:
+        root = self._ec_root(unit)
+        if root is None:
+            return False
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if not members:
+            members = [root]
+        for member in members:
+            if member is None:
+                continue
+            is_character = getattr(member, "is_character", False)
+            if callable(is_character):
+                is_character = is_character()
+            if bool(is_character):
+                return True
+            if self._ec_has_keyword(member, "CHARACTER"):
+                return True
+        return False
+
+    def _ec_is_favoured_champions(self, unit: Any) -> bool:
+        root = self._ec_root(unit)
+        if root is None:
+            return False
+        mgr = self._get_emperors_children_mgr()
+        checker = getattr(mgr, "is_favoured_champions", None) if mgr is not None else None
+        return bool(checker(root)) if callable(checker) else False
+
+    def _ec_slaanesh_character_candidates(self, *, require_not_fought: bool = False) -> list[Any]:
+        candidates = self._ec_targetable_units(
+            detachment="slaanesh",
+            require_not_fought=require_not_fought,
+        )
+        out: list[Any] = []
+        for root in list(candidates or []):
+            if self._ec_attached_has_character(root):
+                out.append(root)
+        return sorted(out, key=self._ec_sort_key)
 
     def _ec_embarked_units(self, transport_unit: Any, *, require_emperors_children: bool = True) -> list[Any]:
         root_transport = self._ec_root(transport_unit)
@@ -1354,6 +1401,979 @@ class EmperorsChildrenStratagemMixin:
         if len(filtered) == 1:
             payload["target_unit"] = filtered[0]
         self._queue_reaction(payload, use_timer=False)
+
+    def _queue_emperors_children_slaanesh_shooting_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: Optional[list[Any]],
+    ) -> None:
+        if not self._is_slaaneshs_chosen_detachment():
+            return
+        if attacking_unit is None or self.game is None:
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        if self._ec_owned_by_player(attacking_unit, self.player):
+            return
+
+        stratagem = self.get_by_name("VENGEFUL SURGE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if self._ec_reaction_already_queued(
+            event_name="shooting_targets_selected",
+            stratagem_name=stratagem.name,
+            phase_name="Shooting phase",
+            enemy_unit=attacking_unit,
+        ):
+            return
+
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for target in list(target_units or []):
+            root = self._ec_root(target)
+            if root is None:
+                continue
+            uid = self._ec_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ec_owned_by_player(root, self.player):
+                continue
+            if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            if not self._is_emperors_children_unit(root):
+                continue
+            if not self._ec_attached_has_character(root):
+                continue
+            candidates.append(root)
+        candidates = sorted(candidates, key=self._ec_sort_key)
+        if not candidates:
+            return
+
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacking_unit,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_emperors_children_slaanesh_fight_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: Optional[list[Any]],
+    ) -> None:
+        if not self._is_slaaneshs_chosen_detachment():
+            return
+        if attacking_unit is None or self.game is None:
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "fight phase":
+            return
+        if self._ec_owned_by_player(attacking_unit, self.player):
+            return
+
+        stratagem = self.get_by_name("BEAUTIFUL DEATH")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if self._ec_reaction_already_queued(
+            event_name="fight_targets_selected",
+            stratagem_name=stratagem.name,
+            phase_name="Fight phase",
+            enemy_unit=attacking_unit,
+        ):
+            return
+
+        candidates: list[Any] = []
+        seen: set[str] = set()
+        for target in list(target_units or []):
+            root = self._ec_root(target)
+            if root is None:
+                continue
+            uid = self._ec_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ec_owned_by_player(root, self.player):
+                continue
+            if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            if not self._is_emperors_children_unit(root):
+                continue
+            if not self._ec_attached_has_character(root):
+                continue
+            candidates.append(root)
+        candidates = sorted(candidates, key=self._ec_sort_key)
+        if not candidates:
+            return
+
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacking_unit,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_emperors_children_slaanesh_favoured_updated_reactions(
+        self,
+        *,
+        unit: Any,
+        manager: Any = None,
+    ) -> None:
+        if not self._is_slaaneshs_chosen_detachment():
+            return
+        if self.game is None:
+            return
+        phase_name = str(getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if phase_name == "shooting phase" and active_player is not self.player:
+            return
+
+        root = self._ec_root(unit)
+        if root is None:
+            return
+        if not self._ec_owned_by_player(root, self.player):
+            return
+        if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+            return
+        if self._unit_cannot_be_target_of_stratagem(root):
+            return
+        if not self._is_emperors_children_unit(root):
+            return
+        if not self._ec_attached_has_character(root):
+            return
+
+        mgr = manager if manager is not None else self._get_emperors_children_mgr()
+        is_favoured = self._ec_is_favoured_champions(root)
+        checker = getattr(mgr, "is_favoured_champions", None) if mgr is not None else None
+        if callable(checker):
+            is_favoured = bool(checker(root))
+        if not is_favoured:
+            return
+
+        current_round = int(getattr(self.game, "turn", 0) or 0)
+
+        diabolic = self.get_by_name("DIABOLIC MAJESTY")
+        if diabolic is not None:
+            if int(getattr(self.player, "command_points", 0) or 0) >= int(getattr(diabolic, "cp_cost", 0) or 0):
+                if str(diabolic.name or "").strip().upper() not in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+                    if int(getattr(self, "_ec_slaanesh_diabolic_majesty_used_round", 0) or 0) != int(current_round or 0):
+                        if not self._ec_reaction_already_queued(
+                            event_name="emperors_children_favoured_champions_updated",
+                            stratagem_name=diabolic.name,
+                            phase_name=phase_name,
+                            target_unit=root,
+                        ):
+                            self._queue_reaction(
+                                {
+                                    "event": "emperors_children_favoured_champions_updated",
+                                    "phase_name": phase_name,
+                                    "stratagem": diabolic.name,
+                                    "cp_cost": diabolic.cp_cost,
+                                    "target_unit": root,
+                                    "unit": root,
+                                    "candidates": [root],
+                                },
+                                use_timer=False,
+                            )
+
+        jealousy = self.get_by_name("HEIGHTENED JEALOUSY")
+        if jealousy is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(jealousy, "cp_cost", 0) or 0):
+            return
+        if str(jealousy.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if self._ec_reaction_already_queued(
+            event_name="emperors_children_favoured_champions_updated",
+            stratagem_name=jealousy.name,
+            phase_name=phase_name,
+            target_unit=root,
+        ):
+            return
+        self._queue_reaction(
+            {
+                "event": "emperors_children_favoured_champions_updated",
+                "phase_name": phase_name,
+                "stratagem": jealousy.name,
+                "cp_cost": jealousy.cp_cost,
+                "target_unit": root,
+                "unit": root,
+                "candidates": [root],
+            },
+            use_timer=False,
+        )
+
+    def _queue_emperors_children_slaanesh_favoured_destroyed_enemy_reaction(
+        self,
+        *,
+        destroyed_unit: Any,
+        destroyed_by_unit: Any,
+    ) -> None:
+        if not self._is_slaaneshs_chosen_detachment():
+            return
+        if self.game is None:
+            return
+        phase_name = str(getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if phase_name == "shooting phase" and active_player is not self.player:
+            return
+        if destroyed_by_unit is None or destroyed_unit is None:
+            return
+
+        attacker_root = self._ec_root(destroyed_by_unit)
+        target_root = self._ec_root(destroyed_unit)
+        if attacker_root is None or target_root is None:
+            return
+        if not self._ec_owned_by_player(attacker_root, self.player):
+            return
+        if self._ec_owned_by_player(target_root, self.player):
+            return
+        if not self._ec_is_alive(attacker_root) or not self._ec_is_on_battlefield(attacker_root):
+            return
+        if self._unit_cannot_be_target_of_stratagem(attacker_root):
+            return
+        if not self._is_emperors_children_unit(attacker_root):
+            return
+        if not self._ec_attached_has_character(attacker_root):
+            return
+        if not self._ec_is_favoured_champions(attacker_root):
+            return
+
+        jealousy = self.get_by_name("HEIGHTENED JEALOUSY")
+        if jealousy is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(jealousy, "cp_cost", 0) or 0):
+            return
+        if str(jealousy.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if self._ec_reaction_already_queued(
+            event_name="unit_destroyed",
+            stratagem_name=jealousy.name,
+            phase_name=phase_name,
+            target_unit=attacker_root,
+        ):
+            return
+        self._queue_reaction(
+            {
+                "event": "unit_destroyed",
+                "phase_name": phase_name,
+                "stratagem": jealousy.name,
+                "cp_cost": jealousy.cp_cost,
+                "target_unit": attacker_root,
+                "unit": attacker_root,
+                "enemy_unit": target_root,
+                "candidates": [attacker_root],
+            },
+            use_timer=False,
+        )
+
+    def _roll_slaanesh_vengeful_surge_distance(self, unit: Any, *, can_reroll: bool) -> int:
+        base_roll = int(dice_module.get_roll("D6") or 0)
+        reroll_used = False
+        player = getattr(unit.get_parent_army(), "player", None) if unit is not None else None
+        is_human = bool(getattr(player, "has_control", lambda: False)()) if player is not None else False
+
+        if can_reroll:
+            if is_human:
+                provider = getattr(getattr(self.game, "map", None), "roll_reroll_provider", None) if self.game is not None else None
+                if callable(provider):
+                    want = bool(
+                        provider(
+                            player=player,
+                            unit=unit,
+                            roll_type="vengeful_surge",
+                            value=int(base_roll or 0),
+                            dice=[int(base_roll or 0)],
+                            allow_reroll=True,
+                        )
+                    )
+                    if want:
+                        base_roll = int(dice_module.get_roll("D6") or 0)
+                        reroll_used = True
+            else:
+                if int(base_roll or 0) <= 3:
+                    base_roll = int(dice_module.get_roll("D6") or 0)
+                    reroll_used = True
+
+        if player is not None:
+            from ..utility.event_bus import append_dice
+
+            label = "Vengeful Surge reroll" if reroll_used else "Vengeful Surge roll"
+            append_dice(player, f"{label}: {int(base_roll or 0)}\" for {getattr(unit, 'name', 'Unit')}")
+        return int(base_roll or 0)
+
+    def _resolve_emperors_children_slaanesh_vengeful_surge_after_shooting(
+        self,
+        *,
+        attacker_unit: Any,
+    ) -> None:
+        if not self._is_slaaneshs_chosen_detachment():
+            return
+        if attacker_unit is None or self.game is None:
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+
+        attacker_root = self._ec_root(attacker_unit)
+        attacker_id = self._ec_sort_key(attacker_root)
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return
+
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._ec_root(unit)
+            if root is None:
+                continue
+            uid = self._ec_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("slaanesh_vengeful_surge_pending")):
+                continue
+            expected_attacker_id = str(sr.get("slaanesh_vengeful_surge_attacker_id", "") or "")
+            if expected_attacker_id and attacker_id and expected_attacker_id != attacker_id:
+                continue
+            for key in (
+                "slaanesh_vengeful_surge_pending",
+                "slaanesh_vengeful_surge_attacker_id",
+                "slaanesh_vengeful_surge_allow_reroll",
+                "slaanesh_vengeful_surge_source",
+                "slaanesh_vengeful_surge_owner",
+                "slaanesh_vengeful_surge_turn",
+                "slaanesh_vengeful_surge_expires_phase",
+            ):
+                sr.pop(key, None)
+            root.special_rules = sr
+
+            if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+                continue
+            can_reroll = bool(sr.get("slaanesh_vengeful_surge_allow_reroll", False))
+            source_name = str(sr.get("slaanesh_vengeful_surge_source", "") or "VENGEFUL SURGE").strip() or "VENGEFUL SURGE"
+            max_distance = self._roll_slaanesh_vengeful_surge_distance(root, can_reroll=can_reroll)
+            if max_distance <= 0:
+                continue
+            closest_enemy = self._court_closest_non_aircraft_enemy(root)
+            queue_move = getattr(self.game, "_queue_reactive_move_movement_decision", None)
+            if callable(queue_move):
+                queue_move(
+                    player=self.player,
+                    unit=root,
+                    max_distance=int(max_distance),
+                    kind="vengeful_surge",
+                    movement_type="reactive",
+                    source=source_name,
+                    attacker_unit=closest_enemy or attacker_root,
+                    allow_engagement_range=True,
+                )
+
+    def _ec_resolve_unit_entry(self, entry: Any) -> Any:
+        if isinstance(entry, str):
+            return self._ec_root(self._resolve_unit_by_id(entry))
+        return self._ec_root(entry)
+
+    def _ec_enemy_units_on_battlefield(self) -> list[Any]:
+        if self.game is None:
+            return []
+        game_map = getattr(self.game, "map", None)
+        if game_map is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(game_map, "units", []) or []):
+            root = self._ec_root(unit)
+            if root is None:
+                continue
+            uid = self._ec_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if self._ec_owned_by_player(root, self.player):
+                continue
+            if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ec_sort_key)
+
+    def _ec_enemy_within_engagement_of_friendly(self, enemy_unit: Any) -> bool:
+        if self.game is None or enemy_unit is None:
+            return False
+        game_map = getattr(self.game, "map", None)
+        if game_map is None:
+            return False
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return False
+        enemy_root = self._ec_root(enemy_unit)
+        if enemy_root is None:
+            return False
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._ec_root(unit)
+            if root is None:
+                continue
+            uid = self._ec_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ec_owned_by_player(root, self.player):
+                continue
+            if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+                continue
+            try:
+                if bool(game_map.is_within_engagement_range(root, enemy_root)):
+                    return True
+            except (AttributeError, TypeError, ValueError):
+                continue
+        return False
+
+    def _use_slaanesh_devoted_duellists(self, stratagem: Any, **kwargs) -> bool:
+        selected = (
+            kwargs.get("units")
+            or kwargs.get("target_units")
+            or kwargs.get("selected_units")
+            or kwargs.get("unit")
+            or kwargs.get("target_unit")
+        )
+        if selected is None:
+            selected = []
+        if not isinstance(selected, (list, tuple)):
+            selected = [selected]
+        resolved: list[Any] = []
+        seen: set[str] = set()
+        for entry in list(selected or []):
+            root = self._ec_resolve_unit_entry(entry)
+            if root is None:
+                continue
+            uid = self._ec_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            resolved.append(root)
+
+        eligible = self._ec_slaanesh_character_candidates(require_not_fought=True)
+        if not resolved and len(eligible) == 1:
+            resolved = [eligible[0]]
+        if not resolved:
+            logger.error("ERROR: DEVOTED DUELLISTS: no target unit provided")
+            return False
+
+        enemy_unit = (
+            kwargs.get("enemy_unit")
+            or kwargs.get("attacker_unit")
+            or kwargs.get("target_enemy_unit")
+            or kwargs.get("enemy_target")
+        )
+        enemy_root = self._ec_resolve_unit_entry(enemy_unit)
+        enemy_candidates = self._ec_enemy_units_on_battlefield()
+        if enemy_root is None and len(enemy_candidates) == 1:
+            enemy_root = enemy_candidates[0]
+        if enemy_root is None:
+            logger.error("ERROR: DEVOTED DUELLISTS: no enemy unit provided")
+            return False
+        if not self._ec_unit_in_candidates(enemy_root, enemy_candidates):
+            logger.error("ERROR: DEVOTED DUELLISTS: selected enemy is not a valid target")
+            return False
+
+        if not self._is_slaaneshs_chosen_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: DEVOTED DUELLISTS: wrong phase")
+            return False
+        for root in list(resolved):
+            if not self._ec_unit_in_candidates(root, eligible):
+                logger.error("ERROR: DEVOTED DUELLISTS: one or more selected units are not eligible")
+                return False
+        if not self._court_spend_cp(stratagem, target_unit=resolved[0], enemy_unit=enemy_root):
+            return False
+
+        enemy_id = self._ec_sort_key(enemy_root)
+        for root in list(resolved):
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["devoted_duellists_active"] = True
+            sr["devoted_duellists_expires_phase"] = "FIGHT_PHASE"
+            sr["devoted_duellists_owner"] = str(getattr(self.player, "id", "") or "")
+            sr["devoted_duellists_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+            sr["devoted_duellists_source"] = str(stratagem.name or "DEVOTED DUELLISTS")
+            sr["devoted_duellists_target_unit_id"] = str(enemy_id or "")
+            sr["devoted_duellists_sustained_hits_value"] = 1
+            root.special_rules = sr
+
+        self._court_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: DEVOTED DUELLISTS: %d unit(s) gain Sustained Hits 1 vs %s this phase.",
+            int(len(resolved)),
+            getattr(enemy_root, "name", "Enemy"),
+        )
+        return True
+
+    def _use_slaanesh_beautiful_death(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        enemy_unit = kwargs.get("enemy_unit") or kwargs.get("attacking_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "BEAUTIFUL DEATH":
+                    continue
+                unit = reaction.get("unit") or reaction.get("target_unit")
+                enemy_unit = enemy_unit or reaction.get("attacking_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: BEAUTIFUL DEATH: no target unit provided")
+            return False
+
+        root = self._ec_resolve_unit_entry(unit)
+        enemy_root = self._ec_resolve_unit_entry(enemy_unit)
+        if root is None:
+            return False
+        if not self._is_slaaneshs_chosen_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: BEAUTIFUL DEATH: wrong phase")
+            return False
+        if candidates and not self._ec_unit_in_candidates(root, candidates):
+            logger.error("ERROR: BEAUTIFUL DEATH: target is not currently eligible")
+            return False
+        if not self._ec_owned_by_player(root, self.player):
+            logger.error("ERROR: BEAUTIFUL DEATH: target unit is not yours")
+            return False
+        if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: BEAUTIFUL DEATH: target cannot be selected")
+            return False
+        if not self._is_emperors_children_unit(root) or not self._ec_attached_has_character(root):
+            logger.error("ERROR: BEAUTIFUL DEATH: target must be an EMPEROR'S CHILDREN CHARACTER unit")
+            return False
+        if enemy_root is not None and self._ec_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: BEAUTIFUL DEATH: attacker is not enemy")
+            return False
+        if not self._court_spend_cp(stratagem, target_unit=root, enemy_unit=enemy_root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["beautiful_death_active"] = True
+        sr["beautiful_death_expires_phase"] = "FIGHT_PHASE"
+        sr["beautiful_death_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["beautiful_death_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["beautiful_death_source"] = str(stratagem.name or "BEAUTIFUL DEATH")
+        root.special_rules = sr
+
+        self._court_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: BEAUTIFUL DEATH: %s can fight on death on a 4+ this phase (+1 if Favoured Champions).",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_slaanesh_diabolic_majesty(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "DIABOLIC MAJESTY":
+                    continue
+                unit = reaction.get("unit") or reaction.get("target_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: DIABOLIC MAJESTY: no target unit provided")
+            return False
+
+        root = self._ec_resolve_unit_entry(unit)
+        if root is None:
+            return False
+        if not self._is_slaaneshs_chosen_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in ("shooting phase", "fight phase"):
+            logger.error("ERROR: DIABOLIC MAJESTY: wrong phase")
+            return False
+        if phase_name == "shooting phase":
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if active_player is not self.player:
+                logger.error("ERROR: DIABOLIC MAJESTY: not your Shooting phase")
+                return False
+        if candidates and not self._ec_unit_in_candidates(root, candidates):
+            logger.error("ERROR: DIABOLIC MAJESTY: target is not currently eligible")
+            return False
+        if not self._ec_owned_by_player(root, self.player):
+            logger.error("ERROR: DIABOLIC MAJESTY: target unit is not yours")
+            return False
+        if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: DIABOLIC MAJESTY: target cannot be selected")
+            return False
+        if not self._is_emperors_children_unit(root) or not self._ec_attached_has_character(root):
+            logger.error("ERROR: DIABOLIC MAJESTY: target must be an EMPEROR'S CHILDREN CHARACTER unit")
+            return False
+        if not self._ec_is_favoured_champions(root):
+            logger.error("ERROR: DIABOLIC MAJESTY: target must be your Favoured Champions")
+            return False
+        current_round = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        if int(getattr(self, "_ec_slaanesh_diabolic_majesty_used_round", 0) or 0) == int(current_round or 0):
+            logger.error("ERROR: DIABOLIC MAJESTY: already used this battle round")
+            return False
+        if not self._court_spend_cp(stratagem, target_unit=root):
+            return False
+
+        turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        affected = 0
+        for enemy_root in list(self._ec_enemy_units_on_battlefield() or []):
+            distance = self._ec_distance_between_units(root, enemy_root)
+            if distance is None or float(distance) > 6.0 + 1e-6:
+                continue
+            sr = getattr(enemy_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["battle_shock_test_modifier"] = int(sr.get("battle_shock_test_modifier", 0) or 0) - 1
+            reasons = list(sr.get("battle_shock_test_modifier_reasons", []) or [])
+            reasons.append("Diabolic Majesty")
+            sr["battle_shock_test_modifier_reasons"] = reasons
+            enemy_root.special_rules = sr
+            take_test = getattr(enemy_root, "take_battle_shock_test", None)
+            if callable(take_test):
+                take_test(turn)
+            affected += 1
+
+        self._ec_slaanesh_diabolic_majesty_used_round = int(current_round or 0)
+        self._court_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: DIABOLIC MAJESTY: %d enemy unit(s) took Battle-shock tests at -1.",
+            int(affected),
+        )
+        return True
+
+    def _use_slaanesh_heightened_jealousy(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "HEIGHTENED JEALOUSY":
+                    continue
+                unit = reaction.get("unit") or reaction.get("target_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: HEIGHTENED JEALOUSY: no target unit provided")
+            return False
+
+        root = self._ec_resolve_unit_entry(unit)
+        if root is None:
+            return False
+        if not self._is_slaaneshs_chosen_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name not in ("shooting phase", "fight phase"):
+            logger.error("ERROR: HEIGHTENED JEALOUSY: wrong phase")
+            return False
+        if phase_name == "shooting phase":
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+            if active_player is not self.player:
+                logger.error("ERROR: HEIGHTENED JEALOUSY: not your Shooting phase")
+                return False
+        if candidates and not self._ec_unit_in_candidates(root, candidates):
+            logger.error("ERROR: HEIGHTENED JEALOUSY: target is not currently eligible")
+            return False
+        if not self._ec_owned_by_player(root, self.player):
+            logger.error("ERROR: HEIGHTENED JEALOUSY: target unit is not yours")
+            return False
+        if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: HEIGHTENED JEALOUSY: target cannot be selected")
+            return False
+        if not self._is_emperors_children_unit(root) or not self._ec_attached_has_character(root):
+            logger.error("ERROR: HEIGHTENED JEALOUSY: target must be an EMPEROR'S CHILDREN CHARACTER unit")
+            return False
+        if not self._ec_is_favoured_champions(root):
+            logger.error("ERROR: HEIGHTENED JEALOUSY: target must be your Favoured Champions")
+            return False
+        if not self._court_spend_cp(stratagem, target_unit=root):
+            return False
+
+        applied = 0
+        favoured_id = self._ec_sort_key(root)
+        phase_key = self._phase_key_from_name(phase_name)
+        for other in list(self._ec_slaanesh_character_candidates(require_not_fought=False) or []):
+            other_root = self._ec_root(other)
+            if other_root is None:
+                continue
+            if self._ec_is_favoured_champions(other_root):
+                continue
+            other_id = self._ec_sort_key(other_root)
+            if favoured_id and other_id and favoured_id == other_id:
+                continue
+            sr = getattr(other_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["heightened_jealousy_active"] = True
+            sr["heightened_jealousy_expires_phase"] = str(phase_key)
+            sr["heightened_jealousy_owner"] = str(getattr(self.player, "id", "") or "")
+            sr["heightened_jealousy_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+            sr["heightened_jealousy_source"] = str(stratagem.name or "HEIGHTENED JEALOUSY")
+            sr["heightened_jealousy_favoured_unit_id"] = str(favoured_id or "")
+            sr["heightened_jealousy_strength_bonus"] = 1
+            other_root.special_rules = sr
+            applied += 1
+
+        self._court_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: HEIGHTENED JEALOUSY: %d non-favoured CHARACTER unit(s) gain +1 Strength on attacks this phase.",
+            int(applied),
+        )
+        return True
+
+    def _use_slaanesh_refusal_to_be_outdone(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: REFUSAL TO BE OUTDONE: no target unit provided")
+            return False
+
+        root = self._ec_resolve_unit_entry(unit)
+        if root is None:
+            return False
+        if not self._is_slaaneshs_chosen_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "charge phase":
+            logger.error("ERROR: REFUSAL TO BE OUTDONE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: REFUSAL TO BE OUTDONE: not your turn")
+            return False
+        if candidates and not self._ec_unit_in_candidates(root, candidates):
+            logger.error("ERROR: REFUSAL TO BE OUTDONE: target is not currently eligible")
+            return False
+        if not self._ec_owned_by_player(root, self.player):
+            logger.error("ERROR: REFUSAL TO BE OUTDONE: target unit is not yours")
+            return False
+        if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: REFUSAL TO BE OUTDONE: target cannot be selected")
+            return False
+        if not self._is_emperors_children_unit(root) or not self._ec_attached_has_character(root):
+            logger.error("ERROR: REFUSAL TO BE OUTDONE: target must be an EMPEROR'S CHILDREN CHARACTER unit")
+            return False
+
+        enemy_unit = (
+            kwargs.get("enemy_unit")
+            or kwargs.get("attacker_unit")
+            or kwargs.get("target_enemy_unit")
+            or kwargs.get("enemy_target")
+        )
+        enemy_root = self._ec_resolve_unit_entry(enemy_unit)
+        enemy_candidates = [
+            cand for cand in self._ec_enemy_units_on_battlefield()
+            if self._ec_enemy_within_engagement_of_friendly(cand)
+        ]
+        if enemy_root is None and len(enemy_candidates) == 1:
+            enemy_root = enemy_candidates[0]
+        if enemy_root is None:
+            logger.error("ERROR: REFUSAL TO BE OUTDONE: no enemy unit provided")
+            return False
+        if not self._ec_unit_in_candidates(enemy_root, enemy_candidates):
+            logger.error("ERROR: REFUSAL TO BE OUTDONE: selected enemy is not within Engagement Range of your units")
+            return False
+        if not self._court_spend_cp(stratagem, target_unit=root, enemy_unit=enemy_root):
+            return False
+
+        enemy_id = self._ec_sort_key(enemy_root)
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        mods = list(sr.get("charge_roll_modifiers", []) or [])
+        mods = [
+            m
+            for m in mods
+            if not (isinstance(m, dict) and str(m.get("tag", "") or "") == "stratagem:refusal_to_be_outdone")
+        ]
+        mods.append(
+            {
+                "value": 2,
+                "source": str(stratagem.name or "REFUSAL TO BE OUTDONE"),
+                "tag": "stratagem:refusal_to_be_outdone",
+                "expires_phase": "CHARGE_PHASE",
+                "owner": str(getattr(self.player, "id", "") or ""),
+                "turn": int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0,
+                "target_unit_ids": [str(enemy_id or "")] if enemy_id else [],
+            }
+        )
+        sr["charge_roll_modifiers"] = mods
+        sr["slaanesh_refusal_to_be_outdone_active"] = True
+        sr["slaanesh_refusal_to_be_outdone_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["slaanesh_refusal_to_be_outdone_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["slaanesh_refusal_to_be_outdone_expires_phase"] = "CHARGE_PHASE"
+        sr["slaanesh_refusal_to_be_outdone_target_unit_id"] = str(enemy_id or "")
+        sr["slaanesh_refusal_to_be_outdone_source"] = str(stratagem.name or "REFUSAL TO BE OUTDONE")
+        root.special_rules = sr
+
+        self._court_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: REFUSAL TO BE OUTDONE: %s gains +2 to charge against %s this phase.",
+            getattr(root, "name", "Unit"),
+            getattr(enemy_root, "name", "Enemy"),
+        )
+        return True
+
+    def _use_slaanesh_vengeful_surge(self, stratagem: Any, **kwargs) -> bool:
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        enemy_unit = kwargs.get("enemy_unit") or kwargs.get("attacking_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "VENGEFUL SURGE":
+                    continue
+                unit = reaction.get("unit") or reaction.get("target_unit")
+                enemy_unit = enemy_unit or reaction.get("attacking_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: VENGEFUL SURGE: no target unit provided")
+            return False
+
+        root = self._ec_resolve_unit_entry(unit)
+        enemy_root = self._ec_resolve_unit_entry(enemy_unit)
+        if root is None:
+            return False
+        if not self._is_slaaneshs_chosen_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: VENGEFUL SURGE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: VENGEFUL SURGE: not opponent's Shooting phase")
+            return False
+        if candidates and not self._ec_unit_in_candidates(root, candidates):
+            logger.error("ERROR: VENGEFUL SURGE: target is not currently eligible")
+            return False
+        if not self._ec_owned_by_player(root, self.player):
+            logger.error("ERROR: VENGEFUL SURGE: target unit is not yours")
+            return False
+        if not self._ec_is_alive(root) or not self._ec_is_on_battlefield(root):
+            return False
+        if self._unit_cannot_be_target_of_stratagem(root):
+            logger.error("ERROR: VENGEFUL SURGE: target cannot be selected")
+            return False
+        if not self._is_emperors_children_unit(root) or not self._ec_attached_has_character(root):
+            logger.error("ERROR: VENGEFUL SURGE: target must be an EMPEROR'S CHILDREN CHARACTER unit")
+            return False
+        if enemy_root is not None and self._ec_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: VENGEFUL SURGE: attacker is not enemy")
+            return False
+        if not self._court_spend_cp(stratagem, target_unit=root, enemy_unit=enemy_root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["slaanesh_vengeful_surge_pending"] = True
+        sr["slaanesh_vengeful_surge_attacker_id"] = str(self._ec_sort_key(enemy_root) or "")
+        sr["slaanesh_vengeful_surge_allow_reroll"] = not self._ec_is_favoured_champions(root)
+        sr["slaanesh_vengeful_surge_source"] = str(stratagem.name or "VENGEFUL SURGE")
+        sr["slaanesh_vengeful_surge_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["slaanesh_vengeful_surge_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["slaanesh_vengeful_surge_expires_phase"] = "SHOOTING_PHASE"
+        root.special_rules = sr
+
+        self._court_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: VENGEFUL SURGE: %s will make a Surge move after the attacker resolves shooting.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_emperors_children_slaanesh_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None:
+            return None
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "DEVOTED DUELLISTS":
+            return self._use_slaanesh_devoted_duellists(stratagem, **kwargs)
+        if name_u == "BEAUTIFUL DEATH":
+            return self._use_slaanesh_beautiful_death(stratagem, **kwargs)
+        if name_u == "HEIGHTENED JEALOUSY":
+            return self._use_slaanesh_heightened_jealousy(stratagem, **kwargs)
+        if name_u == "DIABOLIC MAJESTY":
+            return self._use_slaanesh_diabolic_majesty(stratagem, **kwargs)
+        if name_u == "REFUSAL TO BE OUTDONE":
+            return self._use_slaanesh_refusal_to_be_outdone(stratagem, **kwargs)
+        if name_u == "VENGEFUL SURGE":
+            return self._use_slaanesh_vengeful_surge(stratagem, **kwargs)
+        return None
 
     def _court_effective_cp_cost(self, stratagem: Any, *, target_unit: Any = None, enemy_unit: Any = None) -> int:
         cp_cost = int(getattr(stratagem, "cp_cost", 0) or 0)
@@ -3351,6 +4371,89 @@ class EmperorsChildrenStratagemMixin:
                         "rapid_ceaseless_onslaught_owner",
                         "rapid_ceaseless_onslaught_turn",
                         "rapid_ceaseless_onslaught_source",
+                    ):
+                        sr.pop(key, None)
+
+            if phase_name == "FIGHT_PHASE" and bool(sr.get("devoted_duellists_active")):
+                exp = str(sr.get("devoted_duellists_expires_phase", "") or "").strip().upper()
+                if not exp or exp == "FIGHT_PHASE":
+                    for key in (
+                        "devoted_duellists_active",
+                        "devoted_duellists_expires_phase",
+                        "devoted_duellists_owner",
+                        "devoted_duellists_turn",
+                        "devoted_duellists_source",
+                        "devoted_duellists_target_unit_id",
+                        "devoted_duellists_sustained_hits_value",
+                    ):
+                        sr.pop(key, None)
+
+            if phase_name == "FIGHT_PHASE" and bool(sr.get("beautiful_death_active")):
+                exp = str(sr.get("beautiful_death_expires_phase", "") or "").strip().upper()
+                if not exp or exp == "FIGHT_PHASE":
+                    for key in (
+                        "beautiful_death_active",
+                        "beautiful_death_expires_phase",
+                        "beautiful_death_owner",
+                        "beautiful_death_turn",
+                        "beautiful_death_source",
+                    ):
+                        sr.pop(key, None)
+
+            if phase_name in ("SHOOTING_PHASE", "FIGHT_PHASE") and bool(sr.get("heightened_jealousy_active")):
+                exp = str(sr.get("heightened_jealousy_expires_phase", "") or "").strip().upper()
+                if not exp or exp == phase_name:
+                    for key in (
+                        "heightened_jealousy_active",
+                        "heightened_jealousy_expires_phase",
+                        "heightened_jealousy_owner",
+                        "heightened_jealousy_turn",
+                        "heightened_jealousy_source",
+                        "heightened_jealousy_favoured_unit_id",
+                        "heightened_jealousy_strength_bonus",
+                    ):
+                        sr.pop(key, None)
+
+            if phase_name == "SHOOTING_PHASE" and bool(sr.get("slaanesh_vengeful_surge_pending")):
+                exp = str(sr.get("slaanesh_vengeful_surge_expires_phase", "") or "").strip().upper()
+                if not exp or exp == "SHOOTING_PHASE":
+                    for key in (
+                        "slaanesh_vengeful_surge_pending",
+                        "slaanesh_vengeful_surge_attacker_id",
+                        "slaanesh_vengeful_surge_allow_reroll",
+                        "slaanesh_vengeful_surge_source",
+                        "slaanesh_vengeful_surge_owner",
+                        "slaanesh_vengeful_surge_turn",
+                        "slaanesh_vengeful_surge_expires_phase",
+                    ):
+                        sr.pop(key, None)
+
+            if phase_name == "CHARGE_PHASE":
+                exp = str(sr.get("slaanesh_refusal_to_be_outdone_expires_phase", "") or "").strip().upper()
+                if (not exp or exp == "CHARGE_PHASE") and (
+                    bool(sr.get("slaanesh_refusal_to_be_outdone_active"))
+                    or isinstance(sr.get("charge_roll_modifiers"), list)
+                ):
+                    mods = list(sr.get("charge_roll_modifiers", []) or [])
+                    kept = [
+                        m
+                        for m in mods
+                        if not (
+                            isinstance(m, dict)
+                            and str(m.get("tag", "") or "") == "stratagem:refusal_to_be_outdone"
+                        )
+                    ]
+                    if kept:
+                        sr["charge_roll_modifiers"] = kept
+                    else:
+                        sr.pop("charge_roll_modifiers", None)
+                    for key in (
+                        "slaanesh_refusal_to_be_outdone_active",
+                        "slaanesh_refusal_to_be_outdone_owner",
+                        "slaanesh_refusal_to_be_outdone_turn",
+                        "slaanesh_refusal_to_be_outdone_expires_phase",
+                        "slaanesh_refusal_to_be_outdone_target_unit_id",
+                        "slaanesh_refusal_to_be_outdone_source",
                     ):
                         sr.pop(key, None)
 

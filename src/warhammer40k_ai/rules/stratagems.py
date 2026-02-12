@@ -39,12 +39,15 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BRAZEN IDOL",
     "BRAZEN CONTEMPT",
     "BERSERK FUGUE",
+    "BEAUTIFUL DEATH",
     "DAEMONIC FURY",
     "DAEMONIC STRENGTH",
     "DAEMONTIDE",
     "DEFIANT TO THE LAST",
     "DEATHLESS DUTY",
     "DEATH ECSTASY",
+    "DEVOTED DUELLISTS",
+    "DIABOLIC MAJESTY",
     "DRAWN TO THE SLAUGHTER",
     "EMBRACE THE PAIN",
     "ASPIRE TO INFAMY",
@@ -55,6 +58,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "FEIGNED RETREAT",
     "FIRE AND FADE",
     "HACK AND SLASH",
+    "HEIGHTENED JEALOUSY",
     "LIGHTNING-FAST REACTIONS",
     "LIMB FROM LIMB",
     "MURDER-CALL",
@@ -78,6 +82,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "PURGING FIRE",
     "RAPID INGRESS",
     "RAPID MANIFESTATION",
+    "REFUSAL TO BE OUTDONE",
     "MEET FORCE WITH FORCE",
     "OVERSHADOWED BY NONE",
     "PUNISH THE CRAVEN",
@@ -95,6 +100,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "UNLEASH THE LIONS",
     "UNBRIDLED CARNAGE",
     "VETERAN SHARPSHOOTERS",
+    "VENGEFUL SURGE",
     "WEBWAY TUNNEL",
     "UNYIELDING FORMS",
     "MERCILESS RECLAMATION",
@@ -197,6 +203,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "BLOODY VENGEANCE",
     "BRAZEN CONTEMPT",
     "BERSERK FUGUE",
+    "BEAUTIFUL DEATH",
     "CUT DOWN THE WEAK",
     "DEFIANT TO THE LAST",
     "DEATHLESS DUTY",
@@ -258,6 +265,9 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "PUTRID DETONATION",
     "BALEFUL BLESSING",
     "CATALYTIC STIMULUS",
+    "DIABOLIC MAJESTY",
+    "HEIGHTENED JEALOUSY",
+    "VENGEFUL SURGE",
     "CAPRICIOUS REACTIONS",
     "COMBAT STIMMS",
     "CONTEMPTUOUS DISREGARD",
@@ -1144,7 +1154,7 @@ class StratagemManager(
         if names & {"FIRES OF COVENANT", "A CHALLENGE MET"}:
             add("unit_set_up", self._on_unit_set_up)
 
-        if names & {"A GRIM WARNING", "BLOOD OFFERING", "BLOODY VENGEANCE", "DRAWN TO THE SLAUGHTER", "ONTO THE NEXT", "UNBOUND ARROGANCE", "TERRIFYING SPECTACLE", "DIVINE INTERVENTION"}:
+        if names & {"A GRIM WARNING", "BLOOD OFFERING", "BLOODY VENGEANCE", "DRAWN TO THE SLAUGHTER", "HEIGHTENED JEALOUSY", "ONTO THE NEXT", "UNBOUND ARROGANCE", "TERRIFYING SPECTACLE", "DIVINE INTERVENTION"}:
             add("unit_destroyed", self._on_unit_destroyed)
 
         if names & {"SKULLS FOR THE SKULL THRONE!", "FICKLEFIRE", "GORY DEDICATION"}:
@@ -1177,6 +1187,10 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_praise_the_fallen)
         if "CATALYTIC STIMULUS" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_catalytic_stimulus)
+        if "VENGEFUL SURGE" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_slaanesh_vengeful_surge)
+        if names & {"DIABOLIC MAJESTY", "HEIGHTENED JEALOUSY"}:
+            add("emperors_children_favoured_champions_updated", self._on_emperors_children_favoured_champions_updated)
 
         if "UNLEASH BALEFIRE" in names and "INSANE BRAVERY" not in names:
             add("battle_shock_test_resolved", self._on_battle_shock_test_resolved)
@@ -1218,9 +1232,11 @@ class StratagemManager(
             "AEGIS ETERNAL",
             "CONTEMPTUOUS DISREGARD",
             "REACTIVE DISEMBARKATION",
+            "VENGEFUL SURGE",
         }
         fight_reaction_names = {
             "BERSERK FUGUE",
+            "BEAUTIFUL DEATH",
             "COMBAT STIMMS",
             "CONTEMPTUOUS DISREGARD",
             "DEFIANT TO THE LAST",
@@ -1339,15 +1355,20 @@ class StratagemManager(
             "SUFFERING AND SACRIFICE",
             "SPIRIT OF THE MARTYR",
             "DIVINE INTERVENTION",
+            "BEAUTIFUL DEATH",
             "CLOSE-QUARTERS EXCRUCIATION",
+            "DEVOTED DUELLISTS",
             "EMBRACE THE PAIN",
             "EUPHORIC INSPIRATION",
+            "HEIGHTENED JEALOUSY",
             "MARTIAL PERFECTION",
             "PROTECTION OF THE DARK PRINCE",
             "PRIDEFUL SUPERIORITY",
+            "REFUSAL TO BE OUTDONE",
             "SINUOUS BREACH",
             "HONOUR THE PRINCE",
             "UNSHAKEABLE OPPONENTS",
+            "VENGEFUL SURGE",
             "VIOLENT EXCESS",
         }
         needs_phase_end = bool(
@@ -2282,10 +2303,14 @@ class StratagemManager(
             "RED WRATH": "Target: BLOOD ANGELS unit (advanced)",
             "A CHALLENGE MET": "Target: WYCH CULT unit; enemy within 9\" that moved or was set up this phase",
             "ACROBATIC DISPLAY": "Target: WYCH CULT unit targeted by enemy attacks",
+            "BEAUTIFUL DEATH": "Target: EMPEROR'S CHILDREN CHARACTER unit targeted by enemy fight attacks",
             "BERSERK FUGUE": "Target: WYCH CULT unit targeted by enemy attacks",
             "DEADLY DEBUT": "Target: DRUKHARI unit that charged and has not fought",
+            "DEVOTED DUELLISTS": "Target: EMPEROR'S CHILDREN CHARACTER unit (not fought); select one enemy unit",
+            "DIABOLIC MAJESTY": "Target: your Favoured Champions EMPEROR'S CHILDREN CHARACTER unit (newly favoured this phase)",
             "FEIGNED WEAKNESS": "Target: DRUKHARI unit that Fell Back",
             "PRETERNATURAL AGILITY": "Target: WYCH CULT unit",
+            "HEIGHTENED JEALOUSY": "Target: your Favoured Champions EMPEROR'S CHILDREN CHARACTER unit (newly favoured or after destroying an enemy)",
             "MORDIAN MINUTE": "Target: ASTRA MILITARUM INFANTRY unit with First Rank, Fire! Second Rank, Fire! (not shot)",
             "NO RETREAT!": "Target: ASTRA MILITARUM unit with Duty and Honour!; select controlled objective in range",
             "PURGING FIRE": "Target: ASTRA MILITARUM unit with an active Order within objective range (not shot)",
@@ -2318,11 +2343,13 @@ class StratagemManager(
             "PRIDEFUL SUPERIORITY": "Target: EMPEROR'S CHILDREN unit selected to fight (not fought)",
             "PROTECTION OF THE DARK PRINCE": "Target: EMPEROR'S CHILDREN unit when an attack/wound is allocated to one of its models",
             "REACTIVE DISEMBARKATION": "Target: EMPEROR'S CHILDREN TRANSPORT targeted by enemy shooting attacks; disembark one embarked unit",
+            "REFUSAL TO BE OUTDONE": "Target: EMPEROR'S CHILDREN CHARACTER unit; select an enemy unit within Engagement Range of your units",
             "CRUEL RAIDERS": "Target: EMPEROR'S CHILDREN unit wholly within 9\" of edge and >3\" horizontal from enemies",
             "SHROUD OF CHAOS": "Target: HERETIC ASTARTES PSYKER/DAEMON PRINCE source unit",
             "SINUOUS BREACH": "Target: EMPEROR'S CHILDREN DAEMON unit (not yet moved/charged)",
             "SOULSEEKERS": "Target: HERETIC ASTARTES unit that has not been selected to shoot",
             "HONOUR THE PRINCE": "Target: EMPEROR'S CHILDREN INFANTRY unit not yet selected to move",
+            "VENGEFUL SURGE": "Target: EMPEROR'S CHILDREN CHARACTER unit targeted by enemy shooting attacks",
             "VIOLENT EXCESS": "Target: EMPEROR'S CHILDREN unit selected to fight (not fought)",
             "UNSHAKEABLE OPPONENTS": "Target: EMPEROR'S CHILDREN unit (start of your Command phase)",
             "UNHOLY HASTE": "Target: HERETIC ASTARTES INFANTRY unit that has not been selected to charge",
@@ -5916,6 +5943,14 @@ class StratagemManager(
         except Exception:
             raise
 
+    def _on_unit_shooting_resolved_slaanesh_vengeful_surge(self, attacker_unit=None, **_kwargs):
+        try:
+            self._resolve_emperors_children_slaanesh_vengeful_surge_after_shooting(
+                attacker_unit=attacker_unit,
+            )
+        except Exception:
+            raise
+
     def _on_unit_shooting_resolved_armour_of_contempt_cleanup(self, attacker_unit=None, **_kwargs) -> None:
         if attacker_unit is None:
             return
@@ -6134,6 +6169,13 @@ class StratagemManager(
             raise
         try:
             self._queue_emperors_children_rapid_shooting_reactions(
+                attacking_unit=attacking_unit,
+                target_units=target_units,
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_emperors_children_slaanesh_shooting_reactions(
                 attacking_unit=attacking_unit,
                 target_units=target_units,
             )
@@ -6890,6 +6932,13 @@ class StratagemManager(
             raise
         try:
             self._queue_emperors_children_mercurial_fight_reactions(
+                attacking_unit=attacking_unit,
+                target_units=target_units,
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_emperors_children_slaanesh_fight_reactions(
                 attacking_unit=attacking_unit,
                 target_units=target_units,
             )
@@ -8558,6 +8607,12 @@ class StratagemManager(
         except Exception:
             raise
 
+    def _on_emperors_children_favoured_champions_updated(self, unit=None, manager=None, **_kwargs) -> None:
+        try:
+            self._queue_emperors_children_slaanesh_favoured_updated_reactions(unit=unit, manager=manager)
+        except Exception:
+            raise
+
     def _on_model_destroyed(
         self,
         attacker_model=None,
@@ -8965,6 +9020,13 @@ class StratagemManager(
             raise
         try:
             self._track_emperors_children_rapid_destroyed_enemy(
+                destroyed_by_unit=kwargs.get("destroyed_by_unit"),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_emperors_children_slaanesh_favoured_destroyed_enemy_reaction(
+                destroyed_unit=unit,
                 destroyed_by_unit=kwargs.get("destroyed_by_unit"),
             )
         except Exception:
@@ -11595,6 +11657,9 @@ class StratagemManager(
         cabal_result = self._use_chaos_space_marines_cabal_stratagem(s, **kwargs)
         if cabal_result is not None:
             return cabal_result
+        ec_slaanesh_result = self._use_emperors_children_slaanesh_stratagem(s, **kwargs)
+        if ec_slaanesh_result is not None:
+            return ec_slaanesh_result
         ec_court_result = self._use_emperors_children_court_stratagem(s, **kwargs)
         if ec_court_result is not None:
             return ec_court_result

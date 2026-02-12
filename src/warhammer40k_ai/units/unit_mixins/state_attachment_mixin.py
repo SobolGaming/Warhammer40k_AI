@@ -95,6 +95,10 @@ class StateAttachmentMixin:
         except Exception:
             pass
         try:
+            self._beautiful_death_pending_models = []
+        except Exception:
+            pass
+        try:
             self._berserk_fugue_pending_models = []
         except Exception:
             pass

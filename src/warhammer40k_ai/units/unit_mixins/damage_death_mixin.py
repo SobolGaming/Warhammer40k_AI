@@ -377,6 +377,54 @@ class DamageDeathMixin:
             # Fail-safe: don't break death processing
             pass
 
+        # Emperor's Children (Slaanesh's Chosen): BEAUTIFUL DEATH (defer fight-on-death until attacker finishes attacks).
+        try:
+            if game_map is not None:
+                army = self.get_parent_army()
+                game = army.player.game if (army is not None and getattr(army, "player", None) is not None) else None
+                phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                if phase_name == "FIGHT_PHASE":
+                    try:
+                        root = self.get_attached_unit_root()
+                    except Exception:
+                        root = self
+                    sr = getattr(root, "special_rules", None)
+                    if isinstance(sr, dict) and sr.get("beautiful_death_active"):
+                        exp = str(sr.get("beautiful_death_expires_phase", "") or "").strip().upper()
+                        if not exp or exp == phase_name:
+                            try:
+                                if not bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+                                    roll = int(get_roll("D6") or 0)
+                                    bonus = 0
+                                    mgr = getattr(army, "emperors_children", None) if army is not None else None
+                                    is_favoured = getattr(mgr, "is_favoured_champions", None) if mgr is not None else None
+                                    if callable(is_favoured) and bool(is_favoured(root)):
+                                        bonus = 1
+                                    total = int(roll + bonus)
+                                    from ...utility.event_bus import append_dice
+                                    if army is not None and getattr(army, "player", None) is not None:
+                                        label = str(sr.get("beautiful_death_source", "") or "Beautiful Death").strip()
+                                        if bonus:
+                                            append_dice(
+                                                army.player,
+                                                f"{label} roll: {roll} +1 (Favoured Champions) = {total} for {self.name}",
+                                            )
+                                        else:
+                                            append_dice(army.player, f"{label} roll: {roll} for {self.name}")
+                                    if total >= 4:
+                                        pending = getattr(root, "_beautiful_death_pending_models", None)
+                                        if not isinstance(pending, list):
+                                            pending = []
+                                        if model not in pending:
+                                            pending.append(model)
+                                        root._beautiful_death_pending_models = pending
+                                        return
+                            except Exception:
+                                pass
+        except Exception:
+            # Fail-safe: don't break death processing
+            pass
+
         # Drukhari (Spectacle of Spite): BERSERK FUGUE (defer fight-on-death until attacker finishes attacks).
         try:
             if game_map is not None:

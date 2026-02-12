@@ -6998,6 +6998,28 @@ class Game(
 
             extra_list = sr.get("charge_roll_modifiers", None)
             if isinstance(extra_list, list):
+                target_ids: set[str] = set()
+                if target_unit is not None:
+                    try:
+                        if isinstance(target_unit, (list, tuple, set)):
+                            targets_for_filter = [t for t in list(target_unit or []) if t is not None]
+                        else:
+                            targets_for_filter = [target_unit]
+                    except Exception:
+                        targets_for_filter = [target_unit]
+                    for tgt in list(targets_for_filter or []):
+                        try:
+                            root = tgt.get_attached_unit_root() if hasattr(tgt, "get_attached_unit_root") else tgt
+                        except Exception:
+                            root = tgt
+                        if root is None:
+                            continue
+                        try:
+                            tid = str(get_entity_id(root) or "")
+                        except Exception:
+                            tid = ""
+                        if tid:
+                            target_ids.add(tid)
                 for item in extra_list:
                     val = 0
                     source = "Charge roll modifier"
@@ -7005,6 +7027,20 @@ class Game(
                         val = int(item[0] or 0)
                         source = str(item[1] if len(item) > 1 else source)
                     elif isinstance(item, dict):
+                        target_filter_ids = {
+                            str(v).strip()
+                            for v in list(item.get("target_unit_ids", []) or [])
+                            if str(v).strip()
+                        }
+                        if not target_filter_ids:
+                            single_target = str(item.get("target_unit_id", "") or "").strip()
+                            if single_target:
+                                target_filter_ids = {single_target}
+                        if target_filter_ids:
+                            if not target_ids:
+                                continue
+                            if not (target_filter_ids & target_ids):
+                                continue
                         val = int(item.get("value", 0) or 0)
                         source = str(item.get("source", "") or source)
                     else:

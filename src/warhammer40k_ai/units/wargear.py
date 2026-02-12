@@ -8662,6 +8662,39 @@ class WargearProfile:
         except Exception:
             deadly_debut_lethal = False
 
+        devoted_duellists_sustained_value = 0
+        try:
+            if is_melee:
+                unit = getattr(attacker, "parent_unit", None)
+                try:
+                    root = unit.get_attached_unit_root() if unit is not None else None
+                except Exception:
+                    root = unit
+                sr = getattr(root, "special_rules", None) if root is not None else None
+                if isinstance(sr, dict) and sr.get("devoted_duellists_active"):
+                    apply_bonus = True
+                    exp = str(sr.get("devoted_duellists_expires_phase", "") or "").strip().upper()
+                    if exp:
+                        try:
+                            army = root.get_parent_army() if root is not None else None
+                            game = getattr(getattr(army, "player", None), "game", None)
+                            pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                        except Exception:
+                            pname = ""
+                        if pname and pname != exp:
+                            apply_bonus = False
+                    if apply_bonus:
+                        expected_target_id = str(sr.get("devoted_duellists_target_unit_id", "") or "")
+                        target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+                        target_id = str(get_entity_id(target_root) or "") if target_root is not None else ""
+                        if expected_target_id and target_id and expected_target_id == target_id:
+                            devoted_duellists_sustained_value = int(
+                                sr.get("devoted_duellists_sustained_hits_value", 1) or 1
+                            )
+        except Exception:
+            devoted_duellists_sustained_value = 0
+        devoted_duellists_sustained = bool(devoted_duellists_sustained_value)
+
         pact_lethal = False
         pact_sustained = False
         exquisite_lethal = False
@@ -8782,6 +8815,7 @@ class WargearProfile:
             or pain_sustained
             or bearer_unit_sustained
             or war_horde_sustained
+            or devoted_duellists_sustained
             or bonus_sustained
             or malefic_sustained
         )
@@ -8863,7 +8897,7 @@ class WargearProfile:
                 hit_result['special_effects'].append("Lethal Hits")
                 attack_instance['lethal_hit'] = True
             # For Sustained Hits, do not override an existing Sustained Hits X on the weapon.
-            if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained or bearer_unit_sustained or war_horde_sustained or bonus_sustained or malefic_sustained or blitzing_grants_sustained:
+            if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained or bearer_unit_sustained or war_horde_sustained or devoted_duellists_sustained or bonus_sustained or malefic_sustained or blitzing_grants_sustained:
                 # Support Sustained Hits X / Sustained Hits D3 / etc. Roll per critical hit.
                 if self.is_sustained_hits():
                     try:
@@ -8888,6 +8922,9 @@ class WargearProfile:
                     elif war_horde_sustained_value:
                         sustained_val = max(int(sustained_val), int(war_horde_sustained_value))
                         label = f"Sustained Hits (+{sustained_val}) [War Horde]"
+                    elif devoted_duellists_sustained_value:
+                        sustained_val = max(int(sustained_val), int(devoted_duellists_sustained_value))
+                        label = f"Sustained Hits (+{sustained_val}) [Devoted Duellists]"
                     elif bonus_sustained:
                         bonus_val, bonus_label = _resolve_bonus_sustained_hits()
                         sustained_val = max(int(sustained_val), int(bonus_val or 0))
@@ -8944,7 +8981,7 @@ class WargearProfile:
                     attack_instance['lethal_hit'] = True
 
                 # Apply Sustained Hits from all sources (same as baseline critical)
-                if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained or bearer_unit_sustained or war_horde_sustained or bonus_sustained or blitzing_grants_sustained:
+                if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained or bearer_unit_sustained or war_horde_sustained or devoted_duellists_sustained or bonus_sustained or blitzing_grants_sustained:
                     # Support Sustained Hits X / Sustained Hits D3 / etc. Roll per critical hit.
                     if self.is_sustained_hits():
                         try:
@@ -8984,6 +9021,11 @@ class WargearProfile:
                                 label = f"Sustained Hits (+{war_horde_sustained_value}) [War Horde]"
                             else:
                                 label += " [War Horde]"
+                        elif devoted_duellists_sustained:
+                            if devoted_duellists_sustained_value > 1:
+                                label = f"Sustained Hits (+{devoted_duellists_sustained_value}) [Devoted Duellists]"
+                            else:
+                                label += " [Devoted Duellists]"
                         elif bonus_sustained:
                             rolled_bonus_sustained_val, _bonus_label = _resolve_bonus_sustained_hits()
                             label = str(_bonus_label or label)
@@ -8997,6 +9039,8 @@ class WargearProfile:
                             sustained_vals.append(int(pain_sustained_value or 0))
                         if war_horde_sustained:
                             sustained_vals.append(int(war_horde_sustained_value or 0))
+                        if devoted_duellists_sustained:
+                            sustained_vals.append(int(devoted_duellists_sustained_value or 0))
                         if bonus_sustained:
                             sustained_vals.append(int(rolled_bonus_sustained_val or 0))
                         attack_instance['sustained_hit'] = max(sustained_vals)
@@ -9197,6 +9241,34 @@ class WargearProfile:
         if sonic_bonus and isinstance(strength, int):
             strength = strength + int(sonic_bonus)
             wound_result.setdefault("modifiers", []).append(f"+{int(sonic_bonus)}S from Sonic Destruction")
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            try:
+                root = unit.get_attached_unit_root() if unit is not None else None
+            except Exception:
+                root = unit
+            sr = getattr(root, "special_rules", None) if root is not None else None
+            if isinstance(sr, dict) and sr.get("heightened_jealousy_active"):
+                apply_bonus = True
+                exp = str(sr.get("heightened_jealousy_expires_phase", "") or "").strip().upper()
+                if exp:
+                    try:
+                        army = root.get_parent_army() if root is not None else None
+                        game = getattr(getattr(army, "player", None), "game", None)
+                        pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    except Exception:
+                        pname = ""
+                    if pname and pname != exp:
+                        apply_bonus = False
+                if apply_bonus and isinstance(strength, int):
+                    s_bonus = int(sr.get("heightened_jealousy_strength_bonus", 1) or 1)
+                    if s_bonus:
+                        strength = strength + s_bonus
+                        wound_result.setdefault("modifiers", []).append(
+                            f"+{s_bonus}S from Heightened Jealousy"
+                        )
+        except Exception:
+            pass
         # Drukhari: Power from Pain (Macro-steroids) set melee Strength.
         try:
             if self.parent_wargear and self.parent_wargear.is_melee():
