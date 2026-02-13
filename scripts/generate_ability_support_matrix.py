@@ -2547,6 +2547,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("DRU", "Blur of Blades"): ("Supported", "Leading: unit gains Fights First."),
         ("DRU", "Blur of Movement"): ("Supported", "Charge-after-Advance eligibility."),
         ("DRU", "Aethersails"): ("Supported", "Advance: fixed +6\" Move instead of rolling."),
+        ("DRU", "Disparate Paths"): (
+            "Supported",
+            "Mustering restrictions validated: allows DRUKHARI armies to include HARLEQUINS units while rejecting non-permitted faction-keyword mixes; HARLEQUINS/Ynnari Army Faction selection is disallowed by validation.",
+        ),
         ("DRU", "Eviscerating Fly-by"): (
             "Supported",
             "Normal/Advance move over: select a moved-over enemy; roll D6 per model (supports FLY bonus and exclusions).",

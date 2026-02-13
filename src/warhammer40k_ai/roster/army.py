@@ -1799,6 +1799,19 @@ class Army:
         if not army_has_ability_id(self, ABILITY_DISPARATE_PATHS):
             self._validate_daemonic_pact()
             return
+        self._validate_disparate_paths()
+        self._validate_daemonic_pact()
+
+    def _validate_disparate_paths(self) -> None:
+        """
+        Disparate Paths:
+        - Include HARLEQUINS units despite missing the base faction keyword.
+        - Unless otherwise stated, HARLEQUINS and YNNARI cannot be selected as Army Faction.
+        """
+        if self._army_faction_matches_pact("HARLEQUINS") or self._army_faction_matches_pact("YNNARI"):
+            raise ArmyValidationError(
+                "Disparate Paths: armies cannot select 'HARLEQUINS' or 'Ynnari' as their Army Faction."
+            )
 
         allowed = set()
         allowed.update(
@@ -1828,7 +1841,6 @@ class Army:
                     f"Unit '{getattr(u, 'name', 'Unknown')}' has faction keywords {fks}, "
                     "which are not allowed for an army with Disparate Paths (allows base faction + HARLEQUINS/YNNARI)."
                 )
-        self._validate_daemonic_pact()
 
     def _corsairs_points_cap(self) -> int:
         limit = int(self.points_limit or 0)
