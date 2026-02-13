@@ -1492,6 +1492,7 @@ class RulesParsingMixin:
                     "bearer_unit_fnp",
                     "attached_character_fnp_entries",
                     "unit_contains_character_fnp_entries",
+                    "same_unit_keyword_fnp_entries",
                     "bearer_unit_invulnerable_save",
                     "bearer_unit_leadership_bonus_controlled_objective",
                     "bearer_unit_agile_maneuver_reroll",
@@ -1540,6 +1541,7 @@ class RulesParsingMixin:
         fnp_entries: list[dict] = []
         attached_character_fnp_entries: list[dict] = []
         unit_contains_character_fnp_entries: list[dict] = []
+        same_unit_keyword_fnp_entries: list[dict] = []
         invuln_entries: list[dict] = []
         sustained_hits_value = 0
         sustained_hits_value_melee = 0
@@ -1567,6 +1569,40 @@ class RulesParsingMixin:
 
         def _parse_move_types(value: str) -> set[str]:
             return self._parse_move_types_from_text(value)
+
+        def _attached_unit_has_model_with_keyword(keyword: str) -> bool:
+            kw = str(keyword or "").strip()
+            if not kw:
+                return False
+            for member in members:
+                if member is None:
+                    continue
+                model_list = list(getattr(member, "models", []) or [])
+                for mdl in model_list:
+                    if not bool(getattr(mdl, "is_alive", False)):
+                        continue
+                    has_any = getattr(mdl, "has_any_keyword", None)
+                    if callable(has_any):
+                        try:
+                            if bool(has_any(kw)):
+                                return True
+                        except Exception:
+                            pass
+                    has_local_any = getattr(member, "has_any_keyword_local", None)
+                    if callable(has_local_any):
+                        try:
+                            if bool(has_local_any(kw)):
+                                return True
+                        except Exception:
+                            pass
+                    has_effective_any = getattr(member, "has_any_keyword", None)
+                    if callable(has_effective_any):
+                        try:
+                            if bool(has_effective_any(kw)):
+                                return True
+                        except Exception:
+                            pass
+            return False
 
         for u in members:
             for name, desc in u._iter_ability_entries_for_rules(model=None):
@@ -1766,6 +1802,23 @@ class RulesParsingMixin:
                                 {
                                     "value": int(val),
                                     "source": source,
+                                }
+                            )
+
+                    m = self._SAME_UNIT_KEYWORD_FNP_RE.search(sentence)
+                    if m:
+                        try:
+                            val = int(m.group("value"))
+                        except Exception:
+                            val = None
+                        keyword = str(m.group("keyword") or "").strip()
+                        if val and keyword and _attached_unit_has_model_with_keyword(keyword):
+                            source = str(name or "Unit keyword ability").strip() or "Unit keyword ability"
+                            same_unit_keyword_fnp_entries.append(
+                                {
+                                    "value": int(val),
+                                    "source": source,
+                                    "keyword": keyword,
                                 }
                             )
 
@@ -2011,6 +2064,13 @@ class RulesParsingMixin:
                 if not isinstance(sr, dict):
                     sr = {}
                 sr["unit_contains_character_fnp_entries"] = list(unit_contains_character_fnp_entries)
+                u.special_rules = sr
+        if same_unit_keyword_fnp_entries:
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["same_unit_keyword_fnp_entries"] = list(same_unit_keyword_fnp_entries)
                 u.special_rules = sr
 
         if invuln_entries:

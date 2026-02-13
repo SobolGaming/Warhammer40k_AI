@@ -380,6 +380,51 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
 
         self.assertNotIn((4, None), unit.has_feel_no_pain(target_model=unit.models[0]))
 
+    def test_same_unit_keyword_fnp_applies_to_officer_only(self):
+        ability = {
+            "name": "Ogryn Bodyguard",
+            "description": (
+                "While one or more Officer models are in the same unit as this model, those OFFICER models have "
+                "the Feel No Pain 4+ ability."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        bodyguard = _make_unit("Ogryn Bodyguard", abilities=[ability])
+        officer = _make_unit("Officer Leader", attached_to=["Ogryn Bodyguard"])
+        other_leader = _make_unit("Priest Leader", attached_to=["Ogryn Bodyguard"])
+        officer.keywords = ["Character", "Officer"]
+        other_leader.keywords = ["Character", "Priest"]
+        bodyguard.attached_leaders = [officer, other_leader]
+        officer.attached_to = bodyguard
+        other_leader.attached_to = bodyguard
+
+        bodyguard._refresh_bearer_unit_common_modifiers()
+
+        self.assertIn((4, None), officer.has_feel_no_pain(target_model=officer.models[0]))
+        self.assertNotIn((4, None), other_leader.has_feel_no_pain(target_model=other_leader.models[0]))
+        self.assertNotIn((4, None), bodyguard.has_feel_no_pain(target_model=bodyguard.models[0]))
+
+    def test_same_unit_keyword_fnp_requires_keyword_model_present(self):
+        ability = {
+            "name": "Ogryn Bodyguard",
+            "description": (
+                "While one or more Officer models are in the same unit as this model, those OFFICER models have "
+                "the Feel No Pain 4+ ability."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        bodyguard = _make_unit("Ogryn Bodyguard", abilities=[ability])
+        non_officer_leader = _make_unit("Priest Leader", attached_to=["Ogryn Bodyguard"])
+        non_officer_leader.keywords = ["Character", "Priest"]
+        bodyguard.attached_leaders = [non_officer_leader]
+        non_officer_leader.attached_to = bodyguard
+
+        bodyguard._refresh_bearer_unit_common_modifiers()
+
+        self.assertNotIn((4, None), non_officer_leader.has_feel_no_pain(target_model=non_officer_leader.models[0]))
+
     def test_leading_unit_contains_model_invulnerable_save_applies(self):
         ability = {
             "name": "Faithful Flock",

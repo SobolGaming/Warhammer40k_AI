@@ -2047,6 +2047,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Declare Battle Formations: must join one COMMAND SQUAD if eligible, otherwise removed as destroyed; joined model counts as part of the unit, can embark with it, and uses 3 transport slots. Warlord and Enhancements restrictions from LOYAL PROTECTOR text variants are parsed.",
         ),
+        ("AM", "Ogryn Bodyguard"): (
+            "Supported",
+            "While one or more OFFICER models are in the same attached unit as this model, OFFICER models in that unit gain Feel No Pain 4+.",
+        ),
         ("AM", "Plasma Warhead"): (
             "Supported",
             "Marker-based firing is implemented: must remain stationary, cannot fire in a phase where Designate/Adjust was used, and resolves attacks against each unit within 6\" of the unit's Deathstrike marker without selecting a target unit.",

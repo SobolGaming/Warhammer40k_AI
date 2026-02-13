@@ -901,6 +901,51 @@ class LateGameplayMixin:
         except Exception:
             pass
         try:
+            sr = getattr(self, "special_rules", None)
+            entries = sr.get("same_unit_keyword_fnp_entries") if isinstance(sr, dict) else None
+            if isinstance(entries, list) and target_model is not None:
+                seen = set((int(v), (c or "")) for v, c in result)
+                for entry in entries:
+                    if not isinstance(entry, dict):
+                        continue
+                    try:
+                        val = int(entry.get("value"))
+                    except Exception:
+                        continue
+                    keyword = str(entry.get("keyword", "") or "").strip()
+                    if keyword:
+                        matched = False
+                        has_any = getattr(target_model, "has_any_keyword", None)
+                        if callable(has_any):
+                            try:
+                                matched = bool(has_any(keyword))
+                            except Exception:
+                                matched = False
+                        if not matched:
+                            t_unit = getattr(target_model, "parent_unit", None) or self
+                            has_unit_kw_local = getattr(t_unit, "has_any_keyword_local", None)
+                            if callable(has_unit_kw_local):
+                                try:
+                                    matched = bool(has_unit_kw_local(keyword))
+                                except Exception:
+                                    matched = False
+                            if not matched:
+                                has_unit_kw = getattr(t_unit, "has_keyword_local", None)
+                                if callable(has_unit_kw):
+                                    try:
+                                        matched = bool(has_unit_kw(keyword))
+                                    except Exception:
+                                        matched = False
+                        if not matched:
+                            continue
+                    key = (int(val), "")
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    result.append((int(val), None))
+        except Exception:
+            pass
+        try:
             if target_model is not None and hasattr(target_model, "get_temporary_fnp_entries"):
                 entries = list(target_model.get_temporary_fnp_entries() or [])
                 if entries:
@@ -2170,4 +2215,3 @@ class LateGameplayMixin:
             pass
 
         return best_dist, sources
-
