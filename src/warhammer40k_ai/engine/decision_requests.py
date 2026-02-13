@@ -276,7 +276,11 @@ def build_leader_attachment_requests(
 
 def _support_artillery_attachment_options(support_unit, bodyguards: List[object]) -> List[DecisionOption]:
     support_id = get_entity_id(support_unit)
-    options = [DecisionOption.create("Unattached", payload={"support_unit_id": support_id, "bodyguard_id": None})]
+    options: List[DecisionOption] = []
+    requires_attach_fn = getattr(support_unit, "joined_support_requires_attachment", None)
+    requires_attachment = bool(requires_attach_fn()) if callable(requires_attach_fn) else False
+    if not requires_attachment:
+        options.append(DecisionOption.create("Unattached", payload={"support_unit_id": support_id, "bodyguard_id": None}))
     current = getattr(support_unit, "support_joined_to", None)
     for bg in bodyguards:
         try:

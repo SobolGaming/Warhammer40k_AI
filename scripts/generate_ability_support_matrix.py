@@ -2039,6 +2039,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("AM", "Desert Riders"): ("Partial", "Shoot and charge after Falling Back; ignores Move/Advance/Charge modifiers not handled."),
         ("AM", "Enginseer"): ("Supported", "Conditional Lone Operative within 3\" of friendly ASTRA MILITARUM VEHICLE units."),
         ("AM", "Horsemasters"): ("Supported", "Shoot and charge after Falling Back."),
+        ("AM", "LOYAL PROTECTOR"): (
+            "Supported",
+            "Declare Battle Formations: must join one COMMAND SQUAD if eligible, otherwise removed as destroyed; joined model counts as part of the unit, can embark with it, and uses 3 transport slots. Warlord and Enhancements restrictions from LOYAL PROTECTOR text variants are parsed.",
+        ),
         ("AM", "Malign Wardings(Psychic)"): ("Supported", "Leading: Feel No Pain 4+ against Psychic attacks."),
         ("GK", "Apothecary's Narthecium"): ("Supported", "Command phase: return 1 destroyed non-CHARACTER model to the bearer's unit."),
         ("GK", "Attuned Onslaught (Psychic)"): ("Supported", "After charging, PALADIN SQUAD melee weapons gain +1 Damage until end of turn."),

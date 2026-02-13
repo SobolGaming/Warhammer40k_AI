@@ -96,7 +96,11 @@ def _validate_attach_support_artillery(game: object, request: DecisionRequest, r
         return ("Joined support unit not found.",)
     if not bool(getattr(support, "has_joined_support_ability", lambda: False)()):
         return ("Selected unit does not have a joined-support attachment ability.",)
+    requires_attach_fn = getattr(support, "joined_support_requires_attachment", None)
+    requires_attachment = bool(requires_attach_fn()) if callable(requires_attach_fn) else False
     if bodyguard_id is None:
+        if requires_attachment:
+            return ("Selected joined support unit must attach to an eligible bodyguard unit.",)
         return ()
     bodyguard = _get_unit(game, str(bodyguard_id or ""))
     if bodyguard is None:

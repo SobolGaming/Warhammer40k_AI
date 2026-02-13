@@ -1327,13 +1327,25 @@ class StateAttachmentMixin:
         except Exception:
             pass
         try:
-            if list(getattr(self, "attached_support_units", []) or []):
-                return True
+            supports = list(getattr(self, "attached_support_units", []) or [])
+            if supports:
+                for support in supports:
+                    if support is None:
+                        continue
+                    allows_embark = False
+                    allows_embark_fn = getattr(support, "joined_support_allows_embark_while_joined", None)
+                    if callable(allows_embark_fn):
+                        allows_embark = bool(allows_embark_fn())
+                    if not allows_embark:
+                        return True
         except Exception:
             pass
         try:
             if getattr(self, "support_joined_to", None) is not None:
-                return True
+                allows_embark_fn = getattr(self, "joined_support_allows_embark_while_joined", None)
+                allows_embark = bool(allows_embark_fn()) if callable(allows_embark_fn) else False
+                if not allows_embark:
+                    return True
         except Exception:
             pass
         return False
@@ -1566,6 +1578,22 @@ class StateAttachmentMixin:
         if root is not self:
             return int(root.get_transport_slot_cost_for_model(model) or 1)
 
+        # LOYAL PROTECTOR joined-support model uses 3 slots while joined to a Command Squad.
+        source_unit = getattr(model, "parent_unit", None)
+        if source_unit is None:
+            for support in list(getattr(self, "attached_support_units", []) or []):
+                if support is None:
+                    continue
+                if model in list(getattr(support, "models", []) or []):
+                    source_unit = support
+                    break
+        if source_unit is not None and source_unit is not self:
+            if getattr(source_unit, "support_joined_to", None) is self:
+                kind_fn = getattr(source_unit, "_joined_support_rule_kind", None)
+                kind = str(kind_fn() or "").strip().lower() if callable(kind_fn) else ""
+                if kind == "loyal_protector":
+                    return 3
+
         rule = self._embarking_slot_rule()
         if rule == "all_models":
             return 2
@@ -1743,9 +1771,14 @@ class StateAttachmentMixin:
         """Return the unit this model is attached/joined to, if any."""
         if self.is_leader:
             return getattr(self, "attached_to", None)
-        if self.has_support_artillery_ability():
+        if self.has_joined_support_ability():
             return getattr(self, "support_joined_to", None)
         return None
+
+    def joined_support_allows_embark_while_joined(self) -> bool:
+        if getattr(self, "support_joined_to", None) is None:
+            return False
+        return str(self._joined_support_rule_kind() or "").strip().lower() == "loyal_protector"
 
     def get_datasheet_id(self) -> Optional[str]:
         try:
@@ -2271,12 +2304,31 @@ class StateAttachmentMixin:
             pass
         return False
 
+    def has_loyal_protector_ability(self) -> bool:
+        """True if this unit has the Astra Militarum LOYAL PROTECTOR mandatory join rule."""
+        try:
+            for ab in getattr(self, "possible_abilities", []) or []:
+                name = str(getattr(ab, "name", "") or "").strip().lower()
+                if name == "loyal protector":
+                    return True
+                desc = str(getattr(ab, "description", "") or "").lower().replace("\u2019", "'")
+                if (
+                    "declare battle formations" in desc
+                    and "must join one command squad unit from your army" in desc
+                    and "loyal protector model joined to it" in desc
+                ):
+                    return True
+        except Exception:
+            pass
+        return False
+
     def has_joined_support_ability(self) -> bool:
         """True if this unit can join another unit via joined-support style rules."""
         return bool(
             self.has_support_artillery_ability()
             or self.has_cryptek_retinue_ability()
             or self.has_canoptek_retinue_ability()
+            or self.has_loyal_protector_ability()
         )
 
     def _joined_support_rule_kind(self) -> str:
@@ -2285,6 +2337,7 @@ class StateAttachmentMixin:
         - support_artillery
         - cryptek_retinue
         - canoptek_retinue
+        - loyal_protector
         - "" (no joined-support rule)
         """
         if self.has_support_artillery_ability():
@@ -2293,7 +2346,33 @@ class StateAttachmentMixin:
             return "cryptek_retinue"
         if self.has_canoptek_retinue_ability():
             return "canoptek_retinue"
+        if self.has_loyal_protector_ability():
+            return "loyal_protector"
         return ""
+
+    def joined_support_requires_attachment(self) -> bool:
+        """True if this joined-support rule is mandatory during Declare Battle Formations."""
+        return str(self._joined_support_rule_kind() or "").strip().lower() == "loyal_protector"
+
+    def _is_command_squad_unit(self, bodyguard: "Unit") -> bool:
+        if bodyguard is None:
+            return False
+        name = _normalize_unit_name_for_rules(getattr(bodyguard, "name", "") or "")
+        if "command squad" in name:
+            return True
+        has_local = getattr(bodyguard, "has_any_keyword_local", None)
+        if callable(has_local):
+            try:
+                if bool(has_local("COMMAND SQUAD")):
+                    return True
+            except Exception:
+                pass
+            try:
+                if bool(has_local("COMMAND")) and bool(has_local("SQUAD")):
+                    return True
+            except Exception:
+                pass
+        return False
 
     def has_support_weapon_ability(self) -> bool:
         """True if this unit has the Support Weapon toughness override rule."""
@@ -2697,6 +2776,10 @@ class StateAttachmentMixin:
         elif rule_kind == "canoptek_retinue":
             # CANOPTEK RETINUE: target must be led by a Cryptek model.
             if not self._bodyguard_is_led_by_keywords(bodyguard, ("Cryptek",)):
+                return False
+        elif rule_kind == "loyal_protector":
+            # LOYAL PROTECTOR: must join one Command Squad unit.
+            if not self._is_command_squad_unit(bodyguard):
                 return False
         else:
             return False

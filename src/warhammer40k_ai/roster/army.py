@@ -1280,6 +1280,7 @@ class Army:
     def validate_support_artillery(self):
         """Validate joined-support attachments (Support Artillery + retinue-style joins)."""
         bodyguard_map: dict = {}
+        units_to_remove: list[Unit] = []
         for unit in list(self.units or []):
             if unit is None:
                 continue
@@ -1288,8 +1289,39 @@ class Army:
                     continue
             except Exception:
                 continue
+            requires_attachment = False
+            requires_attach_fn = getattr(unit, "joined_support_requires_attachment", None)
+            if callable(requires_attach_fn):
+                requires_attachment = bool(requires_attach_fn())
             joined_to = getattr(unit, "support_joined_to", None)
             if joined_to is None:
+                if requires_attachment:
+                    eligible_bodyguards: list[Unit] = []
+                    can_join_fn = getattr(unit, "can_join_support_artillery", None)
+                    if callable(can_join_fn):
+                        for candidate in list(self.units or []):
+                            if candidate is None or candidate is unit:
+                                continue
+                            try:
+                                if can_join_fn(candidate):
+                                    eligible_bodyguards.append(candidate)
+                            except Exception:
+                                continue
+                    if eligible_bodyguards:
+                        names = ", ".join(
+                            sorted(
+                                {
+                                    str(getattr(candidate, "name", "Unknown") or "Unknown")
+                                    for candidate in eligible_bodyguards
+                                }
+                            )
+                        )
+                        suffix = f" Eligible units: {names}." if names else "."
+                        raise ArmyValidationError(
+                            f"Joined support unit '{unit.name}' must join an eligible unit during Declare Battle Formations."
+                            f"{suffix}"
+                        )
+                    units_to_remove.append(unit)
                 continue
             if joined_to not in self.units:
                 raise ArmyValidationError(f"Joined support unit '{unit.name}' is joined to an invalid unit.")
@@ -1312,6 +1344,21 @@ class Army:
                 raise ArmyValidationError(
                     f"Unit '{bodyguard.name}' has multiple joined support units ({names})."
                 )
+
+        for unit in units_to_remove:
+            if unit not in self.units:
+                continue
+            self.units.remove(unit)
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["destroyed_before_battle"] = True
+            sr["destroyed_before_battle_reason"] = "Mandatory joined-support attachment was impossible."
+            unit.special_rules = sr
+            logger.info(
+                "Declare Battle Formations: removed '%s' as destroyed because no eligible mandatory joined-support target was available.",
+                getattr(unit, "name", "Unknown"),
+            )
 
     def validate_enhancements(self):
         # Rule 1: Maximum of 3 Enhancements
