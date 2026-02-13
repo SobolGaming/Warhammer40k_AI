@@ -89,6 +89,99 @@ def _make_profile():
 
 
 class TestIgnoreRangedModifiers(unittest.TestCase):
+    def _assert_ignore_negative_hit_modifiers_for_description(self, description: str):
+        from warhammer40k_ai.engine.game import BattleRoundPhases
+        from warhammer40k_ai.utility import dice as dice_mod
+        from warhammer40k_ai.utility.modifier_choice import CHOICE_IGNORE_NEGATIVE
+
+        ignore_mods = {
+            "name": "Weapon Support System",
+            "description": description,
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        stealth = {"name": "Stealth", "description": "Stealth.", "type": "Datasheet", "parameter": ""}
+
+        game, army1, army2, _p1, _p2 = _build_game()
+        game.turn = 1
+        game.phase = BattleRoundPhases.SHOOTING_PHASE
+        game.current_player_index = 0
+
+        attacker = _make_unit("Shooter", abilities=[ignore_mods])
+        target = _make_unit("Target", abilities=[stealth])
+        army1.add_unit(attacker)
+        army2.add_unit(target)
+
+        attacker.models[0].set_location(0, 0, 0, 0)
+        target.models[0].set_location(1, 0, 0, 0)
+        game.map.units = [attacker, target]
+
+        game.map.hit_modifier_choice_provider = lambda **_kwargs: CHOICE_IGNORE_NEGATIVE
+
+        rolls = iter([4, 4, 4])
+        original_get_dice_roll = dice_mod.get_dice_roll
+        dice_mod.get_dice_roll = lambda _size=6: next(rolls)
+        try:
+            profile = _make_profile()
+            result = profile.attack(target, attacker.models[0], game.map)
+        finally:
+            dice_mod.get_dice_roll = original_get_dice_roll
+
+        self.assertIsNotNone(result)
+        self.assertTrue(result.hit_results)
+        self.assertTrue(result.hit_results[0]["hit"], "Ignoring negative hit modifiers should let a 4 hit on 4+.")
+
+    def _assert_hit_only_rule_keeps_bs_modifiers(self, description: str):
+        from warhammer40k_ai.engine.game import BattleRoundPhases
+        from warhammer40k_ai.rules.doctrina_imperatives import DoctrinaImperativesManager, PROTECTOR_IMPERATIVE
+        from warhammer40k_ai.utility import dice as dice_mod
+        from warhammer40k_ai.utility.modifier_choice import CHOICE_IGNORE_POSITIVE
+
+        ignore_mods = {
+            "name": "Weapon Support System",
+            "description": description,
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        doctrina = {"name": "Doctrina Imperatives", "description": "Doctrina Imperatives", "type": "Datasheet", "parameter": ""}
+
+        game, army1, army2, _p1, _p2 = _build_game()
+        game.turn = 1
+        game.phase = BattleRoundPhases.SHOOTING_PHASE
+        game.current_player_index = 0
+
+        mgr = DoctrinaImperativesManager(army1)
+        mgr.active_imperative_key = PROTECTOR_IMPERATIVE.key
+        mgr.active_round = 1
+        army1.doctrina_imperatives = mgr
+
+        attacker = _make_unit("Shooter", abilities=[ignore_mods, doctrina])
+        target = _make_unit("Target")
+        army1.add_unit(attacker)
+        army2.add_unit(target)
+
+        attacker.models[0].set_location(0, 0, 0, 0)
+        target.models[0].set_location(1, 0, 0, 0)
+        game.map.units = [attacker, target]
+
+        game.map.hit_modifier_choice_provider = lambda **_kwargs: CHOICE_IGNORE_POSITIVE
+
+        rolls = iter([3, 4, 4])
+        original_get_dice_roll = dice_mod.get_dice_roll
+        dice_mod.get_dice_roll = lambda _size=6: next(rolls)
+        try:
+            profile = _make_profile()
+            result = profile.attack(target, attacker.models[0], game.map)
+        finally:
+            dice_mod.get_dice_roll = original_get_dice_roll
+
+        self.assertIsNotNone(result)
+        self.assertTrue(result.hit_results)
+        self.assertTrue(
+            result.hit_results[0]["hit"],
+            "Weapon Support System should not ignore Ballistic Skill modifiers when it only references Hit-roll modifiers.",
+        )
+
     def test_ignore_positive_bs_modifiers(self):
         from warhammer40k_ai.engine.game import BattleRoundPhases
         from warhammer40k_ai.rules.doctrina_imperatives import DoctrinaImperativesManager, PROTECTOR_IMPERATIVE
@@ -184,6 +277,26 @@ class TestIgnoreRangedModifiers(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertTrue(result.hit_results)
         self.assertTrue(result.hit_results[0]["hit"], "Ignoring negative hit modifiers should let a 4 hit on 4+.")
+
+    def test_weapon_support_system_bearer_wording_ignore_negative_hit_modifiers(self):
+        self._assert_ignore_negative_hit_modifiers_for_description(
+            "Each time the bearer makes a ranged attack, you can ignore any or all modifiers to the Hit roll."
+        )
+
+    def test_weapon_support_system_unit_wording_ignore_negative_hit_modifiers(self):
+        self._assert_ignore_negative_hit_modifiers_for_description(
+            "Each time a model in this unit makes a ranged attack, you can ignore any or all modifiers to the Hit roll."
+        )
+
+    def test_weapon_support_system_bearer_wording_does_not_ignore_bs_modifiers(self):
+        self._assert_hit_only_rule_keeps_bs_modifiers(
+            "Each time the bearer makes a ranged attack, you can ignore any or all modifiers to the Hit roll."
+        )
+
+    def test_weapon_support_system_unit_wording_does_not_ignore_bs_modifiers(self):
+        self._assert_hit_only_rule_keeps_bs_modifiers(
+            "Each time a model in this unit makes a ranged attack, you can ignore any or all modifiers to the Hit roll."
+        )
 
 
 if __name__ == "__main__":

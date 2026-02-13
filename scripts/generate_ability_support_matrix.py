@@ -3122,6 +3122,7 @@ def _classify_ability_base(
     fight_within_3_support = _fight_within_3_support(description)
     allocated_damage_reduction_support = _allocated_damage_reduction_support(description)
     ranged_ignore_bs_hit_support = _ranged_ignore_bs_hit_modifiers_support(description)
+    ranged_ignore_hit_support = _ranged_ignore_hit_modifiers_support(description)
     ignore_skill_and_hit_modifiers_support = _ignore_skill_and_hit_modifiers_support(description)
     ranged_targeting_restriction_support = _ranged_targeting_restriction_support(description)
 
@@ -3141,6 +3142,8 @@ def _classify_ability_base(
         return hazardous_test_modifier_support
     if ranged_ignore_bs_hit_support:
         return ranged_ignore_bs_hit_support
+    if ranged_ignore_hit_support:
+        return ranged_ignore_hit_support
     if ignore_skill_and_hit_modifiers_support:
         return ignore_skill_and_hit_modifiers_support
     if ranged_targeting_restriction_support:
@@ -4532,6 +4535,34 @@ def _ranged_ignore_bs_hit_modifiers_support(description: str) -> Optional[Tuple[
     if "ranged attack" not in norm and "ranged weapon" not in norm:
         return None
     return ("Supported", "Ranged attacks: ignore any or all modifiers to Ballistic Skill and Hit roll.")
+
+
+def _ranged_ignore_hit_modifiers_support(description: str) -> Optional[Tuple[str, str]]:
+    """
+    Support for abilities that let ranged attacks ignore any/all Hit roll modifiers.
+
+    Examples:
+      "Each time the bearer makes a ranged attack, you can ignore any or all modifiers to the Hit roll."
+      "Each time a model in this unit makes a ranged attack, you can ignore any or all modifiers to the Hit roll."
+    """
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    if "ignore any or all modifiers" not in norm:
+        return None
+    if "hit roll" not in norm:
+        return None
+    if "ranged attack" not in norm and "ranged weapon" not in norm:
+        return None
+    if "ballistic skill" in norm or "weapon skill" in norm:
+        return None
+    if "wound roll" in norm:
+        return None
+    if "strength" in norm or "armour penetration" in norm or "damage" in norm:
+        return None
+    return ("Supported", "Ranged attacks: ignore any or all modifiers to the Hit roll.")
 
 
 def _ignore_skill_and_hit_modifiers_support(description: str) -> Optional[Tuple[str, str]]:
