@@ -2596,6 +2596,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "If attached to a CANOPTEK MACROCYTES unit during Declare Battle Formations, the model gains Scouts 8\"; otherwise no Scouts bonus.",
         ),
+        ("NEC", "DEPLOYMENT"): (
+            "Supported",
+            "Convergence Of Dominion setup uses a 12\" model-to-model chain (instead of unit coherency) and then splits into single-model units so each Starstele is treated as a separate unit for the rest of the battle.",
+        ),
         ("NEC", "Relentless Combatants"): ("Supported", "Re-roll Charge rolls. Charge-after-Fall-Back eligibility."),
         ("NEC", "Shadowloom"): ("Supported", "Stealth."),
         ("NEC", "Powers of the C'tan"): (
@@ -2843,6 +2847,10 @@ def _datasheet_ability_support_by_name_faction_datasheet() -> Dict[Tuple[str, st
         ("DG", "DEPLOYMENT", "000002462"): (
             "Supported",
             "Miasmic Malignifier deployment is represented by standard fortification setup in the engine; the two-piece terrain representation is abstracted to a single fortification unit for gameplay effects.",
+        ),
+        ("NEC", "DEPLOYMENT", "000002361"): (
+            "Supported",
+            "Convergence Of Dominion setup uses a 12\" model-to-model chain (instead of unit coherency) and then splits into single-model units so each Starstele is treated as a separate unit for the rest of the battle.",
         ),
     }
     out: Dict[Tuple[str, str, str], Tuple[str, str]] = {}

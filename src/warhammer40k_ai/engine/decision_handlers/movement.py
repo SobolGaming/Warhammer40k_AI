@@ -30,6 +30,10 @@ from ._helpers import (
     validate_model_positions,
     validate_option_choice,
 )
+from ...utility.deployment_special_rules import (
+    is_convergence_of_dominion_deployment_unit,
+    validate_convergence_of_dominion_deployment,
+)
 from ...utility.entity_ids import get_entity_id
 
 
@@ -448,25 +452,44 @@ def _validate_placement_positions(
                 if bases_overlap_3d(base, other_base):
                     return ("Move unit: placement overlaps another unit.",)
 
-    # Coherency validation (placements must end in coherency)
-    final_positions: list[tuple[float, float, float]] = []
-    for model in list(getattr(unit, "models", []) or []):
-        mid = str(get_entity_id(model))
-        if mid in positions_by_id:
-            x, y, z, _f = positions_by_id[mid]
-            final_positions.append((x, y, z))
-        else:
-            try:
-                pos = model.get_location()
-                final_positions.append((float(pos[0]), float(pos[1]), float(pos[2])))
-            except Exception:
-                final_positions.append((0.0, 0.0, 0.0))
-
-    is_coherent, _non_coherent = validate_unit_coherency_after_movement(
-        unit, final_positions, ignore_pending=False
+    deployment_special_chain = (
+        str(placement_kind or "") == "deployment"
+        and is_convergence_of_dominion_deployment_unit(unit)
     )
-    if not is_coherent:
-        return ("Move unit: placement breaks unit coherency.",)
+    if deployment_special_chain:
+        chain_entries: list[tuple[str, object]] = []
+        for model in list(getattr(unit, "models", []) or []):
+            if not getattr(model, "is_alive", True):
+                continue
+            model_id = str(get_entity_id(model))
+            base = candidate_bases.get(model_id)
+            if base is None:
+                base = getattr(model, "model_base", None)
+            label = str(getattr(model, "name", "") or f"Model {model_id}")
+            chain_entries.append((label, base))
+        chain_valid, chain_reason = validate_convergence_of_dominion_deployment(chain_entries)
+        if not chain_valid:
+            return (f"Move unit: deployment invalid: {chain_reason}",)
+    else:
+        # Coherency validation (placements must end in coherency)
+        final_positions: list[tuple[float, float, float]] = []
+        for model in list(getattr(unit, "models", []) or []):
+            mid = str(get_entity_id(model))
+            if mid in positions_by_id:
+                x, y, z, _f = positions_by_id[mid]
+                final_positions.append((x, y, z))
+            else:
+                try:
+                    pos = model.get_location()
+                    final_positions.append((float(pos[0]), float(pos[1]), float(pos[2])))
+                except Exception:
+                    final_positions.append((0.0, 0.0, 0.0))
+
+        is_coherent, _non_coherent = validate_unit_coherency_after_movement(
+            unit, final_positions, ignore_pending=False
+        )
+        if not is_coherent:
+            return ("Move unit: placement breaks unit coherency.",)
 
     # Ensure only allowed ids are placed (if provided)
     if allowed_set is not None:
@@ -1107,6 +1130,18 @@ def _finalize_deployment_move(game: object, unit: object, model_positions: list[
         uy = sum(p[1] for p in positions) / len(positions)
         uz = sum(p[2] for p in positions) / len(positions)
         unit.position = (ux, uy, uz)
+
+    if is_convergence_of_dominion_deployment_unit(unit):
+        from ...utility.unit_split import split_unit_into_single_model_units
+
+        split_units = split_unit_into_single_model_units(unit, game=game, game_map=game_map)
+        for split_unit in list(split_units or []):
+            alive_models = [m for m in list(getattr(split_unit, "models", []) or []) if getattr(m, "is_alive", True)]
+            if not alive_models:
+                continue
+            loc = alive_models[0].get_location()
+            if isinstance(loc, (list, tuple)) and len(loc) >= 3:
+                split_unit.position = (float(loc[0]), float(loc[1]), float(loc[2]))
 
     army = getattr(unit, "get_parent_army", None)
     if callable(army):

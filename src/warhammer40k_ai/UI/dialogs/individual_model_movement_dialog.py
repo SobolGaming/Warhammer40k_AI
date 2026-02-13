@@ -1489,22 +1489,45 @@ class IndividualModelMovementDialog(BaseDialog):
 
         # Validate unit coherency
         from ...utility.calcs import validate_unit_coherency_after_movement
+        from ...utility.deployment_special_rules import (
+            is_convergence_of_dominion_deployment_unit,
+            validate_convergence_of_dominion_deployment,
+        )
 
         # Get final positions of all models
         final_positions = []
         for model in self.unit.models:
             final_positions.append(model.get_location())
 
-        ignore_pending = not require_all
-        is_coherent, non_coherent_models = validate_unit_coherency_after_movement(
-            self.unit, final_positions, ignore_pending=ignore_pending
+        uses_convergence_deployment = (
+            require_all
+            and str(self.movement_type or "").strip().lower() == "deploy"
+            and str(self.placement_kind or "") == "deployment"
+            and is_convergence_of_dominion_deployment_unit(self.unit)
         )
+        if uses_convergence_deployment:
+            chain_entries = []
+            for idx, model in enumerate(self.unit.models):
+                if not getattr(model, "is_alive", True):
+                    continue
+                base = getattr(model, "model_base", None)
+                label = str(getattr(model, "name", "") or f"Model #{idx + 1}")
+                chain_entries.append((label, base))
+            chain_valid, chain_reason = validate_convergence_of_dominion_deployment(chain_entries)
+            if not chain_valid:
+                logger.error(f"ERROR: Cannot complete deployment: {chain_reason}")
+                return
+        else:
+            ignore_pending = not require_all
+            is_coherent, non_coherent_models = validate_unit_coherency_after_movement(
+                self.unit, final_positions, ignore_pending=ignore_pending
+            )
 
-        if not is_coherent:
-            # Movement/deployment must END in coherency. If coherency would be broken, the move is not allowed.
-            logger.error(f"ERROR: Cannot complete {self.movement_type}: {self.unit.name} would not be in coherency "
-                  f"(non-coherent models: {non_coherent_models}). Reposition models and try again.")
-            return
+            if not is_coherent:
+                # Movement/deployment must END in coherency. If coherency would be broken, the move is not allowed.
+                logger.error(f"ERROR: Cannot complete {self.movement_type}: {self.unit.name} would not be in coherency "
+                      f"(non-coherent models: {non_coherent_models}). Reposition models and try again.")
+                return
         if self.movement_type == "charge":
             targets = list(self.target_units or ([] if self.target_unit is None else [self.target_unit]))
             ok, reason = self.unit.validate_charge_end_state(targets, self.game_map)
