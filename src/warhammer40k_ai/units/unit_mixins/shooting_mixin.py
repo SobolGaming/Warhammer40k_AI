@@ -664,6 +664,10 @@ class ShootingMixin:
             if not model.is_alive:
                 continue
 
+            if bool(getattr(getattr(self, "round_state", None), "fell_back_this_round", False)):
+                if not self.can_shoot_after_fall_back(weapon_profile, model=model):
+                    continue
+
             # Check if this model has the weapon
             has_weapon = False
             for wargear in model.wargear:
@@ -1455,6 +1459,10 @@ class ShootingMixin:
         for model in models_with_weapon:
             if not model.is_alive:
                 continue
+
+            if bool(getattr(getattr(self, "round_state", None), "fell_back_this_round", False)):
+                if not self.can_shoot_after_fall_back(weapon_profile, model=model):
+                    continue
 
             active_profile = weapon_profile
             if getattr(active_profile, "is_bubblechukka", lambda: False)():
@@ -3841,4 +3849,3 @@ class ShootingMixin:
             self.round_state.disembarked_cannot_charge = True
 
         return True
-

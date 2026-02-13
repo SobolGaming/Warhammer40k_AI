@@ -7576,9 +7576,9 @@ def _battlesuit_support_system_support(name: str, description: str) -> Optional[
         if re.fullmatch(pattern, norm):
             return ("Supported", "Shoot-after-Fall-Back eligibility.")
     if "only models equipped with this wargear can make ranged attacks" in norm:
-        return ("Partial", "Shoot after Falling Back; wargear-only restriction not enforced.")
+        return ("Supported", "Shoot after Falling Back; when doing so only models equipped with this wargear can make ranged attacks.")
     if "loses the smoke keyword" in norm:
-        return ("Partial", "Shoot after Falling Back; SMOKE loss not enforced.")
+        return ("Supported", "Shoot after Falling Back; while doing so the unit loses the SMOKE keyword.")
     return None
 
 

@@ -8853,6 +8853,96 @@ class ActionsMovementMixin:
                 return True
         return False
 
+    def _get_fall_back_shoot_extended_rule_data(self) -> dict:
+        """
+        Parse extended Fall Back-and-Shoot clauses that include additional restrictions.
+
+        Returns a dict with:
+          - grants_fall_back_shoot: bool
+          - lose_smoke_keyword: bool
+          - restricted_wargear_names: tuple[str, ...] (normalized names)
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict) and "fall_back_shoot_extended_rule_data" in cache:
+            return dict(cache.get("fall_back_shoot_extended_rule_data") or {})
+
+        patterns = (
+            "eligible to shoot in a turn in which it fell back",
+            "eligible to shoot in a turn in which it fell back or advanced",
+            "eligible to shoot in a turn in which it advanced or fell back",
+            "eligible to shoot and declare a charge in a turn in which it fell back",
+            "eligible to shoot and declare a charge in a turn in which it advanced or fell back",
+            "eligible to shoot and declare a charge in a turn in which it fell back or advanced",
+            "that unit is eligible to shoot and declare a charge in a turn in which it fell back",
+            "that unit is eligible to shoot and declare a charge in a turn in which it advanced or fell back",
+            "that unit is eligible to shoot and declare a charge in a turn in which it fell back or advanced",
+        )
+
+        grants_fall_back_shoot = False
+        lose_smoke_keyword = False
+        restricted_wargear_names: set[str] = set()
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit_obj in members:
+            for raw_name, desc in unit_obj._iter_ability_entries_for_rules():
+                normalized = unit_obj._normalize_rules_text(desc or "")
+                if not normalized:
+                    continue
+                low = normalized.lower()
+                if not any(p in low for p in patterns):
+                    continue
+
+                grants_fall_back_shoot = True
+
+                if "loses the smoke keyword" in low:
+                    lose_smoke_keyword = True
+
+                if "only models equipped with this wargear can make ranged attacks" in low:
+                    norm_name = Unit._norm_wargear_name(str(raw_name or ""))
+                    if norm_name:
+                        restricted_wargear_names.add(norm_name)
+
+        data = {
+            "grants_fall_back_shoot": bool(grants_fall_back_shoot),
+            "lose_smoke_keyword": bool(lose_smoke_keyword),
+            "restricted_wargear_names": tuple(sorted(restricted_wargear_names)),
+        }
+
+        if not isinstance(cache, dict):
+            cache = {}
+        cache["fall_back_shoot_extended_rule_data"] = dict(data)
+        root._ability_cache = cache
+        return dict(data)
+
+    def _fall_back_shoot_restricted_wargear_names(self) -> tuple[str, ...]:
+        data = self._get_fall_back_shoot_extended_rule_data()
+        names = data.get("restricted_wargear_names", ())
+        return tuple(names) if isinstance(names, (list, tuple)) else tuple()
+
+    def _model_meets_fall_back_shoot_wargear_restriction(self, model: Optional['Model']) -> bool:
+        required = self._fall_back_shoot_restricted_wargear_names()
+        if not required:
+            return True
+        for name in required:
+            if self._model_has_wargear_named(model, name):
+                return True
+        return False
+
+    def loses_smoke_keyword_when_shooting_after_fall_back(self) -> bool:
+        data = self._get_fall_back_shoot_extended_rule_data()
+        return bool(data.get("lose_smoke_keyword"))
+
     def has_advance_and_shoot(self) -> bool:
         """Check if the unit has an ability that allows shooting after advancing.
         
@@ -9043,6 +9133,9 @@ class ActionsMovementMixin:
                     "that unit is eligible to shoot and declare a charge in a turn in which it advanced or fell back",
                     "that unit is eligible to shoot and declare a charge in a turn in which it fell back or advanced",
                 ])
+                if not found:
+                    data = self._get_fall_back_shoot_extended_rule_data()
+                    found = bool(data.get("grants_fall_back_shoot"))
         
         # Cache the result
         if not hasattr(self, '_ability_cache'):
@@ -9147,7 +9240,7 @@ class ActionsMovementMixin:
             
         return False
 
-    def can_shoot_after_fall_back(self, profile) -> bool:
+    def can_shoot_after_fall_back(self, profile, model: Optional['Model'] = None) -> bool:
         """Check if this unit can shoot after falling back with the given weapon profile.
         
         In 10th edition, Falling Back normally makes a unit not eligible to shoot.
@@ -9161,6 +9254,32 @@ class ActionsMovementMixin:
         """
         # Check for unit abilities that allow shooting after falling back
         if self.has_fell_back_and_shoot():
+            # Some abilities restrict this to models equipped with specific wargear.
+            required = self._fall_back_shoot_restricted_wargear_names()
+            if required:
+                if model is not None:
+                    return self._model_meets_fall_back_shoot_wargear_restriction(model)
+                try:
+                    root = self.get_attached_unit_root()
+                except Exception:
+                    root = self
+                try:
+                    members = list(root.get_attached_unit_members() or [])
+                except Exception:
+                    members = [root]
+                if not members:
+                    members = [root]
+                candidates = []
+                for member in members:
+                    for candidate in list(getattr(member, "models", []) or []):
+                        if bool(getattr(candidate, "is_alive", False)):
+                            candidates.append(candidate)
+                if profile is not None and callable(getattr(self, "_model_has_weapon_profile", None)):
+                    candidates = [m for m in candidates if self._model_has_weapon_profile(m, profile)]
+                for candidate in candidates:
+                    if self._model_meets_fall_back_shoot_wargear_restriction(candidate):
+                        return True
+                return False
             return True
 
         try:

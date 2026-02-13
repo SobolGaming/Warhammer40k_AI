@@ -1869,6 +1869,13 @@ class StateAttachmentMixin:
         for u in members:
             try:
                 hover_active = bool(getattr(u, "hover_mode", False))
+                smoke_suppressed = False
+                try:
+                    fell_back = bool(getattr(getattr(u, "round_state", None), "fell_back_this_round", False))
+                    loses_smoke = bool(getattr(u, "loses_smoke_keyword_when_shooting_after_fall_back", lambda: False)())
+                    smoke_suppressed = fell_back and loses_smoke
+                except Exception:
+                    smoke_suppressed = False
                 # Collect keywords from all models in this unit
                 for model in (getattr(u, "models", []) or []):
                     try:
@@ -1876,6 +1883,8 @@ class StateAttachmentMixin:
                             ks = str(k)
                             lk = ks.lower()
                             if hover_active and lk == "aircraft":
+                                continue
+                            if smoke_suppressed and lk == "smoke":
                                 continue
                             if lk in seen:
                                 continue
@@ -1889,6 +1898,8 @@ class StateAttachmentMixin:
                     lk = ks.lower()
                     if hover_active and lk == "aircraft":
                         continue
+                    if smoke_suppressed and lk == "smoke":
+                        continue
                     if lk in seen:
                         continue
                     seen.add(lk)
@@ -1901,6 +1912,8 @@ class StateAttachmentMixin:
                 for k in extra:
                     ks = str(k)
                     lk = ks.lower()
+                    if smoke_suppressed and lk == "smoke":
+                        continue
                     if lk in seen:
                         continue
                     seen.add(lk)

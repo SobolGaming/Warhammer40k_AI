@@ -850,6 +850,9 @@ class ShootingDeclarationDialog(BaseDialog):
                     used = getattr(model, "_one_shot_used", set())
                     if key and key in used:
                         continue
+                if getattr(self.unit.round_state, "fell_back_this_round", False):
+                    if not self.unit.can_shoot_after_fall_back(weapon_profile, model=model):
+                        continue
                 for wargear in model.wargear:
                     for profile_name, profile in wargear.profiles.items():
                         if profile == weapon_profile:
