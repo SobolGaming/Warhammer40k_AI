@@ -1196,6 +1196,61 @@ class Army:
                 f"The Yncarne restriction: cannot include non-Ynnari Epic Hero units ({names})."
             )
 
+    def validate_tau_independent_power(self) -> None:
+        """
+        T'au Empire - Commander Farsight, INDEPENDENT POWER:
+        - If your army includes Commander Farsight, it cannot include any ETHEREAL units.
+        - If your army includes any ETHEREAL units, it cannot include Commander Farsight.
+        """
+        units = list(getattr(self, "units", []) or [])
+        if not units:
+            return
+
+        def _norm_name(value: str) -> str:
+            text = re.sub(r"[^a-z0-9 ]+", " ", str(value or "").lower())
+            return re.sub(r"\s+", " ", text).strip()
+
+        def _has_keyword(unit, keyword: str) -> bool:
+            if unit is None:
+                return False
+            fn = getattr(unit, "has_any_keyword", None)
+            if callable(fn):
+                return bool(fn(keyword))
+            kw = str(keyword or "").strip().upper()
+            if not kw:
+                return False
+            keywords = [
+                str(k).strip().upper()
+                for k in (getattr(unit, "keywords", []) or [])
+                if str(k).strip()
+            ]
+            faction_keywords = [
+                str(k).strip().upper()
+                for k in (getattr(unit, "faction_keywords", []) or [])
+                if str(k).strip()
+            ]
+            return kw in set(keywords + faction_keywords)
+
+        farsight_units = [
+            unit for unit in units
+            if _norm_name(getattr(unit, "name", "")) == "commander farsight"
+        ]
+        if not farsight_units:
+            return
+
+        ethereal_units = [
+            unit for unit in units
+            if _has_keyword(unit, "ETHEREAL")
+        ]
+        if not ethereal_units:
+            return
+
+        ethereal_names = ", ".join(sorted({str(getattr(unit, "name", "Unknown") or "Unknown") for unit in ethereal_units}))
+        raise ArmyValidationError(
+            "INDEPENDENT POWER: armies that include Commander Farsight cannot include ETHEREAL units "
+            f"({ethereal_names})."
+        )
+
     def validate_leaders(self):
         # Map of units to their attached Leaders
         unit_leader_map: dict = {}
@@ -2064,6 +2119,7 @@ class Army:
         self.validate_epic_heroes()
         self.validate_unique_model_restrictions()
         self.validate_ynnari_epic_hero_restrictions()
+        self.validate_tau_independent_power()
         self.validate_leaders()
         self.validate_enhancements()
         self.validate_warlord()

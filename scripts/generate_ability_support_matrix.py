@@ -2629,6 +2629,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Kroot Carnivores BODYGUARD enforces two attached Leaders only at Starting Strength 20 and requires those two Leaders to be different datasheets.",
         ),
+        ("TAU", "INDEPENDENT POWER"): (
+            "Supported",
+            "Army validation enforces Commander Farsight and ETHEREAL units as mutually exclusive.",
+        ),
         ("TAU", "Advanced Armour"): ("Supported", "Feel No Pain 4+ against mortal wounds."),
         ("TAU", "Agile Combatant"): ("Supported", "Shoot after Falling Back."),
         ("TAU", "Recon Drone"): ("Supported", "Infiltrators."),
@@ -2883,6 +2887,10 @@ def _datasheet_ability_support_by_name_faction_datasheet() -> Dict[Tuple[str, st
         ("TAU", "BODYGUARD", "000000413"): (
             "Supported",
             "Kroot Carnivores BODYGUARD enforces two attached Leaders only at Starting Strength 20 and requires those two Leaders to be different datasheets.",
+        ),
+        ("TAU", "INDEPENDENT POWER", "000000406"): (
+            "Supported",
+            "Army validation enforces Commander Farsight and ETHEREAL units as mutually exclusive.",
         ),
     }
     out: Dict[Tuple[str, str, str], Tuple[str, str]] = {}
