@@ -518,6 +518,52 @@ class WargearProfile:
             return base_max
         if attacker is None:
             return base_max
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            root = unit.get_attached_unit_root() if unit is not None else None
+        except Exception:
+            root = getattr(attacker, "parent_unit", None)
+        try:
+            sr = getattr(root, "special_rules", None) if root is not None else None
+            if isinstance(sr, dict) and bool(sr.get("aeldari_doom_inescapable_active")):
+                apply_override = True
+                exp = str(sr.get("aeldari_doom_inescapable_expires_phase", "") or "").strip().upper()
+                if exp:
+                    phase_name = ""
+                    try:
+                        army = root.get_parent_army() if root is not None else None
+                        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+                    except Exception:
+                        phase_name = ""
+                    if phase_name and phase_name != exp:
+                        apply_override = False
+                if apply_override:
+                    overrides = sr.get("aeldari_doom_inescapable_weapon_range_overrides")
+                    if isinstance(overrides, dict):
+                        weapon_name = ""
+                        try:
+                            if self.parent_wargear is not None:
+                                weapon_name = str(getattr(self.parent_wargear, "name", "") or "")
+                            if not weapon_name:
+                                weapon_name = str(getattr(self, "name", "") or "")
+                        except Exception:
+                            weapon_name = ""
+                        want = re.sub(r"[^a-z0-9]+", "", str(weapon_name or "").lower())
+                        for key, value in overrides.items():
+                            key_norm = re.sub(r"[^a-z0-9]+", "", str(key or "").lower())
+                            if not key_norm or not want:
+                                continue
+                            if key_norm == want or key_norm in want or want in key_norm:
+                                try:
+                                    override_val = int(value or 0)
+                                except Exception:
+                                    override_val = 0
+                                if override_val > 0:
+                                    base_max = max(int(base_max), int(override_val))
+                                break
+        except Exception:
+            pass
         bonus = 0
         try:
             if self.is_melta():
@@ -1656,6 +1702,7 @@ class WargearProfile:
             ap_val = int(self.ap)
         except Exception:
             ap_val = 0
+        base_ap_val = int(ap_val)
         if self._plunging_fire_applies(attacker, target):
             # Improve AP by 1: AP -1 becomes -2, AP 0 becomes -1, etc.
             ap_val -= 1
@@ -2241,6 +2288,11 @@ class WargearProfile:
                         except Exception:
                             continue
                     ap_val += int(self._bastion_shield_ap_worsen(attacker, target_root) or 0)
+        except Exception:
+            pass
+        try:
+            if self._aeldari_warrior_focus_ignore_ap_modifiers(attacker) and int(ap_val) > int(base_ap_val):
+                ap_val = int(base_ap_val)
         except Exception:
             pass
         return int(apply_characteristic_caps("ap", int(ap_val), base_raw=getattr(self, "_raw_ap", None)))
@@ -5283,6 +5335,64 @@ class WargearProfile:
                 return roll_value, None
         return roll_value, "skip"
 
+    def _aeldari_warrior_focus_rule(self, attacker: 'Model') -> Optional[dict]:
+        unit = getattr(attacker, "parent_unit", None)
+        if unit is None:
+            return None
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("aeldari_warrior_focus_active")):
+            return None
+        phase_name = ""
+        game = None
+        try:
+            army = root.get_parent_army() if root is not None else None
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+        except Exception:
+            phase_name = ""
+            game = None
+        exp = str(sr.get("aeldari_warrior_focus_expires_phase", "") or "").strip().upper()
+        if exp and phase_name and phase_name != exp:
+            return None
+        if game is not None:
+            try:
+                marked_turn = int(sr.get("aeldari_warrior_focus_turn", 0) or 0)
+            except Exception:
+                marked_turn = 0
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                current_turn = 0
+            if marked_turn and current_turn and marked_turn != current_turn:
+                return None
+        source = str(sr.get("aeldari_warrior_focus_source", "") or "WARRIOR FOCUS").strip() or "WARRIOR FOCUS"
+        return {
+            "name": source,
+            "attack_type": "any",
+            "skill_kinds": {"ballistic", "weapon"},
+            "allow_hit": True,
+            "allow_strength": True,
+            "allow_ap": True,
+            "allow_damage": True,
+            "default_choice": "ignore_negative",
+        }
+
+    def _aeldari_warrior_focus_ignore_strength_modifiers(self, attacker: 'Model') -> bool:
+        rule = self._aeldari_warrior_focus_rule(attacker)
+        return bool(rule and rule.get("allow_strength"))
+
+    def _aeldari_warrior_focus_ignore_ap_modifiers(self, attacker: 'Model') -> bool:
+        rule = self._aeldari_warrior_focus_rule(attacker)
+        return bool(rule and rule.get("allow_ap"))
+
+    def _aeldari_warrior_focus_ignore_damage_modifiers(self, attacker: 'Model') -> bool:
+        rule = self._aeldari_warrior_focus_rule(attacker)
+        return bool(rule and rule.get("allow_damage"))
+
     def _ignore_hit_modifier_rule_name(self, attacker: 'Model') -> Optional[str]:
         rule = None
         try:
@@ -5381,6 +5491,10 @@ class WargearProfile:
             root = unit.get_attached_unit_root()
         except Exception:
             root = unit
+
+        warrior_focus = self._aeldari_warrior_focus_rule(attacker)
+        if warrior_focus:
+            return warrior_focus
 
         coterie_source = self._coterie_unshakeable_opponents_source(attacker)
         if coterie_source:
@@ -6871,6 +6985,7 @@ class WargearProfile:
             ability_label: str,
             player=None,
             game_map=None,
+            default_choice=CHOICE_KEEP_ALL,
         ):
             if roll_value is None and mods:
                 choice = attack_instance.get(choice_key)
@@ -6891,10 +7006,10 @@ class WargearProfile:
                             except Exception:
                                 choice = None
                     if choice not in options:
-                        choice = CHOICE_KEEP_ALL
+                        choice = default_choice if default_choice in options else CHOICE_KEEP_ALL
                     attack_instance[choice_key] = choice
                 if choice is None:
-                    choice = CHOICE_KEEP_ALL
+                    choice = default_choice if default_choice in options else CHOICE_KEEP_ALL
                 if choice != CHOICE_KEEP_ALL:
                     kept, ignored = filter_signed_modifiers(mods, choice)
                     return choice, kept, ignored
@@ -6963,23 +7078,39 @@ class WargearProfile:
                     provider_attr = "skill_modifier_choice_provider"
                     if game_map is not None and not callable(getattr(game_map, provider_attr, None)):
                         provider_attr = "hit_modifier_choice_provider"
-                    _choice, skill_mods, _ignored = _resolve_modifier_choice(
-                        skill_mods,
-                        choice_key="skill_modifier_choice",
-                        provider_attr=provider_attr,
-                        ability_label=f"{ignore_rule.get('name', 'Ignore modifiers')} ({skill_label})",
-                        player=player,
-                        game_map=game_map,
-                    )
+                    default_choice = CHOICE_KEEP_ALL
+                    if str(ignore_rule.get("default_choice", "") or "").strip().lower() == "ignore_negative":
+                        default_choice = CHOICE_IGNORE_NEGATIVE
+                    if roll_value is not None and default_choice == CHOICE_IGNORE_NEGATIVE:
+                        attack_instance.setdefault("skill_modifier_choice", CHOICE_IGNORE_NEGATIVE)
+                        skill_mods, _ignored = filter_signed_modifiers(skill_mods, CHOICE_IGNORE_NEGATIVE)
+                    else:
+                        _choice, skill_mods, _ignored = _resolve_modifier_choice(
+                            skill_mods,
+                            choice_key="skill_modifier_choice",
+                            provider_attr=provider_attr,
+                            ability_label=f"{ignore_rule.get('name', 'Ignore modifiers')} ({skill_label})",
+                            player=player,
+                            game_map=game_map,
+                            default_choice=default_choice,
+                        )
                 if allow_hit and hit_mods:
-                    _choice, hit_mods, _ignored = _resolve_modifier_choice(
-                        hit_mods,
-                        choice_key="hit_modifier_choice",
-                        provider_attr="hit_modifier_choice_provider",
-                        ability_label=f"{ignore_rule.get('name', 'Ignore modifiers')} (Hit roll)",
-                        player=player,
-                        game_map=game_map,
-                    )
+                    default_choice = CHOICE_KEEP_ALL
+                    if str(ignore_rule.get("default_choice", "") or "").strip().lower() == "ignore_negative":
+                        default_choice = CHOICE_IGNORE_NEGATIVE
+                    if roll_value is not None and default_choice == CHOICE_IGNORE_NEGATIVE:
+                        attack_instance.setdefault("hit_modifier_choice", CHOICE_IGNORE_NEGATIVE)
+                        hit_mods, _ignored = filter_signed_modifiers(hit_mods, CHOICE_IGNORE_NEGATIVE)
+                    else:
+                        _choice, hit_mods, _ignored = _resolve_modifier_choice(
+                            hit_mods,
+                            choice_key="hit_modifier_choice",
+                            provider_attr="hit_modifier_choice_provider",
+                            ability_label=f"{ignore_rule.get('name', 'Ignore modifiers')} (Hit roll)",
+                            player=player,
+                            game_map=game_map,
+                            default_choice=default_choice,
+                        )
 
         if driven_by_ultimate_rage:
             skill_choice = attack_instance.get("skill_modifier_choice")
@@ -9551,6 +9682,20 @@ class WargearProfile:
                 if isinstance(strength, int):
                     strength = strength + 1
                     wound_result.setdefault("modifiers", []).append("+1S from Bondsman (Magaera's Duty)")
+        except Exception:
+            pass
+        try:
+            wf_rule = self._aeldari_warrior_focus_rule(attacker)
+            if wf_rule and bool(wf_rule.get("allow_strength")) and isinstance(strength, int):
+                try:
+                    base_strength = int(self.strength)
+                except Exception:
+                    base_strength = None
+                if isinstance(base_strength, int) and int(strength) < int(base_strength):
+                    strength = int(base_strength)
+                    wound_result.setdefault("modifiers", []).append(
+                        f"{wf_rule.get('name', 'WARRIOR FOCUS')}: ignored negative Strength modifiers"
+                    )
         except Exception:
             pass
 
@@ -13489,6 +13634,7 @@ class WargearProfile:
             pass
 
         # Apply modifiers unless these are "mortal wounds in addition" (not currently used, but Core Rules require it).
+        base_damage_before_mods = int(damage_value)
         if attack_instance.get("mortal_wound", False) and attack_instance.get("mortal_wound_in_addition", False):
             final_damage = int(damage_value)
         else:
@@ -13499,6 +13645,15 @@ class WargearProfile:
                 allow_damage_zero=bool(dbg.get("had_set_to_zero", False)),
                 base_raw=getattr(self, "_raw_damage", None),
             )
+        try:
+            if self._aeldari_warrior_focus_ignore_damage_modifiers(attacker):
+                if int(final_damage) < int(base_damage_before_mods):
+                    final_damage = int(base_damage_before_mods)
+                    damage_result.setdefault("special_effects", []).append(
+                        "WARRIOR FOCUS: ignored negative Damage modifiers"
+                    )
+        except Exception:
+            pass
 
         # Apply "min 1" / "allow 0 if set to 0" outcome to the actual damage applied.
         damage_value = int(final_damage)

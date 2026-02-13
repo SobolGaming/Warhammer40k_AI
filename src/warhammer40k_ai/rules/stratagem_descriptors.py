@@ -1255,6 +1255,92 @@ _ARMOURED_WARHOST_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _ARMOURED_WARHOST_STRATAGEM_DESCRIPTORS.values()
 }
 
+_ASPECT_HOST_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009928005": StratagemToolDescriptor(
+        stratagem_id="000009928005",
+        name="Doom Inescapable",
+        timing="shooting_phase",
+        target="avatar_of_khaine_model_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="wailing_doom_range_and_damage_override",
+        cp_cost=1,
+        effect_params={"weapon_name": "Wailing Doom", "range": 18, "damage": 8},
+    ),
+    "000009928007": StratagemToolDescriptor(
+        stratagem_id="000009928007",
+        name="Khaine's Vengeance",
+        timing="opponent_movement_phase_after_selected_to_fall_back",
+        target="aspect_warriors_or_avatar_within_engagement_of_falling_back_enemy",
+        duration="immediate",
+        effect="force_desperate_escape_test",
+        cp_cost=1,
+        effect_params={"exclude_enemy_keywords": ["MONSTER", "VEHICLE"], "battleshock_roll_modifier": -1},
+    ),
+    "000009928006": StratagemToolDescriptor(
+        stratagem_id="000009928006",
+        name="Preternatural Precision",
+        timing="shooting_phase",
+        target="aspect_warriors_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="select_ranged_weapon_keywords_with_optional_token_spend",
+        cp_cost=1,
+        effect_params={
+            "aspect_shrine_token_optional": True,
+            "choices": ["IGNORES COVER", "LETHAL HITS", "SUSTAINED HITS 1"],
+            "choice_count_without_token": 1,
+            "choice_count_with_token": 2,
+        },
+    ),
+    "000009928004": StratagemToolDescriptor(
+        stratagem_id="000009928004",
+        name="Skyborne Sanctuary",
+        timing="end_of_fight_phase",
+        target="asuryani_unit_and_friendly_transport",
+        duration="immediate",
+        effect="embark_transport_if_within_6_and_not_engaged",
+        cp_cost=1,
+        range_in=6.0,
+    ),
+    "000009928003": StratagemToolDescriptor(
+        stratagem_id="000009928003",
+        name="To Their Final Breath",
+        timing="fight_phase_after_enemy_targets_selected",
+        target="aspect_warriors_or_avatar_unit_targeted_not_yet_fought",
+        duration="until_end_of_phase",
+        effect="fight_on_death_after_attacks_with_optional_token_bonus",
+        cp_cost=1,
+        effect_params={
+            "base_threshold": 4,
+            "token_spend_bonus": 1,
+            "token_spend_optional": True,
+            "requires_melee_destroyed_by_attacker": True,
+        },
+    ),
+    "000009928002": StratagemToolDescriptor(
+        stratagem_id="000009928002",
+        name="Warrior Focus",
+        timing="shooting_or_fight_phase_on_select",
+        target="aspect_warriors_or_avatar_unit_not_yet_selected",
+        duration="until_end_of_phase",
+        effect="ignore_attack_characteristic_and_hit_modifiers",
+        cp_cost=1,
+        effect_params={
+            "ignore_modifiers": [
+                "ballistic_skill",
+                "weapon_skill",
+                "strength",
+                "armour_penetration",
+                "damage",
+                "hit_roll",
+            ]
+        },
+    ),
+}
+
+_ASPECT_HOST_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _ASPECT_HOST_STRATAGEM_DESCRIPTORS.values()
+}
+
 
 def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> Optional[StratagemToolDescriptor]:
     if stratagem_id:
@@ -1312,6 +1398,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _ARMOURED_WARHOST_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _ASPECT_HOST_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
     key = _normalize_name(name)
     if not key:
         return None
@@ -1334,4 +1423,5 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _MERCURIAL_HOST_STRATAGEM_BY_NAME.get(key)
         or _RAPID_EVISCERATION_STRATAGEM_BY_NAME.get(key)
         or _ARMOURED_WARHOST_STRATAGEM_BY_NAME.get(key)
+        or _ASPECT_HOST_STRATAGEM_BY_NAME.get(key)
     )

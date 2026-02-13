@@ -698,6 +698,8 @@ class ShootingDeclarationDialog(BaseDialog):
         weapon_range_max = 0
         if hasattr(weapon_profile, 'range') and hasattr(weapon_profile.range, 'max'):
             weapon_range_max = weapon_profile.range.max or 0
+        max_weapon_range_seen = float(weapon_range_max or 0)
+        max_weapon_range_seen = float(weapon_range_max or 0)
 
         # Only consider models that actually have this weapon
         shooter_models = self._get_models_with_weapon(weapon_profile)
@@ -710,12 +712,20 @@ class ShootingDeclarationDialog(BaseDialog):
         for shooting_model in shooter_models:
             if not shooting_model.is_alive:
                 continue
+            shooter_range_max = float(weapon_range_max or 0)
+            try:
+                if hasattr(weapon_profile, "_effective_range_max"):
+                    shooter_range_max = float(weapon_profile._effective_range_max(shooting_model) or shooter_range_max)
+            except Exception:
+                shooter_range_max = float(weapon_range_max or 0)
+            if shooter_range_max > max_weapon_range_seen:
+                max_weapon_range_seen = shooter_range_max
             for target_model in target_unit.models:
                 if not target_model.is_alive:
                     continue
                 from ...utility.aura_utils import distance_between_models_bases_3d
                 distance = float(distance_between_models_bases_3d(shooting_model, target_model))
-                if distance <= weapon_range_max:
+                if distance <= shooter_range_max:
                     any_in_range = True
                     # As soon as we detect in-range for this shooter, we can attempt LoS via unit validator
                     break
@@ -736,7 +746,7 @@ class ShootingDeclarationDialog(BaseDialog):
             return (False, "No valid target models found")
 
         if not any_in_range:
-            return (False, f"Out of range: closest is {closest_distance:.1f}\" > {weapon_range_max}\"")
+            return (False, f"Out of range: closest is {closest_distance:.1f}\" > {max_weapon_range_seen:.1f}\"")
 
         # Reaching here means at least one shooter was in range but failed LoS/other constraints
         return (False, "No line of sight from any model or shooting restricted")
@@ -774,10 +784,18 @@ class ShootingDeclarationDialog(BaseDialog):
         for sm in shooter_models:
             if not sm.is_alive:
                 continue
+            shooter_range_max = float(weapon_range_max or 0)
+            try:
+                if hasattr(weapon_profile, "_effective_range_max"):
+                    shooter_range_max = float(weapon_profile._effective_range_max(sm) or shooter_range_max)
+            except Exception:
+                shooter_range_max = float(weapon_range_max or 0)
+            if shooter_range_max > max_weapon_range_seen:
+                max_weapon_range_seen = shooter_range_max
             for tm in target_models_iter:
                 from ...utility.aura_utils import distance_between_models_bases_3d
                 edge = float(distance_between_models_bases_3d(sm, tm))
-                if edge <= weapon_range_max:
+                if edge <= shooter_range_max:
                     in_range_any = True
                     shooting_model = sm
                     target_model = tm
@@ -790,7 +808,7 @@ class ShootingDeclarationDialog(BaseDialog):
         if not in_range_any:
             # Avoid misleading rounding when barely out of range
             display_edge = math.ceil(closest_edge * 10.0) / 10.0
-            return (False, f"Out of range: {display_edge:.1f}\" > {weapon_range_max}\"")
+            return (False, f"Out of range: {display_edge:.1f}\" > {max_weapon_range_seen:.1f}\"")
 
         # Use the unit's validator to get true legality (includes LoS and special rules)
         if hasattr(self.unit, '_can_model_shoot_weapon_at_target') and self.game_map is not None:

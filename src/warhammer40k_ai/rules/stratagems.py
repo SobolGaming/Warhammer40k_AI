@@ -43,6 +43,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BERSERK FUGUE",
     "BEAUTIFUL DEATH",
     "CLOUDSTRIKE",
+    "DOOM INESCAPABLE",
     "DAEMONIC FURY",
     "DAEMONIC STRENGTH",
     "DAEMONTIDE",
@@ -91,6 +92,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "OVERSHADOWED BY NONE",
     "PUNISH THE CRAVEN",
     "SKYBORNE SANCTUARY",
+    "TO THEIR FINAL BREATH",
     "SMOKESCREEN",
     "SKULLS FOR THE SKULL THRONE!",
     "SUMMONED BY SLAUGHTER",
@@ -191,12 +193,16 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SUSTAINED BY AGONY",
     "SWIFT DEPLOYMENT",
     "SYCOPHANTIC SURGE",
+    "KHAINE'S VENGEANCE",
+    "KHAINE’S VENGEANCE",
+    "PRETERNATURAL PRECISION",
     "UNCANNY REACTIONS",
     "HONOUR THE PRINCE",
     "UNHOLY HASTE",
     "PROTECTION OF THE DARK PRINCE",
     "UNSHAKEABLE OPPONENTS",
     "VECTORED ENGINES",
+    "WARRIOR FOCUS",
     "PRETERNATURAL AGILITY",
     "VIOLENT CRESCENDO",
     "VIOLENT EXCESS",
@@ -227,6 +233,8 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "FRENZIED RESILIENCE",
     "FEIGNED WEAKNESS",
     "FEIGNED RETREAT",
+    "KHAINE'S VENGEANCE",
+    "KHAINE’S VENGEANCE",
     "COMMAND RE-ROLL",
     "COUNTER-OFFENSIVE",
     "FIRE OVERWATCH",
@@ -245,6 +253,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "SKULLS FOR THE SKULL THRONE!",
     "SMOKESCREEN",
     "SKYBORNE SANCTUARY",
+    "TO THEIR FINAL BREATH",
     "CORRUPT REALSPACE",
     "DAEMONIC INVULNERABILITY",
     "DELIRIUM UNMADE",
@@ -1171,7 +1180,7 @@ class StratagemManager(
         if names & {"EPIC CHALLENGE", "PEERLESS WARRIOR", "MARTIAL PERFECTION"}:
             add("fight_unit_selected", self._on_fight_unit_selected)
 
-        if names & {"OVERWATCH", "FIRE OVERWATCH", "APOPLECTIC FRENZY", "PUNISH THE CRAVEN"}:
+        if names & {"OVERWATCH", "FIRE OVERWATCH", "APOPLECTIC FRENZY", "PUNISH THE CRAVEN", "KHAINE'S VENGEANCE", "KHAINE’S VENGEANCE"}:
             add("unit_move_started", self._on_unit_move_started)
 
         if names & {
@@ -1296,6 +1305,7 @@ class StratagemManager(
             "FLICKERING REALITY",
             "'ARD AS NAILS",
             "\u2019ARD AS NAILS",
+            "TO THEIR FINAL BREATH",
         }
 
         has_generic_defensive_shooting = "shooting" in defensive_phases
@@ -1415,12 +1425,18 @@ class StratagemManager(
             "SINUOUS BREACH",
             "SWIFT DEPLOYMENT",
             "SYCOPHANTIC SURGE",
+            "DOOM INESCAPABLE",
+            "PRETERNATURAL PRECISION",
+            "TO THEIR FINAL BREATH",
+            "WARRIOR FOCUS",
             "HONOUR THE PRINCE",
             "UNSHAKEABLE OPPONENTS",
             "VENGEFUL SURGE",
             "VECTORED ENGINES",
             "VIOLENT CRESCENDO",
             "VIOLENT EXCESS",
+            "KHAINE'S VENGEANCE",
+            "KHAINE’S VENGEANCE",
             "DARK APPARITIONS",
         }
         needs_phase_end = bool(
@@ -2361,10 +2377,16 @@ class StratagemManager(
             "ANTI-GRAV REPULSION": "Target: AELDARI VEHICLE FLY unit selected as a charge target",
             "ANTI‑GRAV REPULSION": "Target: AELDARI VEHICLE FLY unit selected as a charge target",
             "CLOUDSTRIKE": "Target: AELDARI VEHICLE FLY unit in Strategic Reserves",
+            "DOOM INESCAPABLE": "Target: AVATAR OF KHAINE unit not yet selected to shoot",
+            "KHAINE'S VENGEANCE": "Target: ASPECT WARRIORS/AVATAR OF KHAINE unit in Engagement Range of an enemy selected to Fall Back",
+            "KHAINE’S VENGEANCE": "Target: ASPECT WARRIORS/AVATAR OF KHAINE unit in Engagement Range of an enemy selected to Fall Back",
             "LAYERED WARDS": "Target: AELDARI VEHICLE unit after a mortal wound is allocated",
+            "PRETERNATURAL PRECISION": "Target: ASPECT WARRIORS unit not yet selected to shoot; choose 1 (or 2 if token spent) from Ignores Cover/Lethal Hits/Sustained Hits 1",
             "SOULSIGHT": "Target: AELDARI VEHICLE unit that has not been selected to shoot",
             "SWIFT DEPLOYMENT": "Target: AELDARI TRANSPORT unit after it Advanced",
+            "TO THEIR FINAL BREATH": "Target: ASPECT WARRIORS/AVATAR OF KHAINE unit selected as an enemy fight target (not fought)",
             "VECTORED ENGINES": "Target: AELDARI VEHICLE FLY unit after it Fell Back",
+            "WARRIOR FOCUS": "Target: ASPECT WARRIORS/AVATAR OF KHAINE unit not yet selected to shoot/fight",
             "A CHALLENGE MET": "Target: WYCH CULT unit; enemy within 9\" that moved or was set up this phase",
             "ACROBATIC DISPLAY": "Target: WYCH CULT unit targeted by enemy attacks",
             "BEAUTIFUL DEATH": "Target: EMPEROR'S CHILDREN CHARACTER unit targeted by enemy fight attacks",
@@ -2964,6 +2986,10 @@ class StratagemManager(
             raise
         try:
             self._queue_aeldari_armoured_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_aeldari_aspect_host_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -3801,7 +3827,15 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_aeldari_aspect_host_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._cleanup_aeldari_armoured_phase_end_effects(phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_aeldari_aspect_host_phase_end_effects(phase=phase)
         except Exception:
             raise
         try:
@@ -5330,6 +5364,7 @@ class StratagemManager(
     def _on_unit_move_started(self, unit, action: str, **kwargs):
         self._maybe_queue_overwatch(unit, action, when='start')
         self._maybe_queue_apoplectic_frenzy(unit, action)
+        self._queue_aeldari_aspect_host_move_start_reactions(unit=unit, action=action)
         self._queue_world_eaters_vessels_move_start_reactions(unit=unit, action=action)
 
     def _on_unit_move_ended(self, unit, action: str, **kwargs):
@@ -6998,6 +7033,13 @@ class StratagemManager(
             raise
         if owner_player is None or owner_player is self.player:
             return
+        try:
+            self._queue_aeldari_aspect_host_fight_targets_selected_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
         try:
             self._queue_world_eaters_possessed_fight_reactions(
                 attacking_unit=attacking_unit,
@@ -11794,6 +11836,9 @@ class StratagemManager(
         as_result = self._use_adepta_sororitas_hallowed_stratagem(s, **kwargs)
         if as_result is not None:
             return as_result
+        aeldari_aspect_result = self._use_aeldari_aspect_host_stratagem(s, **kwargs)
+        if aeldari_aspect_result is not None:
+            return aeldari_aspect_result
         aeldari_armoured_result = self._use_aeldari_armoured_warhost_stratagem(s, **kwargs)
         if aeldari_armoured_result is not None:
             return aeldari_armoured_result

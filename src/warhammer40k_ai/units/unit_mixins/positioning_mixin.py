@@ -2562,6 +2562,50 @@ class PositioningMixin:
                         rules = list(rules or []) + [{"attack_type": "any", "keyword": keyword, "source": source}]
         except Exception:
             pass
+        try:
+            root = self.get_attached_unit_root()
+            sr = getattr(root, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("aeldari_preternatural_precision_active"):
+                apply_bonus = True
+                exp = str(sr.get("aeldari_preternatural_precision_expires_phase", "") or "").strip().upper()
+                owner_id = str(sr.get("aeldari_preternatural_precision_owner", "") or "")
+                turn = int(sr.get("aeldari_preternatural_precision_turn", 0) or 0)
+                if exp or owner_id or turn:
+                    game = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
+                    if game is not None:
+                        try:
+                            cur_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                        except Exception:
+                            cur_phase = ""
+                        try:
+                            cur_owner = str(getattr(game.get_current_player(), "id", "") or "")
+                        except Exception:
+                            cur_owner = ""
+                        try:
+                            cur_turn = int(getattr(game, "turn", 0) or 0)
+                        except Exception:
+                            cur_turn = 0
+                        if exp and cur_phase and cur_phase != exp:
+                            apply_bonus = False
+                        if owner_id and cur_owner and owner_id != cur_owner:
+                            apply_bonus = False
+                        if turn and cur_turn and turn != cur_turn:
+                            apply_bonus = False
+                atype = str(attack_type or "").strip().lower()
+                if atype and atype not in ("any", "ranged"):
+                    apply_bonus = False
+                if apply_bonus:
+                    source = str(sr.get("aeldari_preternatural_precision_source", "") or "PRETERNATURAL PRECISION").strip()
+                    source = source or "PRETERNATURAL PRECISION"
+                    allowed = {"IGNORES COVER", "LETHAL HITS", "SUSTAINED HITS 1"}
+                    for keyword in list(sr.get("aeldari_preternatural_precision_keywords", []) or []):
+                        kw = str(keyword or "").strip().upper()
+                        if kw in allowed:
+                            rules = list(rules or []) + [
+                                {"attack_type": "ranged", "keyword": kw, "source": source}
+                            ]
+        except Exception:
+            pass
         if not rules:
             return {}
         return self._resolve_attack_keyword_bonuses_from_rules(rules, attack_type=attack_type)
