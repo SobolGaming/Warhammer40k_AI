@@ -2600,6 +2600,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Convergence Of Dominion setup uses a 12\" model-to-model chain (instead of unit coherency) and then splits into single-model units so each Starstele is treated as a separate unit for the rest of the battle.",
         ),
+        ("NEC", "TRIARCHAL MENHIRS"): (
+            "Supported",
+            "When this unit's Szarekh model is destroyed, all remaining TRIARCHAL MENHIR models in the unit are also destroyed.",
+        ),
         ("NEC", "Relentless Combatants"): ("Supported", "Re-roll Charge rolls. Charge-after-Fall-Back eligibility."),
         ("NEC", "Shadowloom"): ("Supported", "Stealth."),
         ("NEC", "Powers of the C'tan"): (
@@ -2851,6 +2855,10 @@ def _datasheet_ability_support_by_name_faction_datasheet() -> Dict[Tuple[str, st
         ("NEC", "DEPLOYMENT", "000002361"): (
             "Supported",
             "Convergence Of Dominion setup uses a 12\" model-to-model chain (instead of unit coherency) and then splits into single-model units so each Starstele is treated as a separate unit for the rest of the battle.",
+        ),
+        ("NEC", "TRIARCHAL MENHIRS", "000002360"): (
+            "Supported",
+            "When this unit's Szarekh model is destroyed, all remaining TRIARCHAL MENHIR models in the unit are also destroyed.",
         ),
     }
     out: Dict[Tuple[str, str, str], Tuple[str, str]] = {}

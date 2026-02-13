@@ -388,6 +388,43 @@ class DamageDeathMixin:
         self.special_rules = sr
         return "none"
 
+    def _has_triarchal_menhirs_ability(self) -> bool:
+        for ability in list(getattr(self, "possible_abilities", []) or []):
+            if isinstance(ability, str):
+                ability_name = str(ability or "")
+            elif isinstance(ability, dict):
+                ability_name = str(ability.get("name", "") or "")
+            else:
+                ability_name = str(getattr(ability, "name", "") or "")
+            if str(ability_name or "").strip().upper() == "TRIARCHAL MENHIRS":
+                return True
+        return False
+
+    def _maybe_handle_triarchal_menhirs(
+        self,
+        model: Optional[Model],
+        game_map: Optional['Map'] = None,
+    ) -> None:
+        """TRIARCHAL MENHIRS: if Szarekh is destroyed, destroy remaining Menhirs."""
+        if model is None:
+            return
+        if not self._has_triarchal_menhirs_ability():
+            return
+        if self._normalize_model_name(str(getattr(model, "name", "") or "")) != "szarekh":
+            return
+
+        remaining_menhirs = [
+            candidate
+            for candidate in list(getattr(self, "models", []) or [])
+            if candidate is not model
+            and getattr(candidate, "is_alive", False)
+            and not getattr(candidate, "_pending_placement", False)
+            and self._normalize_model_name(str(getattr(candidate, "name", "") or "")) == "triarchal menhir"
+        ]
+        for menhir in list(remaining_menhirs):
+            menhir.wounds = 0
+            menhir.die(game_map=game_map)
+
     def _handle_model_destroyed(self, model: Model, game_map: Optional['Map'] = None) -> None:
         """Handle reactive 'on death' mechanics before the model is removed.
 
@@ -498,6 +535,7 @@ class DamageDeathMixin:
 
         # Crewed Platform: destroy platform models when the last crew model is destroyed.
         self._maybe_handle_crewed_platform(model, game_map=game_map)
+        self._maybe_handle_triarchal_menhirs(model, game_map=game_map)
 
         # WORLD EATERS: Total Carnage (Blessings of Khorne) - deferred "fight on death" after attacker finishes attacks.
         # Trigger: a model is destroyed by a MELEE attack, model's unit benefits from Total Carnage, and unit has not fought this phase.
