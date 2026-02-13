@@ -330,6 +330,47 @@ class TestLeaderAttachments(unittest.TestCase):
 
         self.assertEqual(leader.has_scout(), (False, 0.0))
 
+    def test_attached_unit_rule_grants_scouts_without_model_keyword(self):
+        leader_ds = _DummyDatasheet(
+            "Leader",
+            "L1",
+            attached_to=["BSS"],
+            attached_to_names=["Battle Sisters Squad"],
+            keywords=["MINISTORUM PRIEST", "CHARACTER"],
+        )
+        battle_sisters_ds = _DummyDatasheet("Battle Sisters Squad", "BSS")
+        sanctifiers_ds = _DummyDatasheet("Sanctifiers", "SANC")
+        leader = _TestUnit(leader_ds)
+        battle_sisters = _TestUnit(battle_sisters_ds)
+        sanctifiers = _TestUnit(sanctifiers_ds)
+
+        sanctifiers.possible_abilities = [
+            Ability(
+                "ATTACHED UNIT",
+                "",
+                (
+                    "If a Ministorum Priest from your army with the Leader ability can be attached to a Battle Sisters Squad, "
+                    "it can be attached to this unit instead. If a MINISTORUM PRIEST from your army is attached to this unit "
+                    "during the Declare Battle Formations step, that model gains the Scouts 6\" ability."
+                ),
+                "",
+            )
+        ]
+
+        army = Army(faction="Test", detachment_type="Test", points_limit=2000)
+        army.player = _DummyPlayer()
+        army.units = [leader, battle_sisters, sanctifiers]
+        for u in army.units:
+            u.parent_army = army
+
+        self.assertTrue(leader.can_attach_to(sanctifiers))
+        self.assertEqual(leader.has_scout(), (False, 0.0))
+
+        leader.attach_to_unit(sanctifiers)
+
+        self.assertEqual(leader.has_scout(), (True, 6.0))
+        self.assertEqual(sanctifiers.has_scout(), (False, 0.0))
+
     def test_attached_unit_rule_scouts_clears_after_reattach(self):
         leader_ds = _DummyDatasheet(
             "Leader",

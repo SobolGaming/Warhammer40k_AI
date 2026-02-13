@@ -7736,7 +7736,7 @@ def _attached_unit_support(name: str, description: str) -> Optional[Tuple[str, s
     note = "Attached Unit section parsed to extend leader attachment eligibility."
     text = _norm_rules_text(_strip_html(description))
     if re.search(
-        r"if a .+ model from your army is attached to this unit during the declare battle formations step"
+        r"if a .+\s+(?:(?:model|unit)\s+)?from your army is attached to this unit during the declare battle formations step"
         r"\s*that model gains(?: the)? scouts? \d+",
         text,
     ):

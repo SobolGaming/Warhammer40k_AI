@@ -626,7 +626,7 @@ class ActionsMovementMixin:
     def _ability_attached_unit_bodyguard_leader_scouts(self, ability) -> Optional[dict]:
         """
         Return rule info for bodyguard ATTACHED UNIT clauses like:
-        "If a MINISTORUM PRIEST or INQUISITOR model from your army is attached to this unit
+        "If a MINISTORUM PRIEST or INQUISITOR from your army is attached to this unit
         during the Declare Battle Formations step, that model gains the Scouts 6\" ability."
         """
         desc = ""
@@ -653,7 +653,7 @@ class ActionsMovementMixin:
             return None
 
         m = re.search(
-            r"\bif a (?P<keywords>[^.;]+?) model from your army is attached to this unit during the declare battle formations step,?\s*"
+            r"\bif a (?P<keywords>[^.;]+?)\s+(?:(?:model|unit)\s+)?from your army is attached to this unit during the declare battle formations step,?\s*"
             r"that model gains(?: the)? scouts?\s*(?P<distance>\d+)",
             low,
             flags=re.IGNORECASE,
