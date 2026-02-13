@@ -33,6 +33,7 @@ from ..engine.decision_kinds import (
 from ..engine.decisions import DecisionOption, DecisionRequest
 from ..engine.decision_requests import (
     build_leader_attachment_requests,
+    build_patrol_squad_requests,
     build_risen_rubricae_requests,
     build_shadow_assignment_requests,
     build_support_artillery_attachment_requests,
@@ -499,6 +500,7 @@ class NetworkServer:
         pending_reserves = self._pending_by_context(DECISION_DECLARE_RESERVES, "army_id")
         pending_plague = self._pending_by_context(DECISION_CHOOSE_PLAGUE, "army_id")
         pending_hover = self._pending_hover_by_unit()
+        pending_patrol = self._pending_patrol_squad_by_unit()
         pending_risen = self._pending_risen_rubricae_by_source()
 
         created: list[DecisionRequest] = []
@@ -515,6 +517,14 @@ class NetworkServer:
             for req in hover_requests:
                 unit_id = str(getattr(req, "context", {}).get("unit_id", "") or "")
                 if unit_id and unit_id in pending_hover:
+                    continue
+                await self._send_decision_request(req)
+                created.append(req)
+
+            patrol_requests = build_patrol_squad_requests(game, units, queue_requests=False)
+            for req in patrol_requests:
+                unit_id = str(getattr(req, "context", {}).get("unit_id", "") or "")
+                if unit_id and unit_id in pending_patrol:
                     continue
                 await self._send_decision_request(req)
                 created.append(req)
@@ -605,6 +615,21 @@ class NetworkServer:
                 pending[unit_id] = req
         return pending
 
+    def _pending_patrol_squad_by_unit(self) -> dict[str, DecisionRequest]:
+        pending: dict[str, DecisionRequest] = {}
+        if self._game is None:
+            return pending
+        queue = getattr(self._game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return pending
+        for req in list(queue.list() or []):
+            if not self._is_patrol_squad_request(req):
+                continue
+            unit_id = str(getattr(req, "context", {}).get("unit_id", "") or "")
+            if unit_id:
+                pending[unit_id] = req
+        return pending
+
     def _pending_risen_rubricae_by_source(self) -> dict[str, DecisionRequest]:
         pending: dict[str, DecisionRequest] = {}
         if self._game is None:
@@ -636,6 +661,14 @@ class NetworkServer:
         ctx = dict(getattr(request, "context", {}) or {})
         return str(ctx.get("ability", "") or "") == "risen_rubricae"
 
+    def _is_patrol_squad_request(self, request: DecisionRequest | None) -> bool:
+        if request is None:
+            return False
+        if getattr(request, "decision_type", None) != DECISION_CONFIRM_YES_NO:
+            return False
+        ctx = getattr(request, "context", {}) or {}
+        return str(ctx.get("ability", "") or "") == "patrol_squad"
+
     def _is_formation_decision(self, request: DecisionRequest | None) -> bool:
         if request is None:
             return False
@@ -643,7 +676,9 @@ class NetworkServer:
             return True
         if self._is_risen_rubricae_request(request):
             return True
-        return self._is_hover_mode_request(request)
+        if self._is_hover_mode_request(request):
+            return True
+        return self._is_patrol_squad_request(request)
 
     def _build_plague_request(
         self,

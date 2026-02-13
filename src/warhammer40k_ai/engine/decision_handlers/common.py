@@ -14,7 +14,13 @@ def _validate_confirm(game: object, request: DecisionRequest, result: DecisionRe
 def _apply_confirm(game: object, request: DecisionRequest, result: DecisionResult) -> None:
     ctx = dict(getattr(request, "context", {}) or {})
     ability = str(ctx.get("ability", "") or "").strip().lower()
-    if ability not in ("hover_mode", "flickering_reality_reroll", "pyrogenesis_flux", "extremis_level_threat"):
+    if ability not in (
+        "hover_mode",
+        "patrol_squad",
+        "flickering_reality_reroll",
+        "pyrogenesis_flux",
+        "extremis_level_threat",
+    ):
         return None
 
     unit_id = str(ctx.get("unit_id", "") or "")
@@ -100,6 +106,24 @@ def _apply_confirm(game: object, request: DecisionRequest, result: DecisionResul
                 break
 
     if unit is None or choice is None:
+        return None
+
+    if ability == "patrol_squad":
+        if not bool(choice):
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["patrol_squad_declared"] = True
+            unit.special_rules = sr
+            return None
+        from ...utility.unit_split import split_unit_into_patrol_squad_units
+        split_units = split_unit_into_patrol_squad_units(
+            unit,
+            game=game,
+            game_map=getattr(game, "map", None),
+        )
+        if len(list(split_units or [])) != 2:
+            raise RuntimeError("Patrol Squad split failed.")
         return None
 
     if ability == "hover_mode":

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from itertools import combinations
+import re
 from typing import Iterable, List, Optional
 
 from .decisions import DecisionOption, DecisionRequest
@@ -161,6 +162,55 @@ def _unique_army_root_units(units: Iterable[object]) -> list[object]:
             continue
         roots[root_id] = root
     return [roots[k] for k in sorted(roots.keys())]
+
+
+def _norm_ability_name(value: str) -> str:
+    text = re.sub(r"[^a-z0-9]+", " ", str(value or "").lower())
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _iter_unit_ability_names(unit: object) -> Iterable[str]:
+    if unit is None:
+        return
+    iter_entries = getattr(unit, "_iter_ability_entries_for_rules", None)
+    if callable(iter_entries):
+        entries = None
+        try:
+            entries = iter_entries(model=None)
+        except TypeError:
+            entries = iter_entries()
+        if entries is not None:
+            for name, _desc in entries:
+                name_text = str(name or "").strip()
+                if name_text:
+                    yield name_text
+            return
+    for ability in list(getattr(unit, "possible_abilities", []) or []):
+        if isinstance(ability, str):
+            name_text = ability
+        else:
+            name_text = str(getattr(ability, "name", "") or "")
+        if str(name_text or "").strip():
+            yield str(name_text).strip()
+
+
+def _unit_has_ability_name(unit: object, ability_name: str) -> bool:
+    target = _norm_ability_name(ability_name)
+    if not target:
+        return False
+    for name in _iter_unit_ability_names(unit):
+        if _norm_ability_name(name) == target:
+            return True
+    return False
+
+
+def _unit_alive_model_count(unit: object) -> int:
+    models = [
+        model
+        for model in list(getattr(unit, "models", []) or [])
+        if model is not None and bool(getattr(model, "is_alive", True))
+    ]
+    return int(len(models))
 
 
 def _leader_attachment_options(leader, bodyguards: List[object]) -> List[DecisionOption]:
@@ -459,6 +509,83 @@ def build_hover_mode_requests(
             player_id=player_id,
             options=options,
             context={"ability": "hover_mode", "unit_id": unit_id, "message": message},
+        )
+        requests.append(request)
+        if queue_requests and hasattr(game, "request_decision"):
+            game.request_decision(request)
+    return requests
+
+
+def build_patrol_squad_requests(
+    game: object,
+    units: Iterable[object],
+    *,
+    queue_requests: bool = True,
+) -> List[DecisionRequest]:
+    all_units = _iter_units(units)
+    requests: List[DecisionRequest] = []
+    for unit in _unique_army_root_units(all_units):
+        if unit is None:
+            continue
+        if not _unit_has_ability_name(unit, "PATROL SQUAD"):
+            continue
+        if bool(getattr(unit, "is_attached_leader", False)):
+            continue
+        if bool(getattr(unit, "is_joined_support", False)):
+            continue
+        if _unit_alive_model_count(unit) != 10:
+            continue
+        sr = getattr(unit, "special_rules", None)
+        if isinstance(sr, dict) and bool(sr.get("patrol_squad_declared", False)):
+            continue
+
+        unit_id = str(get_entity_id(unit) or "")
+        if not unit_id:
+            continue
+        player = _player_for_unit(unit)
+        player_id = _player_id_for_unit(unit)
+        player_name = str(getattr(player, "name", "Player") or "Player")
+        unit_name = str(getattr(unit, "name", "Unit") or "Unit")
+
+        token_abilities: list[str] = []
+        if _unit_has_ability_name(unit, "Bomb Squigs"):
+            token_abilities.append("Bomb Squigs")
+        if _unit_has_ability_name(unit, "Distraction Grot"):
+            token_abilities.append("Distraction Grot")
+        token_note = ""
+        if token_abilities:
+            joined = " and ".join(token_abilities)
+            token_note = (
+                f"\n\nIf split, only one of the two new units can use {joined}; "
+                "the first split unit is assigned those uses."
+            )
+
+        message = (
+            f"Use Patrol Squad for {unit_name} ({player_name})?\n\n"
+            "Split into two units of five models each."
+            f"{token_note}"
+        )
+        options = [
+            DecisionOption.create(
+                "Split",
+                payload={"choice": True, "unit_id": unit_id, "action": "split_patrol_squad"},
+            ),
+            DecisionOption.create(
+                "Keep Together",
+                payload={"choice": False, "unit_id": unit_id, "action": "skip_patrol_squad"},
+            ),
+        ]
+        request = DecisionRequest.create(
+            DECISION_CONFIRM_YES_NO,
+            "Patrol Squad",
+            player_id=player_id,
+            options=options,
+            context={
+                "ability": "patrol_squad",
+                "ability_name": "Patrol Squad",
+                "unit_id": unit_id,
+                "message": message,
+            },
         )
         requests.append(request)
         if queue_requests and hasattr(game, "request_decision"):

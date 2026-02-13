@@ -411,6 +411,7 @@ Note: modifier ignore dialogs are used by abilities like Driven by Ultimate Rage
 - voice_of_command_dialog: ISSUE_ORDER {unit_id, order_id}
 - wrathful_presence_dialog: CHOOSE_WRATHFUL_PRESENCE {choice_id}
 - yes_no_dialog: CONFIRM_YES_NO {choice}
+- patrol_squad_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="patrol_squad"`, `unit_id`, `ability_name="Patrol Squad"`)
 - extremis_level_threat_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="extremis_level_threat"`, `ability_name`, `army_id`)
 - protector_of_paths_overwatch_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context optional key `PROTECTOR_OF_PATHS_OVERWATCH`, `ability_name`, `stratagem`, `target_unit`, `base_cp_cost`)
 - aspect_shrine_prompt_dialog: CHOOSE_ASPECT {choice_id}

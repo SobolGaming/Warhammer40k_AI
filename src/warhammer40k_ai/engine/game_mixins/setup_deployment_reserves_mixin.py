@@ -1672,6 +1672,42 @@ class GameSetupDeploymentReservesMixin:
                     continue
                 self.request_decision(req)
 
+    def _apply_patrol_squad_declarations(self) -> None:
+        """Queue PATROL SQUAD split choices at the start of Declare Battle Formations."""
+        players = list(self.players or [])
+        if not players:
+            return
+        pending_unit_ids: set[str] = set()
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if getattr(req, "decision_type", None) != DECISION_CONFIRM_YES_NO:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "patrol_squad":
+                    continue
+                unit_id = str(ctx.get("unit_id", "") or "")
+                if unit_id:
+                    pending_unit_ids.add(unit_id)
+
+        from ..decision_requests import build_patrol_squad_requests
+
+        for player in players:
+            if player is None:
+                raise RuntimeError("Patrol Squad declarations require players.")
+            army = player.get_army()
+            if army is None:
+                raise RuntimeError(f"Patrol Squad declarations require an army for {player.name}.")
+            units = list(getattr(army, "units", []) or [])
+            requests = build_patrol_squad_requests(self, units, queue_requests=False)
+            for req in list(requests or []):
+                unit_id = str(getattr(req, "context", {}).get("unit_id", "") or "")
+                if unit_id and unit_id in pending_unit_ids:
+                    continue
+                self.request_decision(req)
+                if unit_id:
+                    pending_unit_ids.add(unit_id)
+
     def _apply_shadow_assignment_declarations(self) -> None:
         """Queue SHADOW ASSIGNMENT choices for eligible Imperial Agents units."""
         players = list(self.players or [])
@@ -1714,6 +1750,7 @@ class GameSetupDeploymentReservesMixin:
 
         # Hover mode declarations must happen before any other formation steps.
         self._apply_hover_declarations()
+        self._apply_patrol_squad_declarations()
         self._apply_shadow_assignment_declarations()
 
         # Thousand Sons: Risen Rubricae selections are made at the start of this step.

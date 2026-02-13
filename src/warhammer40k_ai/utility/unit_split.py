@@ -4,6 +4,7 @@ import copy
 from typing import Any, Dict, Iterable, List, Optional
 
 from ..units.status_effects import BattleShockEffect, StatusEffect
+from .entity_ids import get_entity_id
 
 
 def _clone_status_effect(effect: StatusEffect) -> Optional[StatusEffect]:
@@ -375,5 +376,184 @@ def split_unit_into_single_model_units(
             game.refresh_rule_subscribers()
     except Exception:
         pass
+
+    return resulting_units
+
+
+def _norm_ability_name(value: str) -> str:
+    import re
+
+    text = re.sub(r"[^a-z0-9]+", " ", str(value or "").lower())
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _unit_has_ability_name(unit: Any, ability_name: str) -> bool:
+    target = _norm_ability_name(ability_name)
+    if not target or unit is None:
+        return False
+
+    iter_entries = getattr(unit, "_iter_ability_entries_for_rules", None)
+    if callable(iter_entries):
+        entries = None
+        try:
+            entries = iter_entries(model=None)
+        except TypeError:
+            entries = iter_entries()
+        if entries is not None:
+            for name, _desc in entries:
+                if _norm_ability_name(name) == target:
+                    return True
+            return False
+
+    for ability in list(getattr(unit, "possible_abilities", []) or []):
+        if isinstance(ability, str):
+            name = ability
+        else:
+            name = getattr(ability, "name", "")
+        if _norm_ability_name(name) == target:
+            return True
+    return False
+
+
+def _add_disabled_ability_names(unit: Any, names: Iterable[str]) -> None:
+    if unit is None:
+        return
+    sr = getattr(unit, "special_rules", None)
+    if not isinstance(sr, dict):
+        sr = {}
+    existing = list(sr.get("disabled_ability_names", []) or [])
+    merged: dict[str, str] = {}
+    for name in existing:
+        norm = _norm_ability_name(name)
+        if norm:
+            merged[norm] = str(name)
+    for name in list(names or []):
+        norm = _norm_ability_name(name)
+        if norm and norm not in merged:
+            merged[norm] = str(name)
+    sr["disabled_ability_names"] = [merged[k] for k in sorted(merged.keys())]
+    unit.special_rules = sr
+
+
+def split_unit_into_patrol_squad_units(
+    unit: Any,
+    *,
+    game: Optional[Any] = None,
+    game_map: Optional[Any] = None,
+) -> List[Any]:
+    """
+    Split a PATROL SQUAD unit into two 5-model units.
+
+    - Uses current alive model order: first 5 models become split unit #1, next 5 become split unit #2.
+    - If the source has Bomb Squigs/Distraction Grot, split unit #2 has those abilities disabled.
+    - Persistent/expiring state is copied to both new units.
+    """
+    if unit is None:
+        return []
+
+    root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+    if root is None:
+        return []
+
+    leaders = list(getattr(root, "attached_leaders", []) or [])
+    if leaders:
+        return []
+
+    models = [m for m in list(getattr(root, "models", []) or []) if getattr(m, "is_alive", True)]
+    if len(models) != 10:
+        return []
+
+    split_groups = [models[:5], models[5:10]]
+    if any(len(group) != 5 for group in split_groups):
+        return []
+
+    snapshot = snapshot_persistent_unit_state(root)
+
+    army_getter = getattr(root, "get_parent_army", None)
+    army = army_getter() if callable(army_getter) else getattr(root, "parent_army", None)
+    if army is None:
+        return []
+
+    if game is None:
+        game = getattr(getattr(army, "player", None), "game", None)
+    if game_map is None:
+        game_map = getattr(game, "map", None) if game is not None else None
+
+    map_units = getattr(game_map, "units", None) if game_map is not None else None
+    root_was_on_map = bool(map_units is not None and root in list(map_units or []))
+
+    second_unit_disabled: list[str] = []
+    if _unit_has_ability_name(root, "Bomb Squigs"):
+        second_unit_disabled.append("Bomb Squigs")
+    if _unit_has_ability_name(root, "Distraction Grot"):
+        second_unit_disabled.append("Distraction Grot")
+
+    from ..units.unit import Unit as UnitClass
+
+    datasheet = getattr(root, "_datasheet", None)
+    if datasheet is None:
+        return []
+
+    root_id = str(get_entity_id(root) or "")
+    resulting_units: List[Any] = []
+
+    for index, group in enumerate(split_groups):
+        new_unit = UnitClass(datasheet, quantity=len(group), enhancement=getattr(root, "enhancement", None))
+        new_unit.models = list(group)
+        for model in group:
+            if hasattr(model, "set_parent_unit"):
+                model.set_parent_unit(new_unit)
+            else:
+                model.parent_unit = new_unit
+
+        apply_persistent_unit_state(new_unit, snapshot, clear_existing=True)
+        new_unit.attached_leaders = []
+        new_unit.attached_to = None
+        new_unit.models_lost = []
+        new_unit.starting_model_count = int(len(group))
+        new_unit.starting_total_wounds = int(
+            sum(int(getattr(model, "_base_wounds", getattr(model, "wounds", 0)) or 0) for model in group)
+        )
+        new_unit.embarked_in = None
+
+        sr = getattr(new_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["patrol_squad_declared"] = True
+        sr["patrol_squad_split_applied"] = True
+        sr["patrol_squad_split_index"] = int(index + 1)
+        if root_id:
+            sr["patrol_squad_split_origin_unit_id"] = root_id
+        new_unit.special_rules = sr
+        if index == 1 and second_unit_disabled:
+            _add_disabled_ability_names(new_unit, second_unit_disabled)
+
+        resulting_units.append(new_unit)
+
+    # Remove the root unit from army/map without firing destroyed triggers.
+    if root in list(getattr(army, "units", []) or []):
+        army.units.remove(root)
+    if map_units is not None and root in list(map_units or []):
+        map_units.remove(root)
+    root.models = []
+    root.models_lost = []
+
+    for new_unit in resulting_units:
+        army.add_unit(new_unit)
+        if root_was_on_map and map_units is not None:
+            map_units.append(new_unit)
+        invalidate_cache = getattr(new_unit, "_invalidate_ability_cache", None)
+        if callable(invalidate_cache):
+            invalidate_cache()
+        update_coherency = getattr(new_unit, "update_coherency", None)
+        if callable(update_coherency):
+            update_coherency()
+
+    rebuild_registry = getattr(game, "rebuild_entity_registry", None) if game is not None else None
+    if callable(rebuild_registry):
+        rebuild_registry()
+    refresh_subscribers = getattr(game, "refresh_rule_subscribers", None) if game is not None else None
+    if callable(refresh_subscribers):
+        refresh_subscribers()
 
     return resulting_units

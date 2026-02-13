@@ -634,6 +634,114 @@ class SetupPhaseHandler(BasePhaseHandler):
             except Exception:
                 _advance(False)
 
+    def _start_patrol_squad_selection_flow(self, players, on_done) -> None:
+        """Prompt local players for PATROL SQUAD split choices before formations dialogs."""
+        from ...engine.decision_kinds import DECISION_CONFIRM_YES_NO
+        from ...engine.decision_requests import build_patrol_squad_requests
+
+        local_players = []
+        for player in list(players or []):
+            try:
+                if player is not None and bool(getattr(player, "has_control", lambda: False)()):
+                    local_players.append(player)
+            except Exception:
+                continue
+
+        local_player_ids = {str(getattr(player, "id", "") or "") for player in local_players}
+        queue = getattr(self.game, "decision_queue", None)
+        pending: list = []
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if getattr(req, "decision_type", None) != DECISION_CONFIRM_YES_NO:
+                    continue
+                if str(getattr(req, "player_id", "") or "") not in local_player_ids:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "patrol_squad":
+                    continue
+                pending.append(req)
+
+        requests = list(pending)
+        if not requests:
+            for player in local_players:
+                try:
+                    army = player.get_army()
+                except Exception:
+                    army = None
+                if army is None:
+                    continue
+                units = list(getattr(army, "units", []) or [])
+                requests.extend(build_patrol_squad_requests(self.game, units, queue_requests=False))
+
+        requests.sort(
+            key=lambda req: (
+                str(getattr(req, "player_id", "") or ""),
+                str(getattr(req, "context", {}).get("unit_id", "") or ""),
+                str(getattr(req, "decision_id", "") or ""),
+            )
+        )
+        self._pending_patrol_squad_queue = list(requests)
+        self._patrol_squad_on_done = on_done
+        if not requests:
+            self._finish_patrol_squad_selection()
+            return
+        self._open_next_patrol_squad_prompt()
+
+    def _finish_patrol_squad_selection(self) -> None:
+        cb = getattr(self, "_patrol_squad_on_done", None)
+        self._patrol_squad_on_done = None
+        if callable(cb):
+            try:
+                cb()
+            except Exception:
+                pass
+
+    def _open_next_patrol_squad_prompt(self) -> None:
+        queue = list(getattr(self, "_pending_patrol_squad_queue", []) or [])
+        if not queue:
+            self._pending_patrol_squad_queue = []
+            self._finish_patrol_squad_selection()
+            return
+
+        request = queue.pop(0)
+        self._pending_patrol_squad_queue = queue
+        ctx = dict(getattr(request, "context", {}) or {})
+        title = str(getattr(request, "prompt", "") or "Patrol Squad")
+        message = str(ctx.get("message", "") or "")
+        if not message:
+            message = "Split this unit into two units of five models each?"
+
+        from ...utility.decision_utils import resolve_decision_command
+        from ..decision_ui_utils import first_option_id
+
+        def _done(option_id: str):
+            choice_id = str(option_id or "")
+            if not choice_id:
+                for option in list(getattr(request, "options", []) or []):
+                    payload = dict(getattr(option, "payload", {}) or {})
+                    if payload.get("choice") is False:
+                        choice_id = str(getattr(option, "option_id", "") or "")
+                        break
+            if not choice_id:
+                choice_id = str(first_option_id(request) or "")
+            if choice_id:
+                resolve_decision_command(self.game, request, choice_id)
+            try:
+                self.game_view.refresh_roster_panes()
+            except Exception:
+                pass
+            self._open_next_patrol_squad_prompt()
+
+        dialog = getattr(self.game_view, "yes_no_dialog", None)
+        if dialog is None:
+            self._open_next_patrol_squad_prompt()
+            return
+        try:
+            dialog.show(title, message, _done, decision_request=request)
+            self.game_view.dialog_manager.open(dialog, modal=True)
+        except Exception:
+            _done("")
+
     def _start_declare_battle_formations_flow(self) -> None:
         """
         Run Declare Battle Formations as simultaneous per-player dialogs:
@@ -1265,7 +1373,10 @@ class SetupPhaseHandler(BasePhaseHandler):
 
     
 
-        self._start_hover_mode_selection_flow(players, _after_hover)
+        self._start_hover_mode_selection_flow(
+            players,
+            lambda: self._start_patrol_squad_selection_flow(players, _after_hover),
+        )
         return
 
     def _is_remote_game(self) -> bool:
@@ -1315,7 +1426,8 @@ class SetupPhaseHandler(BasePhaseHandler):
                 if decision_type != DECISION_CONFIRM_YES_NO:
                     continue
                 ctx = dict(getattr(req, "context", {}) or {})
-                if str(ctx.get("ability", "") or "") != "hover_mode":
+                ability = str(ctx.get("ability", "") or "")
+                if ability not in ("hover_mode", "patrol_squad"):
                     continue
             req_pid = getattr(req, "player_id", None)
             if pid is None or req_pid is None or str(req_pid) == str(pid):
@@ -1389,6 +1501,7 @@ class SetupPhaseHandler(BasePhaseHandler):
         )
         from ...engine.decision_requests import (
             build_leader_attachment_requests,
+            build_patrol_squad_requests,
             build_support_artillery_attachment_requests,
             build_transport_assignment_requests,
             build_reserves_allocation_request,
@@ -1443,6 +1556,21 @@ class SetupPhaseHandler(BasePhaseHandler):
                     continue
                 ctx = dict(getattr(req, "context", {}) or {})
                 if str(ctx.get("ability", "") or "") != "hover_mode":
+                    continue
+                pending.append(req)
+            return pending
+
+        def _pending_patrol_squad_requests():
+            pending = []
+            if queue is None or not hasattr(queue, "list"):
+                return pending
+            for req in list(queue.list() or []):
+                if getattr(req, "decision_type", None) != DECISION_CONFIRM_YES_NO:
+                    continue
+                if str(getattr(req, "player_id", "")) != str(getattr(player, "id", "")):
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "patrol_squad":
                     continue
                 pending.append(req)
             return pending
@@ -1720,7 +1848,7 @@ class SetupPhaseHandler(BasePhaseHandler):
             _refresh_units_cache()
             pending = _pending_hover_requests()
             if not pending:
-                _show_plague()
+                _show_patrol_squads()
                 return
             req = pending[0]
             ctx = dict(getattr(req, "context", {}) or {})
@@ -1741,6 +1869,44 @@ class SetupPhaseHandler(BasePhaseHandler):
             def _done(option_id: str):
                 resolve_decision_command(self.game, req, option_id)
                 _show_hover()
+
+            dlg.show(title, msg, _done, decision_request=req)
+            try:
+                self.game_view.dialog_manager.open(dlg, modal=True)
+            except Exception:
+                return
+
+        def _show_patrol_squads():
+            _refresh_units_cache()
+            pending = _pending_patrol_squad_requests()
+            if not pending:
+                pending = list(build_patrol_squad_requests(self.game, units, queue_requests=False))
+                pending = [
+                    req
+                    for req in pending
+                    if str(getattr(req, "player_id", "") or "") == str(getattr(player, "id", "") or "")
+                ]
+            if not pending:
+                _show_plague()
+                return
+            req = pending[0]
+            ctx = dict(getattr(req, "context", {}) or {})
+            title = str(getattr(req, "prompt", "") or "Patrol Squad")
+            msg = str(ctx.get("message", "") or "")
+            if not msg:
+                msg = "Split this unit into two units of five models each?"
+            dlg = getattr(self.game_view, "yes_no_dialog", None)
+            if dlg is None:
+                _show_plague()
+                return
+
+            def _done(option_id: str):
+                resolve_decision_command(self.game, req, option_id)
+                try:
+                    self.game_view.refresh_roster_panes()
+                except Exception:
+                    pass
+                _show_patrol_squads()
 
             dlg.show(title, msg, _done, decision_request=req)
             try:

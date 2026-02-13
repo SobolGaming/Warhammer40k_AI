@@ -388,6 +388,22 @@ class ActionsMovementMixin:
 
     def _ability_is_active(self, ability) -> bool:
         """Return True if the ability is currently active for this unit."""
+        sr = getattr(self, "special_rules", None)
+        if isinstance(sr, dict):
+            disabled = list(sr.get("disabled_ability_names", []) or [])
+            if disabled:
+                if isinstance(ability, str):
+                    name = ability
+                else:
+                    name = getattr(ability, "name", "") or ""
+                norm_name = re.sub(r"[^a-z0-9]+", " ", str(name or "").lower()).strip()
+                disabled_set = {
+                    re.sub(r"[^a-z0-9]+", " ", str(item or "").lower()).strip()
+                    for item in disabled
+                }
+                if norm_name and norm_name in disabled_set:
+                    return False
+
         led_by_model_phrases = self._ability_led_by_model_phrases(ability)
         if led_by_model_phrases:
             if not any(self._attached_leader_matches_phrase(phrase) for phrase in led_by_model_phrases):
@@ -10113,4 +10129,3 @@ class ActionsMovementMixin:
     ###########################################################################
     ### Shooting Phase Actions
     ###########################################################################
-
