@@ -50,6 +50,11 @@ class _TestUnit(Unit):
             save = 3
             inv_save = None
             _pending_placement = False
+            abilities = []
+            wargear = []
+            optional_wargear = []
+            keywords = []
+            faction_keywords = []
 
         n = 1 if quantity is None else int(quantity)
         return [_M() for _ in range(n)]
@@ -101,6 +106,19 @@ def _canoptek_retinue_ability() -> Ability:
             "At the start of the Declare Battle Formations step, this unit can join one other unit from your army "
             "that is being led by a Cryptek model (a unit cannot have more than one TOMB CRAWLERS unit joined to it "
             "and cannot have both a TOMB CRAWLERS and a Cryptothralls unit joined to it)."
+        ),
+        "",
+        "",
+    )
+
+
+def _vanguard_protocols_ability() -> Ability:
+    return Ability(
+        "VANGUARD PROTOCOLS",
+        "",
+        (
+            "If this model is attached to a Canoptek Macrocytes unit during the Declare Battle Formations step, "
+            "this model has the Scouts 8\" ability."
         ),
         "",
         "",
@@ -195,6 +213,69 @@ class TestNecronRetinueAttachment(unittest.TestCase):
         labels = [opt.label for opt in list(requests_after[0].options or [])]
         self.assertIn("Unattached", labels)
         self.assertIn(bodyguard.name, labels)
+
+
+class TestNecronVanguardProtocols(unittest.TestCase):
+    def test_vanguard_protocols_no_scouts_when_unattached(self):
+        geomancer = _TestUnit(
+            _DummyDatasheet(
+                "Geomancer",
+                "LEADER",
+                abilities=[_vanguard_protocols_ability()],
+                keywords=["Character", "Cryptek", "Infantry"],
+                attached_to=["MACRO"],
+            )
+        )
+        macrocytes = _TestUnit(_DummyDatasheet("Canoptek Macrocytes", "MACRO", keywords=["Canoptek", "Macrocytes", "Beasts"]))
+        _make_army([geomancer, macrocytes])
+
+        has_scout, distance = geomancer.has_scout()
+        self.assertFalse(has_scout)
+        self.assertEqual(0.0, float(distance))
+
+    def test_vanguard_protocols_grants_scouts_8_when_attached_to_macrocytes(self):
+        geomancer = _TestUnit(
+            _DummyDatasheet(
+                "Geomancer",
+                "LEADER",
+                abilities=[_vanguard_protocols_ability()],
+                keywords=["Character", "Cryptek", "Infantry"],
+                attached_to=["MACRO", "OTHER"],
+            )
+        )
+        macrocytes = _TestUnit(_DummyDatasheet("Canoptek Macrocytes", "MACRO", keywords=["Canoptek", "Macrocytes", "Beasts"]))
+        other = _TestUnit(_DummyDatasheet("Canoptek Wraiths", "OTHER", keywords=["Canoptek", "Wraiths", "Beasts"]))
+        _make_army([geomancer, macrocytes, other])
+
+        geomancer.attach_to_unit(macrocytes)
+        has_scout, distance = geomancer.has_scout()
+        self.assertTrue(has_scout)
+        self.assertEqual(8.0, float(distance))
+
+    def test_vanguard_protocols_requires_macrocytes_attachment(self):
+        geomancer = _TestUnit(
+            _DummyDatasheet(
+                "Geomancer",
+                "LEADER",
+                abilities=[_vanguard_protocols_ability()],
+                keywords=["Character", "Cryptek", "Infantry"],
+                attached_to=["MACRO", "OTHER"],
+            )
+        )
+        macrocytes = _TestUnit(_DummyDatasheet("Canoptek Macrocytes", "MACRO", keywords=["Canoptek", "Macrocytes", "Beasts"]))
+        other = _TestUnit(_DummyDatasheet("Canoptek Wraiths", "OTHER", keywords=["Canoptek", "Wraiths", "Beasts"]))
+        _make_army([geomancer, macrocytes, other])
+
+        geomancer.attach_to_unit(other)
+        has_scout_other, distance_other = geomancer.has_scout()
+        self.assertFalse(has_scout_other)
+        self.assertEqual(0.0, float(distance_other))
+
+        geomancer.detach_from_unit()
+        geomancer.attach_to_unit(macrocytes)
+        has_scout_macro, distance_macro = geomancer.has_scout()
+        self.assertTrue(has_scout_macro)
+        self.assertEqual(8.0, float(distance_macro))
 
 
 if __name__ == "__main__":

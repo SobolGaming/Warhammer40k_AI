@@ -2592,7 +2592,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("NEC", "Ghostwalk Mantle"): ("Supported", "Leading: unit gains Fights First."),
         ("NEC", "Illuminor"): ("Supported", "Conditional Lone Operative within 3\" of friendly NECRONS units."),
         ("NEC", "Protective Disciples"): ("Supported", "Conditional Lone Operative within 3\" of friendly DESTROYER CULT units."),
-        ("NEC", "VANGUARD PROTOCOLS"): ("Partial", "Scouts 8\" applied without attached-unit restriction."),
+        ("NEC", "VANGUARD PROTOCOLS"): (
+            "Supported",
+            "If attached to a CANOPTEK MACROCYTES unit during Declare Battle Formations, the model gains Scouts 8\"; otherwise no Scouts bonus.",
+        ),
         ("NEC", "Relentless Combatants"): ("Supported", "Re-roll Charge rolls. Charge-after-Fall-Back eligibility."),
         ("NEC", "Shadowloom"): ("Supported", "Stealth."),
         ("NEC", "Powers of the C'tan"): (
