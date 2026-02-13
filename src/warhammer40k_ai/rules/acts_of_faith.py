@@ -420,3 +420,256 @@ class ActsOfFaithManager:
         allow_reroll = self._litany_allows_reroll(destroyed_unit=unit, destroyed_model=model)
         for _ in range(int(extra)):
             self.gain_miracle_die(game=game, allow_reroll=allow_reroll, reason="Saintly Example")
+
+    def _is_hallowed_martyrs(self) -> bool:
+        if self.army is None:
+            return False
+        mgr = getattr(self.army, "adepta_sororitas_detachments", None)
+        checker = getattr(mgr, "is_hallowed_martyrs", None) if mgr is not None else None
+        if callable(checker):
+            try:
+                return bool(checker())
+            except Exception:
+                return False
+        return False
+
+    @staticmethod
+    def _model_is_alive(model) -> bool:
+        if model is None:
+            return False
+        alive = getattr(model, "is_alive", None)
+        if callable(alive):
+            try:
+                return bool(alive())
+            except Exception:
+                return False
+        if alive is not None:
+            return bool(alive)
+        try:
+            return int(getattr(model, "wounds", 0) or 0) > 0
+        except Exception:
+            return False
+
+    @staticmethod
+    def _unit_on_battlefield(unit) -> bool:
+        if unit is None:
+            return False
+        is_alive = getattr(unit, "is_alive", None)
+        if callable(is_alive):
+            try:
+                if not bool(is_alive()):
+                    return False
+            except Exception:
+                return False
+        if not bool(getattr(unit, "deployed", True)):
+            return False
+        try:
+            if bool(getattr(unit, "is_embarked", False)):
+                return False
+        except Exception:
+            pass
+        try:
+            in_reserves = getattr(unit, "is_in_reserves", None)
+            if callable(in_reserves) and bool(in_reserves()):
+                return False
+        except Exception:
+            return False
+        return True
+
+    @staticmethod
+    def _normalize_chaplet_reroll_indices(selection, *, pool: list[int], max_rerolls: int) -> list[int]:
+        if max_rerolls <= 0 or not pool:
+            return []
+        selected: list[int] = []
+        used: set[int] = set()
+
+        def _add_index(index: int) -> None:
+            if len(selected) >= int(max_rerolls):
+                return
+            if index < 0 or index >= len(pool):
+                return
+            if index in used:
+                return
+            used.add(index)
+            selected.append(int(index))
+
+        if isinstance(selection, dict):
+            indices = selection.get("indices", selection.get("dice_indices", ()))
+            values = selection.get("values", selection.get("dice_values", ()))
+            for idx in list(indices or []):
+                try:
+                    _add_index(int(idx))
+                except Exception:
+                    continue
+            for raw_value in list(values or []):
+                try:
+                    value = int(raw_value)
+                except Exception:
+                    continue
+                for idx, die in enumerate(pool):
+                    if idx in used:
+                        continue
+                    if int(die) == int(value):
+                        _add_index(idx)
+                        break
+        else:
+            if isinstance(selection, (int, str)):
+                raw_iter = [selection]
+            else:
+                try:
+                    raw_iter = list(selection or [])
+                except Exception:
+                    raw_iter = []
+            for raw_value in raw_iter:
+                try:
+                    value = int(raw_value)
+                except Exception:
+                    continue
+                for idx, die in enumerate(pool):
+                    if idx in used:
+                        continue
+                    if int(die) == int(value):
+                        _add_index(idx)
+                        break
+
+        selected.sort()
+        return selected
+
+    def _choose_chaplet_reroll_indices(self, *, unit, bearer_model, game, pool: list[int], max_rerolls: int) -> list[int]:
+        if max_rerolls <= 0 or not pool:
+            return []
+        player = getattr(self.army, "player", None) if self.army is not None else None
+        provider = getattr(getattr(game, "map", None), "miracle_dice_pool_reroll_provider", None) if game is not None else None
+        if callable(provider):
+            try:
+                selection = provider(
+                    player=player,
+                    unit=unit,
+                    model=bearer_model,
+                    pool=list(pool),
+                    max_rerolls=int(max_rerolls),
+                    reason="Chaplet of Sacrifice",
+                )
+            except Exception:
+                selection = None
+            if selection is None:
+                return []
+            return self._normalize_chaplet_reroll_indices(selection, pool=list(pool), max_rerolls=int(max_rerolls))
+
+        # Deterministic fallback: re-roll the lowest dice values (up to max), skip 6s.
+        candidates = [idx for idx, die in enumerate(list(pool or [])) if int(die) < 6]
+        candidates.sort(key=lambda idx: (int(pool[idx]), int(idx)))
+        return list(candidates[: int(max_rerolls)])
+
+    def on_command_phase_end(self, *, game=None, player=None) -> None:
+        if not self._army_has_rule():
+            return
+        if not self._is_hallowed_martyrs():
+            return
+        if self.army is None:
+            return
+        owner = getattr(self.army, "player", None)
+        if player is not None and owner is not None and player is not owner:
+            return
+        if game is not None:
+            try:
+                phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            except Exception:
+                phase_name = ""
+            if phase_name and phase_name != "COMMAND_PHASE":
+                return
+            try:
+                current = getattr(game, "get_current_player", lambda: None)()
+            except Exception:
+                current = None
+            if current is not None and owner is not None and current is not owner:
+                return
+
+        if not self.miracle_dice:
+            return
+
+        units = list(getattr(self.army, "units", []) or [])
+        try:
+            units = sorted(units, key=lambda u: str(get_entity_id(u) or ""))
+        except Exception:
+            units = list(units)
+
+        for unit in units:
+            if unit is None:
+                continue
+            if not self._unit_in_army(unit):
+                continue
+            if not self._unit_on_battlefield(unit):
+                continue
+
+            enh = getattr(unit, "enhancement", None)
+            name = str(getattr(enh, "name", "") or "").strip().lower()
+            enh_id = str(getattr(enh, "id", "") or "").strip()
+            if not (name == "chaplet of sacrifice" or enh_id == "000008470004"):
+                continue
+
+            get_bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+            bearer = get_bearer() if callable(get_bearer) else None
+            if bearer is None:
+                models = list(getattr(unit, "models", []) or [])
+                for m in models:
+                    if self._model_is_alive(m):
+                        bearer = m
+                        break
+            if bearer is None:
+                continue
+            if not self._model_is_alive(bearer):
+                continue
+
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            is_below_starting = False
+            try:
+                is_below_starting = bool(getattr(root, "is_below_starting_strength", lambda: False)())
+            except Exception:
+                is_below_starting = False
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            try:
+                max_rerolls = int(
+                    sr.get(
+                        "enhancement_chaplet_of_sacrifice_max_rerolls_damaged"
+                        if is_below_starting
+                        else "enhancement_chaplet_of_sacrifice_max_rerolls",
+                        3 if is_below_starting else 1,
+                    )
+                    or (3 if is_below_starting else 1)
+                )
+            except Exception:
+                max_rerolls = 3 if is_below_starting else 1
+            if max_rerolls <= 0:
+                continue
+            if not self.miracle_dice:
+                continue
+            max_rerolls = min(int(max_rerolls), len(self.miracle_dice))
+            selected_indices = self._choose_chaplet_reroll_indices(
+                unit=unit,
+                bearer_model=bearer,
+                game=game,
+                pool=list(self.miracle_dice),
+                max_rerolls=int(max_rerolls),
+            )
+            if not selected_indices:
+                continue
+            for idx in list(selected_indices):
+                if idx < 0 or idx >= len(self.miracle_dice):
+                    continue
+                before = int(self.miracle_dice[idx] or 0)
+                after = int(get_roll("D6") or 0)
+                self.miracle_dice[idx] = int(after)
+                try:
+                    if owner is not None:
+                        append_dice(
+                            owner,
+                            f"Chaplet of Sacrifice: re-rolled Miracle die {int(before)} -> {int(after)}.",
+                        )
+                except Exception:
+                    pass

@@ -2936,6 +2936,7 @@ class GameView:
                 self.game.map.roll_reroll_provider = self._roll_reroll_provider
                 self.game.map.reanimation_allocation_provider = self._reanimation_allocation_provider
                 self.game.map.miracle_dice_provider = self._miracle_dice_provider
+                self.game.map.miracle_dice_pool_reroll_provider = self._miracle_dice_pool_reroll_provider
                 self.game.map.aspect_shrine_provider = self._aspect_shrine_provider
                 self.game.map.leading_unmodified_six_provider = self._leading_unmodified_six_provider
                 self.game.map.model_unmodified_six_provider = self._model_unmodified_six_provider
@@ -2955,6 +2956,7 @@ class GameView:
                 self.game_map.roll_reroll_provider = self._roll_reroll_provider
                 self.game_map.reanimation_allocation_provider = self._reanimation_allocation_provider
                 self.game_map.miracle_dice_provider = self._miracle_dice_provider
+                self.game_map.miracle_dice_pool_reroll_provider = self._miracle_dice_pool_reroll_provider
                 self.game_map.aspect_shrine_provider = self._aspect_shrine_provider
                 self.game_map.leading_unmodified_six_provider = self._leading_unmodified_six_provider
                 self.game_map.model_unmodified_six_provider = self._model_unmodified_six_provider
@@ -14666,6 +14668,62 @@ class GameView:
             clock.tick(60)
 
         return choice_holder["choice"]
+
+    def _miracle_dice_pool_reroll_provider(
+        self,
+        player=None,
+        unit=None,
+        model=None,
+        pool: Optional[list[int]] = None,
+        max_rerolls: int = 1,
+        reason: str = "",
+        **_kwargs,
+    ):
+        """Blocking prompt for selecting up to N Miracle dice from the pool to re-roll."""
+        try:
+            if player is None or not getattr(player, "has_control", lambda: False)():
+                return None
+        except Exception:
+            return None
+        values = list(pool or [])
+        if not values:
+            return None
+        try:
+            limit = max(0, int(max_rerolls or 0))
+        except Exception:
+            limit = 0
+        if limit <= 0:
+            return None
+
+        selected_indices: list[int] = []
+        working_pool = list(values)
+        prompts = min(int(limit), len(working_pool))
+        for _ in range(prompts):
+            chosen_val = self._miracle_dice_provider(
+                player=player,
+                unit=unit,
+                roll_type=str(reason or "miracle pool re-roll"),
+                dice_count=1,
+                die_faces=6,
+                pool=[v for v in list(working_pool) if v is not None],
+            )
+            if chosen_val is None:
+                break
+            picked_index = None
+            for idx, val in enumerate(working_pool):
+                if val is None:
+                    continue
+                if int(val) == int(chosen_val):
+                    picked_index = idx
+                    break
+            if picked_index is None:
+                continue
+            selected_indices.append(int(picked_index))
+            working_pool[picked_index] = None
+
+        if not selected_indices:
+            return None
+        return {"indices": list(selected_indices)}
 
     # ---------------- Quarry/Victim selection prompts ----------------
 

@@ -391,6 +391,31 @@ class WargearProfile:
         attacker_id = str(getattr(attacker, "id", getattr(attacker, "_id", "")) or "")
         return attacker_id == str(bearer_id)
 
+    def _through_suffering_bonus(self, attacker: 'Model', sr: dict) -> int:
+        if not isinstance(sr, dict) or not sr.get("enhancement_through_suffering_strength"):
+            return 0
+        if not self._attacker_is_enhancement_bearer(attacker, sr):
+            return 0
+        try:
+            base_bonus = int(sr.get("enhancement_through_suffering_base_bonus", 1) or 1)
+        except Exception:
+            base_bonus = 1
+        try:
+            wounded_bonus = int(sr.get("enhancement_through_suffering_wounded_bonus", 2) or 2)
+        except Exception:
+            wounded_bonus = 2
+        try:
+            current_wounds = int(getattr(attacker, "wounds", 0) or 0)
+        except Exception:
+            current_wounds = 0
+        try:
+            starting_wounds = int(getattr(attacker, "_base_wounds", 0) or 0)
+        except Exception:
+            starting_wounds = 0
+        if starting_wounds > 0 and current_wounds < starting_wounds:
+            return int(wounded_bonus)
+        return int(base_bonus)
+
     @staticmethod
     def _normalize_weapon_name_key(value: str) -> str:
         return re.sub(r"[^a-z0-9]+", "", str(value or "").strip().lower())
@@ -2908,6 +2933,18 @@ class WargearProfile:
                         Modifier(ModifierOp.ADD, int(bearer_bonus), source="enhancement:bearer_melee_attacks_add")
                     )
                     attack_result.attacks_special_modifiers.append(f"Enhancement bearer +{bearer_bonus}A (melee)")
+            through_suffering_bonus = self._through_suffering_bonus(attacker, sr)
+            if through_suffering_bonus:
+                atk_mods.append(
+                    Modifier(
+                        ModifierOp.ADD,
+                        int(through_suffering_bonus),
+                        source="enhancement:through_suffering_attacks_add",
+                    )
+                )
+                attack_result.attacks_special_modifiers.append(
+                    f"Through Suffering, Strength +{through_suffering_bonus}A (bearer melee)"
+                )
             shadow_extra = int(sr.get("enhancement_bearer_melee_attacks_bonus_shadow_extra", 0) or 0)
             if shadow_extra and self._attacker_is_enhancement_bearer(attacker, sr):
                 if self._attacker_in_shadow_of_chaos(attacker):
@@ -9547,6 +9584,12 @@ class WargearProfile:
                 wound_result.setdefault("modifiers", []).append(
                     f"+{bearer_s_bonus}S from Enhancement bearer (melee)"
                 )
+            through_suffering_bonus = self._through_suffering_bonus(attacker, sr)
+            if through_suffering_bonus:
+                strength = strength + int(through_suffering_bonus)
+                wound_result.setdefault("modifiers", []).append(
+                    f"+{int(through_suffering_bonus)}S from Through Suffering, Strength"
+                )
             shadow_extra = int(sr.get("enhancement_bearer_melee_strength_bonus_shadow_extra", 0) or 0)
             if shadow_extra and self._attacker_is_enhancement_bearer(attacker, sr):
                 if self._attacker_in_shadow_of_chaos(attacker):
@@ -13446,6 +13489,18 @@ class WargearProfile:
                     Modifier(ModifierOp.ADD, int(bearer_d_bonus), source="enhancement:bearer_melee_damage_add")
                 )
                 damage_result['special_effects'].append(f"Enhancement bearer +{bearer_d_bonus}D (melee)")
+            through_suffering_bonus = self._through_suffering_bonus(attacker, sr)
+            if through_suffering_bonus:
+                damage_mods.append(
+                    Modifier(
+                        ModifierOp.ADD,
+                        int(through_suffering_bonus),
+                        source="enhancement:through_suffering_damage_add",
+                    )
+                )
+                damage_result['special_effects'].append(
+                    f"Through Suffering, Strength +{int(through_suffering_bonus)}D (bearer melee)"
+                )
             possessed_blade = self._get_possessed_blade_state(attacker)
             if possessed_blade and possessed_blade.get("active", False) and possessed_blade.get("weapon_matches", False):
                 pb_damage = int(possessed_blade.get("active_damage_bonus", 0) or 0)
@@ -13663,6 +13718,23 @@ class WargearProfile:
             red = int(getattr(t_unit, "special_rules", {}).get("enhancement_reduce_damage_taken", 0) or 0)
             if red:
                 damage_mods.append(Modifier(ModifierOp.SUB, int(red), source="enhancement:reduce_damage_taken"))
+        except Exception:
+            pass
+        # Mantle of Ophelia: attacks allocated to the bearer have Damage characteristic set to 1.
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            sr = getattr(t_unit, "special_rules", None) if t_unit is not None else None
+            if isinstance(sr, dict) and sr.get("enhancement_mantle_of_ophelia"):
+                target_id = str(get_entity_id(target_model) or "")
+                bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "")
+                applies = bool(target_id and bearer_id and target_id == bearer_id)
+                if not applies and not bearer_id:
+                    models = list(getattr(t_unit, "models", []) or []) if t_unit is not None else []
+                    if len(models) == 1 and models[0] is target_model:
+                        applies = True
+                if applies:
+                    damage_mods.append(Modifier(ModifierOp.SET, 1, source="enhancement:mantle_of_ophelia_set_damage_1"))
+                    damage_result['special_effects'].append("Mantle of Ophelia: Damage set to 1")
         except Exception:
             pass
         # Unit/model abilities: reduce damage allocated to this model.

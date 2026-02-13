@@ -205,6 +205,7 @@ class Enhancement:
         ae_mgr = getattr(army, "aeldari_detachments", None) if army is not None else None
         dg_mgr = getattr(army, "death_guard_detachments", None) if army is not None else None
         ac_mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
+        as_mgr = getattr(army, "adepta_sororitas_detachments", None) if army is not None else None
         orks_mgr = getattr(army, "orks_detachments", None) if army is not None else None
         cd_mgr = getattr(army, "chaos_daemons_detachments", None) if army is not None else None
         csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
@@ -256,6 +257,10 @@ class Enhancement:
             is_virulent_vectorium = bool(dg_mgr and dg_mgr.is_virulent_vectorium())
         except Exception:
             is_virulent_vectorium = False
+        try:
+            is_hallowed_martyrs = bool(as_mgr and as_mgr.is_hallowed_martyrs())
+        except Exception:
+            is_hallowed_martyrs = False
         is_lions = bool(ac_mgr and ac_mgr.is_lions_of_the_emperor())
         try:
             is_war_horde = bool(orks_mgr and orks_mgr.is_war_horde())
@@ -347,6 +352,48 @@ class Enhancement:
             bearer = get_bearer()
             if bearer is not None:
                 bearer_id = str(getattr(bearer, "id", getattr(bearer, "_id", "")) or "")
+
+        if name == "saintly example" or enh_id == "000008470002":
+            if not is_hallowed_martyrs:
+                return
+            unit.special_rules["enhancement_saintly_example"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "through suffering, strength" or enh_id == "000008470003":
+            if not is_hallowed_martyrs:
+                return
+            unit.special_rules["enhancement_through_suffering_strength"] = True
+            unit.special_rules["enhancement_through_suffering_base_bonus"] = 1
+            unit.special_rules["enhancement_through_suffering_wounded_bonus"] = 2
+            # Generic parser support applies a unit-wide +1 A/S/D for this text; replace that
+            # with bearer-specific runtime handling for the conditional +1/+2 effect.
+            for key in (
+                "enhancement_melee_attacks_bonus",
+                "enhancement_melee_strength_bonus",
+                "enhancement_melee_damage_bonus",
+            ):
+                current = int(unit.special_rules.get(key, 0) or 0)
+                if current > 0:
+                    unit.special_rules[key] = current - 1
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "chaplet of sacrifice" or enh_id == "000008470004":
+            if not is_hallowed_martyrs:
+                return
+            unit.special_rules["enhancement_chaplet_of_sacrifice"] = True
+            unit.special_rules["enhancement_chaplet_of_sacrifice_max_rerolls"] = 1
+            unit.special_rules["enhancement_chaplet_of_sacrifice_max_rerolls_damaged"] = 3
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "mantle of ophelia" or enh_id == "000008470005":
+            if not is_hallowed_martyrs:
+                return
+            unit.special_rules["enhancement_mantle_of_ophelia"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 
         if name == "abhuman detail" or enh_id == "000010637002":
             if not is_grizzled_company:

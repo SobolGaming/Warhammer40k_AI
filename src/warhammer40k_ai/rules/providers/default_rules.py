@@ -512,6 +512,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
             subscriptions=[
                 ("unit_destroyed", "_on_unit_destroyed_acts_of_faith"),
                 ("model_destroyed_before_removal", "_on_model_destroyed_acts_of_faith"),
+                ("phase_end", "_on_phase_end_acts_of_faith_enhancements"),
             ],
         )
     )

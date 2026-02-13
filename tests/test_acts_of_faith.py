@@ -147,6 +147,91 @@ class TestActsOfFaith(unittest.TestCase):
 
         self.assertEqual(mgr.miracle_dice, [6])
 
+    def test_saintly_example_grants_additional_d3_miracle_dice_once(self):
+        from warhammer40k_ai.rules import acts_of_faith as aof
+
+        player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False)
+        game = SimpleNamespace(map=SimpleNamespace(), phase=SimpleNamespace(name="FIGHT_PHASE"))
+        player.game = game
+        army = self._make_army("AS", player)
+        enhancement = SimpleNamespace(name="Saintly Example", id="000008470002")
+        unit = self._make_unit("Canoness", army, acts=True, enhancement=enhancement)
+        army.units = [unit]
+        mgr = aof.ActsOfFaithManager(army)
+
+        seq = iter([2, 4, 5])  # D3 extra, then two D6 miracle dice.
+        old_get_roll = aof.get_roll
+        aof.get_roll = lambda _s="D6": next(seq)
+        try:
+            mgr.on_model_destroyed(unit, unit.models[0], game=game)
+            mgr.on_model_destroyed(unit, unit.models[0], game=game)
+        finally:
+            aof.get_roll = old_get_roll
+
+        self.assertEqual(mgr.miracle_dice, [4, 5])
+
+    def test_chaplet_of_sacrifice_rerolls_one_die_at_command_phase_end(self):
+        from warhammer40k_ai.rules import acts_of_faith as aof
+
+        player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False)
+        game = SimpleNamespace(
+            map=SimpleNamespace(
+                miracle_dice_pool_reroll_provider=lambda **_kwargs: {"indices": [0]},
+            ),
+            phase=SimpleNamespace(name="COMMAND_PHASE"),
+        )
+        game.get_current_player = lambda: player
+        player.game = game
+        army = self._make_army("AS", player)
+        army.adepta_sororitas_detachments = SimpleNamespace(is_hallowed_martyrs=lambda: True)
+        enhancement = SimpleNamespace(name="Chaplet of Sacrifice", id="000008470004")
+        unit = self._make_unit("Palatine", army, acts=True, enhancement=enhancement)
+        army.units = [unit]
+
+        mgr = aof.ActsOfFaithManager(army)
+        mgr.miracle_dice = [2, 5]
+
+        old_get_roll = aof.get_roll
+        aof.get_roll = lambda _s="D6": 6
+        try:
+            mgr.on_command_phase_end(game=game, player=player)
+        finally:
+            aof.get_roll = old_get_roll
+
+        self.assertEqual(mgr.miracle_dice, [6, 5])
+
+    def test_chaplet_of_sacrifice_rerolls_up_to_three_when_below_starting_strength(self):
+        from warhammer40k_ai.rules import acts_of_faith as aof
+
+        player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False)
+        game = SimpleNamespace(
+            map=SimpleNamespace(
+                miracle_dice_pool_reroll_provider=lambda **_kwargs: {"indices": [0, 1, 2]},
+            ),
+            phase=SimpleNamespace(name="COMMAND_PHASE"),
+        )
+        game.get_current_player = lambda: player
+        player.game = game
+        army = self._make_army("AS", player)
+        army.adepta_sororitas_detachments = SimpleNamespace(is_hallowed_martyrs=lambda: True)
+        enhancement = SimpleNamespace(name="Chaplet of Sacrifice", id="000008470004")
+        unit = self._make_unit("Canoness", army, acts=True, enhancement=enhancement)
+        unit.is_below_starting_strength = lambda: True
+        army.units = [unit]
+
+        mgr = aof.ActsOfFaithManager(army)
+        mgr.miracle_dice = [1, 2, 3, 6]
+
+        seq = iter([4, 5, 6])
+        old_get_roll = aof.get_roll
+        aof.get_roll = lambda _s="D6": next(seq)
+        try:
+            mgr.on_command_phase_end(game=game, player=player)
+        finally:
+            aof.get_roll = old_get_roll
+
+        self.assertEqual(mgr.miracle_dice, [4, 5, 6, 6])
+
     def test_charge_roll_uses_miracle(self):
         from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize
         from warhammer40k_ai.roster.player import Player, PlayerControl

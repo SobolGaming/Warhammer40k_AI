@@ -8237,6 +8237,26 @@ class GamePhaseHandlersMixin:
 
         self._phase_enemy_unit_destroyers[pname] = set()
 
+    def _on_phase_end_acts_of_faith_enhancements(self, player=None, phase=None, **_kwargs) -> None:
+        """End of Command phase: resolve Acts of Faith enhancement effects (e.g. Chaplet of Sacrifice)."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None:
+            return
+        if player is not self.get_current_player():
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        mgr = getattr(army, "acts_of_faith", None)
+        if mgr is None:
+            return
+        on_phase_end = getattr(mgr, "on_command_phase_end", None)
+        if not callable(on_phase_end):
+            return
+        on_phase_end(game=self, player=player)
+
     def _on_phase_end_daemonic_patrons(self, player=None, phase=None, **_kwargs) -> None:
         """End of Fight phase: destroy one model if Daemonic Patrons was called and no enemy models were destroyed."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
