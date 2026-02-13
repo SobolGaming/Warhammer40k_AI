@@ -4823,6 +4823,85 @@ class PositioningMixin:
         
         return False
 
+    def _is_non_self_scout_clause(self, text: str) -> bool:
+        low = str(text or "").lower().replace("\u2019", "'").replace("\u0192?T", "'")
+        low = re.sub(r"\s+", " ", low).strip()
+        if "scout" not in low:
+            return False
+        if re.search(
+            r"if this unit has a leader unit attached to it during the declare battle formations step,?\s*"
+            r"that leader unit gains(?: the)? scouts?\s*\d+",
+            low,
+            flags=re.IGNORECASE,
+        ):
+            return True
+        if re.search(
+            r"if a [^.;]+ model from your army is attached to this unit during the declare battle formations step,?\s*"
+            r"that model gains(?: the)? scouts?\s*\d+",
+            low,
+            flags=re.IGNORECASE,
+        ):
+            return True
+        return False
+
+    def _has_self_scout_source(self) -> bool:
+        for keyword in list(getattr(self, "keywords", []) or []):
+            if "scout" in str(keyword or "").lower():
+                return True
+
+        for ability in list(self._iter_active_possible_abilities() or []):
+            if isinstance(ability, str):
+                for segment in self._iter_conditioned_text_segments(ability):
+                    seg_low = str(segment or "").lower()
+                    if "scout" not in seg_low:
+                        continue
+                    if self._is_non_self_scout_clause(seg_low):
+                        continue
+                    return True
+                continue
+
+            name = str(getattr(ability, "name", "") or "")
+            if "scout" in name.lower():
+                return True
+            description = str(getattr(ability, "description", "") or "")
+            for segment in self._iter_conditioned_text_segments(description):
+                seg_low = str(segment or "").lower()
+                if "scout" not in seg_low:
+                    continue
+                if self._is_non_self_scout_clause(seg_low):
+                    continue
+                return True
+
+        for ability in list(getattr(self, "abilities", []) or []):
+            try:
+                if not self._ability_is_active(ability):
+                    continue
+            except Exception:
+                pass
+            if isinstance(ability, str):
+                for segment in self._iter_conditioned_text_segments(ability):
+                    seg_low = str(segment or "").lower()
+                    if "scout" not in seg_low:
+                        continue
+                    if self._is_non_self_scout_clause(seg_low):
+                        continue
+                    return True
+                continue
+
+            name = str(getattr(ability, "name", "") or "")
+            if "scout" in name.lower():
+                return True
+            description = str(getattr(ability, "description", "") or "")
+            for segment in self._iter_conditioned_text_segments(description):
+                seg_low = str(segment or "").lower()
+                if "scout" not in seg_low:
+                    continue
+                if self._is_non_self_scout_clause(seg_low):
+                    continue
+                return True
+
+        return False
+
     def _get_attached_unit_scout_bonus_distance(self) -> float:
         """
         Return the maximum scout distance granted via special rules across attached unit members.
@@ -4866,10 +4945,15 @@ class PositioningMixin:
             found, distance_str = self._find_ability_with_patterns(["scout"], extract_value=True, value_pattern=r'(\d+)')
         except ValueError:
             found, distance_str = False, None
+        if found and not self._has_self_scout_source():
+            found, distance_str = False, None
+        if not found:
             try:
                 for txt in self._iter_active_ability_texts():
                     low = str(txt or "").lower()
                     if "scout" not in low:
+                        continue
+                    if self._is_non_self_scout_clause(low):
                         continue
                     m = re.search(r"scouts?\s*(\d+)", low)
                     if m:
@@ -5057,4 +5141,3 @@ class PositioningMixin:
             self._ability_cache['redeploy_ability_name'] = ability_name
         return result
     
-

@@ -374,6 +374,38 @@ class TestLeaderAttachments(unittest.TestCase):
         leader.attach_to_unit(bodyguard_two)
         self.assertEqual(leader.has_scout(), (False, 0.0))
 
+    def test_archons_retinue_grants_scouts_to_attached_leader_only(self):
+        leader_ds = _DummyDatasheet("Leader", "L1", attached_to=["BG1"], keywords=["CHARACTER"])
+        bodyguard_ds = _DummyDatasheet("Hand of the Archon", "BG1")
+        leader = _TestUnit(leader_ds)
+        bodyguard = _TestUnit(bodyguard_ds)
+
+        bodyguard.possible_abilities = [
+            Ability(
+                "ARCHON'S RETINUE",
+                "",
+                (
+                    "If this unit has a Leader unit attached to it during the Declare Battle Formations step, "
+                    "that Leader unit gains the Scouts 7\" ability."
+                ),
+                "",
+            )
+        ]
+
+        army = Army(faction="Test", detachment_type="Test", points_limit=2000)
+        army.player = _DummyPlayer()
+        army.units = [leader, bodyguard]
+        for u in army.units:
+            u.parent_army = army
+
+        self.assertEqual(leader.has_scout(), (False, 0.0))
+        self.assertEqual(bodyguard.has_scout(), (False, 0.0))
+
+        leader.attach_to_unit(bodyguard)
+
+        self.assertEqual(leader.has_scout(), (True, 7.0))
+        self.assertEqual(bodyguard.has_scout(), (False, 0.0))
+
 
 if __name__ == "__main__":
     unittest.main()

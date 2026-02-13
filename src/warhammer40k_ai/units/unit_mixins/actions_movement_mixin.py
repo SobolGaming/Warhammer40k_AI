@@ -643,28 +643,47 @@ class ActionsMovementMixin:
         if not text:
             return None
         low = text.lower().replace("\u2019", "'").replace("\u0192?T", "'")
-        if name and "attached unit" not in str(name).lower():
+        name_low = str(name).lower()
+        if name and "attached unit" not in name_low and "retinue" not in name_low:
+            # Allow non-ATTACHED UNIT names when wording explicitly matches
+            # "If this unit has a Leader unit attached ... that Leader unit gains Scouts X\"."
+            if "if this unit has a leader unit attached to it during the declare battle formations step" not in low:
+                return None
+        if "scout" not in low:
             return None
-        if "attached to this unit during the declare battle formations step" not in low:
-            return None
-        if "that model gains" not in low or "scout" not in low:
-            return None
+
         m = re.search(
-            r"(?:^|[.;])\s*if a (?P<keywords>[^.;]+?) model from your army is attached to this unit during the declare battle formations step,?\s*"
+            r"\bif a (?P<keywords>[^.;]+?) model from your army is attached to this unit during the declare battle formations step,?\s*"
             r"that model gains(?: the)? scouts?\s*(?P<distance>\d+)",
             low,
             flags=re.IGNORECASE,
         )
+        if m:
+            kw_clause = str(m.group("keywords") or "").strip()
+            kw_clause = re.sub(r"\bwith the leader ability\b", " ", kw_clause, flags=re.IGNORECASE)
+            leader_keywords = [
+                token.strip().upper()
+                for token in re.split(r"\bor\b|\band\b|,", kw_clause, flags=re.IGNORECASE)
+                if token.strip()
+            ]
+            if not leader_keywords:
+                return None
+            try:
+                distance = int(m.group("distance"))
+            except Exception:
+                return None
+            if distance <= 0:
+                return None
+            return {"leader_keywords": tuple(leader_keywords), "scout_distance": int(distance)}
+
+        # Generic retinue-style wording where any attached Leader gains Scouts.
+        m = re.search(
+            r"\bif this unit has a leader unit attached to it during the declare battle formations step,?\s*"
+            r"that leader unit gains(?: the)? scouts?\s*(?P<distance>\d+)",
+            low,
+            flags=re.IGNORECASE,
+        )
         if not m:
-            return None
-        kw_clause = str(m.group("keywords") or "").strip()
-        kw_clause = re.sub(r"\bwith the leader ability\b", " ", kw_clause, flags=re.IGNORECASE)
-        leader_keywords = [
-            token.strip().upper()
-            for token in re.split(r"\bor\b|\band\b|,", kw_clause, flags=re.IGNORECASE)
-            if token.strip()
-        ]
-        if not leader_keywords:
             return None
         try:
             distance = int(m.group("distance"))
@@ -672,7 +691,7 @@ class ActionsMovementMixin:
             return None
         if distance <= 0:
             return None
-        return {"leader_keywords": tuple(leader_keywords), "scout_distance": int(distance)}
+        return {"leader_keywords": tuple(), "scout_distance": int(distance)}
 
     def _clear_attached_unit_bodyguard_leader_scouts(self) -> None:
         sr = getattr(self, "special_rules", None)
@@ -698,7 +717,8 @@ class ActionsMovementMixin:
             rule = self._ability_attached_unit_bodyguard_leader_scouts(ab)
             if rule is None:
                 continue
-            if not any(self.has_any_keyword(k) for k in list(rule.get("leader_keywords") or ())):
+            rule_keywords = list(rule.get("leader_keywords") or ())
+            if rule_keywords and not any(self.has_any_keyword(k) for k in rule_keywords):
                 continue
             try:
                 max_distance = max(max_distance, int(rule.get("scout_distance", 0) or 0))

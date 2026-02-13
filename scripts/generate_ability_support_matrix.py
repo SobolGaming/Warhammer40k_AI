@@ -2540,7 +2540,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Miasmic Malignifier deployment is represented by standard fortification setup in the engine; the two-piece terrain representation is abstracted to a single fortification unit for gameplay effects.",
         ),
-        ("DRU", "ARCHON'S RETINUE"): ("Partial", "Scouts 7\" applied without leader/attachment restriction (affects unit)."),
+        ("DRU", "ARCHON'S RETINUE"): (
+            "Supported",
+            "If attached during Declare Battle Formations, the attached Leader gains Scouts 7\"; the bodyguard unit does not gain Scouts from this ability.",
+        ),
         ("DRU", "Blur of Blades"): ("Supported", "Leading: unit gains Fights First."),
         ("DRU", "Blur of Movement"): ("Supported", "Charge-after-Advance eligibility."),
         ("DRU", "Aethersails"): ("Supported", "Advance: fixed +6\" Move instead of rolling."),
