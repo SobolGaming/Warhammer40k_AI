@@ -2667,6 +2667,89 @@ class ActionsMovementMixin:
                     return ""
         return choice
 
+    def _needgaard_huntrs_mark_active_for_shooting(self, *, game=None) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not sr.get("needgaard_huntrs_mark_active"):
+            return False
+        owner_id = str(sr.get("needgaard_huntrs_mark_owner", "") or "")
+        try:
+            effect_turn = int(sr.get("needgaard_huntrs_mark_turn", 0) or 0)
+        except Exception:
+            effect_turn = 0
+        if game is None:
+            try:
+                army = root.get_parent_army()
+            except Exception:
+                army = None
+            try:
+                game = getattr(getattr(army, "player", None), "game", None)
+            except Exception:
+                game = None
+        if game is None:
+            return True
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_name and phase_name != "SHOOTING_PHASE":
+            return False
+        if owner_id:
+            try:
+                current = game.get_current_player()
+            except Exception:
+                current = None
+            current_id = str(getattr(current, "id", "") or "") if current is not None else ""
+            if current_id and current_id != owner_id:
+                return False
+        if effect_turn:
+            try:
+                if int(getattr(game, "turn", 0) or 0) != effect_turn:
+                    return False
+            except Exception:
+                return False
+        return True
+
+    def _needgaard_ordered_retreat_active_this_turn(self, *, game=None) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not sr.get("needgaard_ordered_retreat_active"):
+            return False
+        owner_id = str(sr.get("needgaard_ordered_retreat_turn_owner", "") or "")
+        try:
+            effect_turn = int(sr.get("needgaard_ordered_retreat_turn", 0) or 0)
+        except Exception:
+            effect_turn = 0
+        if game is None:
+            try:
+                army = root.get_parent_army()
+            except Exception:
+                army = None
+            try:
+                game = getattr(getattr(army, "player", None), "game", None)
+            except Exception:
+                game = None
+        if game is None:
+            return True
+        if owner_id:
+            try:
+                current = game.get_current_player()
+            except Exception:
+                current = None
+            current_id = str(getattr(current, "id", "") or "") if current is not None else ""
+            if current_id and current_id != owner_id:
+                return False
+        if effect_turn:
+            try:
+                if int(getattr(game, "turn", 0) or 0) != effect_turn:
+                    return False
+            except Exception:
+                return False
+        return True
+
     def get_unit_hit_reroll_modifiers(self, attack_type: str, *, target=None, attacker_model=None) -> dict:
         """
         Return unit-level hit modifiers for this attached unit, parsed via attack_roll_parser.
@@ -2793,6 +2876,15 @@ class ActionsMovementMixin:
         if choice == "HERO":
             reroll_hit_values.add(1)
             reroll_hit_reasons.append("Dance of Death (Hero's Prowess): re-roll Hit rolls of 1")
+
+        # Needgaard Oathband: HUNTR'S MARK grants ranged re-roll Hit rolls of 1.
+        try:
+            active_fn = getattr(root, "_needgaard_huntrs_mark_active_for_shooting", None)
+            if atype in ("any", "ranged") and callable(active_fn) and active_fn():
+                reroll_hit_values.add(1)
+                reroll_hit_reasons.append("HUNTR'S MARK: re-roll Hit rolls of 1")
+        except Exception:
+            pass
 
         army = None
         get_parent_army = getattr(root, "get_parent_army", None)
@@ -3223,6 +3315,15 @@ class ActionsMovementMixin:
         if choice == "VILLAIN":
             mods["wound"] += 1
             wound_reasons.append("Dance of Death (Villain's Doom): +1 to wound")
+
+        # Needgaard Oathband: HUNTR'S MARK grants ranged re-roll Wound rolls of 1.
+        try:
+            active_fn = getattr(root, "_needgaard_huntrs_mark_active_for_shooting", None)
+            if atype in ("any", "ranged") and callable(active_fn) and active_fn():
+                reroll_wound_values.add(1)
+                reroll_wound_reasons.append("HUNTR'S MARK: re-roll Wound rolls of 1")
+        except Exception:
+            pass
 
         game = None
         army = None
@@ -8748,6 +8849,11 @@ class ActionsMovementMixin:
             bool: True if the unit has an ability that allows shooting after falling back
         """
         try:
+            if self._needgaard_ordered_retreat_active_this_turn():
+                return True
+        except Exception:
+            pass
+        try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("feigned_retreat_active"):
                 owner = str(sr.get("feigned_retreat_turn_owner", "") or "")
@@ -9185,6 +9291,11 @@ class ActionsMovementMixin:
         """Check if this unit can charge after falling back."""
         if self.has_thrill_seekers():
             return True
+        try:
+            if self._needgaard_ordered_retreat_active_this_turn():
+                return True
+        except Exception:
+            pass
         try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("enhancement_kunnin_but_brutal_active"):

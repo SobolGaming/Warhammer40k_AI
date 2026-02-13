@@ -17,6 +17,7 @@ from .stratagem_descriptors import get_stratagem_tool_descriptor
 from .stratagems_chaos_knights import ChaosKnightsStratagemMixin
 from .stratagems_necrons import NecronsStratagemMixin
 from .stratagems_orks import OrksStratagemMixin
+from .stratagems_votann import VotannStratagemMixin
 from .stratagems_world_eaters import WorldEatersStratagemMixin
 from .stratagems_grey_knights import GreyKnightsStratagemMixin
 
@@ -206,6 +207,13 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "PRETERNATURAL AGILITY",
     "VIOLENT CRESCENDO",
     "VIOLENT EXCESS",
+    "ANCESTRAL SENTENCE",
+    "HONOUR OF THE HOLD",
+    "HUNTR'S MARK",
+    "HUNTR’S MARK",
+    "ORDERED RETREAT",
+    "REACTIVE REPRISAL",
+    "VOID HARDENED",
 }
 
 REACTION_ONLY_STRATAGEM_NAMES = {
@@ -317,6 +325,13 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "SUFFERING AND SACRIFICE",
     "SWIFT DEPLOYMENT",
     "VECTORED ENGINES",
+    "ANCESTRAL SENTENCE",
+    "HONOUR OF THE HOLD",
+    "HUNTR'S MARK",
+    "HUNTR’S MARK",
+    "ORDERED RETREAT",
+    "REACTIVE REPRISAL",
+    "VOID HARDENED",
 }
 
 
@@ -1035,6 +1050,7 @@ class StratagemManager(
     ChaosDaemonsStratagemMixin,
     NecronsStratagemMixin,
     AeldariStratagemMixin,
+    VotannStratagemMixin,
     OrksStratagemMixin,
 ):
     def __init__(self, player) -> None:
@@ -1196,6 +1212,7 @@ class StratagemManager(
             "DARK VIGOUR",
             "SWIFT DEPLOYMENT",
             "VECTORED ENGINES",
+            "ORDERED RETREAT",
         }:
             add("unit_move_ended", self._on_unit_move_ended)
         if names & {"ANTI-GRAV REPULSION", "ANTI‑GRAV REPULSION"}:
@@ -1238,6 +1255,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_catalytic_stimulus)
         if "VENGEFUL SURGE" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_slaanesh_vengeful_surge)
+        if "REACTIVE REPRISAL" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_needgaard_reactive_reprisal)
         if names & {"DIABOLIC MAJESTY", "HEIGHTENED JEALOUSY"}:
             add("emperors_children_favoured_champions_updated", self._on_emperors_children_favoured_champions_updated)
 
@@ -1283,6 +1302,7 @@ class StratagemManager(
             "REACTIVE DISEMBARKATION",
             "UNCANNY REACTIONS",
             "VENGEFUL SURGE",
+            "VOID HARDENED",
         }
         fight_reaction_names = {
             "BERSERK FUGUE",
@@ -1306,6 +1326,7 @@ class StratagemManager(
             "'ARD AS NAILS",
             "\u2019ARD AS NAILS",
             "TO THEIR FINAL BREATH",
+            "VOID HARDENED",
         }
 
         has_generic_defensive_shooting = "shooting" in defensive_phases
@@ -1438,6 +1459,12 @@ class StratagemManager(
             "KHAINE'S VENGEANCE",
             "KHAINE’S VENGEANCE",
             "DARK APPARITIONS",
+            "ANCESTRAL SENTENCE",
+            "HONOUR OF THE HOLD",
+            "HUNTR'S MARK",
+            "HUNTR’S MARK",
+            "ORDERED RETREAT",
+            "VOID HARDENED",
         }
         needs_phase_end = bool(
             (names & phase_end_trigger_names)
@@ -2496,6 +2523,13 @@ class StratagemManager(
             "PYROGENESIS": "Target: TZEENTCH LEGIONES DAEMONICA unit (not yet shot/fought)",
             "THE REALM OF CHAOS": "Target: up to two LEGIONES DAEMONICA units (end of opponent turn)",
             "WARP SURGE": "Target: LEGIONES DAEMONICA unit (within Shadow of Chaos)",
+            "ANCESTRAL SENTENCE": "Target: LEAGUES OF VOTANN unit that has not been selected to shoot; optional 3 YP for Sustained Hits 2",
+            "HONOUR OF THE HOLD": "Target: LEAGUES OF VOTANN unit that has not been selected to fight; select one enemy in Engagement Range (optional 3 YP for AP +2)",
+            "HUNTR'S MARK": "Target: LEAGUES OF VOTANN unit that has not been selected to shoot",
+            "HUNTR’S MARK": "Target: LEAGUES OF VOTANN unit that has not been selected to shoot",
+            "ORDERED RETREAT": "Target: LEAGUES OF VOTANN unit that Fell Back this turn",
+            "REACTIVE REPRISAL": "Target: LEAGUES OF VOTANN unit targeted by enemy shooting; shoot the attacking enemy unit",
+            "VOID HARDENED": "Target: LEAGUES OF VOTANN unit selected as enemy shooting/fight target; worsen incoming AP by 1 for that attacker",
         }
         return hints.get(name_u, "")
 
@@ -3018,6 +3052,10 @@ class StratagemManager(
             raise
         try:
             self._queue_emperors_children_rapid_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_votann_needgaard_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
 
@@ -3860,6 +3898,10 @@ class StratagemManager(
             raise
         try:
             self._resolve_hallowed_martyrs_phase_end(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_votann_needgaard_phase_end_effects(phase=phase)
         except Exception:
             raise
         # Clear command-phase battle-shock suppression flags (e.g., Terrifying Spectacle).
@@ -5379,6 +5421,7 @@ class StratagemManager(
         self._process_warpbane_fires_of_covenant_trigger(unit=unit, trigger_kind="move_end", action=action)
         self._queue_emperors_children_mercurial_move_end_reactions(unit=unit, action=action)
         self._queue_aeldari_armoured_move_end_reactions(unit=unit, action=action)
+        self._queue_votann_needgaard_move_end_reactions(unit=unit, action=action)
 
     def _on_charge_declared(self, unit=None, target_units=None, **_kwargs):
         self._queue_aeldari_armoured_charge_declared_reactions(
@@ -6067,6 +6110,15 @@ class StratagemManager(
         except Exception:
             raise
 
+    def _on_unit_shooting_resolved_needgaard_reactive_reprisal(self, attacker_unit=None, hits_by_target=None, **_kwargs):
+        try:
+            self._queue_votann_needgaard_shooting_resolved_reactions(
+                attacker_unit=attacker_unit,
+                hits_by_target=hits_by_target,
+            )
+        except Exception:
+            raise
+
     def _on_unit_shooting_resolved_slaanesh_vengeful_surge(self, attacker_unit=None, **_kwargs):
         try:
             self._resolve_emperors_children_slaanesh_vengeful_surge_after_shooting(
@@ -6309,6 +6361,13 @@ class StratagemManager(
             self._queue_emperors_children_slaanesh_shooting_reactions(
                 attacking_unit=attacking_unit,
                 target_units=target_units,
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_votann_needgaard_shooting_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
             )
         except Exception:
             raise
@@ -7079,6 +7138,13 @@ class StratagemManager(
             self._queue_emperors_children_slaanesh_fight_reactions(
                 attacking_unit=attacking_unit,
                 target_units=target_units,
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_votann_needgaard_fight_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
             )
         except Exception:
             raise
@@ -11842,6 +11908,9 @@ class StratagemManager(
         aeldari_armoured_result = self._use_aeldari_armoured_warhost_stratagem(s, **kwargs)
         if aeldari_armoured_result is not None:
             return aeldari_armoured_result
+        votann_result = self._use_votann_needgaard_stratagem(s, **kwargs)
+        if votann_result is not None:
+            return votann_result
 
         # Rage-cursed Onslaught: RED WRATH (advance then shoot/charge choice; Red Thirst for both)
         if s.name.upper() == "RED WRATH":

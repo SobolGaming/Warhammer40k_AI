@@ -1852,6 +1852,53 @@ class WargearProfile:
         except Exception:
             pass
         try:
+            if self.parent_wargear and self.parent_wargear.is_melee() and target is not None:
+                attacker_unit = getattr(attacker, "parent_unit", None)
+                attacker_root = attacker_unit.get_attached_unit_root() if hasattr(attacker_unit, "get_attached_unit_root") else attacker_unit
+                sr = getattr(attacker_root, "special_rules", None) if attacker_root is not None else None
+                if isinstance(sr, dict) and sr.get("needgaard_honour_of_the_hold_active"):
+                    bonus = int(sr.get("needgaard_honour_of_the_hold_ap_bonus", 0) or 0)
+                    if bonus:
+                        apply_bonus = True
+                        exp = str(sr.get("needgaard_honour_of_the_hold_expires_phase", "") or "").strip().upper()
+                        owner_id = str(sr.get("needgaard_honour_of_the_hold_owner", "") or "")
+                        try:
+                            effect_turn = int(sr.get("needgaard_honour_of_the_hold_turn", 0) or 0)
+                        except Exception:
+                            effect_turn = 0
+                        target_unit_id = str(sr.get("needgaard_honour_of_the_hold_target_unit_id", "") or "")
+                        try:
+                            target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+                        except Exception:
+                            target_root = target
+                        current_target_id = str(get_entity_id(target_root) or "") if target_root is not None else ""
+                        if target_unit_id and current_target_id and target_unit_id != current_target_id:
+                            apply_bonus = False
+                        try:
+                            army = attacker_root.get_parent_army() if attacker_root is not None else None
+                            game = getattr(getattr(army, "player", None), "game", None)
+                        except Exception:
+                            game = None
+                        if game is not None:
+                            phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                            if exp and phase_name and phase_name != exp:
+                                apply_bonus = False
+                            if owner_id:
+                                current_player = getattr(game, "get_current_player", lambda: None)()
+                                current_owner = str(getattr(current_player, "id", "") or "")
+                                if current_owner and current_owner != owner_id:
+                                    apply_bonus = False
+                            if effect_turn:
+                                try:
+                                    if int(getattr(game, "turn", 0) or 0) != effect_turn:
+                                        apply_bonus = False
+                                except Exception:
+                                    apply_bonus = False
+                        if apply_bonus:
+                            ap_val -= int(bonus)
+        except Exception:
+            pass
+        try:
             if self.parent_wargear and self.parent_wargear.is_melee():
                 sr = getattr(attacker.parent_unit, "special_rules", None)
                 bonus = int(sr.get("charge_melee_ap_bonus", 0) or 0) if isinstance(sr, dict) else 0
@@ -7712,6 +7759,49 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Needgaard Oathband: HUNTR'S MARK re-roll Hit rolls of 1 (ranged).
+        try:
+            if rerolls_allowed and attack_is_ranged and dice_roll == 1 and "reroll" not in hit_result:
+                unit = attacker.parent_unit
+                sr = getattr(unit, "special_rules", None) if unit is not None else None
+                if isinstance(sr, dict) and sr.get("needgaard_huntrs_mark_active"):
+                    applies = True
+                    owner_id = str(sr.get("needgaard_huntrs_mark_owner", "") or "")
+                    try:
+                        turn = int(sr.get("needgaard_huntrs_mark_turn", 0) or 0)
+                    except Exception:
+                        turn = 0
+                    try:
+                        army = unit.get_parent_army() if unit is not None else None
+                        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    except Exception:
+                        game = None
+                    if game is not None:
+                        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                        if phase_name and phase_name != "SHOOTING_PHASE":
+                            applies = False
+                        if owner_id:
+                            current_player = getattr(game, "get_current_player", lambda: None)()
+                            current_owner = str(getattr(current_player, "id", "") or "")
+                            if current_owner and current_owner != owner_id:
+                                applies = False
+                        if turn:
+                            try:
+                                if int(getattr(game, "turn", 0) or 0) != turn:
+                                    applies = False
+                            except Exception:
+                                applies = False
+                    if applies:
+                        rr = _reroll_hit()
+                        effect_text = "HUNTR'S MARK: re-roll Hit roll of 1"
+                        hit_result.setdefault("special_effects", []).append(effect_text)
+                        hit_result["reroll_of_one"] = 1
+                        hit_result["reroll"] = rr
+                        dice_roll = rr
+                        reroll_used = True
+        except Exception:
+            pass
+
         # Cabal of Sorcerers: Destiny's Ruin rerolls (TS/Scintillating Legions only).
         try:
             if rerolls_allowed and "reroll" not in hit_result:
@@ -10919,6 +11009,48 @@ class WargearProfile:
                     wound_result["reroll"] = rr
                     dice_roll = rr
                     reroll_used = True
+        except Exception:
+            pass
+
+        # Needgaard Oathband: HUNTR'S MARK re-roll Wound rolls of 1 (ranged).
+        try:
+            if rerolls_allowed and attack_is_ranged and dice_roll == 1 and "reroll" not in wound_result:
+                unit = attacker.parent_unit
+                sr = getattr(unit, "special_rules", None) if unit is not None else None
+                if isinstance(sr, dict) and sr.get("needgaard_huntrs_mark_active"):
+                    applies = True
+                    owner_id = str(sr.get("needgaard_huntrs_mark_owner", "") or "")
+                    try:
+                        turn = int(sr.get("needgaard_huntrs_mark_turn", 0) or 0)
+                    except Exception:
+                        turn = 0
+                    try:
+                        army = unit.get_parent_army() if unit is not None else None
+                        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    except Exception:
+                        game = None
+                    if game is not None:
+                        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                        if phase_name and phase_name != "SHOOTING_PHASE":
+                            applies = False
+                        if owner_id:
+                            current_player = getattr(game, "get_current_player", lambda: None)()
+                            current_owner = str(getattr(current_player, "id", "") or "")
+                            if current_owner and current_owner != owner_id:
+                                applies = False
+                        if turn:
+                            try:
+                                if int(getattr(game, "turn", 0) or 0) != turn:
+                                    applies = False
+                            except Exception:
+                                applies = False
+                    if applies:
+                        rr = _reroll_wound()
+                        wound_result.setdefault("special_effects", []).append("HUNTR'S MARK: re-roll Wound roll of 1")
+                        wound_result["reroll_of_one"] = 1
+                        wound_result["reroll"] = rr
+                        dice_roll = rr
+                        reroll_used = True
         except Exception:
             pass
 

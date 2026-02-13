@@ -1341,6 +1341,80 @@ _ASPECT_HOST_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _ASPECT_HOST_STRATAGEM_DESCRIPTORS.values()
 }
 
+_NEEDGAARD_OATHBAND_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010436005": StratagemToolDescriptor(
+        stratagem_id="000010436005",
+        name="Ancestral Sentence",
+        timing="shooting_phase_start",
+        target="leagues_of_votann_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="grant_ranged_sustained_hits",
+        cp_cost=1,
+        effect_params={
+            "sustained_hits_value": 1,
+            "optional_yield_points_cost": 3,
+            "optional_sustained_hits_value": 2,
+        },
+    ),
+    "000010436006": StratagemToolDescriptor(
+        stratagem_id="000010436006",
+        name="Huntr's Mark",
+        timing="shooting_phase_start",
+        target="leagues_of_votann_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="reroll_hit_and_wound_ones",
+        cp_cost=1,
+        effect_params={"attack_type": "ranged"},
+    ),
+    "000010436003": StratagemToolDescriptor(
+        stratagem_id="000010436003",
+        name="Honour of the Hold",
+        timing="fight_phase_start",
+        target="leagues_of_votann_unit_not_yet_fought_with_selected_enemy_in_engagement_range",
+        duration="until_end_of_phase",
+        effect="melee_ap_bonus_against_selected_enemy",
+        cp_cost=1,
+        effect_params={
+            "ap_bonus": 1,
+            "optional_yield_points_cost": 3,
+            "optional_ap_bonus": 2,
+        },
+    ),
+    "000010436004": StratagemToolDescriptor(
+        stratagem_id="000010436004",
+        name="Ordered Retreat",
+        timing="movement_phase_after_fall_back",
+        target="leagues_of_votann_unit_that_fell_back",
+        duration="until_end_of_turn",
+        effect="eligible_to_shoot_and_charge_after_fall_back",
+        cp_cost=1,
+    ),
+    "000010436007": StratagemToolDescriptor(
+        stratagem_id="000010436007",
+        name="Reactive Reprisal",
+        timing="opponent_shooting_phase_after_enemy_shoots_with_fortify_takeover",
+        target="leagues_of_votann_unit_targeted_by_enemy_shooter",
+        duration="immediate",
+        effect="reactive_shooting_at_attacker",
+        cp_cost=2,
+        effect_params={"target_restriction": "attacking_enemy_unit_only"},
+    ),
+    "000010436002": StratagemToolDescriptor(
+        stratagem_id="000010436002",
+        name="Void Hardened",
+        timing="opponent_shooting_or_either_fight_phase_after_targets_selected_with_fortify_takeover",
+        target="leagues_of_votann_unit_targeted_by_enemy_attacker",
+        duration="until_attacker_finishes_attacks",
+        effect="worsen_incoming_ap",
+        cp_cost=1,
+        effect_params={"ap_worsen": 1, "duration_scope": "attacking_enemy_unit"},
+    ),
+}
+
+_NEEDGAARD_OATHBAND_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _NEEDGAARD_OATHBAND_STRATAGEM_DESCRIPTORS.values()
+}
+
 
 def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> Optional[StratagemToolDescriptor]:
     if stratagem_id:
@@ -1401,6 +1475,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _ASPECT_HOST_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _NEEDGAARD_OATHBAND_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
     key = _normalize_name(name)
     if not key:
         return None
@@ -1424,4 +1501,5 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _RAPID_EVISCERATION_STRATAGEM_BY_NAME.get(key)
         or _ARMOURED_WARHOST_STRATAGEM_BY_NAME.get(key)
         or _ASPECT_HOST_STRATAGEM_BY_NAME.get(key)
+        or _NEEDGAARD_OATHBAND_STRATAGEM_BY_NAME.get(key)
     )
