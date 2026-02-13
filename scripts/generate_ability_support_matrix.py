@@ -2037,11 +2037,19 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("ADM", "Shroudpsalm (Aura)"): ("Partial", "Stealth applied to bearer only; aura not propagated."),
         ("AM", "Alchemyk Counteragents"): ("Supported", "Feel No Pain 6+ against mortal wounds."),
         ("AM", "Desert Riders"): ("Partial", "Shoot and charge after Falling Back; ignores Move/Advance/Charge modifiers not handled."),
+        ("AM", "Deathstrike Missile"): (
+            "Supported",
+            "Shooting phase action support: optional Designate/Adjust/None flow places or moves a unique Deathstrike marker for the unit, with phase-use and ONE SHOT constraints enforced.",
+        ),
         ("AM", "Enginseer"): ("Supported", "Conditional Lone Operative within 3\" of friendly ASTRA MILITARUM VEHICLE units."),
         ("AM", "Horsemasters"): ("Supported", "Shoot and charge after Falling Back."),
         ("AM", "LOYAL PROTECTOR"): (
             "Supported",
             "Declare Battle Formations: must join one COMMAND SQUAD if eligible, otherwise removed as destroyed; joined model counts as part of the unit, can embark with it, and uses 3 transport slots. Warlord and Enhancements restrictions from LOYAL PROTECTOR text variants are parsed.",
+        ),
+        ("AM", "Plasma Warhead"): (
+            "Supported",
+            "Marker-based firing is implemented: must remain stationary, cannot fire in a phase where Designate/Adjust was used, and resolves attacks against each unit within 6\" of the unit's Deathstrike marker without selecting a target unit.",
         ),
         ("AM", "Malign Wardings(Psychic)"): ("Supported", "Leading: Feel No Pain 4+ against Psychic attacks."),
         ("GK", "Apothecary's Narthecium"): ("Supported", "Command phase: return 1 destroyed non-CHARACTER model to the bearer's unit."),
