@@ -229,7 +229,7 @@ class Player:
             pending_increase = 0
         if amount == 0:
             if is_stratagem_spend:
-                self._maybe_apply_multiwave_comms_array_cp_refund(
+                self._maybe_apply_targeted_stratagem_cp_refund(
                     target_unit_id=pending_target_unit_id,
                     stratagem_name=(pending_stratagem_name or reason_name),
                 )
@@ -251,7 +251,7 @@ class Player:
                 else:
                     append_action(self, f"Stratagem used ({amount} CP)")
             if is_stratagem_spend:
-                self._maybe_apply_multiwave_comms_array_cp_refund(
+                self._maybe_apply_targeted_stratagem_cp_refund(
                     target_unit_id=pending_target_unit_id,
                     stratagem_name=(pending_stratagem_name or reason_name),
                 )
@@ -379,46 +379,115 @@ class Player:
                 return root
         return None
 
-    def _maybe_apply_multiwave_comms_array_cp_refund(self, *, target_unit_id: str, stratagem_name: str = "") -> None:
+    def _target_unit_stratagem_cp_refund_specs(self, target_unit) -> list[dict]:
+        if target_unit is None:
+            return []
+        parent = self._target_unit_parent_army(target_unit)
+        if parent is not None and parent is not self.get_army():
+            return []
+        members = self._attached_members(target_unit)
+        specs: list[dict] = []
+        for u in members:
+            sr = getattr(u, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            for spec in list(sr.get("stratagem_target_cp_refund_specs", []) or []):
+                if isinstance(spec, dict):
+                    specs.append(spec)
+
+        if not specs:
+            has_rule = getattr(target_unit, "has_multiwave_comms_array", None)
+            if callable(has_rule) and bool(has_rule()):
+                specs.append(
+                    {
+                        "roll_min": 5,
+                        "cp_gain": 1,
+                        "name": "Multiwave Comms Array",
+                        "description": "",
+                    }
+                )
+
+        seen = set()
+        deduped: list[dict] = []
+        for spec in specs:
+            key = (
+                int(spec.get("roll_min", 0) or 0),
+                int(spec.get("cp_gain", 0) or 0),
+                str(spec.get("name", "") or "").strip().lower(),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(spec)
+        deduped.sort(
+            key=lambda item: (
+                str(item.get("name", "") or "").strip().lower(),
+                int(item.get("roll_min", 0) or 0),
+                int(item.get("cp_gain", 0) or 0),
+            )
+        )
+        return deduped
+
+    def _maybe_apply_targeted_stratagem_cp_refund(self, *, target_unit_id: str, stratagem_name: str = "") -> None:
         root = self._resolve_owned_unit_root_by_id(target_unit_id)
         if root is None:
             return
-        has_rule = getattr(root, "has_multiwave_comms_array", None)
-        if not callable(has_rule) or not bool(has_rule()):
+        specs = self._target_unit_stratagem_cp_refund_specs(root)
+        if not specs:
             return
-        try:
-            from ..utility.dice import get_roll
-            roll = int(get_roll("D6") or 0)
-        except Exception:
-            roll = 0
-        gained = 0
-        if roll >= 5:
-            gained = int(self.gain_command_points(1, reason="Multiwave Comms Array") or 0)
-        try:
-            from ..utility.event_bus import append_dice, append_action
-
-            append_dice(self, f"Multiwave Comms Array roll: {int(roll)}")
-            if gained > 0:
-                append_action(self, f"Multiwave Comms Array: gained {int(gained)} CP.")
-            else:
-                append_action(self, "Multiwave Comms Array: no CP gained.")
-        except Exception:
-            pass
         game = getattr(self, "game", None)
         event_system = getattr(game, "event_system", None) if game is not None else None
-        if event_system is not None:
+
+        for spec in specs:
             try:
-                event_system.publish(
-                    "command_points_gained",
-                    player=self,
-                    amount=int(gained or 0),
-                    reason="Multiwave Comms Array",
-                    target_unit=root,
-                    roll=int(roll),
-                    stratagem_name=str(stratagem_name or ""),
-                )
+                from ..utility.dice import get_roll
+
+                roll = int(get_roll("D6") or 0)
+            except Exception:
+                roll = 0
+            label = str(spec.get("name", "") or "Stratagem CP Refund").strip() or "Stratagem CP Refund"
+            try:
+                roll_min = int(spec.get("roll_min", 5) or 5)
+            except Exception:
+                roll_min = 5
+            try:
+                cp_gain = int(spec.get("cp_gain", 1) or 1)
+            except Exception:
+                cp_gain = 1
+            gained = 0
+            if roll >= roll_min and cp_gain > 0:
+                gained = int(self.gain_command_points(cp_gain, reason=label) or 0)
+            try:
+                from ..utility.event_bus import append_dice, append_action
+
+                append_dice(self, f"{label} roll: {int(roll)}")
+                if gained > 0:
+                    append_action(self, f"{label}: gained {int(gained)} CP.")
+                else:
+                    append_action(self, f"{label}: no CP gained.")
             except Exception:
                 pass
+            if event_system is not None:
+                try:
+                    event_system.publish(
+                        "command_points_gained",
+                        player=self,
+                        amount=int(gained or 0),
+                        reason=label,
+                        target_unit=root,
+                        roll=int(roll),
+                        stratagem_name=str(stratagem_name or ""),
+                    )
+                except Exception:
+                    pass
+            if gained > 0:
+                break
+
+    def _maybe_apply_multiwave_comms_array_cp_refund(self, *, target_unit_id: str, stratagem_name: str = "") -> None:
+        self._maybe_apply_targeted_stratagem_cp_refund(
+            target_unit_id=target_unit_id,
+            stratagem_name=stratagem_name,
+        )
 
     def _get_opponent_player(self):
         game = getattr(self, "game", None)

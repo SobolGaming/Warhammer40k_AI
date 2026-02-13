@@ -2007,6 +2007,13 @@ class StateAttachmentMixin:
             try:
                 hover_active = bool(getattr(u, "hover_mode", False))
                 smoke_suppressed = False
+                removed_keywords: set[str] = set()
+                sr = getattr(u, "special_rules", None)
+                if isinstance(sr, dict):
+                    for k in list(sr.get("ability_removed_keywords", []) or []):
+                        key = str(k or "").strip().lower()
+                        if key:
+                            removed_keywords.add(key)
                 try:
                     fell_back = bool(getattr(getattr(u, "round_state", None), "fell_back_this_round", False))
                     loses_smoke = bool(getattr(u, "loses_smoke_keyword_when_shooting_after_fall_back", lambda: False)())
@@ -2023,6 +2030,8 @@ class StateAttachmentMixin:
                                 continue
                             if smoke_suppressed and lk == "smoke":
                                 continue
+                            if lk in removed_keywords:
+                                continue
                             if lk in seen:
                                 continue
                             seen.add(lk)
@@ -2037,11 +2046,12 @@ class StateAttachmentMixin:
                         continue
                     if smoke_suppressed and lk == "smoke":
                         continue
+                    if lk in removed_keywords:
+                        continue
                     if lk in seen:
                         continue
                     seen.add(lk)
                     kws.append(ks)
-                sr = getattr(u, "special_rules", None)
                 if isinstance(sr, dict):
                     extra = list(sr.get("ability_added_keywords", []) or [])
                 else:
@@ -2050,6 +2060,8 @@ class StateAttachmentMixin:
                     ks = str(k)
                     lk = ks.lower()
                     if smoke_suppressed and lk == "smoke":
+                        continue
+                    if lk in removed_keywords:
                         continue
                     if lk in seen:
                         continue

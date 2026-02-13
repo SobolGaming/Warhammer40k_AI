@@ -1002,6 +1002,83 @@ class RulesParsingMixin:
 
         self.special_rules = sr
 
+    def _refresh_targeted_stratagem_cp_refund_flags(self) -> None:
+        """Parse abilities that refund CP when this unit is targeted by a Stratagem."""
+        if getattr(self, "special_rules", None) is None:
+            self.special_rules = {}
+        sr = self.special_rules
+        try:
+            if "stratagem_target_cp_refund_specs" in sr:
+                del sr["stratagem_target_cp_refund_specs"]
+        except Exception:
+            pass
+
+        entries: list[tuple[str, str]] = []
+        entries.extend(list(self._iter_ability_entries_for_rules(model=None)))
+        for model in list(getattr(self, "models", []) or []):
+            entries.extend(list(self._iter_ability_entries_for_rules(model=model)))
+
+        specs: list[dict] = []
+        seen_entries: set[tuple[str, str]] = set()
+        for name, desc in entries:
+            entry_key = (str(name or "").strip().lower(), str(desc or "").strip().lower())
+            if entry_key in seen_entries:
+                continue
+            seen_entries.add(entry_key)
+
+            text_src = self._strip_eligibility_prefix(desc or name)
+            text = self._normalize_rules_text(text_src or "")
+            if not text:
+                continue
+            norm = text.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+            norm = re.sub(r"'s\b", "s", norm)
+            norm = re.sub(r"[^a-z0-9]+", " ", norm)
+            norm = re.sub(r"\s+", " ", norm).strip()
+            if not norm or "stratagem" not in norm:
+                continue
+
+            m = self._TARGETED_STRATAGEM_CP_REFUND_RE.fullmatch(norm)
+            if not m:
+                m = self._TARGETED_STRATAGEM_CP_REFUND_SELECT_RE.fullmatch(norm)
+            if not m:
+                continue
+            try:
+                roll_min = int(m.group("roll") or 5)
+            except Exception:
+                roll_min = 5
+            try:
+                cp_gain = int(m.group("cp") or 1)
+            except Exception:
+                cp_gain = 1
+            if roll_min <= 0 or cp_gain <= 0:
+                continue
+            specs.append(
+                {
+                    "roll_min": int(roll_min),
+                    "cp_gain": int(cp_gain),
+                    "name": name or "Stratagem CP Refund",
+                    "description": desc or "",
+                }
+            )
+
+        if specs:
+            seen_specs: set[tuple] = set()
+            deduped_specs: list[dict] = []
+            for spec in specs:
+                key = (
+                    int(spec.get("roll_min", 0) or 0),
+                    int(spec.get("cp_gain", 0) or 0),
+                    str(spec.get("name", "") or "").strip().lower(),
+                )
+                if key in seen_specs:
+                    continue
+                seen_specs.add(key)
+                deduped_specs.append(spec)
+            if deduped_specs:
+                sr["stratagem_target_cp_refund_specs"] = deduped_specs
+
+        self.special_rules = sr
+
     def _refresh_targeted_stratagem_cp_increase_flags(self) -> None:
         """Parse unit abilities that increase Stratagem CP cost when the opponent targets a unit."""
         if getattr(self, "special_rules", None) is None:
@@ -2648,7 +2725,7 @@ class RulesParsingMixin:
         return False
 
     def _refresh_bearer_keyword_flags(self) -> None:
-        """Parse bearer-only keyword additions (e.g., SMOKE) into special_rules."""
+        """Parse bearer-only keyword additions/removals into special_rules."""
         try:
             root = self.get_attached_unit_root()
         except Exception:
@@ -2665,6 +2742,8 @@ class RulesParsingMixin:
                     sr = {}
                 if "ability_added_keywords" in sr:
                     del sr["ability_added_keywords"]
+                if "ability_removed_keywords" in sr:
+                    del sr["ability_removed_keywords"]
                 u.special_rules = sr
             except Exception:
                 continue
@@ -2673,6 +2752,7 @@ class RulesParsingMixin:
 
         for u in members:
             added: list[str] = []
+            removed: list[str] = []
             unit_added: list[str] = []
             for ab in u._iter_active_abilities():
                 try:
@@ -2694,14 +2774,17 @@ class RulesParsingMixin:
                 norm = re.sub(r"\s+", " ", norm).strip()
                 if re.fullmatch(r"(?:the )?" + re.escape(self._BEARER_SMOKE_KEYWORD_TOKENS), norm):
                     added.append("Smoke")
+                if re.search(r"\b" + re.escape(self._BEARER_LOSES_SMOKE_KEYWORD_TOKENS) + r"\b", norm):
+                    removed.append("Smoke")
                 if re.fullmatch(r"(?:the )?bearers unit has the grenades keyword", norm):
                     unit_added.append("Grenades")
                 if re.fullmatch(r"this unit has the grenades keyword", norm):
                     unit_added.append("Grenades")
-            if added:
+            if added or removed:
                 sr = getattr(u, "special_rules", None)
                 if not isinstance(sr, dict):
                     sr = {}
+            if added:
                 seen = set()
                 unique = []
                 for kw in added:
@@ -2713,6 +2796,19 @@ class RulesParsingMixin:
                     unique.append(k)
                 if unique:
                     sr["ability_added_keywords"] = unique
+            if removed:
+                seen = set()
+                unique = []
+                for kw in removed:
+                    k = str(kw).strip()
+                    lk = k.lower()
+                    if not k or lk in seen:
+                        continue
+                    seen.add(lk)
+                    unique.append(k)
+                if unique:
+                    sr["ability_removed_keywords"] = unique
+            if added or removed:
                 u.special_rules = sr
             if unit_added:
                 for kw in unit_added:

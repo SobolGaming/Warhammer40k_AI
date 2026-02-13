@@ -275,6 +275,11 @@ class Unit(
             self._refresh_targeted_stratagem_cp_discount_flags()
         except Exception:
             pass
+        # Parse stratagem-target CP refund abilities (roll D6; gain 1CP).
+        try:
+            self._refresh_targeted_stratagem_cp_refund_flags()
+        except Exception:
+            pass
         try:
             self._refresh_targeted_stratagem_cp_increase_flags()
         except Exception:
@@ -1932,6 +1937,7 @@ class Unit(
         re.IGNORECASE,
     )
     _BEARER_SMOKE_KEYWORD_TOKENS = "bearer has the smoke keyword"
+    _BEARER_LOSES_SMOKE_KEYWORD_TOKENS = "bearer loses the smoke keyword"
     _COMMAND_PHASE_BONUS_CP_RE = re.compile(
         r"(?:at\s+the\s+)?start\s+of\s+(?:each\s+of\s+)?your\s+command\s+phase[s]?\b.*?\bgain\s+(\d+)\s*(?:cp|command point(?:s)?)",
         re.IGNORECASE,
@@ -2114,6 +2120,23 @@ class Unit(
     )
     _TARGETED_STRATAGEM_CP_INCREASE_MAX_RE = re.compile(
         r"maximum\s+of\s+(?P<max>\d+)\s*cp",
+        re.IGNORECASE,
+    )
+    _TARGETED_STRATAGEM_CP_REFUND_RE = re.compile(
+        r"(?:the\s+bearer\s+loses\s+the\s+smoke\s+keyword\s+but\s+)?"
+        r"each\s+time\s+you\s+target\s+"
+        r"(?P<subject>this\s+unit|that\s+unit|the\s+bearer|the\s+bearers\s+unit|the\s+bearer\s+s\s+unit|"
+        r"this\s+models\s+unit|this\s+model\s+s\s+unit)\s+"
+        r"with\s+a\s+stratagem\s+roll\s+one\s+d6\s+on\s+a\s+(?P<roll>\d+)\s+"
+        r"(?:you\s+)?gain\s+(?P<cp>\d+)\s*cp",
+        re.IGNORECASE,
+    )
+    _TARGETED_STRATAGEM_CP_REFUND_SELECT_RE = re.compile(
+        r"each\s+time\s+you\s+select\s+"
+        r"(?P<subject>the\s+bearers\s+unit|the\s+bearer\s+s\s+unit|this\s+models\s+unit|this\s+model\s+s\s+unit|"
+        r"its\s+unit|that\s+unit|this\s+unit)\s+"
+        r"as\s+the\s+target\s+of\s+a\s+stratagem\s+roll\s+one\s+d6\s+on\s+a\s+(?P<roll>\d+)\s+"
+        r"(?:you\s+)?gain\s+(?P<cp>\d+)\s*cp",
         re.IGNORECASE,
     )
     _POST_SHOOT_BATTLESHOCK_RE = re.compile(

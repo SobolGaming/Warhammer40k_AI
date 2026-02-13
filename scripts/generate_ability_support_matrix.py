@@ -3145,6 +3145,7 @@ def _classify_ability_base(
     model_target_strength_support = _model_target_strength_hit_wound_support(description)
     model_self_strength_support = _model_self_strength_hit_wound_support(description)
     model_attack_roll_bonus_support = _model_attack_roll_bonus_support(description)
+    targeted_stratagem_refund_support = _targeted_stratagem_cp_refund_support(description)
     targeted_stratagem_discount_support = _targeted_stratagem_cp_discount_support(description)
     targeted_stratagem_increase_support = _targeted_stratagem_cp_increase_support(description)
     brutal_example_overwatch_support = _brutal_example_overwatch_support(description)
@@ -3433,6 +3434,8 @@ def _classify_ability_base(
         return model_self_strength_support
     if model_attack_roll_bonus_support:
         return model_attack_roll_bonus_support
+    if targeted_stratagem_refund_support:
+        return targeted_stratagem_refund_support
     if targeted_stratagem_discount_support:
         return targeted_stratagem_discount_support
     if targeted_stratagem_increase_support:
@@ -5348,6 +5351,42 @@ def _targeted_stratagem_cp_discount_support(description: str) -> Optional[Tuple[
         return (
             "Supported",
             "Once per battle round, when this unit is targeted with a Stratagem, you can reduce its CP cost by 1.",
+        )
+    return None
+
+
+def _targeted_stratagem_cp_refund_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+
+    direct_pattern = (
+        r"(?:the bearer loses the smoke keyword but )?each time you target "
+        r"(?:this unit|that unit|the bearer|the bearers unit|the bearer s unit|this models unit|this model s unit) "
+        r"with a stratagem roll one d6 on a (?P<roll>\d+) (?:you )?gain (?P<cp>\d+) ?cp"
+    )
+    select_pattern = (
+        r"each time you select "
+        r"(?:the bearers unit|the bearer s unit|this models unit|this model s unit|its unit|that unit|this unit) "
+        r"as the target of a stratagem roll one d6 on a (?P<roll>\d+) (?:you )?gain (?P<cp>\d+) ?cp"
+    )
+    smoke_loss = "bearer loses the smoke keyword" in norm
+    for pattern in (direct_pattern, select_pattern):
+        m = re.fullmatch(pattern, norm)
+        if not m:
+            continue
+        roll = m.group("roll") or "5"
+        cp = m.group("cp") or "1"
+        if smoke_loss:
+            return (
+                "Supported",
+                f"Bearer loses the SMOKE keyword; when targeted by a Stratagem, roll D6 and gain {cp} CP on {roll}+ (CP gain guardrail respected).",
+            )
+        return (
+            "Supported",
+            f"When targeted by a Stratagem, roll D6 and gain {cp} CP on {roll}+ (CP gain guardrail respected).",
         )
     return None
 
