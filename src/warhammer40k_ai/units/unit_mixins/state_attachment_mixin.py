@@ -1472,7 +1472,8 @@ class StateAttachmentMixin:
                 has_kill_team = bool(root.attached_unit_has_kill_team())
         except Exception:
             has_kill_team = False
-        if has_kill_team:
+        try:
+            # If this unit has attached leaders, include their models for capacity.
             try:
                 models = self.get_models_for_collision()
             except Exception:
@@ -1483,18 +1484,121 @@ class StateAttachmentMixin:
                     if not getattr(m, "is_alive", False):
                         continue
                 except Exception:
-                    pass
-                total += 2 if self._kill_team_model_uses_two_transport_slots(m) else 1
+                    continue
+                slot_cost = int(self.get_transport_slot_cost_for_model(m) or 1)
+                if has_kill_team and self._kill_team_model_uses_two_transport_slots(m):
+                    slot_cost = max(slot_cost, 2)
+                total += max(1, slot_cost)
             return int(total)
-        try:
-            # If this unit has attached leaders, include their models for capacity.
-            try:
-                models = self.get_models_for_collision()
-            except Exception:
-                models = self.models
-            return sum(1 for m in models if getattr(m, "is_alive", False))
         except Exception:
             return len(self.models)
+
+    def _embarking_slot_rule(self) -> str:
+        """
+        Return EMBARKING slot rule variant for this attached-unit root.
+
+        Supported variants:
+        - ``all_models``: each model counts as 2 slots while embarked.
+        - ``heavy_weapons_gunner``: Heavy Weapons Gunner models count as 2 slots while embarked.
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+
+        cache_key = "embarking_slot_rule"
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return str(cache.get(cache_key) or "")
+
+        rule = ""
+        iter_texts = getattr(root, "_iter_active_ability_texts", None)
+        normalize = getattr(root, "_normalize_rules_text", None)
+        if callable(iter_texts):
+            for raw_text in iter_texts():
+                text = str(raw_text or "")
+                if not text:
+                    continue
+                if callable(normalize):
+                    text = normalize(text)
+                low = text.lower().replace("\u2019", "'")
+                if "while embarked within a transport" not in low:
+                    continue
+                if "for the purposes of the firing deck ability" not in low:
+                    continue
+                if (
+                    "each model takes up the space of 2 models" in low
+                    and "each weapon equipped by these models is considered to be 2 models" in low
+                ):
+                    rule = "all_models"
+                    break
+                if (
+                    "each heavy weapons gunner model takes up the space of 2 models" in low
+                    and "each weapon equipped by these models is considered to be 2 models" in low
+                ):
+                    rule = "heavy_weapons_gunner"
+                    break
+
+        if not isinstance(cache, dict):
+            try:
+                root._ability_cache = {}
+                cache = root._ability_cache
+            except Exception:
+                cache = None
+        if isinstance(cache, dict):
+            cache[cache_key] = str(rule or "")
+        return str(rule or "")
+
+    def _is_heavy_weapons_gunner_model(self, model: Optional[Model]) -> bool:
+        if model is None:
+            return False
+        name = _normalize_unit_name_for_rules(getattr(model, "name", "") or "")
+        return "heavy weapons gunner" in name
+
+    def get_transport_slot_cost_for_model(self, model: Optional[Model]) -> int:
+        """Return per-model embark slot cost for this unit (default 1)."""
+        if model is None:
+            return 1
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is not self:
+            return int(root.get_transport_slot_cost_for_model(model) or 1)
+
+        rule = self._embarking_slot_rule()
+        if rule == "all_models":
+            return 2
+        if rule == "heavy_weapons_gunner" and self._is_heavy_weapons_gunner_model(model):
+            return 2
+        return 1
+
+    def get_firing_deck_weapon_slots_for_model(self, model: Optional[Model]) -> int:
+        """
+        Return how many Firing Deck 'model weapons' this model consumes.
+
+        For EMBARKING variants, this matches transport slot weighting.
+        """
+        return int(self.get_transport_slot_cost_for_model(model) or 1)
+
+    def get_firing_deck_selection_cost(self, model: Optional[Model]) -> int:
+        """Resolve Firing Deck selection cost for an embarked model from its parent unit context."""
+        if model is None:
+            return 1
+        source_unit = getattr(model, "parent_unit", None)
+        if source_unit is None:
+            return 1
+        try:
+            source_root = source_unit.get_attached_unit_root()
+        except Exception:
+            source_root = source_unit
+        getter = getattr(source_root, "get_firing_deck_weapon_slots_for_model", None)
+        if not callable(getter):
+            return 1
+        try:
+            return max(1, int(getter(model) or 1))
+        except Exception:
+            return 1
 
     def _kill_team_model_uses_two_transport_slots(self, model: Model) -> bool:
         name = str(getattr(model, "name", "") or "").lower()

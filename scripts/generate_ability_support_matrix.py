@@ -3046,6 +3046,7 @@ def _classify_ability_base(
     attached_battleline_infiltrators_support = _attached_battleline_infiltrators_scouts_support(description)
     transport_support = _transport_disembark_support(description)
     transport_reactive_disembark_support = _transport_reactive_disembark_support(description)
+    embarking_firing_deck_weight_support = _embarking_firing_deck_weight_support(description)
     end_of_fight_embark_support = _end_of_fight_embark_support(description)
     enemy_move_reactive_d6_support = _enemy_move_reactive_d6_support(description)
     horde_move_support = _horde_move_support(description)
@@ -3266,6 +3267,8 @@ def _classify_ability_base(
         return transport_support
     if transport_reactive_disembark_support:
         return transport_reactive_disembark_support
+    if embarking_firing_deck_weight_support:
+        return embarking_firing_deck_weight_support
     if enemy_move_reactive_d6_support:
         return enemy_move_reactive_d6_support
     if horde_move_support:
@@ -5920,6 +5923,33 @@ def _transport_reactive_disembark_support(description: str) -> Optional[Tuple[st
         return None
     rng = m.group("range")
     return ("Supported", f"Enemy unit set up/move within {rng}\": disembark embarked units.")
+
+
+def _embarking_firing_deck_weight_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    all_models_pattern = (
+        r"while embarked within a transport each model takes up the space of 2 models "
+        r"and each weapon equipped by these models is considered to be 2 models weapons for the purposes of the firing deck ability"
+    )
+    heavy_weapons_gunner_pattern = (
+        r"while embarked within a transport each heavy weapons gunner model takes up the space of 2 models "
+        r"and each weapon equipped by these models is considered to be 2 models weapons for the purposes of the firing deck ability"
+    )
+    if re.fullmatch(all_models_pattern, norm):
+        return (
+            "Supported",
+            "While embarked, each model counts as 2 transport slots and each selected weapon counts as 2 for Firing Deck limits.",
+        )
+    if re.fullmatch(heavy_weapons_gunner_pattern, norm):
+        return (
+            "Supported",
+            "While embarked, each Heavy Weapons Gunner model counts as 2 transport slots and each selected Heavy Weapons Gunner weapon counts as 2 for Firing Deck limits.",
+        )
+    return None
 
 
 def _enemy_move_reactive_d6_support(description: str) -> Optional[Tuple[str, str]]:

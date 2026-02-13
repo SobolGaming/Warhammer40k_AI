@@ -12,7 +12,7 @@ class FiringDeckDialog(BaseDialog):
 
     - Lists non-ONE SHOT ranged weapons carried by embarked models.
     - To save space, shows at most X entries per (wargear name, profile name) across embarked models.
-    - Enforces: at most X total selections AND at most 1 selected weapon per embarked model.
+    - Enforces: weighted cap up to X total model-weapon slots AND at most 1 selected weapon per embarked model.
     """
 
     def __init__(self, screen_width: int, screen_height: int):
@@ -109,6 +109,20 @@ class FiringDeckDialog(BaseDialog):
                     mids.add(m.id)
         return mids
 
+    @staticmethod
+    def _entry_cost(entry: Dict) -> int:
+        try:
+            return max(1, int(entry.get("selection_cost", 1) or 1))
+        except Exception:
+            return 1
+
+    def _selected_slots(self) -> int:
+        total = 0
+        for idx in self.selected_indices:
+            if 0 <= idx < len(self.entries):
+                total += self._entry_cost(self.entries[idx])
+        return int(total)
+
     def _handle_button_click(self, button_name: str) -> bool:
         if button_name == "cancel":
             if self.on_cancel:
@@ -117,9 +131,13 @@ class FiringDeckDialog(BaseDialog):
             return True
 
         if button_name == "confirm":
+            payload = self._build_selected_payload()
             option_id = self._option_id_for_action("confirm")
-            if option_id and self.on_confirm:
-                self.on_confirm(option_id, {"selected_entries": self._build_selected_payload()})
+            if self.on_confirm:
+                if option_id:
+                    self.on_confirm(option_id, {"selected_entries": payload})
+                else:
+                    self.on_confirm(payload)
             self.hide()
             return True
 
@@ -136,13 +154,14 @@ class FiringDeckDialog(BaseDialog):
                 self.selected_indices.remove(idx)
                 return True
 
-            # Enforce total cap
-            if len(self.selected_indices) >= int(self.firing_deck_x or 0):
-                logger.info(f"INFO: Firing Deck: you can select at most {self.firing_deck_x} embarked models.")
+            # Enforce weighted total cap
+            entry = self.entries[idx]
+            new_total = self._selected_slots() + self._entry_cost(entry)
+            if new_total > int(self.firing_deck_x or 0):
+                logger.info(f"INFO: Firing Deck: selection exceeds the {self.firing_deck_x} model-weapon limit.")
                 return True
 
             # Enforce: one weapon per embarked model
-            entry = self.entries[idx]
             m = entry.get("model")
             if m is not None and m.id in self._selected_model_ids():
                 logger.error("ERROR: Firing Deck: that embarked model is already selected (one weapon per model).")
@@ -178,6 +197,7 @@ class FiringDeckDialog(BaseDialog):
                     "model_id": get_entity_id(model),
                     "wargear_id": get_entity_id(wargear),
                     "profile_name": str(profile_name),
+                    "selection_cost": self._entry_cost(entry),
                 }
             )
         return entries_payload
@@ -188,16 +208,16 @@ class FiringDeckDialog(BaseDialog):
 
         self.draw_dialog_background(screen)
         tname = getattr(self.transport_unit, "name", "Transport")
-        subtitle = f"Select up to {self.firing_deck_x} embarked models' weapons"
+        subtitle = f"Select up to {self.firing_deck_x} embarked model-weapon slots"
         self.draw_title_bar(screen, f"Firing Deck - {tname}", subtitle=subtitle)
 
         # Instructions
-        inst = "Pick up to X non-ONE SHOT ranged weapons from embarked models (max 1 per model)."
+        inst = "Pick non-ONE SHOT ranged weapons (max 1 per model), up to X weighted slots."
         inst_surface = self.font_small.render(inst, True, TEXT_SECONDARY)
         screen.blit(inst_surface, (self.x + 20, self.y + self.title_bar_height + 10))
 
         # Counter
-        counter = f"Selected: {len(self.selected_indices)}/{self.firing_deck_x}"
+        counter = f"Selected slots: {self._selected_slots()}/{self.firing_deck_x}"
         counter_surface = self.font_small.render(counter, True, TEXT_PRIMARY)
         screen.blit(counter_surface, (self.x + 20, self.y + self.title_bar_height + 34))
 
@@ -220,9 +240,10 @@ class FiringDeckDialog(BaseDialog):
             profile_name = e.get("profile_name") or getattr(profile, "name", "default")
             wname = getattr(wargear, "name", "Weapon")
             mname = getattr(model, "name", "Model")
+            cost = self._entry_cost(e)
 
             line1 = f"{wname} ({profile_name})"
-            line2 = f"From: {mname}"
+            line2 = f"From: {mname} | Cost: {cost}"
 
             # Button background
             self.draw_button(screen, btn_name, "", color=BUTTON_BG)
@@ -241,5 +262,4 @@ class FiringDeckDialog(BaseDialog):
 
         self.draw_button(screen, "confirm", "Confirm")
         self.draw_button(screen, "cancel", "Cancel")
-
 

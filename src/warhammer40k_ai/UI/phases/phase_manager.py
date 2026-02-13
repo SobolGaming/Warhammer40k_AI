@@ -2528,12 +2528,18 @@ class BattlePhaseHandler(BasePhaseHandler):
                             if c >= int(fd_x or 0):
                                 continue
                             per_weapon_count[key] = c + 1
+                            selection_cost = 1
+                            try:
+                                selection_cost = max(1, int(unit.get_firing_deck_selection_cost(m) or 1))
+                            except Exception:
+                                selection_cost = 1
                             entries.append({
                                 "model": m,
                                 "wargear": w,
                                 "profile": profile,
                                 "profile_name": profile_name,
                                 "passenger_unit": punit,
+                                "selection_cost": selection_cost,
                             })
 
             if entries:

@@ -335,12 +335,29 @@ def _validate_firing_deck(game: object, request: DecisionRequest, result: Decisi
     errors = list(validate_option_choice(request, result))
     if errors:
         return errors
+    opt = find_option(request, result.option_id)
+    opt_payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
+    transport_id = str(opt_payload.get("transport_id", "") or request.context.get("transport_id", "") or "")
+    if not transport_id:
+        return ("Firing deck requires transport_id.",)
+    transport = get_unit(game, transport_id)
+    if transport is None:
+        return ("Firing deck transport not found.",)
+    try:
+        has_fd, fd_x = transport.has_firing_deck()
+    except Exception:
+        has_fd, fd_x = (False, 0)
+    if not has_fd or int(fd_x or 0) <= 0:
+        return ("Firing deck transport is missing Firing Deck X.",)
+
     payload = dict(result.payload or {})
     selections = payload.get("selected_entries")
     if selections is None:
         return ("Firing deck requires selected_entries.",)
     if not isinstance(selections, list):
         return ("selected_entries must be a list.",)
+    selected_model_ids: set[str] = set()
+    total_slots = 0
     for entry in selections:
         if not isinstance(entry, dict):
             return ("selected_entries must contain dicts.",)
@@ -349,10 +366,38 @@ def _validate_firing_deck(game: object, request: DecisionRequest, result: Decisi
         model_id = str(entry.get("model_id", "") or "")
         if not wargear_id or not profile_name or not model_id:
             return ("Firing deck entry missing wargear_id/profile_name/model_id.",)
-        if get_wargear(game, wargear_id) is None:
+        wargear = get_wargear(game, wargear_id)
+        if wargear is None:
             return ("Firing deck wargear not found.",)
-        if get_model(game, model_id) is None:
+        model = get_model(game, model_id)
+        if model is None:
             return ("Firing deck model not found.",)
+        if profile_name not in (getattr(wargear, "profiles", {}) or {}):
+            return ("Firing deck profile not found on wargear.",)
+        if model_id in selected_model_ids:
+            return ("Firing deck can select at most one weapon per embarked model.",)
+        selected_model_ids.add(model_id)
+        source_unit = getattr(model, "parent_unit", None)
+        if source_unit is None:
+            return ("Firing deck model has no source unit.",)
+        try:
+            source_root = source_unit.get_attached_unit_root()
+        except Exception:
+            source_root = source_unit
+        if (
+            source_root is None
+            or (
+                getattr(source_root, "embarked_in", None) is not transport
+                and source_root not in list(getattr(transport, "transport_passengers", []) or [])
+            )
+        ):
+            return ("Firing deck model is not embarked in this transport.",)
+        try:
+            total_slots += max(1, int(transport.get_firing_deck_selection_cost(model) or 1))
+        except Exception:
+            total_slots += 1
+    if total_slots > int(fd_x or 0):
+        return (f"Firing deck selections exceed Firing Deck {int(fd_x or 0)}.",)
     return ()
 
 
