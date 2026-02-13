@@ -1223,13 +1223,13 @@ class Army:
                 )
 
     def validate_support_artillery(self):
-        """Validate Support Artillery joins (Guardian Defenders only, max 1 support per unit)."""
+        """Validate joined-support attachments (Support Artillery + retinue-style joins)."""
         bodyguard_map: dict = {}
         for unit in list(self.units or []):
             if unit is None:
                 continue
             try:
-                if not bool(getattr(unit, "has_support_artillery_ability", lambda: False)()):
+                if not bool(getattr(unit, "has_joined_support_ability", lambda: False)()):
                     continue
             except Exception:
                 continue
@@ -1237,17 +1237,17 @@ class Army:
             if joined_to is None:
                 continue
             if joined_to not in self.units:
-                raise ArmyValidationError(f"Support artillery '{unit.name}' is joined to an invalid unit.")
+                raise ArmyValidationError(f"Joined support unit '{unit.name}' is joined to an invalid unit.")
             try:
                 if hasattr(unit, "can_join_support_artillery") and not unit.can_join_support_artillery(joined_to):
                     raise ArmyValidationError(
-                        f"Support artillery '{unit.name}' cannot join '{joined_to.name}'."
+                        f"Joined support unit '{unit.name}' cannot join '{joined_to.name}'."
                     )
             except ArmyValidationError:
                 raise
             except Exception:
                 raise ArmyValidationError(
-                    f"Support artillery '{unit.name}' join validation failed for '{joined_to.name}'."
+                    f"Joined support unit '{unit.name}' join validation failed for '{joined_to.name}'."
                 )
             bodyguard_map.setdefault(joined_to, []).append(unit)
 
@@ -1255,7 +1255,7 @@ class Army:
             if len(supports) > 1:
                 names = ", ".join(s.name for s in supports if s)
                 raise ArmyValidationError(
-                    f"Unit '{bodyguard.name}' has multiple Support Weapons joined ({names})."
+                    f"Unit '{bodyguard.name}' has multiple joined support units ({names})."
                 )
 
     def validate_enhancements(self):

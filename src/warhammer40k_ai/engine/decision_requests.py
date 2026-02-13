@@ -260,13 +260,24 @@ def build_support_artillery_attachment_requests(
     all_units = _iter_units(units)
     supports = [
         u for u in all_units
-        if bool(getattr(u, "has_support_artillery_ability", lambda: False)())
+        if bool(getattr(u, "has_joined_support_ability", lambda: False)())
     ]
-    bodyguards = [u for u in all_units if bool(getattr(u, "is_guardian_defenders_unit", lambda: False)())]
+    bodyguards = [
+        u for u in all_units
+        if not bool(getattr(u, "is_leader", False))
+        and not bool(getattr(u, "is_joined_support", False))
+    ]
     requests: List[DecisionRequest] = []
     for support_unit in supports:
         options = _support_artillery_attachment_options(support_unit, bodyguards)
-        prompt = f"Attach support weapon {getattr(support_unit, 'name', 'Support Weapon')}"
+        current = getattr(support_unit, "support_joined_to", None)
+        has_target_options = any(
+            opt.payload.get("bodyguard_id") is not None
+            for opt in list(options or [])
+        )
+        if current is None and not has_target_options:
+            continue
+        prompt = f"Attach joined support unit {getattr(support_unit, 'name', 'Support Unit')}"
         request = DecisionRequest.create(
             DECISION_ATTACH_SUPPORT_ARTILLERY,
             prompt,

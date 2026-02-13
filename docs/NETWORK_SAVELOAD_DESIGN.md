@@ -160,7 +160,7 @@ Setup / Mission:
 
 Deployment / Pre-battle:
 - leader_attachment_dialog: ATTACH_LEADER {leader_unit_id, bodyguard_unit_id}
-- support_artillery_attachment_dialog: ATTACH_SUPPORT_ARTILLERY {support_unit_id, bodyguard_unit_id}
+- support_artillery_attachment_dialog: ATTACH_SUPPORT_ARTILLERY {support_unit_id, bodyguard_unit_id} (used for joined support/retinue attachments)
 - reserves_allocation_dialog: DECLARE_RESERVES {unit_ids_by_bucket}
 - transport_assignment_dialog: ASSIGN_TRANSPORT {unit_id, transport_id}
 - shadow_assignment_dialog (quarry_selection_dialog): SHADOW_ASSIGNMENT {unit_id, replacement_datasheet_id | skip} (context `ability="shadow_assignment"`)

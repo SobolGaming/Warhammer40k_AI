@@ -1993,6 +1993,66 @@ class StateAttachmentMixin:
             pass
         return False
 
+    def has_cryptek_retinue_ability(self) -> bool:
+        """True if this unit has the Necron CRYPTEK RETINUE join rule."""
+        try:
+            for ab in getattr(self, "possible_abilities", []) or []:
+                name = str(getattr(ab, "name", "") or "").strip().lower()
+                if name == "cryptek retinue":
+                    return True
+                desc = str(getattr(ab, "description", "") or "").lower()
+                if (
+                    "declare battle formations" in desc
+                    and "being led by a cryptek infantry model" in desc
+                    and "cryptothralls" in desc
+                ):
+                    return True
+        except Exception:
+            pass
+        return False
+
+    def has_canoptek_retinue_ability(self) -> bool:
+        """True if this unit has the Necron CANOPTEK RETINUE join rule."""
+        try:
+            for ab in getattr(self, "possible_abilities", []) or []:
+                name = str(getattr(ab, "name", "") or "").strip().lower()
+                if name == "canoptek retinue":
+                    return True
+                desc = str(getattr(ab, "description", "") or "").lower()
+                if (
+                    "declare battle formations" in desc
+                    and "being led by a cryptek model" in desc
+                    and "tomb crawlers" in desc
+                ):
+                    return True
+        except Exception:
+            pass
+        return False
+
+    def has_joined_support_ability(self) -> bool:
+        """True if this unit can join another unit via joined-support style rules."""
+        return bool(
+            self.has_support_artillery_ability()
+            or self.has_cryptek_retinue_ability()
+            or self.has_canoptek_retinue_ability()
+        )
+
+    def _joined_support_rule_kind(self) -> str:
+        """
+        Return joined-support rule discriminator:
+        - support_artillery
+        - cryptek_retinue
+        - canoptek_retinue
+        - "" (no joined-support rule)
+        """
+        if self.has_support_artillery_ability():
+            return "support_artillery"
+        if self.has_cryptek_retinue_ability():
+            return "cryptek_retinue"
+        if self.has_canoptek_retinue_ability():
+            return "canoptek_retinue"
+        return ""
+
     def has_support_weapon_ability(self) -> bool:
         """True if this unit has the Support Weapon toughness override rule."""
         try:
@@ -2339,11 +2399,36 @@ class StateAttachmentMixin:
         except Exception:
             return False
 
+    def _unit_has_local_keyword(self, unit: "Unit", keyword: str) -> bool:
+        if unit is None:
+            return False
+        try:
+            has_local = getattr(unit, "has_any_keyword_local", None)
+            if callable(has_local):
+                return bool(has_local(keyword))
+        except Exception:
+            return False
+        return False
+
+    def _bodyguard_is_led_by_keywords(self, bodyguard: "Unit", required_keywords: tuple[str, ...]) -> bool:
+        if bodyguard is None:
+            return False
+        leaders = list(getattr(bodyguard, "attached_leaders", []) or [])
+        if not leaders:
+            return False
+        for leader in leaders:
+            if leader is None:
+                continue
+            if all(self._unit_has_local_keyword(leader, kw) for kw in required_keywords):
+                return True
+        return False
+
     def can_join_support_artillery(self, bodyguard: "Unit") -> bool:
-        """Validate Support Artillery join eligibility."""
+        """Validate joined-support eligibility (Support Artillery / Necron Retinues)."""
         if bodyguard is None or bodyguard is self:
             return False
-        if not self.has_support_artillery_ability():
+        rule_kind = self._joined_support_rule_kind()
+        if not rule_kind:
             return False
         # Same army
         try:
@@ -2353,16 +2438,28 @@ class StateAttachmentMixin:
                 return False
         except Exception:
             return False
-        # Only Guardian Defenders can be joined
-        if not bodyguard.is_guardian_defenders_unit():
-            return False
         # Don't allow joining a leader unit
         try:
             if bool(getattr(bodyguard, "is_leader", False)):
                 return False
         except Exception:
             pass
-        # One support weapon per unit
+        if rule_kind == "support_artillery":
+            # Only Guardian Defenders can be joined by Support Artillery.
+            if not bodyguard.is_guardian_defenders_unit():
+                return False
+        elif rule_kind == "cryptek_retinue":
+            # CRYPTEK RETINUE: target must be led by a Cryptek Infantry model.
+            if not self._bodyguard_is_led_by_keywords(bodyguard, ("Cryptek", "Infantry")):
+                return False
+        elif rule_kind == "canoptek_retinue":
+            # CANOPTEK RETINUE: target must be led by a Cryptek model.
+            if not self._bodyguard_is_led_by_keywords(bodyguard, ("Cryptek",)):
+                return False
+        else:
+            return False
+
+        # Keep one joined support unit per bodyguard in engine state.
         try:
             supports = list(getattr(bodyguard, "attached_support_units", []) or [])
         except Exception:
@@ -2372,9 +2469,9 @@ class StateAttachmentMixin:
         return True
 
     def attach_support_artillery_to(self, bodyguard: "Unit") -> None:
-        """Join this Support Weapon model to a Guardian Defenders unit."""
+        """Join this unit to a bodyguard via joined-support rules."""
         if not self.can_join_support_artillery(bodyguard):
-            raise ValueError(f"Support artillery '{self.name}' cannot join '{getattr(bodyguard, 'name', 'Unknown')}'.")
+            raise ValueError(f"Joined support unit '{self.name}' cannot join '{getattr(bodyguard, 'name', 'Unknown')}'.")
         # Detach from any prior bodyguard first
         current = getattr(self, "support_joined_to", None)
         if current is not None and current is not bodyguard:
@@ -2399,7 +2496,7 @@ class StateAttachmentMixin:
             pass
 
     def detach_support_artillery(self) -> None:
-        """Detach this Support Weapon model from its joined unit (if any)."""
+        """Detach this joined-support unit from its bodyguard (if any)."""
         bodyguard = getattr(self, "support_joined_to", None)
         if bodyguard is None:
             return

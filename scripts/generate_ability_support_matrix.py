@@ -2581,6 +2581,14 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("LOV", "Teleport Crest"): ("Supported", "Models in the bearer's unit gain Deep Strike; leading-gated variants require the bearer to be leading."),
         ("LOV", "Unhinged Vengeance"): ("Supported", "Opponent Shooting phase reaction: if model lost wounds after enemy shooting, optional D6+2 reactive move toward closest non-AIRCRAFT enemy (can end in Engagement Range), once per phase."),
         ("NEC", "Adaptive Strategy"): ("Supported", "Shoot and charge after Falling Back."),
+        ("NEC", "CRYPTEK RETINUE"): (
+            "Supported",
+            "Declare Battle Formations: this unit can join one bodyguard led by a CRYPTEK INFANTRY Leader; joined-support attachment updates attached-unit membership and Starting Strength aggregation.",
+        ),
+        ("NEC", "CANOPTEK RETINUE"): (
+            "Supported",
+            "Declare Battle Formations: this unit can join one bodyguard led by a CRYPTEK Leader; joined-support attachment updates attached-unit membership and Starting Strength aggregation.",
+        ),
         ("NEC", "Ghostwalk Mantle"): ("Supported", "Leading: unit gains Fights First."),
         ("NEC", "Illuminor"): ("Supported", "Conditional Lone Operative within 3\" of friendly NECRONS units."),
         ("NEC", "Protective Disciples"): ("Supported", "Conditional Lone Operative within 3\" of friendly DESTROYER CULT units."),

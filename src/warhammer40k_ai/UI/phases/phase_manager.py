@@ -825,8 +825,8 @@ class SetupPhaseHandler(BasePhaseHandler):
 
                 left_support = LeaderAttachmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
                 right_support = LeaderAttachmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
-                left_support.title = f"Attach Support Weapons - {p_left.name}"
-                right_support.title = f"Attach Support Weapons - {p_right.name}"
+                left_support.title = f"Attach Joined Support Units - {p_left.name}"
+                right_support.title = f"Attach Joined Support Units - {p_right.name}"
 
                 modal = SideBySideModal(self.game_view.screen.get_width(), self.game_view.screen.get_height(), left_support, right_support)
                 _position_two(left_support, right_support)
@@ -855,7 +855,7 @@ class SetupPhaseHandler(BasePhaseHandler):
                     try:
                         a_left.validate_support_artillery()
                     except Exception as e:
-                        logger.exception(f"  {p_left.name} support artillery validation failed: {e}")
+                        logger.exception(f"  {p_left.name} joined support validation failed: {e}")
                         return
                     _mark_attached_leaders_handled(a_left)
                     modal.left_done = True
@@ -876,7 +876,7 @@ class SetupPhaseHandler(BasePhaseHandler):
                     try:
                         a_right.validate_support_artillery()
                     except Exception as e:
-                        logger.exception(f"  {p_right.name} support artillery validation failed: {e}")
+                        logger.exception(f"  {p_right.name} joined support validation failed: {e}")
                         return
                     _mark_attached_leaders_handled(a_right)
                     modal.right_done = True
@@ -906,34 +906,38 @@ class SetupPhaseHandler(BasePhaseHandler):
                     return
 
                 def _support_units(units):
-                    return [u for u in units if bool(getattr(u, "has_support_artillery_ability", lambda: False)())]
+                    return [u for u in units if bool(getattr(u, "has_joined_support_ability", lambda: False)())]
 
-                def _guardian_units(units):
-                    return [u for u in units if bool(getattr(u, "is_guardian_defenders_unit", lambda: False)())]
+                def _bodyguard_units(units):
+                    return [
+                        u for u in units
+                        if not bool(getattr(u, "is_leader", False))
+                        and not bool(getattr(u, "is_joined_support", False))
+                    ]
 
                 left_support.show(
                     l_units,
                     leaders=_support_units(l_units),
-                    bodyguards=_guardian_units(l_units),
+                    bodyguards=_bodyguard_units(l_units),
                     leader_requests=l_requests,
                     on_confirm=_left_done,
                     on_cancel=lambda: None,
-                    title=f"Attach Support Weapons - {p_left.name}",
-                    subtitle="Select a Support Weapon, then choose a Guardian Defenders unit (or Unattached).",
-                    left_label="Support Weapons",
-                    right_label="Guardian Defenders Units",
+                    title=f"Attach Joined Support Units - {p_left.name}",
+                    subtitle="Select a support/retinue unit, then choose an eligible bodyguard unit (or Unattached).",
+                    left_label="Support/Retinue Units",
+                    right_label="Bodyguard Units",
                 )
                 right_support.show(
                     r_units,
                     leaders=_support_units(r_units),
-                    bodyguards=_guardian_units(r_units),
+                    bodyguards=_bodyguard_units(r_units),
                     leader_requests=r_requests,
                     on_confirm=_right_done,
                     on_cancel=lambda: None,
-                    title=f"Attach Support Weapons - {p_right.name}",
-                    subtitle="Select a Support Weapon, then choose a Guardian Defenders unit (or Unattached).",
-                    left_label="Support Weapons",
-                    right_label="Guardian Defenders Units",
+                    title=f"Attach Joined Support Units - {p_right.name}",
+                    subtitle="Select a support/retinue unit, then choose an eligible bodyguard unit (or Unattached).",
+                    left_label="Support/Retinue Units",
+                    right_label="Bodyguard Units",
                 )
 
                 modal.show()
@@ -1529,7 +1533,7 @@ class SetupPhaseHandler(BasePhaseHandler):
             support_ids = {
                 get_entity_id(u)
                 for u in units
-                if bool(getattr(u, "has_support_artillery_ability", lambda: False)())
+                if bool(getattr(u, "has_joined_support_ability", lambda: False)())
             }
             pending = _pending_requests(
                 DECISION_ATTACH_SUPPORT_ARTILLERY,
@@ -1561,7 +1565,7 @@ class SetupPhaseHandler(BasePhaseHandler):
                 try:
                     army.validate_support_artillery()
                 except Exception as e:
-                    logger.exception(f"  {player.name} support artillery validation failed: {e}")
+                    logger.exception(f"  {player.name} joined support validation failed: {e}")
                     return
                 try:
                     self.game_view.refresh_roster_panes()
@@ -1569,19 +1573,23 @@ class SetupPhaseHandler(BasePhaseHandler):
                     pass
                 _show_transports()
 
-            support_units = [u for u in units if bool(getattr(u, "has_support_artillery_ability", lambda: False)())]
-            guardian_units = [u for u in units if bool(getattr(u, "is_guardian_defenders_unit", lambda: False)())]
+            support_units = [u for u in units if bool(getattr(u, "has_joined_support_ability", lambda: False)())]
+            bodyguard_units = [
+                u for u in units
+                if not bool(getattr(u, "is_leader", False))
+                and not bool(getattr(u, "is_joined_support", False))
+            ]
             dlg.show(
                 units,
                 leaders=support_units,
-                bodyguards=guardian_units,
+                bodyguards=bodyguard_units,
                 leader_requests=pending,
                 on_confirm=_on_done,
                 on_cancel=lambda: None,
-                title=f"Attach Support Weapons - {player.name}",
-                subtitle="Select a Support Weapon, then choose a Guardian Defenders unit (or Unattached).",
-                left_label="Support Weapons",
-                right_label="Guardian Defenders Units",
+                title=f"Attach Joined Support Units - {player.name}",
+                subtitle="Select a support/retinue unit, then choose an eligible bodyguard unit (or Unattached).",
+                left_label="Support/Retinue Units",
+                right_label="Bodyguard Units",
             )
             dlg.visible = True
             try:

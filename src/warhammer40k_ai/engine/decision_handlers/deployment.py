@@ -93,19 +93,19 @@ def _validate_attach_support_artillery(game: object, request: DecisionRequest, r
         return ("Support artillery attachment requires support_unit_id.",)
     support = _get_unit(game, support_id)
     if support is None:
-        return ("Support artillery unit not found.",)
-    if not bool(getattr(support, "has_support_artillery_ability", lambda: False)()):
-        return ("Selected unit does not have Support Artillery.",)
+        return ("Joined support unit not found.",)
+    if not bool(getattr(support, "has_joined_support_ability", lambda: False)()):
+        return ("Selected unit does not have a joined-support attachment ability.",)
     if bodyguard_id is None:
         return ()
     bodyguard = _get_unit(game, str(bodyguard_id or ""))
     if bodyguard is None:
-        return ("Guardian Defenders unit not found.",)
+        return ("Bodyguard unit not found.",)
     try:
         if not support.can_join_support_artillery(bodyguard):
-            return ("Support artillery cannot join the selected unit.",)
+            return ("Joined support unit cannot join the selected unit.",)
     except Exception:
-        return ("Support artillery attachment validation failed.",)
+        return ("Joined-support attachment validation failed.",)
     return ()
 
 
@@ -115,13 +115,13 @@ def _apply_attach_support_artillery(game: object, request: DecisionRequest, resu
     support = _get_unit(game, str(payload.get("support_unit_id", "") or ""))
     bodyguard_id = payload.get("bodyguard_id")
     if support is None:
-        raise RuntimeError("Support artillery unit missing for attachment.")
+        raise RuntimeError("Joined support unit missing for attachment.")
     if bodyguard_id is None:
         support.detach_support_artillery()
         return None
     bodyguard = _get_unit(game, str(bodyguard_id or ""))
     if bodyguard is None:
-        raise RuntimeError("Bodyguard unit missing for support attachment.")
+        raise RuntimeError("Bodyguard unit missing for joined-support attachment.")
     support.attach_support_artillery_to(bodyguard)
     return None
 
