@@ -2070,6 +2070,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("AOI", "Backroom Deals"): ("Partial", "Infiltrators applied without formation selection/leading restriction."),
         ("AOI", "Frenzon"): ("Supported", "Shoot and charge after Advancing."),
         ("AOI", "Psychic Hood"): ("Supported", "Feel No Pain 4+ against Psychic attacks."),
+        ("AOI", "SHADOW ASSIGNMENT"): (
+            "Supported",
+            "During Declare Battle Formations, eligible OFFICIO ASSASSINORUM models can be replaced via SHADOW_ASSIGNMENT decisions with points cap and duplicate-assassin validation.",
+        ),
         ("AOI", "Rites of Teleportation"): ("Partial", "Deep Strike granted without Inquisitor attachment restriction."),
         ("AOI", "Unsubtle Crusader"): ("Partial", "Scouts 6\" applied without formation selection/target-unit restriction."),
         ("AE", "ASPECT TRAINING"): (

@@ -8,9 +8,18 @@ from ..decision_kinds import (
     DECISION_ATTACH_SUPPORT_ARTILLERY,
     DECISION_DECLARE_RESERVES,
     DECISION_ASSIGN_TRANSPORT,
+    DECISION_SHADOW_ASSIGNMENT,
     DECISION_SCOUT_MOVE,
 )
 from ..decisions import DecisionOption, DecisionRequest, DecisionResult
+from ...rules.imperial_agents_shadow_assignment import (
+    army_supports_shadow_assignment,
+    build_shadow_assignment_unit,
+    get_shadow_assignment_candidate,
+    shadow_assignment_candidates_for_unit,
+    unit_has_shadow_assignment,
+)
+from ...utility.entity_ids import get_entity_id
 
 
 def _find_option(request: DecisionRequest, option_id: str) -> DecisionOption | None:
@@ -227,6 +236,150 @@ def _apply_assign_transport(game: object, request: DecisionRequest, result: Deci
     return None
 
 
+def _shadow_assignment_payload(request: DecisionRequest, result: DecisionResult) -> dict:
+    opt = _find_option(request, result.option_id)
+    payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
+    if not payload:
+        payload = dict(getattr(result, "payload", {}) or {})
+    return payload
+
+
+def _shadow_assignment_source_unit(game: object, request: DecisionRequest, payload: dict):
+    unit_id = str(payload.get("unit_id", "") or request.context.get("unit_id", "") or "")
+    if not unit_id:
+        return None
+    return _get_unit(game, unit_id)
+
+
+def _replace_id_value(value: object, *, old_id: str, new_id: str):
+    if isinstance(value, str):
+        return new_id if value == old_id else value
+    if isinstance(value, list):
+        return [_replace_id_value(v, old_id=old_id, new_id=new_id) for v in value]
+    if isinstance(value, tuple):
+        return tuple(_replace_id_value(v, old_id=old_id, new_id=new_id) for v in value)
+    if isinstance(value, dict):
+        return {k: _replace_id_value(v, old_id=old_id, new_id=new_id) for k, v in value.items()}
+    return value
+
+
+def _rewrite_pending_request_unit_ids(game: object, *, old_id: str, new_id: str) -> None:
+    if not old_id or not new_id or old_id == new_id:
+        return
+    queue = getattr(game, "decision_queue", None)
+    if queue is None or not hasattr(queue, "list"):
+        return
+    for req in list(queue.list() or []):
+        req.context = _replace_id_value(dict(getattr(req, "context", {}) or {}), old_id=old_id, new_id=new_id)
+        for opt in list(getattr(req, "options", []) or []):
+            opt.payload = _replace_id_value(dict(getattr(opt, "payload", {}) or {}), old_id=old_id, new_id=new_id)
+        if hasattr(req, "candidates"):
+            req.candidates = []
+            req.mask = []
+            req.mask_reasons = []
+            req.finalize_candidates()
+
+
+def _validate_shadow_assignment(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(_validate_choice_from_options(request, result))
+    if errors:
+        return errors
+
+    payload = _shadow_assignment_payload(request, result)
+    source_unit = _shadow_assignment_source_unit(game, request, payload)
+    if source_unit is None:
+        return ("Shadow Assignment source unit not found.",)
+    if not unit_has_shadow_assignment(source_unit):
+        return ("Selected unit does not have Shadow Assignment.",)
+
+    army = getattr(source_unit, "get_parent_army", lambda: None)()
+    if army is None:
+        return ("Shadow Assignment source unit has no parent army.",)
+    if not army_supports_shadow_assignment(army):
+        return ("Shadow Assignment requires an Imperial Agents army.",)
+
+    action = str(payload.get("action", "") or "").strip().lower()
+    replacement_name = str(payload.get("replacement_name", "") or "").strip()
+    replacement_datasheet_id = str(payload.get("replacement_datasheet_id", "") or "").strip()
+    if action in {"", "skip"} and not replacement_name and not replacement_datasheet_id:
+        return ()
+    if action not in {"replace", "skip", ""}:
+        return ("Shadow Assignment action must be 'replace' or 'skip'.",)
+    if action == "skip":
+        return ()
+    if not replacement_name and not replacement_datasheet_id:
+        return ("Shadow Assignment replacement is required.",)
+
+    selected = get_shadow_assignment_candidate(
+        replacement_name=replacement_name,
+        replacement_datasheet_id=replacement_datasheet_id,
+    )
+    if selected is None:
+        return ("Selected Shadow Assignment replacement is not valid.",)
+    allowed = {
+        (str(candidate.datasheet_id), str(candidate.name).strip().lower())
+        for candidate in shadow_assignment_candidates_for_unit(source_unit, list(getattr(army, "units", []) or []))
+    }
+    key = (str(selected.datasheet_id), str(selected.name).strip().lower())
+    if key not in allowed:
+        return ("Selected Shadow Assignment replacement is not legal for this unit.",)
+    return ()
+
+
+def _apply_shadow_assignment(game: object, request: DecisionRequest, result: DecisionResult):
+    payload = _shadow_assignment_payload(request, result)
+    source_unit = _shadow_assignment_source_unit(game, request, payload)
+    if source_unit is None:
+        raise RuntimeError("Shadow Assignment source unit missing.")
+    action = str(payload.get("action", "") or "").strip().lower()
+    replacement_name = str(payload.get("replacement_name", "") or "").strip()
+    replacement_datasheet_id = str(payload.get("replacement_datasheet_id", "") or "").strip()
+    if action in {"", "skip"} and not replacement_name and not replacement_datasheet_id:
+        return None
+    if action == "skip":
+        return None
+
+    selected = get_shadow_assignment_candidate(
+        replacement_name=replacement_name,
+        replacement_datasheet_id=replacement_datasheet_id,
+    )
+    if selected is None:
+        raise RuntimeError("Shadow Assignment replacement candidate not found.")
+
+    army = getattr(source_unit, "get_parent_army", lambda: None)()
+    if army is None:
+        raise RuntimeError("Shadow Assignment source unit has no parent army.")
+    units = list(getattr(army, "units", []) or [])
+    try:
+        source_index = units.index(source_unit)
+    except ValueError as exc:
+        raise RuntimeError("Shadow Assignment source unit missing from army.") from exc
+
+    new_unit = build_shadow_assignment_unit(selected)
+    new_unit.set_parent_army(army)
+    new_unit.deployed = bool(getattr(source_unit, "deployed", False))
+    new_unit.reserve_status = str(getattr(source_unit, "reserve_status", "deployed") or "deployed")
+    new_unit.reserve_turn_deployed = getattr(source_unit, "reserve_turn_deployed", None)
+    new_unit.arrived_from_reserves_this_turn = bool(getattr(source_unit, "arrived_from_reserves_this_turn", False))
+    new_unit.is_warlord = bool(getattr(source_unit, "is_warlord", False))
+
+    old_unit_id = str(get_entity_id(source_unit) or "")
+    army.units[source_index] = new_unit
+    if getattr(army, "warlord", None) is source_unit:
+        army.warlord = new_unit
+
+    rebuild = getattr(game, "rebuild_entity_registry", None)
+    if callable(rebuild):
+        rebuild()
+    refresh = getattr(game, "refresh_rule_subscribers", None)
+    if callable(refresh):
+        refresh()
+
+    new_unit_id = str(get_entity_id(new_unit) or "")
+    _rewrite_pending_request_unit_ids(game, old_id=old_unit_id, new_id=new_unit_id)
+    return new_unit_id
+
+
 def _validate_scout_move(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
     errors = list(_validate_choice_from_options(request, result))
     if errors:
@@ -312,4 +465,5 @@ register_decision_handler(
 )
 register_decision_handler(DECISION_DECLARE_RESERVES, validate=_validate_declare_reserves, apply=_apply_declare_reserves)
 register_decision_handler(DECISION_ASSIGN_TRANSPORT, validate=_validate_assign_transport, apply=_apply_assign_transport)
+register_decision_handler(DECISION_SHADOW_ASSIGNMENT, validate=_validate_shadow_assignment, apply=_apply_shadow_assignment)
 register_decision_handler(DECISION_SCOUT_MOVE, validate=_validate_scout_move, apply=_apply_scout_move)

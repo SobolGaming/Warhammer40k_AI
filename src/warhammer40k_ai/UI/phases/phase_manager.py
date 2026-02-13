@@ -411,6 +411,130 @@ class SetupPhaseHandler(BasePhaseHandler):
 
         logger.info("Transport Assignment Dialog opened - select transports and units to start embarked")
 
+    def _show_shadow_assignment_dialog(self, *, players=None, on_done=None) -> None:
+        """Show SHADOW ASSIGNMENT replacement prompts for eligible Imperial Agents assassins."""
+        from ..dialogs import QuarrySelectionDialog
+        from ...engine.command_kinds import CMD_RESOLVE_DECISION
+        from ...engine.commands import GameCommand
+        from ...engine.decision_kinds import DECISION_SHADOW_ASSIGNMENT
+        from ...engine.decision_requests import build_shadow_assignment_requests
+        from ..decision_ui_utils import first_option_id
+
+        selected_players = [p for p in list(players or self.game.players or []) if p is not None]
+        selected_player_ids = {str(getattr(p, "id", "") or "") for p in selected_players}
+        all_units = []
+        for player in selected_players:
+            army = player.get_army()
+            if army is None:
+                continue
+            all_units.extend(list(getattr(army, "units", []) or []))
+
+        queue = getattr(self.game, "decision_queue", None)
+        pending = []
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if getattr(req, "decision_type", None) != DECISION_SHADOW_ASSIGNMENT:
+                    continue
+                req_player_id = str(getattr(req, "player_id", "") or "")
+                if selected_player_ids and req_player_id not in selected_player_ids:
+                    continue
+                pending.append(req)
+        if not pending:
+            pending = list(build_shadow_assignment_requests(self.game, all_units))
+
+        if not pending:
+            if callable(on_done):
+                on_done()
+            return
+
+        pending.sort(
+            key=lambda req: (
+                str(getattr(req, "player_id", "") or ""),
+                str(getattr(req, "context", {}).get("unit_id", "") or ""),
+                str(getattr(req, "decision_id", "") or ""),
+            )
+        )
+
+        def _skip_option_id(req) -> str:
+            for opt in list(getattr(req, "options", []) or []):
+                payload = dict(getattr(opt, "payload", {}) or {})
+                action = str(payload.get("action", "") or "").strip().lower()
+                replacement = payload.get("replacement_datasheet_id")
+                if action == "skip" or replacement is None:
+                    return opt.option_id
+            return str(first_option_id(req) or "")
+
+        def _resolve(req, option_id: str) -> None:
+            if not option_id:
+                return
+            payload = {
+                "decision_id": req.decision_id,
+                "option_id": option_id,
+                "result_payload": {},
+            }
+            cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=req.player_id, payload=payload)
+            self.game.apply_command(cmd)
+
+        def _advance() -> None:
+            if not pending:
+                if callable(on_done):
+                    on_done()
+                return
+
+            req = pending.pop(0)
+            unit_id = str(getattr(req, "context", {}).get("unit_id", "") or "")
+            registry = getattr(self.game, "entity_registry", None)
+            unit = registry.get(unit_id, kind="unit") if registry is not None else None
+            if unit is None:
+                default_id = _skip_option_id(req)
+                if default_id:
+                    _resolve(req, default_id)
+                _advance()
+                return
+
+            dialog = QuarrySelectionDialog(
+                self.game_view.screen.get_width(),
+                self.game_view.screen.get_height(),
+            )
+            self.game_view.shadow_assignment_dialog = dialog
+            title = f"Shadow Assignment - {getattr(unit, 'name', 'Assassin')}"
+            header = "Select a replacement OFFICIO ASSASSINORUM model or choose None."
+            subtitle = "Replacement must not exceed current points and cannot create duplicate assassin names."
+
+            def _on_confirm(option_id: str):
+                _resolve(req, option_id)
+                try:
+                    self.game_view.refresh_roster_panes()
+                except Exception:
+                    pass
+                _advance()
+
+            def _on_cancel():
+                default_id = _skip_option_id(req)
+                if default_id:
+                    _resolve(req, default_id)
+                    try:
+                        self.game_view.refresh_roster_panes()
+                    except Exception:
+                        pass
+                _advance()
+
+            dialog.show(
+                title=title,
+                header=header,
+                subtitle=subtitle,
+                on_confirm=_on_confirm,
+                on_cancel=_on_cancel,
+                decision_request=req,
+                show_cancel=True,
+            )
+            try:
+                self.game_view.dialog_manager.open(dialog, modal=True)
+            except Exception:
+                _on_cancel()
+
+        _advance()
+
     def _start_hover_mode_selection_flow(self, players, on_done) -> None:
         """Prompt local players to choose Hover mode for eligible AIRCRAFT before formations dialogs."""
         queue = []
@@ -539,7 +663,7 @@ class SetupPhaseHandler(BasePhaseHandler):
                 # Keep existing behavior by running as two sequential dialogs (old implementation).
                 # (We intentionally do not duplicate the old nested functions here.)
                 try:
-                    self._show_leader_attachment_dialog()
+                    self._show_shadow_assignment_dialog(on_done=self._show_leader_attachment_dialog)
                     return
                 except Exception:
                     _execute_setup_phase_cmd(self.game, player_id=_current_player_id(self.game), payload={})
@@ -964,6 +1088,12 @@ class SetupPhaseHandler(BasePhaseHandler):
                 except Exception:
                     pass
 
+            def _show_shadow_assignments():
+                self._show_shadow_assignment_dialog(
+                    players=[p_left, p_right],
+                    on_done=_show_leaders,
+                )
+
             def _needs_plague_selection(player_obj) -> bool:
                 try:
                     army = player_obj.get_army()
@@ -987,7 +1117,7 @@ class SetupPhaseHandler(BasePhaseHandler):
                 needs_left = _needs_plague_selection(p_left)
                 needs_right = _needs_plague_selection(p_right)
                 if not (needs_left or needs_right):
-                    _show_leaders()
+                    _show_shadow_assignments()
                     return
 
                 from ..dialogs import NurglesGiftPlagueDialog
@@ -1049,12 +1179,12 @@ class SetupPhaseHandler(BasePhaseHandler):
                     def _maybe_advance():
                         if m.left_done and m.right_done:
                             m.hide()
-                            _show_leaders()
+                            _show_shadow_assignments()
 
                     l_request = _plague_request(p_left, a_left)
                     r_request = _plague_request(p_right, a_right)
                     if l_request is None or r_request is None:
-                        _show_leaders()
+                        _show_shadow_assignments()
                         return
 
                     def _l_done(option_id: str):
@@ -1106,20 +1236,20 @@ class SetupPhaseHandler(BasePhaseHandler):
 
                 target_request = _plague_request(target_player, target_army)
                 if target_request is None:
-                    _show_leaders()
+                    _show_shadow_assignments()
                     return
 
                 def _done(option_id: str):
                     resolve_decision_value(self.game, target_request, option_id)
                     _refresh_army_rule_panel(target_player)
-                    _show_leaders()
+                    _show_shadow_assignments()
 
                 def _cancel():
                     default_id = first_option_id(target_request)
                     if default_id:
                         resolve_decision_value(self.game, target_request, default_id)
                         _refresh_army_rule_panel(target_player)
-                    _show_leaders()
+                    _show_shadow_assignments()
 
                 dlg.show(on_confirm=_done, on_cancel=_cancel, decision_request=target_request)
                 try:
@@ -1164,9 +1294,16 @@ class SetupPhaseHandler(BasePhaseHandler):
             DECISION_ASSIGN_TRANSPORT,
             DECISION_DECLARE_RESERVES,
             DECISION_CHOOSE_PLAGUE,
+            DECISION_SHADOW_ASSIGNMENT,
             DECISION_CONFIRM_YES_NO,
         )
-        types = {DECISION_ATTACH_LEADER, DECISION_ASSIGN_TRANSPORT, DECISION_DECLARE_RESERVES, DECISION_CHOOSE_PLAGUE}
+        types = {
+            DECISION_ATTACH_LEADER,
+            DECISION_ASSIGN_TRANSPORT,
+            DECISION_DECLARE_RESERVES,
+            DECISION_CHOOSE_PLAGUE,
+            DECISION_SHADOW_ASSIGNMENT,
+        }
         pid = getattr(player, "id", None)
         for req in list(queue.list() or []):
             decision_type = getattr(req, "decision_type", None)
@@ -1183,6 +1320,7 @@ class SetupPhaseHandler(BasePhaseHandler):
 
     def _formation_dialog_active(self) -> bool:
         for attr in (
+            "shadow_assignment_dialog",
             "leader_attachment_dialog",
             "transport_assignment_dialog",
             "reserves_allocation_dialog",
@@ -1261,6 +1399,11 @@ class SetupPhaseHandler(BasePhaseHandler):
         queue = getattr(self.game, "decision_queue", None)
         unit_by_id = {get_entity_id(u): u for u in units if u is not None}
 
+        def _refresh_units_cache() -> None:
+            nonlocal units, unit_by_id
+            units = list(getattr(army, "units", []) or [])
+            unit_by_id = {get_entity_id(u): u for u in units if u is not None}
+
         def _pending_requests(decision_type: str, *, context_key: str, valid_ids: set[str]):
             pending = {}
             if queue is None or not hasattr(queue, "list"):
@@ -1301,6 +1444,7 @@ class SetupPhaseHandler(BasePhaseHandler):
             return pending
 
         def _show_reserves():
+            _refresh_units_cache()
             req = _pending_single(DECISION_DECLARE_RESERVES)
             if req is None:
                 req = build_reserves_allocation_request(self.game, army)
@@ -1328,6 +1472,7 @@ class SetupPhaseHandler(BasePhaseHandler):
                 pass
 
         def _show_transports():
+            _refresh_units_cache()
             unit_ids = {get_entity_id(u) for u in units}
             pending = _pending_requests(DECISION_ASSIGN_TRANSPORT, context_key="unit_id", valid_ids=unit_ids)
             if not pending:
@@ -1380,6 +1525,7 @@ class SetupPhaseHandler(BasePhaseHandler):
                 pass
 
         def _show_support_artillery():
+            _refresh_units_cache()
             support_ids = {
                 get_entity_id(u)
                 for u in units
@@ -1444,6 +1590,7 @@ class SetupPhaseHandler(BasePhaseHandler):
                 pass
 
         def _show_leaders():
+            _refresh_units_cache()
             leader_ids = {get_entity_id(u) for u in units if bool(getattr(u, "is_leader", False))}
             pending = _pending_requests(DECISION_ATTACH_LEADER, context_key="leader_id", valid_ids=leader_ids)
             if not pending:
@@ -1486,20 +1633,35 @@ class SetupPhaseHandler(BasePhaseHandler):
             except Exception:
                 pass
 
+        def _show_shadow_assignments():
+            _refresh_units_cache()
+            self._show_shadow_assignment_dialog(
+                players=[player],
+                on_done=_after_shadow_assignments,
+            )
+
+        def _after_shadow_assignments():
+            _refresh_units_cache()
+            try:
+                self.game_view.refresh_roster_panes()
+            except Exception:
+                pass
+            _show_leaders()
+
         def _show_plague():
             req = _pending_single(DECISION_CHOOSE_PLAGUE)
             if req is None:
                 mgr = getattr(army, "nurgles_gift", None)
                 if mgr is None or not getattr(mgr, "_army_has_gift", lambda: False)():
-                    _show_leaders()
+                    _show_shadow_assignments()
                     return
                 if getattr(mgr, "active_plague_key", None):
-                    _show_leaders()
+                    _show_shadow_assignments()
                     return
                 try:
                     from ...rules.nurgles_gift import DEFAULT_PLAGUES
                 except Exception:
-                    _show_leaders()
+                    _show_shadow_assignments()
                     return
                 army_id = get_entity_id(army)
                 options = []
@@ -1516,7 +1678,7 @@ class SetupPhaseHandler(BasePhaseHandler):
                         )
                     )
                 if not options:
-                    _show_leaders()
+                    _show_shadow_assignments()
                     return
                 req = DecisionRequest.create(
                     DECISION_CHOOSE_PLAGUE,
@@ -1532,13 +1694,13 @@ class SetupPhaseHandler(BasePhaseHandler):
 
             def _done(option_id: str):
                 resolve_decision_value(self.game, req, option_id)
-                _show_leaders()
+                _show_shadow_assignments()
 
             def _cancel():
                 default_id = first_option_id(req)
                 if default_id:
                     resolve_decision_value(self.game, req, default_id)
-                _show_leaders()
+                _show_shadow_assignments()
 
             dlg.show(on_confirm=_done, on_cancel=_cancel, decision_request=req)
             try:
@@ -1547,6 +1709,7 @@ class SetupPhaseHandler(BasePhaseHandler):
                 pass
 
         def _show_hover():
+            _refresh_units_cache()
             pending = _pending_hover_requests()
             if not pending:
                 _show_plague()

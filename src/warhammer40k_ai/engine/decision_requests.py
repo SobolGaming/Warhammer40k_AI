@@ -11,7 +11,13 @@ from .decision_kinds import (
     DECISION_CHOOSE_QUARRY,
     DECISION_CONFIRM_YES_NO,
     DECISION_DECLARE_RESERVES,
+    DECISION_SHADOW_ASSIGNMENT,
     DECISION_SCOUT_MOVE,
+)
+from ..rules.imperial_agents_shadow_assignment import (
+    army_supports_shadow_assignment,
+    shadow_assignment_options_for_unit,
+    unit_has_shadow_assignment,
 )
 from ..utility.entity_ids import get_entity_id
 
@@ -42,6 +48,28 @@ def _player_for_unit(unit: object):
     if army is None:
         return None
     return getattr(army, "player", None)
+
+
+def _army_for_unit(unit: object):
+    if unit is None:
+        return None
+    getter = getattr(unit, "get_parent_army", None)
+    if callable(getter):
+        return getter()
+    return getattr(unit, "parent_army", None)
+
+
+def _army_key(army: object) -> str:
+    if army is None:
+        return ""
+    army_id = str(get_entity_id(army) or "").strip()
+    if army_id:
+        return army_id
+    player = getattr(army, "player", None)
+    player_id = str(getattr(player, "id", "") or "").strip()
+    if player_id:
+        return f"player:{player_id}"
+    return f"obj:{id(army)}"
 
 
 def _unit_has_special_rule_flag(unit: object, flag_key: str) -> bool:
@@ -302,6 +330,62 @@ def build_transport_assignment_requests(
         requests.append(request)
         if queue_requests and hasattr(game, "request_decision"):
             game.request_decision(request)
+    return requests
+
+
+def build_shadow_assignment_requests(
+    game: object,
+    units: Iterable[object],
+    *,
+    queue_requests: bool = True,
+) -> List[DecisionRequest]:
+    all_units = _iter_units(units)
+    units_by_army: dict[str, list[object]] = {}
+    army_by_key: dict[str, object] = {}
+    for unit in all_units:
+        army = _army_for_unit(unit)
+        if army is None:
+            continue
+        key = _army_key(army)
+        if not key:
+            continue
+        units_by_army.setdefault(key, []).append(unit)
+        army_by_key[key] = army
+
+    requests: List[DecisionRequest] = []
+    for key in sorted(units_by_army.keys()):
+        army = army_by_key[key]
+        if not army_supports_shadow_assignment(army):
+            continue
+        army_units = list(units_by_army[key] or [])
+        sources = [unit for unit in army_units if unit_has_shadow_assignment(unit)]
+        sources.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+        for source_unit in sources:
+            source_id = str(get_entity_id(source_unit) or "")
+            if not source_id:
+                continue
+            option_defs = shadow_assignment_options_for_unit(source_unit, army_units)
+            if len(option_defs) <= 1:
+                continue
+            options = [
+                DecisionOption.create(str(label), payload=dict(payload or {}))
+                for label, payload in option_defs
+            ]
+            request = DecisionRequest.create(
+                DECISION_SHADOW_ASSIGNMENT,
+                f"Shadow Assignment for {getattr(source_unit, 'name', 'Assassin')}",
+                player_id=_player_id_for_unit(source_unit),
+                options=options,
+                context={
+                    "ability": "shadow_assignment",
+                    "ability_name": "Shadow Assignment",
+                    "unit_id": source_id,
+                },
+            )
+            requests.append(request)
+            if queue_requests and hasattr(game, "request_decision"):
+                game.request_decision(request)
+
     return requests
 
 

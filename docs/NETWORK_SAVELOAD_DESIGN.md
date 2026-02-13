@@ -163,6 +163,7 @@ Deployment / Pre-battle:
 - support_artillery_attachment_dialog: ATTACH_SUPPORT_ARTILLERY {support_unit_id, bodyguard_unit_id}
 - reserves_allocation_dialog: DECLARE_RESERVES {unit_ids_by_bucket}
 - transport_assignment_dialog: ASSIGN_TRANSPORT {unit_id, transport_id}
+- shadow_assignment_dialog (quarry_selection_dialog): SHADOW_ASSIGNMENT {unit_id, replacement_datasheet_id | skip} (context `ability="shadow_assignment"`)
 - hover_mode_prompt (yes_no_dialog): CONFIRM_YES_NO {unit_id, choice} (context `ability="hover_mode"`)
 - nurgles_gift_plague_dialog: CHOOSE_PLAGUE {choice_id} (context `army_id`) (Declare Battle Formations)
 - daemonic_allegiance_dialog: CHOOSE_DAEMONIC_ALLEGIANCE {unit_id, keyword}
@@ -388,6 +389,7 @@ Faction / Detachment / Ability choices:
 - nurgles_gift_plague_dialog: CHOOSE_PLAGUE {choice_id}
 - pledge_selection_dialog: CHOOSE_PLEDGE {choice_id} (context `army_id`, `battle_round`, `max_value`, `ability_name="Pledges to the Dark Prince"`)
 - quarry_selection_dialog: CHOOSE_QUARRY {target_unit_id} (context may include `ability`, `ability_name`, `effect_key`, `source_unit_id`, `prey_reroll_hit`, `prey_reroll_wound`, `prey_melee_only`, `prey_keyword`, `prey_repick_on_destroyed`)
+- quarry_selection_dialog (Shadow Assignment): SHADOW_ASSIGNMENT {unit_id, replacement_datasheet_id | skip} (context `ability="shadow_assignment"`, `ability_name="Shadow Assignment"`)
 - quarry_selection_dialog (Risen Rubricae): CHOOSE_QUARRY {selected_unit_ids[]} (context `ability="risen_rubricae"`, `ability_name="Risen Rubricae"`, `source_unit_id`, `enhancement_id`)
 - quarry_selection_dialog (Ethereal Pathway): CHOOSE_QUARRY {selected_unit_ids[] | skip} (context `ability="ethereal_pathway"`, `ability_name="Ethereal Pathway"`, `source_unit_id`, `enhancement_id`)
 - modifier_ignore_dialog: CHOOSE_HIT_MODIFIER_IGNORES {choice} (context `attacker_model_id`, `target_unit_id`, `wargear_id`, `profile_name`, `ability_name`)

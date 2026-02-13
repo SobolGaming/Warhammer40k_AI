@@ -22,6 +22,7 @@ from ..engine.decision_kinds import (
     DECISION_ATTACH_LEADER,
     DECISION_ATTACH_SUPPORT_ARTILLERY,
     DECISION_ASSIGN_TRANSPORT,
+    DECISION_SHADOW_ASSIGNMENT,
     DECISION_CHOOSE_QUARRY,
     DECISION_CONFIRM_YES_NO,
     DECISION_DECLARE_RESERVES,
@@ -33,6 +34,7 @@ from ..engine.decisions import DecisionOption, DecisionRequest
 from ..engine.decision_requests import (
     build_leader_attachment_requests,
     build_risen_rubricae_requests,
+    build_shadow_assignment_requests,
     build_support_artillery_attachment_requests,
     build_hover_mode_requests,
     build_transport_assignment_requests,
@@ -108,6 +110,7 @@ class NetworkServer:
             DECISION_ATTACH_LEADER,
             DECISION_ATTACH_SUPPORT_ARTILLERY,
             DECISION_ASSIGN_TRANSPORT,
+            DECISION_SHADOW_ASSIGNMENT,
             DECISION_DECLARE_RESERVES,
             DECISION_CHOOSE_PLAGUE,
         }
@@ -492,6 +495,7 @@ class NetworkServer:
         pending_attach = self._pending_by_context(DECISION_ATTACH_LEADER, "leader_id")
         pending_support = self._pending_by_context(DECISION_ATTACH_SUPPORT_ARTILLERY, "support_unit_id")
         pending_transport = self._pending_by_context(DECISION_ASSIGN_TRANSPORT, "unit_id")
+        pending_shadow = self._pending_by_context(DECISION_SHADOW_ASSIGNMENT, "unit_id")
         pending_reserves = self._pending_by_context(DECISION_DECLARE_RESERVES, "army_id")
         pending_plague = self._pending_by_context(DECISION_CHOOSE_PLAGUE, "army_id")
         pending_hover = self._pending_hover_by_unit()
@@ -511,6 +515,14 @@ class NetworkServer:
             for req in hover_requests:
                 unit_id = str(getattr(req, "context", {}).get("unit_id", "") or "")
                 if unit_id and unit_id in pending_hover:
+                    continue
+                await self._send_decision_request(req)
+                created.append(req)
+
+            shadow_requests = build_shadow_assignment_requests(game, units, queue_requests=False)
+            for req in shadow_requests:
+                unit_id = str(getattr(req, "context", {}).get("unit_id", "") or "")
+                if unit_id and unit_id in pending_shadow:
                     continue
                 await self._send_decision_request(req)
                 created.append(req)

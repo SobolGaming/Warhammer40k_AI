@@ -17,6 +17,7 @@ For UI mapping, see `docs/NETWORK_SAVELOAD_DESIGN.md`.
 - `ATTACH_SUPPORT_ARTILLERY` — Attach support artillery to bodyguard (or none).
 - `DECLARE_RESERVES` — Declare units in reserve.
 - `ASSIGN_TRANSPORT` — Assign transport to a unit (or none).
+- `SHADOW_ASSIGNMENT` — Replace an eligible OFFICIO ASSASSINORUM unit with another valid assassin option (or None).
 - `SCOUT_MOVE` — Resolve pre-game scout move.
 - `CHOOSE_START_OF_BATTLE_KEYWORD` — Choose start-of-battle keyword.
 - `SELECT_SETUP_REACTIVE_TARGET` — Choose target for setup-reactive effects.
