@@ -3111,6 +3111,7 @@ def _classify_ability_base(
     target_keyword_attack_keyword_support = _target_keyword_attack_keyword_support(description)
     weapon_keyword_grant_support = _weapon_keyword_grant_support(description)
     closest_enemy_hit_charge_support = _closest_enemy_hit_and_charge_reroll_support(description)
+    order_range_extension_support = _order_range_extension_support(description)
     orders_support = _orders_section_support(name, description)
     attached_unit_support = _attached_unit_support(name, description)
     model_reroll_support = _model_reroll_wound_vs_character_support(description)
@@ -3383,6 +3384,8 @@ def _classify_ability_base(
         return objective_attack_keyword_support
     if closest_enemy_hit_charge_support:
         return closest_enemy_hit_charge_support
+    if order_range_extension_support:
+        return order_range_extension_support
     if orders_support:
         return orders_support
     if attached_unit_support:
@@ -7685,6 +7688,26 @@ def _orders_section_support(name: str, description: str) -> Optional[Tuple[str, 
         if text:
             return ("Supported", note)
     return ("Supported", note)
+
+
+def _order_range_extension_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"each time (?:this model|the officer in the bearers unit) issues an order "
+        r"it can issue (?:it|that order) to an eligible unit up to (?P<rng>\d+) away",
+        norm,
+    )
+    if not m:
+        return None
+    rng = m.group("rng") or "0"
+    return (
+        "Supported",
+        f"Voice of Command range extension: issuing OFFICER can target eligible units up to {rng}\" away.",
+    )
 
 
 def _attached_unit_support(name: str, description: str) -> Optional[Tuple[str, str]]:

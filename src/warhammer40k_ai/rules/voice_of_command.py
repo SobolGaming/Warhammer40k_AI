@@ -170,11 +170,17 @@ class VoiceOfCommandManager:
         clean = re.sub(r"\s+", " ", clean).strip()
         return clean
 
+    def _iter_unit_abilities(self, unit):
+        if unit is None:
+            return
+        for ab in (list(getattr(unit, "possible_abilities", []) or []) + list(getattr(unit, "abilities", []) or [])):
+            yield ab
+
     def _parse_orders_profile(self, unit) -> tuple[int, list[str], list[str]]:
         count = 1
         keywords: list[str] = []
         allowed_order_keys: list[str] = []
-        for ab in (list(getattr(unit, "possible_abilities", []) or []) + list(getattr(unit, "abilities", []) or [])):
+        for ab in self._iter_unit_abilities(unit):
             try:
                 name = ab if isinstance(ab, str) else getattr(ab, "name", "")
                 if "orders" not in str(name or "").lower():
@@ -220,6 +226,44 @@ class VoiceOfCommandManager:
             except Exception:
                 continue
         return count, keywords, allowed_order_keys
+
+    def _parse_order_range_override_from_text(self, text: str) -> float:
+        rules = self._strip_html(text).lower().replace("\u2019", "'").replace("\u2018", "'")
+        if "issues an order" not in rules or "eligible unit up to" not in rules:
+            return 0.0
+        pattern = (
+            r"each time\s+"
+            r"(?:this model|the officer in the bearer'?s unit)\s+"
+            r"issues?\s+an?\s+order\s*,?\s*"
+            r"it\s+can\s+issue\s+(?:it|that order)\s+to\s+an?\s+eligible\s+unit\s+"
+            r"up\s+to\s+(\d+(?:\.\d+)?)\s*(?:\"|inches?)?\s*away"
+        )
+        m = re.search(pattern, rules, flags=re.IGNORECASE)
+        if not m:
+            return 0.0
+        try:
+            value = float(m.group(1) or 0.0)
+        except Exception:
+            return 0.0
+        if value <= 0:
+            return 0.0
+        return value
+
+    def _officer_order_range_from_abilities(self, officer_unit) -> float:
+        if officer_unit is None:
+            return 0.0
+        max_range = 0.0
+        for ab in self._iter_unit_abilities(officer_unit):
+            try:
+                text = ab if isinstance(ab, str) else getattr(ab, "description", "")
+                if not text:
+                    text = ab if isinstance(ab, str) else getattr(ab, "name", "")
+            except Exception:
+                continue
+            parsed = self._parse_order_range_override_from_text(str(text or ""))
+            if parsed > max_range:
+                max_range = parsed
+        return max_range
 
     def _order_issued_state(self, unit, battle_round: int) -> int:
         sr = getattr(unit, "special_rules", None)
@@ -281,6 +325,10 @@ class VoiceOfCommandManager:
         return extra
 
     def _officer_order_range(self, officer_unit, *, order_key: str = "") -> float:
+        max_range = 6.0
+        ability_range = self._officer_order_range_from_abilities(officer_unit)
+        if ability_range > max_range:
+            max_range = ability_range
         if self._officer_has_laud_hailer(officer_unit):
             sr = getattr(officer_unit, "special_rules", None)
             if isinstance(sr, dict):
@@ -289,9 +337,11 @@ class VoiceOfCommandManager:
                 except Exception:
                     val = 12.0
                 if val > 0:
-                    return val
-            return 12.0
-        return 6.0
+                    if val > max_range:
+                        max_range = val
+            elif 12.0 > max_range:
+                max_range = 12.0
+        return float(max_range)
 
     def get_order_range(self, officer_unit, *, order_key: str = "") -> float:
         return float(self._officer_order_range(officer_unit, order_key=order_key))

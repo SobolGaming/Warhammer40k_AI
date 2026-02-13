@@ -3,9 +3,10 @@ from types import SimpleNamespace
 
 
 class _Ability:
-    def __init__(self, name: str, description: str = ""):
+    def __init__(self, name: str, description: str = "", ability_type: str = ""):
         self.name = name
         self.description = description
+        self.type = ability_type
 
 
 class _PlayerStub:
@@ -545,6 +546,73 @@ class TestVoiceOfCommand(unittest.TestCase):
         self.assertFalse(mgr.issue_order(game, officer, target, ORDER_MOVE.key, phase_name="COMMAND_PHASE"))
 
         officer.special_rules["enhancement_laud_hailer"] = True
+        self.assertTrue(mgr.issue_order(game, officer, target, ORDER_MOVE.key, phase_name="COMMAND_PHASE"))
+
+    def test_master_vox_ability_extends_order_range_to_24(self):
+        from warhammer40k_ai.rules.voice_of_command import VoiceOfCommandManager, ORDER_MOVE
+
+        orders_text = "This model can issue 1 order to REGIMENT units within 6\"."
+        master_vox_text = (
+            "Each time the OFFICER in the bearer\u2019s unit issues an Order, "
+            "it can issue it to an eligible unit up to 24\" away."
+        )
+        army = _ArmyStub()
+        mgr = VoiceOfCommandManager(army)
+        mgr._army_has_voice = lambda: True
+        army.voice_of_command = mgr
+
+        officer = _UnitStub(
+            "Command Squad",
+            keywords=["OFFICER", "ASTRA MILITARUM"],
+            abilities=[
+                _Ability("Voice of Command"),
+                _Ability("Orders", orders_text),
+                _Ability("Master Vox", master_vox_text, ability_type="Wargear"),
+            ],
+            army=army,
+        )
+        target = _UnitStub(
+            "Infantry",
+            keywords=["REGIMENT", "ASTRA MILITARUM"],
+            abilities=[],
+            army=army,
+        )
+        army.units = [officer, target]
+
+        game = SimpleNamespace(turn=1, map=_MapStub([officer, target], distance=18.0))
+        army.player.game = game
+
+        self.assertEqual(mgr.get_order_range(officer), 24.0)
+        self.assertTrue(mgr.issue_order(game, officer, target, ORDER_MOVE.key, phase_name="COMMAND_PHASE"))
+
+    def test_vox_net_style_order_range_text_is_supported(self):
+        from warhammer40k_ai.rules.voice_of_command import VoiceOfCommandManager, ORDER_MOVE
+
+        orders_text = "This model can issue 1 order to REGIMENT units within 6\"."
+        vox_net_text = "Each time this model issues an Order, it can issue it to an eligible unit up to 12\" away."
+        army = _ArmyStub()
+        mgr = VoiceOfCommandManager(army)
+        mgr._army_has_voice = lambda: True
+        army.voice_of_command = mgr
+
+        officer = _UnitStub(
+            "Tank Commander",
+            keywords=["OFFICER", "ASTRA MILITARUM"],
+            abilities=[_Ability("Voice of Command"), _Ability("Orders", orders_text), _Ability("Vox-net", vox_net_text)],
+            army=army,
+        )
+        target = _UnitStub(
+            "Infantry",
+            keywords=["REGIMENT", "ASTRA MILITARUM"],
+            abilities=[],
+            army=army,
+        )
+        army.units = [officer, target]
+
+        game = SimpleNamespace(turn=1, map=_MapStub([officer, target], distance=9.0))
+        army.player.game = game
+
+        self.assertEqual(mgr.get_order_range(officer), 12.0)
         self.assertTrue(mgr.issue_order(game, officer, target, ORDER_MOVE.key, phase_name="COMMAND_PHASE"))
 
     def test_target_weak_spot_improves_ap_within_12(self):
