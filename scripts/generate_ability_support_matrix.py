@@ -3132,6 +3132,7 @@ def _classify_ability_base(
     weapon_keyword_grant_support = _weapon_keyword_grant_support(description)
     closest_enemy_hit_charge_support = _closest_enemy_hit_and_charge_reroll_support(description)
     order_range_extension_support = _order_range_extension_support(description)
+    act_of_faith_cherub_support = _act_of_faith_cherub_support(description)
     orders_support = _orders_section_support(name, description)
     attached_unit_support = _attached_unit_support(name, description)
     model_reroll_support = _model_reroll_wound_vs_character_support(description)
@@ -3406,6 +3407,8 @@ def _classify_ability_base(
         return closest_enemy_hit_charge_support
     if order_range_extension_support:
         return order_range_extension_support
+    if act_of_faith_cherub_support:
+        return act_of_faith_cherub_support
     if orders_support:
         return orders_support
     if attached_unit_support:
@@ -7727,6 +7730,28 @@ def _order_range_extension_support(description: str) -> Optional[Tuple[str, str]
     return (
         "Supported",
         f"Voice of Command range extension: issuing OFFICER can target eligible units up to {rng}\" away.",
+    )
+
+
+def _act_of_faith_cherub_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"(?P<count>once|twice) per battle after this unit has performed an act of faith "
+        r"you gain 1 miracle dice(?: designers note .+)?",
+        norm,
+    )
+    if not m:
+        return None
+    count = str(m.group("count") or "").strip().lower()
+    uses = 2 if count == "twice" else 1
+    label = "Twice per battle" if uses == 2 else "Once per battle"
+    return (
+        "Supported",
+        f"After this unit performs an Act of Faith: gain 1 Miracle die ({label.lower()}).",
     )
 
 

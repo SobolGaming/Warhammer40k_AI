@@ -1,5 +1,6 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
+import re
 from typing import Optional, Tuple
 
 from ..utility.ability_support import ABILITY_ACTS_OF_FAITH, army_has_ability_id
@@ -62,6 +63,16 @@ class ActsOfFaithManager:
         return get_entity_id(root)
 
     @staticmethod
+    def _unit_root(unit):
+        if unit is None:
+            return None
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        return root
+
+    @staticmethod
     def _phase_key(game) -> str:
         try:
             phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
@@ -110,6 +121,78 @@ class ActsOfFaithManager:
         except Exception:
             pass
         return False
+
+    @staticmethod
+    def _cherub_max_uses_for_ability(ability) -> int:
+        name = ""
+        desc = ""
+        try:
+            name = str(getattr(ability, "name", "") or "").strip().lower()
+        except Exception:
+            name = ""
+        try:
+            desc = str(getattr(ability, "description", "") or "")
+        except Exception:
+            desc = ""
+
+        if name == "cherubs":
+            return 2
+        if name == "cherub":
+            return 1
+
+        text = f"{name} {desc}".lower()
+        text = text.replace("\u2019", "'").replace("\u2018", "'")
+        text = re.sub(r"\s+", " ", text).strip()
+        if not text:
+            return 0
+        if (
+            "after this unit has performed an act of faith" in text
+            and "you gain 1 miracle dice" in text
+        ):
+            if "twice per battle" in text:
+                return 2
+            if "once per battle" in text:
+                return 1
+        return 0
+
+    def _cherub_max_uses_for_unit(self, unit) -> int:
+        root = self._unit_root(unit)
+        if root is None:
+            return 0
+        max_uses = 0
+        try:
+            abilities = list(getattr(root, "possible_abilities", []) or [])
+        except Exception:
+            abilities = []
+        for ability in abilities:
+            uses = self._cherub_max_uses_for_ability(ability)
+            if uses > max_uses:
+                max_uses = uses
+        return int(max_uses)
+
+    def _maybe_trigger_cherub_miracle_die(self, unit, *, game=None) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        max_uses = self._cherub_max_uses_for_unit(root)
+        if max_uses <= 0:
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        try:
+            used = int(sr.get("acts_of_faith_cherub_uses", 0) or 0)
+        except Exception:
+            used = 0
+        if used >= max_uses:
+            return False
+
+        reason = "Cherubs" if max_uses > 1 else "Cherub"
+        self.gain_miracle_die(game=game, allow_reroll=False, reason=reason)
+        sr["acts_of_faith_cherub_uses"] = int(used + 1)
+        root.special_rules = sr
+        return True
 
     def _iter_litany_sources(self) -> list:
         sources = []
@@ -281,6 +364,10 @@ class ActsOfFaithManager:
                 player = getattr(self.army, "player", None)
                 if player is not None:
                     append_dice(player, f"Miracle die used ({roll_type}): {int(value)}")
+        except Exception:
+            pass
+        try:
+            self._maybe_trigger_cherub_miracle_die(unit, game=game)
         except Exception:
             pass
         return True
