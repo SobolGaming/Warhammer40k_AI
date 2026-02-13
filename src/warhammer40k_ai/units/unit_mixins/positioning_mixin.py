@@ -4886,6 +4886,18 @@ class PositioningMixin:
         if bonus_dist > 0:
             found = True
             dist = max(float(dist or 0.0), float(bonus_dist))
+        try:
+            sr = getattr(self, "special_rules", None)
+            leader_bonus_dist = (
+                float(sr.get("attached_unit_bodyguard_leader_scout_distance", 0) or 0.0)
+                if isinstance(sr, dict) and bool(getattr(self, "is_attached_leader", False))
+                else 0.0
+            )
+        except Exception:
+            leader_bonus_dist = 0.0
+        if leader_bonus_dist > 0:
+            found = True
+            dist = max(float(dist or 0.0), float(leader_bonus_dist))
         result = (True, float(dist)) if found else (False, 0.0)
 
         # Attached units can only Scout if every model has Scouts (use smallest distance if mixed).

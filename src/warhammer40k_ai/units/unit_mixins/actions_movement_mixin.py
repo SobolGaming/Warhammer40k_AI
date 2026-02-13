@@ -417,6 +417,11 @@ class ActionsMovementMixin:
         except Exception:
             pass
         try:
+            if self._ability_attached_unit_bodyguard_leader_scouts(ability) is not None:
+                return False
+        except Exception:
+            pass
+        try:
             from ...rules.wrathful_presence import ability_name_to_key, unit_has_active_wrathful_presence
             name = ability if isinstance(ability, str) else getattr(ability, "name", "")
             key = ability_name_to_key(name)
@@ -601,6 +606,96 @@ class ActionsMovementMixin:
             sr["attached_battleline_infiltrators_scouts"] = True
             sr["attached_battleline_infiltrators_scout_distance"] = int(rule.get("scout_distance", 0) or 0)
             self.special_rules = sr
+
+    def _ability_attached_unit_bodyguard_leader_scouts(self, ability) -> Optional[dict]:
+        """
+        Return rule info for bodyguard ATTACHED UNIT clauses like:
+        "If a MINISTORUM PRIEST or INQUISITOR model from your army is attached to this unit
+        during the Declare Battle Formations step, that model gains the Scouts 6\" ability."
+        """
+        desc = ""
+        name = ""
+        try:
+            if isinstance(ability, str):
+                desc = ability
+            else:
+                name = str(getattr(ability, "name", "") or "")
+                desc = str(getattr(ability, "description", "") or "")
+        except Exception:
+            desc = ""
+        text = self._normalize_rules_text(f"{name} {desc}")
+        if not text:
+            return None
+        low = text.lower().replace("\u2019", "'").replace("\u0192?T", "'")
+        if name and "attached unit" not in str(name).lower():
+            return None
+        if "attached to this unit during the declare battle formations step" not in low:
+            return None
+        if "that model gains" not in low or "scout" not in low:
+            return None
+        m = re.search(
+            r"(?:^|[.;])\s*if a (?P<keywords>[^.;]+?) model from your army is attached to this unit during the declare battle formations step,?\s*"
+            r"that model gains(?: the)? scouts?\s*(?P<distance>\d+)",
+            low,
+            flags=re.IGNORECASE,
+        )
+        if not m:
+            return None
+        kw_clause = str(m.group("keywords") or "").strip()
+        kw_clause = re.sub(r"\bwith the leader ability\b", " ", kw_clause, flags=re.IGNORECASE)
+        leader_keywords = [
+            token.strip().upper()
+            for token in re.split(r"\bor\b|\band\b|,", kw_clause, flags=re.IGNORECASE)
+            if token.strip()
+        ]
+        if not leader_keywords:
+            return None
+        try:
+            distance = int(m.group("distance"))
+        except Exception:
+            return None
+        if distance <= 0:
+            return None
+        return {"leader_keywords": tuple(leader_keywords), "scout_distance": int(distance)}
+
+    def _clear_attached_unit_bodyguard_leader_scouts(self) -> None:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        removed = False
+        if "attached_unit_bodyguard_leader_scouts" in sr:
+            del sr["attached_unit_bodyguard_leader_scouts"]
+            removed = True
+        if "attached_unit_bodyguard_leader_scout_distance" in sr:
+            del sr["attached_unit_bodyguard_leader_scout_distance"]
+            removed = True
+        if removed:
+            self.special_rules = sr
+
+    def _apply_attached_unit_bodyguard_leader_scouts(self, bodyguard: 'Unit') -> None:
+        """Apply ATTACHED UNIT clauses that grant Scouts to the attached Leader model."""
+        self._clear_attached_unit_bodyguard_leader_scouts()
+        if bodyguard is None:
+            return
+        max_distance = 0
+        for ab in (getattr(bodyguard, "possible_abilities", []) or []):
+            rule = self._ability_attached_unit_bodyguard_leader_scouts(ab)
+            if rule is None:
+                continue
+            if not any(self.has_any_keyword(k) for k in list(rule.get("leader_keywords") or ())):
+                continue
+            try:
+                max_distance = max(max_distance, int(rule.get("scout_distance", 0) or 0))
+            except Exception:
+                continue
+        if max_distance <= 0:
+            return
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["attached_unit_bodyguard_leader_scouts"] = True
+        sr["attached_unit_bodyguard_leader_scout_distance"] = int(max_distance)
+        self.special_rules = sr
 
     def _get_aspect_shrine_root(self) -> 'Unit':
         try:

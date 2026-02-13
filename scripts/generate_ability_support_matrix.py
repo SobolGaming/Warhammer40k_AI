@@ -7560,8 +7560,16 @@ def _attached_unit_support(name: str, description: str) -> Optional[Tuple[str, s
     if _norm(name) != "attached unit":
         return None
     note = "Attached Unit section parsed to extend leader attachment eligibility."
-    text = _strip_html(description).lower()
-    if "gains the" in text:
+    text = _norm_rules_text(_strip_html(description))
+    if re.search(
+        r"if a .+ model from your army is attached to this unit during the declare battle formations step"
+        r"\s*that model gains(?: the)? scouts? \d+",
+        text,
+    ):
+        m = re.search(r"scouts? (?P<rng>\d+)", text)
+        rng = m.group("rng") if m else "6"
+        return ("Supported", f"{note} Matching attached Leaders gain Scouts {rng}\" at battle formations.")
+    if " gains " in text:
         return ("Partial", f"{note} Additional leader-gain effects not implemented.")
     return ("Supported", note)
 

@@ -2626,6 +2626,10 @@ class StateAttachmentMixin:
             self._apply_attached_battleline_infiltrators_scouts(bodyguard)
         except Exception:
             pass
+        try:
+            self._apply_attached_unit_bodyguard_leader_scouts(bodyguard)
+        except Exception:
+            pass
         # Attachment status affects leading-only abilities; refresh caches/rules.
         try:
             self._invalidate_ability_cache()
@@ -2747,6 +2751,10 @@ class StateAttachmentMixin:
         except Exception:
             pass
         self.attached_to = None
+        try:
+            self._clear_attached_unit_bodyguard_leader_scouts()
+        except Exception:
+            pass
         # Attachment status affects leading-only abilities; refresh caches/rules.
         try:
             self._invalidate_ability_cache()

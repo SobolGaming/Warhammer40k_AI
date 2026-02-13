@@ -44,6 +44,7 @@ class _TestUnit(Unit):
             wounds = 1
             _base_wounds = 1
             name = "M"
+            abilities = []
             leadership = 7
             objective_control = 1
             movement = 6
@@ -248,7 +249,131 @@ class TestLeaderAttachments(unittest.TestCase):
 
         self.assertFalse(leader.can_attach_to(bodyguard))
 
+    def test_attached_unit_rule_grants_scouts_to_matching_leader(self):
+        leader_ds = _DummyDatasheet(
+            "Leader",
+            "L1",
+            attached_to=["BASE"],
+            attached_to_names=["Base Unit"],
+            keywords=["MINISTORUM PRIEST", "CHARACTER"],
+        )
+        base_ds = _DummyDatasheet("Base Unit", "BASE")
+        bodyguard_ds = _DummyDatasheet("Bodyguard", "BG1")
+        leader = _TestUnit(leader_ds)
+        base = _TestUnit(base_ds)
+        bodyguard = _TestUnit(bodyguard_ds)
+
+        bodyguard.possible_abilities = [
+            Ability(
+                "ATTACHED UNIT",
+                "",
+                (
+                    "If a Ministorum Priest model from your army with the Leader ability can be attached to a Base Unit unit, "
+                    "it can be attached to this unit instead. If a MINISTORUM PRIEST model from your army is attached to this "
+                    "unit during the Declare Battle Formations step, that model gains the Scouts 6\" ability."
+                ),
+                "",
+            )
+        ]
+
+        army = Army(faction="Test", detachment_type="Test", points_limit=2000)
+        army.player = _DummyPlayer()
+        army.units = [leader, base, bodyguard]
+        for u in army.units:
+            u.parent_army = army
+
+        self.assertTrue(leader.can_attach_to(bodyguard))
+        self.assertEqual(leader.has_scout(), (False, 0.0))
+
+        leader.attach_to_unit(bodyguard)
+
+        self.assertEqual(leader.has_scout(), (True, 6.0))
+        self.assertEqual(bodyguard.has_scout(), (False, 0.0))
+
+    def test_attached_unit_rule_scouts_requires_matching_keyword(self):
+        leader_ds = _DummyDatasheet(
+            "Leader",
+            "L1",
+            attached_to=["BASE"],
+            attached_to_names=["Base Unit"],
+            keywords=["INQUISITOR", "CHARACTER"],
+        )
+        base_ds = _DummyDatasheet("Base Unit", "BASE")
+        bodyguard_ds = _DummyDatasheet("Bodyguard", "BG1")
+        leader = _TestUnit(leader_ds)
+        base = _TestUnit(base_ds)
+        bodyguard = _TestUnit(bodyguard_ds)
+
+        bodyguard.possible_abilities = [
+            Ability(
+                "ATTACHED UNIT",
+                "",
+                (
+                    "If a Inquisitor model from your army with the Leader ability can be attached to a Base Unit unit, "
+                    "it can be attached to this unit instead. If a MINISTORUM PRIEST model from your army is attached to this "
+                    "unit during the Declare Battle Formations step, that model gains the Scouts 6\" ability."
+                ),
+                "",
+            )
+        ]
+
+        army = Army(faction="Test", detachment_type="Test", points_limit=2000)
+        army.player = _DummyPlayer()
+        army.units = [leader, base, bodyguard]
+        for u in army.units:
+            u.parent_army = army
+
+        self.assertTrue(leader.can_attach_to(bodyguard))
+        self.assertEqual(leader.has_scout(), (False, 0.0))
+
+        leader.attach_to_unit(bodyguard)
+
+        self.assertEqual(leader.has_scout(), (False, 0.0))
+
+    def test_attached_unit_rule_scouts_clears_after_reattach(self):
+        leader_ds = _DummyDatasheet(
+            "Leader",
+            "L1",
+            attached_to=["BASE", "BG2"],
+            attached_to_names=["Base Unit", "Bodyguard Two"],
+            keywords=["MINISTORUM PRIEST", "CHARACTER"],
+        )
+        base_ds = _DummyDatasheet("Base Unit", "BASE")
+        bodyguard_one_ds = _DummyDatasheet("Bodyguard One", "BG1")
+        bodyguard_two_ds = _DummyDatasheet("Bodyguard Two", "BG2")
+        leader = _TestUnit(leader_ds)
+        base = _TestUnit(base_ds)
+        bodyguard_one = _TestUnit(bodyguard_one_ds)
+        bodyguard_two = _TestUnit(bodyguard_two_ds)
+
+        bodyguard_one.possible_abilities = [
+            Ability(
+                "ATTACHED UNIT",
+                "",
+                (
+                    "If a Ministorum Priest model from your army with the Leader ability can be attached to a Base Unit unit, "
+                    "it can be attached to this unit instead. If a MINISTORUM PRIEST model from your army is attached to this "
+                    "unit during the Declare Battle Formations step, that model gains the Scouts 6\" ability."
+                ),
+                "",
+            )
+        ]
+
+        army = Army(faction="Test", detachment_type="Test", points_limit=2000)
+        army.player = _DummyPlayer()
+        army.units = [leader, base, bodyguard_one, bodyguard_two]
+        for u in army.units:
+            u.parent_army = army
+
+        self.assertTrue(leader.can_attach_to(bodyguard_one))
+        self.assertTrue(leader.can_attach_to(bodyguard_two))
+
+        leader.attach_to_unit(bodyguard_one)
+        self.assertEqual(leader.has_scout(), (True, 6.0))
+
+        leader.attach_to_unit(bodyguard_two)
+        self.assertEqual(leader.has_scout(), (False, 0.0))
+
 
 if __name__ == "__main__":
     unittest.main()
-
