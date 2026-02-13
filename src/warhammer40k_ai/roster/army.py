@@ -1795,13 +1795,15 @@ class Army:
             return {"retinue": 2, "character": 2, "requisitioned": 1}
         return {"retinue": 3, "character": 3, "requisitioned": 2}
 
-    def _is_agents_of_imperium_unit(self, unit) -> bool:
+    def _unit_has_any_keyword(self, unit, keyword: str) -> bool:
         if unit is None:
+            return False
+        kw = str(keyword or "").strip().upper()
+        if not kw:
             return False
         fn = getattr(unit, "has_any_keyword", None)
         if callable(fn):
-            return bool(fn("AGENTS OF THE IMPERIUM"))
-        kw = "AGENTS OF THE IMPERIUM"
+            return bool(fn(kw))
         keywords = [
             str(k).strip().upper()
             for k in (getattr(unit, "keywords", []) or [])
@@ -1813,6 +1815,21 @@ class Army:
             if str(k).strip()
         ]
         return kw in set(keywords + faction_keywords)
+
+    def _is_agents_of_imperium_unit(self, unit) -> bool:
+        return self._unit_has_any_keyword(unit, "AGENTS OF THE IMPERIUM")
+
+    def _is_voidfarers_character_unit(self, unit) -> bool:
+        return self._unit_has_any_keyword(unit, "VOIDFARERS") and bool(getattr(unit, "is_character", False))
+
+    def _is_inquisitor_unit(self, unit) -> bool:
+        return self._unit_has_any_keyword(unit, "INQUISITOR")
+
+    def _is_voidsmen_at_arms_unit(self, unit) -> bool:
+        return self._unit_has_any_keyword(unit, "VOIDSMEN-AT-ARMS")
+
+    def _is_inquisitorial_agents_unit(self, unit) -> bool:
+        return self._unit_has_any_keyword(unit, "INQUISITORIAL AGENTS")
 
     def _validate_corsairs_and_travelling_players(self) -> None:
         allied_units = []
@@ -1893,24 +1910,7 @@ class Army:
             return
 
         for unit in list(getattr(self, "units", []) or []):
-            has_keyword = False
-            fn = getattr(unit, "has_any_keyword", None)
-            if callable(fn):
-                has_keyword = bool(fn("IMPERIUM"))
-            else:
-                kw = "IMPERIUM"
-                keywords = [
-                    str(k).strip().upper()
-                    for k in (getattr(unit, "keywords", []) or [])
-                    if str(k).strip()
-                ]
-                faction_keywords = [
-                    str(k).strip().upper()
-                    for k in (getattr(unit, "faction_keywords", []) or [])
-                    if str(k).strip()
-                ]
-                has_keyword = kw in set(keywords + faction_keywords)
-            if not has_keyword:
+            if not self._unit_has_any_keyword(unit, "IMPERIUM"):
                 raise ArmyValidationError(
                     "Assigned Agents: all units must have the IMPERIUM keyword to include Agents of the Imperium allies."
                 )
@@ -1918,16 +1918,21 @@ class Army:
         retinue = 0
         character = 0
         requisitioned = 0
+        voidsmen_at_arms_retinue = 0
+        inquisitorial_agents_retinue = 0
         for unit in agents_units:
             if getattr(unit, "is_dedicated_transport", False):
                 continue
-            fn = getattr(unit, "has_any_keyword", None)
-            has_requisitioned = bool(fn("REQUISITIONED")) if callable(fn) else False
-            has_retinue = bool(fn("RETINUE")) if callable(fn) else False
+            has_requisitioned = self._unit_has_any_keyword(unit, "REQUISITIONED")
+            has_retinue = self._unit_has_any_keyword(unit, "RETINUE")
             if has_requisitioned:
                 requisitioned += 1
             elif has_retinue:
                 retinue += 1
+                if self._is_voidsmen_at_arms_unit(unit):
+                    voidsmen_at_arms_retinue += 1
+                if self._is_inquisitorial_agents_unit(unit):
+                    inquisitorial_agents_retinue += 1
             elif getattr(unit, "is_character", False):
                 character += 1
             else:
@@ -1937,6 +1942,15 @@ class Army:
                 )
 
         caps = self._assigned_agents_unit_caps()
+        all_units = list(getattr(self, "units", []) or [])
+        voidfarers_character_units = sum(
+            1 for unit in all_units if self._is_voidfarers_character_unit(unit)
+        )
+        inquisitor_units = sum(1 for unit in all_units if self._is_inquisitor_unit(unit))
+        exempt_retinue = min(voidsmen_at_arms_retinue, voidfarers_character_units) + min(
+            inquisitorial_agents_retinue, inquisitor_units
+        )
+        retinue = max(0, retinue - exempt_retinue)
         if retinue > caps["retinue"]:
             raise ArmyValidationError(
                 f"Assigned Agents: too many Retinue units ({retinue}/{caps['retinue']})."

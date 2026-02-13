@@ -122,3 +122,87 @@ def test_assigned_agents_empty_transport_destroyed_round_one():
     army.on_battle_round_start(1)
 
     assert not transport.is_alive()
+
+
+def test_assigned_agents_navy_bodyguard_allows_extra_voidsmen_retinue():
+    army = setup_sm_army(points_limit=1000)
+    bodyguard = make_unit(
+        "Voidfarers Character",
+        keywords=["Character", "Voidfarers"],
+        faction_keywords=["AGENTS OF THE IMPERIUM", "IMPERIUM"],
+    )
+    voidsmen = make_unit(
+        "Voidsmen-at-arms",
+        keywords=["Retinue", "Voidfarers", "Voidsmen-at-arms"],
+        faction_keywords=["AGENTS OF THE IMPERIUM", "IMPERIUM"],
+    )
+    other_retinue = make_unit(
+        "Other Retinue",
+        keywords=["Retinue"],
+        faction_keywords=["AGENTS OF THE IMPERIUM", "IMPERIUM"],
+    )
+    for unit in (bodyguard, voidsmen, other_retinue):
+        army.add_unit(unit)
+
+    army.validate_allies()
+
+
+def test_assigned_agents_navy_bodyguard_requires_voidfarers_character():
+    army = setup_sm_army(points_limit=1000)
+    voidsmen = make_unit(
+        "Voidsmen-at-arms",
+        keywords=["Retinue", "Voidfarers", "Voidsmen-at-arms"],
+        faction_keywords=["AGENTS OF THE IMPERIUM", "IMPERIUM"],
+    )
+    other_retinue = make_unit(
+        "Other Retinue",
+        keywords=["Retinue"],
+        faction_keywords=["AGENTS OF THE IMPERIUM", "IMPERIUM"],
+    )
+    for unit in (voidsmen, other_retinue):
+        army.add_unit(unit)
+
+    with pytest.raises(ArmyValidationError):
+        army.validate_allies()
+
+
+def test_assigned_agents_inquisitorial_henchmen_allows_extra_inquisitorial_agents_retinue():
+    army = setup_sm_army(points_limit=1000)
+    inquisitor = make_unit(
+        "Inquisitor",
+        keywords=["Character", "Inquisitor"],
+        faction_keywords=["AGENTS OF THE IMPERIUM", "IMPERIUM"],
+    )
+    inquisitorial_agents = make_unit(
+        "Inquisitorial Agents",
+        keywords=["Retinue", "Inquisitorial Agents"],
+        faction_keywords=["AGENTS OF THE IMPERIUM", "IMPERIUM"],
+    )
+    other_retinue = make_unit(
+        "Other Retinue",
+        keywords=["Retinue"],
+        faction_keywords=["AGENTS OF THE IMPERIUM", "IMPERIUM"],
+    )
+    for unit in (inquisitor, inquisitorial_agents, other_retinue):
+        army.add_unit(unit)
+
+    army.validate_allies()
+
+
+def test_assigned_agents_inquisitorial_henchmen_requires_inquisitor():
+    army = setup_sm_army(points_limit=1000)
+    inquisitorial_agents = make_unit(
+        "Inquisitorial Agents",
+        keywords=["Retinue", "Inquisitorial Agents"],
+        faction_keywords=["AGENTS OF THE IMPERIUM", "IMPERIUM"],
+    )
+    other_retinue = make_unit(
+        "Other Retinue",
+        keywords=["Retinue"],
+        faction_keywords=["AGENTS OF THE IMPERIUM", "IMPERIUM"],
+    )
+    for unit in (inquisitorial_agents, other_retinue):
+        army.add_unit(unit)
+
+    with pytest.raises(ArmyValidationError):
+        army.validate_allies()
