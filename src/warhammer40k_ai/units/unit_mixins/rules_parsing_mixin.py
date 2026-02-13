@@ -77,6 +77,8 @@ class RulesParsingMixin:
             if self._SPAWN_ONLY_ABILITY_RE.search(str(name).strip()):
                 self.special_rules["spawn_only"] = True
                 self.special_rules["spawn_only_reason"] = "USING SIR HEKHTUR + no points data"
+                self.special_rules["stratagem_target_core_only"] = True
+                self.special_rules["stratagem_target_core_only_source"] = "USING SIR HEKHTUR"
                 return
 
     def _parse_daemonic_allegiance_wargear_options(self, text: str) -> list[tuple[str, str]]:

@@ -50,6 +50,17 @@ class DamageDeathMixin:
             # but skip re-publishing when we finalize removal after CAREEN resolves.
             if (not fleed) and len(self.models) == 1:
                 try:
+                    if self._maybe_publish_using_sir_hekhtur_parent_destroyed(last_model=model, game_map=game_map):
+                        return
+                except Exception:
+                    pass
+                try:
+                    using_sir_state = self._handle_using_sir_hekhtur_on_destroyed(last_model=model, game_map=game_map)
+                    if using_sir_state in ("defer", "published"):
+                        return
+                except Exception:
+                    pass
+                try:
                     if bool(getattr(self, "is_leader", False)) and getattr(self, "attached_to", None) is not None:
                         self.detach_from_unit()
                 except Exception:
@@ -131,6 +142,17 @@ class DamageDeathMixin:
                     return
             except Exception:
                 pass
+            try:
+                if self._maybe_publish_using_sir_hekhtur_parent_destroyed(last_model=model, game_map=game_map):
+                    return
+            except Exception:
+                pass
+            try:
+                using_sir_state = self._handle_using_sir_hekhtur_on_destroyed(last_model=model, game_map=game_map)
+                if using_sir_state in ("defer", "published"):
+                    return
+            except Exception:
+                pass
             # If a Leader is destroyed while attached, immediately detach it so the bodyguard
             # no longer counts it for keyword/strength/collision purposes.
             try:
@@ -163,6 +185,208 @@ class DamageDeathMixin:
                 )
             except Exception:
                 pass
+
+    @staticmethod
+    def _using_sir_hekhtur_normalize(value: object) -> str:
+        text = str(value or "").strip().lower()
+        text = re.sub(r"\s+", " ", text)
+        return text
+
+    def _is_canis_rex_unit(self) -> bool:
+        if self._using_sir_hekhtur_normalize(getattr(self, "name", "")) == "canis rex":
+            return True
+        has_any_keyword = getattr(self, "has_any_keyword", None)
+        if callable(has_any_keyword):
+            try:
+                return bool(has_any_keyword("Canis Rex"))
+            except Exception:
+                return False
+        return False
+
+    def _create_sir_hekhtur_unit_for_parent(self):
+        from ...waha_helper.waha_helper import WahaHelper
+        from ..unit import Unit
+
+        parent_army = self.get_parent_army()
+        if parent_army is None:
+            return None
+
+        faction_id = str(getattr(parent_army, "faction_id", "") or "").strip().upper() or None
+        datasheet = WahaHelper().get_datasheet("Sir Hekhtur", faction_id=faction_id)
+        if datasheet is None:
+            return None
+
+        unit = Unit(datasheet)
+        unit.spawned_in_battle = True
+        unit.deployed = True
+        set_reserve = getattr(unit, "set_reserve_status", None)
+        if callable(set_reserve):
+            set_reserve("deployed")
+        else:
+            unit.reserve_status = "deployed"
+        return unit
+
+    def _resolve_using_sir_hekhtur_parent(self, parent_unit_id: str):
+        parent_id = str(parent_unit_id or "").strip()
+        if not parent_id:
+            return None
+        parent_army = self.get_parent_army()
+        player = getattr(parent_army, "player", None) if parent_army is not None else None
+        game = getattr(player, "game", None)
+        resolver = getattr(game, "_resolve_unit_by_id", None) if game is not None else None
+        if callable(resolver):
+            parent = resolver(parent_id)
+            if parent is not None:
+                return parent
+        for cand in list(getattr(parent_army, "units", []) or []):
+            if str(get_entity_id(cand) or "") == parent_id:
+                return cand
+        return None
+
+    def _maybe_publish_using_sir_hekhtur_parent_destroyed(
+        self,
+        *,
+        last_model: Optional[Model],
+        game_map: Optional['Map'],
+    ) -> bool:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        parent_id = str(sr.get("using_sir_hekhtur_parent_unit_id", "") or "").strip()
+        if not parent_id:
+            return False
+
+        parent_unit = self._resolve_using_sir_hekhtur_parent(parent_id)
+        if parent_unit is None:
+            return False
+
+        parent_sr = getattr(parent_unit, "special_rules", None)
+        if not isinstance(parent_sr, dict):
+            parent_sr = {}
+        if bool(parent_sr.get("using_sir_hekhtur_destroyed_event_published", False)):
+            return True
+
+        parent_army = self.get_parent_army()
+        player = getattr(parent_army, "player", None) if parent_army is not None else None
+        game = getattr(player, "game", None)
+        if game is None or not hasattr(game, "event_system"):
+            return False
+
+        parent_sr["using_sir_hekhtur_destroyed_event_published"] = True
+        parent_sr.pop("using_sir_hekhtur_destroyed_pending", None)
+        parent_unit.special_rules = parent_sr
+
+        game.event_system.publish(
+            "unit_destroyed",
+            unit=parent_unit,
+            last_model=last_model,
+            destroyed_by_model=getattr(self, "_last_destroyed_by_model", None),
+            destroyed_by_unit=getattr(self, "_last_destroyed_by_unit", None),
+            destroyed_by_weapon_profile=getattr(self, "_last_destroyed_by_weapon_profile", None),
+            game_map=game_map,
+        )
+        return True
+
+    def _handle_using_sir_hekhtur_on_destroyed(
+        self,
+        *,
+        last_model: Optional[Model],
+        game_map: Optional['Map'],
+    ) -> str:
+        if game_map is None:
+            return "none"
+        if not self._is_canis_rex_unit():
+            return "none"
+
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        if bool(sr.get("using_sir_hekhtur_destroyed_event_published", False)):
+            return "published"
+        if bool(sr.get("using_sir_hekhtur_destroyed_pending", False)):
+            return "defer"
+
+        parent_army = self.get_parent_army()
+        if parent_army is None:
+            return "none"
+
+        sir_unit = None
+        parent_id = str(get_entity_id(self) or "")
+        for cand in list(getattr(parent_army, "units", []) or []):
+            cand_sr = getattr(cand, "special_rules", None)
+            if not isinstance(cand_sr, dict):
+                continue
+            if str(cand_sr.get("using_sir_hekhtur_parent_unit_id", "") or "") != parent_id:
+                continue
+            if cand is self:
+                continue
+            alive_attr = getattr(cand, "is_alive", None)
+            alive = bool(alive_attr()) if callable(alive_attr) else bool(alive_attr)
+            if alive:
+                sir_unit = cand
+                break
+
+        if sir_unit is None:
+            sir_unit = self._create_sir_hekhtur_unit_for_parent()
+            if sir_unit is None:
+                return "none"
+            add_unit = getattr(parent_army, "add_unit", None)
+            if callable(add_unit):
+                add_unit(sir_unit)
+            else:
+                sir_unit.set_parent_army(parent_army)
+                parent_army.units.append(sir_unit)
+
+        sir_sr = getattr(sir_unit, "special_rules", None)
+        if not isinstance(sir_sr, dict):
+            sir_sr = {}
+        sir_sr["using_sir_hekhtur_parent_unit_id"] = parent_id
+        sir_sr["using_sir_hekhtur_parent_unit_name"] = str(getattr(self, "name", "") or "Canis Rex")
+        sir_sr["stratagem_target_core_only"] = True
+        sir_sr["stratagem_target_core_only_source"] = "USING SIR HEKHTUR"
+        sir_unit.special_rules = sir_sr
+
+        sir_unit.spawned_in_battle = True
+        sir_unit.embarked_in = self
+        sir_unit.round_state.embarked_this_round = True
+        if sir_unit not in self.transport_passengers:
+            self.transport_passengers.append(sir_unit)
+        if hasattr(game_map, "units") and sir_unit in game_map.units:
+            game_map.units.remove(sir_unit)
+
+        if last_model is not None and getattr(last_model, "model_base", None) is not None:
+            self._last_known_base = copy.deepcopy(last_model.model_base)
+
+        parent_player = getattr(parent_army, "player", None)
+        game = getattr(parent_player, "game", None)
+        current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        disembarked = bool(
+            sir_unit.disembark(
+                game_map=game_map,
+                transport_unit=self,
+                destroyed_transport=True,
+                emergency=True,
+                current_turn=current_turn,
+            )
+        )
+
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        if bool(sr.get("using_sir_hekhtur_destroyed_event_published", False)):
+            self.special_rules = sr
+            return "published"
+
+        sir_alive_attr = getattr(sir_unit, "is_alive", None)
+        sir_alive = bool(sir_alive_attr()) if callable(sir_alive_attr) else bool(sir_alive_attr)
+        if disembarked and sir_alive:
+            sr["using_sir_hekhtur_destroyed_pending"] = True
+            sr["using_sir_hekhtur_spawned_unit_id"] = str(get_entity_id(sir_unit) or "")
+            self.special_rules = sr
+            return "defer"
+
+        self.special_rules = sr
+        return "none"
 
     def _handle_model_destroyed(self, model: Model, game_map: Optional['Map'] = None) -> None:
         """Handle reactive 'on death' mechanics before the model is removed.

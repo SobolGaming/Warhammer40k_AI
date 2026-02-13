@@ -439,6 +439,50 @@ def _unit_cannot_be_target_of_stratagem(unit: Any) -> bool:
     return False
 
 
+_CORE_STRATAGEM_NAME_ALLOWLIST = {
+    "COMMAND RE-ROLL",
+    "COUNTER-OFFENSIVE",
+    "EPIC CHALLENGE",
+    "FIRE OVERWATCH",
+    "OVERWATCH",
+    "GO TO GROUND",
+    "GRENADE",
+    "HEROIC INTERVENTION",
+    "INSANE BRAVERY",
+    "RAPID INGRESS",
+    "SMOKESCREEN",
+    "TANK SHOCK",
+}
+
+
+def _is_core_stratagem(stratagem: Any) -> bool:
+    if stratagem is None:
+        return False
+    stype = str(getattr(stratagem, "type", "") or "").strip().lower()
+    stype = stype.replace("\u00a0", " ").replace("\u2013", "-").replace("\u2014", "-")
+    if (
+        stype == "core"
+        or stype.startswith("core ")
+        or stype.startswith("core-")
+        or stype.startswith("core stratagem")
+        or "core stratagem" in stype
+    ):
+        return True
+    name_u = str(getattr(stratagem, "name", "") or "").strip().upper().replace("\u2019", "'")
+    return name_u in _CORE_STRATAGEM_NAME_ALLOWLIST
+
+
+def _unit_allows_stratagem_target(unit: Any, stratagem: Any) -> bool:
+    if unit is None:
+        return True
+    sr = getattr(unit, "special_rules", None)
+    if not isinstance(sr, dict):
+        return True
+    if not bool(sr.get("stratagem_target_core_only", False)):
+        return True
+    return _is_core_stratagem(stratagem)
+
+
 def _extract_friendly_target_unit_from_kwargs(kwargs: Dict[str, Any]) -> Any:
     """
     Best-effort extraction of the *friendly* unit being targeted by a stratagem.
@@ -933,6 +977,8 @@ class Stratagem:
                     return False
             else:
                 return False
+        if not _unit_allows_stratagem_target(tgt, self):
+            return False
 
         # Allow CP cost modifiers (e.g. Direct the Slaughter) to affect affordability.
         target_unit = kwargs.get("target_unit", None)
@@ -9603,6 +9649,9 @@ class StratagemManager(
                 else:
                     logger.error("ERROR: Cannot target a Battle-shocked or embarked unit with a Stratagem")
                     return False
+            if not _unit_allows_stratagem_target(tgt, s):
+                logger.error("ERROR: Target unit can only be selected by Core Stratagems")
+                return False
         except Exception:
             raise
         warpbane_result = self._use_grey_knights_warpbane_stratagem(s, **kwargs)
@@ -17779,4 +17828,3 @@ class StratagemManager(
         if clear:
             self._pending_reactions = []
         return items
-

@@ -2798,6 +2798,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "After this model shoots, select a hit enemy unit; disembarked models from this transport gain +1 to Hit and +1 to Wound with Psychic attacks against that target this phase.",
         ),
+        ("QI", "USING SIR HEKHTUR"): (
+            "Supported",
+            "When Canis Rex is destroyed, Sir Hekhtur is spawned and must Emergency Disembark as if from a destroyed Transport; Sir Hekhtur can only be targeted by Core Stratagems; Canis Rex unit-destroyed handling is deferred until Sir Hekhtur is destroyed.",
+        ),
         ("DG", "Mischief Makers"): (
             "Supported",
             "Enemy non-TITAN units selected to fight while engaged suffer -1 to hit with melee attacks until end of phase.",
