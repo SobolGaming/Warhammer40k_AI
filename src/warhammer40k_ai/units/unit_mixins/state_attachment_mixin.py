@@ -34,6 +34,12 @@ _INSPIRING_COMMANDER_OC_SET_RE = re.compile(
     re.IGNORECASE,
 )
 
+_BODYGUARD_TWO_LEADER_RE = re.compile(
+    r"if\s+this\s+unit\s+has\s+a\s+starting\s+strength\s+of\s+(?P<min>\d+).*?"
+    r"attach\s+up\s+to\s+(?:2|two)\s+leader\s+units?\s+to\s+it\s+instead\s+of\s+one",
+    re.IGNORECASE,
+)
+
 
 def _normalize_unit_name_for_rules(value: str) -> str:
     text = re.sub(r"[^a-z0-9]+", " ", str(value or "").lower())
@@ -1961,6 +1967,12 @@ class StateAttachmentMixin:
                 return 0
         except Exception:
             pass
+        bodyguard_spec = self._get_bodyguard_two_leader_spec()
+        if bodyguard_spec is not None:
+            min_starting_strength = int(bodyguard_spec.get("min_starting_strength", 0) or 0)
+            if self._starting_model_count_for_attachment_rules() >= min_starting_strength:
+                return 2
+            return 1
         max_leaders = 1
         try:
             for ab in getattr(self, "possible_abilities", []) or []:
@@ -1974,6 +1986,87 @@ class StateAttachmentMixin:
         except Exception:
             pass
         return max_leaders
+
+    def _starting_model_count_for_attachment_rules(self) -> int:
+        raw = getattr(self, "starting_model_count", None)
+        if raw is None:
+            raw = len(list(getattr(self, "models", []) or []))
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            value = len(list(getattr(self, "models", []) or []))
+        return max(0, value)
+
+    def _iter_possible_ability_name_desc_pairs(self) -> list[tuple[str, str]]:
+        pairs: list[tuple[str, str]] = []
+        for ab in list(getattr(self, "possible_abilities", []) or []):
+            if isinstance(ab, str):
+                name = str(ab or "")
+                desc = str(ab or "")
+            elif isinstance(ab, dict):
+                name = str(ab.get("name", "") or "")
+                desc = str(ab.get("description", "") or "")
+            else:
+                name = str(getattr(ab, "name", "") or "")
+                desc = str(getattr(ab, "description", "") or "")
+            pairs.append((name, desc))
+        return pairs
+
+    def _get_bodyguard_two_leader_spec(self) -> Optional[dict]:
+        for name, desc in self._iter_possible_ability_name_desc_pairs():
+            normalized_desc = self._normalize_rules_text(desc).lower()
+            match = _BODYGUARD_TWO_LEADER_RE.search(normalized_desc)
+            if match is None:
+                continue
+            normalized_name = self._normalize_rules_text(name).lower()
+            if "bodyguard" not in normalized_name and "bodyguard" not in normalized_desc:
+                continue
+            min_starting_strength = int(match.group("min"))
+            return {
+                "min_starting_strength": int(min_starting_strength),
+                "requires_warboss": "warboss unit" in normalized_desc,
+            }
+        return None
+
+    @staticmethod
+    def _leader_has_keyword_for_attachment(leader: "Unit", keyword: str) -> bool:
+        has_any = getattr(leader, "has_any_keyword", None)
+        if callable(has_any) and bool(has_any(keyword)):
+            return True
+        has_kw = getattr(leader, "has_keyword", None)
+        if callable(has_kw) and bool(has_kw(keyword)):
+            return True
+        return False
+
+    def _leader_attachment_constraint_error(
+        self,
+        candidate_leader: "Unit",
+        *,
+        current_leaders: Optional[list["Unit"]] = None,
+    ) -> str:
+        spec = self._get_bodyguard_two_leader_spec()
+        if spec is None:
+            return ""
+        leaders = list(current_leaders or list(getattr(self, "attached_leaders", []) or []))
+        if candidate_leader not in leaders:
+            leaders.append(candidate_leader)
+        if len(leaders) <= 1:
+            return ""
+
+        min_starting_strength = int(spec.get("min_starting_strength", 0) or 0)
+        if self._starting_model_count_for_attachment_rules() < min_starting_strength:
+            return (
+                f"Unit '{self.name}' can only have two Leaders attached if its Starting Strength is "
+                f"{min_starting_strength}."
+            )
+
+        if bool(spec.get("requires_warboss", False)):
+            has_warboss = any(self._leader_has_keyword_for_attachment(leader, "WARBOSS") for leader in leaders)
+            if not has_warboss:
+                return (
+                    f"Unit '{self.name}' requires one attached Leader with the WARBOSS keyword when attaching two Leaders."
+                )
+        return ""
 
     def has_support_artillery_ability(self) -> bool:
         """True if this unit has the Support Artillery join rule."""
@@ -2684,9 +2777,21 @@ class StateAttachmentMixin:
             bodyguard_id = None
         if not bodyguard_id:
             return False
-        if bodyguard_id in allowed:
-            return True
-        return self._can_attach_via_attached_unit_rule(bodyguard)
+        attach_allowed = bool(bodyguard_id in allowed or self._can_attach_via_attached_unit_rule(bodyguard))
+        if not attach_allowed:
+            return False
+
+        current_leaders = list(getattr(bodyguard, "attached_leaders", []) or [])
+        if self not in current_leaders:
+            max_leaders = int(bodyguard.max_attached_leaders() or 0)
+            if max_leaders <= 0:
+                return False
+            if len(current_leaders) >= max_leaders:
+                return False
+        error = str(bodyguard._leader_attachment_constraint_error(self, current_leaders=current_leaders) or "")
+        if error:
+            return False
+        return True
 
     def attach_to_unit(self, bodyguard: 'Unit') -> None:
         """Attach this Leader to a Bodyguard unit (Declare Battle Formations)."""
@@ -2707,6 +2812,9 @@ class StateAttachmentMixin:
             return
         if len(current) >= max_leaders:
             raise ValueError(f"Unit '{bodyguard.name}' already has the maximum number of Leaders attached ({max_leaders}).")
+        constraint_error = str(bodyguard._leader_attachment_constraint_error(self, current_leaders=current) or "")
+        if constraint_error:
+            raise ValueError(constraint_error)
         # Detach from any prior bodyguard first
         if getattr(self, "attached_to", None) is not None and getattr(self, "attached_to", None) is not bodyguard:
             self.detach_from_unit()

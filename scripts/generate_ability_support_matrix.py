@@ -2614,6 +2614,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("NEC", "Nullstone Field Generator (Aura)"): ("Partial", "Feel No Pain vs mortal/psychic applies to bearer only; aura not propagated."),
         ("ORK", "Full Throttle"): ("Supported", "Charge-after-Advance and charge-after-Fall-Back eligibility."),
         ("ORK", "Mekboy"): ("Supported", "Conditional Lone Operative within 3\" of friendly ORKS VEHICLE units."),
+        ("ORK", "BODYGUARD"): (
+            "Supported",
+            "Boyz BODYGUARD enforces two attached Leaders only at Starting Strength 20 and requires one attached Leader to have the WARBOSS keyword when two Leaders are attached.",
+        ),
         ("ORK", "Super Runts"): ("Partial", "Scouts 9\" applied without leading restriction; hit/wound bonus not implemented."),
         ("ORK", "Tellyporta Tech"): ("Partial", "Deep Strike granted without leading restriction."),
         ("ORK", "Drill Boss"): ("Supported", "Leading: +1 to hit for melee attacks in the unit."),
@@ -2859,6 +2863,10 @@ def _datasheet_ability_support_by_name_faction_datasheet() -> Dict[Tuple[str, st
         ("NEC", "TRIARCHAL MENHIRS", "000002360"): (
             "Supported",
             "When this unit's Szarekh model is destroyed, all remaining TRIARCHAL MENHIR models in the unit are also destroyed.",
+        ),
+        ("ORK", "BODYGUARD", "000000016"): (
+            "Supported",
+            "Boyz BODYGUARD enforces two attached Leaders only at Starting Strength 20 and requires one attached Leader to have the WARBOSS keyword when two Leaders are attached.",
         ),
     }
     out: Dict[Tuple[str, str, str], Tuple[str, str]] = {}
