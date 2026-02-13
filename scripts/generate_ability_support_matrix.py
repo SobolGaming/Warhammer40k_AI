@@ -2055,6 +2055,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Marker-based firing is implemented: must remain stationary, cannot fire in a phase where Designate/Adjust was used, and resolves attacks against each unit within 6\" of the unit's Deathstrike marker without selecting a target unit.",
         ),
+        ("AM", "Slabshield"): (
+            "Supported",
+            "Bearer wounds characteristic set-value clauses are parsed (e.g., Wounds characteristic becomes 4 or 7 based on the ability text).",
+        ),
         ("AM", "Malign Wardings(Psychic)"): ("Supported", "Leading: Feel No Pain 4+ against Psychic attacks."),
         ("GK", "Apothecary's Narthecium"): ("Supported", "Command phase: return 1 destroyed non-CHARACTER model to the bearer's unit."),
         ("GK", "Attuned Onslaught (Psychic)"): ("Supported", "After charging, PALADIN SQUAD melee weapons gain +1 Damage until end of turn."),

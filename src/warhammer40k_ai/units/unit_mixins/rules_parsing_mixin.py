@@ -2236,7 +2236,7 @@ class RulesParsingMixin:
         self._refresh_bearer_wounds_bonuses()
 
     def _refresh_bearer_wounds_bonuses(self) -> None:
-        """Apply bearer-only wound bonuses from wargear abilities (e.g., +W)."""
+        """Apply bearer-only wound modifiers from abilities (set/base bonuses)."""
         try:
             root = self.get_attached_unit_root()
         except Exception:
@@ -2249,10 +2249,11 @@ class RulesParsingMixin:
             return
 
         bonus_by_name: dict[str, int] = {}
+        set_by_name: dict[str, int] = {}
         for ab in list(getattr(root, "possible_abilities", []) or []):
             try:
                 atype = str(getattr(ab, "type", "") or "").lower()
-                if "wargear" not in atype:
+                if ("wargear" not in atype) and ("datasheet" not in atype):
                     continue
                 name = str(getattr(ab, "name", "") or "").strip()
                 if not name:
@@ -2262,6 +2263,14 @@ class RulesParsingMixin:
                 if not normalized:
                     continue
                 normalized = normalized.replace("\u2019", "'").lower()
+                set_match = self._BEARER_WOUNDS_SET_RE.search(normalized)
+                if set_match:
+                    try:
+                        set_val = int(set_match.group(1) or 0)
+                    except Exception:
+                        set_val = 0
+                    if set_val > 0:
+                        set_by_name[self._norm_wargear_name(name)] = int(set_val)
                 m = self._BEARER_WOUNDS_BONUS_RE.search(normalized)
                 if not m:
                     continue
@@ -2290,9 +2299,12 @@ class RulesParsingMixin:
             except Exception:
                 base_unmod = 0
             bonus = 0
+            set_values: list[int] = []
             try:
                 for wg in list(getattr(model, "wargear", []) or []):
                     nm = self._norm_wargear_name(getattr(wg, "name", "") or "")
+                    if nm in set_by_name:
+                        set_values.append(int(set_by_name.get(nm, 0) or 0))
                     if nm in bonus_by_name:
                         bonus += int(bonus_by_name.get(nm, 0) or 0)
             except Exception:
@@ -2300,11 +2312,19 @@ class RulesParsingMixin:
             try:
                 for ow in list(getattr(model, "optional_wargear", []) or []):
                     nm = self._norm_wargear_name(str(ow or ""))
+                    if nm in set_by_name:
+                        set_values.append(int(set_by_name.get(nm, 0) or 0))
                     if nm in bonus_by_name:
                         bonus += int(bonus_by_name.get(nm, 0) or 0)
             except Exception:
                 pass
-            desired_base = base_unmod + int(bonus or 0)
+            set_base = 0
+            if set_values:
+                try:
+                    set_base = max(int(v or 0) for v in set_values)
+                except Exception:
+                    set_base = 0
+            desired_base = (int(set_base) if int(set_base or 0) > 0 else int(base_unmod)) + int(bonus or 0)
             try:
                 prev_base = int(getattr(model, "_base_wounds", 0) or 0)
             except Exception:

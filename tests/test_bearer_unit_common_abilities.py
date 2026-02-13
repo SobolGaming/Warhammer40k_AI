@@ -425,6 +425,40 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
 
         self.assertNotIn((4, None), non_officer_leader.has_feel_no_pain(target_model=non_officer_leader.models[0]))
 
+    def test_bearer_wounds_characteristic_set_value_applies(self):
+        ability = {
+            "name": "Slabshield",
+            "description": "The bearer has a Wounds characteristic of 4.",
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        unit = _make_unit("Bullgryn Squad", abilities=[ability])
+        model = unit.models[0]
+        model.optional_wargear = ["Slabshield"]
+
+        unit._refresh_bearer_unit_common_modifiers()
+
+        self.assertEqual(model._base_wounds, 4)
+        self.assertEqual(model.wounds, 4)
+        self.assertEqual(unit.starting_total_wounds, 4)
+
+    def test_bearer_wounds_characteristic_set_value_supports_other_integer(self):
+        ability = {
+            "name": "Slabshield",
+            "description": "The bearer has a Wounds characteristic of 7.",
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        unit = _make_unit("Ogryn Bodyguard", abilities=[ability])
+        model = unit.models[0]
+        model.optional_wargear = ["Slabshield"]
+
+        unit._refresh_bearer_unit_common_modifiers()
+
+        self.assertEqual(model._base_wounds, 7)
+        self.assertEqual(model.wounds, 7)
+        self.assertEqual(unit.starting_total_wounds, 7)
+
     def test_leading_unit_contains_model_invulnerable_save_applies(self):
         ability = {
             "name": "Faithful Flock",

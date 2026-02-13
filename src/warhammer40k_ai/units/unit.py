@@ -1860,6 +1860,10 @@ class Unit(
         r"add\s+(\d+)\s+to\s+the\s+bearer'?s\s+wounds?\s+characteristic",
         re.IGNORECASE,
     )
+    _BEARER_WOUNDS_SET_RE = re.compile(
+        r"(?:the\s+bearer|this\s+model)\s+has\s+a\s+wounds?\s+characteristic\s+of\s+(\d+)",
+        re.IGNORECASE,
+    )
     _BEARER_UNIT_AGILE_MANEUVER_REROLL_RE = re.compile(
         r"(?:you can )?re-?roll any rolls made for (?:the )?(?:bearer'?s|that) unit while it is performing an agile (?:manoeuvre|maneuver)",
         re.IGNORECASE,
