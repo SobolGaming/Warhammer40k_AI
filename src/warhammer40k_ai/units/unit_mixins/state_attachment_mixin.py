@@ -39,6 +39,10 @@ _BODYGUARD_TWO_LEADER_RE = re.compile(
     r"attach\s+up\s+to\s+(?:2|two)\s+leader\s+units?\s+to\s+it\s+instead\s+of\s+one",
     re.IGNORECASE,
 )
+_BODYGUARD_NO_DUPLICATE_LEADERS_RE = re.compile(
+    r"\bnot\s+duplicates?\b",
+    re.IGNORECASE,
+)
 
 
 def _normalize_unit_name_for_rules(value: str) -> str:
@@ -2025,6 +2029,7 @@ class StateAttachmentMixin:
             return {
                 "min_starting_strength": int(min_starting_strength),
                 "requires_warboss": "warboss unit" in normalized_desc,
+                "requires_unique_leaders": _BODYGUARD_NO_DUPLICATE_LEADERS_RE.search(normalized_desc) is not None,
             }
         return None
 
@@ -2037,6 +2042,22 @@ class StateAttachmentMixin:
         if callable(has_kw) and bool(has_kw(keyword)):
             return True
         return False
+
+    @staticmethod
+    def _leader_duplicate_key_for_attachment(leader: "Unit") -> str:
+        if leader is None:
+            return ""
+        datasheet_id = ""
+        get_dsid = getattr(leader, "get_datasheet_id", None)
+        if callable(get_dsid):
+            raw_id = get_dsid()
+            datasheet_id = str(raw_id or "").strip()
+        if datasheet_id:
+            return f"id:{datasheet_id}"
+        name = str(getattr(leader, "name", "") or "").strip().lower()
+        if name:
+            return f"name:{name}"
+        return ""
 
     def _leader_attachment_constraint_error(
         self,
@@ -2066,6 +2087,17 @@ class StateAttachmentMixin:
                 return (
                     f"Unit '{self.name}' requires one attached Leader with the WARBOSS keyword when attaching two Leaders."
                 )
+        if bool(spec.get("requires_unique_leaders", False)):
+            seen: set[str] = set()
+            for leader in leaders:
+                key = self._leader_duplicate_key_for_attachment(leader)
+                if not key:
+                    continue
+                if key in seen:
+                    return (
+                        f"Unit '{self.name}' requires attached Leaders to be different datasheets when attaching two Leaders."
+                    )
+                seen.add(key)
         return ""
 
     def has_support_artillery_ability(self) -> bool:

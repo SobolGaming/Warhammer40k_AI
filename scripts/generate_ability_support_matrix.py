@@ -2625,6 +2625,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("ORK", "Super Runts"): ("Partial", "Scouts 9\" applied without leading restriction; hit/wound bonus not implemented."),
         ("ORK", "Tellyporta Tech"): ("Partial", "Deep Strike granted without leading restriction."),
         ("ORK", "Drill Boss"): ("Supported", "Leading: +1 to hit for melee attacks in the unit."),
+        ("TAU", "BODYGUARD"): (
+            "Supported",
+            "Kroot Carnivores BODYGUARD enforces two attached Leaders only at Starting Strength 20 and requires those two Leaders to be different datasheets.",
+        ),
         ("TAU", "Advanced Armour"): ("Supported", "Feel No Pain 4+ against mortal wounds."),
         ("TAU", "Agile Combatant"): ("Supported", "Shoot after Falling Back."),
         ("TAU", "Recon Drone"): ("Supported", "Infiltrators."),
@@ -2875,6 +2879,10 @@ def _datasheet_ability_support_by_name_faction_datasheet() -> Dict[Tuple[str, st
         ("ORK", "PATROL SQUAD", "000000025"): (
             "Supported",
             "Declare Battle Formations: optional split into two 5-model Kommandos units, with Bomb Squigs/Distraction Grot use assigned to only one split unit.",
+        ),
+        ("TAU", "BODYGUARD", "000000413"): (
+            "Supported",
+            "Kroot Carnivores BODYGUARD enforces two attached Leaders only at Starting Strength 20 and requires those two Leaders to be different datasheets.",
         ),
     }
     out: Dict[Tuple[str, str, str], Tuple[str, str]] = {}
