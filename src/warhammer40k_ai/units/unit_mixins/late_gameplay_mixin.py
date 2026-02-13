@@ -1445,6 +1445,18 @@ class LateGameplayMixin:
         except Exception:
             pass
 
+        # Cloudstrike: if the 6" Deep Strike option was active, cannot charge until end of turn.
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get("cloudstrike_no_charge_on_arrival")):
+                owner = str(sr.get("cloudstrike_turn_owner", "") or "")
+                sr["cloudstrike_no_charge_turn"] = int(turn or 0)
+                if owner:
+                    sr["cloudstrike_no_charge_turn_owner"] = owner
+                self.special_rules = sr
+        except Exception:
+            pass
+
         # Clear temporary Deep Strike flags from Realm of Chaos/Denizens of the Warp.
         try:
             sr = getattr(self, "special_rules", None)
@@ -1473,6 +1485,17 @@ class LateGameplayMixin:
                         "rapid_manifestation_turn",
                         "rapid_manifestation_expires_phase",
                         "rapid_manifestation_source",
+                    ):
+                        sr.pop(key, None)
+                if "cloudstrike_deep_strike_min_distance" in sr or "cloudstrike_expires_phase" in sr:
+                    for key in (
+                        "cloudstrike_temp_deep_strike",
+                        "cloudstrike_deep_strike_min_distance",
+                        "cloudstrike_turn_owner",
+                        "cloudstrike_turn",
+                        "cloudstrike_expires_phase",
+                        "cloudstrike_source",
+                        "cloudstrike_no_charge_on_arrival",
                     ):
                         sr.pop(key, None)
                 if "hallowed_beacon_deep_strike_min_distance" in sr or "hallowed_beacon_expires_phase" in sr:

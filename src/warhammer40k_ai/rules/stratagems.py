@@ -26,6 +26,8 @@ logger = logging.getLogger(__name__)
 IMPLEMENTED_STRATAGEM_NAMES = {
     "A CHALLENGE MET",
     "A GRIM WARNING",
+    "ANTI-GRAV REPULSION",
+    "ANTI‑GRAV REPULSION",
     "ARMOUR OF CONTEMPT",
     "A WORTHY SKULL",
     "APOPLECTIC FRENZY",
@@ -40,6 +42,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BRAZEN CONTEMPT",
     "BERSERK FUGUE",
     "BEAUTIFUL DEATH",
+    "CLOUDSTRIKE",
     "DAEMONIC FURY",
     "DAEMONIC STRENGTH",
     "DAEMONTIDE",
@@ -59,6 +62,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "FIRE AND FADE",
     "HACK AND SLASH",
     "HEIGHTENED JEALOUSY",
+    "LAYERED WARDS",
     "LIGHTNING-FAST REACTIONS",
     "LIMB FROM LIMB",
     "MURDER-CALL",
@@ -182,14 +186,17 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "PRIDEFUL SUPERIORITY",
     "SHROUD OF CHAOS",
     "SINUOUS BREACH",
+    "SOULSIGHT",
     "SOULSEEKERS",
     "SUSTAINED BY AGONY",
+    "SWIFT DEPLOYMENT",
     "SYCOPHANTIC SURGE",
     "UNCANNY REACTIONS",
     "HONOUR THE PRINCE",
     "UNHOLY HASTE",
     "PROTECTION OF THE DARK PRINCE",
     "UNSHAKEABLE OPPONENTS",
+    "VECTORED ENGINES",
     "PRETERNATURAL AGILITY",
     "VIOLENT CRESCENDO",
     "VIOLENT EXCESS",
@@ -198,6 +205,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
 REACTION_ONLY_STRATAGEM_NAMES = {
     "A CHALLENGE MET",
     "A GRIM WARNING",
+    "ANTI-GRAV REPULSION",
+    "ANTI‑GRAV REPULSION",
     "ARMOUR OF ABHORRENCE",
     "ARMOUR OF CONTEMPT",
     "A WORTHY SKULL",
@@ -275,14 +284,17 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "DARK APPARITIONS",
     "ECSTATIC SLAUGHTER",
     "HEIGHTENED JEALOUSY",
+    "LAYERED WARDS",
     "SUSTAINED BY AGONY",
     "UNCANNY REACTIONS",
     "VENGEFUL SURGE",
     "CAPRICIOUS REACTIONS",
     "COMBAT STIMMS",
+    "CLOUDSTRIKE",
     "CONTEMPTUOUS DISREGARD",
     "DIVINE INTERVENTION",
     "SHROUD OF CHAOS",
+    "SOULSIGHT",
     "DARK VIGOUR",
     "CRUEL RAIDERS",
     "ADVANCE AND CLAIM",
@@ -294,6 +306,8 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "SANCTIFIED IMMOLATION",
     "SPIRIT OF THE MARTYR",
     "SUFFERING AND SACRIFICE",
+    "SWIFT DEPLOYMENT",
+    "VECTORED ENGINES",
 }
 
 
@@ -1109,6 +1123,7 @@ class StratagemManager(
     def _normalize_stratagem_name(name: str) -> str:
         text = str(name or "")
         text = text.replace("\u2019", "'").replace("\u2018", "'")
+        text = text.replace("\u2010", "-").replace("\u2011", "-").replace("\u2012", "-")
         text = text.replace("\u2013", "-").replace("\u2014", "-")
         text = text.replace("\u00e2\u20ac\u2122", "'")
         text = text.replace("\u0192?T", "'")
@@ -1159,8 +1174,23 @@ class StratagemManager(
         if names & {"OVERWATCH", "FIRE OVERWATCH", "APOPLECTIC FRENZY", "PUNISH THE CRAVEN"}:
             add("unit_move_started", self._on_unit_move_started)
 
-        if names & {"OVERWATCH", "FIRE OVERWATCH", "TANK SHOCK", "HEROIC INTERVENTION", "FEIGNED RETREAT", "FEIGNED WEAKNESS", "CUT DOWN THE WEAK", "FIRES OF COVENANT", "A CHALLENGE MET", "DARK VIGOUR"}:
+        if names & {
+            "OVERWATCH",
+            "FIRE OVERWATCH",
+            "TANK SHOCK",
+            "HEROIC INTERVENTION",
+            "FEIGNED RETREAT",
+            "FEIGNED WEAKNESS",
+            "CUT DOWN THE WEAK",
+            "FIRES OF COVENANT",
+            "A CHALLENGE MET",
+            "DARK VIGOUR",
+            "SWIFT DEPLOYMENT",
+            "VECTORED ENGINES",
+        }:
             add("unit_move_ended", self._on_unit_move_ended)
+        if names & {"ANTI-GRAV REPULSION", "ANTI‑GRAV REPULSION"}:
+            add("charge_declared", self._on_charge_declared)
         if names & {"FIRES OF COVENANT", "A CHALLENGE MET"}:
             add("unit_set_up", self._on_unit_set_up)
 
@@ -1172,7 +1202,7 @@ class StratagemManager(
 
         if names & {"SUMMONED BY SLAUGHTER", "PUTRID DETONATION", "SANCTIFIED IMMOLATION"}:
             add("model_destroyed_before_removal", self._on_model_destroyed_before_removal)
-        if names & {"BALEFUL BLESSING", "PROTECTION OF THE DARK PRINCE"}:
+        if names & {"BALEFUL BLESSING", "PROTECTION OF THE DARK PRINCE", "LAYERED WARDS"}:
             add("mortal_wound_allocated", self._on_mortal_wound_allocated)
         if "PROTECTION OF THE DARK PRINCE" in names:
             add("attack_allocated", self._on_attack_allocated)
@@ -1327,6 +1357,9 @@ class StratagemManager(
             "GO TO GROUND",
             "SMOKESCREEN",
             "BLITZING FIREPOWER",
+            "ANTI-GRAV REPULSION",
+            "ANTI‑GRAV REPULSION",
+            "CLOUDSTRIKE",
             "FULL-THROTTLE ASSAULT",
             "DAEMONIC STRENGTH",
             "IMMORTAL FURY",
@@ -1374,14 +1407,18 @@ class StratagemManager(
             "EUPHORIC INSPIRATION",
             "HEIGHTENED JEALOUSY",
             "MARTIAL PERFECTION",
+            "LAYERED WARDS",
             "PROTECTION OF THE DARK PRINCE",
             "PRIDEFUL SUPERIORITY",
             "REFUSAL TO BE OUTDONE",
+            "SOULSIGHT",
             "SINUOUS BREACH",
+            "SWIFT DEPLOYMENT",
             "SYCOPHANTIC SURGE",
             "HONOUR THE PRINCE",
             "UNSHAKEABLE OPPONENTS",
             "VENGEFUL SURGE",
+            "VECTORED ENGINES",
             "VIOLENT CRESCENDO",
             "VIOLENT EXCESS",
             "DARK APPARITIONS",
@@ -2204,6 +2241,11 @@ class StratagemManager(
                 result["available"] = True
                 result["reason"] = None
                 return result
+        if name_u == "SOULSIGHT":
+            if self._aeldari_armoured_soulsight_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
         if name_u == "MERCILESS RECLAMATION":
             if self._starshatter_merciless_reclamation_candidates(phase_name):
                 result["available"] = True
@@ -2316,6 +2358,13 @@ class StratagemManager(
             "INSENSATE RAMPAGE": "Target: DEATH COMPANY unit",
             "LIMB FROM LIMB": "Target: BLOOD ANGELS unit (charged)",
             "RED WRATH": "Target: BLOOD ANGELS unit (advanced)",
+            "ANTI-GRAV REPULSION": "Target: AELDARI VEHICLE FLY unit selected as a charge target",
+            "ANTI‑GRAV REPULSION": "Target: AELDARI VEHICLE FLY unit selected as a charge target",
+            "CLOUDSTRIKE": "Target: AELDARI VEHICLE FLY unit in Strategic Reserves",
+            "LAYERED WARDS": "Target: AELDARI VEHICLE unit after a mortal wound is allocated",
+            "SOULSIGHT": "Target: AELDARI VEHICLE unit that has not been selected to shoot",
+            "SWIFT DEPLOYMENT": "Target: AELDARI TRANSPORT unit after it Advanced",
+            "VECTORED ENGINES": "Target: AELDARI VEHICLE FLY unit after it Fell Back",
             "A CHALLENGE MET": "Target: WYCH CULT unit; enemy within 9\" that moved or was set up this phase",
             "ACROBATIC DISPLAY": "Target: WYCH CULT unit targeted by enemy attacks",
             "BEAUTIFUL DEATH": "Target: EMPEROR'S CHILDREN CHARACTER unit targeted by enemy fight attacks",
@@ -2911,6 +2960,10 @@ class StratagemManager(
             raise
         try:
             self._queue_warpbane_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_aeldari_armoured_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -3745,6 +3798,10 @@ class StratagemManager(
         try:
             self._queue_warpbane_phase_end_reactions(player=player, phase=phase)
             self._cleanup_warpbane_phase_end_effects(phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_aeldari_armoured_phase_end_effects(phase=phase)
         except Exception:
             raise
         try:
@@ -5286,6 +5343,13 @@ class StratagemManager(
         self._maybe_queue_cut_down_the_weak(unit, action)
         self._process_warpbane_fires_of_covenant_trigger(unit=unit, trigger_kind="move_end", action=action)
         self._queue_emperors_children_mercurial_move_end_reactions(unit=unit, action=action)
+        self._queue_aeldari_armoured_move_end_reactions(unit=unit, action=action)
+
+    def _on_charge_declared(self, unit=None, target_units=None, **_kwargs):
+        self._queue_aeldari_armoured_charge_declared_reactions(
+            charging_unit=unit,
+            target_units=list(target_units or []),
+        )
 
     def _on_unit_set_up(self, unit, **kwargs):
         self._track_a_challenge_met_set_up(unit)
@@ -8619,6 +8683,16 @@ class StratagemManager(
             )
         except Exception:
             raise
+        try:
+            self._queue_aeldari_armoured_layered_wards_reaction(
+                target_unit=target_unit,
+                attacker_unit=attacker_unit,
+                target_model=target_model,
+                phase_name=phase_name,
+                trigger_event="mortal_wound_allocated",
+            )
+        except Exception:
+            raise
 
     def _on_attack_allocated(
         self,
@@ -11720,6 +11794,9 @@ class StratagemManager(
         as_result = self._use_adepta_sororitas_hallowed_stratagem(s, **kwargs)
         if as_result is not None:
             return as_result
+        aeldari_armoured_result = self._use_aeldari_armoured_warhost_stratagem(s, **kwargs)
+        if aeldari_armoured_result is not None:
+            return aeldari_armoured_result
 
         # Rage-cursed Onslaught: RED WRATH (advance then shoot/charge choice; Red Thirst for both)
         if s.name.upper() == "RED WRATH":
@@ -17504,6 +17581,8 @@ class StratagemManager(
                         trigger_label = "Trigger: enemy move start"
                     elif when == "end":
                         trigger_label = "Trigger: enemy move end"
+                elif r.get("event") == "charge_declared":
+                    trigger_label = "Trigger: enemy charge declared"
                 elif r.get("event") in ("charge_move_ended", "heroic_intervention"):
                     trigger_label = "Trigger: enemy charge end"
                 elif r.get("event") == "shooting_targets_selected":

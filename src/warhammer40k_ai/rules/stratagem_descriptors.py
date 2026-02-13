@@ -1183,6 +1183,78 @@ _RAPID_EVISCERATION_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _RAPID_EVISCERATION_STRATAGEM_DESCRIPTORS.values()
 }
 
+_ARMOURED_WARHOST_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009770007": StratagemToolDescriptor(
+        stratagem_id="000009770007",
+        name="Anti-Grav Repulsion",
+        timing="opponent_charge_phase_after_charge_declared",
+        target="aeldari_vehicle_fly_unit_selected_as_charge_target",
+        duration="until_end_of_phase",
+        effect="enemy_charge_roll_modifier",
+        cp_cost=1,
+        effect_params={"charge_roll_modifier": -2},
+    ),
+    "000009770005": StratagemToolDescriptor(
+        stratagem_id="000009770005",
+        name="Cloudstrike",
+        timing="movement_phase_reinforcements_step_start",
+        target="aeldari_vehicle_fly_unit_in_strategic_reserves",
+        duration="until_end_of_turn",
+        effect="temporary_deep_strike_with_6_in_and_no_charge",
+        cp_cost=1,
+        effect_params={
+            "grant_deep_strike": True,
+            "deep_strike_min_distance": 6,
+            "no_charge_after_6_in_arrival": True,
+            "transport_disembark_min_enemy_horizontal_distance": 6,
+            "transport_disembark_no_charge": True,
+        },
+    ),
+    "000009770002": StratagemToolDescriptor(
+        stratagem_id="000009770002",
+        name="Layered Wards",
+        timing="any_phase_after_mortal_wound_allocated",
+        target="aeldari_vehicle_unit_allocated_mortal_wound",
+        duration="until_end_of_phase",
+        effect="feel_no_pain_vs_mortals",
+        cp_cost=1,
+        effect_params={"feel_no_pain_value": 5, "condition": "against mortal wounds"},
+    ),
+    "000009770006": StratagemToolDescriptor(
+        stratagem_id="000009770006",
+        name="Soulsight",
+        timing="shooting_phase_on_select",
+        target="aeldari_vehicle_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="selected_to_shoot_one_hit_one_wound_one_damage_reroll",
+        cp_cost=1,
+        effect_params={"reroll_hit": True, "reroll_wound": True, "reroll_damage": True},
+    ),
+    "000009770003": StratagemToolDescriptor(
+        stratagem_id="000009770003",
+        name="Swift Deployment",
+        timing="movement_phase_after_transport_advanced",
+        target="aeldari_transport_unit_that_advanced",
+        duration="until_end_of_phase",
+        effect="allow_disembark_after_advance_no_charge",
+        cp_cost=1,
+        effect_params={"allow_disembark_after_advance": True, "disembarking_units_cannot_charge": True},
+    ),
+    "000009770004": StratagemToolDescriptor(
+        stratagem_id="000009770004",
+        name="Vectored Engines",
+        timing="movement_phase_after_fall_back",
+        target="aeldari_vehicle_fly_unit_that_fell_back",
+        duration="until_end_of_turn",
+        effect="shoot_after_fall_back",
+        cp_cost=1,
+    ),
+}
+
+_ARMOURED_WARHOST_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _ARMOURED_WARHOST_STRATAGEM_DESCRIPTORS.values()
+}
+
 
 def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> Optional[StratagemToolDescriptor]:
     if stratagem_id:
@@ -1237,6 +1309,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _RAPID_EVISCERATION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _ARMOURED_WARHOST_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
     key = _normalize_name(name)
     if not key:
         return None
@@ -1258,4 +1333,5 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _COTERIE_OF_THE_CONCEITED_STRATAGEM_BY_NAME.get(key)
         or _MERCURIAL_HOST_STRATAGEM_BY_NAME.get(key)
         or _RAPID_EVISCERATION_STRATAGEM_BY_NAME.get(key)
+        or _ARMOURED_WARHOST_STRATAGEM_BY_NAME.get(key)
     )

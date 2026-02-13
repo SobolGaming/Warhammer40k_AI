@@ -8955,6 +8955,26 @@ class ActionsMovementMixin:
                     return True
         except Exception:
             pass
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("vectored_engines_active"):
+                army = self.get_parent_army()
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                owner = str(sr.get("vectored_engines_turn_owner", "") or "")
+                turn = int(sr.get("vectored_engines_turn", 0) or 0)
+                active = True
+                if game is not None:
+                    cur_turn = int(getattr(game, "turn", 0) or 0)
+                    cur_player = getattr(game, "get_current_player", lambda: None)()
+                    cur_owner = str(getattr(cur_player, "id", "") or "")
+                    if owner and cur_owner and owner != cur_owner:
+                        active = False
+                    if turn and cur_turn and turn != cur_turn:
+                        active = False
+                if active:
+                    return True
+        except Exception:
+            pass
             
         return False
 

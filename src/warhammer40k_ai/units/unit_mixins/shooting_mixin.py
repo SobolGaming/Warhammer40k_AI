@@ -2690,6 +2690,7 @@ class ShootingMixin:
         game_map: 'Map',
         max_distance: float,
         require_not_in_engagement: bool = True,
+        min_enemy_horizontal_distance: Optional[float] = None,
     ) -> Optional[List[Tuple[float, float, float, float]]]:
         """
         Attempt to find legal placements for all models in this unit wholly within
@@ -2785,8 +2786,15 @@ class ShootingMixin:
                         # If coherency logic fails, allow placement but still avoid collisions.
                         pass
 
-                    # Disembark requirement: not within engagement range of any enemy models
-                    if require_not_in_engagement and enemy_models:
+                    # Disembark requirement: not within engagement range (or farther if overridden).
+                    min_enemy = 0.0
+                    try:
+                        min_enemy = float(min_enemy_horizontal_distance or 0.0)
+                    except Exception:
+                        min_enemy = 0.0
+                    if require_not_in_engagement:
+                        min_enemy = max(min_enemy, 1.0)
+                    if min_enemy > 0 and enemy_models:
                         from ...utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
                         candidate_base = self._create_potential_base(x, y, z, facing, model=model)
                         too_close = False
@@ -2794,8 +2802,16 @@ class ShootingMixin:
                             if not getattr(em, "is_alive", False):
                                 continue
                             horizontal = float(horizontal_distance_between_bases_2d(candidate_base, em.model_base))
-                            vertical = float(vertical_distance_between_bases(candidate_base, em.model_base))
-                            if horizontal <= 1.0 + 1e-6 and vertical <= 5.0 + 1e-6:
+                            if min_enemy_horizontal_distance is not None and float(min_enemy_horizontal_distance or 0.0) > 0:
+                                if horizontal <= min_enemy + 1e-6:
+                                    too_close = True
+                                    break
+                            else:
+                                vertical = float(vertical_distance_between_bases(candidate_base, em.model_base))
+                                if horizontal <= 1.0 + 1e-6 and vertical <= 5.0 + 1e-6:
+                                    too_close = True
+                                    break
+                            if horizontal <= min_enemy + 1e-6 and min_enemy > 1.0:
                                 # Too close to an enemy model for disembark
                                 too_close = True
                                 break
@@ -2822,6 +2838,7 @@ class ShootingMixin:
         max_distance: float,
         placed: List[Tuple[float, float, float, float]],
         require_not_in_engagement: bool = True,
+        min_enemy_horizontal_distance: Optional[float] = None,
     ) -> Optional[Tuple[float, float, float, float]]:
         """Find a valid disembark position for one model given already-placed models."""
         if transport_base is None:
@@ -2893,7 +2910,14 @@ class ShootingMixin:
                 except Exception:
                     pass
 
-                if require_not_in_engagement and enemy_models:
+                min_enemy = 0.0
+                try:
+                    min_enemy = float(min_enemy_horizontal_distance or 0.0)
+                except Exception:
+                    min_enemy = 0.0
+                if require_not_in_engagement:
+                    min_enemy = max(min_enemy, 1.0)
+                if min_enemy > 0 and enemy_models:
                     from ...utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
                     candidate_base = self._create_potential_base(x, y, z, facing, model=model)
                     blocked = False
@@ -2901,8 +2925,16 @@ class ShootingMixin:
                         if not getattr(em, "is_alive", False):
                             continue
                         horizontal = float(horizontal_distance_between_bases_2d(candidate_base, em.model_base))
-                        vertical = float(vertical_distance_between_bases(candidate_base, em.model_base))
-                        if horizontal <= 1.0 + 1e-6 and vertical <= 5.0 + 1e-6:
+                        if min_enemy_horizontal_distance is not None and float(min_enemy_horizontal_distance or 0.0) > 0:
+                            if horizontal <= min_enemy + 1e-6:
+                                blocked = True
+                                break
+                        else:
+                            vertical = float(vertical_distance_between_bases(candidate_base, em.model_base))
+                            if horizontal <= 1.0 + 1e-6 and vertical <= 5.0 + 1e-6:
+                                blocked = True
+                                break
+                        if horizontal <= min_enemy + 1e-6 and min_enemy > 1.0:
                             blocked = True
                             break
                     if blocked:
@@ -3125,10 +3157,80 @@ class ShootingMixin:
                     overrides["allow_charge_after_normal_move"] = bool(
                         sr.get("stratagem_disembark_override_allow_charge_after_normal_move", False)
                     )
+                if "stratagem_disembark_override_allow_after_advance" in sr:
+                    overrides["allow_after_advance"] = bool(
+                        sr.get("stratagem_disembark_override_allow_after_advance", False)
+                    )
+                if "stratagem_disembark_override_force_cannot_charge" in sr:
+                    overrides["force_cannot_charge_this_turn"] = bool(
+                        sr.get("stratagem_disembark_override_force_cannot_charge", False)
+                    )
+                if "stratagem_disembark_override_min_enemy_horizontal_distance" in sr:
+                    try:
+                        min_enemy = float(sr.get("stratagem_disembark_override_min_enemy_horizontal_distance", 0) or 0)
+                    except Exception:
+                        min_enemy = 0.0
+                    if min_enemy > 0:
+                        overrides["min_enemy_horizontal_distance"] = float(min_enemy)
         try:
             tsr = getattr(transport_unit, "special_rules", None)
         except Exception:
             tsr = None
+        if isinstance(tsr, dict) and tsr.get("swift_deployment_active"):
+            swift_active = True
+            exp = str(tsr.get("swift_deployment_expires_phase", "") or "").strip().upper()
+            if exp:
+                try:
+                    phase = getattr(game, "phase", None)
+                    phase_name = str(getattr(phase, "name", "") or phase or "").strip().upper()
+                except Exception:
+                    phase_name = ""
+                if phase_name and phase_name != exp:
+                    swift_active = False
+            owner = str(tsr.get("swift_deployment_turn_owner", "") or "")
+            turn = int(tsr.get("swift_deployment_turn", 0) or 0)
+            if swift_active and game is not None:
+                try:
+                    current_player = getattr(game, "get_current_player", lambda: None)()
+                except Exception:
+                    current_player = None
+                current_owner = str(getattr(current_player, "id", "") or "")
+                try:
+                    current_turn = int(getattr(game, "turn", 0) or 0)
+                except Exception:
+                    current_turn = 0
+                if owner and current_owner and owner != current_owner:
+                    swift_active = False
+                if turn and current_turn and turn != current_turn:
+                    swift_active = False
+            if swift_active:
+                overrides["allow_after_advance"] = True
+        if isinstance(tsr, dict) and tsr.get("cloudstrike_transport_no_charge_disembark"):
+            cloudstrike_active = True
+            owner = str(tsr.get("cloudstrike_transport_disembark_turn_owner", "") or "")
+            turn = int(tsr.get("cloudstrike_transport_disembark_turn", 0) or 0)
+            if game is not None:
+                try:
+                    current_player = getattr(game, "get_current_player", lambda: None)()
+                except Exception:
+                    current_player = None
+                current_owner = str(getattr(current_player, "id", "") or "")
+                try:
+                    current_turn = int(getattr(game, "turn", 0) or 0)
+                except Exception:
+                    current_turn = 0
+                if owner and current_owner and owner != current_owner:
+                    cloudstrike_active = False
+                if turn and current_turn and turn != current_turn:
+                    cloudstrike_active = False
+            if cloudstrike_active:
+                overrides["force_cannot_charge_this_turn"] = True
+                try:
+                    min_enemy = float(tsr.get("cloudstrike_transport_disembark_min_enemy_distance", 0) or 0)
+                except Exception:
+                    min_enemy = 0.0
+                if min_enemy > 0:
+                    overrides["min_enemy_horizontal_distance"] = float(min_enemy)
         if isinstance(tsr, dict) and tsr.get("goretrack_full_throttle_assault_active"):
             exp = str(tsr.get("goretrack_full_throttle_assault_expires_phase", "") or "").strip().upper()
             if exp:
@@ -3255,15 +3357,17 @@ class ShootingMixin:
         if army is not None and getattr(army, "player", None) is not None:
             game = army.player.game
         overrides = self._disembark_override_rules(transport_unit=transport_unit, game=game)
+        if overrides.get("allow_after_advance") is True:
+            allow_after_advance = True
         if overrides.get("allow_charge_after_normal_move") is True:
             allow_charge_after_normal_move = True
-        game = None
-        army = self.get_parent_army()
-        if army is not None and getattr(army, "player", None) is not None:
-            game = army.player.game
-        overrides = self._disembark_override_rules(transport_unit=transport_unit, game=game)
-        if overrides.get("allow_charge_after_normal_move") is True:
-            allow_charge_after_normal_move = True
+        force_cannot_charge_from_override = bool(overrides.get("force_cannot_charge_this_turn", False))
+        min_enemy_horizontal_distance = None
+        if overrides.get("min_enemy_horizontal_distance") is not None:
+            try:
+                min_enemy_horizontal_distance = float(overrides.get("min_enemy_horizontal_distance"))
+            except Exception:
+                min_enemy_horizontal_distance = None
 
         # Transport state restrictions for normal disembark
         if not destroyed_transport:
@@ -3307,6 +3411,7 @@ class ShootingMixin:
             game_map=game_map,
             max_distance=disembark_distance,
             require_not_in_engagement=require_not_in_engagement,
+            min_enemy_horizontal_distance=min_enemy_horizontal_distance,
         )
 
         if placements is None and destroyed_transport and not emergency:
@@ -3335,6 +3440,7 @@ class ShootingMixin:
                         max_distance=6.0,
                         placed=placed_positions,
                         require_not_in_engagement=require_not_in_engagement,
+                        min_enemy_horizontal_distance=min_enemy_horizontal_distance,
                     )
                     if pos is None:
                         unplaced_models.append(m)
@@ -3473,6 +3579,12 @@ class ShootingMixin:
                 if not allow_charge_after_normal_move:
                     self.round_state.disembarked_cannot_charge = True
 
+        if force_cannot_charge_from_override:
+            self.round_state.disembarked_from_moved_transport = True
+            self.round_state.moved_this_round = True
+            self.round_state.remained_stationary_this_round = False
+            self.round_state.disembarked_cannot_charge = True
+
 
         return True
 
@@ -3487,6 +3599,7 @@ class ShootingMixin:
         game_map: Optional['Map'] = None,
         max_distance: float = 3.0,
         require_not_in_engagement: bool = True,
+        min_enemy_horizontal_distance: Optional[float] = None,
     ) -> dict:
         """Validate manual disembark placement for a single model."""
         if game_map is None:
@@ -3510,6 +3623,11 @@ class ShootingMixin:
                 pass
         if overrides.get("require_not_in_engagement") is not None:
             require_not_in_engagement = bool(overrides.get("require_not_in_engagement"))
+        if overrides.get("min_enemy_horizontal_distance") is not None:
+            try:
+                min_enemy_horizontal_distance = float(overrides.get("min_enemy_horizontal_distance"))
+            except Exception:
+                min_enemy_horizontal_distance = None
 
         transport_base = None
         try:
@@ -3560,7 +3678,14 @@ class ShootingMixin:
         except Exception:
             pass
 
+        min_enemy = 0.0
+        try:
+            min_enemy = float(min_enemy_horizontal_distance or 0.0)
+        except Exception:
+            min_enemy = 0.0
         if require_not_in_engagement:
+            min_enemy = max(min_enemy, 1.0)
+        if min_enemy > 0:
             try:
                 from ...utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
                 for enemy in list(game_map.get_enemy_units(self) or []):
@@ -3579,9 +3704,15 @@ class ShootingMixin:
                         if not getattr(em, "is_alive", True):
                             continue
                         horizontal = float(horizontal_distance_between_bases_2d(candidate_base, em.model_base))
-                        vertical = float(vertical_distance_between_bases(candidate_base, em.model_base))
-                        if horizontal <= 1.0 + 1e-6 and vertical <= 5.0 + 1e-6:
-                            return {"valid": False, "reason": "Within Engagement Range"}
+                        if min_enemy_horizontal_distance is not None and float(min_enemy_horizontal_distance or 0.0) > 0:
+                            if horizontal <= min_enemy + 1e-6:
+                                return {"valid": False, "reason": "Too close to enemy unit"}
+                        else:
+                            vertical = float(vertical_distance_between_bases(candidate_base, em.model_base))
+                            if horizontal <= 1.0 + 1e-6 and vertical <= 5.0 + 1e-6:
+                                return {"valid": False, "reason": "Within Engagement Range"}
+                        if horizontal <= min_enemy + 1e-6 and min_enemy > 1.0:
+                            return {"valid": False, "reason": "Too close to enemy unit"}
             except Exception:
                 pass
 
@@ -3619,6 +3750,19 @@ class ShootingMixin:
         sr = getattr(transport_unit, "special_rules", None)
         if isinstance(sr, dict) and sr.get("pain_rapid_deployment_active"):
             allow_after_advance = True
+        game = None
+        try:
+            army = self.get_parent_army()
+        except Exception:
+            army = None
+        if army is not None and getattr(army, "player", None) is not None:
+            game = army.player.game
+        overrides = self._disembark_override_rules(transport_unit=transport_unit, game=game)
+        if overrides.get("allow_after_advance") is True:
+            allow_after_advance = True
+        if overrides.get("allow_charge_after_normal_move") is True:
+            allow_charge_after_normal_move = True
+        force_cannot_charge_from_override = bool(overrides.get("force_cannot_charge_this_turn", False))
 
         if not destroyed_transport:
             if getattr(transport_unit.round_state, "advanced_this_round", False):
@@ -3689,6 +3833,12 @@ class ShootingMixin:
                 self.round_state.remained_stationary_this_round = False
                 if not allow_charge_after_normal_move:
                     self.round_state.disembarked_cannot_charge = True
+
+        if force_cannot_charge_from_override:
+            self.round_state.disembarked_from_moved_transport = True
+            self.round_state.moved_this_round = True
+            self.round_state.remained_stationary_this_round = False
+            self.round_state.disembarked_cannot_charge = True
 
         return True
 

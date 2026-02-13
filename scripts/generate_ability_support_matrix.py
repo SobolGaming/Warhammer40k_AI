@@ -7695,8 +7695,15 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
     return (status, notes)
 
 
-def _stratagem_support(name: str, description: str = "") -> Tuple[str, str, str]:
+def _stratagem_support(
+    name: str,
+    description: str = "",
+    *,
+    detachment_name: str = "",
+    stratagem_id: str = "",
+) -> Tuple[str, str, str]:
     name_u = _canon_stratagem_name(name)
+    det_u = _norm(detachment_name).upper()
     notes = {
         "COMMAND RE-ROLL": "Queued on roll; executes reroll callback; once-per-phase rule enforced.",
         "COUNTER-OFFENSIVE": "Fight phase: select a unit to fight next after enemy unit fights.",
@@ -7715,8 +7722,11 @@ def _stratagem_support(name: str, description: str = "") -> Tuple[str, str, str]
         "ARMOUR OF CONTEMPT": "Shooting/Fight phase: targeted ADEPTUS ASTARTES unit worsens AP by 1 vs the attacking unit until it finishes its attacks.",
         "BERZERKER'S WRATH": "Blood Surge distance is fixed at 8\" (no D6 roll) for a BERZERKERS unit.",
         "BERZERKER’S WRATH": "Blood Surge distance is fixed at 8\" (no D6 roll) for a BERZERKERS unit.",
+        "ANTI-GRAV REPULSION": "Opponent Charge phase reaction: AELDARI VEHICLE FLY target imposes -2 to that enemy unit's Charge rolls until phase end (target-filtered modifier).",
+        "ANTI‑GRAV REPULSION": "Opponent Charge phase reaction: AELDARI VEHICLE FLY target imposes -2 to that enemy unit's Charge rolls until phase end (target-filtered modifier).",
         "BLESSING OF BURNING BLOOD": "Shooting/Fight phase: after enemy targets; BLOOD LEGIONS unit within 6\" of targeted WORLD EATERS grants 5++ (4++ if Boon of Blood active) until end of phase.",
         "BLITZING FIREPOWER": "Shooting phase: ASURYANI unit gains Sustained Hits 1 vs targets within 12\"; if already has Sustained Hits, crits on 5+.",
+        "CLOUDSTRIKE": "Movement Reinforcements start: AELDARI VEHICLE FLY in Strategic Reserves gains temporary Deep Strike with >6\" setup; on arrival cannot charge this turn; affected Transports enforce >6\" disembark distance and no-charge for disembarking units this turn.",
         "DEATHLESS DUTY": "Fight phase: DEATH COMPANY unit fights on death after the attacker finishes its attacks (until end of phase).",
         "FEIGNED RETREAT": "Movement phase: ASURYANI unit that Fell Back can shoot and charge this turn.",
         "FIRE AND FADE": "Shooting phase: ASURYANI INFANTRY makes Normal move D6+1\" after shooting; cannot charge or embark this turn.",
@@ -7731,11 +7741,13 @@ def _stratagem_support(name: str, description: str = "") -> Tuple[str, str, str]
         "DAEMONTIDE": "Command phase: WORLD EATERS unit selects BLOOD LEGIONS within 6\" to return destroyed models (1 Mounted / D3 Beast / D6 Infantry).",
         "FRENZIED RESILIENCE": "Fight phase: after enemy targets; WORLD EATERS unit reduces damage by 1.",
         "HACK AND SLASH": "Fight phase: charged WORLD EATERS unit gains +1 AP on melee weapons.",
+        "LAYERED WARDS": "Any phase reaction after a mortal wound allocation: targeted AELDARI VEHICLE gains Feel No Pain 5+ against mortal wounds until end of phase.",
         "PLAGUESURGE": "Command phase: your DEATH GUARD WARLORD on battlefield gains +3\" Contagion Range until the start of your next Command phase.",
         "LEECHSPORE ERUPTION": "Command phase: wounded DEATH GUARD model rolls D6s equal to wounds lost; on each 5+ deal 1 mortal to an enemy within 3\" and heal 1 (both capped at 6).",
         "OVERWHELMING GENEROSITY": "Start of Shooting phase: mark one visible enemy unit; DEATH GUARD units can re-roll attack-count dice when making ranged attacks that target it this phase.",
         "CREEPING BLIGHT": "Shooting phase: selected DEATH GUARD INFANTRY unit (not yet selected to shoot) re-rolls ranged Hit and Wound rolls vs Afflicted targets this phase.",
         "PUTRID DETONATION": "Any phase reaction: just-destroyed DEATH GUARD VEHICLE/MONSTER with Deadly Demise auto-explodes and enemy units damaged by it become Afflicted until your next turn.",
+        "SOULSIGHT": "Your Shooting phase: targeted AELDARI VEHICLE not yet selected to shoot gains one Hit, one Wound, and one Damage re-roll each time it is selected to shoot this phase.",
         "HORRIFYING VIOLENCE": "Opponent Command phase: eligible engaged WORLD EATERS POSSESSED unit triggers Battle-shock tests at -1 for enemy units in its Engagement Range.",
         "IMMORTAL FURY": "Fight phase defensive reaction: targeted WORLD EATERS POSSESSED unit (not fought) can fight on death this phase after the attacker finishes its attacks.",
         "A WORTHY SKULL": "Fight phase: after CHARACTER/MONSTER kill, gain D3 Blood Tithe points and optionally activate Blood Tithe.",
@@ -7761,6 +7773,7 @@ def _stratagem_support(name: str, description: str = "") -> Tuple[str, str, str]
         "FULL-THROTTLE ASSAULT": "Movement phase: WORLD EATERS RHINO allows disembarking units to charge after a Normal move this phase.",
         "FURY UNLEASHED": "Opponent Shooting phase: hit WORLD EATERS RHINO disembarks a KHORNE BERZERKERS unit to make a Blood Surge move (mutually exclusive with Unrelenting Advance).",
         "SMASH THROUGH": "Movement phase: WORLD EATERS VEHICLE can move horizontally through terrain on Normal/Advance moves this phase.",
+        "SWIFT DEPLOYMENT": "Your Movement phase after an AELDARI TRANSPORT Advances: that transport can disembark units after advancing this phase; those disembarked units count as Normal moved and cannot charge this turn.",
         "UNRELENTING ADVANCE": "Opponent Shooting phase: hit WORLD EATERS VEHICLE can make a Normal move up to 6\" (mutually exclusive with Fury Unleashed).",
         "THE FOE FORESEEN": "Shooting/Fight phase: targeted ADEPTUS ASTARTES unit worsens AP by 1 vs the attacking unit until it finishes its attacks.",
         "ARMOUR OF ABHORRENCE": "Shooting/Fight phase defensive reaction after enemy targets selected: targeted EMPEROR'S CHILDREN unit worsens the AP characteristic of incoming attacks by 1 until the attacking unit finishes its attacks.",
@@ -7844,6 +7857,7 @@ def _stratagem_support(name: str, description: str = "") -> Tuple[str, str, str]
         "PEERLESS WARRIOR": "Fight phase: selected ADEPTUS CUSTODES unit gains +1 Attacks on melee weapons until end of phase.",
         "SWIFT AS THE EAGLE": "Opponent Shooting phase: targeted ADEPTUS CUSTODES unit makes a Normal move up to 6\" and can move within Engagement Range.",
         "UNLEASH THE LIONS": "Command phase: split Allarus/Aquilon unit on battlefield into 1-model units (leaders split too); Starting Strength 1.",
+        "VECTORED ENGINES": "Your Movement phase reaction after a friendly AELDARI VEHICLE FLY Falls Back: that unit can shoot this turn despite falling back.",
         "UNBRIDLED CARNAGE": "Fight phase: ORKS unit not yet fought scores critical hits on 5+ in melee until end of phase.",
         "ORKS IS NEVER BEATEN": "Fight phase: targeted ORKS unit fights on death after attacker finishes attacks if it has not fought; then removed.",
         "ERE WE GO": "Movement phase start: ORKS INFANTRY unit gains +2 to Advance and Charge rolls until end of turn.",
@@ -7870,6 +7884,13 @@ def _stratagem_support(name: str, description: str = "") -> Tuple[str, str, str]
         "REPELLING SPHERE": "Opponent Charge phase: targeted GREY KNIGHTS INFANTRY imposes -1 to enemy Charge rolls that include it as a target, or -2 while wholly within Hallowed Ground.",
         "SANCTIFIED KILL ZONE": "Shooting/Fight phase: targeted GREY KNIGHTS unit wholly within Hallowed Ground gains wound re-rolls (re-roll 1s, or full wound re-rolls for PURIFIER SQUAD) until end of phase.",
     }
+
+    # Some stratagem names are reused across detachments; only mark the implemented variants.
+    force_not_implemented = {
+        ("SOULSIGHT", "DEVOTED OF YNNEAD"),
+    }
+    if (name_u, det_u) in force_not_implemented:
+        return ("Not implemented", "No effect logic currently wired.", name_u)
 
     if name_u in IMPLEMENTED_STRATAGEM_NAMES_CANONICAL:
         return ("Implemented", notes.get(name_u, "Implemented in engine."), name_u)
@@ -8338,7 +8359,12 @@ def _build_faction_content(
                 det_strats.sort(key=lambda s: _norm(s.get("name", "")))
                 strat_rows = []
                 for s in det_strats:
-                    status, notes, _ = _stratagem_support(s.get("name", ""), s.get("description", ""))
+                    status, notes, _ = _stratagem_support(
+                        s.get("name", ""),
+                        s.get("description", ""),
+                        detachment_name=det_name,
+                        stratagem_id=str(s.get("id", "") or ""),
+                    )
                     det_strat_statuses.append(status)
                     strat_rows.append(
                         (
