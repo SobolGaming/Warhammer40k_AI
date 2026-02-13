@@ -290,6 +290,9 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"ranged weapons equipped by aeldari vehicle models from your army have the assault ability",
             r"you can reroll advance rolls made for aeldari vehicle fly units from your army",
         ),
+        "Superior Craftsmanship": (
+            r"add \d+ to the range characteristic of ranged weapons equipped by t au empire models from your army",
+        ),
         "Ruthless Discipline": (
             r"add \d+ to the number of orders each astra militarum officer model from your army can issue as stated on their datasheet",
             r"while an astra militarum unit from your army is affected by an order each time a model in that unit makes an attack reroll a hit roll of \d+",
@@ -1541,6 +1544,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Skilled Crews": (
             "Supported",
             "Armoured Warhost: AELDARI VEHICLE ranged weapons count as [ASSAULT]; AELDARI VEHICLE FLY units can re-roll Advance rolls.",
+        ),
+        "Superior Craftsmanship": (
+            "Supported",
+            "Experimental Prototype Cadre: add 6\" to the Range characteristic of ranged weapons equipped by T'AU EMPIRE models from your army.",
         ),
         "Path of the Warrior": (
             "Supported",

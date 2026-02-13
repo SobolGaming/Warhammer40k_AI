@@ -607,6 +607,15 @@ class WargearProfile:
         except Exception:
             pass
         try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            mgr = getattr(army, "tau_empire_detachments", None) if army is not None else None
+            if mgr is not None and callable(getattr(mgr, "superior_craftsmanship_range_bonus", None)):
+                game = getattr(getattr(army, "player", None), "game", None)
+                bonus += int(mgr.superior_craftsmanship_range_bonus(attacker, self, game=game) or 0)
+        except Exception:
+            pass
+        try:
             if self.parent_wargear and self.parent_wargear.is_ranged():
                 unit = getattr(attacker, "parent_unit", None)
                 sr = getattr(unit, "special_rules", None)
