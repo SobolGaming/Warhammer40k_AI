@@ -18083,6 +18083,24 @@ class GameView:
                     )
 
                 try:
+                    strands_discount, strands_die = player._preview_seer_council_strands_of_fate_discount(
+                        stratagem=strat
+                    )
+                except Exception:
+                    strands_discount, strands_die = 0, 0
+                if int(strands_discount or 0) > 0 and int(strands_die or 0) > 0:
+                    optional_decisions.append(
+                        {
+                            "key": "SEER_COUNCIL_STRANDS_OF_FATE",
+                            "title": "Strands of Fate",
+                            "message": (
+                                f"Discard a Fate die showing {int(strands_die)} to reduce CP cost by 1?\n\n"
+                                f"{str(name)}: {base}CP -> {max(0, base-1)}CP"
+                            ),
+                        }
+                    )
+
+                try:
                     army = player.get_army()
                 except Exception:
                     army = None

@@ -748,6 +748,23 @@ class Player:
             deduped.append(str(n))
         return 1, deduped
 
+    def _preview_seer_council_strands_of_fate_discount(self, *, stratagem=None) -> tuple[int, int]:
+        if stratagem is None:
+            return 0, 0
+        army = self.get_army()
+        mgr = getattr(army, "aeldari_detachments", None) if army is not None else None
+        if mgr is None:
+            return 0, 0
+        preview_fn = getattr(mgr, "preview_seer_council_fate_discount", None)
+        if not callable(preview_fn):
+            return 0, 0
+        info = preview_fn(stratagem_name=getattr(stratagem, "name", None) or "")
+        discount = int(info.get("discount", 0) or 0)
+        die_value = int(info.get("die_value", 0) or 0)
+        if discount <= 0 or die_value <= 0:
+            return 0, 0
+        return 1, die_value
+
     def _target_unit_has_stratagem_target_cp_increase_sources(self, target_unit, *, current_cost: int | None = None) -> tuple[list[dict], list[dict]]:
         if target_unit is None:
             return [], []
@@ -1476,6 +1493,23 @@ class Player:
                 discount += int(tsd)
                 reasons.append(f"Targeted Stratagem Discount ({label}): -1CP (once per battle round)")
 
+        seer_discount, seer_die_value = self._preview_seer_council_strands_of_fate_discount(stratagem=stratagem)
+        if seer_discount:
+            ctx = {
+                "ability_name": "Strands of Fate",
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+                "fate_die_value": int(seer_die_value),
+            }
+            if self._should_preview_optional_ability(
+                "SEER_COUNCIL_STRANDS_OF_FATE",
+                ctx,
+                assume=assume_optional_discounts,
+            ):
+                discount += int(seer_discount)
+                reasons.append(f"Strands of Fate: discard Fate die {int(seer_die_value)} for -1CP")
+
         gof = self._preview_gift_of_foresight_discount(stratagem=stratagem, target_unit=target_unit)
         if gof:
             discount += int(gof)
@@ -2068,6 +2102,26 @@ class Player:
                 br = self._battle_round()
                 if br > 0:
                     self._ability_used_battle_round["TARGETED_STRATAGEM_DISCOUNT"] = br
+
+        # Decide whether to apply Seer Council Strands of Fate discount if available.
+        seer_available, seer_die_value = self._preview_seer_council_strands_of_fate_discount(stratagem=stratagem)
+        if seer_available:
+            ctx = {
+                "ability_name": "Strands of Fate",
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+                "fate_die_value": int(seer_die_value),
+            }
+            if self._should_use_optional_ability("SEER_COUNCIL_STRANDS_OF_FATE", ctx):
+                army = self.get_army()
+                mgr = getattr(army, "aeldari_detachments", None) if army is not None else None
+                consume_fn = getattr(mgr, "consume_seer_council_fate_discount", None) if mgr is not None else None
+                consumed = consume_fn(stratagem_name=getattr(stratagem, "name", None) or "") if callable(consume_fn) else {}
+                if bool(consumed.get("consumed", False)):
+                    applied_discount += int(consumed.get("discount", 1) or 1)
+                    used_value = int(consumed.get("die_value", int(seer_die_value)) or int(seer_die_value))
+                    reasons.append(f"Strands of Fate: discarded Fate die {used_value} for -1CP (used)")
 
         # Decide whether to apply Gift of Foresight if available.
         gof_available = bool(self._preview_gift_of_foresight_discount(stratagem=stratagem, target_unit=target_unit))

@@ -367,6 +367,11 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Defend at All Costs": (
             r"each time a dire avenger guardian support weapon or war walker model from your army makes an attack if that models unit and or the target unit are within range of one or more objective markers add \d+ to the hit roll",
         ),
+        "Strands of Fate": (
+            r"at the start of the first battle round you generate fate dice by rolling a number of d6 based on the battle size as shown below",
+            r"each time you use one of the stratagems below if your fate dice pool contains one or more fate dice showing the corresponding value in the table below you can discard one of those corresponding fate dice",
+            r"ishas fury",
+        ),
         "Extremis-level Threat": (
             r"once per battle in your command phase you can use this ability",
             r"if you do until the start of your next command phase each time a model from your army with the oath of moment ability makes an attack that targets your oath of moment target you can reroll the wound roll as well",
@@ -1564,6 +1569,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Defend at All Costs": (
             "Supported",
             "Guardian Battlehost: Dire Avengers, Guardians, Support Weapon, and War Walker models gain +1 to hit if their unit and/or the target unit is within range of one or more objective markers.",
+        ),
+        "Strands of Fate": (
+            "Supported",
+            "Seer Council: first battle round generates Fate dice by battle size (Incursion 3, Strike Force 6, Onslaught 9); when using Presentiment of Dread/Forewarned/Unshrouded Truth/Fate Inescapable/Isha's Fury/Psychic Shield, you can discard a matching Fate die (1-6) to reduce that stratagem's CP cost by 1.",
         ),
         "Pledges to the Dark Prince": (
             "Supported",

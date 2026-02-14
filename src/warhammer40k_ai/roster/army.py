@@ -2287,6 +2287,9 @@ class Army:
         mgr = getattr(self, "world_eaters_detachments", None)
         if mgr is not None:
             mgr.on_battle_round_start(int(battle_round), game=game)
+        mgr = getattr(self, "aeldari_detachments", None)
+        if mgr is not None:
+            mgr.on_battle_round_start(int(battle_round), game=game)
         mgr = getattr(self, "battle_focus", None)
         if mgr is not None:
             mgr.on_battle_round_start(int(battle_round), game=game)

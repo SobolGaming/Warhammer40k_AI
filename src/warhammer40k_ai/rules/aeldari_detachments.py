@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import re
+
+from ..utility.dice import get_roll
 from .detachment_manager import DetachmentManagerBase
 
 
@@ -20,6 +23,19 @@ class AeldariDetachmentManager(DetachmentManagerBase):
         "support weapon",
         "war walker",
     )
+    _SEER_COUNCIL_STRATAGEM_FATE_VALUES = {
+        "PRESENTIMENT OF DREAD": 1,
+        "FOREWARNED": 2,
+        "UNSHROUDED TRUTH": 3,
+        "FATE INESCAPABLE": 4,
+        "ISHA'S FURY": 5,
+        "PSYCHIC SHIELD": 6,
+    }
+
+    def __init__(self, army=None):
+        super().__init__(army)
+        self.seer_council_fate_dice: list[int] = []
+        self.seer_council_fate_dice_generated_round: int = 0
 
     def is_warhost_detachment(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -55,6 +71,93 @@ class AeldariDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Seer Council")
+
+    @staticmethod
+    def _normalize_seer_council_stratagem_name(name: str) -> str:
+        text = str(name or "").strip().upper()
+        text = text.replace("\u2019", "'").replace("\u2018", "'")
+        for dash in ("\u2010", "\u2011", "\u2012", "\u2013", "\u2014", "−"):
+            text = text.replace(dash, "-")
+        text = re.sub(r"[^A-Z0-9' -]+", " ", text)
+        text = re.sub(r"\s+", " ", text).strip()
+        return text
+
+    def _seer_council_fate_dice_count(self, *, game=None) -> int:
+        size_name = ""
+        if game is not None:
+            size = getattr(getattr(game, "battlefield", None), "size", None)
+            size_name = str(getattr(size, "name", "") or size or "")
+        size_name = size_name.strip().upper().replace(" ", "_")
+        if "INCURSION" in size_name:
+            return 3
+        if "STRIKE_FORCE" in size_name or "STRIKEFORCE" in size_name:
+            return 6
+        if "ONSLAUGHT" in size_name:
+            return 9
+
+        points_limit = int(getattr(self.army, "points_limit", 0) or 0) if self.army is not None else 0
+        if points_limit >= 3000:
+            return 9
+        if points_limit >= 2000:
+            return 6
+        if points_limit >= 1000:
+            return 3
+        return 0
+
+    def on_battle_round_start(self, battle_round: int, *, game=None) -> None:
+        if not self.is_seer_council():
+            return
+        br = int(battle_round or 0)
+        if br != 1:
+            return
+        if int(self.seer_council_fate_dice_generated_round or 0) == 1:
+            return
+
+        dice_count = self._seer_council_fate_dice_count(game=game)
+        pool: list[int] = []
+        for _ in range(max(0, int(dice_count or 0))):
+            roll = int(get_roll("D6") or 1)
+            pool.append(min(6, max(1, roll)))
+        self.seer_council_fate_dice = pool
+        self.seer_council_fate_dice_generated_round = 1
+
+    def preview_seer_council_fate_discount(self, *, stratagem_name: str) -> dict:
+        if not self.is_seer_council():
+            return {"available": False, "discount": 0, "die_value": 0, "matching_dice": 0}
+        key = self._normalize_seer_council_stratagem_name(stratagem_name)
+        die_value = int(self._SEER_COUNCIL_STRATAGEM_FATE_VALUES.get(key, 0) or 0)
+        if die_value <= 0:
+            return {"available": False, "discount": 0, "die_value": 0, "matching_dice": 0}
+        pool = [int(v) for v in list(self.seer_council_fate_dice or [])]
+        matching = sum(1 for value in pool if value == die_value)
+        if matching <= 0:
+            return {"available": False, "discount": 0, "die_value": die_value, "matching_dice": 0}
+        return {"available": True, "discount": 1, "die_value": die_value, "matching_dice": matching}
+
+    def consume_seer_council_fate_discount(self, *, stratagem_name: str) -> dict:
+        preview = self.preview_seer_council_fate_discount(stratagem_name=stratagem_name)
+        if not bool(preview.get("available", False)):
+            out = dict(preview)
+            out["consumed"] = False
+            return out
+        die_value = int(preview.get("die_value", 0) or 0)
+        pool = [int(v) for v in list(self.seer_council_fate_dice or [])]
+        try:
+            idx = pool.index(die_value)
+        except ValueError:
+            out = dict(preview)
+            out["consumed"] = False
+            return out
+        del pool[idx]
+        self.seer_council_fate_dice = pool
+        remaining = sum(1 for value in pool if value == die_value)
+        return {
+            "available": True,
+            "consumed": True,
+            "discount": 1,
+            "die_value": die_value,
+            "matching_dice": remaining,
+        }
 
     def is_serpents_brood(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
