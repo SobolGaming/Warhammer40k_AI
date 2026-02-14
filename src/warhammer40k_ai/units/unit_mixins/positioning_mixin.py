@@ -5130,6 +5130,8 @@ class PositioningMixin:
         redeploy_filters: list[str] = []
         redeploy_filter_any_groups: list[list[str]] = []
         ability_name = ""
+        requires_source_on_battlefield = False
+        allow_embarked_transport_on_battlefield = False
 
         for name, desc in abilities_to_check:
             text = html.unescape(str(desc or ""))
@@ -5142,6 +5144,11 @@ class PositioningMixin:
                 has_redeploy = True
                 if name and not ability_name:
                     ability_name = str(name)
+                if ("if this unit is on the battlefield" in text) or ("if the bearer is on the battlefield" in text):
+                    requires_source_on_battlefield = True
+                if "transport it is embarked within is on the battlefield" in text:
+                    requires_source_on_battlefield = True
+                    allow_embarked_transport_on_battlefield = True
                 # Support numeric or dice expressions like D3, D6, D10 (optionally with +N)
                 m = re.search(
                     r"select\s+up\s+to\s+((?:\d+)|(?:d\d+(?:\s*\+\s*\d+)?)|one|two|three|four|five|six)",
@@ -5191,6 +5198,8 @@ class PositioningMixin:
                     redeploy_filters = ["EMPEROR'S CHILDREN"]
                 if "aeldari vehicle units" in text or "aeldari vehicle unit" in text:
                     redeploy_filters = ["AELDARI", "VEHICLE"]
+                elif "aeldari units" in text or "aeldari unit" in text:
+                    redeploy_filters = ["AELDARI"]
                 if "jakhals" in text and "goremongers" in text:
                     redeploy_filter_any_groups = [["JAKHALS"], ["GOREMONGERS"]]
                 if "tyranids units" in text or "tyranids unit" in text:
@@ -5207,5 +5216,9 @@ class PositioningMixin:
             self._ability_cache['redeploy_filter_any_groups'] = [list(group) for group in redeploy_filter_any_groups]
         if ability_name:
             self._ability_cache['redeploy_ability_name'] = ability_name
+        self._ability_cache['redeploy_requires_source_on_battlefield'] = bool(requires_source_on_battlefield)
+        self._ability_cache['redeploy_allow_embarked_transport_on_battlefield'] = bool(
+            allow_embarked_transport_on_battlefield
+        )
         return result
     

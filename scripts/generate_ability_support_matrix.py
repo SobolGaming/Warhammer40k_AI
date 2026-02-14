@@ -2319,6 +2319,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Leading: each attack made by models in that unit gains Sustained Hits 1 and +1 to hit.",
         ),
+        ("AE", "Prince of Corsairs"): (
+            "Supported",
+            "After deployment, if this unit is on the battlefield (or embarked in a transport on the battlefield), redeploy up to three friendly AELDARI units; selected units may be placed into Strategic Reserves regardless of limits.",
+        ),
         ("AE", "Raid and Run"): (
             "Supported",
             "End of Fight phase: if this unit was eligible to fight this phase, it can make a D3+3\" move (Normal move if not engaged; Fall Back move if engaged).",

@@ -1892,6 +1892,45 @@ class GameSetupDeploymentReservesMixin:
         else:
             raise RuntimeError("Deployment requires manual UI or explicit decision_makers.")
 
+    def _unit_is_deployed_on_battlefield_for_redeploy(self, unit) -> bool:
+        if unit is None:
+            return False
+        try:
+            if not bool(getattr(unit, "deployed", False)):
+                return False
+            if str(getattr(unit, "reserve_status", "deployed") or "deployed") != "deployed":
+                return False
+            if bool(getattr(unit, "is_embarked", False)) or getattr(unit, "embarked_in", None) is not None:
+                return False
+            return True
+        except Exception:
+            return False
+
+    def _redeploy_source_meets_battlefield_requirement(self, source_unit, *, allow_embarked_transport: bool) -> bool:
+        if source_unit is None:
+            return False
+        try:
+            source_root = source_unit.get_attached_unit_root()
+        except Exception:
+            source_root = source_unit
+        if source_root is None:
+            return False
+        if self._unit_is_deployed_on_battlefield_for_redeploy(source_root):
+            return True
+        if not bool(allow_embarked_transport):
+            return False
+        try:
+            transport = getattr(source_root, "embarked_in", None)
+        except Exception:
+            transport = None
+        if transport is None:
+            return False
+        try:
+            transport_root = transport.get_attached_unit_root()
+        except Exception:
+            transport_root = transport
+        return self._unit_is_deployed_on_battlefield_for_redeploy(transport_root)
+
     def execute_redeploy_units_phase(self) -> None:
         """Phase: Redeploy Units - Alternate resolving redeploy rules, Attacker first.
 
@@ -1927,6 +1966,17 @@ class GameSetupDeploymentReservesMixin:
                     cache = getattr(u, "_ability_cache", {}) or {}
                 except Exception:
                     cache = {}
+                requires_source_on_battlefield = bool(cache.get("redeploy_requires_source_on_battlefield", False))
+                allow_embarked_transport_on_battlefield = bool(
+                    cache.get("redeploy_allow_embarked_transport_on_battlefield", False)
+                )
+                if requires_source_on_battlefield and (
+                    not self._redeploy_source_meets_battlefield_requirement(
+                        u,
+                        allow_embarked_transport=allow_embarked_transport_on_battlefield,
+                    )
+                ):
+                    continue
                 filters = list(cache.get("redeploy_filters") or [])
                 filter_any_groups = list(cache.get("redeploy_filter_any_groups") or [])
                 ability_name = str(cache.get("redeploy_ability_name") or "")

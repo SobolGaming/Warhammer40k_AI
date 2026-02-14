@@ -1041,3 +1041,154 @@ def test_piratical_hero_leading_grants_sustained_hits_and_hit_bonus():
     )
     assert int(keyword_mods_ranged.get("sustained_hits_value") or 0) == 1
     assert int(keyword_mods_melee.get("sustained_hits_value") or 0) == 1
+
+
+def test_prince_of_corsairs_redeploy_filters_to_aeldari_units_when_source_on_battlefield():
+    ability = Ability(
+        "Prince of Corsairs",
+        "AE",
+        (
+            "After both players have deployed their armies, if this unit is on the battlefield (or any Transport it is "
+            "embarked within is on the battlefield), select up to three AELDARI units from your army and redeploy them. "
+            "When doing so, you can set those units up in Strategic Reserves, regardless of how many units are already in "
+            "Strategic Reserves."
+        ),
+        "Datasheet",
+        "",
+    )
+    source = _make_unit("Prince Yriel", abilities=[ability], keywords=["CHARACTER"], faction_keywords=["AELDARI"])
+    aeldari_target = _make_unit("Corsair Voidreavers", keywords=["INFANTRY"], faction_keywords=["AELDARI"])
+    ally_target = _make_unit("Allied Unit", keywords=["INFANTRY"], faction_keywords=["AGENTS OF THE IMPERIUM"])
+    enemy = _make_unit("Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+
+    game, army1, army2, _p1, _p2 = _build_game()
+    game.attacker_index = 0
+    game.defender_index = 1
+    for unit in (source, aeldari_target, ally_target):
+        army1.add_unit(unit)
+    army2.add_unit(enemy)
+    game.map.units = [source, aeldari_target, ally_target, enemy]
+    game.rebuild_entity_registry()
+
+    for unit in (source, aeldari_target, ally_target, enemy):
+        unit.deployed = True
+        unit.reserve_status = "deployed"
+
+    game.execute_redeploy_units_phase()
+
+    pending = [
+        req for req in list(game.decision_queue.list() or [])
+        if str(getattr(req, "decision_type", "") or "") == DECISION_CHOOSE_QUARRY
+    ]
+    assert len(pending) == 1
+    request = pending[0]
+    ctx = dict(getattr(request, "context", {}) or {})
+    assert str(ctx.get("ability_name", "") or "") == "Prince of Corsairs"
+
+    target_ids = {
+        str((dict(getattr(opt, "payload", {}) or {}).get("target_unit_id", "") or ""))
+        for opt in list(getattr(request, "options", []) or [])
+    }
+    assert str(get_entity_id(aeldari_target) or "") in target_ids
+    assert str(get_entity_id(ally_target) or "") not in target_ids
+
+    assert any(
+        str((dict(getattr(opt, "payload", {}) or {}).get("target_unit_id", "") or "")) == str(get_entity_id(aeldari_target) or "")
+        and str((dict(getattr(opt, "payload", {}) or {}).get("redeploy_action", "") or "")).lower() == "strategic_reserves"
+        for opt in list(getattr(request, "options", []) or [])
+    )
+
+
+def test_prince_of_corsairs_requires_source_on_battlefield_or_embarked_transport():
+    ability = Ability(
+        "Prince of Corsairs",
+        "AE",
+        (
+            "After both players have deployed their armies, if this unit is on the battlefield (or any Transport it is "
+            "embarked within is on the battlefield), select up to three AELDARI units from your army and redeploy them. "
+            "When doing so, you can set those units up in Strategic Reserves, regardless of how many units are already in "
+            "Strategic Reserves."
+        ),
+        "Datasheet",
+        "",
+    )
+    source = _make_unit("Prince Yriel", abilities=[ability], keywords=["CHARACTER"], faction_keywords=["AELDARI"])
+    aeldari_target = _make_unit("Corsair Voidreavers", keywords=["INFANTRY"], faction_keywords=["AELDARI"])
+    enemy = _make_unit("Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+
+    game, army1, army2, _p1, _p2 = _build_game()
+    game.attacker_index = 0
+    game.defender_index = 1
+    army1.add_unit(source)
+    army1.add_unit(aeldari_target)
+    army2.add_unit(enemy)
+    game.map.units = [aeldari_target, enemy]
+    game.rebuild_entity_registry()
+
+    source.deployed = False
+    source.reserve_status = "strategic_reserves"
+    aeldari_target.deployed = True
+    aeldari_target.reserve_status = "deployed"
+    enemy.deployed = True
+    enemy.reserve_status = "deployed"
+
+    game.execute_redeploy_units_phase()
+
+    pending = [
+        req for req in list(game.decision_queue.list() or [])
+        if str(getattr(req, "decision_type", "") or "") == DECISION_CHOOSE_QUARRY
+    ]
+    assert not pending
+
+
+def test_prince_of_corsairs_triggers_when_source_embarked_transport_is_on_battlefield():
+    ability = Ability(
+        "Prince of Corsairs",
+        "AE",
+        (
+            "After both players have deployed their armies, if this unit is on the battlefield (or any Transport it is "
+            "embarked within is on the battlefield), select up to three AELDARI units from your army and redeploy them. "
+            "When doing so, you can set those units up in Strategic Reserves, regardless of how many units are already in "
+            "Strategic Reserves."
+        ),
+        "Datasheet",
+        "",
+    )
+    source = _make_unit("Prince Yriel", abilities=[ability], keywords=["CHARACTER"], faction_keywords=["AELDARI"])
+    transport = _make_unit("Falcon", keywords=["VEHICLE", "TRANSPORT"], faction_keywords=["AELDARI"])
+    aeldari_target = _make_unit("Corsair Voidscarred", keywords=["INFANTRY"], faction_keywords=["AELDARI"])
+    enemy = _make_unit("Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+
+    game, army1, army2, _p1, _p2 = _build_game()
+    game.attacker_index = 0
+    game.defender_index = 1
+    for unit in (source, transport, aeldari_target):
+        army1.add_unit(unit)
+    army2.add_unit(enemy)
+    game.map.units = [transport, aeldari_target, enemy]
+    game.rebuild_entity_registry()
+
+    source.embarked_in = transport
+    transport.transport_passengers = [source]
+    source.deployed = True
+    source.reserve_status = "deployed"
+    transport.deployed = True
+    transport.reserve_status = "deployed"
+    aeldari_target.deployed = True
+    aeldari_target.reserve_status = "deployed"
+    enemy.deployed = True
+    enemy.reserve_status = "deployed"
+
+    game.execute_redeploy_units_phase()
+
+    pending = [
+        req for req in list(game.decision_queue.list() or [])
+        if str(getattr(req, "decision_type", "") or "") == DECISION_CHOOSE_QUARRY
+    ]
+    assert len(pending) == 1
+    request = pending[0]
+    target_ids = {
+        str((dict(getattr(opt, "payload", {}) or {}).get("target_unit_id", "") or ""))
+        for opt in list(getattr(request, "options", []) or [])
+    }
+    assert str(get_entity_id(aeldari_target) or "") in target_ids
