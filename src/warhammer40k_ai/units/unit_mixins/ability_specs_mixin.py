@@ -592,6 +592,65 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def unit_ammo_runt_specs(self) -> List[dict]:
+        """
+        Unit-level rule: when selected to shoot, can gain [LETHAL HITS] for ranged weapons.
+
+        Returns specs with keys:
+            - source: ability name
+            - per_ammo_runt: bool (True when uses scale with Ammo Runt count)
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_ammo_runt_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, bool]] = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text_src = unit._strip_eligibility_prefix(text_src)
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                is_named_ammo_runt = str(name or "").strip().lower() == "ammo runt"
+                mentions_ammo_runt = "ammo runt" in normalized
+                if not (is_named_ammo_runt or mentions_ammo_runt):
+                    continue
+                m = self._AMMO_RUNT_RE.fullmatch(normalized)
+                if not m:
+                    if not is_named_ammo_runt:
+                        continue
+                    if "selected to shoot" not in normalized or "lethal hits" not in normalized:
+                        continue
+                per_runt = bool((m and m.group("per_runt")) or ("for each ammo runt this unit has" in normalized))
+                source = str(name or "Ammo Runt").strip() or "Ammo Runt"
+                key = (source.lower(), bool(per_runt))
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append({"source": source, "per_ammo_runt": bool(per_runt)})
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_post_shoot_mortal_wounds_battleshock_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model-specific rule: after this model's unit has shot, select a hit enemy INFANTRY unit;

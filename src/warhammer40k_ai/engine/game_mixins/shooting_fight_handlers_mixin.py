@@ -3241,6 +3241,117 @@ class GameShootingFightHandlersMixin:
             )
             return
 
+    def _on_shooting_targets_selected_ammo_runt(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None or not target_units:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            root = attacking_unit
+        if root is None or not root.is_alive():
+            return
+        try:
+            player = root.get_parent_army().player
+        except Exception:
+            player = None
+        if player is None or player is not self.get_current_player():
+            return
+
+        specs = sorted(
+            list(getattr(root, "unit_ammo_runt_specs", lambda: [])() or []),
+            key=lambda s: str(s.get("source", "") or "").strip().lower(),
+        )
+        if not specs:
+            return
+        spec = specs[0]
+        ability_name = str(spec.get("source", "") or "Ammo Runt").strip() or "Ammo Runt"
+        per_ammo_runt = bool(spec.get("per_ammo_runt"))
+
+        def _count_ammo_runts(unit_obj) -> int:
+            count = 0
+            try:
+                models = list(unit_obj._get_bodyguard_support_models() or [])
+            except Exception:
+                models = list(getattr(unit_obj, "models", []) or [])
+            for model in models:
+                if model is None or not getattr(model, "is_alive", False):
+                    continue
+                try:
+                    for wg in list(getattr(model, "wargear", []) or []):
+                        if wg is None:
+                            continue
+                        if Unit._norm_wargear_name(getattr(wg, "name", "")) == "ammo runt":
+                            count += 1
+                except Exception:
+                    pass
+                try:
+                    for ow in list(getattr(model, "optional_wargear", []) or []):
+                        if Unit._norm_wargear_name(str(ow or "")) == "ammo runt":
+                            count += 1
+                except Exception:
+                    continue
+            return max(0, int(count))
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        used = 0
+        try:
+            used = int(sr.get("ammo_runt_uses", 0) or 0)
+        except Exception:
+            used = 0
+
+        has_explicit_total = "ammo_runt_token_total" in sr
+        if per_ammo_runt:
+            if has_explicit_total:
+                try:
+                    max_uses = max(0, int(sr.get("ammo_runt_token_total", 0) or 0))
+                except Exception:
+                    max_uses = 0
+            else:
+                max_uses = _count_ammo_runts(root)
+                if max_uses <= 0:
+                    # Fallback for roster contexts that omit explicit token equipment.
+                    max_uses = 1
+        else:
+            max_uses = 1
+        max_uses = max(0, int(max_uses))
+        if used >= max_uses:
+            return
+
+        unit_id = get_entity_id(root)
+        if not unit_id:
+            return
+        remaining = max(0, int(max_uses - used))
+        message = f"Use {ability_name} for {getattr(root, 'name', 'Unit')}?"
+        if max_uses > 1:
+            suffix = "use" if remaining == 1 else "uses"
+            message = f"{message} ({remaining} {suffix} remaining)"
+        ctx = {
+            "ability": "ammo_runt",
+            "ability_name": ability_name,
+            "phase": "Shooting phase",
+            "unit": getattr(root, "name", "") or "",
+            "unit_id": unit_id,
+            "max_uses": int(max_uses),
+            "remaining_uses": int(remaining),
+        }
+        self._queue_optional_ability_confirmation(
+            player=player,
+            ability_key="ammo_runt",
+            ability_name=ability_name,
+            message=message,
+            context=ctx,
+            payload={
+                "unit_id": unit_id,
+                "ability_name": ability_name,
+                "max_uses": int(max_uses),
+            },
+            instance_key=f"{unit_id}:ammo_runt:{used}",
+        )
+
     def _on_shooting_targets_selected_sacrificial_dagger(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None or not target_units:
             return

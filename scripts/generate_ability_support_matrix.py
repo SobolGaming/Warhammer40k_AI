@@ -3148,6 +3148,7 @@ def _classify_ability_base(
     closest_enemy_hit_charge_support = _closest_enemy_hit_and_charge_reroll_support(description)
     order_range_extension_support = _order_range_extension_support(description)
     act_of_faith_cherub_support = _act_of_faith_cherub_support(description)
+    ammo_runt_support = _ammo_runt_support(description)
     orders_support = _orders_section_support(name, description)
     attached_unit_support = _attached_unit_support(name, description)
     model_reroll_support = _model_reroll_wound_vs_character_support(description)
@@ -3265,6 +3266,8 @@ def _classify_ability_base(
         return common_support
     if leading_support:
         return leading_support
+    if ammo_runt_support:
+        return ammo_runt_support
     if attached_character_fnp_support:
         return attached_character_fnp_support
     if weapon_keyword_grant_support:
@@ -7806,6 +7809,33 @@ def _act_of_faith_cherub_support(description: str) -> Optional[Tuple[str, str]]:
     return (
         "Supported",
         f"After this unit performs an Act of Faith: gain 1 Miracle die ({label.lower()}).",
+    )
+
+
+def _ammo_runt_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    if "ammo runt" not in norm:
+        return None
+    m = re.fullmatch(
+        r"once per battle(?P<per> for each ammo runt this unit has)? when this unit is selected to shoot "
+        r"it can use this ability if it does until the end of the phase ranged weapons equipped by models in this unit "
+        r"have the lethal hits ability(?: designers note .+)?",
+        norm,
+    )
+    if not m:
+        return None
+    if bool(m.group("per")):
+        return (
+            "Supported",
+            "Ammo Runt: when selected to shoot, unit ranged weapons gain Lethal Hits; uses are tracked per Ammo Runt.",
+        )
+    return (
+        "Supported",
+        "Ammo Runt: once per battle when selected to shoot, unit ranged weapons gain Lethal Hits until end of phase.",
     )
 
 

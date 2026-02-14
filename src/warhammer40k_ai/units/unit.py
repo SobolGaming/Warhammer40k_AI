@@ -2193,6 +2193,12 @@ class Unit(
         r"that targets that enemy unit add (?P<hit>\d+) to the hit roll and add (?P<wound>\d+) to the wound roll",
         re.IGNORECASE,
     )
+    _AMMO_RUNT_RE = re.compile(
+        r"once per battle(?P<per_runt> for each ammo runt this unit has)? when this unit is selected to shoot "
+        r"it can use this ability if it does until the end of the phase ranged weapons equipped by models in this unit "
+        r"have the lethal hits ability(?: .*)?",
+        re.IGNORECASE,
+    )
     _HAND_OF_ASURYAN_RE = re.compile(
         r"once per battle when this model is selected to shoot it can use this ability if it does until the end of the phase "
         r"its (?P<weapon>[a-z0-9 ]+?) weapon has a damage characteristic of (?P<damage>\d+)",
