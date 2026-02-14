@@ -217,6 +217,20 @@
         "type": ""
     },
     {
+        "id": "000001135",
+        "faction_id": "AE",
+        "name": "Eldritch Raiders",
+        "legend": "<p class=\"ShowFluff legend\">Few of the deep void\u2019s piratical denizens are as feared as the Eldritch Raiders. Led by Prince Yriel of Iyanden, the infamous pirate lord, these thrill-seeking raiders sail the stars in search of prey, striking their targets hard, fast and without mercy. Speed and cunning are the hallmarks of the Anhrathe, and the Eldritch Raiders possess these attributes in volume. When the time comes for battle, veteran Voidscarred and bands of Voidreavers rush into the fray, unleashing blizzards of shuriken fire to pin their enemies down and rushing forward to scythe through opposing infantry before they can raise a blade in defence. Above, leaping bands of Skyreavers soar over the enemy line to strike vulnerable flanks, whilst Vypers and Starfangs soar overhead, raking heavy infantry and enemy vehicles with punishing volleys of fire. Always in the thick of the fighting is Prince Yriel himself, parrying, thrusting and killing with his Spear of Twilight, leading by inspirational example and with the strategic nous of one who has walked the Path of Command.</p>",
+        "type": ""
+    },
+    {
+        "id": "000001136",
+        "faction_id": "AE",
+        "name": "Corsair Coterie",
+        "legend": "<p class=\"ShowFluff legend\">Ever opportunistic, Aeldari Corsairs ply the void in search of worthwhile targets, often operating in small raiding forces known as coteries. Though lightly armed and armoured, such forces are cunning and motivated, possessing a wealth of skills, knowledge and experience. These attributes enable them to overcome greater and more numerous foes and ensure that, by the time the final blow is struck, they have the riches they sought. Deploying by sleek and swift skimmers or leaping from the open hatches of voidships, winged Skyreavers lead the assault, striking at stunned opponents before they can mount an adequate defence. Into the breach surge the remainder of the Corsair force, making the most of the assault\u2019s initial momentum to push the enemy back, seize loot and plunder from under their noses and fade away into the void, leaving victims reeling in the aftermath of a dazzling and destructive onslaught.</p>",
+        "type": ""
+    },
+    {
         "id": "000000760",
         "faction_id": "AM",
         "name": "Combined Arms",
@@ -550,6 +564,20 @@
         "faction_id": "CSM",
         "name": "Nightmare Hunt",
         "legend": "<p class=\"ShowFluff legend\">Many warbands of the Traitor Legions embrace shock assaults of limitless cruelty and terror. The tactics of a Nightmare Hunt have been employed to fuel sorcerous rituals with their victims\u2019 fear, to sow discord and dread amongst the enemy, or to serve as reminders to circling rivals of a warband\u2019s superiority. For some Heretic Astartes, however, murder and misery-making for their own sake provide a sadistic delight. Such warriors steal onto the battlefield, darkness their ally as they prowl closer to their prey. Howling horrors plummet from dark skies or tear their way into reality, ready to rend the foe apart in gruesome spectacles. Every panicked error their quarry makes is another vulnerability that a Nightmare Hunt\u2019s predators gladly sink their talons into.</p>",
+        "type": ""
+    },
+    {
+        "id": "000001133",
+        "faction_id": "CSM",
+        "name": "Huron\u2019s Marauders",
+        "legend": "<p class=\"ShowFluff legend\">When the Red Corsairs go to war, they are aware that Huron Blackheart is always watching, whether in person or through the eyes of his agents. Fear of failure and incurring Tyrant\u2019s wrath are potent motivators. Crimson-clad Raiders go to great lengths to earn their tyrannical commander\u2019s approval, hurling themselves into the foe with savage vigour and seizing myriad treasures to swell his coffers. Should the Tyrant\u2019s gaze fall upon them, Red Corsair warriors are impelled to redouble their efforts, for those who fail Huron Blackheart are sure to meet an agonising end. Mortal soldiers and ragtag pirate crews engage the enemy with rabid devotion. Transhuman Renegades bellow war cries and dedications to their commander as they wade into battle, hewing down rank after rank of enemy infantry. All give their utmost to slaughter the enemy and secure plunder on behalf of their cruel master. The wrath of Huron Blackheart is terrifying enough to ensure that death is preferable to failure.</p>",
+        "type": ""
+    },
+    {
+        "id": "000001134",
+        "faction_id": "CSM",
+        "name": "Renegade Warband",
+        "legend": "<p class=\"ShowFluff legend\">Warbands of transhuman traitors seek to ruthlessly exploit the indoctrinated strategies and tactics of their loyalist past, delighting in turning such skills against their enemies. These forces of embittered and vengeful killers are lethally effective, utilising decades or even centuries of combat experience to raid, despoil and slaughter. Led by despotic warlords and crazed killers, these vicious aggressors descend upon their unfortunate victims, twisting their intricate knowledge of the Codex Astartes to their merciless ends. Whether motivated by enmity for those who have wronged them or simply a thirst for power, these murderous raiders ambush supply convoys and attack frontier worlds, striking like a mailed fist to seize and secure that which they require. These Renegades possess towering intelligence and ferocity but are loosed from the strictures of their former lives. They are free to fully embrace their ingrained desire to wage unrestricted war against any foe they wish.</p>",
         "type": ""
     },
     {
@@ -917,6 +945,13 @@
         "type": ""
     },
     {
+        "id": "000001137",
+        "faction_id": "LoV",
+        "name": "Mercenary Oathband",
+        "legend": "<p class=\"ShowFluff legend\">When the Eye of the Ancestors has been cast and the worth of some site or resource deemed vital, the Kin may form a hearthband to ensure its swift conquest. Typically led by one or more of the kindred\u2019s most courageous and strategically cunning K\u00e2hls, such forces are painstakingly forged to complete the precise mission for which they are assembled. Einhyr elites lead the charge, exo-armoured forms advancing like the Ancestors come to life, contemptuous of the enemy\u2019s pitiful attempts to cut them down with gunfire or stagger their charge. Hand-picked Hearthkyn support their advance, no mere citizen soldiers but instead the finest warriors of the kinhost assembled for this one crucial mission. Driving inexorably into the teeth of the foe, the hearthband does not stop until their task is complete and the battle is won.</p>",
+        "type": ""
+    },
+    {
         "id": "000000756",
         "faction_id": "NEC",
         "name": "Awakened Dynasty",
@@ -1068,6 +1103,13 @@
         "faction_id": "ORK",
         "name": "More Dakka!",
         "legend": "<p class=\"ShowFluff legend\">Of all the Ork manias, few are as widespread as the love of heavy firepower. Temporarily united by a shared love of loud and destructive dakka, hordes of similarly obsessed Orks can produce storms of killing fire capable of felling even the most heavily armoured of enemies.</p>",
+        "type": ""
+    },
+    {
+        "id": "000001138",
+        "faction_id": "ORK",
+        "name": "Freebooter Krew",
+        "legend": "<p class=\"ShowFluff legend\">Ork Freebooterz are the most selfish, acquisitive and merciless of their kind. Kicked out of their tribes for failing to respect even the brutal structures of Orkoid society, they find their way into the company of equally shifty gits and form Freebooter krewz. Freebooterz typically sail the void aboard kroozers bristling with guns and boarding craft, and take every opportunity to pillage and destroy everything in their path. When Freebooter Krewz gather under the banner of an especially ambitious and cunning Kaptin, they form pirate fleets that can endanger even fortified worlds and full-fledged battle stations. Any manner of Ork can become a Freebooter \u2013 though the most iconic of their kind are the gunned-up show-offs known as Flash Gitz \u2013 and so their krewz may include mobs of Boyz and Grots, hurtling packs of bad Ork Bikerboyz, piratical Beast Snaggas, fleets of trophy-festooned Battlewagons and more besides. The only unifying features are the Freebooterz\u2019 greed for loot of every kind, and their willingness to do just about anything to get their talons on it.</p>",
         "type": ""
     },
     {

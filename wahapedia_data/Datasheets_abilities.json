@@ -14225,7 +14225,7 @@
         "ability_id": "",
         "model": "",
         "name": "Prince of Corsairs",
-        "description": "If your army includes this model, after both players have deployed their armies, select up to three <span class=\"kwb\">AELDARI</span> units from your army and redeploy them. When doing so, you can set those units up in Strategic Reserves if you wish, regardless of how many units are already in Strategic Reserves.",
+        "description": "If your army includes this model, after both players have deployed their armies, select up to three <span class=\"kwb\">AELDARI</span> units from your army and redeploy them. When doing so, you can set those units up in Strategic Reserves if you wish, regardless of how many units are already in Strategic Reserves. ",
         "type": "Datasheet",
         "parameter": ""
     },
@@ -23672,7 +23672,7 @@
     {
         "datasheet_id": "000000925",
         "line": "1",
-        "ability_id": "000008346",
+        "ability_id": "000008343",
         "model": "",
         "name": "",
         "description": "",
@@ -23682,6 +23682,26 @@
     {
         "datasheet_id": "000000925",
         "line": "2",
+        "ability_id": "000008338",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Core",
+        "parameter": "5+"
+    },
+    {
+        "datasheet_id": "000000925",
+        "line": "3",
+        "ability_id": "000008346",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Core",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000000925",
+        "line": "4",
         "ability_id": "000008359",
         "model": "",
         "name": "",
@@ -23691,31 +23711,21 @@
     },
     {
         "datasheet_id": "000000925",
-        "line": "3",
-        "ability_id": "",
-        "model": "",
-        "name": "The Tyrant of Badab",
-        "description": "While this model is leading a unit, add 1 to the Objective Control characteristic of models in that unit.",
-        "type": "Datasheet",
-        "parameter": ""
-    },
-    {
-        "datasheet_id": "000000925",
-        "line": "4",
-        "ability_id": "",
-        "model": "",
-        "name": "Red Corsairs",
-        "description": "After both players have deployed their armies, you can select up to three Heretic Astartes Infantry units from your army and redeploy them. When doing so, those units can be placed into Strategic Reserves, regardless of how many units are already in Strategic Reserves.",
-        "type": "Datasheet",
-        "parameter": ""
-    },
-    {
-        "datasheet_id": "000000925",
         "line": "5",
         "ability_id": "",
         "model": "",
+        "name": "Lord of Badab (Aura)",
+        "description": "While a friendly Heretic Astartes Infantry unit (excluding Battle-shocked units and Damned units) is within 6\" of this model, add 1 to the Objective Control characteristic of models in that unit.",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000000925",
+        "line": "6",
+        "ability_id": "",
+        "model": "",
         "name": "Hamadrya\u2019s Knowledge (Psychic)",
-        "description": "Once per battle, when an enemy unit ends a Normal, Advance or Fall Back move within 9\" of this model\u2019s unit, if this model\u2019s unit is not within Engagement Range of one or more enemy units, it can make a Normal move of up to D6\".",
+        "description": "Once per battle round, when an enemy unit ends a Normal, Advance or Fall Back move within 9\" of this model\u2019s unit, if this model\u2019s unit is not within Engagement Range of one or more enemy units, it can make a Normal move of up to D3+3\".",
         "type": "Datasheet",
         "parameter": ""
     },
@@ -45365,7 +45375,7 @@
         "ability_id": "",
         "model": "",
         "name": "DEPLOYMENT",
-        "description": "When this model is set up, it will consist of 1 platform section, up to 5 shield sections, up to 2 broken shield sections, and up to 2 end sections. All sections must be connected to each other to form a continuous defence line; the two broken shield sections can be placed either at the end of the defence line, or in the middle of it such that both are within l/2\" of each other (in this case, these two sections count as being connected to each other). All the sections that have been set up are then treated as a single model for all rules purposes.",
+        "description": "When this model is set up, it will consist of 1 platform section, up to 5 shield sections, up to 2 broken shield sections, and up to 2 end sections. All sections must be connected to each other to form a continuous defence line; the two broken shield sections can be placed either at the end of the defence line, or in the middle of it such that both are within 1/2\" of each other (in this case, these two sections count as being connected to each other). All the sections that have been set up are then treated as a single model for all rules purposes.",
         "type": "Special (\u043f\u0440\u0430\u0432\u0430\u044f \u043a\u043e\u043b\u043e\u043d\u043a\u0430)",
         "parameter": ""
     },
@@ -61075,7 +61085,7 @@
         "ability_id": "",
         "model": "",
         "name": "DEPLOYMENT",
-        "description": "When this model is set up, it will consist of 1 platform section, up to 5 shield sections, up to 2 broken shield sections, and up to 2 end sections. All sections must be connected to each other to form a continuous defence line; the two broken shield sections can be placed either at the end of the defence line, or in the middle of it such that both are within l/2\" of each other (in this case, these two sections count as being connected to each other). All the sections that have been set up are then treated as a single model for all rules purposes.",
+        "description": "When this model is set up, it will consist of 1 platform section, up to 5 shield sections, up to 2 broken shield sections, and up to 2 end sections. All sections must be connected to each other to form a continuous defence line; the two broken shield sections can be placed either at the end of the defence line, or in the middle of it such that both are within 1/2\" of each other (in this case, these two sections count as being connected to each other). All the sections that have been set up are then treated as a single model for all rules purposes.",
         "type": "Special (\u043f\u0440\u0430\u0432\u0430\u044f \u043a\u043e\u043b\u043e\u043d\u043a\u0430)",
         "parameter": ""
     },
@@ -69945,7 +69955,7 @@
         "ability_id": "",
         "model": "",
         "name": "Virtue of Intolerance",
-        "description": "At the start of the battle, select one unit from your opponent\u2019s army to be this unit\u2019s quarry. Each time a model in this unit makes an attack that targets its quarry, that attack has the [PRECISION] ability and you can re-roll the Hit roll.",
+        "description": "At the start of the battle, select one unit from your opponent\u2019s army to be this unit\u2019s quarry. Each time a model in this unit makes an attack that targets its quarry, that attack has the [PRECISION] ability and you can re-roll the Hit roll. This ability can be used even if this unit is embarked within a Transport.",
         "type": "Datasheet",
         "parameter": ""
     },
@@ -69977,6 +69987,326 @@
         "name": "ATTACHED UNIT",
         "description": "If a Character unit from your army can be attached to a Dominion Squad unit, it can be attached to this unit instead.",
         "type": "Fortification (\u043b\u0435\u0432\u0430\u044f \u043a\u043e\u043b\u043e\u043d\u043a\u0430)",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004190",
+        "line": "1",
+        "ability_id": "000008359",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Faction",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004190",
+        "line": "2",
+        "ability_id": "",
+        "model": "",
+        "name": "Choice Samples",
+        "description": "While this unit\u2019s Garreon the Corpsemaster is on the battlefield, in your Command phase, select one of the following: you can return 1 destroyed model (excluding <span class=\"kwb\">CHARACTER</span> models) to this unit, or, if one or more Heretic Astartes Infantry units from your army are below Starting Strength and within 3\" of this unit, you gain 1CP.",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004190",
+        "line": "3",
+        "ability_id": "",
+        "model": "",
+        "name": "Fleet Command",
+        "description": "After both players have deployed their armies, if this unit is on the battlefield (or any Transport it is embarked within is on the battlefield) select up to three <span class=\"kwb\">HERETIC</span> <span class=\"kwb\">ASTARTES</span> units from your army and redeploy them. When doing so, you can set those units up in Strategic Reserves, regardless of how many units are already in Strategic Reserves.",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004190",
+        "line": "4",
+        "ability_id": "",
+        "model": "",
+        "name": "Plunder",
+        "description": "Once per battle, after this unit ends a Normal move, you can select one visible enemy unit within 12\" of it and roll one D6: on a 2+, that enemy unit suffers D3+1 mortal wounds.",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004190",
+        "line": "5",
+        "ability_id": "",
+        "model": "",
+        "name": "MASTERS OF THE MAELSTROM",
+        "description": "At the start of the Declare Battle Formations step, this unit can join one of the following units. This unit then counts as part of that unit for the rest of the battle, and that unit\u2019s Starting Strength is increased accordingly.<br><ul><li>Chosen, Legionaries, Red Corsairs Raiders</li></ul>This unit cannot join an Attached unit, and only Huron Blackheart can join a unit this unit has joined.",
+        "type": "Fortification (\u043b\u0435\u0432\u0430\u044f \u043a\u043e\u043b\u043e\u043d\u043a\u0430)",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004191",
+        "line": "1",
+        "ability_id": "000008345",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Core",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004191",
+        "line": "2",
+        "ability_id": "000008359",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Faction",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004191",
+        "line": "3",
+        "ability_id": "",
+        "model": "",
+        "name": "Trophy Takers",
+        "description": "The first time this unit destroys an enemy unit, until the end of the battle, while this unit is not Battle-shocked, add 1 to the Objective Control characteristic of models in this unit.",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004191",
+        "line": "4",
+        "ability_id": "",
+        "model": "",
+        "name": "ATTACHED UNIT",
+        "description": "If a Character unit from your army with the Leader ability can be attached to a Legionaries unit, it can be attached to this unit instead.",
+        "type": "Fortification (\u043b\u0435\u0432\u0430\u044f \u043a\u043e\u043b\u043e\u043d\u043a\u0430)",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004192",
+        "line": "1",
+        "ability_id": "000008345",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Core",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004192",
+        "line": "2",
+        "ability_id": "000008346",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Core",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004192",
+        "line": "3",
+        "ability_id": "000008359",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Faction",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004192",
+        "line": "4",
+        "ability_id": "",
+        "model": "",
+        "name": "Brutal Raider",
+        "description": "Each time this model\u2019s unit ends a Charge move, until the end of the turn, add 1 to the Strength characteristic of melee weapons equipped by this model and improve the Armour Penetration characteristics of those weapons by 1.",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004192",
+        "line": "5",
+        "ability_id": "",
+        "model": "",
+        "name": "Raider\u2019s Due",
+        "description": "Each time this unit declares a Charge that targets one or more units that are within range of one or more objective markers, you can re-roll the Charge roll.",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004193",
+        "line": "1",
+        "ability_id": "000008346",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Core",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004193",
+        "line": "2",
+        "ability_id": "000008344",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Core",
+        "parameter": "7\""
+    },
+    {
+        "datasheet_id": "000004193",
+        "line": "3",
+        "ability_id": "000009894",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Faction",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004193",
+        "line": "4",
+        "ability_id": "",
+        "model": "",
+        "name": "Piratical Hero",
+        "description": "While this model is leading a unit, each time a model in that unit makes an attack, that attack has the [SUSTAINED HITS 1] ability and add 1 to the Hit roll.",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004193",
+        "line": "5",
+        "ability_id": "",
+        "model": "",
+        "name": "Prince of Corsairs",
+        "description": "After both players have deployed their armies, if this unit is on the battlefield (or any Transport it is embarked within is on the battlefield), select up to three <span class=\"kwb\">AELDARI</span> units from your army and redeploy them. When doing so, you can set those units up in Strategic Reserves, regardless of how many units are already in Strategic Reserves. ",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004194",
+        "line": "1",
+        "ability_id": "000008346",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Core",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004194",
+        "line": "2",
+        "ability_id": "000008344",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Core",
+        "parameter": "7\""
+    },
+    {
+        "datasheet_id": "000004194",
+        "line": "3",
+        "ability_id": "000009894",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Faction",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004194",
+        "line": "4",
+        "ability_id": "",
+        "model": "",
+        "name": "Aethersense (Psychic)",
+        "description": "Enemy units that are set up on the battlefield from Reserves cannot be set up within 12\" of this model.",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004194",
+        "line": "5",
+        "ability_id": "",
+        "model": "",
+        "name": "Fury of the Void (Psychic)",
+        "description": "In your Shooting phase, after this model\u2019s unit has shot, select one enemy unit hit by one or more attacks made with this model\u2019s Dread of the Deep Void. Until the end of the turn, that unit is riven. Each time an <span class=\"kwb\">AELDARI</span> model from your army makes an attack that targets a riven unit, add 1 to the Strength characteristic of that attack.",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004195",
+        "line": "1",
+        "ability_id": "000008339",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Core",
+        "parameter": "1"
+    },
+    {
+        "datasheet_id": "000004195",
+        "line": "2",
+        "ability_id": "000008344",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Core",
+        "parameter": "7\""
+    },
+    {
+        "datasheet_id": "000004195",
+        "line": "3",
+        "ability_id": "000009894",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Faction",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004195",
+        "line": "4",
+        "ability_id": "",
+        "model": "",
+        "name": "Hallucinogen Grenades",
+        "description": "At the start of your opponent\u2019s Shooting phase, this unit can use this ability. If it does, select one Aeldari Infantry unit from your army visible to and within 36\" of this unit: until the end of the phase, that unit has the Stealth ability.",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004196",
+        "line": "1",
+        "ability_id": "000008343",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Core",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004196",
+        "line": "2",
+        "ability_id": "000008344",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Core",
+        "parameter": "7\""
+    },
+    {
+        "datasheet_id": "000004196",
+        "line": "3",
+        "ability_id": "000009894",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004196",
+        "line": "4",
+        "ability_id": "",
+        "model": "",
+        "name": "Raid and Run",
+        "description": "At the end of the Fight phase, if this unit was eligible to fight this phase, and is not within Engagement Range of one or more enemy units, it can make a Normal move of up to D3+3\". Otherwise, if this unit was eligible to fight this phase, this unit can make a Fall Back move of up to D3+3\".",
+        "type": "Datasheet",
         "parameter": ""
     }
 ]

@@ -22,9 +22,9 @@
         "name": "Munitorum Field Manual",
         "type": "Expansion",
         "edition": "10",
-        "version": "3.8",
-        "errata_date": "07.01.2026 0:00:00",
-        "errata_link": "https://assets.warhammer-community.com/eng_07-01_warhammer_40000_core_rules_munitorum_field_manual-foyrvzepji-l3iqvqilei.pdf"
+        "version": "3.9",
+        "errata_date": "12.02.2026 0:00:00",
+        "errata_link": "https://assets.warhammer-community.com/eng_11-02_warhammer_40000_core_rules_munitorum_field_manua-nhzplimifq-x47lmaz27p.pdf"
     },
     {
         "id": "000000259",
@@ -40,9 +40,9 @@
         "name": "Astra Militarum",
         "type": "Faction Pack",
         "edition": "10",
-        "version": "1.2",
-        "errata_date": "07.01.2026 0:00:00",
-        "errata_link": "https://assets.warhammer-community.com/eng_07-01_warhammer_40000_faction_pack_astra_militarum-qvx2k7bxqn-fywelavi4a.pdf"
+        "version": "1.4",
+        "errata_date": "11.02.2026 0:00:00",
+        "errata_link": "https://assets.warhammer-community.com/eng_11-02_warhammer_40000_faction_pack_astra_militarum-xrrzknaxfo-cig0l0cgh3.pdf"
     },
     {
         "id": "000000053",
@@ -67,9 +67,9 @@
         "name": "Aeldari",
         "type": "Faction Pack",
         "edition": "10",
-        "version": "1.1",
-        "errata_date": "08.12.2025 0:00:00",
-        "errata_link": "https://assets.warhammer-community.com/eng_8-12_wh40k_faction_pack_aeldari-myegu0tol8-jrckmom64e.pdf"
+        "version": "1.2",
+        "errata_date": "11.02.2026 0:00:00",
+        "errata_link": "https://assets.warhammer-community.com/eng_11-02_warhammer_40000_faction_pack_aeldari-tmtx4nmkgp-ksodwfy7uo.pdf"
     },
     {
         "id": "000000270",
@@ -85,9 +85,9 @@
         "name": "Orks",
         "type": "Faction Pack",
         "edition": "10",
-        "version": "1.0",
-        "errata_date": "22.10.2025 0:00:00",
-        "errata_link": "https://assets.warhammer-community.com/eng_22-10_warhammer40000_faction_pack_orks-loiadww1to-milklk2d5c.pdf"
+        "version": "1.1",
+        "errata_date": "11.02.2026 0:00:00",
+        "errata_link": "https://assets.warhammer-community.com/eng_11-02_wh40k_faction_pack_-orks-btwsaaayei-sww6vtlfjk.pdf"
     },
     {
         "id": "000000271",
@@ -130,9 +130,9 @@
         "name": "Leagues of Votann",
         "type": "Faction Pack",
         "edition": "10",
-        "version": "1.0",
-        "errata_date": "22.10.2025 0:00:00",
-        "errata_link": "https://assets.warhammer-community.com/eng_22-10_warhammer40000_faction_pack_leagues_of_votann-g6kjw9qmly-n8grk51p4g.pdf"
+        "version": "1.1",
+        "errata_date": "11.02.2026 0:00:00",
+        "errata_link": "https://assets.warhammer-community.com/eng_11-02_wh40k_faction_pack_leagues_of_votann-ochlykavhd-ti0l5bbduf.pdf"
     },
     {
         "id": "000000015",
@@ -193,9 +193,9 @@
         "name": "Chaos Daemons",
         "type": "Faction Pack",
         "edition": "10",
-        "version": "1.1",
-        "errata_date": "10.12.2025 0:00:00",
-        "errata_link": "https://assets.warhammer-community.com/eng_10-12_wh40k_faction_pack_chaos_daemons-o4zman18oy-fz13htfitp.pdf"
+        "version": "1.2",
+        "errata_date": "11.02.2026 0:00:00",
+        "errata_link": "https://assets.warhammer-community.com/eng_11-02_warhammer_40000_faction_pack_chaos_daemons-xjdr0v2gia-pegn6mif0x.pdf"
     },
     {
         "id": "000000034",
@@ -211,9 +211,9 @@
         "name": "Space Marines",
         "type": "Faction Pack",
         "edition": "10",
-        "version": "1.4",
-        "errata_date": "07.01.2026 0:00:00",
-        "errata_link": "https://assets.warhammer-community.com/eng_07-01_warhammer_40000_faction_pack_space_marines-9ps9uold3v-zei03cythi.pdf"
+        "version": "1.5",
+        "errata_date": "11.02.2026 0:00:00",
+        "errata_link": "https://assets.warhammer-community.com/eng_11-02_warhammer_40000_faction_pack_space_marines-t7ypi7ib36-b5jouxnw7u.pdf"
     },
     {
         "id": "000000020",
@@ -238,18 +238,18 @@
         "name": "Adepta Sororitas",
         "type": "Faction Pack",
         "edition": "10",
-        "version": "1.1",
-        "errata_date": "07.01.2026 0:00:00",
-        "errata_link": "https://assets.warhammer-community.com/eng_07-01_warhammer_40000_faction_pack_adepta_sororitas-5cwwgh20xo-hjbnotutnt.pdf"
+        "version": "1.2",
+        "errata_date": "11.02.2026 0:00:00",
+        "errata_link": "https://assets.warhammer-community.com/eng_11-02_warhammer_40000_faction_pack_adepta_sororitas-qsfjrcbqnt-eaa1ivx3ml.pdf"
     },
     {
         "id": "000000012",
         "name": "Chaos Space Marines",
         "type": "Faction Pack",
         "edition": "10",
-        "version": "1.2",
-        "errata_date": "07.01.2026 0:00:00",
-        "errata_link": "https://assets.warhammer-community.com/eng_07-01_warhammer_40000_faction_pack_chaos_space_marines-2khifxospj-ohzo6rfaw7.pdf"
+        "version": "1.3",
+        "errata_date": "11.02.2026 0:00:00",
+        "errata_link": "https://assets.warhammer-community.com/eng_11-02_wh40k_faction_pack_chaos_space_marines-lo3fztfdb6-tavncu27rz.pdf"
     },
     {
         "id": "000000031",

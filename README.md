@@ -23,6 +23,7 @@ pip3 install -e .
 2. **Updated Warhammer 40k Data**:
 ```bash
 python3 scripts/get_wahapedia_data.py -f -c -o wahapedia_data -s wahapedia_data
+python3 scripts/diff_wahapedia_data.py --old wahapedia_data/Archive/ --new wahapedia_data/ --out docs/wahapedia_diff.txt
 ```
 
 ### Usage Examples

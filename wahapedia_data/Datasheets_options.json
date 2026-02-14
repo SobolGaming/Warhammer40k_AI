@@ -2931,7 +2931,13 @@
         "datasheet_id": "000000605",
         "line": "1",
         "button": "\u2022",
-        "description": "Any number of models can each have their shuriken cannon replaced with one of the following:<ul style=\"list-style-type:circle\"><li>1 missile launcher</li><li>1 bright lance</li><li>1 scatter laser</li><li>1 starcannon</li></ul>"
+        "description": "Any number of models can each have their bright lance replaced with one of the following:<ul style=\"list-style-type:circle\"><li>1 scatter laser</li><li>1 starcannon</li></ul>"
+    },
+    {
+        "datasheet_id": "000000605",
+        "line": "2",
+        "button": "\u2022",
+        "description": "Any number of models can each have their shuriken cannon replaced with 1 missile launcher."
     },
     {
         "datasheet_id": "000000607",
@@ -5047,6 +5053,12 @@
     },
     {
         "datasheet_id": "000000923",
+        "line": "1",
+        "button": "\u2022",
+        "description": "None"
+    },
+    {
+        "datasheet_id": "000000925",
         "line": "1",
         "button": "\u2022",
         "description": "None"
@@ -9657,19 +9669,25 @@
         "datasheet_id": "000002704",
         "line": "1",
         "button": "\u2022",
-        "description": "This model\u2019s 2 quad lascannons can be replaced with 2 laser destroyers."
+        "description": "This model\u2019s 2 quad lascannons can be replaced with one of the following:<ul style=\"list-style-type:circle\"><li> 2 laser destroyers</li><li>2 quad heavy bolters</li></ul>"
     },
     {
         "datasheet_id": "000002704",
         "line": "2",
         "button": "\u2022",
-        "description": "This model\u2019s twin heavy bolter can be replaced with 1 twin heavy flamer"
+        "description": "This model\u2019s twin heavy bolter can be replaced with 1 twin heavy flamer."
     },
     {
         "datasheet_id": "000002704",
         "line": "3",
         "button": "\u2022",
-        "description": "This model can be equipped with one of the following:<ul style=\"list-style-type:circle\"><li>1 heavy bolter</li><li>1 heavy flamer</li><li>1 multi-melta</li><li>1 storm bolter</li></ul>"
+        "description": "This model can be equipped with 1 havoc launcher."
+    },
+    {
+        "datasheet_id": "000002704",
+        "line": "4",
+        "button": "\u2022",
+        "description": "This model can be equipped with one of the following:<ul style=\"list-style-type:circle\"><li>1 combi-weapon</li><li>1 heavy bolter</li><li>1 heavy flamer</li><li>1 multi-melta</li><li>1 storm bolter</li></ul>"
     },
     {
         "datasheet_id": "000002705",
@@ -11823,73 +11841,97 @@
         "datasheet_id": "000003651",
         "line": "1",
         "button": "\u2022",
-        "description": "This model\u2019s 2 quad lascannons can be replaced with 2 laser destroyers."
+        "description": "This model\u2019s 2 quad lascannons can be replaced with one of the following:<ul style=\"list-style-type:circle\"><li> 2 laser destroyers</li><li>2 quad heavy bolters</li></ul>"
     },
     {
         "datasheet_id": "000003651",
         "line": "2",
         "button": "\u2022",
-        "description": "This model\u2019s twin heavy bolter can be replaced with 1 twin heavy flamer"
+        "description": "This model\u2019s twin heavy bolter can be replaced with 1 twin heavy flamer."
     },
     {
         "datasheet_id": "000003651",
         "line": "3",
         "button": "\u2022",
-        "description": "This model can be equipped with one of the following:<ul style=\"list-style-type:circle\"><li>1 heavy bolter</li><li>1 heavy flamer</li><li>1 multi-melta</li><li>1 storm bolter</li></ul>"
+        "description": "This model can be equipped with 1 havoc launcher."
+    },
+    {
+        "datasheet_id": "000003651",
+        "line": "4",
+        "button": "\u2022",
+        "description": "This model can be equipped with one of the following:<ul style=\"list-style-type:circle\"><li>1 combi-weapon</li><li>1 heavy bolter</li><li>1 heavy flamer</li><li>1 multi-melta</li><li>1 storm bolter</li></ul>"
     },
     {
         "datasheet_id": "000003652",
         "line": "1",
         "button": "\u2022",
-        "description": "This model\u2019s 2 quad lascannons can be replaced with 2 laser destroyers."
+        "description": "This model\u2019s 2 quad lascannons can be replaced with one of the following:<ul style=\"list-style-type:circle\"><li> 2 laser destroyers</li><li>2 quad heavy bolters</li></ul>"
     },
     {
         "datasheet_id": "000003652",
         "line": "2",
         "button": "\u2022",
-        "description": "This model\u2019s twin heavy bolter can be replaced with 1 twin heavy flamer"
+        "description": "This model\u2019s twin heavy bolter can be replaced with 1 twin heavy flamer."
     },
     {
         "datasheet_id": "000003652",
         "line": "3",
         "button": "\u2022",
-        "description": "This model can be equipped with one of the following:<ul style=\"list-style-type:circle\"><li>1 heavy bolter</li><li>1 heavy flamer</li><li>1 multi-melta</li><li>1 storm bolter</li></ul>"
+        "description": "This model can be equipped with 1 havoc launcher."
+    },
+    {
+        "datasheet_id": "000003652",
+        "line": "4",
+        "button": "\u2022",
+        "description": "This model can be equipped with one of the following:<ul style=\"list-style-type:circle\"><li>1 combi-weapon</li><li>1 heavy bolter</li><li>1 heavy flamer</li><li>1 multi-melta</li><li>1 storm bolter</li></ul>"
     },
     {
         "datasheet_id": "000003653",
         "line": "1",
         "button": "\u2022",
-        "description": "This model\u2019s 2 quad lascannons can be replaced with 2 laser destroyers."
+        "description": "This model\u2019s 2 quad lascannons can be replaced with one of the following:<ul style=\"list-style-type:circle\"><li> 2 laser destroyers</li><li>2 quad heavy bolters</li></ul>"
     },
     {
         "datasheet_id": "000003653",
         "line": "2",
         "button": "\u2022",
-        "description": "This model\u2019s twin heavy bolter can be replaced with 1 twin heavy flamer"
+        "description": "This model\u2019s twin heavy bolter can be replaced with 1 twin heavy flamer."
     },
     {
         "datasheet_id": "000003653",
         "line": "3",
         "button": "\u2022",
-        "description": "This model can be equipped with one of the following:<ul style=\"list-style-type:circle\"><li>1 heavy bolter</li><li>1 heavy flamer</li><li>1 multi-melta</li><li>1 storm bolter</li></ul>"
+        "description": "This model can be equipped with 1 havoc launcher."
+    },
+    {
+        "datasheet_id": "000003653",
+        "line": "4",
+        "button": "\u2022",
+        "description": "This model can be equipped with one of the following:<ul style=\"list-style-type:circle\"><li>1 combi-weapon</li><li>1 heavy bolter</li><li>1 heavy flamer</li><li>1 multi-melta</li><li>1 storm bolter</li></ul>"
     },
     {
         "datasheet_id": "000003654",
         "line": "1",
         "button": "\u2022",
-        "description": "This model\u2019s 2 quad lascannons can be replaced with 2 laser destroyers."
+        "description": "This model\u2019s 2 quad lascannons can be replaced with one of the following:<ul style=\"list-style-type:circle\"><li> 2 laser destroyers</li><li>2 quad heavy bolters</li></ul>"
     },
     {
         "datasheet_id": "000003654",
         "line": "2",
         "button": "\u2022",
-        "description": "This model\u2019s twin heavy bolter can be replaced with 1 twin heavy flamer"
+        "description": "This model\u2019s twin heavy bolter can be replaced with 1 twin heavy flamer."
     },
     {
         "datasheet_id": "000003654",
         "line": "3",
         "button": "\u2022",
-        "description": "This model can be equipped with one of the following:<ul style=\"list-style-type:circle\"><li>1 heavy bolter</li><li>1 heavy flamer</li><li>1 multi-melta</li><li>1 storm bolter</li></ul>"
+        "description": "This model can be equipped with 1 havoc launcher."
+    },
+    {
+        "datasheet_id": "000003654",
+        "line": "4",
+        "button": "\u2022",
+        "description": "This model can be equipped with one of the following:<ul style=\"list-style-type:circle\"><li>1 combi-weapon</li><li>1 heavy bolter</li><li>1 heavy flamer</li><li>1 multi-melta</li><li>1 storm bolter</li></ul>"
     },
     {
         "datasheet_id": "000003655",
@@ -16636,5 +16678,65 @@
         "line": "6",
         "button": "\u2022",
         "description": "One Celestian Insidiant equipped with 1 condemnor bolt pistol can be equipped with 1 simulacrum imperialis (that model\u2019s condemnor bolt pistol cannot be replaced)."
+    },
+    {
+        "datasheet_id": "000004191",
+        "line": "1",
+        "button": "\u2022",
+        "description": "The Red Corsairs Raider Champion\u2019s bolt pistol can be replaced with 1 hand flamer."
+    },
+    {
+        "datasheet_id": "000004191",
+        "line": "2",
+        "button": "\u2022",
+        "description": "For every 5 models in this unit:<ul style=\"list-style-type:circle\"><li>1 Red Corsairs Raider\u2019s boltgun can be replaced with 1 meltagun</li><li>1 Red Corsairs Raider\u2019s reaver\u2019s blade can be replaced with 1 power fist</li></ul>"
+    },
+    {
+        "datasheet_id": "000004192",
+        "line": "1",
+        "button": "\u2022",
+        "description": "This model\u2019s power sword can be replaced with 1 power maul."
+    },
+    {
+        "datasheet_id": "000004192",
+        "line": "2",
+        "button": "\u2022",
+        "description": "This model can be equipped with 1 plasma pistol."
+    },
+    {
+        "datasheet_id": "000004193",
+        "line": "1",
+        "button": "\u2022",
+        "description": "None"
+    },
+    {
+        "datasheet_id": "000004194",
+        "line": "1",
+        "button": "\u2022",
+        "description": "None"
+    },
+    {
+        "datasheet_id": "000004195",
+        "line": "1",
+        "button": "\u2022",
+        "description": "None"
+    },
+    {
+        "datasheet_id": "000004196",
+        "line": "1",
+        "button": "\u2022",
+        "description": "The Skyreaver Felarch can replace its shuriken pistol with one of the following:<ul style=\"list-style-type:circle\"><li>1  blast pistol</li><li>1 neuro disruptor</li></ul>"
+    },
+    {
+        "datasheet_id": "000004196",
+        "line": "2",
+        "button": "\u2022",
+        "description": "For every 5 models in the unit, up to 2 Skyreaver models can each have their shuriken pistol and Corsair blade replaced with one of the following*:<ul style=\"list-style-type:circle\"><li>1 blaster and 1 close combat weapon</li><li>1 flamer and 1 close combat weapon</li><li>1 fusion gun and 1 close combat weapon</li><li>1 shredder and 1 close combat weapon</li></ul>"
+    },
+    {
+        "datasheet_id": "000004196",
+        "line": "3",
+        "button": "*",
+        "description": "* You cannot select the same option more than once per unit unless it contains 10 models, in which case you cannot select the same weapon more than twice per unit."
     }
 ]

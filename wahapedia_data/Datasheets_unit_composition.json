@@ -10623,5 +10623,70 @@
         "datasheet_id": "000004189",
         "line": "2",
         "description": "9 Celestian Insidiants"
+    },
+    {
+        "datasheet_id": "000004190",
+        "line": "1",
+        "description": "1 Garreon the Corpsemaster \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+    },
+    {
+        "datasheet_id": "000004190",
+        "line": "2",
+        "description": "1 Garlon Souleater \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+    },
+    {
+        "datasheet_id": "000004190",
+        "line": "3",
+        "description": "1 Katar Garrix \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+    },
+    {
+        "datasheet_id": "000004190",
+        "line": "4",
+        "description": "1 Captain Sargotta \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+    },
+    {
+        "datasheet_id": "000004190",
+        "line": "5",
+        "description": "1 The Enforcer \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+    },
+    {
+        "datasheet_id": "000004191",
+        "line": "1",
+        "description": "1 Red Corsairs Raider Champion"
+    },
+    {
+        "datasheet_id": "000004191",
+        "line": "2",
+        "description": "4-9 Red Corsairs Raiders"
+    },
+    {
+        "datasheet_id": "000004192",
+        "line": "1",
+        "description": "1 Red Corsairs Reave-Captain"
+    },
+    {
+        "datasheet_id": "000004193",
+        "line": "1",
+        "description": "1 Prince Yriel \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+    },
+    {
+        "datasheet_id": "000004194",
+        "line": "1",
+        "description": "1 Kharseth \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+    },
+    {
+        "datasheet_id": "000004195",
+        "line": "1",
+        "description": "1-2 Starfangs"
+    },
+    {
+        "datasheet_id": "000004196",
+        "line": "1",
+        "description": "1 Skyreaver Felarch"
+    },
+    {
+        "datasheet_id": "000004196",
+        "line": "2",
+        "description": "4-9 Skyreavers"
     }
 ]
