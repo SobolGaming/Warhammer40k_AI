@@ -310,6 +310,22 @@ _AELDARI_GUARDIAN_BATTLEHOST_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _AELDARI_GUARDIAN_BATTLEHOST_DESCRIPTORS.values()
 }
 
+_INVASION_FLEET_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008348002": EnhancementToolDescriptor(
+        enhancement_id="000008348002",
+        name="Alien Cunning",
+        timing="after_deployment",
+        target="friendly_tyranids_units",
+        duration="redeploy_step",
+        effect="redeploy_units",
+        effect_params={"max_units": 3, "allow_strategic_reserves": True},
+    ),
+}
+
+_INVASION_FLEET_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _INVASION_FLEET_DESCRIPTORS.values()
+}
+
 _CABAL_OF_CHAOS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010151002": EnhancementToolDescriptor(
         enhancement_id="000010151002",
@@ -876,6 +892,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _AELDARI_GUARDIAN_BATTLEHOST_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _INVASION_FLEET_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _CABAL_OF_CHAOS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -922,6 +941,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _POSSESSED_SLAUGHTERBAND_BY_NAME.get(key)
         or _VESSELS_OF_WRATH_BY_NAME.get(key)
         or _AELDARI_GUARDIAN_BATTLEHOST_BY_NAME.get(key)
+        or _INVASION_FLEET_BY_NAME.get(key)
         or _CABAL_OF_CHAOS_BY_NAME.get(key)
         or _SPECTACLE_OF_SPITE_BY_NAME.get(key)
         or _COURT_OF_THE_PHOENICIAN_BY_NAME.get(key)

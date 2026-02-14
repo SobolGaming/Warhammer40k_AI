@@ -5083,15 +5083,21 @@ class PositioningMixin:
         ability_name = ""
 
         for name, desc in abilities_to_check:
-            text = str(desc or "").lower()
+            text = html.unescape(str(desc or ""))
+            text = re.sub(r"<[^>]+>", " ", text)
+            text = text.lower()
             text = text.replace("\u2019", "'").replace("\u2018", "'")
+            text = re.sub(r"\s+", " ", text).strip()
             if ("after both players have deployed their armies" in text and "redeploy" in text):
                 # Attempt to extract count from "select up to" phrases
                 has_redeploy = True
                 if name and not ability_name:
                     ability_name = str(name)
                 # Support numeric or dice expressions like D3, D6, D10 (optionally with +N)
-                m = re.search(r"select\s+up\s+to\s+((?:\d+)|(?:d\d+(?:\s*\+\s*\d+)?))", text)
+                m = re.search(
+                    r"select\s+up\s+to\s+((?:\d+)|(?:d\d+(?:\s*\+\s*\d+)?)|one|two|three|four|five|six)",
+                    text,
+                )
                 if m:
                     val = m.group(1)
                     if val.startswith('d'):
@@ -5108,10 +5114,21 @@ class PositioningMixin:
                             # Fallback to minimal 1 if dice utilities unavailable
                             count = max(count, 1)
                     else:
-                        try:
-                            count = max(count, int(val))
-                        except Exception:
-                            pass
+                        word_counts = {
+                            "one": 1,
+                            "two": 2,
+                            "three": 3,
+                            "four": 4,
+                            "five": 5,
+                            "six": 6,
+                        }
+                        if val in word_counts:
+                            count = max(count, int(word_counts[val]))
+                        else:
+                            try:
+                                count = max(count, int(val))
+                            except Exception:
+                                pass
                 else:
                     count = max(count, 3)  # default to 3 if unspecified
                 if "strategic reserves" in text:
@@ -5127,6 +5144,8 @@ class PositioningMixin:
                     redeploy_filters = ["AELDARI", "VEHICLE"]
                 if "jakhals" in text and "goremongers" in text:
                     redeploy_filter_any_groups = [["JAKHALS"], ["GOREMONGERS"]]
+                if "tyranids units" in text or "tyranids unit" in text:
+                    redeploy_filters = ["TYRANIDS"]
 
         result = (has_redeploy, count, can_place_in_reserves)
         # Cache the result
