@@ -20,8 +20,8 @@ INFUSED_TEXT = (
 )
 
 HAMADRYA_TEXT = (
-    "Once per battle, when an enemy unit ends a Normal, Advance or Fall Back move within 9\" of this model's unit, "
-    "if this model's unit is not within Engagement Range of one or more enemy units, it can make a Normal move of up to D6\"."
+    "Once per battle round, when an enemy unit ends a Normal, Advance or Fall Back move within 9\" of this model's unit, "
+    "if this model's unit is not within Engagement Range of one or more enemy units, it can make a Normal move of up to D3+3\"."
 )
 
 MALIGN_COVER_TEXT = (
@@ -171,7 +171,7 @@ def test_csm_infused_afflicted_is_visible_to_nurgles_gift_manager_when_active():
     assert plague.key == PLAGUE_SKULLSQUIRM.key
 
 
-def test_csm_hamadrya_knowledge_parses_once_per_battle_reactive_move():
+def test_csm_hamadrya_knowledge_parses_once_per_battle_round_reactive_move():
     army = Army("CSM", detachment_type="Other")
     unit = _make_unit(
         "Huron Blackheart",
@@ -185,7 +185,7 @@ def test_csm_hamadrya_knowledge_parses_once_per_battle_reactive_move():
     rule = unit.get_loping_speed_rule()
     assert rule is not None
     assert int(rule.get("range", 0) or 0) == 9
-    assert str(rule.get("distance_roll", "")) == "D6"
+    assert str(rule.get("distance_roll", "")) == "D3+3"
     assert bool(rule.get("once_per_battle", False)) is True
 
 

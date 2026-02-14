@@ -240,6 +240,50 @@ def test_infernal_puppeteer_does_not_override_attacks():
     assert attack_calls[0].get("attacks_override") is None
 
 
+def test_infernal_puppeteer_origin_requires_visibility_when_map_available(monkeypatch):
+    from warhammer40k_ai.utility.aura_utils import get_eligible_infernal_puppeteer_origin_units
+
+    army = _make_cd_army("Scintillating Legion")
+
+    bearer = Unit.__new__(Unit)
+    bearer.name = "Bearer"
+    bearer._id = "bearer"
+    bearer.deployed = True
+    bearer.models = [SimpleNamespace(name="Bearer Model", is_alive=True)]
+    bearer.get_parent_army = lambda: army
+
+    origin_visible = Unit.__new__(Unit)
+    origin_visible.name = "Visible Origin"
+    origin_visible._id = "visible"
+    origin_visible.deployed = True
+    origin_visible.models = [SimpleNamespace(name="Visible Model", is_alive=True)]
+    origin_visible.get_parent_army = lambda: army
+    origin_visible.has_any_keyword = lambda kw: str(kw).strip().upper() in {"LEGIONES DAEMONICA", "TZEENTCH"}
+    origin_visible.is_alive = lambda: True
+
+    origin_hidden = Unit.__new__(Unit)
+    origin_hidden.name = "Hidden Origin"
+    origin_hidden._id = "hidden"
+    origin_hidden.deployed = True
+    origin_hidden.models = [SimpleNamespace(name="Hidden Model", is_alive=True)]
+    origin_hidden.get_parent_army = lambda: army
+    origin_hidden.has_any_keyword = lambda kw: str(kw).strip().upper() in {"LEGIONES DAEMONICA", "TZEENTCH"}
+    origin_hidden.is_alive = lambda: True
+
+    class _Map:
+        def get_friendly_units(self, _unit):
+            return [bearer, origin_visible, origin_hidden]
+
+        def can_model_see_model(self, _from_model, to_model):
+            return bool(getattr(to_model, "name", "") == "Visible Model")
+
+    monkeypatch.setattr("warhammer40k_ai.utility.aura_utils.model_within_range_of_unit", lambda *_a, **_k: True)
+
+    eligible = get_eligible_infernal_puppeteer_origin_units(bearer, game_map=_Map(), range_in=9.0)
+    eligible_ids = {str(getattr(u, "_id", "")) for u in eligible}
+    assert eligible_ids == {"visible"}
+
+
 def test_improbable_shield_aura_grants_fnp():
     army = _make_cd_army("Scintillating Legion")
 

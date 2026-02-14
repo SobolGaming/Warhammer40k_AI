@@ -3463,12 +3463,6 @@ class ActionsMovementMixin:
             army = get_parent_army()
             game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
         mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
-        bonus_fn = getattr(mgr, "ruthless_discipline_reroll_wound_ones", None) if mgr is not None else None
-        if callable(bonus_fn) and bonus_fn(root, target, game=game):
-            reroll_wound_values.add(1)
-            reroll_wound_reasons.append(
-                "Ruthless Discipline: re-roll Wound rolls of 1 vs targets within objective range"
-            )
         dg_mgr = getattr(army, "death_guard_detachments", None) if army is not None else None
         arch_fn = getattr(dg_mgr, "arch_contaminator_reroll_wounds", None) if dg_mgr is not None else None
         if callable(arch_fn) and arch_fn(root, game=game):

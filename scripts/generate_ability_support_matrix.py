@@ -300,7 +300,6 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Ruthless Discipline": (
             r"add \d+ to the number of orders each astra militarum officer model from your army can issue as stated on their datasheet",
             r"while an astra militarum unit from your army is affected by an order each time a model in that unit makes an attack reroll a hit roll of \d+",
-            r"if the target of that attack is within range of an objective marker reroll a wound roll of \d+ as well",
         ),
         "Warp Rifts": (
             r"each time a legiones daemonica unit from your army is set up on the battlefield using the deep strike ability .* it can be set up anywhere that is more than 6 horizontally away from all enemy models instead of more than 9",
@@ -1670,7 +1669,7 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Relentless Onslaught": ("Supported", "Starshatter Arsenal: +1 to hit vs targets within objective range; VEHICLE/MOUNTED (non-TITANIC) ranged weapons gain Assault."),
         "Ruthless Discipline": (
             "Supported",
-            "Grizzled Company: OFFICERs issue +1 order; ordered units re-roll Hit rolls of 1 and re-roll Wound rolls of 1 vs targets within objective range.",
+            "Grizzled Company: OFFICERs issue +1 order; ordered units re-roll Hit rolls of 1.",
         ),
         "The Blood of Martyrs": (
             "Supported",
@@ -2521,7 +2520,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ),
         ("CSM", "Hamadrya's Knowledge (Psychic)"): (
             "Supported",
-            "Reactive move trigger: once per battle, when an enemy ends a Normal/Advance/Fall Back move within 9\" and this unit is not engaged, it can make a Normal move up to D6\".",
+            "Reactive move trigger: once per battle round, when an enemy ends a Normal/Advance/Fall Back move within 9\" and this unit is not engaged, it can make a Normal move up to D3+3\".",
         ),
         ("CSM", "Malign Cover"): (
             "Supported",
@@ -8068,7 +8067,7 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000010304004": "Fleshmetal Fusion: +1 Toughness; while using Unnatural Fortitude, bearer gains +1 armor save vs Damage 1.",
         "000010304005": "Bestial Aspect: bearer ranged weapons gain [Assault]; while using Unholy Hunger, may ignore Move/Advance modifiers.",
         "000009810002": "Inescapable Eye: Command phase +1 Flux token if opponent has any and bearer is on battlefield.",
-        "000009810003": "Infernal Puppeteer: when selected to shoot, optionally measure range/LOS from a friendly LEGIONES DAEMONICA TZEENTCH unit within 9\".",
+        "000009810003": "Infernal Puppeteer: in your Shooting phase, optionally measure range/LOS from a friendly visible LEGIONES DAEMONICA TZEENTCH unit within 9\".",
         "000009810004": "Neverblade: bearer melee weapons gain +2 Strength, +1 Attacks, +1 AP; +1 to hit with melee attacks.",
         "000009810005": "Improbable Shield (Aura): friendly LEGIONES DAEMONICA TZEENTCH units within 6\" gain Feel No Pain 4+ vs Psychic attacks and mortal wounds.",
     }

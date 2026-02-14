@@ -1697,7 +1697,7 @@ class ShootingDeclarationDialog(BaseDialog):
             self._infernal_puppeteer_dialog = LinkedFireOriginDialog(self.screen_width, self.screen_height)
 
         header = f"Select origin for {self.unit.name} (Infernal Puppeteer)"
-        subtitle = f"Choose a friendly TZEENTCH LEGIONES DAEMONICA unit within {int(range_in)}\"."
+        subtitle = f"Choose a friendly visible TZEENTCH LEGIONES DAEMONICA unit within {int(range_in)}\"."
         self._infernal_puppeteer_dialog.show(
             title="Infernal Puppeteer Origin",
             header=header,

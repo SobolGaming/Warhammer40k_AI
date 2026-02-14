@@ -234,9 +234,12 @@ def _validate_declare_shots(game: object, request: DecisionRequest, result: Deci
                         return ("Infernal Puppeteer origin must be a LEGIONES DAEMONICA TZEENTCH unit.",)
                 except Exception:
                     return ("Infernal Puppeteer origin must be a LEGIONES DAEMONICA TZEENTCH unit.",)
-                from ...utility.aura_utils import model_within_range_of_unit
+                from ...utility.aura_utils import model_within_range_of_unit, linked_fire_origin_is_visible
                 if not model_within_range_of_unit(bearer, origin_unit, rng, use_attached_aggregate=True):
                     return ("Infernal Puppeteer origin must be within range of the bearer.",)
+                game_map = getattr(game, "map", None)
+                if not linked_fire_origin_is_visible(shooting_unit, origin_unit, game_map=game_map):
+                    return ("Infernal Puppeteer origin must be visible to the bearer unit.",)
             else:
                 from ...utility.aura_utils import unit_has_fire_prism_keyword, linked_fire_origin_is_visible
 

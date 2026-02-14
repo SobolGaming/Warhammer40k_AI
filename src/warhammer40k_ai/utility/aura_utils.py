@@ -670,6 +670,7 @@ def _infernal_puppeteer_origin_eligible(
     bearer_unit,
     origin_unit,
     *,
+    game_map=None,
     range_in: float = 9.0,
 ) -> bool:
     if bearer_unit is None or origin_unit is None:
@@ -713,12 +714,16 @@ def _infernal_puppeteer_origin_eligible(
     bearer_model = _resolve_bearer_model(bearer_unit)
     if bearer_model is None:
         return False
-    return model_within_range_of_unit(
+    if not model_within_range_of_unit(
         bearer_model,
         origin_unit,
         float(range_in),
         use_attached_aggregate=True,
-    )
+    ):
+        return False
+    if game_map is not None and not linked_fire_origin_is_visible(bearer_unit, origin_unit, game_map=game_map):
+        return False
+    return True
 
 
 def get_eligible_infernal_puppeteer_origin_units(
@@ -751,6 +756,7 @@ def get_eligible_infernal_puppeteer_origin_units(
         if _infernal_puppeteer_origin_eligible(
             bearer_unit,
             unit,
+            game_map=game_map,
             range_in=range_in,
         ):
             eligible.append(unit)

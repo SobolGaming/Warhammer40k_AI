@@ -723,7 +723,7 @@ class TestVoiceOfCommand(unittest.TestCase):
 
         self.assertEqual(mgr.orders_remaining(officer, 1), 2)
 
-    def test_ruthless_discipline_reroll_hit_and_wound(self):
+    def test_ruthless_discipline_reroll_hit_only(self):
         from warhammer40k_ai.rules.voice_of_command import VoiceOfCommandManager, ORDER_MOVE
         from warhammer40k_ai.rules.astra_militarum_detachments import AstraMilitarumDetachmentManager
         from warhammer40k_ai.units import wargear as wargear_module
@@ -797,8 +797,8 @@ class TestVoiceOfCommand(unittest.TestCase):
             wound = ranged._wound_target_with_tracking(target, attacker, {})
         finally:
             wargear_module.get_roll = original_roll
-        self.assertEqual(wound.get("reroll_of_one"), 1)
-        self.assertEqual(wound.get("reroll"), 4)
+        self.assertIsNone(wound.get("reroll_of_one"))
+        self.assertIsNone(wound.get("reroll"))
 
 
 if __name__ == "__main__":

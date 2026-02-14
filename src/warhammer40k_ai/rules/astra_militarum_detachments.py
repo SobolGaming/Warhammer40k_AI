@@ -69,18 +69,3 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
         if not self.unit_is_astra_militarum(unit):
             return False
         return self._attached_unit_has_order(unit)
-
-    def ruthless_discipline_reroll_wound_ones(self, unit, target_unit=None, *, game=None) -> bool:
-        if not self.ruthless_discipline_reroll_hit_ones(unit):
-            return False
-        if unit is None or target_unit is None:
-            return False
-        root = unit
-        get_root = getattr(unit, "get_attached_unit_root", None)
-        if callable(get_root):
-            root = get_root()
-        game_map = getattr(game, "map", None) if game is not None else None
-        check_fn = getattr(root, "_target_within_objective_range", None)
-        if callable(check_fn):
-            return bool(check_fn(target_unit, game_map))
-        return False

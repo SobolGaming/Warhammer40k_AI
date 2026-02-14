@@ -301,6 +301,26 @@ def _excluded_by_unit_keywords(unit, excluded_keywords: Iterable[str]) -> bool:
     return False
 
 
+def _excluded_by_battleshocked_state(unit, excluded_keywords: Iterable[str]) -> bool:
+    if unit is None:
+        return False
+    has_battleshocked_exclusion = False
+    for kw in excluded_keywords:
+        token = str(kw or "").strip().lower().replace(" ", "").replace("-", "")
+        if token in ("battleshocked",):
+            has_battleshocked_exclusion = True
+            break
+    if not has_battleshocked_exclusion:
+        return False
+    try:
+        fn = getattr(unit, "is_battle_shocked", None)
+        if callable(fn):
+            return bool(fn())
+    except Exception:
+        return False
+    return bool(getattr(unit, "battle_shocked", False))
+
+
 def _parse_excluded_keywords(desc: str) -> tuple[str, ...]:
     if not desc:
         return ()
@@ -502,17 +522,25 @@ def _parse_add_oc_aura(ability) -> Optional[dict]:
     if not desc:
         return None
     m = re.search(
-        r'While a friendly (?P<faction_kw>.+?) (?:unit|model) is within (?P<rng>\d+)" of this (?:unit|model|the bearer), '
+        r'While a friendly (?P<faction_kw>.+?) (?:unit|model)(?: \((?P<exclude_a>[^)]+)\))? is within (?P<rng>\d+)"(?: \((?P<exclude_b>[^)]+)\))? of (?:this unit|this model|the bearer), '
         r'add (?P<amt>\d+) to the Objective Control characteristic of (?:(?:models? in that )?(?:unit|model))',
         desc,
         flags=re.IGNORECASE,
     )
     if not m:
         return None
+    excluded: list[str] = []
+    for key in ("exclude_a", "exclude_b"):
+        raw = str(m.group(key) or "").strip()
+        if not raw:
+            continue
+        raw = re.sub(r"^\s*excluding\s+", "", raw, flags=re.IGNORECASE).strip()
+        excluded.extend(list(_parse_excluded_keywords(f"(excluding {raw})")))
     return {
         "faction_keyword": str(m.group("faction_kw") or "").strip(),
         "range": float(m.group("rng")),
         "amount": int(m.group("amt")),
+        "excluded_keywords": tuple(excluded),
     }
 
 def _parse_leadership_oc_aura(ability) -> Optional[dict]:
@@ -1288,6 +1316,11 @@ def get_aura_objective_control_bonus(unit, *, game_map=None) -> int:
                     continue
                 applied_aura_names.add(aura_key)
             if spec["faction_keyword"] and not unit.has_any_keyword(spec["faction_keyword"]):
+                continue
+            excluded_keywords = tuple(spec.get("excluded_keywords", ()) or ())
+            if excluded_keywords and _excluded_by_unit_keywords(unit, excluded_keywords):
+                continue
+            if excluded_keywords and _excluded_by_battleshocked_state(unit, excluded_keywords):
                 continue
             if not _unit_within_aura_range(source, unit, float(spec["range"]), ability=ab):
                 continue

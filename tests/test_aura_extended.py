@@ -203,6 +203,69 @@ class TestAuraExtendedShapes(unittest.TestCase):
             oc = Unit.objective_control.fget(receiver)
         self.assertEqual(int(oc), 3)
 
+    def test_objective_control_aura_bonus_excludes_battleshocked_and_damned(self):
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.units.ability import Ability
+
+        aura = Ability(
+            name="Lord of Badab (Aura)",
+            faction_id="",
+            description=(
+                'While a friendly Heretic Astartes Infantry unit (excluding Battle-shocked units and Damned units) '
+                'is within 6" of this model, add 1 to the Objective Control characteristic of models in that unit.'
+            ),
+            type="Datasheet",
+            parameter="",
+            legend=None,
+        )
+
+        class _Unit:
+            def __init__(self, *, abilities=None, oc=2, keywords=None, battle_shocked=False):
+                self.possible_abilities = list(abilities or [])
+                self.models = [SimpleNamespace(objective_control=oc)]
+                self._army = None
+                self._keywords = {str(k).strip().lower() for k in (keywords or []) if str(k).strip()}
+                self._battle_shocked = bool(battle_shocked)
+
+            def get_parent_army(self):
+                return self._army
+
+            def has_any_keyword(self, kw: str) -> bool:
+                parts = [p for p in str(kw).strip().lower().split() if p]
+                return all(p in self._keywords for p in parts)
+
+            def has_keyword(self, kw: str) -> bool:
+                return str(kw).strip().lower() in self._keywords
+
+            def is_battle_shocked(self) -> bool:
+                return self._battle_shocked
+
+        class _Map:
+            def __init__(self, units):
+                self.units = list(units)
+
+            def get_friendly_units(self, unit):
+                return list(self.units)
+
+        source = _Unit(abilities=[aura], oc=2, keywords=["heretic", "astartes", "infantry"])
+        game_map = _Map([source])
+        game = SimpleNamespace(map=game_map, event_system=SimpleNamespace(publish=lambda *_a, **_k: None), turn=1)
+        player = SimpleNamespace(game=game, name="P1", id="P1")
+        army = SimpleNamespace(player=player)
+        source._army = army
+
+        eligible = _Unit(abilities=[], oc=2, keywords=["heretic", "astartes", "infantry"])
+        eligible._army = army
+        battle_shocked = _Unit(abilities=[], oc=2, keywords=["heretic", "astartes", "infantry"], battle_shocked=True)
+        battle_shocked._army = army
+        damned = _Unit(abilities=[], oc=2, keywords=["heretic", "astartes", "infantry", "damned"])
+        damned._army = army
+
+        with patch("warhammer40k_ai.utility.aura_effects.unit_within_range_of_unit", return_value=True):
+            self.assertEqual(int(Unit.objective_control.fget(eligible)), 3)
+            self.assertEqual(int(Unit.objective_control.fget(battle_shocked)), 2)
+            self.assertEqual(int(Unit.objective_control.fget(damned)), 2)
+
     def test_battleshock_aura_penalty_applies(self):
         from warhammer40k_ai.units.ability import Ability
         from warhammer40k_ai.utility.aura_effects import get_aura_battleshock_test_modifiers
