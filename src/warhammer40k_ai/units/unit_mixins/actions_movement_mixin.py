@@ -305,6 +305,7 @@ class ActionsMovementMixin:
             pass
         return False
 
+    @lru_cache(maxsize=128)
     def _iter_conditioned_text_segments(self, text: str) -> list[str]:
         """
         Split ability text into sentence-like segments and filter clauses gated

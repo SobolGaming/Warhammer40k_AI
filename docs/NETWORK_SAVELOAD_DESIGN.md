@@ -157,6 +157,8 @@ Setup / Mission:
 - mission_selection_dialog: CHOOSE_MISSION {mission_id}
 - mission_selection_modal: CHOOSE_MISSION {mission_id}
 - side_by_side_modal: CONFIRM_MODAL {choice_id}
+- settings_dialog: LOCAL_UI_SETTINGS {enable_developer_controls} (client-local UI state only; no engine command emitted)
+- developer_menu_dialog: LOCAL_UI_TOOLING {profiling_enabled} (client-local debugging control; no engine command emitted)
 
 Deployment / Pre-battle:
 - player_color_picker_dialog: CHOOSE_PLAYER_COLOR {player_id, hue_degrees, rgb} (context `selection_kind="player_color"`, `hue_step_degrees=15`)

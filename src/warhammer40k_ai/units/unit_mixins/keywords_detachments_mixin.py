@@ -5126,6 +5126,7 @@ class KeywordsDetachmentsMixin:
         self._ability_cache['reanimation_protocols'] = found
         return found
 
+    @lru_cache(maxsize=128)
     def _normalize_rules_text(self, text: str) -> str:
         """Normalize Wahapedia-style text for rule pattern matching."""
         if not text:
