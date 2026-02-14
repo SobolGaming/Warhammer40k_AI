@@ -4,6 +4,8 @@ import pytest
 
 from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.engine.decision_kinds import DECISION_ALLOCATE_DAMAGE, DECISION_CHOOSE_QUARRY, DECISION_MOVE_UNIT
+from warhammer40k_ai.engine.decision_handlers.abilities import _apply_choose_quarry
+from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.units.ability import Ability
@@ -557,3 +559,126 @@ def test_word_of_phoenix_queues_bodyguard_return(monkeypatch):
     ctx = pending[0].context or {}
     assert ctx.get("selection_kind") == "bodyguard_return"
     assert int(ctx.get("remaining") or 0) == 3
+
+
+def test_hallucinogen_grenades_spec_parses_unit_level_selection():
+    ability = Ability(
+        "Hallucinogen Grenades",
+        "AE",
+        (
+            "At the start of your opponent's Shooting phase, this unit can use this ability. "
+            "If it does, select one Aeldari Infantry unit from your army visible to and within 36\" of this unit: "
+            "until the end of the phase, that unit has the Stealth ability."
+        ),
+        "Datasheet",
+        "",
+    )
+    source = _make_unit("Starfangs", abilities=[ability])
+    specs = source.unit_start_opponent_shooting_phase_grant_stealth_specs()
+    assert len(specs) == 1
+    assert int(specs[0].get("range") or 0) == 36
+    assert str(specs[0].get("keyword_phrase", "") or "").lower() == "aeldari infantry"
+    assert bool(specs[0].get("optional")) is True
+
+
+def test_hallucinogen_grenades_queues_none_plus_visible_aeldari_infantry():
+    ability = Ability(
+        "Hallucinogen Grenades",
+        "AE",
+        (
+            "At the start of your opponent's Shooting phase, this unit can use this ability. "
+            "If it does, select one Aeldari Infantry unit from your army visible to and within 36\" of this unit: "
+            "until the end of the phase, that unit has the Stealth ability."
+        ),
+        "Datasheet",
+        "",
+    )
+    source = _make_unit("Starfangs", abilities=[ability], keywords=["AELDARI", "VEHICLE"], faction_keywords=["AELDARI"])
+    infantry_target = _make_unit("Guardians", keywords=["AELDARI", "INFANTRY"], faction_keywords=["AELDARI"])
+    non_infantry = _make_unit("Vyper", keywords=["AELDARI", "VEHICLE"], faction_keywords=["AELDARI"])
+    enemy = _make_unit("Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+
+    game, army1, army2, _p1, p2 = _build_game()
+    army1.add_unit(source)
+    army1.add_unit(infantry_target)
+    army1.add_unit(non_infantry)
+    army2.add_unit(enemy)
+    game.map.units = [source, infantry_target, non_infantry, enemy]
+    game.current_player_index = 1
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.rebuild_entity_registry()
+
+    for unit in (source, infantry_target, non_infantry, enemy):
+        unit.deployed = True
+        unit.reserve_status = "deployed"
+
+    source.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+    infantry_target.models[0].set_location(10.0, 0.0, 0.0, 0.0)
+    non_infantry.models[0].set_location(10.0, 2.0, 0.0, 0.0)
+    enemy.models[0].set_location(12.0, 0.0, 0.0, 0.0)
+
+    source._has_line_of_sight_to_target = lambda _m, target, _g: target is infantry_target
+
+    game._on_phase_start_opponent_shooting_phase_disrupt(player=p2, phase=BattleRoundPhases.SHOOTING_PHASE)
+    pending = [
+        r for r in list(game.decision_queue.list() or [])
+        if str((r.context or {}).get("ability", "") or "") == "opponent_shooting_phase_grant_stealth"
+    ]
+    assert pending
+    request = pending[0]
+    assert request.decision_type == DECISION_CHOOSE_QUARRY
+
+    option_payloads = [dict(getattr(opt, "payload", {}) or {}) for opt in list(request.options or [])]
+    assert any(str(p.get("action", "") or "") == "skip" for p in option_payloads)
+    target_ids = {str(p.get("target_unit_id", "") or "") for p in option_payloads if p.get("target_unit_id")}
+    assert get_entity_id(infantry_target) in target_ids
+    assert get_entity_id(non_infantry) not in target_ids
+
+
+def test_hallucinogen_grenades_apply_grants_stealth_and_phase_cleanup_removes_it():
+    source = _make_unit("Starfangs", model_count=1)
+    target = _make_unit("Guardians", keywords=["AELDARI", "INFANTRY"], faction_keywords=["AELDARI"], model_count=1)
+
+    game, army1, army2, p1, p2 = _build_game()
+    army1.add_unit(source)
+    army1.add_unit(target)
+    army2.add_unit(_make_unit("Enemy", model_count=1))
+    game.map.units = [source, target]
+    game.current_player_index = 1
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.turn = 1
+    game.rebuild_entity_registry()
+
+    request = DecisionRequest.create(
+        DECISION_CHOOSE_QUARRY,
+        "Hallucinogen Grenades",
+        player_id=p1.id,
+        options=[
+            DecisionOption.create(
+                "Guardians",
+                payload={
+                    "target_unit_id": get_entity_id(target),
+                    "source_unit_id": get_entity_id(source),
+                },
+            )
+        ],
+        context={
+            "ability": "opponent_shooting_phase_grant_stealth",
+            "ability_name": "Hallucinogen Grenades",
+            "source_unit_id": get_entity_id(source),
+            "phase": "Shooting phase",
+        },
+    )
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=p1.id,
+        option_id=request.options[0].option_id,
+    )
+    _apply_choose_quarry(game, request, result)
+
+    assert target.has_stealth() is True
+    assert str(target.special_rules.get("opponent_shooting_phase_stealth_owner", "") or "") == p2.id
+
+    game._on_phase_end_shooting_phase_disrupt_cleanup(player=p2, phase=BattleRoundPhases.SHOOTING_PHASE)
+    assert bool(target.special_rules.get("opponent_shooting_phase_stealth_active")) is False
+    assert target.has_stealth() is False

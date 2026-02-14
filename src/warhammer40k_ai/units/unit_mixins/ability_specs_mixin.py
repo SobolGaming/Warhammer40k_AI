@@ -4658,6 +4658,82 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def unit_start_opponent_shooting_phase_grant_stealth_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: start of opponent's Shooting phase, optionally select a visible friendly keyworded unit
+        within range; that unit gains Stealth until end of phase.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - range: int
+            - keyword_phrase: str
+            - optional: bool
+            - ability_key: str
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_start_opponent_shooting_phase_grant_stealth_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, str]] = set()
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text_src = unit._strip_eligibility_prefix(text_src)
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                m = unit._START_OPP_SHOOTING_PHASE_FRIENDLY_VISIBLE_STEALTH_RE.fullmatch(normalized)
+                if not m:
+                    continue
+                try:
+                    range_value = int(m.group("range") or 0)
+                except Exception:
+                    range_value = 0
+                if range_value <= 0:
+                    continue
+                keyword_phrase = str(m.group("keyword") or "").strip()
+                if not keyword_phrase:
+                    continue
+                source = str(name or "Opponent Shooting phase Stealth").strip() or "Opponent Shooting phase Stealth"
+                ability_seed = unit._normalize_keyword_phrase(source) or "opponent_shooting_phase_grant_stealth"
+                ability_key = f"opponent_shooting_phase_grant_stealth:{ability_seed}"
+                key = (source.lower(), int(range_value), unit._normalize_keyword_phrase(keyword_phrase))
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "range": int(range_value),
+                        "keyword_phrase": keyword_phrase,
+                        "optional": True,
+                        "ability_key": ability_key,
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_movement_phase_end_enemy_within_range_mortal_table_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model-specific rule: end of Movement phase, roll D6 for each enemy unit within range; apply mortal wound table.

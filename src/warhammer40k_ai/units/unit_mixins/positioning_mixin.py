@@ -4800,6 +4800,9 @@ class PositioningMixin:
         # Enhancement: Phial of the Abyss grants Stealth to models in the bearer's unit.
         if isinstance(sr, dict) and sr.get("enhancement_phial_of_the_abyss"):
             return True
+        # Start of opponent Shooting phase effects (e.g., Hallucinogen Grenades) can grant Stealth until end of phase.
+        if isinstance(sr, dict) and sr.get("opponent_shooting_phase_stealth_active") is True:
+            return True
         # Use cached result if available
         if 'stealth' in getattr(self, '_ability_cache', {}):
             found = self._ability_cache['stealth']

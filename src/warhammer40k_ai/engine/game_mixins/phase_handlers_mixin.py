@@ -1497,6 +1497,15 @@ class GamePhaseHandlersMixin:
                         "shooting_phase_ranged_hazardous_expires_phase",
                     ):
                         sr.pop(key, None)
+                if str(sr.get("opponent_shooting_phase_stealth_owner", "") or "") == owner_id and sr.get("opponent_shooting_phase_stealth_active"):
+                    for key in (
+                        "opponent_shooting_phase_stealth_active",
+                        "opponent_shooting_phase_stealth_owner",
+                        "opponent_shooting_phase_stealth_turn",
+                        "opponent_shooting_phase_stealth_source",
+                        "opponent_shooting_phase_stealth_expires_phase",
+                    ):
+                        sr.pop(key, None)
                 unit.special_rules = sr
 
     def _on_phase_start_movement_phase_visible_wound_bonus_cleanup(self, player=None, phase=None, **_kwargs) -> None:
@@ -4615,6 +4624,7 @@ class GamePhaseHandlersMixin:
         if game_map is None:
             return
 
+        from ...utility.aura_utils import unit_within_range_of_unit
         from ...utility.entity_ids import get_entity_id
         from ..decision_kinds import DECISION_CHOOSE_QUARRY
         from ..decisions import DecisionOption, DecisionRequest
@@ -4719,78 +4729,205 @@ class GamePhaseHandlersMixin:
                                 continue
                             entries.append((model, cand, source_unit))
 
-            if not groups:
-                continue
-
             queue = getattr(self, "decision_queue", None)
-
-            for group_key, entries in list(groups.items()):
-                meta = dict(group_meta.get(group_key, {}) or {})
-                ability_key = str(meta.get("ability_key", "") or "")
-                model_filter = str(meta.get("model_id", "") or "")
-                if queue is not None and hasattr(queue, "list"):
-                    skip = False
-                    for req in list(queue.list() or []):
-                        ctx = dict(getattr(req, "context", {}) or {})
-                        if str(ctx.get("ability", "")) != "opponent_shooting_phase_disrupt":
+            if groups:
+                for group_key, entries in list(groups.items()):
+                    meta = dict(group_meta.get(group_key, {}) or {})
+                    ability_key = str(meta.get("ability_key", "") or "")
+                    model_filter = str(meta.get("model_id", "") or "")
+                    if queue is not None and hasattr(queue, "list"):
+                        skip = False
+                        for req in list(queue.list() or []):
+                            ctx = dict(getattr(req, "context", {}) or {})
+                            if str(ctx.get("ability", "")) != "opponent_shooting_phase_disrupt":
+                                continue
+                            if str(ctx.get("ability_key", "") or "") != ability_key:
+                                continue
+                            if model_filter and str(ctx.get("model_id", "") or "") != model_filter:
+                                continue
+                            skip = True
+                            break
+                        if skip:
                             continue
-                        if str(ctx.get("ability_key", "") or "") != ability_key:
+                    options = []
+                    if meta.get("optional"):
+                        options.append(DecisionOption.create("None", payload={"action": "skip"}))
+                    seen_pairs: set[tuple[str, str]] = set()
+                    entries.sort(key=lambda t: (str(get_entity_id(t[0]) or ""), str(get_entity_id(t[1]) or "")))
+                    for model, cand, source_unit in entries:
+                        model_id = str(get_entity_id(model) or "")
+                        target_id = str(get_entity_id(cand) or "")
+                        unit_id = str(get_entity_id(source_unit) or "")
+                        if not model_id or not target_id:
                             continue
-                        if model_filter and str(ctx.get("model_id", "") or "") != model_filter:
+                        key = (model_id, target_id)
+                        if key in seen_pairs:
                             continue
-                        skip = True
-                        break
-                    if skip:
-                        continue
-                options = []
-                if meta.get("optional"):
-                    options.append(DecisionOption.create("None", payload={"action": "skip"}))
-                seen_pairs: set[tuple[str, str]] = set()
-                entries.sort(key=lambda t: (str(get_entity_id(t[0]) or ""), str(get_entity_id(t[1]) or "")))
-                for model, cand, source_unit in entries:
-                    model_id = str(get_entity_id(model) or "")
-                    target_id = str(get_entity_id(cand) or "")
-                    unit_id = str(get_entity_id(source_unit) or "")
-                    if not model_id or not target_id:
-                        continue
-                    key = (model_id, target_id)
-                    if key in seen_pairs:
-                        continue
-                    seen_pairs.add(key)
-                    label = f"{getattr(model, 'name', 'Model')} -> {getattr(cand, 'name', 'Unit')}"
-                    options.append(
-                        DecisionOption.create(
-                            label,
-                            payload={
-                                "target_unit_id": target_id,
-                                "model_id": model_id,
-                                "source_unit_id": unit_id,
-                            },
+                        seen_pairs.add(key)
+                        label = f"{getattr(model, 'name', 'Model')} -> {getattr(cand, 'name', 'Unit')}"
+                        options.append(
+                            DecisionOption.create(
+                                label,
+                                payload={
+                                    "target_unit_id": target_id,
+                                    "model_id": model_id,
+                                    "source_unit_id": unit_id,
+                                },
+                            )
                         )
+                    if not options:
+                        continue
+                    ability_name = str(meta.get("ability_name", "") or "Opponent Shooting phase disruption").strip()
+                    ctx = {
+                        "ability": "opponent_shooting_phase_disrupt",
+                        "ability_name": ability_name,
+                        "ability_key": ability_key,
+                        "mortal_on_one": bool(meta.get("mortal_on_one", False)),
+                        "grant_ranged_hazardous": bool(meta.get("grant_ranged_hazardous", False)),
+                        "optional": bool(meta.get("optional", False)),
+                        "limit_one_per_army": bool(meta.get("limit_one", False)),
+                        "phase": "Shooting phase",
+                    }
+                    if model_filter:
+                        ctx["model_id"] = model_filter
+                    request = DecisionRequest.create(
+                        DECISION_CHOOSE_QUARRY,
+                        f"{ability_name}: select a unit.",
+                        player_id=getattr(opp, "id", None),
+                        options=options,
+                        context=ctx,
                     )
-                if not options:
+                    self.request_decision(request)
+
+            friendly_roots: list = []
+            seen_roots: set[str] = set()
+            for unit in sorted(list(army.units or []), key=_unit_sort_key):
+                if unit is None:
                     continue
-                ability_name = str(meta.get("ability_name", "") or "Opponent Shooting phase disruption").strip()
-                ctx = {
-                    "ability": "opponent_shooting_phase_disrupt",
-                    "ability_name": ability_name,
-                    "ability_key": ability_key,
-                    "mortal_on_one": bool(meta.get("mortal_on_one", False)),
-                    "grant_ranged_hazardous": bool(meta.get("grant_ranged_hazardous", False)),
-                    "optional": bool(meta.get("optional", False)),
-                    "limit_one_per_army": bool(meta.get("limit_one", False)),
-                    "phase": "Shooting phase",
-                }
-                if model_filter:
-                    ctx["model_id"] = model_filter
-                request = DecisionRequest.create(
-                    DECISION_CHOOSE_QUARRY,
-                    f"{ability_name}: select a unit.",
-                    player_id=getattr(opp, "id", None),
-                    options=options,
-                    context=ctx,
-                )
-                self.request_decision(request)
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                root_id = str(get_entity_id(root) or "")
+                if not root_id or root_id in seen_roots:
+                    continue
+                seen_roots.add(root_id)
+                if not getattr(root, "is_alive", lambda: False)():
+                    continue
+                if not getattr(root, "deployed", True):
+                    continue
+                try:
+                    if root.is_in_reserves() or root.is_embarked:
+                        continue
+                except Exception:
+                    pass
+                friendly_roots.append(root)
+
+            for root in list(friendly_roots):
+                spec_fn = getattr(root, "unit_start_opponent_shooting_phase_grant_stealth_specs", None)
+                if not callable(spec_fn):
+                    continue
+                specs = list(spec_fn() or [])
+                if not specs:
+                    continue
+                source_id = str(get_entity_id(root) or "")
+                if not source_id:
+                    continue
+                try:
+                    source_models = list(root.get_attached_unit_models() or [])
+                except Exception:
+                    source_models = list(getattr(root, "models", []) or [])
+                source_models = [m for m in source_models if getattr(m, "is_alive", True)]
+                if not source_models:
+                    continue
+                for spec in specs:
+                    ability_name = str(spec.get("source", "") or "Hallucinogen Grenades").strip() or "Hallucinogen Grenades"
+                    ability_key = str(spec.get("ability_key", "") or "").strip()
+                    keyword_phrase = str(spec.get("keyword_phrase", "") or "").strip()
+                    if not keyword_phrase:
+                        continue
+                    try:
+                        range_value = int(spec.get("range", 0) or 0)
+                    except Exception:
+                        range_value = 0
+                    if range_value <= 0:
+                        continue
+
+                    if queue is not None and hasattr(queue, "list"):
+                        skip = False
+                        for req in list(queue.list() or []):
+                            qctx = dict(getattr(req, "context", {}) or {})
+                            if str(qctx.get("ability", "")) != "opponent_shooting_phase_grant_stealth":
+                                continue
+                            if str(qctx.get("source_unit_id", "") or "") != source_id:
+                                continue
+                            if ability_key and str(qctx.get("ability_key", "") or "") != ability_key:
+                                continue
+                            skip = True
+                            break
+                        if skip:
+                            continue
+
+                    candidates: list = []
+                    for cand in list(friendly_roots):
+                        if cand is None:
+                            continue
+                        if not bool(getattr(root, "_unit_matches_keyword_phrase", lambda *_a, **_k: False)(cand, keyword_phrase)):
+                            continue
+                        if not unit_within_range_of_unit(root, cand, float(range_value), use_attached_aggregate=True):
+                            continue
+                        if cand is root:
+                            candidates.append(cand)
+                            continue
+                        has_los = False
+                        for source_model in list(source_models):
+                            try:
+                                if bool(root._has_line_of_sight_to_target(source_model, cand, game_map)):
+                                    has_los = True
+                                    break
+                            except Exception:
+                                continue
+                        if has_los:
+                            candidates.append(cand)
+
+                    if not candidates:
+                        continue
+
+                    options = [DecisionOption.create("None", payload={"action": "skip"})]
+                    for cand in sorted(list(candidates), key=_unit_sort_key):
+                        target_id = str(get_entity_id(cand) or "")
+                        if not target_id:
+                            continue
+                        options.append(
+                            DecisionOption.create(
+                                str(getattr(cand, "name", "Unit") or "Unit"),
+                                payload={
+                                    "target_unit_id": target_id,
+                                    "source_unit_id": source_id,
+                                },
+                            )
+                        )
+                    if len(options) <= 1:
+                        continue
+
+                    ctx = {
+                        "ability": "opponent_shooting_phase_grant_stealth",
+                        "ability_name": ability_name,
+                        "ability_key": ability_key,
+                        "source_unit_id": source_id,
+                        "keyword_phrase": keyword_phrase,
+                        "range": int(range_value),
+                        "optional": True,
+                        "phase": "Shooting phase",
+                    }
+                    request = DecisionRequest.create(
+                        DECISION_CHOOSE_QUARRY,
+                        f"{ability_name}: select one friendly unit (or None).",
+                        player_id=getattr(opp, "id", None),
+                        options=options,
+                        context=ctx,
+                    )
+                    self.request_decision(request)
 
     def _on_phase_start_aeldari_enhancements(self, player=None, phase=None, **_kwargs) -> None:
         """Aeldari enhancements that trigger at the start of Command or Shooting phases."""

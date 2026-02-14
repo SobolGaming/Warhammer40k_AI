@@ -2315,6 +2315,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Start of battle: select an enemy unit; this unit's weapons gain Lethal Hits and Precision vs that unit.",
         ),
+        ("AE", "Hallucinogen Grenades"): (
+            "Supported",
+            "Start of opponent Shooting phase: optional selection of a visible friendly AELDARI INFANTRY unit within 36\"; selected unit gains Stealth until end of phase.",
+        ),
         ("AE", "Point-blank Devastation"): (
             "Supported",
             "Within half range: can re-roll attack dice for heavy wraithcannon or suncannon.",

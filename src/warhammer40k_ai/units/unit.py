@@ -2347,6 +2347,12 @@ class Unit(
         r"have the hazardous ability",
         re.IGNORECASE,
     )
+    _START_OPP_SHOOTING_PHASE_FRIENDLY_VISIBLE_STEALTH_RE = re.compile(
+        r"at the start of your opponent s shooting phase this unit can use this ability if it does select one "
+        r"(?P<keyword>[a-z0-9 ]+) unit from your army (?:that is )?visible to and within (?P<range>\d+) of this unit "
+        r"until the end of the phase that unit has the stealth ability",
+        re.IGNORECASE,
+    )
     _MOVEMENT_PHASE_END_ENEMY_WITHIN_RANGE_MORTAL_TABLE_RE = re.compile(
         r"at the end of your movement phase roll (?:one|1) d6 for each enemy unit within (?P<range>\d+) of this model "
         r"on a 2 3 that unit suffers 1 mortal wounds? on a 4 5 that unit suffers d3 mortal wounds? on a 6 that unit suffers d6 mortal wounds?"

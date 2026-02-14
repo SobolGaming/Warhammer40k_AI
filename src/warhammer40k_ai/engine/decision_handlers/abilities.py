@@ -3831,6 +3831,59 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         except Exception:
             pass
         return target_unit
+    if str(ctx.get("ability", "") or "") == "opponent_shooting_phase_grant_stealth":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        target_val = payload.get("target_unit_id") or ctx.get("target_unit_id")
+        target_unit = resolve_unit(game, target_val)
+        if target_unit is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        source_unit = resolve_unit(game, payload.get("source_unit_id") or ctx.get("source_unit_id"))
+        if player is None and source_unit is not None:
+            try:
+                player = source_unit.get_parent_army().player
+            except Exception:
+                player = None
+        ability_name = str(ctx.get("ability_name", "") or "Hallucinogen Grenades").strip() or "Hallucinogen Grenades"
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        try:
+            members = list(target_root.get_attached_unit_members() or [])
+        except Exception:
+            members = [target_root]
+        if not members:
+            members = [target_root]
+        try:
+            phase_owner = game.get_current_player()
+        except Exception:
+            phase_owner = None
+        owner_id = str(getattr(phase_owner, "id", "") or "")
+        try:
+            turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        for unit in members:
+            if unit is None:
+                continue
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["opponent_shooting_phase_stealth_active"] = True
+            sr["opponent_shooting_phase_stealth_owner"] = owner_id
+            sr["opponent_shooting_phase_stealth_turn"] = int(turn or 0)
+            sr["opponent_shooting_phase_stealth_source"] = ability_name
+            sr["opponent_shooting_phase_stealth_expires_phase"] = "SHOOTING_PHASE"
+            unit.special_rules = sr
+        try:
+            tname = str(getattr(target_root, "name", "Unit") or "Unit")
+            _log_action_for_players(game, player, f"{ability_name}: {tname} gains Stealth until end of phase.")
+        except Exception:
+            pass
+        return target_unit
     if str(ctx.get("ability", "") or "") == "opponent_shooting_phase_disrupt":
         if is_skip_choice(request, result):
             return None
