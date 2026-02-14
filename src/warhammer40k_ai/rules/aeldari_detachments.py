@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 
 from ..utility.dice import get_roll
+from ..utility.entity_ids import get_entity_id
 from .detachment_manager import DetachmentManagerBase
 
 
@@ -36,6 +37,239 @@ class AeldariDetachmentManager(DetachmentManagerBase):
         super().__init__(army)
         self.seer_council_fate_dice: list[int] = []
         self.seer_council_fate_dice_generated_round: int = 0
+        self.devoted_of_ynnead_lethal_surge_turn: int = 0
+        self.devoted_of_ynnead_lethal_surge_turn_owner: str = ""
+        self.devoted_of_ynnead_lethal_intent_phase_key: str = ""
+        self.devoted_of_ynnead_lethal_intent_candidate_unit_ids: set[str] = set()
+
+    @staticmethod
+    def _normalize_unit_name(name: str) -> str:
+        text = re.sub(r"[^a-z0-9 ]+", " ", str(name or "").lower())
+        return re.sub(r"\s+", " ", text).strip()
+
+    @staticmethod
+    def _devoted_phase_key(*, turn: int, phase_name: str, turn_owner_id: str) -> str:
+        return f"{int(turn or 0)}:{str(phase_name or '').strip().upper()}:{str(turn_owner_id or '')}"
+
+    def _iter_unique_army_roots(self) -> list:
+        roots: list = []
+        seen: set[str] = set()
+        for unit in list(getattr(self.army, "units", []) or []):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            rid = str(get_entity_id(root) or "")
+            if not rid or rid in seen:
+                continue
+            seen.add(rid)
+            roots.append(root)
+        roots.sort(key=lambda u: str(get_entity_id(u) or ""))
+        return roots
+
+    def devoted_of_ynnead_unit_counts_as_ynnari(self, unit) -> bool:
+        if unit is None:
+            return False
+        if self._unit_has_keyword(unit, "YNNARI"):
+            return True
+        if not self.is_devoted_of_ynnead():
+            return False
+        if bool(getattr(unit, "is_epic_hero", False)):
+            return False
+        return self._unit_has_keyword(unit, "ASURYANI")
+
+    def devoted_of_ynnead_is_infantry_or_mounted(self, unit) -> bool:
+        if unit is None:
+            return False
+        return self._unit_has_keyword(unit, "INFANTRY") or self._unit_has_keyword(unit, "MOUNTED")
+
+    def devoted_of_ynnead_lethal_reprisal_candidates(self) -> list:
+        if not self.is_devoted_of_ynnead():
+            return []
+        candidates: list = []
+        for root in self._iter_unique_army_roots():
+            if root is None:
+                continue
+            if not self.devoted_of_ynnead_unit_counts_as_ynnari(root):
+                continue
+            if bool(getattr(root, "is_titanic", False)) or self._unit_has_keyword(root, "TITANIC"):
+                continue
+            try:
+                if not root.is_alive() or not bool(getattr(root, "deployed", False)):
+                    continue
+            except Exception:
+                continue
+            try:
+                if root.is_in_reserves() or root.is_embarked:
+                    continue
+            except Exception:
+                pass
+            try:
+                if not bool(root.is_below_starting_strength()):
+                    continue
+            except Exception:
+                continue
+            candidates.append(root)
+        return candidates
+
+    def devoted_of_ynnead_lethal_surge_available(self, unit, *, game=None) -> bool:
+        if unit is None or not self.is_devoted_of_ynnead():
+            return False
+        if not self.devoted_of_ynnead_unit_counts_as_ynnari(unit):
+            return False
+        if game is None:
+            player = getattr(self.army, "player", None) if self.army is not None else None
+            game = getattr(player, "game", None) if player is not None else None
+        if game is None:
+            return False
+        try:
+            turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        try:
+            turn_owner = getattr(game, "get_current_player", lambda: None)()
+        except Exception:
+            turn_owner = None
+        turn_owner_id = str(getattr(turn_owner, "id", "") or "")
+        if int(self.devoted_of_ynnead_lethal_surge_turn or 0) != int(turn):
+            return True
+        if str(self.devoted_of_ynnead_lethal_surge_turn_owner or "") != turn_owner_id:
+            return True
+        return False
+
+    def mark_devoted_of_ynnead_lethal_surge_used(self, *, game=None) -> None:
+        if game is None:
+            player = getattr(self.army, "player", None) if self.army is not None else None
+            game = getattr(player, "game", None) if player is not None else None
+        if game is None:
+            return
+        try:
+            self.devoted_of_ynnead_lethal_surge_turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            self.devoted_of_ynnead_lethal_surge_turn = 0
+        try:
+            turn_owner = getattr(game, "get_current_player", lambda: None)()
+        except Exception:
+            turn_owner = None
+        self.devoted_of_ynnead_lethal_surge_turn_owner = str(getattr(turn_owner, "id", "") or "")
+
+    def record_devoted_of_ynnead_lethal_intent_candidates(
+        self,
+        *,
+        game,
+        candidate_unit_ids: list[str],
+        turn_owner_id: str = "",
+        phase_name: str = "SHOOTING_PHASE",
+    ) -> None:
+        if not self.is_devoted_of_ynnead() or game is None:
+            return
+        clean_ids = sorted({str(uid or "") for uid in list(candidate_unit_ids or []) if str(uid or "").strip()})
+        if not clean_ids:
+            return
+        try:
+            turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        owner_id = str(turn_owner_id or "")
+        if not owner_id:
+            try:
+                owner = getattr(game, "get_current_player", lambda: None)()
+            except Exception:
+                owner = None
+            owner_id = str(getattr(owner, "id", "") or "")
+        key = self._devoted_phase_key(turn=turn, phase_name=phase_name, turn_owner_id=owner_id)
+        if key != self.devoted_of_ynnead_lethal_intent_phase_key:
+            self.devoted_of_ynnead_lethal_intent_phase_key = key
+            self.devoted_of_ynnead_lethal_intent_candidate_unit_ids = set()
+        self.devoted_of_ynnead_lethal_intent_candidate_unit_ids.update(clean_ids)
+
+    def consume_devoted_of_ynnead_lethal_intent_candidates(
+        self,
+        *,
+        game,
+        turn_owner_id: str = "",
+        phase_name: str = "SHOOTING_PHASE",
+    ) -> list:
+        if not self.is_devoted_of_ynnead() or game is None:
+            return []
+        try:
+            turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        owner_id = str(turn_owner_id or "")
+        if not owner_id:
+            try:
+                owner = getattr(game, "get_current_player", lambda: None)()
+            except Exception:
+                owner = None
+            owner_id = str(getattr(owner, "id", "") or "")
+        key = self._devoted_phase_key(turn=turn, phase_name=phase_name, turn_owner_id=owner_id)
+        if key != self.devoted_of_ynnead_lethal_intent_phase_key:
+            return []
+        candidate_ids = sorted(str(v or "") for v in self.devoted_of_ynnead_lethal_intent_candidate_unit_ids if str(v or "").strip())
+        self.devoted_of_ynnead_lethal_intent_phase_key = ""
+        self.devoted_of_ynnead_lethal_intent_candidate_unit_ids = set()
+        if not candidate_ids:
+            return []
+        by_id = {}
+        for root in self._iter_unique_army_roots():
+            by_id[str(get_entity_id(root) or "")] = root
+        out: list = []
+        for uid in candidate_ids:
+            unit = by_id.get(uid)
+            if unit is None:
+                continue
+            if not self.devoted_of_ynnead_unit_counts_as_ynnari(unit):
+                continue
+            if not self.devoted_of_ynnead_is_infantry_or_mounted(unit):
+                continue
+            try:
+                if not unit.is_alive() or not bool(getattr(unit, "deployed", False)):
+                    continue
+            except Exception:
+                continue
+            try:
+                if unit.is_in_reserves() or unit.is_embarked:
+                    continue
+            except Exception:
+                pass
+            out.append(unit)
+        return out
+
+    def validate_detachment_rules(self) -> list[str]:
+        errors: list[str] = []
+        if not self.is_devoted_of_ynnead():
+            return errors
+        army = self.army
+        if army is None:
+            return errors
+
+        units = list(getattr(army, "units", []) or [])
+        if not units:
+            errors.append("Strength from Death (Servants of the Whispering God): army must include Yvraine and/or The Yncarne.")
+            return errors
+
+        names = {self._normalize_unit_name(getattr(unit, "name", "")) for unit in units if unit is not None}
+        yvraine_present = "yvraine" in names
+        yncarne_present = "the yncarne" in names
+        if not yvraine_present and not yncarne_present:
+            errors.append("Strength from Death (Servants of the Whispering God): army must include Yvraine and/or The Yncarne.")
+            return errors
+
+        warlord = getattr(army, "warlord", None)
+        if warlord is None:
+            for unit in units:
+                if bool(getattr(unit, "is_warlord", False)):
+                    warlord = unit
+                    break
+        warlord_name = self._normalize_unit_name(getattr(warlord, "name", "")) if warlord is not None else ""
+        if warlord_name not in {"yvraine", "the yncarne"}:
+            errors.append("Strength from Death (Servants of the Whispering God): Yvraine or The Yncarne must be your WARLORD.")
+        return errors
 
     def is_warhost_detachment(self) -> bool:
         if not self._army_faction_matches(self.faction_id):

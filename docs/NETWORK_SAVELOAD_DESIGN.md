@@ -221,6 +221,7 @@ Movement:
 - transport_reactive_disembark_dialog: DISEMBARK {unit_id, transport_id, positions} (context `reactive_disembark_*`)
 - battle_focus_opportunity_dialog: SELECT_OVERWATCH_SHOOTER {unit_id} (context `ability="battle_focus"`, `maneuver="opportunity"`)
 - battle_focus_fade_back_dialog: SELECT_OVERWATCH_SHOOTER {unit_id} (context `ability="battle_focus"`, `maneuver="fade_back"`)
+- battle_focus_lethal_surge_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="aeldari_strength_from_death_lethal_surge"`, `unit_id`, `attacker_unit_id`, `turn`, `turn_owner_id`)
 - battle_focus_maneuver_dialog: CHOOSE_BATTLE_FOCUS_MANEUVER {choice_key | skip} (context `unit_id`, `trigger="move"`, `action`)
 - setup_reactive_target_dialog: SELECT_SETUP_REACTIVE_TARGET {unit_id, target_unit_id | skip}
 - setup_reactive_action_dialog: CHOOSE_SETUP_REACTIVE_ACTION {action}
@@ -239,7 +240,10 @@ Blood Surge uses the same pattern with `reactive_move_kind="blood_surge"` and `m
 Brazen Fury uses the same pattern with `reactive_move_kind="brazen_fury"` and `movement_type="brazen_fury"`.
 Horde Move uses the same pattern with `reactive_move_kind="horde_move"` and `movement_type="horde_move"`.
 Battle Focus reactive maneuvers first use `SELECT_OVERWATCH_SHOOTER` (context `ability="battle_focus"`),
-then queue `MOVE_UNIT` with `movement_type="reactive"` and `max_distance`.
+then queue `MOVE_UNIT` with `movement_type="reactive"` and `max_distance`. Devoted of Ynnead
+Lethal Surge uses a `CONFIRM_YES_NO` step and queues `MOVE_UNIT` with
+`reactive_move_kind="aeldari_strength_from_death_lethal_surge"` and
+`reactive_move_allow_engagement_range=true`.
 Fire and Fade and Reactive Reposition queue `MOVE_UNIT` with `movement_type="reactive"` and
 `reactive_move_kind="fire_and_fade"` / `reactive_move_kind="reactive_reposition"`.
 Tactical Acumen queues `MOVE_UNIT` with `movement_type="reactive"` and `reactive_move_kind="tactical_acumen"`.
@@ -310,6 +314,8 @@ Fight:
 - dance_of_death_dialog: CHOOSE_DANCE_OF_DEATH {choice} (context `unit_id`, `phase_name`, `ability_name`)
 - harbinger_of_death_dialog: CHOOSE_HARBINGER_OF_DEATH {choice} (context `unit_id`, `model_id`, `weapon_name`, `ability_name`)
 - herald_of_ynnead_target_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="herald_of_ynnead"`, `attacker_unit_id`, `model_id`, `keyword`, `ability_name`)
+- strength_from_death_lethal_reprisal_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="aeldari_strength_from_death_lethal_reprisal"`, `ability_name`, `turn`, `turn_owner_id`)
+- strength_from_death_lethal_intent_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="aeldari_strength_from_death_lethal_intent"`, `ability_name`, `turn`, `turn_owner_id`, `optional=true`)
 - fight_phase_target_attack_bonus_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="fight_phase_target_attack_bonus"`, `source_unit_id`, `model_id`, `range`, `keyword`, `attack_type`, `strength_bonus`, `ap_bonus`, `damage_bonus`, `wound_bonus`, `enemy_melee_wound_penalty`)
 - inflamed_infections_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="inflamed_infections"`, `source_unit_id`, `attacker_unit_id`, `model_id`, `crit_hit_threshold`, `crit_hit_threshold_below_half`, `optional=true`)
 - boon_of_death_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="boon_of_death"`, `source_unit_id`, `attacker_unit_id`, `turn`, `optional=true`)
@@ -347,6 +353,7 @@ Optional ability confirmations (yes/no):
 - battle_focus_flitting_shadows_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="battle_focus_flitting_shadows"`, `unit_id`)
 - battle_focus_sudden_strike_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="battle_focus_sudden_strike"`, `unit_id`)
 - battle_focus_fade_back_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="battle_focus_fade_back"`, `unit_id`)
+- battle_focus_lethal_surge_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="aeldari_strength_from_death_lethal_surge"`, `unit_id`, `attacker_unit_id`, `turn`, `turn_owner_id`)
 - start_any_phase_damage_set_one_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="start_any_phase_damage_set_one"`, `unit_id`, `model_id`, `buff_key`)
 - start_any_phase_fnp_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="start_any_phase_fnp"`, `unit_id`, `ability_key`)
 - dark_ritual_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="dark_ritual"`, `unit_id`, `ability_key`)

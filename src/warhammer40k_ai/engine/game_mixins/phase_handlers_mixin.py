@@ -2168,6 +2168,26 @@ class GamePhaseHandlersMixin:
         pname = str(getattr(phase, "name", "") or "").strip().upper()
         if pname != "FIGHT_PHASE":
             return
+        queue_lethal_reprisal = bool(getattr(self, "is_authoritative", True))
+        current_turn = int(getattr(self, "turn", 0) or 0)
+        try:
+            turn_owner = self.get_current_player()
+        except Exception:
+            turn_owner = None
+        turn_owner_id = str(getattr(turn_owner, "id", "") or "")
+        pending_lethal_reprisal_players: set[str] = set()
+        if queue_lethal_reprisal:
+            queue = getattr(self, "decision_queue", None)
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                        continue
+                    ctx = dict(getattr(req, "context", {}) or {})
+                    if str(ctx.get("ability", "") or "") != "aeldari_strength_from_death_lethal_reprisal":
+                        continue
+                    req_player_id = str(getattr(req, "player_id", "") or "")
+                    if req_player_id:
+                        pending_lethal_reprisal_players.add(req_player_id)
         for p in list(getattr(self, "players", []) or []):
             if p is None:
                 continue
@@ -2219,6 +2239,141 @@ class GamePhaseHandlersMixin:
                 root.special_rules = sr
                 if root_id:
                     processed.add(root_id)
+
+            if not queue_lethal_reprisal:
+                continue
+            player_id = str(getattr(p, "id", "") or "")
+            if player_id and player_id in pending_lethal_reprisal_players:
+                continue
+            ae_mgr = getattr(army, "aeldari_detachments", None)
+            if ae_mgr is None or not bool(getattr(ae_mgr, "is_devoted_of_ynnead", lambda: False)()):
+                continue
+            candidates = list(getattr(ae_mgr, "devoted_of_ynnead_lethal_reprisal_candidates", lambda: [])() or [])
+            if not candidates:
+                continue
+            try:
+                candidates.sort(key=lambda u: str(get_entity_id(u) or ""))
+            except Exception:
+                pass
+            options = []
+            for cand in list(candidates or []):
+                target_id = str(get_entity_id(cand) or "")
+                if not target_id:
+                    continue
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(cand, "name", "Unit") or "Unit"),
+                        payload={"target_unit_id": target_id},
+                    )
+                )
+            if not options:
+                continue
+            ability_name = "Strength from Death (Lethal Reprisal)"
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{ability_name}: select one YNNARI unit below Starting Strength.",
+                player_id=getattr(p, "id", None),
+                options=options,
+                context={
+                    "ability": "aeldari_strength_from_death_lethal_reprisal",
+                    "ability_name": ability_name,
+                    "turn": int(current_turn or 0),
+                    "turn_owner_id": turn_owner_id,
+                    "phase": "Fight phase",
+                },
+            )
+            self.request_decision(request)
+
+    def _on_phase_end_aeldari_strength_from_death_lethal_intent(self, player=None, phase=None, **_kwargs) -> None:
+        """End of opponent Shooting phase: optional Lethal Intent move selection for Devoted of Ynnead."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "SHOOTING_PHASE":
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        try:
+            turn_owner = self.get_current_player()
+        except Exception:
+            turn_owner = None
+        turn_owner_id = str(getattr(turn_owner, "id", "") or "")
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+
+        pending_players: set[str] = set()
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "aeldari_strength_from_death_lethal_intent":
+                    continue
+                req_player_id = str(getattr(req, "player_id", "") or "")
+                if req_player_id:
+                    pending_players.add(req_player_id)
+
+        for p in list(getattr(self, "players", []) or []):
+            if p is None:
+                continue
+            if turn_owner is not None and p is turn_owner:
+                continue
+            player_id = str(getattr(p, "id", "") or "")
+            if player_id and player_id in pending_players:
+                continue
+            army = self._get_player_army(p)
+            if army is None:
+                continue
+            ae_mgr = getattr(army, "aeldari_detachments", None)
+            if ae_mgr is None or not bool(getattr(ae_mgr, "is_devoted_of_ynnead", lambda: False)()):
+                continue
+            consume = getattr(ae_mgr, "consume_devoted_of_ynnead_lethal_intent_candidates", None)
+            if not callable(consume):
+                continue
+            candidates = list(
+                consume(
+                    game=self,
+                    turn_owner_id=turn_owner_id,
+                    phase_name=pname,
+                )
+                or []
+            )
+            if not candidates:
+                continue
+            try:
+                candidates.sort(key=lambda u: str(get_entity_id(u) or ""))
+            except Exception:
+                pass
+            options = [DecisionOption.create("None", payload={"action": "skip"})]
+            for cand in list(candidates or []):
+                target_id = str(get_entity_id(cand) or "")
+                if not target_id:
+                    continue
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(cand, "name", "Unit") or "Unit"),
+                        payload={"target_unit_id": target_id},
+                    )
+                )
+            if len(options) <= 1:
+                continue
+            ability_name = "Strength from Death (Lethal Intent)"
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{ability_name}: select one unit to make a Normal move (or None).",
+                player_id=getattr(p, "id", None),
+                options=options,
+                context={
+                    "ability": "aeldari_strength_from_death_lethal_intent",
+                    "ability_name": ability_name,
+                    "turn": int(current_turn or 0),
+                    "turn_owner_id": turn_owner_id,
+                    "phase": "Shooting phase",
+                    "optional": True,
+                },
+            )
+            self.request_decision(request)
 
     def _on_phase_start_herald_of_ynnead(self, player=None, phase=None, **_kwargs) -> None:
         """Fight phase start: select an engaged enemy unit to mark for wound reroll 1s (Herald of Ynnead)."""

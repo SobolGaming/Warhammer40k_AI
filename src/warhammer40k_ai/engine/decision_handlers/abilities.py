@@ -1752,6 +1752,91 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         if callable(apply_fn):
             apply_fn(request, result, skipped=skipped)
         return None
+    if ability == "aeldari_strength_from_death_lethal_reprisal":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or ctx.get("target_unit_id") or payload.get("unit_id"))
+        if target_unit is None:
+            return None
+        try:
+            target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        except Exception:
+            target_root = target_unit
+        if target_root is None:
+            return None
+        ability_name = str(ctx.get("ability_name", "") or "Strength from Death (Lethal Reprisal)").strip() or "Strength from Death (Lethal Reprisal)"
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["empowered_by_death_active"] = True
+        sr["empowered_by_death_expires_phase"] = "FIGHT_PHASE"
+        sr["empowered_by_death_source"] = ability_name
+        target_root.special_rules = sr
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            try:
+                player = getattr(target_root.get_parent_army(), "player", None)
+            except Exception:
+                player = None
+        try:
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {getattr(target_root, 'name', 'Unit')} gains Fights First until end of phase.",
+            )
+        except Exception:
+            pass
+        return target_root
+    if ability == "aeldari_strength_from_death_lethal_intent":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or ctx.get("target_unit_id") or payload.get("unit_id"))
+        if target_unit is None:
+            return None
+        try:
+            target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        except Exception:
+            target_root = target_unit
+        if target_root is None:
+            return None
+        try:
+            from ...utility.dice import get_roll
+        except Exception:
+            return None
+        try:
+            move_distance = int(get_roll("D6") or 0) + 1
+        except Exception:
+            move_distance = 1
+        if move_distance <= 0:
+            return None
+        ability_name = str(ctx.get("ability_name", "") or "Strength from Death (Lethal Intent)").strip() or "Strength from Death (Lethal Intent)"
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            try:
+                player = getattr(target_root.get_parent_army(), "player", None)
+            except Exception:
+                player = None
+        queue_move = getattr(game, "_queue_reactive_move_movement_decision", None)
+        if callable(queue_move):
+            queue_move(
+                player=player,
+                unit=target_root,
+                max_distance=int(move_distance),
+                kind="aeldari_strength_from_death_lethal_intent",
+                movement_type="reactive",
+                source=ability_name,
+            )
+        try:
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {getattr(target_root, 'name', 'Unit')} can make a Normal move of up to {int(move_distance)}\".",
+            )
+        except Exception:
+            pass
+        return target_root
     if ability == "paragon_of_sanctity":
         if is_skip_choice(request, result):
             return None

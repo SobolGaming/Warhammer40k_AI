@@ -1700,6 +1700,8 @@ class IndividualModelMovementDialog(BaseDialog):
             for k in (
                 "battle_focus_reactive_move_max",
                 "battle_focus_reactive_move_source",
+                "battle_focus_reactive_move_kind",
+                "battle_focus_reactive_move_allow_engagement_range",
                 "battle_focus_reactive_move_expires_phase",
             ):
                 sr.pop(k, None)

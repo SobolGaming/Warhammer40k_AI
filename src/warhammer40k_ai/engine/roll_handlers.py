@@ -645,6 +645,9 @@ def handle_battle_focus_reactive_move(game: object, state: DiceRollState):
         return None
     payload = dict(spec.get("handler_payload", {}) or {})
     maneuver = str(payload.get("maneuver", "") or "Battle Focus").strip() or "Battle Focus"
+    source_name = str(payload.get("source_name", "") or maneuver).strip() or maneuver
+    reactive_kind = str(payload.get("reactive_move_kind", "") or "battle_focus").strip() or "battle_focus"
+    allow_engagement_range = bool(payload.get("allow_engagement_range", False))
     try:
         roll_val = int(state.total or 0)
     except Exception:
@@ -673,7 +676,9 @@ def handle_battle_focus_reactive_move(game: object, state: DiceRollState):
     if not isinstance(sr, dict):
         sr = {}
     sr["battle_focus_reactive_move_max"] = int(max_dist)
-    sr["battle_focus_reactive_move_source"] = str(maneuver)
+    sr["battle_focus_reactive_move_source"] = str(source_name)
+    sr["battle_focus_reactive_move_kind"] = str(reactive_kind)
+    sr["battle_focus_reactive_move_allow_engagement_range"] = bool(allow_engagement_range)
     if phase_name:
         sr["battle_focus_reactive_move_expires_phase"] = phase_name
     sr.pop("battle_focus_reactive_move_pending", None)
@@ -696,9 +701,10 @@ def handle_battle_focus_reactive_move(game: object, state: DiceRollState):
             moving_unit=moving_unit,
             attacker_unit=attacker_unit,
             max_distance=int(max_dist),
-            kind="battle_focus",
+            kind=str(reactive_kind),
             movement_type="reactive",
-            source=str(maneuver),
+            source=str(source_name),
+            allow_engagement_range=bool(allow_engagement_range),
         )
     except Exception:
         return max_dist

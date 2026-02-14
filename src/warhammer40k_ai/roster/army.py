@@ -1428,6 +1428,11 @@ class Army:
             for msg in list(we_mgr.validate_detachment_rules() or []):
                 if msg:
                     raise ArmyValidationError(str(msg))
+        ae_mgr = getattr(self, "aeldari_detachments", None)
+        if ae_mgr is not None:
+            for msg in list(ae_mgr.validate_detachment_rules() or []):
+                if msg:
+                    raise ArmyValidationError(str(msg))
 
     def _detachment_matches_pact(self, detachment: str, forbidden: str) -> bool:
         def _norm(text: str) -> str:

@@ -5137,9 +5137,15 @@ class Game(
         )
 
     def _on_unit_destroyed_friendly_unit_destroyed_reposition(self, unit=None, last_model=None, **_kwargs) -> None:
-        if unit is None or last_model is None:
+        if unit is None:
             return
-        army = unit.get_parent_army()
+        try:
+            destroyed_root = unit.get_attached_unit_root()
+        except Exception:
+            destroyed_root = unit
+        if destroyed_root is None:
+            return
+        army = destroyed_root.get_parent_army()
         if army is None:
             return
         owner = getattr(army, "player", None)
@@ -5149,13 +5155,78 @@ class Game(
         if current_player is owner:
             return
         current_player_id = getattr(current_player, "id", None)
+        phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+
+        # Devoted of Ynnead (Strength from Death): track Lethal Intent candidates
+        # during the opponent's Shooting phase when a friendly YNNARI unit is destroyed.
+        if phase_name == "SHOOTING_PHASE":
+            ae_mgr = getattr(army, "aeldari_detachments", None)
+            if ae_mgr is not None and bool(getattr(ae_mgr, "is_devoted_of_ynnead", lambda: False)()):
+                destroyed_counts_as_ynnari = bool(
+                    getattr(ae_mgr, "devoted_of_ynnead_unit_counts_as_ynnari", lambda *_a, **_k: False)(destroyed_root)
+                )
+                if destroyed_counts_as_ynnari:
+                    candidate_ids: list[str] = []
+                    seen_candidate_ids: set[str] = set()
+                    for candidate in list(getattr(army, "units", []) or []):
+                        if candidate is None:
+                            continue
+                        try:
+                            root = candidate.get_attached_unit_root()
+                        except Exception:
+                            root = candidate
+                        if root is None or root is destroyed_root:
+                            continue
+                        rid = str(get_entity_id(root) or "")
+                        if not rid or rid in seen_candidate_ids:
+                            continue
+                        seen_candidate_ids.add(rid)
+                        if not bool(getattr(ae_mgr, "devoted_of_ynnead_unit_counts_as_ynnari", lambda *_a, **_k: False)(root)):
+                            continue
+                        if not bool(getattr(ae_mgr, "devoted_of_ynnead_is_infantry_or_mounted", lambda *_a, **_k: False)(root)):
+                            continue
+                        try:
+                            if not root.is_alive() or not bool(getattr(root, "deployed", False)):
+                                continue
+                        except Exception:
+                            continue
+                        try:
+                            if root.is_in_reserves() or root.is_embarked:
+                                continue
+                        except Exception:
+                            pass
+                        in_range = False
+                        if last_model is not None and bool(getattr(last_model, "model_base", None) is not None):
+                            try:
+                                in_range = bool(root._model_within_range_of_unit(last_model, root, 6.0))
+                            except Exception:
+                                in_range = False
+                        if not in_range:
+                            try:
+                                from ..utility.aura_utils import unit_within_range_of_unit
+
+                                in_range = bool(
+                                    unit_within_range_of_unit(root, destroyed_root, 6.0, use_attached_aggregate=True)
+                                )
+                            except Exception:
+                                in_range = False
+                        if not in_range:
+                            continue
+                        candidate_ids.append(rid)
+                    if candidate_ids:
+                        getattr(ae_mgr, "record_devoted_of_ynnead_lethal_intent_candidates", lambda **_kw: None)(
+                            game=self,
+                            candidate_unit_ids=sorted(set(candidate_ids)),
+                            turn_owner_id=str(current_player_id or ""),
+                            phase_name=phase_name,
+                        )
 
         pos = None
         if hasattr(last_model, "get_location"):
             pos = last_model.get_location()
         if pos is None:
             try:
-                pos = unit.position
+                pos = destroyed_root.position
             except Exception:
                 pos = None
         if pos is None:
@@ -5171,7 +5242,7 @@ class Game(
                 root = candidate
             if root is None:
                 continue
-            if root is unit:
+            if root is destroyed_root:
                 continue
             ability = root.get_opponent_turn_friendly_unit_destroyed_reposition_ability()
             if not ability:
@@ -5183,7 +5254,7 @@ class Game(
             keyword = str(ability.get("keyword") or "").strip()
             if keyword:
                 try:
-                    if not root._unit_matches_keyword_phrase(unit, keyword, use_effective=False):
+                    if not root._unit_matches_keyword_phrase(destroyed_root, keyword, use_effective=False):
                         continue
                 except Exception:
                     continue
@@ -5191,14 +5262,14 @@ class Game(
             if placement is None:
                 continue
             unit_id = maybe_entity_id(root)
-            destroyed_unit_id = maybe_entity_id(unit)
+            destroyed_unit_id = maybe_entity_id(destroyed_root)
             ability_name = str(ability.get("name") or "Reposition").strip()
             ctx = {
                 "ability_name": ability_name,
                 "phase": "Opponent's turn",
                 "unit": getattr(root, "name", "") or "",
                 "unit_id": unit_id,
-                "destroyed_unit": getattr(unit, "name", "") or "",
+                "destroyed_unit": getattr(destroyed_root, "name", "") or "",
                 "destroyed_unit_id": destroyed_unit_id,
                 "destroyed_position": list(pos) if isinstance(pos, (list, tuple)) else None,
                 "placement_position": list(placement),

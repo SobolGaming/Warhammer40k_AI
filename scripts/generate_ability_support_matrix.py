@@ -372,6 +372,17 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time you use one of the stratagems below if your fate dice pool contains one or more fate dice showing the corresponding value in the table below you can discard one of those corresponding fate dice",
             r"ishas fury",
         ),
+        "Strength from Death": (
+            r"at the end of your opponents shooting phase if one or more ynnari units from your army were destroyed this phase select one ynnari infantry or ynnari mounted unit from your army that was within 6 of your destroyed unit",
+            r"once per turn when a ynnari unit from your army performs the fade back agile manoeuvre it can make a lethal surge move instead of a normal move",
+            r"if it does roll one d6 and add 1 to the result",
+            r"when doing so those models can be moved within engagement range of the enemy unit that just triggered that agile manoeuvre",
+            r"at the start of the fight phase select one ynnari unit from your army excluding titanic units that is below its starting strength",
+            r"until the end of the phase that unit has the fights first ability",
+            r"you can include ynnari units in your army even though they do not have the asuryani faction keyword",
+            r"asuryani units excluding epic heroes from your army gain the ynnari keyword",
+            r"you must include yvraine and or the yncarne in your army and one of those models must be your warlord",
+        ),
         "Extremis-level Threat": (
             r"once per battle in your command phase you can use this ability",
             r"if you do until the start of your next command phase each time a model from your army with the oath of moment ability makes an attack that targets your oath of moment target you can reroll the wound roll as well",
@@ -1573,6 +1584,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Strands of Fate": (
             "Supported",
             "Seer Council: first battle round generates Fate dice by battle size (Incursion 3, Strike Force 6, Onslaught 9); when using Presentiment of Dread/Forewarned/Unshrouded Truth/Fate Inescapable/Isha's Fury/Psychic Shield, you can discard a matching Fate die (1-6) to reduce that stratagem's CP cost by 1.",
+        ),
+        "Strength from Death": (
+            "Supported",
+            "Devoted of Ynnead: Lethal Intent target selection at end of opponent Shooting phase with D6+1 reactive move, once-per-turn Lethal Surge Fade Back upgrade allowing movement within Engagement Range of the triggering enemy, Lethal Reprisal Fight phase selection granting Fights First, and Servants of the Whispering God army restrictions.",
         ),
         "Pledges to the Dark Prince": (
             "Supported",

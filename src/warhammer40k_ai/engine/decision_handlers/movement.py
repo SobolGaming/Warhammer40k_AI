@@ -53,6 +53,8 @@ def _clear_battle_focus_reactive_flags(unit) -> None:
         for key in (
             "battle_focus_reactive_move_max",
             "battle_focus_reactive_move_source",
+            "battle_focus_reactive_move_kind",
+            "battle_focus_reactive_move_allow_engagement_range",
             "battle_focus_reactive_move_expires_phase",
         ):
             sr.pop(key, None)

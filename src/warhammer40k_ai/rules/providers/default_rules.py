@@ -188,6 +188,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("phase_end", "_on_phase_end_nurgles_rot"),
                 ("phase_end", "_on_phase_end_seed_the_garden_of_nurgle"),
                 ("phase_end", "_on_phase_end_shooting_phase_disrupt_cleanup"),
+                ("phase_end", "_on_phase_end_aeldari_strength_from_death_lethal_intent"),
                 ("phase_end", "_on_phase_end_movement_phase_mortal_table"),
                 ("phase_end", "_on_phase_end_flickerjump_mortal_wounds"),
                 ("fight_targets_selected", "_on_fight_targets_selected_tracking"),

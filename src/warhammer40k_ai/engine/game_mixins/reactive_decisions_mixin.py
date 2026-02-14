@@ -2837,6 +2837,39 @@ class GameReactiveDecisionsMixin:
             if maneuver == "opportunity":
                 applied = bool(mgr.apply_reactive_maneuver(unit, mgr.MANEUVER_OPPORTUNITY, self, moving_unit=moving_unit))
             elif maneuver == "fade_back":
+                ae_mgr = getattr(army, "aeldari_detachments", None) if army is not None else None
+                can_lethal_surge = bool(
+                    ae_mgr is not None
+                    and bool(getattr(ae_mgr, "devoted_of_ynnead_lethal_surge_available", lambda *_a, **_k: False)(unit, game=self))
+                )
+                if can_lethal_surge:
+                    try:
+                        turn = int(getattr(self, "turn", 0) or 0)
+                    except Exception:
+                        turn = 0
+                    try:
+                        turn_owner = getattr(self, "get_current_player", lambda: None)()
+                    except Exception:
+                        turn_owner = None
+                    turn_owner_id = str(getattr(turn_owner, "id", "") or "")
+                    self._queue_optional_ability_confirmation(
+                        player=player,
+                        ability_key="aeldari_strength_from_death_lethal_surge",
+                        ability_name="Strength from Death (Lethal Surge)",
+                        message=f"Use Lethal Surge for {getattr(unit, 'name', 'Unit')}?",
+                        context={
+                            "unit_id": unit_id,
+                            "attacker_unit_id": attacker_unit_id,
+                            "turn": int(turn or 0),
+                            "turn_owner_id": turn_owner_id,
+                        },
+                        payload={
+                            "unit_id": unit_id,
+                            "attacker_unit_id": attacker_unit_id,
+                        },
+                        instance_key=f"{unit_id}:{turn}:{turn_owner_id}:aeldari_strength_from_death_lethal_surge",
+                    )
+                    return
                 applied = bool(mgr.apply_reactive_maneuver(unit, mgr.MANEUVER_FADE_BACK, self, attacker_unit=attacker_unit))
             else:
                 return
@@ -2854,15 +2887,18 @@ class GameReactiveDecisionsMixin:
             if max_distance <= 0:
                 return
             source = str(sr.get("battle_focus_reactive_move_source", "") or "Battle Focus").strip() or "Battle Focus"
+            kind = str(sr.get("battle_focus_reactive_move_kind", "") or "battle_focus").strip() or "battle_focus"
+            allow_engagement_range = bool(sr.get("battle_focus_reactive_move_allow_engagement_range", False))
             self._queue_reactive_move_movement_decision(
                 player=player,
                 unit=unit,
                 moving_unit=moving_unit,
                 attacker_unit=attacker_unit,
                 max_distance=max_distance,
-                kind="battle_focus",
+                kind=kind,
                 movement_type="reactive",
                 source=source,
+                allow_engagement_range=allow_engagement_range,
             )
         if decision_type == DECISION_MOVE_UNIT:
             ctx = dict(getattr(request, "context", {}) or {})
@@ -2935,6 +2971,7 @@ class GameReactiveDecisionsMixin:
             "oathbound_speculator",
             "dead_reckoning",
             "possessed_blade_fight",
+            "aeldari_strength_from_death_lethal_surge",
         ):
             return
         selected = None
@@ -2948,6 +2985,56 @@ class GameReactiveDecisionsMixin:
             choice = bool(payload.get("choice"))
         elif "choice" in getattr(result, "payload", {}):
             choice = bool(result.payload.get("choice"))
+        if ability_key == "aeldari_strength_from_death_lethal_surge":
+            player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+            if player is None:
+                return
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None:
+                return
+            army = player.get_army()
+            mgr = getattr(army, "battle_focus", None) if army is not None else None
+            if mgr is None:
+                return
+            attacker_unit_id = str(payload.get("attacker_unit_id") or ctx.get("attacker_unit_id") or "")
+            attacker_unit = self._resolve_unit_by_id(attacker_unit_id) if attacker_unit_id else None
+            applied = bool(
+                mgr.apply_reactive_maneuver(
+                    unit,
+                    mgr.MANEUVER_FADE_BACK,
+                    self,
+                    attacker_unit=attacker_unit,
+                    use_lethal_surge=bool(choice),
+                )
+            )
+            if not applied:
+                return
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict) or sr.get("battle_focus_reactive_move_pending"):
+                return
+            try:
+                max_distance = int(sr.get("battle_focus_reactive_move_max", 0) or 0)
+            except Exception:
+                max_distance = 0
+            if max_distance <= 0:
+                return
+            source = str(sr.get("battle_focus_reactive_move_source", "") or "Battle Focus").strip() or "Battle Focus"
+            kind = str(sr.get("battle_focus_reactive_move_kind", "") or "battle_focus").strip() or "battle_focus"
+            allow_engagement_range = bool(sr.get("battle_focus_reactive_move_allow_engagement_range", False))
+            self._queue_reactive_move_movement_decision(
+                player=player,
+                unit=unit,
+                attacker_unit=attacker_unit,
+                max_distance=max_distance,
+                kind=kind,
+                movement_type="reactive",
+                source=source,
+                allow_engagement_range=allow_engagement_range,
+            )
+            return
         if not choice:
             return
 

@@ -503,7 +503,16 @@ class BattleFocusManager:
             return True
         return (uid in self._units_used_this_phase) and not used_before
 
-    def apply_reactive_maneuver(self, unit, maneuver: str, game, *, moving_unit=None, attacker_unit=None) -> bool:
+    def apply_reactive_maneuver(
+        self,
+        unit,
+        maneuver: str,
+        game,
+        *,
+        moving_unit=None,
+        attacker_unit=None,
+        use_lethal_surge: bool = False,
+    ) -> bool:
         if unit is None or game is None:
             return False
         if not self._army_has_battle_focus():
@@ -514,7 +523,14 @@ class BattleFocusManager:
         before = int(self.tokens or 0)
         uid = self._unit_id(unit)
         used_before = uid in self._units_used_this_phase
-        self._apply_reactive_move(unit, maneuver, game, moving_unit=moving_unit, attacker_unit=attacker_unit)
+        self._apply_reactive_move(
+            unit,
+            maneuver,
+            game,
+            moving_unit=moving_unit,
+            attacker_unit=attacker_unit,
+            use_lethal_surge=bool(use_lethal_surge),
+        )
         if int(self.tokens or 0) < before:
             return True
         return (uid in self._units_used_this_phase) and not used_before
@@ -813,7 +829,16 @@ class BattleFocusManager:
         unit.special_rules = sr
         self._mark_used(unit, maneuver)
 
-    def _apply_reactive_move(self, unit, maneuver: str, game, *, moving_unit=None, attacker_unit=None) -> None:
+    def _apply_reactive_move(
+        self,
+        unit,
+        maneuver: str,
+        game,
+        *,
+        moving_unit=None,
+        attacker_unit=None,
+        use_lethal_surge: bool = False,
+    ) -> None:
         if unit is None or game is None:
             return
         if not self._can_use_unit_this_phase(unit):
@@ -837,6 +862,18 @@ class BattleFocusManager:
         phase = getattr(game, "phase", None)
         phase_name = str(getattr(phase, "name", "") or phase or "").strip().upper()
         warhost_bonus = bool(self.is_warhost_detachment())
+        allow_engagement_range = False
+        reactive_source = str(maneuver)
+        reactive_kind = "battle_focus"
+        if maneuver == self.MANEUVER_FADE_BACK and bool(use_lethal_surge):
+            ae_mgr = getattr(self.army, "aeldari_detachments", None) if self.army is not None else None
+            if ae_mgr is not None and bool(getattr(ae_mgr, "devoted_of_ynnead_lethal_surge_available", lambda *_a, **_k: False)(unit, game=game)):
+                allow_engagement_range = True
+                reactive_source = "Strength from Death (Lethal Surge)"
+                reactive_kind = "aeldari_strength_from_death_lethal_surge"
+                mark_used = getattr(ae_mgr, "mark_devoted_of_ynnead_lethal_surge_used", None)
+                if callable(mark_used):
+                    mark_used(game=game)
 
         has_roll_manager = bool(getattr(game, "roll_manager", None) is not None)
         if has_roll_manager and bool(getattr(game, "is_authoritative", True)):
@@ -859,10 +896,14 @@ class BattleFocusManager:
                     )
             except Exception:
                 pass
+            if allow_engagement_range:
+                reason = f"Lethal Surge roll for {getattr(unit, 'name', 'Unit')}"
+            else:
+                reason = f"Battle Focus {str(maneuver).replace('_', ' ').title()} roll for {getattr(unit, 'name', 'Unit')}"
             roll_spec = {
                 "dice_count": 1,
                 "faces": 6,
-                "reason": f"Battle Focus {str(maneuver).replace('_', ' ').title()} roll for {getattr(unit, 'name', 'Unit')}",
+                "reason": reason,
                 "roll_type": "battle_focus_maneuver",
                 "unit_id": unit_id,
                 "handler_key": "battle_focus_reactive_move",
@@ -872,6 +913,9 @@ class BattleFocusManager:
                     "warhost_bonus": warhost_bonus,
                     "moving_unit_id": get_entity_id(moving_unit) if moving_unit is not None else None,
                     "attacker_unit_id": get_entity_id(attacker_unit) if attacker_unit is not None else None,
+                    "allow_engagement_range": bool(allow_engagement_range),
+                    "reactive_move_kind": str(reactive_kind),
+                    "source_name": str(reactive_source),
                 },
                 "reroll_rules": reroll_rules,
             }
@@ -904,7 +948,9 @@ class BattleFocusManager:
                 roll += 1
             max_dist = int(roll) + 1
             sr["battle_focus_reactive_move_max"] = max_dist
-            sr["battle_focus_reactive_move_source"] = str(maneuver)
+            sr["battle_focus_reactive_move_source"] = str(reactive_source)
+            sr["battle_focus_reactive_move_kind"] = str(reactive_kind)
+            sr["battle_focus_reactive_move_allow_engagement_range"] = bool(allow_engagement_range)
             sr["battle_focus_reactive_move_expires_phase"] = phase_name
             unit.special_rules = sr
 
@@ -950,6 +996,8 @@ class BattleFocusManager:
                     for k in (
                         "battle_focus_reactive_move_max",
                         "battle_focus_reactive_move_source",
+                        "battle_focus_reactive_move_kind",
+                        "battle_focus_reactive_move_allow_engagement_range",
                         "battle_focus_reactive_move_expires_phase",
                         "battle_focus_reactive_move_pending",
                     ):
