@@ -88,6 +88,7 @@ class DialogManager:
             _get(gv, "transport_embark_dialog"),
             _get(gv, "transport_disembark_dialog"),
             _get(gv, "transport_assignment_dialog"),
+            _get(gv, "player_color_picker_dialog"),
             _get(gv, "reserves_allocation_dialog"),
             _get(gv, "precision_allocation_dialog"),
             _get(gv, "damage_allocation_dialog"),

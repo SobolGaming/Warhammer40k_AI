@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 from warhammer40k_ai.engine.battlefield import Battlefield, BattlefieldSize
-from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO, DECISION_MOVE_UNIT
+from warhammer40k_ai.engine.decision_kinds import (
+    DECISION_CHOOSE_PLAYER_COLOR,
+    DECISION_CONFIRM_YES_NO,
+    DECISION_MOVE_UNIT,
+)
+from warhammer40k_ai.engine.decision_requests import build_player_color_selection_requests
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
 from warhammer40k_ai.engine.game import Game
 from warhammer40k_ai.roster.player import Player
@@ -111,3 +116,43 @@ def test_decision_record_human_action_candidate_injection_for_move_payload() -> 
     assert record["human_action_injected"] is True
     assert record["chosen_action_id"] in action_ids
     assert len(injected) == 1
+
+
+def test_decision_record_player_color_candidates_are_deterministic_and_valid() -> None:
+    player_one = Player("P1")
+    player_two = Player("P2")
+    game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[player_one, player_two])
+
+    requests = build_player_color_selection_requests(game, [player_two], queue_requests=True)
+    assert len(requests) == 1
+    request = requests[0]
+    chosen_option = request.options[4]
+    result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=player_two.id,
+        option_id=chosen_option.option_id,
+        payload={},
+    )
+    apply_result = game.resolve_decision(result)
+    assert apply_result.ok is True
+
+    record = game.decision_record_store.records[-1]
+    assert record["valid"] is True
+    assert record["decision_type"] == DECISION_CHOOSE_PLAYER_COLOR
+    candidate_action_ids = [str(candidate["action_id"]) for candidate in list(record["candidates"] or [])]
+    assert candidate_action_ids == sorted(candidate_action_ids)
+    assert all(
+        action_id.startswith(f"{DECISION_CHOOSE_PLAYER_COLOR}:{player_two.id}:")
+        for action_id in candidate_action_ids
+    )
+    assert str(record["chosen_action_id"]) == str(chosen_option.payload["action_id"])
+
+    chosen_candidate = next(
+        candidate
+        for candidate in list(record["candidates"] or [])
+        if str(candidate.get("action_id", "")) == str(record["chosen_action_id"])
+    )
+    rgb = list(dict(chosen_candidate.get("params", {}) or {}).get("rgb", []) or [])
+    assert len(rgb) == 3
+    assert all(0 <= int(channel) <= 255 for channel in rgb)
+    assert int(dict(chosen_candidate.get("params", {}) or {}).get("hue_degrees", 0)) % 15 == 0

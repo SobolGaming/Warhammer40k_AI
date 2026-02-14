@@ -3,7 +3,8 @@ import pytest
 from warhammer40k_ai.battlefield.map import Objective, ObjectiveCategory, ObjectivePoint
 from warhammer40k_ai.engine.battlefield import Battlefield
 from warhammer40k_ai.engine.commands import GameCommand
-from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_EXAMPLE
+from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_PLAYER_COLOR, DECISION_CONFIRM_EXAMPLE
+from warhammer40k_ai.engine.decision_requests import build_player_color_selection_requests
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
 from warhammer40k_ai.engine.game import Game
 from warhammer40k_ai.engine.mission_cards import MarkedForDeathSecondary, TakeAndHoldPrimary
@@ -268,3 +269,46 @@ def test_snapshot_preserves_army_points_totals(waha_helper):
     after_points = [pl.army.get_total_points() for pl in loaded.players]
 
     assert after_points == before_points
+
+
+def test_snapshot_roundtrip_preserves_player_color_state_and_pending_color_decisions(waha_helper):
+    game, _, _, player_one, player_two = _build_game(waha_helper)
+    player_one.set_ui_color([11, 22, 33], hue_degrees=45, selected=True, source="selected")
+
+    created = build_player_color_selection_requests(game, [player_two], queue_requests=True)
+    assert len(created) == 1
+    assert created[0].decision_type == DECISION_CHOOSE_PLAYER_COLOR
+
+    snapshot = snapshot_game(game)
+    players_by_id = {entry["id"]: entry for entry in list(snapshot.get("players", []) or [])}
+    player_one_state = dict(players_by_id[player_one.id].get("state", {}) or {})
+    assert player_one_state.get("ui_color_rgb") == [11, 22, 33]
+    assert player_one_state.get("ui_color_hue_degrees") == 45
+    assert player_one_state.get("ui_color_selected") is True
+    assert player_one_state.get("ui_color_source") == "selected"
+
+    loaded = load_game_snapshot(snapshot)
+    loaded_players = {player.id: player for player in list(loaded.players or [])}
+    loaded_one = loaded_players[player_one.id]
+    loaded_two = loaded_players[player_two.id]
+
+    assert loaded_one.get_ui_color_rgb() == (11, 22, 33)
+    assert loaded_one.ui_color_hue_degrees == 45
+    assert loaded_one.ui_color_selected is True
+    assert loaded_one.ui_color_source == "selected"
+
+    pending = [
+        req
+        for req in list(loaded.decision_queue.list() or [])
+        if req.decision_type == DECISION_CHOOSE_PLAYER_COLOR
+    ]
+    assert len(pending) == 1
+    loaded_request = pending[0]
+    assert str(loaded_request.player_id) == str(loaded_two.id)
+    action_ids = [str(candidate.action_id) for candidate in list(loaded_request.candidates or [])]
+    assert action_ids == sorted(action_ids)
+    assert action_ids[0].startswith(f"{DECISION_CHOOSE_PLAYER_COLOR}:{loaded_two.id}:")
+    for candidate in list(loaded_request.candidates or []):
+        rgb = list(dict(candidate.params or {}).get("rgb", []) or [])
+        assert len(rgb) == 3
+        assert all(0 <= int(channel) <= 255 for channel in rgb)

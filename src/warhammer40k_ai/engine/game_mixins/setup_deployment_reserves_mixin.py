@@ -10,6 +10,7 @@ class GameSetupDeploymentReservesMixin:
         """Add a player to the game."""
         self.players.append(player)
         player.set_game(self)
+        player.assign_default_ui_color(len(self.players) - 1)
         self.refresh_rule_subscribers()
 
     def add_objective(self, objective: Objective) -> None:
@@ -1603,6 +1604,38 @@ class GameSetupDeploymentReservesMixin:
         # Apply primary-mission setup rules that modify objective markers (Chapter Approved 2025/26).
         self._apply_primary_mission_setup_rules()
 
+    def sync_deployment_zones_to_attacker_defender(self) -> None:
+        """Ensure deployment zones are keyed by current attacker/defender player ids."""
+        zones = getattr(self, "deployment_zones", None)
+        if not isinstance(zones, dict) or not zones:
+            return
+        attacker_idx = getattr(self, "attacker_index", None)
+        defender_idx = getattr(self, "defender_index", None)
+        if attacker_idx is None or defender_idx is None:
+            return
+        if not (0 <= int(attacker_idx) < len(self.players)):
+            return
+        if not (0 <= int(defender_idx) < len(self.players)):
+            return
+        attacker_player = self.players[int(attacker_idx)]
+        defender_player = self.players[int(defender_idx)]
+        attacker_zone = None
+        defender_zone = None
+        for zone in list(zones.values()):
+            if not isinstance(zone, dict):
+                continue
+            zone_type = str(zone.get("zone_type", "") or "").strip().lower()
+            if zone_type == "attacker" and attacker_zone is None:
+                attacker_zone = zone
+            elif zone_type == "defender" and defender_zone is None:
+                defender_zone = zone
+        if attacker_zone is None or defender_zone is None:
+            return
+        self.deployment_zones = {
+            str(getattr(defender_player, "id", "")): defender_zone,
+            str(getattr(attacker_player, "id", "")): attacker_zone,
+        }
+
     def execute_determine_attacker_defender_phase(self) -> None:
         """Phase 4: Determine Attacker and Defender - Roll off to determine roles."""
         logger.info("DETERMINE ATTACKER AND DEFENDER: Rolling off...")
@@ -1635,6 +1668,7 @@ class GameSetupDeploymentReservesMixin:
         
         # Set deployment turn to defender (defender deploys first)
         self.deployment_turn_index = self.defender_index
+        self.sync_deployment_zones_to_attacker_defender()
         # Reset deployment special-rule trackers for a fresh setup sequence
         self.deployment_skip_turns = {}
 
@@ -1671,6 +1705,15 @@ class GameSetupDeploymentReservesMixin:
                 if unit_id and unit_id in pending_unit_ids:
                     continue
                 self.request_decision(req)
+
+    def _apply_player_color_declarations(self) -> None:
+        """Queue player color selection decisions before deployment interactions begin."""
+        players = list(self.players or [])
+        if not players:
+            return
+        from ..decision_requests import build_player_color_selection_requests
+
+        build_player_color_selection_requests(self, players, queue_requests=True)
 
     def _apply_patrol_squad_declarations(self) -> None:
         """Queue PATROL SQUAD split choices at the start of Declare Battle Formations."""
@@ -1747,6 +1790,9 @@ class GameSetupDeploymentReservesMixin:
     def execute_declare_battle_formations_phase(self) -> None:
         """Phase 5: Declare Battle Formations - Attach leaders, embark in transports, allocate reserves."""
         logger.info("DECLARE BATTLE FORMATIONS: Validating formations...")
+
+        # Player color selections are chosen before deployment interaction begins.
+        self._apply_player_color_declarations()
 
         # Hover mode declarations must happen before any other formation steps.
         self._apply_hover_declarations()
@@ -1844,6 +1890,7 @@ class GameSetupDeploymentReservesMixin:
             # For local players in manual mode, set up deployment state but don't auto-deploy
             # The UI will handle the actual deployment decisions
             logger.info("INFO: Local deployment mode - use UI to deploy units")
+            self.sync_deployment_zones_to_attacker_defender()
             
             # Set up deployment zones if not already done
             if not hasattr(self, 'deployment_zones') or not self.deployment_zones:

@@ -159,8 +159,9 @@ class Game(
         self.battle_shock_step_active = False
         
         # Wire game reference into any pre-supplied players
-        for p in self.players:
+        for idx, p in enumerate(self.players):
             p.set_game(self)
+            p.assign_default_ui_color(idx)
 
         # Install default rules subscribers (e.g. on-kill rewards)
         self._install_default_event_subscribers()

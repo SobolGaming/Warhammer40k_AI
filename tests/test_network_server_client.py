@@ -4,8 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from warhammer40k_ai.engine.command_kinds import CMD_NEXT_PHASE
+from warhammer40k_ai.engine.command_kinds import CMD_NEXT_PHASE, CMD_REQUEST_DECISION
 from warhammer40k_ai.engine.commands import GameCommand
+from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_PLAYER_COLOR
 from warhammer40k_ai.network.client import NetworkClient
 from warhammer40k_ai.network.messages import CommandMessage
 from warhammer40k_ai.network.server import NetworkServer
@@ -16,11 +17,26 @@ KEY_PATH = Path("tests/fixtures/tls/server.key")
 pytestmark = [pytest.mark.integration, pytest.mark.slow]
 
 
-async def _wait_for(client: NetworkClient, category: str, message_type: str, timeout: float = 10.0):
+async def _wait_for(client: NetworkClient, category: str, message_type: str, timeout: float = 20.0):
     while True:
         event = await client.next_message(timeout=timeout)
         client.handle_message(event)
         if event.category == category and event.message_type == message_type:
+            return event
+
+
+async def _wait_for_player_color_decision_request(client: NetworkClient, timeout: float = 20.0):
+    while True:
+        event = await client.next_message(timeout=timeout)
+        client.handle_message(event)
+        if event.category != "game" or event.message_type != "command":
+            continue
+        command = dict((event.message.get("payload", {}) or {}).get("command", {}) or {})
+        if str(command.get("kind", "") or "") != CMD_REQUEST_DECISION:
+            continue
+        payload = dict(command.get("payload", {}) or {})
+        decision = dict(payload.get("decision", {}) or {})
+        if str(decision.get("decision_type", "") or "") == DECISION_CHOOSE_PLAYER_COLOR:
             return event
 
 
@@ -70,8 +86,22 @@ def test_network_server_client_flow_tls():
         await _wait_for(client2, "control", "ready")
 
         await _wait_for(client1, "control", "start_game")
-        await _wait_for(client1, "game", "snapshot")
-        await _wait_for(client2, "game", "snapshot")
+        snapshot1 = await _wait_for(client1, "game", "snapshot")
+        snapshot2 = await _wait_for(client2, "game", "snapshot")
+        snapshot1_players = list(
+            ((snapshot1.message.get("payload", {}) or {}).get("snapshot", {}) or {}).get("players", []) or []
+        )
+        snapshot2_players = list(
+            ((snapshot2.message.get("payload", {}) or {}).get("snapshot", {}) or {}).get("players", []) or []
+        )
+        assert len(snapshot1_players) == 2
+        assert len(snapshot2_players) == 2
+        for player_data in snapshot1_players + snapshot2_players:
+            state = dict(player_data.get("state", {}) or {})
+            rgb = list(state.get("ui_color_rgb", []) or [])
+            assert len(rgb) == 3
+            assert all(0 <= int(channel) <= 255 for channel in rgb)
+        await _wait_for_player_color_decision_request(client1)
 
         command = GameCommand.create(CMD_NEXT_PHASE, player_id=client1.player_id)
         await client1.send_command(command)

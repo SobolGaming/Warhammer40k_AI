@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import colorsys
 from itertools import combinations
 import re
 from typing import Iterable, List, Optional
@@ -9,6 +10,7 @@ from .decision_kinds import (
     DECISION_ATTACH_LEADER,
     DECISION_ATTACH_SUPPORT_ARTILLERY,
     DECISION_ASSIGN_TRANSPORT,
+    DECISION_CHOOSE_PLAYER_COLOR,
     DECISION_CHOOSE_QUARRY,
     DECISION_CONFIRM_YES_NO,
     DECISION_DECLARE_RESERVES,
@@ -22,9 +24,52 @@ from ..rules.imperial_agents_shadow_assignment import (
 )
 from ..utility.entity_ids import get_entity_id
 
+PLAYER_COLOR_HUE_STEP_DEGREES = 15
+PLAYER_COLOR_SATURATION = 0.85
+PLAYER_COLOR_VALUE = 0.95
+
 
 def _iter_units(units: Iterable[object] | None) -> List[object]:
     return [u for u in list(units or []) if u is not None]
+
+
+def _iter_players(players: Iterable[object] | None) -> List[object]:
+    return [p for p in list(players or []) if p is not None]
+
+
+def _hsv_to_rgb_triplet(hue_degrees: int, *, saturation: float, value: float) -> list[int]:
+    h = float(hue_degrees % 360) / 360.0
+    r, g, b = colorsys.hsv_to_rgb(h, float(saturation), float(value))
+    return [int(round(r * 255.0)), int(round(g * 255.0)), int(round(b * 255.0))]
+
+
+def _player_sort_key(player: object) -> str:
+    return str(get_entity_id(player) or "")
+
+
+def _player_color_options(player: object) -> List[DecisionOption]:
+    player_id = str(get_entity_id(player) or "")
+    if not player_id:
+        return []
+    options: List[DecisionOption] = []
+    for hue in range(0, 360, PLAYER_COLOR_HUE_STEP_DEGREES):
+        rgb = _hsv_to_rgb_triplet(
+            hue,
+            saturation=PLAYER_COLOR_SATURATION,
+            value=PLAYER_COLOR_VALUE,
+        )
+        options.append(
+            DecisionOption.create(
+                f"Hue {hue:03d}",
+                payload={
+                    "player_id": player_id,
+                    "rgb": rgb,
+                    "hue_degrees": int(hue),
+                    "action_id": f"{DECISION_CHOOSE_PLAYER_COLOR}:{player_id}:{int(hue):03d}",
+                },
+            )
+        )
+    return options
 
 
 def _player_id_for_unit(unit: object) -> Optional[str]:
@@ -872,3 +917,52 @@ def build_scout_move_request(game: object, unit: object) -> Optional[DecisionReq
     if hasattr(game, "request_decision"):
         game.request_decision(request)
     return request
+
+
+def build_player_color_selection_requests(
+    game: object,
+    players: Iterable[object],
+    *,
+    queue_requests: bool = True,
+) -> List[DecisionRequest]:
+    all_players = _iter_players(players)
+    requests: List[DecisionRequest] = []
+    if not all_players:
+        return requests
+
+    pending_player_ids: set[str] = set()
+    queue = getattr(game, "decision_queue", None)
+    if queue is not None and hasattr(queue, "list"):
+        for req in list(queue.list() or []):
+            if getattr(req, "decision_type", None) != DECISION_CHOOSE_PLAYER_COLOR:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            player_id = str(ctx.get("player_id", "") or "")
+            if player_id:
+                pending_player_ids.add(player_id)
+
+    for player in sorted(all_players, key=_player_sort_key):
+        player_id = str(get_entity_id(player) or "")
+        if not player_id or player_id in pending_player_ids:
+            continue
+        if bool(getattr(player, "ui_color_selected", False)):
+            continue
+        options = _player_color_options(player)
+        if not options:
+            continue
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_PLAYER_COLOR,
+            f"Select color for {str(getattr(player, 'name', 'Player') or 'Player')}.",
+            player_id=player_id,
+            options=options,
+            context={
+                "player_id": player_id,
+                "selection_kind": "player_color",
+                "hue_step_degrees": PLAYER_COLOR_HUE_STEP_DEGREES,
+            },
+        )
+        requests.append(request)
+        if queue_requests and hasattr(game, "request_decision"):
+            game.request_decision(request)
+            pending_player_ids.add(player_id)
+    return requests

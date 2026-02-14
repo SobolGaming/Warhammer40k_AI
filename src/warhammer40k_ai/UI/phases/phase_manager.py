@@ -535,6 +535,107 @@ class SetupPhaseHandler(BasePhaseHandler):
 
         _advance()
 
+    def _start_player_color_selection_flow(self, players, on_done) -> None:
+        """Prompt local players to choose a UI color before setup interaction dialogs."""
+        from ...engine.decision_kinds import DECISION_CHOOSE_PLAYER_COLOR
+        from ...engine.decision_requests import build_player_color_selection_requests
+
+        queue = getattr(self.game, "decision_queue", None)
+        pending_requests = []
+
+        for player in list(players or []):
+            if player is None:
+                continue
+            has_control_fn = getattr(player, "has_control", None)
+            if not callable(has_control_fn) or not bool(has_control_fn()):
+                continue
+            player_id = str(getattr(player, "id", "") or "")
+            if not player_id:
+                continue
+
+            request = None
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if getattr(req, "decision_type", None) != DECISION_CHOOSE_PLAYER_COLOR:
+                        continue
+                    if str(getattr(req, "player_id", "") or "") == player_id:
+                        request = req
+                        break
+
+            if request is None:
+                created = build_player_color_selection_requests(self.game, [player], queue_requests=True)
+                if created:
+                    request = created[0]
+
+            if request is not None:
+                pending_requests.append((player, request))
+
+        self._pending_player_color_queue = pending_requests
+        self._player_color_on_done = on_done
+
+        if not pending_requests:
+            self._finish_player_color_selection()
+            return
+
+        self._open_next_player_color_prompt()
+
+    def _finish_player_color_selection(self) -> None:
+        callback = getattr(self, "_player_color_on_done", None)
+        self._player_color_on_done = None
+        if callable(callback):
+            callback()
+
+    def _open_next_player_color_prompt(self) -> None:
+        queue = list(getattr(self, "_pending_player_color_queue", []) or [])
+        if not queue:
+            self._pending_player_color_queue = []
+            self._finish_player_color_selection()
+            return
+
+        from ...utility.decision_utils import resolve_decision_command
+        from ..decision_ui_utils import first_option_id
+        from ..dialogs import PlayerColorPickerDialog
+
+        player, request = queue.pop(0)
+        self._pending_player_color_queue = queue
+
+        dialog = getattr(self.game_view, "player_color_picker_dialog", None)
+        if dialog is None:
+            dialog = PlayerColorPickerDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+            self.game_view.player_color_picker_dialog = dialog
+
+        player_name = str(getattr(player, "name", "Player") or "Player")
+        initial_hue = getattr(player, "ui_color_hue_degrees", None)
+
+        def _on_confirm(option_id: str) -> None:
+            resolve_decision_command(
+                self.game,
+                request,
+                option_id,
+                player_id=getattr(player, "id", None),
+            )
+            self._open_next_player_color_prompt()
+
+        def _on_cancel() -> None:
+            fallback = first_option_id(request)
+            if fallback:
+                resolve_decision_command(
+                    self.game,
+                    request,
+                    fallback,
+                    player_id=getattr(player, "id", None),
+                )
+            self._open_next_player_color_prompt()
+
+        dialog.show(
+            player_name=player_name,
+            on_confirm=_on_confirm,
+            on_cancel=_on_cancel,
+            decision_request=request,
+            initial_hue_degrees=initial_hue,
+        )
+        self.game_view.dialog_manager.open(dialog, modal=True)
+
     def _start_hover_mode_selection_flow(self, players, on_done) -> None:
         """Prompt local players to choose Hover mode for eligible AIRCRAFT before formations dialogs."""
         queue = []
@@ -1373,10 +1474,13 @@ class SetupPhaseHandler(BasePhaseHandler):
 
     
 
-        self._start_hover_mode_selection_flow(
-            players,
-            lambda: self._start_patrol_squad_selection_flow(players, _after_hover),
-        )
+        def _after_player_colors():
+            self._start_hover_mode_selection_flow(
+                players,
+                lambda: self._start_patrol_squad_selection_flow(players, _after_hover),
+            )
+
+        self._start_player_color_selection_flow(players, _after_player_colors)
         return
 
     def _is_remote_game(self) -> bool:
@@ -1407,6 +1511,7 @@ class SetupPhaseHandler(BasePhaseHandler):
         from ...engine.decision_kinds import (
             DECISION_ATTACH_LEADER,
             DECISION_ASSIGN_TRANSPORT,
+            DECISION_CHOOSE_PLAYER_COLOR,
             DECISION_DECLARE_RESERVES,
             DECISION_CHOOSE_PLAGUE,
             DECISION_SHADOW_ASSIGNMENT,
@@ -1415,6 +1520,7 @@ class SetupPhaseHandler(BasePhaseHandler):
         types = {
             DECISION_ATTACH_LEADER,
             DECISION_ASSIGN_TRANSPORT,
+            DECISION_CHOOSE_PLAYER_COLOR,
             DECISION_DECLARE_RESERVES,
             DECISION_CHOOSE_PLAGUE,
             DECISION_SHADOW_ASSIGNMENT,
@@ -1436,6 +1542,7 @@ class SetupPhaseHandler(BasePhaseHandler):
 
     def _formation_dialog_active(self) -> bool:
         for attr in (
+            "player_color_picker_dialog",
             "shadow_assignment_dialog",
             "leader_attachment_dialog",
             "transport_assignment_dialog",
@@ -1490,11 +1597,18 @@ class SetupPhaseHandler(BasePhaseHandler):
             return
         units = list(getattr(army, "units", []) or [])
 
-        from ..dialogs import LeaderAttachmentDialog, TransportAssignmentDialog, ReservesAllocationDialog, NurglesGiftPlagueDialog
+        from ..dialogs import (
+            LeaderAttachmentDialog,
+            NurglesGiftPlagueDialog,
+            PlayerColorPickerDialog,
+            ReservesAllocationDialog,
+            TransportAssignmentDialog,
+        )
         from ...engine.decision_kinds import (
             DECISION_ATTACH_LEADER,
             DECISION_ATTACH_SUPPORT_ARTILLERY,
             DECISION_ASSIGN_TRANSPORT,
+            DECISION_CHOOSE_PLAYER_COLOR,
             DECISION_DECLARE_RESERVES,
             DECISION_CHOOSE_PLAGUE,
             DECISION_CONFIRM_YES_NO,
@@ -1502,6 +1616,7 @@ class SetupPhaseHandler(BasePhaseHandler):
         from ...engine.decision_requests import (
             build_leader_attachment_requests,
             build_patrol_squad_requests,
+            build_player_color_selection_requests,
             build_support_artillery_attachment_requests,
             build_transport_assignment_requests,
             build_reserves_allocation_request,
@@ -1574,6 +1689,52 @@ class SetupPhaseHandler(BasePhaseHandler):
                     continue
                 pending.append(req)
             return pending
+
+        def _show_player_color():
+            req = _pending_single(DECISION_CHOOSE_PLAYER_COLOR)
+            if req is None:
+                created = build_player_color_selection_requests(self.game, [player], queue_requests=True)
+                req = created[0] if created else None
+            if req is None:
+                _show_hover()
+                return
+
+            dialog = getattr(self.game_view, "player_color_picker_dialog", None)
+            if dialog is None:
+                dialog = PlayerColorPickerDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+                self.game_view.player_color_picker_dialog = dialog
+
+            player_name = str(getattr(player, "name", "Player") or "Player")
+            initial_hue = getattr(player, "ui_color_hue_degrees", None)
+
+            def _done(option_id: str) -> None:
+                resolve_decision_command(
+                    self.game,
+                    req,
+                    option_id,
+                    player_id=getattr(player, "id", None),
+                )
+                _show_player_color()
+
+            def _cancel() -> None:
+                default_id = first_option_id(req)
+                if default_id:
+                    resolve_decision_command(
+                        self.game,
+                        req,
+                        default_id,
+                        player_id=getattr(player, "id", None),
+                    )
+                _show_player_color()
+
+            dialog.show(
+                player_name=player_name,
+                on_confirm=_done,
+                on_cancel=_cancel,
+                decision_request=req,
+                initial_hue_degrees=initial_hue,
+            )
+            self.game_view.dialog_manager.open(dialog, modal=True)
 
         def _show_reserves():
             _refresh_units_cache()
@@ -1914,7 +2075,7 @@ class SetupPhaseHandler(BasePhaseHandler):
             except Exception:
                 return
 
-        _show_hover()
+        _show_player_color()
 
     def get_allowed_actions(self) -> List[str]:
         return ["advance_setup_phase", "view_unit_details"]

@@ -22,6 +22,7 @@ from ..engine.decision_kinds import (
     DECISION_ATTACH_LEADER,
     DECISION_ATTACH_SUPPORT_ARTILLERY,
     DECISION_ASSIGN_TRANSPORT,
+    DECISION_CHOOSE_PLAYER_COLOR,
     DECISION_SHADOW_ASSIGNMENT,
     DECISION_CHOOSE_QUARRY,
     DECISION_CONFIRM_YES_NO,
@@ -34,6 +35,7 @@ from ..engine.decisions import DecisionOption, DecisionRequest
 from ..engine.decision_requests import (
     build_leader_attachment_requests,
     build_patrol_squad_requests,
+    build_player_color_selection_requests,
     build_risen_rubricae_requests,
     build_shadow_assignment_requests,
     build_support_artillery_attachment_requests,
@@ -114,6 +116,7 @@ class NetworkServer:
             DECISION_SHADOW_ASSIGNMENT,
             DECISION_DECLARE_RESERVES,
             DECISION_CHOOSE_PLAGUE,
+            DECISION_CHOOSE_PLAYER_COLOR,
         }
 
     @property
@@ -499,6 +502,7 @@ class NetworkServer:
         pending_shadow = self._pending_by_context(DECISION_SHADOW_ASSIGNMENT, "unit_id")
         pending_reserves = self._pending_by_context(DECISION_DECLARE_RESERVES, "army_id")
         pending_plague = self._pending_by_context(DECISION_CHOOSE_PLAGUE, "army_id")
+        pending_player_color = self._pending_by_context(DECISION_CHOOSE_PLAYER_COLOR, "player_id")
         pending_hover = self._pending_hover_by_unit()
         pending_patrol = self._pending_patrol_squad_by_unit()
         pending_risen = self._pending_risen_rubricae_by_source()
@@ -508,6 +512,16 @@ class NetworkServer:
         for player in list(getattr(game, "players", []) or []):
             if player is None:
                 continue
+            color_requests = build_player_color_selection_requests(game, [player], queue_requests=False)
+            for req in color_requests:
+                player_id = str(getattr(req, "context", {}).get("player_id", "") or "")
+                if player_id and player_id in pending_player_color:
+                    continue
+                await self._send_decision_request(req)
+                created.append(req)
+                if player_id:
+                    pending_player_color[player_id] = req
+
             army = player.get_army()
             if army is None:
                 continue

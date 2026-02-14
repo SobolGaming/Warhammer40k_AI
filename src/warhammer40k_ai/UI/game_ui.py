@@ -19910,11 +19910,13 @@ class GameView:
 
         # Draw deployment zones (with transparency)
         if hasattr(self.game, 'deployment_zones') and self.game.deployment_zones:
+            sync_zones = getattr(self.game, "sync_deployment_zones_to_attacker_defender", None)
+            if callable(sync_zones):
+                sync_zones()
             draw_deployment_zones(
                 battlefield_surface,
                 self.game.deployment_zones,
-                self.player1,
-                self.player2,
+                self.game,
                 self.zoom_level,
                 self.offset_x,
                 self.offset_y,

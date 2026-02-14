@@ -1,25 +1,22 @@
 import pygame
 
 from warhammer40k_ai.battlefield.map import Objective, ObjectivePoint
-from warhammer40k_ai.roster.player import Player
 
 from ..ui_constants import TILE_SIZE
+from ..player_colors import (
+    get_zone_border_rgb,
+    get_zone_fill_rgba,
+    resolve_game_player_by_id,
+)
 
 
-def draw_deployment_zones(screen: pygame.Surface, deployment_zones: dict, player1: Player, player2: Player,
+def draw_deployment_zones(screen: pygame.Surface, deployment_zones: dict, game: object,
                          zoom_level: float, offset_x: int, offset_y: int) -> None:
     """Draw deployment zones with transparency and appropriate colors for each player."""
     for player_id, zone in deployment_zones.items():
-        # Determine player color with more vibrant colors during deployment
-        if player_id == player1.id:
-            color = (0, 255, 0, 160)  # More visible green for player 1
-            border_color = (0, 200, 0)
-        elif player_id == player2.id:
-            color = (255, 0, 0, 160)  # More visible red for player 2
-            border_color = (200, 0, 0)
-        else:
-            color = (128, 128, 128, 160)  # Semi-transparent gray for unknown players
-            border_color = (100, 100, 100)
+        player = resolve_game_player_by_id(game, player_id)
+        color = get_zone_fill_rgba(player)
+        border_color = get_zone_border_rgb(player)
         
         # Check if this is a mission zone (new system) or old system
         if 'mission_zones' in zone:

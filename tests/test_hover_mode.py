@@ -90,7 +90,13 @@ def test_hover_declaration_applied_in_battle_formations():
 
     game.execute_declare_battle_formations_phase()
 
-    pending = list(game.decision_queue.list() or [])
+    pending = [
+        req
+        for req in list(game.decision_queue.list() or [])
+        if req.decision_type == DECISION_CONFIRM_YES_NO
+        and str(getattr(req, "context", {}).get("ability", "") or "") == "hover_mode"
+    ]
+    assert len(pending) == 2
     hover_id = get_entity_id(hover_unit)
     for req in pending:
         unit_id = str(getattr(req, "context", {}).get("unit_id", "") or "")
