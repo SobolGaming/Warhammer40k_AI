@@ -1,11 +1,21 @@
 import unittest
 
-from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+from warhammer40k_ai.engine.attack_resolution import AttackSequence
+from warhammer40k_ai.engine.decision_kinds import (
+    DECISION_CHOOSE_QUARRY,
+    DECISION_REQUEST_DICE_ROLL,
+    DECISION_SELECT_DICE_REROLL,
+)
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.rules.enhancement import Enhancement
 from warhammer40k_ai.rules.enhancement_descriptors import get_enhancement_tool_descriptor
+from warhammer40k_ai.rules.perfectly_adapted import (
+    PERFECTLY_ADAPTED_ACTION_ID,
+    build_perfectly_adapted_reroll_rule,
+    mark_perfectly_adapted_reroll_used,
+)
 from warhammer40k_ai.units.model import Model
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.utility.decision_utils import resolve_decision_command
@@ -75,6 +85,7 @@ class TestTyranidsInvasionFleetEnhancements(unittest.TestCase):
         player = Player("Player", PlayerControl.REMOTE, army=army)
         enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
         game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+        game.auto_resolve_dice_rolls = False
         game.attacker_index = 0
         game.defender_index = 1
 
@@ -201,6 +212,217 @@ class TestTyranidsInvasionFleetEnhancements(unittest.TestCase):
         self.assertEqual(desc.effect, "count_as_within_synapse_range")
         self.assertEqual(float(desc.range_in or 0.0), 9.0)
         self.assertEqual(str(desc.effect_params.get("keyword", "") or ""), "TYRANIDS")
+
+    def test_perfectly_adapted_has_tool_descriptor(self):
+        desc = get_enhancement_tool_descriptor(enhancement_id="000008348003")
+        self.assertIsNotNone(desc)
+        self.assertEqual(desc.name, "Perfectly Adapted")
+        self.assertEqual(
+            desc.effect,
+            "bearer_single_reroll_one_of_hit_wound_damage_advance_charge_or_save",
+        )
+        self.assertTrue(bool(desc.effect_params.get("once_per_turn", False)))
+        self.assertTrue(bool(desc.effect_params.get("shared_pool", False)))
+
+    def test_perfectly_adapted_shared_once_per_turn_pool(self):
+        army = Army("Tyranids", detachment_type="Invasion Fleet")
+        army.faction_id = "TYR"
+        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army.faction_id = "SM"
+
+        player = Player("Player", PlayerControl.REMOTE, army=army)
+        enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+        game.auto_resolve_dice_rolls = False
+        game.attacker_index = 0
+        game.defender_index = 1
+
+        enhancement = Enhancement(
+            id="000008348003",
+            name="Perfectly Adapted",
+            faction_id="TYR",
+            detachment="Invasion Fleet",
+            description=(
+                '<span class="kwb">TYRANIDS</span> model only. Once per turn, you can re-roll one Hit roll, one '
+                "Wound roll, one Damage roll, one Advance roll, one Charge roll or one saving throw made for the bearer."
+            ),
+        )
+        bearer = _make_unit("Winged Tyranid Prime", army, keywords=["CHARACTER"], faction_keywords=["TYRANIDS"])
+        bearer.models = [_make_model("Prime", bearer, x=0.0, y=0.0, wounds=6)]
+        bearer.enhancement = enhancement
+        enhancement.apply_to_unit(bearer)
+
+        self.assertTrue(bool(bearer.special_rules.get("enhancement_perfectly_adapted", False)))
+
+        advance_rule = build_perfectly_adapted_reroll_rule(unit=bearer, game=game, roll_type="advance")
+        self.assertIsNotNone(advance_rule)
+        self.assertEqual(str(advance_rule.get("action_id", "")), PERFECTLY_ADAPTED_ACTION_ID)
+        self.assertEqual(str(advance_rule.get("mode", "")), "whole")
+
+        self.assertTrue(mark_perfectly_adapted_reroll_used(unit=bearer, game=game, roll_type="advance"))
+
+        hit_rule_same_turn = build_perfectly_adapted_reroll_rule(unit=bearer, game=game, roll_type="hit")
+        self.assertIsNone(hit_rule_same_turn)
+
+        game.turn = 2
+        hit_rule_next_turn = build_perfectly_adapted_reroll_rule(unit=bearer, game=game, roll_type="hit")
+        self.assertIsNotNone(hit_rule_next_turn)
+        self.assertEqual(str(hit_rule_next_turn.get("mode", "")), "select")
+        self.assertEqual(int(hit_rule_next_turn.get("max_select", 0) or 0), 1)
+
+    def test_perfectly_adapted_hit_reroll_positions_only_include_bearer_attacks(self):
+        army = Army("Tyranids", detachment_type="Invasion Fleet")
+        army.faction_id = "TYR"
+        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army.faction_id = "SM"
+
+        player = Player("Player", PlayerControl.REMOTE, army=army)
+        enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+        game.auto_resolve_dice_rolls = False
+        game.attacker_index = 0
+        game.defender_index = 1
+
+        enhancement = Enhancement(
+            id="000008348003",
+            name="Perfectly Adapted",
+            faction_id="TYR",
+            detachment="Invasion Fleet",
+            description=(
+                '<span class="kwb">TYRANIDS</span> model only. Once per turn, you can re-roll one Hit roll, one '
+                "Wound roll, one Damage roll, one Advance roll, one Charge roll or one saving throw made for the bearer."
+            ),
+        )
+        attacker = _make_unit("Tyranid Warriors", army, keywords=["INFANTRY"], faction_keywords=["TYRANIDS"])
+        bearer_model = _make_model("Prime", attacker, x=0.0, y=0.0, wounds=6)
+        other_model = _make_model("Warrior", attacker, x=1.0, y=0.0, wounds=3)
+        attacker.models = [bearer_model, other_model]
+        attacker.enhancement = enhancement
+        enhancement.apply_to_unit(attacker)
+
+        target = _make_unit("Intercessors", enemy_army, keywords=["INFANTRY"], faction_keywords=["ADEPTUS ASTARTES"])
+        target.models = [_make_model("Marine", target, x=5.0, y=0.0, wounds=2)]
+
+        army.units = [attacker]
+        enemy_army.units = [target]
+        game.map.units = [attacker, target]
+        game.rebuild_entity_registry()
+
+        seq = AttackSequence(
+            sequence_id=1,
+            attacker_unit_id=attacker._id,
+            target_unit_id=target._id,
+            wargear_id="wargear-1",
+            profile_name="default",
+            model_ids=[str(getattr(m, "id", "") or "") for m in list(attacker.models or [])],
+        )
+        seq.hit_groups = [
+            {
+                "final_needed": 4,
+                "crit_threshold": 6,
+                "reroll_values": [],
+                "reroll_full_reasons": [],
+                "attack_indices": [0, 1, 2],
+            }
+        ]
+        seq.hit_group_index = 0
+        seq.attack_instances = [
+            {"attacker_model_id": str(getattr(bearer_model, "id", "") or "")},
+            {"attacker_model_id": str(getattr(other_model, "id", "") or "")},
+            {"attacker_model_id": str(getattr(bearer_model, "id", "") or "")},
+        ]
+
+        game.attack_manager._request_next_hit_roll(game, seq)
+        pending = list(game.decision_queue.list() or [])
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending[0].decision_type, DECISION_REQUEST_DICE_ROLL)
+
+        roll_id = int((pending[0].context or {}).get("roll_id", 0) or 0)
+        state = game.roll_manager.get_roll(roll_id)
+        self.assertIsNotNone(state)
+        reroll_rules = list((state.spec or {}).get("reroll_rules", []) or [])
+        pa_rule = next(rule for rule in reroll_rules if str(rule.get("action_id", "")) == PERFECTLY_ADAPTED_ACTION_ID)
+        self.assertEqual(list(pa_rule.get("eligible_positions", []) or []), [0, 2])
+
+    def test_perfectly_adapted_reroll_action_consumes_usage(self):
+        army = Army("Tyranids", detachment_type="Invasion Fleet")
+        army.faction_id = "TYR"
+        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army.faction_id = "SM"
+
+        player = Player("Player", PlayerControl.REMOTE, army=army)
+        enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+        game.auto_resolve_dice_rolls = False
+        game.attacker_index = 0
+        game.defender_index = 1
+
+        enhancement = Enhancement(
+            id="000008348003",
+            name="Perfectly Adapted",
+            faction_id="TYR",
+            detachment="Invasion Fleet",
+            description=(
+                '<span class="kwb">TYRANIDS</span> model only. Once per turn, you can re-roll one Hit roll, one '
+                "Wound roll, one Damage roll, one Advance roll, one Charge roll or one saving throw made for the bearer."
+            ),
+        )
+        bearer = _make_unit("Broodlord", army, keywords=["CHARACTER"], faction_keywords=["TYRANIDS"])
+        bearer.models = [_make_model("Broodlord", bearer, x=0.0, y=0.0, wounds=7)]
+        bearer.enhancement = enhancement
+        enhancement.apply_to_unit(bearer)
+        army.units = [bearer]
+        game.map.units = [bearer]
+        game.rebuild_entity_registry()
+
+        rule = build_perfectly_adapted_reroll_rule(unit=bearer, game=game, roll_type="advance")
+        self.assertIsNotNone(rule)
+        req = game.request_dice_roll(
+            player_id=player.id,
+            spec={
+                "dice_count": 1,
+                "faces": 6,
+                "reason": "Advance roll",
+                "roll_type": "advance",
+                "unit_id": bearer._id,
+                "fixed_dice": [1],
+                "reroll_rules": [rule],
+            },
+            prompt="Advance roll",
+        )
+        self.assertIsNotNone(req)
+
+        pending = list(game.decision_queue.list() or [])
+        self.assertEqual(len(pending), 1)
+        roll_request = pending[0]
+        self.assertEqual(roll_request.decision_type, DECISION_REQUEST_DICE_ROLL)
+
+        roll_option = list(roll_request.options or [])[0]
+        resolve_decision_command(game, roll_request, roll_option.option_id, player_id=player.id)
+
+        reroll_request = list(game.decision_queue.list() or [])[0]
+        self.assertEqual(reroll_request.decision_type, DECISION_SELECT_DICE_REROLL)
+
+        pa_option = next(
+            option
+            for option in list(reroll_request.options or [])
+            if str((option.payload or {}).get("action_id", "")) == PERFECTLY_ADAPTED_ACTION_ID
+        )
+        roll_state = game.roll_manager.get_roll(int((reroll_request.context or {}).get("roll_id", 0) or 0))
+        self.assertIsNotNone(roll_state)
+        die_id = str(((roll_state.dice or [])[0] or {}).get("die_id", "") or "")
+        self.assertTrue(bool(die_id))
+        resolve_decision_command(
+            game,
+            reroll_request,
+            pa_option.option_id,
+            player_id=player.id,
+            result_payload={"selected_die_ids": [die_id]},
+        )
+
+        used_key = str(bearer.special_rules.get("enhancement_perfectly_adapted_used_turn_key", "") or "")
+        self.assertTrue(bool(used_key))
+        self.assertIsNone(build_perfectly_adapted_reroll_rule(unit=bearer, game=game, roll_type="hit"))
 
 
 if __name__ == "__main__":

@@ -320,6 +320,19 @@ _INVASION_FLEET_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
         effect="redeploy_units",
         effect_params={"max_units": 3, "allow_strategic_reserves": True},
     ),
+    "000008348003": EnhancementToolDescriptor(
+        enhancement_id="000008348003",
+        name="Perfectly Adapted",
+        timing="when_making_roll_for_bearer",
+        target="bearer",
+        duration="once_per_turn",
+        effect="bearer_single_reroll_one_of_hit_wound_damage_advance_charge_or_save",
+        effect_params={
+            "once_per_turn": True,
+            "shared_pool": True,
+            "roll_types": ("hit", "wound", "damage", "advance", "charge", "save"),
+        },
+    ),
     "000008348004": EnhancementToolDescriptor(
         enhancement_id="000008348004",
         name="Synaptic Linchpin",

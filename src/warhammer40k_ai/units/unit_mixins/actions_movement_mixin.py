@@ -7031,6 +7031,16 @@ class ActionsMovementMixin:
                 flux_rule = mgr.build_reroll_rule(game=game, player=player, unit=self, roll_type="advance")
                 if flux_rule:
                     reroll_rules.append(flux_rule)
+            if fixed_source is None:
+                from ...rules.perfectly_adapted import build_perfectly_adapted_reroll_rule
+
+                pa_rule = build_perfectly_adapted_reroll_rule(
+                    unit=self,
+                    game=game,
+                    roll_type="advance",
+                )
+                if pa_rule:
+                    reroll_rules.append(pa_rule)
             command_reroll_ok = False
             if fixed_source is None:
                 command_reroll_ok = command_reroll_available(game, player, roll_type="advance")

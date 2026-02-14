@@ -1104,6 +1104,28 @@ class AttackResolutionManager:
                 flux_rule = mgr.build_reroll_rule(game=game, player=player, unit=attacker_unit, roll_type="hit")
                 if flux_rule:
                     reroll_rules.append(flux_rule)
+            from ..rules.perfectly_adapted import (
+                build_perfectly_adapted_reroll_rule,
+                get_perfectly_adapted_bearer_model_id,
+            )
+
+            bearer_model_id = get_perfectly_adapted_bearer_model_id(attacker_unit)
+            if bearer_model_id:
+                eligible_positions: list[int] = []
+                for pos, attack_idx in enumerate(list(group.get("attack_indices", []) or [])):
+                    if int(attack_idx) >= len(seq.attack_instances):
+                        continue
+                    attack_instance = seq.attack_instances[int(attack_idx)]
+                    if str(attack_instance.get("attacker_model_id", "") or "") == bearer_model_id:
+                        eligible_positions.append(int(pos))
+                pa_rule = build_perfectly_adapted_reroll_rule(
+                    unit=attacker_unit,
+                    game=game,
+                    roll_type="hit",
+                    eligible_positions=eligible_positions,
+                )
+                if pa_rule:
+                    reroll_rules.append(pa_rule)
         spec = {
             "dice_count": int(count),
             "faces": 6,
@@ -1296,6 +1318,30 @@ class AttackResolutionManager:
                 flux_rule = mgr.build_reroll_rule(game=game, player=player, unit=attacker_unit, roll_type="wound")
                 if flux_rule:
                     reroll_rules.append(flux_rule)
+            from ..rules.perfectly_adapted import (
+                build_perfectly_adapted_reroll_rule,
+                get_perfectly_adapted_bearer_model_id,
+            )
+
+            pending = list(seq.context.get("pending_wound_instances", []) or [])
+            bearer_model_id = get_perfectly_adapted_bearer_model_id(attacker_unit)
+            if bearer_model_id and pending:
+                eligible_positions: list[int] = []
+                for pos, hit_idx in enumerate(list(group.get("attack_indices", []) or [])):
+                    idx = int(hit_idx)
+                    if idx >= len(pending):
+                        continue
+                    hit_instance = pending[idx]
+                    if str(hit_instance.get("attacker_model_id", "") or "") == bearer_model_id:
+                        eligible_positions.append(int(pos))
+                pa_rule = build_perfectly_adapted_reroll_rule(
+                    unit=attacker_unit,
+                    game=game,
+                    roll_type="wound",
+                    eligible_positions=eligible_positions,
+                )
+                if pa_rule:
+                    reroll_rules.append(pa_rule)
         spec = {
             "dice_count": int(count),
             "faces": 6,
@@ -1645,12 +1691,24 @@ class AttackResolutionManager:
         player_id = getattr(player, "id", None) if player is not None else None
         from .roll_utils import command_reroll_available
         reroll_rules = []
+        pa_target_model_id = ""
         if target_unit is not None and player is not None:
             mgr = getattr(game, "fates_in_flux", None)
             if mgr is not None:
                 flux_rule = mgr.build_reroll_rule(game=game, player=player, unit=target_unit, roll_type="save")
                 if flux_rule:
                     reroll_rules.append(flux_rule)
+            from ..rules.perfectly_adapted import build_perfectly_adapted_reroll_rule
+
+            pa_rule = build_perfectly_adapted_reroll_rule(
+                unit=target_unit,
+                game=game,
+                roll_type="save",
+                target_model_id=str(get_entity_id(target_model) or ""),
+            )
+            if pa_rule:
+                reroll_rules.append(pa_rule)
+                pa_target_model_id = str(get_entity_id(target_model) or "")
         spec = {
             "dice_count": 1,
             "faces": 6,
@@ -1665,6 +1723,8 @@ class AttackResolutionManager:
             "command_reroll_mode": "one",
             "unit_id": get_entity_id(target_unit) if target_unit is not None else None,
         }
+        if pa_target_model_id:
+            spec["perfectly_adapted_target_model_id"] = pa_target_model_id
         if not bool(getattr(game, "is_authoritative", True)):
             return
         req = game.request_dice_roll(player_id=player_id, spec=spec, prompt=spec["reason"])
@@ -2219,12 +2279,24 @@ class AttackResolutionManager:
                 player_id = getattr(player, "id", None) if player is not None else None
                 from .roll_utils import command_reroll_available
                 reroll_rules = []
+                pa_attacker_model_id = ""
                 if attacker_unit is not None and player is not None:
                     mgr = getattr(game, "fates_in_flux", None)
                     if mgr is not None:
                         flux_rule = mgr.build_reroll_rule(game=game, player=player, unit=attacker_unit, roll_type="damage")
                         if flux_rule:
                             reroll_rules.append(flux_rule)
+                    from ..rules.perfectly_adapted import build_perfectly_adapted_reroll_rule
+
+                    pa_rule = build_perfectly_adapted_reroll_rule(
+                        unit=attacker_unit,
+                        game=game,
+                        roll_type="damage",
+                        attacker_model_id=str(wound_instance.get("attacker_model_id", "") or ""),
+                    )
+                    if pa_rule:
+                        reroll_rules.append(pa_rule)
+                        pa_attacker_model_id = str(wound_instance.get("attacker_model_id", "") or "")
                 spec = {
                     "dice_count": int(getattr(dmg, "number", 1) or 1),
                     "faces": int(getattr(dmg, "die_faces", 6) or 6),
@@ -2239,6 +2311,8 @@ class AttackResolutionManager:
                     "command_reroll_mode": "whole",
                     "unit_id": get_entity_id(attacker_unit) if attacker_unit is not None else None,
                 }
+                if pa_attacker_model_id:
+                    spec["perfectly_adapted_attacker_model_id"] = pa_attacker_model_id
                 if not bool(getattr(game, "is_authoritative", True)):
                     return
                 req = game.request_dice_roll(player_id=player_id, spec=spec, prompt=spec["reason"])

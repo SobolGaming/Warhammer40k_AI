@@ -6735,6 +6735,14 @@ class Game(
                 )
         except Exception:
             pass
+        from ..rules.perfectly_adapted import build_perfectly_adapted_reroll_rule
+        pa_rule = build_perfectly_adapted_reroll_rule(
+            unit=charging_unit,
+            game=self,
+            roll_type="charge",
+        )
+        if pa_rule:
+            reroll_rules.append(pa_rule)
 
         from ..engine.roll_utils import command_reroll_available
         command_reroll_ok = command_reroll_available(self, player, roll_type="charge")

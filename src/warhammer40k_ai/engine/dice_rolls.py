@@ -380,10 +380,24 @@ class DiceRollManager:
             if max_select is None and mode in ("one", "single", "select"):
                 max_select = 1
             eligible_values = rule.get("eligible_values")
+            eligible_positions_raw = rule.get("eligible_positions", None)
+            eligible_positions = None
+            if isinstance(eligible_positions_raw, list):
+                eligible_positions = set()
+                for raw_pos in list(eligible_positions_raw or []):
+                    try:
+                        pos = int(raw_pos)
+                    except Exception:
+                        continue
+                    if pos < 0:
+                        continue
+                    eligible_positions.add(pos)
             eligible_ids: List[str] = []
             if mode == "ones":
                 mode = "values"
-            for die in list(state.dice or []):
+            for pos, die in enumerate(list(state.dice or [])):
+                if eligible_positions is not None and pos not in eligible_positions:
+                    continue
                 if bool(die.get("is_derived", False)):
                     continue
                 if int(die.get("reroll_count", 0) or 0) >= 1 and not bool(rule.get("allow_multiple", False)):
@@ -406,8 +420,12 @@ class DiceRollManager:
                 # "all" implies reroll whole pool, even if some dice already rerolled (allowed only if any eligible).
                 eligible_ids = [
                     str(d.get("die_id", ""))
-                    for d in list(state.dice or [])
-                    if (not bool(d.get("is_derived", False))) and int(d.get("reroll_count", 0) or 0) < 1
+                    for pos, d in enumerate(list(state.dice or []))
+                    if (
+                        (eligible_positions is None or pos in eligible_positions)
+                        and (not bool(d.get("is_derived", False)))
+                        and int(d.get("reroll_count", 0) or 0) < 1
+                    )
                 ]
                 if not eligible_ids:
                     continue

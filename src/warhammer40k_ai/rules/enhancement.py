@@ -1296,6 +1296,11 @@ class Enhancement:
                 tag="adaptive_biology_base",
             )
 
+        if name == "perfectly adapted" or enh_id == "000008348003":
+            unit.special_rules["enhancement_perfectly_adapted"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
         if name == "synaptic linchpin" or enh_id == "000008348004":
             unit.special_rules["enhancement_synaptic_linchpin"] = True
             unit.special_rules["enhancement_synaptic_linchpin_range"] = 9.0

@@ -108,6 +108,21 @@ def _validate_select_reroll(game: object, request: DecisionRequest, result: Deci
             return ("Flux re-roll requires selected dice.",)
         if mgr_flux.tokens_for_player(player) < selected_count:
             return ("Insufficient Flux tokens.",)
+    if action_id == "perfectly_adapted_reroll":
+        from ...rules.perfectly_adapted import can_use_perfectly_adapted_reroll
+
+        unit = resolve_unit(game, state.spec.get("unit_id"))
+        roll_type = str(state.spec.get("roll_type", "") or "")
+        attacker_model_id = str(state.spec.get("perfectly_adapted_attacker_model_id", "") or "")
+        target_model_id = str(state.spec.get("perfectly_adapted_target_model_id", "") or "")
+        if not can_use_perfectly_adapted_reroll(
+            unit=unit,
+            game=game,
+            roll_type=roll_type,
+            attacker_model_id=attacker_model_id,
+            target_model_id=target_model_id,
+        ):
+            return ("Perfectly Adapted re-roll not available for this roll.",)
     # Command reroll validation (CP and phase usage)
     if bool(action.get("is_command", False)) or bool(action.get("consume_cp", False)):
         player = resolve_player(game, getattr(result, "player_id", None))
@@ -159,8 +174,9 @@ def _apply_select_reroll(game: object, request: DecisionRequest, result: Decisio
             selected_die_ids=[],
             actor_player_id=getattr(result, "player_id", None),
         )
-    # Spend CP for command reroll if needed
     state = mgr.get_roll(int(roll_id))
+    history_len_before = len(list(getattr(state, "reroll_history", []) or [])) if state is not None else 0
+    # Spend CP for command reroll if needed
     action = None
     for opt_action in list(getattr(state, "reroll_options", []) or []):
         if str(opt_action.get("action_id", "")) == action_id:
@@ -205,13 +221,26 @@ def _apply_select_reroll(game: object, request: DecisionRequest, result: Decisio
                 payload.get("roll_results", {}),
                 actor_player_id=getattr(result, "player_id", None),
             )
-    return mgr.apply_reroll(
+    updated_state = mgr.apply_reroll(
         game,
         int(roll_id),
         action_id=action_id,
         selected_die_ids=selected,
         actor_player_id=getattr(result, "player_id", None),
     )
+    if bool(getattr(game, "is_authoritative", True)) and action_id == "perfectly_adapted_reroll":
+        history = list(getattr(updated_state, "reroll_history", []) or [])
+        reroll_applied = (
+            len(history) > history_len_before
+            and str((history[-1] or {}).get("action_id", "") or "") == "perfectly_adapted_reroll"
+        )
+        if reroll_applied:
+            from ...rules.perfectly_adapted import mark_perfectly_adapted_reroll_used
+
+            unit = resolve_unit(game, getattr(updated_state, "spec", {}).get("unit_id"))
+            roll_type = str(getattr(updated_state, "spec", {}).get("roll_type", "") or "")
+            mark_perfectly_adapted_reroll_used(unit=unit, game=game, roll_type=roll_type)
+    return updated_state
 
 
 register_decision_handler(DECISION_REQUEST_DICE_ROLL, validate=_validate_request_dice_roll, apply=_apply_request_dice_roll)
