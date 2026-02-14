@@ -1,6 +1,6 @@
 # Dynamic Player Highlighting Implementation Plan
 
-## Status: PHASE 0 COMPLETE; PHASE 1 CORRECTIONS COMPLETE; PHASE 2 COMPLETE; PHASE 3 COMPLETE; PHASE 4 COMPLETE; PHASE 5 COMPLETE
+## Status: PHASE 0 COMPLETE; PHASE 1 CORRECTIONS COMPLETE; PHASE 2 COMPLETE; PHASE 3 COMPLETE; PHASE 4 COMPLETE; PHASE 5 COMPLETE; PHASE 6 COMPLETE
 
 Issue checklist for implementing player-selected color highlighting for roster headers and deployment zones, with deterministic decision/API support for local and remote play.
 
@@ -169,14 +169,19 @@ Targets: `tests/test_network_server_client.py`, `tests/test_network_game_session
 
 ## Phase 6: Documentation Updates
 
-- [ ] Update player configuration documentation to replace hardcoded neon-green behavior with dynamic player-selected colors and persistent swatches.
+- [x] Update player configuration documentation to replace hardcoded neon-green behavior with dynamic player-selected colors and persistent swatches.
 Targets: `docs/PLAYER_CONFIGURATION.md`.
-- [ ] Add UI dialog-to-decision mapping entry for the player color picker dialog and decision payload.
+  - Added a dedicated "Player UI Colors" section documenting canonical color state fields and setup-time `CHOOSE_PLAYER_COLOR` flow.
+  - Replaced outdated neon-green roster highlight wording with dynamic selected-color behavior and documented persistent roster swatches + zone tinting.
+- [x] Add UI dialog-to-decision mapping entry for the player color picker dialog and decision payload.
 Targets: `docs/NETWORK_SAVELOAD_DESIGN.md`.
-- [ ] Update decision catalog for the new decision type.
+  - Added `player_color_picker_dialog` mapping to `CHOOSE_PLAYER_COLOR` with deterministic context details (`selection_kind`, `hue_step_degrees=15`) and payload fields (`player_id`, `hue_degrees`, `rgb`).
+- [x] Update decision catalog for the new decision type.
 Targets: `docs/DECISION_TYPES.md`.
-- [ ] Keep this implementation plan updated with completion checkmarks, exact pytest commands, and pass/fail results.
+  - Clarified `CHOOSE_PLAYER_COLOR` in the deployment/pre-game catalog as a setup-time deterministic color-selection decision.
+- [x] Keep this implementation plan updated with completion checkmarks, exact pytest commands, and pass/fail results.
 Targets: `docs/implementation/dynamic_player_highlighting_implementation_plan.md`.
+  - Updated phase status to include Phase 6 completion and marked all documentation tasks complete with implementation-result child bullets.
 
 ## Open Questions for Developer Confirmation (Before Coding)
 

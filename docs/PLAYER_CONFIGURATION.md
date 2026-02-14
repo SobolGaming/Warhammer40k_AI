@@ -53,6 +53,17 @@ Each `Player` instance includes a `control` value:
 
 The UI checks `player.has_control()` before enabling interactions, which allows future networked or automation control to be added without changing core game flow.
 
+## Player UI Colors
+
+Players now have deterministic UI color state used by both local and remote flows:
+- `ui_color_rgb` - canonical RGB triplet (`[0,255]` per channel)
+- `ui_color_hue_degrees` - optional hue metadata (`0-359`)
+- `ui_color_selected` - whether the player explicitly chose a color
+- `ui_color_source` - `default` or `selected`
+
+At setup, the engine emits `CHOOSE_PLAYER_COLOR` decisions before deployment interactions.
+The color picker uses quantized hue options (15-degree steps) so candidate/action IDs remain deterministic.
+
 ## Controller Hooks (Non-Local)
 
 Remote controllers should drive gameplay by resolving `DecisionRequest` entries.
@@ -93,7 +104,8 @@ Optional hooks for automation:
 - Player names update with attacker/defender roles after setup
 - Unit health indicators and deployment status
 - Interactive selection for deployment and details
-- Active player banner highlights neon green when the game is waiting on that player to act (local or remote).
+- Active player header highlight uses the waiting player's selected color across the full roster identifier row.
+- Each roster identifier row includes a persistent color swatch so player-color ownership is always visible.
 
 ### Info Panel
 - Game phase and turn indicators
@@ -102,5 +114,5 @@ Optional hooks for automation:
 
 ### Battlefield View
 - Zoom and pan controls
-- Deployment zones with labels and boundaries
+- Deployment zones with labels and muted transparency tinting based on the player assigned to each zone
 - Objective markers and unit visualization

@@ -159,6 +159,7 @@ Setup / Mission:
 - side_by_side_modal: CONFIRM_MODAL {choice_id}
 
 Deployment / Pre-battle:
+- player_color_picker_dialog: CHOOSE_PLAYER_COLOR {player_id, hue_degrees, rgb} (context `selection_kind="player_color"`, `hue_step_degrees=15`)
 - leader_attachment_dialog: ATTACH_LEADER {leader_unit_id, bodyguard_unit_id}
 - support_artillery_attachment_dialog: ATTACH_SUPPORT_ARTILLERY {support_unit_id, bodyguard_unit_id} (used for joined support/retinue attachments)
 - reserves_allocation_dialog: DECLARE_RESERVES {unit_ids_by_bucket}
