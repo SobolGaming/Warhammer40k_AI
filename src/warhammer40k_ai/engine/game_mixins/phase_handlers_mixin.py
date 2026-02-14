@@ -7991,6 +7991,102 @@ class GamePhaseHandlersMixin:
                         )
         return
 
+    def _on_phase_end_raid_and_run(self, player=None, phase=None, **_kwargs) -> None:
+        """Fight phase end: Raid and Run reactive move for units that were eligible to fight this phase."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "FIGHT_PHASE":
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+
+        for p in list(self.players or []):
+            if p is None:
+                continue
+            army = self._get_player_army(p)
+            if army is None:
+                continue
+            processed_roots: set[str] = set()
+            for unit in list(army.units or []):
+                if unit is None:
+                    continue
+                if not unit.is_alive() or not getattr(unit, "deployed", True):
+                    continue
+                try:
+                    if unit.is_in_reserves() or unit.is_embarked:
+                        continue
+                except Exception:
+                    pass
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None or not root.is_alive():
+                    continue
+                root_id = maybe_entity_id(root)
+                if not root_id:
+                    continue
+                if root_id in processed_roots:
+                    continue
+                processed_roots.add(root_id)
+                try:
+                    if not getattr(root, "deployed", True):
+                        continue
+                    if root.is_in_reserves() or root.is_embarked:
+                        continue
+                except Exception:
+                    pass
+
+                try:
+                    specs = list(root.unit_end_of_fight_raid_and_run_specs() or [])
+                except Exception:
+                    specs = []
+                if not specs:
+                    continue
+
+                round_state = getattr(root, "round_state", None)
+                was_eligible = bool(getattr(round_state, "eligible_to_fight_this_phase", False))
+                if not was_eligible and bool(getattr(round_state, "fought_this_phase", False)):
+                    was_eligible = True
+                if not was_eligible:
+                    continue
+
+                engaged = False
+                for enemy in list(game_map.get_enemy_units(root) or []):
+                    if enemy is None or not enemy.is_alive():
+                        continue
+                    try:
+                        if game_map.is_within_engagement_range(root, enemy):
+                            engaged = True
+                            break
+                    except Exception:
+                        continue
+
+                movement_type = "fall_back" if engaged else "move"
+                for spec in list(specs or []):
+                    move_expr = str(spec.get("move_expr", "") or "D3+3").strip() or "D3+3"
+                    if str(move_expr).upper() != "D3+3":
+                        continue
+                    try:
+                        max_distance = int(get_roll("D3") or 0) + 3
+                    except Exception:
+                        max_distance = 0
+                    if max_distance <= 0:
+                        continue
+                    ability_name = str(spec.get("source", "") or "Raid and Run").strip() or "Raid and Run"
+                    self._queue_reactive_move_movement_decision(
+                        player=p,
+                        unit=root,
+                        max_distance=int(max_distance),
+                        kind="raid_and_run",
+                        movement_type=movement_type,
+                        source=ability_name,
+                        allow_skip=True,
+                    )
+        return
+
     def _on_phase_end_charge_phase_bodyguard_loss(self, player=None, phase=None, **_kwargs) -> None:
         """Charge phase end: failed Leadership test can destroy a Bodyguard model while leading."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

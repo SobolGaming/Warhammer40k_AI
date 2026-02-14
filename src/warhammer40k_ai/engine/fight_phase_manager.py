@@ -99,12 +99,60 @@ class FightPhaseManager:
         self._forced_next_player = None
         self._current_player = current_player
         self._opponent_player = opponent_player
+        self._reset_fight_phase_eligibility_flags(current_player, opponent_player)
         
         # In fight phase, the non-current player goes first
         self.active_player = opponent_player
         
         # Start with Fight First stage
         self._start_fight_first_stage(current_player, opponent_player)
+
+    def _reset_fight_phase_eligibility_flags(self, current_player: Player, opponent_player: Player) -> None:
+        """Clear per-phase fight-eligibility tracking for both players' units."""
+        seen: set[str] = set()
+        for player in (current_player, opponent_player):
+            if player is None:
+                continue
+            army = player.get_army() if hasattr(player, "get_army") else None
+            if army is None:
+                continue
+            units = getattr(army, "units", None)
+            if not isinstance(units, (list, tuple, set)):
+                continue
+            for unit in list(units or []):
+                if unit is None:
+                    continue
+                try:
+                    root = self._canonical_unit_for_fight(unit)
+                except Exception:
+                    root = unit
+                if root is None:
+                    continue
+                rid = str(get_entity_id(root) or "")
+                if rid and rid in seen:
+                    continue
+                if rid:
+                    seen.add(rid)
+                try:
+                    root.round_state.eligible_to_fight_this_phase = False
+                except Exception:
+                    pass
+
+    def _mark_units_eligible_to_fight_this_phase(self, units: List[Unit]) -> None:
+        """Mark units that were observed as eligible to fight during this Fight phase."""
+        for unit in list(units or []):
+            if unit is None:
+                continue
+            try:
+                root = self._canonical_unit_for_fight(unit)
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            try:
+                root.round_state.eligible_to_fight_this_phase = True
+            except Exception:
+                pass
     
     def _start_fight_first_stage(self, current_player: Player, opponent_player: Player) -> None:
         """Start the Fight First stage."""
@@ -238,6 +286,7 @@ class FightPhaseManager:
             except Exception:
                 continue
             roots.append(root)
+        self._mark_units_eligible_to_fight_this_phase(roots)
         return roots
 
     def _is_forced_unit_valid(self, unit: Unit) -> bool:

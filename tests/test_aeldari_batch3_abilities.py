@@ -844,3 +844,148 @@ def test_hallucinogen_grenades_apply_grants_stealth_and_phase_cleanup_removes_it
     game._on_phase_end_shooting_phase_disrupt_cleanup(player=p2, phase=BattleRoundPhases.SHOOTING_PHASE)
     assert bool(target.special_rules.get("opponent_shooting_phase_stealth_active")) is False
     assert target.has_stealth() is False
+
+
+def test_raid_and_run_spec_parses_end_of_fight_reactive_move():
+    ability = Ability(
+        "Raid and Run",
+        "AE",
+        (
+            "At the end of the Fight phase, if this unit was eligible to fight this phase, and is not within "
+            "Engagement Range of one or more enemy units, it can make a Normal move of up to D3+3\". Otherwise, "
+            "if this unit was eligible to fight this phase, this unit can make a Fall Back move of up to D3+3\"."
+        ),
+        "Datasheet",
+        "",
+    )
+    source = _make_unit("Corsair Skyreavers", abilities=[ability])
+    specs = source.unit_end_of_fight_raid_and_run_specs()
+    assert len(specs) == 1
+    assert str(specs[0].get("move_expr", "") or "").upper() == "D3+3"
+
+
+def test_raid_and_run_queues_normal_move_when_not_engaged(monkeypatch):
+    ability = Ability(
+        "Raid and Run",
+        "AE",
+        (
+            "At the end of the Fight phase, if this unit was eligible to fight this phase, and is not within "
+            "Engagement Range of one or more enemy units, it can make a Normal move of up to D3+3\". Otherwise, "
+            "if this unit was eligible to fight this phase, this unit can make a Fall Back move of up to D3+3\"."
+        ),
+        "Datasheet",
+        "",
+    )
+    source = _make_unit("Corsair Skyreavers", abilities=[ability], keywords=["AELDARI", "INFANTRY"], faction_keywords=["AELDARI"])
+    enemy = _make_unit("Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+
+    game, army1, army2, _p1, _p2 = _build_game()
+    army1.add_unit(source)
+    army2.add_unit(enemy)
+    game.map.units = [source, enemy]
+    game.phase = BattleRoundPhases.FIGHT_PHASE
+    game.current_player_index = 0
+    game.rebuild_entity_registry()
+
+    source.deployed = True
+    source.reserve_status = "deployed"
+    enemy.deployed = True
+    enemy.reserve_status = "deployed"
+
+    source.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+    enemy.models[0].set_location(10.0, 0.0, 0.0, 0.0)
+    source.round_state.eligible_to_fight_this_phase = True
+
+    monkeypatch.setattr("warhammer40k_ai.engine.game.get_roll", lambda _spec: 2)
+
+    game._on_phase_end_raid_and_run(phase=BattleRoundPhases.FIGHT_PHASE)
+
+    move_requests = [r for r in list(game.decision_queue.list() or []) if r.decision_type == DECISION_MOVE_UNIT]
+    assert len(move_requests) == 1
+    ctx = dict(getattr(move_requests[0], "context", {}) or {})
+    assert str(ctx.get("reactive_move_kind", "") or "") == "raid_and_run"
+    assert str(ctx.get("movement_type", "") or "") == "move"
+    assert int(ctx.get("max_distance") or 0) == 5
+    assert bool(ctx.get("allow_skip", False)) is True
+
+
+def test_raid_and_run_queues_fall_back_when_engaged(monkeypatch):
+    ability = Ability(
+        "Raid and Run",
+        "AE",
+        (
+            "At the end of the Fight phase, if this unit was eligible to fight this phase, and is not within "
+            "Engagement Range of one or more enemy units, it can make a Normal move of up to D3+3\". Otherwise, "
+            "if this unit was eligible to fight this phase, this unit can make a Fall Back move of up to D3+3\"."
+        ),
+        "Datasheet",
+        "",
+    )
+    source = _make_unit("Corsair Skyreavers", abilities=[ability], keywords=["AELDARI", "INFANTRY"], faction_keywords=["AELDARI"])
+    enemy = _make_unit("Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+
+    game, army1, army2, _p1, _p2 = _build_game()
+    army1.add_unit(source)
+    army2.add_unit(enemy)
+    game.map.units = [source, enemy]
+    game.phase = BattleRoundPhases.FIGHT_PHASE
+    game.current_player_index = 0
+    game.rebuild_entity_registry()
+
+    source.deployed = True
+    source.reserve_status = "deployed"
+    enemy.deployed = True
+    enemy.reserve_status = "deployed"
+
+    source.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+    enemy.models[0].set_location(0.5, 0.0, 0.0, 0.0)
+    source.round_state.eligible_to_fight_this_phase = True
+
+    monkeypatch.setattr("warhammer40k_ai.engine.game.get_roll", lambda _spec: 1)
+
+    game._on_phase_end_raid_and_run(phase=BattleRoundPhases.FIGHT_PHASE)
+
+    move_requests = [r for r in list(game.decision_queue.list() or []) if r.decision_type == DECISION_MOVE_UNIT]
+    assert len(move_requests) == 1
+    ctx = dict(getattr(move_requests[0], "context", {}) or {})
+    assert str(ctx.get("movement_type", "") or "") == "fall_back"
+    assert int(ctx.get("max_distance") or 0) == 4
+
+
+def test_raid_and_run_does_not_queue_when_unit_was_not_eligible_to_fight():
+    ability = Ability(
+        "Raid and Run",
+        "AE",
+        (
+            "At the end of the Fight phase, if this unit was eligible to fight this phase, and is not within "
+            "Engagement Range of one or more enemy units, it can make a Normal move of up to D3+3\". Otherwise, "
+            "if this unit was eligible to fight this phase, this unit can make a Fall Back move of up to D3+3\"."
+        ),
+        "Datasheet",
+        "",
+    )
+    source = _make_unit("Corsair Skyreavers", abilities=[ability], keywords=["AELDARI", "INFANTRY"], faction_keywords=["AELDARI"])
+    enemy = _make_unit("Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+
+    game, army1, army2, _p1, _p2 = _build_game()
+    army1.add_unit(source)
+    army2.add_unit(enemy)
+    game.map.units = [source, enemy]
+    game.phase = BattleRoundPhases.FIGHT_PHASE
+    game.current_player_index = 0
+    game.rebuild_entity_registry()
+
+    source.deployed = True
+    source.reserve_status = "deployed"
+    enemy.deployed = True
+    enemy.reserve_status = "deployed"
+
+    source.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+    enemy.models[0].set_location(10.0, 0.0, 0.0, 0.0)
+    source.round_state.eligible_to_fight_this_phase = False
+    source.round_state.fought_this_phase = False
+
+    game._on_phase_end_raid_and_run(phase=BattleRoundPhases.FIGHT_PHASE)
+
+    move_requests = [r for r in list(game.decision_queue.list() or []) if r.decision_type == DECISION_MOVE_UNIT]
+    assert not move_requests

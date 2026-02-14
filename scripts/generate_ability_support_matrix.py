@@ -2315,6 +2315,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Start of battle: select an enemy unit; this unit's weapons gain Lethal Hits and Precision vs that unit.",
         ),
+        ("AE", "Raid and Run"): (
+            "Supported",
+            "End of Fight phase: if this unit was eligible to fight this phase, it can make a D3+3\" move (Normal move if not engaged; Fall Back move if engaged).",
+        ),
         ("AE", "Hallucinogen Grenades"): (
             "Supported",
             "Start of opponent Shooting phase: optional selection of a visible friendly AELDARI INFANTRY unit within 36\"; selected unit gains Stealth until end of phase.",

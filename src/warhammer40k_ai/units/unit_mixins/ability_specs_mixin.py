@@ -3473,6 +3473,51 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def unit_end_of_fight_raid_and_run_specs(self) -> List[dict]:
+        """
+        Unit-level rule: end of Fight phase, if the unit was eligible to fight this phase,
+        it can make a Normal move (if not engaged) or a Fall Back move (if engaged) of D3+3".
+
+        Returns list of specs with keys:
+            - source: ability name
+            - move_expr: movement roll expression string
+        """
+        cache_key = "unit_end_of_fight_raid_and_run_specs"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[str] = set()
+
+        for name, desc in self._iter_ability_entries_for_rules(model=None):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            if not self._RAID_AND_RUN_RE.fullmatch(normalized):
+                continue
+            source = str(name or "Raid and Run").strip() or "Raid and Run"
+            key = source.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "move_expr": "D3+3",
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_start_of_battle_keyword_reroll_ones_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model-specific rule: at the start of the battle, select a keyword; re-roll Hit/Wound rolls of 1

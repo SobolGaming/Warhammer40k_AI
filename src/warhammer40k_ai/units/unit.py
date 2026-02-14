@@ -70,6 +70,7 @@ class UnitRoundState:
     action_completes_turn: Optional[int] = None
     action_locked_until_turn_end: bool = False  # Cannot shoot or declare charge while true (except titanic character rule handled at call site)
     fought_this_phase: bool = False  # Used by timing-sensitive rules (e.g., Total Carnage)
+    eligible_to_fight_this_phase: bool = False  # True once the unit is observed as fight-eligible in the current Fight phase.
     engaged_enemies_at_turn_start: Optional[set] = None  # Track engaged enemy unit ids at start of controlling player's turn
     charge_target_ids: Optional[set] = None  # Track declared charge target unit ids
 
@@ -2899,6 +2900,12 @@ class Unit(
         r"once per battle at the end of the fight phase if this model s unit has fought this phase "
         r"if it is within engagement range of one or more enemy units it can make a fall back move "
         r"(?:or )?if it is not within engagement range of one or more enemy units it can make a normal move",
+        re.IGNORECASE,
+    )
+    _RAID_AND_RUN_RE = re.compile(
+        r"at the end of the fight phase if this unit was eligible to fight this phase and is not within engagement range of one or more enemy units "
+        r"it can make a normal move of up to d3 3 "
+        r"otherwise if this unit was eligible to fight this phase this unit can make a fall back move of up to d3 3",
         re.IGNORECASE,
     )
     _TITANIC_AGILITY_RE = re.compile(
