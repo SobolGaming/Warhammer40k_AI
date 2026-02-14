@@ -2667,6 +2667,18 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("ORK", "Super Runts"): ("Partial", "Scouts 9\" applied without leading restriction; hit/wound bonus not implemented."),
         ("ORK", "Tellyporta Tech"): ("Partial", "Deep Strike granted without leading restriction."),
         ("ORK", "Drill Boss"): ("Supported", "Leading: +1 to hit for melee attacks in the unit."),
+        ("ORK", "Dead Choppy"): (
+            "Supported",
+            "Implemented via wargear keyword support: each additional dread klaw increases this weapon's Attacks by 1.",
+        ),
+        ("ORK", "Bubblechukka"): (
+            "Supported",
+            "Implemented via wargear keyword support: random Bubblechukka profile selection by D6 (1-2 big bubble, 3-4 wobbly bubble, 5-6 dense bubble).",
+        ),
+        ("ORK", "Snagged"): (
+            "Supported",
+            "Implemented via wargear keyword support: hits against MONSTER/VEHICLE targets grant +2 charge and prevent Fire Overwatch against the bearer until end of turn.",
+        ),
         ("TAU", "BODYGUARD"): (
             "Supported",
             "Kroot Carnivores BODYGUARD enforces two attached Leaders only at Starting Strength 20 and requires those two Leaders to be different datasheets.",
