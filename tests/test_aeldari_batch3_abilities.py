@@ -989,3 +989,55 @@ def test_raid_and_run_does_not_queue_when_unit_was_not_eligible_to_fight():
 
     move_requests = [r for r in list(game.decision_queue.list() or []) if r.decision_type == DECISION_MOVE_UNIT]
     assert not move_requests
+
+
+def test_piratical_hero_leading_grants_sustained_hits_and_hit_bonus():
+    ability = Ability(
+        "Piratical Hero",
+        "AE",
+        (
+            "While this model is leading a unit, each time a model in that unit makes an attack, "
+            "that attack has the [SUSTAINED HITS 1] ability and add 1 to the Hit roll."
+        ),
+        "Datasheet",
+        "",
+    )
+    bodyguard = _make_unit("Corsair Voidreavers", datasheet_id="bg_yriel", model_count=1)
+    leader = _make_unit(
+        "Prince Yriel",
+        datasheet_id="leader_yriel",
+        abilities=[ability],
+        attached_to=["bg_yriel"],
+        model_count=1,
+    )
+
+    game, army1, army2, _p1, _p2 = _build_game()
+    enemy = _make_unit("Enemy", model_count=1)
+    army1.add_unit(bodyguard)
+    army1.add_unit(leader)
+    army2.add_unit(enemy)
+    leader.attach_to_unit(bodyguard)
+    game.map.units = [bodyguard, leader, enemy]
+    game.rebuild_entity_registry()
+
+    for unit in (bodyguard, leader, enemy):
+        unit.deployed = True
+        unit.reserve_status = "deployed"
+
+    hit_mods_ranged = bodyguard.get_leading_attack_roll_modifiers("ranged", target=enemy)
+    hit_mods_melee = bodyguard.get_leading_attack_roll_modifiers("melee", target=enemy)
+    assert int(hit_mods_ranged.get("hit") or 0) == 1
+    assert int(hit_mods_melee.get("hit") or 0) == 1
+
+    keyword_mods_ranged = bodyguard.get_attack_keyword_bonuses(
+        target=enemy,
+        attack_type="ranged",
+        model=bodyguard.models[0],
+    )
+    keyword_mods_melee = bodyguard.get_attack_keyword_bonuses(
+        target=enemy,
+        attack_type="melee",
+        model=bodyguard.models[0],
+    )
+    assert int(keyword_mods_ranged.get("sustained_hits_value") or 0) == 1
+    assert int(keyword_mods_melee.get("sustained_hits_value") or 0) == 1

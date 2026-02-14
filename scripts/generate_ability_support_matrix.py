@@ -2315,6 +2315,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Start of battle: select an enemy unit; this unit's weapons gain Lethal Hits and Precision vs that unit.",
         ),
+        ("AE", "Piratical Hero"): (
+            "Supported",
+            "Leading: each attack made by models in that unit gains Sustained Hits 1 and +1 to hit.",
+        ),
         ("AE", "Raid and Run"): (
             "Supported",
             "End of Fight phase: if this unit was eligible to fight this phase, it can make a D3+3\" move (Normal move if not engaged; Fall Back move if engaged).",

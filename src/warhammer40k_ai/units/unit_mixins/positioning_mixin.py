@@ -2003,6 +2003,26 @@ class PositioningMixin:
                             "target_keywords_any": target_keywords,
                         }
                     )
+            for match in self._ATTACK_ALWAYS_KEYWORD_BONUS_RE.finditer(text):
+                atype = str(match.group("atype") or "").strip().lower()
+                if atype not in ("melee", "ranged"):
+                    atype = "any"
+                kw_section = str(match.group("kw_section") or "")
+                bonus_keywords = _parse_bonus_keywords(kw_section)
+                if not bonus_keywords:
+                    continue
+                for bonus_kw in bonus_keywords:
+                    key = ("always_kw", atype, bonus_kw.strip().lower())
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    rules.append(
+                        {
+                            "attack_type": atype,
+                            "keyword": bonus_kw.strip(),
+                            "source": str(name or "Ability"),
+                        }
+                    )
 
         try:
             root = self.get_attached_unit_root()
@@ -2010,6 +2030,11 @@ class PositioningMixin:
             root = self
         leading_weapon_keywords_re = re.compile(
             r"^(?:(?P<atype>melee|ranged)\s+)?weapons equipped by models in that unit have (?P<kw_section>.+?) abilit(?:y|ies)$",
+            re.IGNORECASE,
+        )
+        leading_attack_keywords_re = re.compile(
+            r"^each time a model in that unit makes (?:a|an)\s+(?:(?P<atype>melee|ranged)\s+)?attack(?:\s*,\s*|\s+)"
+            r"that attack has (?P<kw_section>.+?) abilit(?:y|ies)(?:\s+and\b.*)?$",
             re.IGNORECASE,
         )
         try:
@@ -2033,6 +2058,27 @@ class PositioningMixin:
                 sentences = [s.strip() for s in re.split(r"[.;]\s*", rest) if s.strip()]
                 for sentence in sentences:
                     m = leading_weapon_keywords_re.fullmatch(sentence)
+                    if m:
+                        atype = str(m.group("atype") or "").strip().lower()
+                        if atype not in ("melee", "ranged"):
+                            atype = "any"
+                        keywords = _parse_bonus_keywords(str(m.group("kw_section") or ""))
+                        if not keywords:
+                            continue
+                        for keyword in keywords:
+                            key = ("leading_unit_weapon_kw", atype, keyword.strip().lower(), source_name.lower())
+                            if key in seen:
+                                continue
+                            seen.add(key)
+                            rules.append(
+                                {
+                                    "attack_type": atype,
+                                    "keyword": keyword.strip(),
+                                    "source": source_name,
+                                }
+                            )
+                        continue
+                    m = leading_attack_keywords_re.fullmatch(sentence)
                     if not m:
                         continue
                     atype = str(m.group("atype") or "").strip().lower()
@@ -2042,7 +2088,7 @@ class PositioningMixin:
                     if not keywords:
                         continue
                     for keyword in keywords:
-                        key = ("leading_unit_weapon_kw", atype, keyword.strip().lower(), source_name.lower())
+                        key = ("always_kw", atype, keyword.strip().lower())
                         if key in seen:
                             continue
                         seen.add(key)

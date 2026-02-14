@@ -2050,6 +2050,11 @@ class Unit(
         r"that\s+attack\s+has\s+the\s+\[(?P<keyword>[^\]]+)\]\s+ability",
         re.IGNORECASE,
     )
+    _ATTACK_ALWAYS_KEYWORD_BONUS_RE = re.compile(
+        r"each\s+time\s+(?:this\s+(?:model|unit)|a\s+model\s+in\s+(?:this\s+unit|that\s+unit|the\s+bearer'?s\s+unit))\s+makes\s+"
+        r"(?:a|an)\s+(?:(?P<atype>melee|ranged)\s+)?attack(?:\s*,\s*|\s+)that\s+attack\s+has\s+(?P<kw_section>.+?)\s+abilit",
+        re.IGNORECASE,
+    )
     _WEAPON_LIST_HALF_RANGE_KEYWORD_RE = re.compile(
         r"this\s+model'?s\s+(?P<weapons>.+?)\s+(?:have|has)\s+the\s+\[(?P<keyword>[^\]]+)\]\s+ability.*?\bwithin\s+half\s+range\b",
         re.IGNORECASE,

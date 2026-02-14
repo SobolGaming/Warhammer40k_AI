@@ -704,6 +704,22 @@ def parse_attack_roll_text(text: str) -> Optional[AttackRollRule]:
     if not effects_text:
         return None
 
+    # Some abilities combine non-roll keyword grants with roll modifiers in one clause
+    # (e.g. "that attack has [SUSTAINED HITS 1] ability and add 1 to the Hit roll").
+    # Strip the keyword-only fragment so hit/wound modifier parsing can proceed.
+    effects_text = re.sub(
+        r"^that attack has .+? abilit(?:y|ies)\s+and\s+",
+        "",
+        effects_text,
+        flags=re.IGNORECASE,
+    )
+    effects_text = re.sub(
+        r"\s+and\s+that attack has .+? abilit(?:y|ies)\b",
+        "",
+        effects_text,
+        flags=re.IGNORECASE,
+    )
+
     effects_text = _strip_punct(effects_text)
     clauses = _split_effect_clauses(effects_text)
     if not clauses:
