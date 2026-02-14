@@ -157,6 +157,168 @@ def test_whispering_web_marks_target_and_sets_crit_threshold():
     assert int(mods.get("crit_hit_threshold") or 0) == 5
 
 
+def test_fury_of_the_void_specs_parse_model_weapon_and_strength_bonus():
+    ability = Ability(
+        "Fury of the Void (Psychic)",
+        "AE",
+        (
+            "In your Shooting phase, after this model's unit has shot, select one enemy unit hit by one or more attacks "
+            "made with this model's Dread of the Deep Void. Until the end of the turn, that unit is riven. "
+            "Each time an AELDARI model from your army makes an attack that targets a riven unit, "
+            "add 1 to the Strength characteristic of that attack."
+        ),
+        "Datasheet",
+        "",
+    )
+    kharseth = _make_unit("Kharseth", abilities=[ability], faction_keywords=["AELDARI"])
+    specs = kharseth.model_post_shoot_keyword_strength_bonus_specs(kharseth.models[0])
+    assert len(specs) == 1
+    spec = specs[0]
+    assert str(spec.get("weapon_key", "") or "") == "dread of the deep void"
+    assert str(spec.get("keyword_phrase", "") or "") == "aeldari"
+    assert int(spec.get("strength_bonus", 0) or 0) == 1
+
+
+def test_fury_of_the_void_queues_only_units_hit_by_dread_of_the_deep_void():
+    ability = Ability(
+        "Fury of the Void (Psychic)",
+        "AE",
+        (
+            "In your Shooting phase, after this model's unit has shot, select one enemy unit hit by one or more attacks "
+            "made with this model's Dread of the Deep Void. Until the end of the turn, that unit is riven. "
+            "Each time an AELDARI model from your army makes an attack that targets a riven unit, "
+            "add 1 to the Strength characteristic of that attack."
+        ),
+        "Datasheet",
+        "",
+    )
+    kharseth = _make_unit("Kharseth", abilities=[ability], faction_keywords=["AELDARI"])
+    marked_target = _make_unit("Marked Target", faction_keywords=["ENEMY"])
+    other_target = _make_unit("Other Target", faction_keywords=["ENEMY"])
+
+    game, army1, army2, _p1, _p2 = _build_game()
+    army1.add_unit(kharseth)
+    army2.add_unit(marked_target)
+    army2.add_unit(other_target)
+    game.map.units = [kharseth, marked_target, other_target]
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.current_player_index = 0
+    game.rebuild_entity_registry()
+
+    attacker_model = kharseth.models[0]
+    game._on_unit_shooting_resolved_post_shoot_keyword_strength_bonus(
+        attacker_unit=kharseth,
+        hits_by_target={marked_target: 1, other_target: 1},
+        hit_models_by_target_weapon={
+            marked_target: {"dread of the deep void": {attacker_model}},
+            other_target: {"shuriken catapult": {attacker_model}},
+        },
+    )
+
+    pending = list(game.decision_queue.list() or [])
+    assert pending
+    req = pending[0]
+    assert req.decision_type == DECISION_CHOOSE_QUARRY
+
+    option_target_ids = {
+        str((opt.payload or {}).get("target_unit_id", "") or "") for opt in list(req.options or [])
+    }
+    assert get_entity_id(marked_target) in option_target_ids
+    assert get_entity_id(other_target) not in option_target_ids
+
+
+def test_fury_of_the_void_marks_riven_and_applies_strength_bonus_until_end_of_turn():
+    ability = Ability(
+        "Fury of the Void (Psychic)",
+        "AE",
+        (
+            "In your Shooting phase, after this model's unit has shot, select one enemy unit hit by one or more attacks "
+            "made with this model's Dread of the Deep Void. Until the end of the turn, that unit is riven. "
+            "Each time an AELDARI model from your army makes an attack that targets a riven unit, "
+            "add 1 to the Strength characteristic of that attack."
+        ),
+        "Datasheet",
+        "",
+    )
+    kharseth = _make_unit("Kharseth", abilities=[ability], faction_keywords=["AELDARI"], keywords=["AELDARI"])
+    aeldari_attacker = _make_unit("Aeldari Attacker", faction_keywords=["AELDARI"], keywords=["AELDARI"])
+    non_aeldari_attacker = _make_unit("Non-Aeldari Attacker")
+    target = _make_unit("Enemy Target", faction_keywords=["ENEMY"])
+
+    game, army1, army2, p1, _p2 = _build_game()
+    army1.add_unit(kharseth)
+    army1.add_unit(aeldari_attacker)
+    army1.add_unit(non_aeldari_attacker)
+    army2.add_unit(target)
+    game.map.units = [kharseth, aeldari_attacker, non_aeldari_attacker, target]
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.current_player_index = 0
+    game.turn = 1
+    game.rebuild_entity_registry()
+
+    kharseth_model = kharseth.models[0]
+    game._on_unit_shooting_resolved_post_shoot_keyword_strength_bonus(
+        attacker_unit=kharseth,
+        hits_by_target={target: 1},
+        hit_models_by_target_weapon={target: {"dread of the deep void": {kharseth_model}}},
+    )
+
+    pending = list(game.decision_queue.list() or [])
+    assert pending
+    req = pending[0]
+    resolve_decision_command(game, req, req.options[0].option_id, player_id=p1.id)
+
+    tsr = dict(getattr(target, "special_rules", {}) or {})
+    assert bool(tsr.get("post_shoot_keyword_strength_bonus_active")) is True
+    assert str(tsr.get("post_shoot_keyword_strength_bonus_marked_state", "") or "") == "riven"
+
+    profile = WargearProfile(
+        "Riven Test Gun",
+        {
+            "range": "24",
+            "A": "1",
+            "BS_WS": "3+",
+            "S": "4",
+            "AP": "0",
+            "D": "1",
+            "description": "",
+        },
+        parent_wargear=SimpleNamespace(name="Riven Test Gun", is_ranged=lambda: True, is_melee=lambda: False),
+    )
+
+    wound_with_bonus = profile._wound_target_with_tracking(
+        target,
+        aeldari_attacker.models[0],
+        {},
+        roll_value=3,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert bool(wound_with_bonus.get("wound")) is True
+    assert any("Fury of the Void" in str(mod) for mod in list(wound_with_bonus.get("modifiers", []) or []))
+
+    wound_without_keyword = profile._wound_target_with_tracking(
+        target,
+        non_aeldari_attacker.models[0],
+        {},
+        roll_value=3,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert bool(wound_without_keyword.get("wound")) is False
+
+    game.turn = 2
+    wound_after_turn = profile._wound_target_with_tracking(
+        target,
+        aeldari_attacker.models[0],
+        {},
+        roll_value=3,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert bool(wound_after_turn.get("wound")) is False
+
+
 def test_death_is_not_enough_applies_battleshock_modifier_on_kill():
     ability = Ability(
         "Death is Not Enough",

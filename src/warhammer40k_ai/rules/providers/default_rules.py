@@ -91,6 +91,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_no_cover"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_no_overwatch"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_ap_bonus"),
+                ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_keyword_strength_bonus"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_keyword_hit_bonus"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_keyword_wound_reroll"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_shoot_again"),

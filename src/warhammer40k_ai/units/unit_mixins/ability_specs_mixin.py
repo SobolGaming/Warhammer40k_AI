@@ -1561,6 +1561,75 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_post_shoot_keyword_strength_bonus_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: after this model's unit has shot, select a hit enemy unit hit by a named weapon;
+        friendly keyword models gain +Strength when attacking that marked unit until end of turn.
+
+        Returns a list of specs with keys:
+            - weapon_key: str (normalized weapon name)
+            - weapon_name: str (display)
+            - keyword_phrase: str (normalized keyword phrase)
+            - strength_bonus: int
+            - source: ability name
+        """
+        if model is None:
+            return []
+        cache_key = f"model_post_shoot_keyword_strength_bonus:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str, str, int]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._POST_SHOOT_MODEL_WEAPON_KEYWORD_STRENGTH_BONUS_RE.fullmatch(normalized)
+            if not m:
+                continue
+            weapon_raw = str(m.group("weapon") or "").strip()
+            if not weapon_raw:
+                continue
+            weapon_key = self._normalize_keyword_phrase(weapon_raw) or weapon_raw.lower()
+            keyword_raw = str(m.group("keyword") or "").strip()
+            keyword_raw = re.sub(r"^(?:a|an)\s+", "", keyword_raw)
+            keyword_phrase = self._normalize_keyword_phrase(keyword_raw) if keyword_raw else ""
+            if not keyword_phrase:
+                keyword_phrase = "friendly"
+            try:
+                bonus = int(m.group("val") or 0)
+            except Exception:
+                bonus = 0
+            if bonus <= 0:
+                continue
+            source = str(name or "Post-shoot Strength bonus").strip() or "Post-shoot Strength bonus"
+            key = (source.lower(), weapon_key, keyword_phrase, int(bonus))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "weapon_key": weapon_key,
+                    "weapon_name": weapon_raw,
+                    "keyword_phrase": keyword_phrase,
+                    "strength_bonus": int(bonus),
+                    "source": source,
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_sonic_destruction_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model/unit-specific rule: vibro cannon attacks gain +S/AP/D per other friendly platform that targeted the unit.

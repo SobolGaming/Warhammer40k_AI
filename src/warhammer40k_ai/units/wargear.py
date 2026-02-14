@@ -794,6 +794,74 @@ class WargearProfile:
         source = str(sr.get("mordian_minute_source", "") or "MORDIAN MINUTE").strip() or "MORDIAN MINUTE"
         return (s_bonus, source)
 
+    def _post_shoot_keyword_strength_bonus(
+        self,
+        attacker: Optional['Model'],
+        target: Optional['Unit'],
+    ) -> Tuple[int, str]:
+        """Return (strength_bonus, source) for post-shoot target markers granting +Strength (e.g., riven)."""
+        if attacker is None or target is None:
+            return (0, "")
+        try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+        except Exception:
+            attacker_unit = None
+        if attacker_unit is None:
+            return (0, "")
+        try:
+            target_root = target.get_attached_unit_root()
+        except Exception:
+            target_root = target
+        if target_root is None:
+            return (0, "")
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict) or not sr.get("post_shoot_keyword_strength_bonus_active"):
+            return (0, "")
+
+        apply_bonus = True
+        owner_id = str(sr.get("post_shoot_keyword_strength_bonus_owner", "") or "")
+        if owner_id:
+            attacker_id = ""
+            try:
+                attacker_id = str(get_entity_id(attacker_unit.get_parent_army().player) or "")
+            except Exception:
+                attacker_id = ""
+            if attacker_id and attacker_id != owner_id:
+                apply_bonus = False
+        if apply_bonus:
+            try:
+                marked_turn = int(sr.get("post_shoot_keyword_strength_bonus_turn", 0) or 0)
+            except Exception:
+                marked_turn = 0
+            if marked_turn:
+                game = None
+                try:
+                    game = attacker_unit.get_parent_army().player.game
+                except Exception:
+                    game = None
+                current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                if current_turn and current_turn != marked_turn:
+                    apply_bonus = False
+        keyword_phrase = str(sr.get("post_shoot_keyword_strength_bonus_phrase", "") or "").strip()
+        if apply_bonus and keyword_phrase:
+            try:
+                if not attacker_unit._unit_matches_keyword_phrase(attacker_unit, keyword_phrase, use_effective=True):
+                    apply_bonus = False
+            except Exception:
+                apply_bonus = False
+        if not apply_bonus:
+            return (0, "")
+        try:
+            bonus = int(sr.get("post_shoot_keyword_strength_bonus_value", 0) or 0)
+        except Exception:
+            bonus = 0
+        if bonus <= 0:
+            return (0, "")
+        source = str(
+            sr.get("post_shoot_keyword_strength_bonus_source", "") or "Post-shoot Strength bonus"
+        ).strip() or "Post-shoot Strength bonus"
+        return (int(bonus), source)
+
     def _court_close_quarters_excruciation_bonus(
         self,
         attacker: Optional['Model'],
@@ -9675,6 +9743,15 @@ class WargearProfile:
                     strength = strength + int(s_bonus)
                     source_name = str(source or "CLOSE-QUARTERS EXCRUCIATION").strip() or "CLOSE-QUARTERS EXCRUCIATION"
                     wound_result.setdefault("modifiers", []).append(f"+{int(s_bonus)}S from {source_name}")
+        except Exception:
+            pass
+        # Post-shoot marked target Strength bonus (e.g., Fury of the Void riven).
+        try:
+            s_bonus, source = self._post_shoot_keyword_strength_bonus(attacker, target)
+            if s_bonus and isinstance(strength, int):
+                strength = strength + int(s_bonus)
+                source_name = str(source or "Post-shoot Strength bonus").strip() or "Post-shoot Strength bonus"
+                wound_result.setdefault("modifiers", []).append(f"+{int(s_bonus)}S from {source_name}")
         except Exception:
             pass
         if isinstance(strength, int):

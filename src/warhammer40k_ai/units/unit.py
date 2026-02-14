@@ -2533,6 +2533,12 @@ class Unit(
         r"add (?P<val>\d+) to the hit roll",
         re.IGNORECASE,
     )
+    _POST_SHOOT_MODEL_WEAPON_KEYWORD_STRENGTH_BONUS_RE = re.compile(
+        r"in your shooting phase after this model s unit has shot select one enemy unit hit by one or more (?:of those )?attacks made with this model s (?P<weapon>[a-z0-9 ]+) "
+        r"until the end of the turn that unit is riven each time an (?:(?:friendly )?(?P<keyword>[a-z0-9 ]+) model(?: from your army)?|model from your army) makes an attack that targets a riven unit "
+        r"add (?P<val>\d+) to the strength characteristic of that attack",
+        re.IGNORECASE,
+    )
     _POST_SHOOT_WRACKING_AGONIES_RE = re.compile(
         r"in your shooting phase after this model has shot select one infantry unit hit by one or more of those attacks "
         r"made with its (?P<weapon>[a-z0-9 ]+) until the start of your next turn that unit is wracked with agonies "

@@ -6711,6 +6711,23 @@ class GamePhaseHandlersMixin:
                                 "post_shoot_crit_hit_threshold_expires_phase",
                             ):
                                 sr.pop(k, None)
+                    owner = str(sr.get("post_shoot_keyword_strength_bonus_owner", "") or "")
+                    try:
+                        turn = int(sr.get("post_shoot_keyword_strength_bonus_turn", 0) or 0)
+                    except Exception:
+                        turn = 0
+                    if owner and owner == active_name:
+                        if int(turn or 0) == int(getattr(self, "turn", 0) or 0):
+                            for k in (
+                                "post_shoot_keyword_strength_bonus_active",
+                                "post_shoot_keyword_strength_bonus_owner",
+                                "post_shoot_keyword_strength_bonus_turn",
+                                "post_shoot_keyword_strength_bonus_source",
+                                "post_shoot_keyword_strength_bonus_phrase",
+                                "post_shoot_keyword_strength_bonus_value",
+                                "post_shoot_keyword_strength_bonus_marked_state",
+                            ):
+                                sr.pop(k, None)
                     owner = str(sr.get("tactical_acumen_no_charge_turn_owner", "") or "")
                     try:
                         turn = int(sr.get("tactical_acumen_no_charge_turn", 0) or 0)

@@ -2367,6 +2367,118 @@ class GameShootingFightHandlersMixin:
             )
             self.request_decision(request)
 
+    def _on_unit_shooting_resolved_post_shoot_keyword_strength_bonus(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        hit_models_by_target_weapon=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None or not hits_by_target:
+            return
+        if not self.is_shooting_phase():
+            return
+        attacker_player = attacker_unit.get_parent_army().player
+        if attacker_player is None:
+            raise RuntimeError("Post-shoot keyword strength bonus requires an attacker player.")
+        if attacker_player is not self.get_current_player():
+            return
+
+        def _is_enemy_unit(unit) -> bool:
+            if unit is None:
+                return False
+            if unit.get_parent_army() == attacker_unit.get_parent_army():
+                return False
+            if not unit.is_alive():
+                return False
+            return True
+
+        def _model_hit_target_with_weapon(model, target, weapon_key: str) -> bool:
+            if not isinstance(hit_models_by_target_weapon, dict):
+                return False
+            target_map = hit_models_by_target_weapon.get(target)
+            if not isinstance(target_map, dict):
+                return False
+            models = target_map.get(weapon_key)
+            if not models and weapon_key.endswith("s"):
+                models = target_map.get(weapon_key[:-1])
+            if not models:
+                return False
+            return model in models
+
+        triggers: list[tuple[Any, dict, list[Any]]] = []
+        for model in list(attacker_unit.models or []):
+            if not getattr(model, "is_alive", False):
+                continue
+            specs = attacker_unit.model_post_shoot_keyword_strength_bonus_specs(model) or []
+            if not specs:
+                continue
+            for spec in specs:
+                weapon_key = str(spec.get("weapon_key", "") or "")
+                if not weapon_key:
+                    continue
+                candidates: list[Any] = []
+                for target_unit, hits in (hits_by_target or {}).items():
+                    if target_unit is None:
+                        continue
+                    if int(hits or 0) <= 0:
+                        continue
+                    if not _is_enemy_unit(target_unit):
+                        continue
+                    if not _model_hit_target_with_weapon(model, target_unit, weapon_key):
+                        continue
+                    candidates.append(target_unit)
+                if candidates:
+                    triggers.append((model, spec, candidates))
+
+        if not triggers:
+            return
+
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+
+        for model, spec, candidates in triggers:
+            if not candidates:
+                continue
+            try:
+                candidates = sorted(candidates, key=lambda u: str(maybe_entity_id(u) or ""))
+            except Exception:
+                candidates = list(candidates)
+            options = []
+            for cand in list(candidates):
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(cand, "name", "Unit") or "Unit"),
+                        payload={"target_unit_id": get_entity_id(cand)},
+                    )
+                )
+            if not options:
+                continue
+            ability_name = str(spec.get("source", "") or "Post-shoot Strength bonus").strip() or "Post-shoot Strength bonus"
+            keyword_phrase = str(spec.get("keyword_phrase", "") or "").strip()
+            try:
+                strength_bonus = int(spec.get("strength_bonus", 0) or 0)
+            except Exception:
+                strength_bonus = 0
+            if strength_bonus <= 0:
+                continue
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{ability_name}: select a riven unit.",
+                player_id=getattr(attacker_player, "id", None),
+                options=options,
+                context={
+                    "attacker_unit_id": get_entity_id(attacker_unit),
+                    "ability": "post_shoot_keyword_strength_bonus",
+                    "ability_name": ability_name,
+                    "keyword_phrase": keyword_phrase,
+                    "strength_bonus": int(strength_bonus),
+                    "weapon_key": str(spec.get("weapon_key", "") or ""),
+                    "weapon_name": str(spec.get("weapon_name", "") or ""),
+                    "model_id": get_entity_id(model),
+                },
+            )
+            self.request_decision(request)
+
     def _on_unit_shooting_resolved_post_shoot_keyword_hit_bonus(
         self,
         attacker_unit=None,

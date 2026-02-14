@@ -2319,6 +2319,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Start of opponent Shooting phase: optional selection of a visible friendly AELDARI INFANTRY unit within 36\"; selected unit gains Stealth until end of phase.",
         ),
+        ("AE", "Fury of the Void (Psychic)"): (
+            "Supported",
+            "After shooting with Dread of the Deep Void hits: select a hit enemy unit to become riven; until end of turn friendly AELDARI attacks targeting that unit gain +1 Strength.",
+        ),
         ("AE", "Point-blank Devastation"): (
             "Supported",
             "Within half range: can re-roll attack dice for heavy wraithcannon or suncannon.",
