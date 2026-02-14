@@ -2332,6 +2332,15 @@ class BattlePhaseHandler(BasePhaseHandler):
         self._pending_rise_to_challenge_queue = []
         self._decision_callbacks = {}
         self._decision_subscription_enabled = False
+        # Pending dice-driven movement flows
+        self._pending_advance_units: set[str] = set()
+        self._pending_charge_units: Dict[str, dict] = {}
+        self._pending_move_modifier_actions: Dict[str, dict] = {}
+        self._pending_pre_move_ability_actions: Dict[str, dict] = {}
+        if self.game is not None:
+            event_system = getattr(self.game, "event_system", None)
+            if event_system is not None:
+                event_system.subscribe("roll_made", self._on_roll_made)
     
     def handle_event(self, event: pygame.event.Event) -> bool:
         """Handle pygame events during battle phases"""
@@ -5565,17 +5574,6 @@ class PhaseManager:
         from ..dialogs.target_model_selection_dialog import TargetModelSelectionDialog
         self.game_view.target_model_selection_dialog = TargetModelSelectionDialog(game_view.screen.get_width(), game_view.screen.get_height())
 
-        # Pending dice-driven movement flows
-        self._pending_advance_units: set[str] = set()
-        self._pending_charge_units: Dict[str, dict] = {}
-        self._pending_move_modifier_actions: Dict[str, dict] = {}
-        self._pending_pre_move_ability_actions: Dict[str, dict] = {}
-        try:
-            if self.game is not None and getattr(self.game, "event_system", None) is not None:
-                self.game.event_system.subscribe("roll_made", self._on_roll_made)
-        except Exception:
-            pass
-    
     def get_current_handler(self) -> BasePhaseHandler:
         """Get the appropriate handler for the current game phase"""
         if self.game.is_in_setup_phase():
