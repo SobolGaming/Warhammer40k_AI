@@ -320,6 +320,16 @@ _INVASION_FLEET_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
         effect="redeploy_units",
         effect_params={"max_units": 3, "allow_strategic_reserves": True},
     ),
+    "000008348004": EnhancementToolDescriptor(
+        enhancement_id="000008348004",
+        name="Synaptic Linchpin",
+        timing="passive_aura",
+        target="friendly_tyranids_units_within_range_of_bearer",
+        duration="constant",
+        effect="count_as_within_synapse_range",
+        range_in=9.0,
+        effect_params={"keyword": "TYRANIDS"},
+    ),
 }
 
 _INVASION_FLEET_BY_NAME = {

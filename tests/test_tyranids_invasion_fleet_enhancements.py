@@ -151,6 +151,57 @@ class TestTyranidsInvasionFleetEnhancements(unittest.TestCase):
         self.assertEqual(int(desc.effect_params.get("max_units", 0) or 0), 3)
         self.assertTrue(bool(desc.effect_params.get("allow_strategic_reserves", False)))
 
+    def test_synaptic_linchpin_grants_synapse_within_nine_of_bearer(self):
+        army = Army("Tyranids", detachment_type="Invasion Fleet")
+        army.faction_id = "TYR"
+
+        bearer = _make_unit("Neurotyrant", army, keywords=["CHARACTER"], faction_keywords=["TYRANIDS"])
+        bearer_a = _make_model("Bearer", bearer, x=0.0, y=0.0, wounds=8)
+        bearer_b = _make_model("Escort", bearer, x=30.0, y=0.0, wounds=2)
+        bearer.models = [bearer_a, bearer_b]
+
+        enhancement = Enhancement(
+            id="000008348004",
+            name="Synaptic Linchpin",
+            faction_id="TYR",
+            detachment="Invasion Fleet",
+            description=(
+                '<span class="kwb">TYRANIDS</span> model only. While a friendly <span class="kwb">TYRANIDS</span> '
+                'unit is within 9" of the bearer, that unit is within Synapse Range of your army.'
+            ),
+        )
+        bearer.enhancement = enhancement
+        enhancement.apply_to_unit(bearer)
+
+        in_range = _make_unit("Hormagaunts", army, keywords=["INFANTRY"], faction_keywords=["TYRANIDS"])
+        in_range.models = [_make_model("Horma", in_range, x=8.0, y=0.0, wounds=1)]
+
+        near_other_model = _make_unit("Genestealers", army, keywords=["INFANTRY"], faction_keywords=["TYRANIDS"])
+        near_other_model.models = [_make_model("Stealer", near_other_model, x=30.5, y=0.0, wounds=1)]
+
+        out_of_range = _make_unit("Termagants", army, keywords=["INFANTRY"], faction_keywords=["TYRANIDS"])
+        out_of_range.models = [_make_model("Terma", out_of_range, x=12.0, y=0.0, wounds=1)]
+
+        army.units = [bearer, in_range, near_other_model, out_of_range]
+
+        self.assertTrue(bool(bearer.special_rules.get("enhancement_synaptic_linchpin", False)))
+        self.assertEqual(float(bearer.special_rules.get("enhancement_synaptic_linchpin_range", 0.0) or 0.0), 9.0)
+
+        synapse_mgr = getattr(army, "synapse", None)
+        self.assertIsNotNone(synapse_mgr)
+
+        self.assertTrue(synapse_mgr.unit_in_synapse_range(in_range))
+        self.assertFalse(synapse_mgr.unit_in_synapse_range(near_other_model))
+        self.assertFalse(synapse_mgr.unit_in_synapse_range(out_of_range))
+
+    def test_synaptic_linchpin_has_tool_descriptor(self):
+        desc = get_enhancement_tool_descriptor(enhancement_id="000008348004")
+        self.assertIsNotNone(desc)
+        self.assertEqual(desc.name, "Synaptic Linchpin")
+        self.assertEqual(desc.effect, "count_as_within_synapse_range")
+        self.assertEqual(float(desc.range_in or 0.0), 9.0)
+        self.assertEqual(str(desc.effect_params.get("keyword", "") or ""), "TYRANIDS")
+
 
 if __name__ == "__main__":
     unittest.main()
