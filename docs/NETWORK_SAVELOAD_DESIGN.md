@@ -227,6 +227,7 @@ Movement:
 - battlefield_point_pick_dialog: PICK_POINT {point}
 - hazard_objective_select_dialog: PICK_OBJECTIVE {objective_id}
 - move_over_mortal_wounds_target_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `mortal_wounds_kind="move_over"`, `unit_id`, `model_id` optional, `ability_name`, `spec`)
+- bomb_squigs_target_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `mortal_wounds_kind="bomb_squigs"`, `unit_id`, `ability_name`, `spec.max_uses`, `spec.remaining_uses`)
 - cult_ambush_reinforcements_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="cult_ambush_reinforcements"`, `marker_id`, `remaining_marker_ids`, `available_unit_ids`)
 Battle-shock:
 - cankerblight_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="cankerblight"`, `target_unit_id`, `source_unit_id`, `source_model_id`)

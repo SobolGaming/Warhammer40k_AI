@@ -2706,10 +2706,11 @@ class Game(
 
         reroll_rules: list[dict] = []
         reroll_count = 0
-        try:
-            reroll_count = int(root.move_over_mortal_wounds_reroll_count() or 0)
-        except Exception:
-            reroll_count = 0
+        if not bool(spec.get("disable_move_over_rerolls", False)):
+            try:
+                reroll_count = int(root.move_over_mortal_wounds_reroll_count() or 0)
+            except Exception:
+                reroll_count = 0
         if reroll_count > 0:
             reroll_count = min(int(reroll_count), int(dice_count))
             label = "Re-roll move-over die" if reroll_count == 1 else f"Re-roll up to {reroll_count} move-over dice"
@@ -2733,17 +2734,19 @@ class Game(
         target_id = get_entity_id(target_unit) if callable(get_entity_id) else None
         model_id = get_entity_id(model) if (model is not None and callable(get_entity_id)) else None
 
+        roll_type = str(spec.get("roll_type", "") or "move_over_mortal_wounds").strip() or "move_over_mortal_wounds"
+        handler_key = str(spec.get("handler_key", "") or "move_over_mortal_wounds").strip() or "move_over_mortal_wounds"
         reason = f"{ability_name}: {getattr(root, 'name', 'Unit')} -> {getattr(target_unit, 'name', 'Target')}"
         roll_spec = {
             "dice_count": int(dice_count),
             "faces": 6,
             "reason": reason,
-            "roll_type": "move_over_mortal_wounds",
+            "roll_type": roll_type,
             "unit_id": unit_id,
             "model_id": model_id,
             "target_unit_id": target_id,
             "target_unit_ids": [target_id] if target_id else [],
-            "handler_key": "move_over_mortal_wounds",
+            "handler_key": handler_key,
             "ability_name": ability_name,
             "threshold": int(threshold),
             "effective_threshold": int(effective_threshold),
@@ -2978,6 +2981,140 @@ class Game(
             self.request_dice_roll(player_id=getattr(player, "id", None), spec=roll_spec, prompt=roll_spec["reason"])
         except Exception:
             pass
+
+    def _on_unit_move_ended_bomb_squigs(self, unit=None, action: str | None = None, **_kwargs) -> None:
+        if unit is None:
+            return
+        action_key = str(action or "").strip().lower()
+        if action_key != "move":
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None or not root.is_alive() or not getattr(root, "deployed", True):
+            return
+        try:
+            if root.is_in_reserves() or root.is_embarked:
+                return
+        except Exception:
+            pass
+
+        try:
+            specs = list(root.unit_bomb_squigs_specs() or [])
+        except Exception:
+            specs = []
+        if not specs:
+            return
+        try:
+            player = root.get_parent_army().player
+        except Exception:
+            player = None
+        if player is None:
+            return
+
+        unit_id = str(get_entity_id(root) or "")
+        if unit_id:
+            queue = getattr(self, "decision_queue", None)
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                        continue
+                    ctx = dict(getattr(req, "context", {}) or {})
+                    if not bool(ctx.get("engine_flow", False)):
+                        continue
+                    if str(ctx.get("mortal_wounds_kind", "") or "").strip().lower() != "bomb_squigs":
+                        continue
+                    if str(ctx.get("unit_id", "") or "") == unit_id:
+                        return
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        try:
+            used = int(sr.get("bomb_squig_uses", 0) or 0)
+        except Exception:
+            used = 0
+        has_explicit_total = "bomb_squig_token_total" in sr
+
+        def _count_bomb_squigs(unit_obj) -> int:
+            count = 0
+            try:
+                models = list(unit_obj._get_bodyguard_support_models() or [])
+            except Exception:
+                models = list(getattr(unit_obj, "models", []) or [])
+            for model in models:
+                if model is None or not getattr(model, "is_alive", False):
+                    continue
+                try:
+                    for wg in list(getattr(model, "wargear", []) or []):
+                        if wg is None:
+                            continue
+                        if Unit._norm_wargear_name(getattr(wg, "name", "")) == "bomb squig":
+                            count += 1
+                except Exception:
+                    pass
+                try:
+                    for ow in list(getattr(model, "optional_wargear", []) or []):
+                        if Unit._norm_wargear_name(str(ow or "")) == "bomb squig":
+                            count += 1
+                except Exception:
+                    continue
+            return max(0, int(count))
+
+        sorted_specs = sorted(
+            list(specs),
+            key=lambda s: str(s.get("source", "") or "").strip().lower(),
+        )
+        for base_spec in sorted_specs:
+            spec = dict(base_spec or {})
+            token_mode = str(spec.get("token_mode", "") or "").strip().lower()
+            if token_mode == "fixed":
+                try:
+                    max_uses = max(0, int(spec.get("fixed_uses", 0) or 0))
+                except Exception:
+                    max_uses = 0
+            elif has_explicit_total:
+                try:
+                    max_uses = max(0, int(sr.get("bomb_squig_token_total", 0) or 0))
+                except Exception:
+                    max_uses = 0
+            else:
+                max_uses = _count_bomb_squigs(root)
+                if max_uses <= 0:
+                    # Fallback for roster contexts that omit explicit token equipment.
+                    max_uses = 1
+            if max_uses <= 0 or used >= max_uses:
+                continue
+
+            try:
+                range_value = int(spec.get("range", 0) or 0)
+            except Exception:
+                range_value = 0
+            if range_value <= 0:
+                continue
+
+            candidates = self._collect_grenade_pack_flyover_candidates(root, {"range": int(range_value)}, game_map)
+            if not candidates:
+                continue
+
+            spec["max_uses"] = int(max_uses)
+            spec["remaining_uses"] = int(max(0, max_uses - used))
+            self._queue_mortal_wounds_target_decision(
+                player=player,
+                unit=root,
+                candidates=list(candidates),
+                spec=spec,
+                kind="bomb_squigs",
+                allow_skip=True,
+                phase="Movement phase",
+            )
+            return
 
     def _on_unit_move_ended_move_over_mortal_wounds(self, unit=None, action: str | None = None, **_kwargs) -> None:
         if unit is None:

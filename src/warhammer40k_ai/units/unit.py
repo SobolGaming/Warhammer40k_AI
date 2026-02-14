@@ -2199,6 +2199,13 @@ class Unit(
         r"have the lethal hits ability(?: .*)?",
         re.IGNORECASE,
     )
+    _BOMB_SQUIGS_RE = re.compile(
+        r"once per battle for each bomb squig this unit has after this unit ends a normal move "
+        r"you can use one bomb squig if you do select one enemy unit within (?P<range>\d+) and visible to this unit "
+        r"and roll (?:one|1) d6 on a (?P<threshold>\d)\+? that enemy unit suffers (?P<mw>d3|d6|\d+) mortal wounds?"
+        r"(?: designers note .+)?",
+        re.IGNORECASE,
+    )
     _HAND_OF_ASURYAN_RE = re.compile(
         r"once per battle when this model is selected to shoot it can use this ability if it does until the end of the phase "
         r"its (?P<weapon>[a-z0-9 ]+?) weapon has a damage characteristic of (?P<damage>\d+)",

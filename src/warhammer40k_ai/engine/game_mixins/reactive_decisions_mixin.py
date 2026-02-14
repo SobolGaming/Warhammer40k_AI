@@ -1908,7 +1908,7 @@ class GameReactiveDecisionsMixin:
         if not candidates:
             return None
         kind_key = str(kind or "").strip().lower()
-        if kind_key not in ("charge_end", "move_over", "fight_phase_end"):
+        if kind_key not in ("charge_end", "move_over", "fight_phase_end", "bomb_squigs"):
             return None
         unit_id = maybe_entity_id(unit)
         if not unit_id:
@@ -5065,7 +5065,7 @@ class GameReactiveDecisionsMixin:
         if not bool(ctx.get("engine_flow", False)):
             return
         kind = str(ctx.get("mortal_wounds_kind", "") or "").strip().lower()
-        if kind not in ("charge_end", "move_over", "fight_phase_end"):
+        if kind not in ("charge_end", "move_over", "fight_phase_end", "bomb_squigs"):
             return
         if self._decision_is_skip(request, result):
             return
@@ -5096,6 +5096,48 @@ class GameReactiveDecisionsMixin:
                     if root is not None:
                         ability_name = str(spec.get("source", "") or "Move-over mortals").strip() or "Move-over mortals"
                         root.mark_unit_once_per_battle_used(ability_key, ability_name=ability_name)
+            return
+        if kind == "bomb_squigs":
+            self.resolve_move_over_mortal_wounds(unit, None, target_unit, spec)
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                return
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            try:
+                used = int(sr.get("bomb_squig_uses", 0) or 0)
+            except Exception:
+                used = 0
+            try:
+                max_uses = int(
+                    spec.get("max_uses")
+                    or ctx.get("max_uses")
+                    or sr.get("bomb_squig_max_uses", 0)
+                    or 1
+                )
+            except Exception:
+                max_uses = 1
+            max_uses = max(0, int(max_uses))
+            if max_uses <= 0:
+                return
+            next_use = int(used + 1)
+            sr["bomb_squig_uses"] = int(next_use)
+            try:
+                prev_max = int(sr.get("bomb_squig_max_uses", 0) or 0)
+            except Exception:
+                prev_max = 0
+            sr["bomb_squig_max_uses"] = max(int(max_uses), int(prev_max))
+            ability_name = str(spec.get("source", "") or ctx.get("ability_name", "") or "Bomb Squigs").strip() or "Bomb Squigs"
+            sr["bomb_squig_source"] = ability_name
+            root.special_rules = sr
+            if next_use >= max_uses:
+                mark_used = getattr(root, "mark_unit_once_per_battle_used", None)
+                if callable(mark_used):
+                    mark_used("bomb_squigs", ability_name=ability_name)
             return
         if model is None:
             return

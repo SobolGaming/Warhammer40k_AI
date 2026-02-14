@@ -59,6 +59,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("unit_move_ended", "_on_unit_move_ended_detachment_rules"),
                 ("unit_move_ended", "_on_unit_move_ended_charge_mortal_wounds"),
                 ("unit_move_ended", "_on_unit_move_ended_charge_battleshock"),
+                ("unit_move_ended", "_on_unit_move_ended_bomb_squigs"),
                 ("unit_move_ended", "_on_unit_move_ended_move_over_mortal_wounds"),
                 ("unit_move_ended", "_on_unit_move_ended_move_over_battleshock"),
                 ("unit_move_ended", "_on_unit_move_ended_move_over_no_cover"),

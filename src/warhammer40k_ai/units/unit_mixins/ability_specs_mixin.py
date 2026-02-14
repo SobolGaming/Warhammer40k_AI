@@ -651,6 +651,150 @@ class AbilitySpecsMixin:
         root._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def unit_bomb_squigs_specs(self) -> List[dict]:
+        """
+        Unit-level rule: after ending a Normal move, optionally select one visible enemy within range
+        and roll for mortal wounds. Supports the three Bomb Squigs token variants.
+
+        Returns specs with keys:
+            - source: ability name
+            - move_types: list[str] (always ["move"])
+            - range: int
+            - threshold: int
+            - mortal_per_success: int
+            - mortal_per_success_die: str
+            - token_mode: str ("fixed" | "per_bomb_squig")
+            - fixed_uses: int
+            - ability_key: str
+            - once_per_battle: bool
+            - disable_move_over_rerolls: bool
+            - roll_type: str
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_bomb_squigs_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple] = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text_src = unit._strip_eligibility_prefix(text_src)
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+
+                is_named_bomb_squigs = str(name or "").strip().lower() == "bomb squigs"
+                mentions_bomb_squig = "bomb squig" in normalized
+                if not (is_named_bomb_squigs or mentions_bomb_squig):
+                    continue
+
+                m = unit._BOMB_SQUIGS_RE.fullmatch(normalized)
+                if not m:
+                    if not is_named_bomb_squigs:
+                        continue
+                    # Keep a strict fallback for equivalent text forms with punctuation/layout differences.
+                    if "ends a normal move" not in normalized:
+                        continue
+                    if "within 12 and visible to this unit" not in normalized:
+                        continue
+                    if "on a 3" not in normalized:
+                        continue
+                    if "d3 mortal wound" not in normalized:
+                        continue
+                    range_value = 12
+                    threshold = 3
+                    mw_raw = "d3"
+                else:
+                    try:
+                        range_value = int(m.group("range") or 0)
+                    except Exception:
+                        range_value = 0
+                    try:
+                        threshold = int(m.group("threshold") or 0)
+                    except Exception:
+                        threshold = 0
+                    mw_raw = str(m.group("mw") or "").strip().lower()
+
+                if range_value <= 0 or threshold <= 0 or not mw_raw:
+                    continue
+
+                mortal_per = 0
+                mortal_die = ""
+                if mw_raw.startswith("d"):
+                    mortal_die = mw_raw.upper()
+                else:
+                    try:
+                        mortal_per = int(mw_raw or 0)
+                    except Exception:
+                        mortal_per = 0
+                if mortal_per <= 0 and not mortal_die:
+                    continue
+
+                token_mode = "per_bomb_squig"
+                fixed_uses = 0
+                if "place two bomb squig tokens next to the unit" in normalized:
+                    token_mode = "fixed"
+                    fixed_uses = 2
+                elif "place a bomb squig token next to the unit" in normalized:
+                    token_mode = "fixed"
+                    fixed_uses = 1
+                elif "place the relevant number of bomb squig tokens next to the unit" in normalized:
+                    token_mode = "per_bomb_squig"
+                elif "for each bomb squig this unit has" in normalized:
+                    token_mode = "per_bomb_squig"
+
+                source = str(name or "Bomb Squigs").strip() or "Bomb Squigs"
+                key = (
+                    source.lower(),
+                    int(range_value),
+                    int(threshold),
+                    int(mortal_per),
+                    str(mortal_die),
+                    str(token_mode),
+                    int(fixed_uses),
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "move_types": ["move"],
+                        "range": int(range_value),
+                        "dice": 1,
+                        "threshold": int(threshold),
+                        "mortal_per_success": int(mortal_per),
+                        "mortal_per_success_die": str(mortal_die),
+                        "token_mode": str(token_mode),
+                        "fixed_uses": int(fixed_uses),
+                        "ability_key": "bomb_squigs",
+                        "once_per_battle": True,
+                        "disable_move_over_rerolls": True,
+                        "roll_type": "bomb_squigs",
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_post_shoot_mortal_wounds_battleshock_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model-specific rule: after this model's unit has shot, select a hit enemy INFANTRY unit;

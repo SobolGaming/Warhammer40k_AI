@@ -3149,6 +3149,7 @@ def _classify_ability_base(
     order_range_extension_support = _order_range_extension_support(description)
     act_of_faith_cherub_support = _act_of_faith_cherub_support(description)
     ammo_runt_support = _ammo_runt_support(description)
+    bomb_squigs_support = _bomb_squigs_support(description)
     orders_support = _orders_section_support(name, description)
     attached_unit_support = _attached_unit_support(name, description)
     model_reroll_support = _model_reroll_wound_vs_character_support(description)
@@ -3268,6 +3269,8 @@ def _classify_ability_base(
         return leading_support
     if ammo_runt_support:
         return ammo_runt_support
+    if bomb_squigs_support:
+        return bomb_squigs_support
     if attached_character_fnp_support:
         return attached_character_fnp_support
     if weapon_keyword_grant_support:
@@ -7836,6 +7839,43 @@ def _ammo_runt_support(description: str) -> Optional[Tuple[str, str]]:
     return (
         "Supported",
         "Ammo Runt: once per battle when selected to shoot, unit ranged weapons gain Lethal Hits until end of phase.",
+    )
+
+
+def _bomb_squigs_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    if "bomb squig" not in norm:
+        return None
+    m = re.fullmatch(
+        r"once per battle for each bomb squig this unit has after this unit ends a normal move "
+        r"you can use one bomb squig if you do select one enemy unit within (?P<range>\d+) and visible to this unit "
+        r"and roll one d6 on a (?P<threshold>\d)\+? that enemy unit suffers d3 mortal wounds(?: designers note .+)?",
+        norm,
+    )
+    if not m:
+        return None
+    if "place two bomb squig tokens next to the unit" in norm:
+        return (
+            "Supported",
+            "Bomb Squigs: after a Normal move, optional 12\" visible target roll (3+ => D3 mortal wounds); two uses tracked.",
+        )
+    if "place a bomb squig token next to the unit" in norm:
+        return (
+            "Supported",
+            "Bomb Squigs: after a Normal move, optional 12\" visible target roll (3+ => D3 mortal wounds); one use tracked.",
+        )
+    if "place the relevant number of bomb squig tokens next to the unit" in norm:
+        return (
+            "Supported",
+            "Bomb Squigs: after a Normal move, optional 12\" visible target roll (3+ => D3 mortal wounds); uses tracked per Bomb Squig.",
+        )
+    return (
+        "Supported",
+        "Bomb Squigs: after a Normal move, optional 12\" visible target roll (3+ => D3 mortal wounds) with tracked uses.",
     )
 
 
