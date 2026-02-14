@@ -293,6 +293,10 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Superior Craftsmanship": (
             r"add \d+ to the range characteristic of ranged weapons equipped by t au empire models from your army",
         ),
+        "Killing Blow": (
+            r"during the first second and third battle rounds ranged weapons equipped by t au empire models from your army have the assault ability",
+            r"during the first second and third battle rounds while a unit is a guided unit its ranged weapons have the lethal hits ability",
+        ),
         "Ruthless Discipline": (
             r"add \d+ to the number of orders each astra militarum officer model from your army can issue as stated on their datasheet",
             r"while an astra militarum unit from your army is affected by an order each time a model in that unit makes an attack reroll a hit roll of \d+",
@@ -1548,6 +1552,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Superior Craftsmanship": (
             "Supported",
             "Experimental Prototype Cadre: add 6\" to the Range characteristic of ranged weapons equipped by T'AU EMPIRE models from your army.",
+        ),
+        "Killing Blow": (
+            "Supported",
+            "Mont'ka: during battle rounds 1-3, ranged weapons of T'AU EMPIRE models count as [ASSAULT], and while a unit is Guided its ranged weapons gain [LETHAL HITS].",
         ),
         "Path of the Warrior": (
             "Supported",

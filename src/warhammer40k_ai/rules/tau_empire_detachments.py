@@ -18,10 +18,23 @@ class TauEmpireDetachmentManager(DetachmentManagerBase):
         unit = getattr(model, "parent_unit", None)
         if unit is None:
             return False
+        return self._unit_in_army(unit)
+
+    def _unit_in_army(self, unit) -> bool:
+        if unit is None or self.army is None:
+            return False
         get_parent_army = getattr(unit, "get_parent_army", None)
         if not callable(get_parent_army):
             return False
         return get_parent_army() is self.army
+
+    def _unit_is_tau_empire(self, unit) -> bool:
+        if unit is None:
+            return False
+        return (
+            self._unit_has_keyword_or_faction(unit, "T'AU EMPIRE", faction_id=self.faction_id)
+            or self._unit_has_keyword_or_faction(unit, "TAU EMPIRE", faction_id=self.faction_id)
+        )
 
     def _model_is_tau_empire(self, model) -> bool:
         if model is None:
@@ -35,10 +48,75 @@ class TauEmpireDetachmentManager(DetachmentManagerBase):
         unit = getattr(model, "parent_unit", None)
         if unit is None:
             return False
-        return (
-            self._unit_has_keyword_or_faction(unit, "T'AU EMPIRE", faction_id=self.faction_id)
-            or self._unit_has_keyword_or_faction(unit, "TAU EMPIRE", faction_id=self.faction_id)
-        )
+        return self._unit_is_tau_empire(unit)
+
+    def _weapon_is_ranged(self, weapon_profile) -> bool:
+        if weapon_profile is None:
+            return False
+        parent = getattr(weapon_profile, "parent_wargear", None)
+        return bool(parent is not None and callable(getattr(parent, "is_ranged", None)) and parent.is_ranged())
+
+    @staticmethod
+    def _battle_round_from_game(game) -> int:
+        if game is None:
+            return 0
+        try:
+            return int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            return 0
+
+    def is_montka(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Mont'ka")
+
+    def _killing_blow_round_active(self, *, game=None) -> bool:
+        if not self.is_montka():
+            return False
+        battle_round = self._battle_round_from_game(game)
+        return 1 <= battle_round <= 3
+
+    def killing_blow_assault_applies(self, unit, weapon_profile=None, *, game=None) -> bool:
+        if not self._killing_blow_round_active(game=game):
+            return False
+        if unit is None or not self._unit_in_army(unit):
+            return False
+        if not self._unit_is_tau_empire(unit):
+            return False
+        if weapon_profile is None:
+            return True
+        return self._weapon_is_ranged(weapon_profile)
+
+    def _unit_is_guided_against_target(self, unit, target_unit, *, game=None) -> bool:
+        if unit is None or target_unit is None:
+            return False
+        army = self.army
+        if army is None:
+            return False
+        ftgg_mgr = getattr(army, "for_the_greater_good", None)
+        if ftgg_mgr is None:
+            return False
+        bonus = ftgg_mgr.guided_attack_bonus(unit, target_unit)
+        if not isinstance(bonus, dict):
+            return False
+        try:
+            return int(bonus.get("bs_improve", 0) or 0) > 0
+        except Exception:
+            return bool(bonus.get("bs_improve"))
+
+    def killing_blow_lethal_hits_applies(self, model, weapon_profile=None, *, target_unit=None, game=None) -> bool:
+        if not self._killing_blow_round_active(game=game):
+            return False
+        if model is None or not self._model_in_army(model):
+            return False
+        if not self._model_is_tau_empire(model):
+            return False
+        if not self._weapon_is_ranged(weapon_profile):
+            return False
+        unit = getattr(model, "parent_unit", None)
+        if unit is None:
+            return False
+        return self._unit_is_guided_against_target(unit, target_unit, game=game)
 
     def superior_craftsmanship_range_bonus(self, model, weapon_profile=None, *, game=None) -> int:
         del game  # Future-proofed signature; no phase/turn dependence for this rule.
@@ -50,8 +128,6 @@ class TauEmpireDetachmentManager(DetachmentManagerBase):
             return 0
         if not self._model_is_tau_empire(model):
             return 0
-        parent = getattr(weapon_profile, "parent_wargear", None)
-        is_ranged = bool(parent is not None and callable(getattr(parent, "is_ranged", None)) and parent.is_ranged())
-        if not is_ranged:
+        if not self._weapon_is_ranged(weapon_profile):
             return 0
         return 6

@@ -5928,7 +5928,6 @@ class WargearProfile:
                 bonus_lethal = True
         except Exception:
             pass
-
         def _set_bonus_sustained(value: int, label: str) -> None:
             nonlocal bonus_sustained_value, bonus_sustained_label, bonus_sustained_dice
             try:
@@ -6103,6 +6102,17 @@ class WargearProfile:
         try:
             if attack_is_ranged and self._purging_fire_lethal_hits_active(attacker):
                 bonus_lethal = True
+        except Exception:
+            pass
+        try:
+            if attack_is_ranged:
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                mgr = getattr(army, "tau_empire_detachments", None) if army is not None else None
+                if mgr is not None and callable(getattr(mgr, "killing_blow_lethal_hits_applies", None)):
+                    game = getattr(getattr(army, "player", None), "game", None)
+                    if mgr.killing_blow_lethal_hits_applies(attacker, self, target_unit=target, game=game):
+                        bonus_lethal = True
         except Exception:
             pass
 
