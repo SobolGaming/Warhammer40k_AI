@@ -23,20 +23,22 @@ Takeaway:
 - The cache on `_normalize_rules_text` was a large win.
 - Remaining regex cost is now mostly `re.search` in repeatedly called ability-gating helpers.
 
-### Current regex hotspots (from caller breakdown)
-`re.Pattern.search` in `ui_profile_20260214_165818` is dominated by:
-- `actions_movement_mixin.py:_iter_conditioned_text_segments` (~55k calls)
-- `actions_movement_mixin.py:_ability_requires_not_leading` (~57k calls)
-- `actions_movement_mixin.py:_ability_requires_leading` (~57k calls)
+### Current regex hotspots (code audit refresh)
+Historical profile data above remains useful, but the current codebase has moved since those captures.
 
-Upstream call pressure:
-- `actions_movement_mixin.py:_ability_is_active` called ~57k times.
-- `_ability_is_active` is called by:
-  - `actions_movement_mixin.py:_iter_active_possible_abilities`
-  - `utility/aura_effects.py:_iter_possible_abilities`
-- `positioning_mixin.py:_find_ability_with_patterns` called ~6.9k times.
-  - Main caller: `state_attachment_mixin.py:has_super_heavy_walker`.
-  - `has_super_heavy_walker` is used in movement/pathing rules (`utility/calcs.py`), i.e. hot loop territory.
+Key audit findings from current source:
+- `has_super_heavy_walker()` is now cached as a boolean on `_ability_cache['super_heavy_walker']` after first evaluation.
+- Cache invalidation already exists via `_invalidate_ability_cache()` pathways used by attachment/composition mutations.
+- The bigger remaining runtime regex pressure is in `utility/aura_effects.py`, where multiple strict parsers run repeatedly inside per-query loops:
+  - `_requires_own_shooting_phase`
+  - `_parse_simple_plus_one_aura`
+  - `_parse_reroll_ones_aura`
+  - `_parse_full_hit_reroll_aura`
+- `_find_ability_with_patterns` remains a generic text-scan helper and is still expensive for uncached traits.
+
+Implication:
+- `has_super_heavy_walker` is no longer the primary optimization target.
+- Aura parsing and generic ability text scanning are now the highest-value areas for parse-once caching.
 
 ## Important correctness note: `_iter_conditioned_text_segments` cache
 `@lru_cache` on `_iter_conditioned_text_segments(self, text)` is not safe.
@@ -55,7 +57,7 @@ Conclusion:
 ## Why regex is still in hot loops
 The current architecture often parses free-text rule descriptions at query time, including inside:
 - ability activity checks (`_ability_is_active`)
-- movement/pathing rule checks (`has_super_heavy_walker` path)
+- aura parsing (`utility/aura_effects.py` strict parser helpers)
 - repeated per-frame/per-candidate scans (`_find_ability_with_patterns`)
 
 Even with compiled patterns, repeated matching in high-frequency loops is expensive relative to boolean flag reads.
@@ -80,12 +82,14 @@ For known frequently queried capabilities, store explicit flags in parsed specs,
 - `led_by_model_phrases: tuple[str, ...]`
 - `attached_specific_unit_phrases: tuple[str, ...]`
 - `has_super_heavy_walker: bool`
+- `aura_specs: tuple[AuraSpec, ...]` (parse-once structured aura definitions)
 - parsed numeric values (e.g., scouts distance)
 
 Then:
 - `has_super_heavy_walker()` becomes an O(1) cached lookup.
 - `_ability_requires_leading/not_leading` become O(1) field reads.
 - `_find_ability_with_patterns` should no longer scan raw text for common movement/terrain traits.
+- aura evaluation should consume pre-parsed `AuraSpec` data, not run regex per query.
 
 ### 3) Split conditioned segments into pure and stateful parts
 Current behavior in `_iter_conditioned_text_segments` should be refactored:
@@ -117,7 +121,7 @@ Cache keys include generation where needed, avoiding stale values.
 ### 5) Define and enforce hot-loop boundaries
 Establish explicit "no regex in hot loop" contract for methods invoked from:
 - `utility/calcs.py` movement/pathing checks
-- repeated render-phase ability scans
+- repeated render/combat-phase ability and aura scans
 
 Practical enforcement:
 - Add a lightweight test that monkeypatches `re.search/sub/finditer` and asserts they are not called during representative movement/pathfinding loops.
@@ -171,13 +175,69 @@ This reduces both runtime cost and maintenance drift.
   - Result: `uv run python -m pytest tests/test_lord_of_murder.py -q` -> passed.
   - Result: `uv run python -m pytest tests/` -> passed (`1985 passed, 16 warnings`).
 
+- [x] Task 8: Post-refactor audit refresh (doc-only).
+  - Result: confirmed `has_super_heavy_walker` already uses `_ability_cache` boolean caching.
+  - Result: identified `utility/aura_effects.py` parse helpers as the current repeated regex hotspot.
+  - Result: added roadmap PR plan to shift aura/runtime checks to parse-once structured data.
+
 ## Further performance improvement ideas
 
 1. Add a parsed ability index on unit/root (`ability_name_tokens`, `ability_desc_tokens`, `trait_flags`) to make most `_find_ability_with_patterns` calls O(1) flag lookups.
 2. Introduce generation-scoped `_ability_is_active` memoization (per unit/root generation) to avoid recomputing activity across repeated render/path candidate evaluation within the same state.
 3. Move additional regex-heavy parsers in `utility/aura_effects.py` and `ability_specs_mixin.py` to shared parse-once cached helpers, mirroring the same parser/runtime split used here.
-4. Add a performance guard test that monkeypatches `re.Pattern.search`/`sub` counters for representative movement/pathing flows and fails on regressions in hot-loop regex activity.
-5. Increase cache observability by recording hit/miss stats for key parse caches (`_normalize_rules_text_cached`, `_parse_ability_condition_metadata`, `_parse_conditioned_text_segment_guards`) during profiling runs.
+4. Add a performance guard test that monkeypatches `re.Pattern.search`/`sub` counters for representative movement/pathing and aura-resolution flows and fails on regressions in hot-loop regex activity.
+5. Increase cache observability by recording hit/miss stats for key parse caches (`_normalize_rules_text_cached`, `_parse_ability_condition_metadata`, `_parse_conditioned_text_segment_guards`, aura-spec cache) during profiling runs.
+
+## Roadmap PRs (proposed, not implemented)
+
+### PR 1: Profiling baseline refresh and hotspot instrumentation
+Scope:
+- Re-run deterministic profiling on current head for local UI and client/server action loops.
+- Add optional counters for regex invocations in hot paths (movement + aura evaluation).
+
+Acceptance criteria:
+- New profile artifacts committed under `profiles/` with date-stamped names.
+- Call-count table in this doc updated using current data.
+- Repeatable command list documented.
+
+### PR 2: AbilityTraitIndex (parse-once trait flags)
+Scope:
+- Add a generation-scoped parsed trait index per unit/root.
+- Include stable boolean fields for common trait checks (`has_super_heavy_walker`, leading/not-leading gates, other high-frequency tags).
+- Route high-frequency trait checks to index reads.
+
+Acceptance criteria:
+- Hot-loop callsites read booleans/specs without regex.
+- Trait index invalidates on ability/attachment/special-rules mutation.
+- Regression tests cover correctness and invalidation.
+
+### PR 3: AuraSpec parse cache and runtime evaluator split
+Scope:
+- Add parse-once aura spec extraction (regex allowed) keyed by normalized text + ability identity.
+- Refactor `utility/aura_effects.py` runtime to consume `AuraSpec` objects only (no regex in per-query loop).
+
+Acceptance criteria:
+- Regex parsers run at parse time only.
+- Runtime aura evaluation performs boolean/range/keyword checks only.
+- Existing aura behavior tests remain green; add targeted cache/invalidation tests.
+
+### PR 4: `_find_ability_with_patterns` migration to indexed lookups
+Scope:
+- Identify high-frequency callers and replace with trait/index lookups.
+- Keep `_find_ability_with_patterns` as compatibility fallback for non-indexed long-tail checks.
+
+Acceptance criteria:
+- Reduced call frequency of `_find_ability_with_patterns` in profiled hot paths.
+- No behavior regression in movement/pathing and detachment/enhancement checks.
+
+### PR 5: Performance guardrails in CI
+Scope:
+- Add lightweight tests asserting no regex usage in representative hot loops.
+- Add optional benchmark/profiling smoke checks for regression detection.
+
+Acceptance criteria:
+- CI fails on reintroduced regex in guarded hot loops.
+- Doc includes troubleshooting guide and known exceptions.
 
 ## Final recommendation
-Continue using cached normalization for pure text transforms, but move all rule text interpretation to a parse-once structured layer and evaluate precomputed flags in runtime loops. That is the cleanest way to both increase performance and remove regex dependence from hot paths without sacrificing rules flexibility.
+Continue using cached normalization for pure text transforms, but prioritize parse-once structured evaluation for aura resolution and high-frequency ability trait checks. `has_super_heavy_walker` is already in a good cached state; the next major wins are aura parser caching and indexed trait lookups that remove regex from runtime loops.
