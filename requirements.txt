@@ -9,6 +9,7 @@ shapely
 simple-namespace
 pytest
 pytest-xdist
+setuptools==82.0.0
 pygame
 shapely
 matplotlib
