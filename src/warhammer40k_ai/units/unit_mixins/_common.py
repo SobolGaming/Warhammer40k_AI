@@ -1,5 +1,7 @@
 """Shared runtime imports for Unit mixins."""
 
+
+from functools import lru_cache
 from typing import List, Tuple, Optional, Callable
 from typing import TYPE_CHECKING
 

@@ -2,6 +2,8 @@ import copy
 import unittest
 from types import SimpleNamespace
 
+from warhammer40k_ai.roster.player import DEFAULT_PLAYER_UI_COLOR_PALETTE
+
 
 class _Player:
     def __init__(self, name: str):
@@ -10,12 +12,28 @@ class _Player:
         self.control = SimpleNamespace(name="LOCAL")
         self.has_control = lambda: True
         self.army = None
+        self.ui_color_rgb = [0, 0, 0]
+        self.ui_color_hue_degrees = None
+        self.ui_color_selected = False
+        self.ui_color_source = "default"
 
     def set_game(self, game):
         self.game = game
 
     def get_army(self):
         return self.army
+
+    def assign_default_ui_color(self, slot_index: int) -> None:
+        palette = list(DEFAULT_PLAYER_UI_COLOR_PALETTE or [])
+        if not palette:
+            color = [128, 128, 128]
+        else:
+            index = int(slot_index) % len(palette)
+            color = list(palette[index])
+        self.ui_color_rgb = [int(color[0]), int(color[1]), int(color[2])]
+        self.ui_color_hue_degrees = None
+        self.ui_color_selected = False
+        self.ui_color_source = "default"
 
 
 class _Army:

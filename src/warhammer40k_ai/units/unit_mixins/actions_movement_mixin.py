@@ -204,55 +204,137 @@ class ActionsMovementMixin:
         r"\b(?:while|if)\s+an?\s+(?P<model>[^.,;:]+?)\s+model\s+is\s+leading\s+(?:this|that)\s+unit\b",
         re.IGNORECASE,
     )
+    _SEGMENT_SPLIT_RE = re.compile(r"[.;]\s*")
+    _COND_SEGMENT_ALWAYS = "always"
+    _COND_SEGMENT_LEADING_SPECIFIC = "leading_specific_unit"
+    _COND_SEGMENT_ATTACHED_SPECIFIC = "attached_specific_unit"
+
+    @staticmethod
+    def _normalize_ascii_alnum_space(value: str) -> str:
+        """Normalize text to lowercase ASCII alnum tokens separated by single spaces."""
+        text = str(value or "").lower()
+        if not text:
+            return ""
+        text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+        out_chars: list[str] = []
+        prev_space = True
+        for ch in text:
+            is_ascii_alnum = ("a" <= ch <= "z") or ("0" <= ch <= "9")
+            if is_ascii_alnum:
+                out_chars.append(ch)
+                prev_space = False
+                continue
+            if not prev_space:
+                out_chars.append(" ")
+                prev_space = True
+        if out_chars and out_chars[-1] == " ":
+            out_chars.pop()
+        return "".join(out_chars)
+
+    @staticmethod
+    def _ability_name_and_description(ability) -> tuple[str, str]:
+        if isinstance(ability, str):
+            return "", str(ability or "")
+        return (
+            str(getattr(ability, "name", "") or ""),
+            str(getattr(ability, "description", "") or ""),
+        )
+
+    @classmethod
+    @lru_cache(maxsize=4096)
+    def _parse_ability_condition_metadata(
+        cls,
+        normalized_text: str,
+    ) -> tuple[bool, bool, tuple[str, ...], tuple[str, ...]]:
+        """
+        Parse ability condition metadata from normalized text.
+
+        This parser is pure and safe to cache globally by text.
+        """
+        text = str(normalized_text or "")
+        if not text:
+            return False, False, tuple(), tuple()
+
+        requires_leading = bool(cls._LEADING_ABILITY_RE.search(text))
+        requires_not_leading = bool(cls._NOT_LEADING_ABILITY_RE.search(text))
+
+        leading_specific_units: list[str] = []
+        for match in cls._LEADING_SPECIFIC_UNIT_RE.finditer(text):
+            phrase = str(match.group("unit") or "").strip()
+            if phrase:
+                leading_specific_units.append(phrase)
+
+        led_by_models: list[str] = []
+        for match in cls._LED_BY_MODEL_RE.finditer(text):
+            phrase = str(match.group("model") or "").strip()
+            if phrase:
+                led_by_models.append(phrase)
+
+        return (
+            requires_leading,
+            requires_not_leading,
+            tuple(leading_specific_units),
+            tuple(led_by_models),
+        )
+
+    @classmethod
+    @lru_cache(maxsize=4096)
+    def _parse_conditioned_text_segment_guards(
+        cls,
+        normalized_text: str,
+    ) -> tuple[tuple[str, str, str], ...]:
+        """
+        Parse sentence-like segments with unit-condition guards.
+
+        Output tuple items are `(segment_text, guard_kind, phrase)`.
+        This parser is pure and safe to cache globally by text.
+        """
+        text = str(normalized_text or "")
+        if not text:
+            return tuple()
+        if not cls._LEADING_SPECIFIC_UNIT_RE.search(text) and not cls._ATTACHED_SPECIFIC_UNIT_RE.search(text):
+            return ((text, cls._COND_SEGMENT_ALWAYS, ""),)
+
+        parsed: list[tuple[str, str, str]] = []
+        for raw in cls._SEGMENT_SPLIT_RE.split(text):
+            part = str(raw or "").strip()
+            if not part:
+                continue
+            m_leading = cls._LEADING_SPECIFIC_UNIT_RE.search(part)
+            if m_leading:
+                phrase = str(m_leading.group("unit") or "").strip()
+                parsed.append((part, cls._COND_SEGMENT_LEADING_SPECIFIC, phrase))
+                continue
+            m_attached = cls._ATTACHED_SPECIFIC_UNIT_RE.search(part)
+            if m_attached:
+                phrase = str(m_attached.group("unit") or "").strip()
+                parsed.append((part, cls._COND_SEGMENT_ATTACHED_SPECIFIC, phrase))
+                continue
+            parsed.append((part, cls._COND_SEGMENT_ALWAYS, ""))
+        return tuple(parsed)
 
     def _ability_leading_specific_units(self, ability) -> list[str]:
         """Return specific unit phrases for abilities gated by leading a named unit."""
-        name = ""
-        desc = ""
-        try:
-            if isinstance(ability, str):
-                desc = ability
-            else:
-                name = str(getattr(ability, "name", "") or "")
-                desc = str(getattr(ability, "description", "") or "")
-        except Exception:
-            desc = ""
+        name, desc = self._ability_name_and_description(ability)
         text = self._strip_eligibility_prefix(f"{name} {desc}".strip())
         text = self._normalize_rules_text(text)
         if not text:
             return []
-        phrases: list[str] = []
-        for m in self._LEADING_SPECIFIC_UNIT_RE.finditer(text):
-            phrase = str(m.group("unit") or "").strip()
-            if phrase:
-                phrases.append(phrase)
-        return phrases
+        meta = self._parse_ability_condition_metadata(text)
+        return list(meta[2])
 
     def _ability_led_by_model_phrases(self, ability) -> list[str]:
         """
         Return model-name/keyword phrases for abilities gated by
         "while a/an <model> model is leading this unit".
         """
-        name = ""
-        desc = ""
-        try:
-            if isinstance(ability, str):
-                desc = ability
-            else:
-                name = str(getattr(ability, "name", "") or "")
-                desc = str(getattr(ability, "description", "") or "")
-        except Exception:
-            desc = ""
+        name, desc = self._ability_name_and_description(ability)
         text = self._strip_eligibility_prefix(f"{name} {desc}".strip())
         text = self._normalize_rules_text(text)
         if not text:
             return []
-        phrases: list[str] = []
-        for m in self._LED_BY_MODEL_RE.finditer(text):
-            phrase = str(m.group("model") or "").strip()
-            if phrase:
-                phrases.append(phrase)
-        return phrases
+        meta = self._parse_ability_condition_metadata(text)
+        return list(meta[3])
 
     def _attached_leader_matches_phrase(self, phrase: str) -> bool:
         if not str(phrase or "").strip():
@@ -314,22 +396,16 @@ class ActionsMovementMixin:
         cleaned = self._normalize_rules_text(cleaned)
         if not cleaned:
             return []
-        if not self._LEADING_SPECIFIC_UNIT_RE.search(cleaned) and not self._ATTACHED_SPECIFIC_UNIT_RE.search(cleaned):
-            return [cleaned]
-        parts = [p.strip() for p in re.split(r"[.;]\s*", cleaned) if p.strip()]
-        if not parts:
+        parsed_segments = self._parse_conditioned_text_segment_guards(cleaned)
+        if not parsed_segments:
             return []
         segments: list[str] = []
-        for part in parts:
-            m = self._LEADING_SPECIFIC_UNIT_RE.search(part)
-            if m:
-                phrase = str(m.group("unit") or "").strip()
+        for part, guard_kind, phrase in parsed_segments:
+            if guard_kind == self._COND_SEGMENT_LEADING_SPECIFIC:
                 if phrase and self._attached_unit_matches_phrase(phrase):
                     segments.append(part)
                 continue
-            m = self._ATTACHED_SPECIFIC_UNIT_RE.search(part)
-            if m:
-                phrase = str(m.group("unit") or "").strip()
+            if guard_kind == self._COND_SEGMENT_ATTACHED_SPECIFIC:
                 if phrase and self._attached_unit_matches_phrase(phrase):
                     segments.append(part)
                     continue
@@ -349,42 +425,27 @@ class ActionsMovementMixin:
                         and ("infiltrators" in low or "scout" in low)
                     ):
                         segments.append(part)
-                continue
             else:
                 segments.append(part)
         return segments
 
     def _ability_requires_leading(self, ability) -> bool:
         """Return True if the ability text is gated by 'While this model is leading a unit'."""
-        desc = ""
-        try:
-            if isinstance(ability, str):
-                desc = ability
-            else:
-                desc = getattr(ability, "description", "") or ""
-        except Exception:
-            desc = ""
+        _, desc = self._ability_name_and_description(ability)
         desc = self._strip_eligibility_prefix(desc)
         text = self._normalize_rules_text(desc)
         if not text:
             return False
-        return bool(self._LEADING_ABILITY_RE.search(text))
+        return bool(self._parse_ability_condition_metadata(text)[0])
 
     def _ability_requires_not_leading(self, ability) -> bool:
         """Return True if the ability text requires the model to NOT be leading a unit."""
-        desc = ""
-        try:
-            if isinstance(ability, str):
-                desc = ability
-            else:
-                desc = getattr(ability, "description", "") or ""
-        except Exception:
-            desc = ""
+        _, desc = self._ability_name_and_description(ability)
         desc = self._strip_eligibility_prefix(desc)
         text = self._normalize_rules_text(desc)
         if not text:
             return False
-        return bool(self._NOT_LEADING_ABILITY_RE.search(text))
+        return bool(self._parse_ability_condition_metadata(text)[1])
 
     def _ability_is_active(self, ability) -> bool:
         """Return True if the ability is currently active for this unit."""
@@ -396,9 +457,9 @@ class ActionsMovementMixin:
                     name = ability
                 else:
                     name = getattr(ability, "name", "") or ""
-                norm_name = re.sub(r"[^a-z0-9]+", " ", str(name or "").lower()).strip()
+                norm_name = self._normalize_ascii_alnum_space(name)
                 disabled_set = {
-                    re.sub(r"[^a-z0-9]+", " ", str(item or "").lower()).strip()
+                    self._normalize_ascii_alnum_space(item)
                     for item in disabled
                 }
                 if norm_name and norm_name in disabled_set:

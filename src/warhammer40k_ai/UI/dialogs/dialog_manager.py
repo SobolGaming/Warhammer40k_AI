@@ -67,8 +67,6 @@ class DialogManager:
             _get(gv, "voice_of_command_dialog"),
             _get(gv, "gate_of_infinity_dialog"),
             _get(gv, "secondary_discard_dialog"),
-            _get(gv, "overwatch_shooter_dialog"),
-            _get(gv, "battle_focus_dialog"),
             _get(gv, "hazard_objective_select_dialog"),
             _get(gv, "battlefield_point_pick_dialog"),
             _get(gv, "movement_choice_dialog"),
@@ -88,11 +86,16 @@ class DialogManager:
             _get(gv, "transport_embark_dialog"),
             _get(gv, "transport_disembark_dialog"),
             _get(gv, "transport_assignment_dialog"),
+            _get(gv, "player_color_picker_dialog"),
             _get(gv, "reserves_allocation_dialog"),
             _get(gv, "precision_allocation_dialog"),
             _get(gv, "damage_allocation_dialog"),
             _get(gv, "mission_selection_dialog"),
             _get(gv, "leader_attachment_dialog"),
+            # Keep reactive selection dialogs late in priority order so they own focus/highlight
+            # when activated in the same frame as movement dialogs.
+            _get(gv, "overwatch_shooter_dialog"),
+            _get(gv, "battle_focus_dialog"),
         ])
 
         return [d for d in discovered if d is not None]

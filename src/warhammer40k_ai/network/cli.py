@@ -13,14 +13,14 @@ def setup_logging(log_level) -> logging.Logger:
     """Configure logging."""
     print(f"Setting up logging at level {log_level}")
     root_logger = logging.getLogger()
-    root_logger.setLevel(logging._nameToLevel(log_level))
+    root_logger.setLevel(logging._nameToLevel[log_level])
 
     for handler in root_logger.handlers[:]:
         root_logger.removeHandler(handler)
 
     formatter = logging.Formatter("%(message)s")
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging._nameToLevel(log_level))
+    console_handler.setLevel(logging._nameToLevel[log_level])
     console_handler.setFormatter(formatter)
     root_logger.addHandler(console_handler)
 

@@ -5126,26 +5126,44 @@ class KeywordsDetachmentsMixin:
         self._ability_cache['reanimation_protocols'] = found
         return found
 
-    def _normalize_rules_text(self, text: str) -> str:
-        """Normalize Wahapedia-style text for rule pattern matching."""
-        if not text:
-            return ""
-        # Strip HTML tags like <span class="kwb">CHARACTER</span>
-        try:
-            text = re.sub(r"<[^>]+>", " ", text)
-        except Exception:
-            pass
-        # Normalize whitespace and punctuation spacing
-        text = text.replace("\n", " ").replace("\r", " ")
-        text = re.sub(r"\s+", " ", text).strip()
-        return text
+    _RULE_TEXT_HTML_TAG_RE = re.compile(r"<[^>]+>")
+    _RULE_TEXT_WHITESPACE_RE = re.compile(r"\s+")
 
     @staticmethod
+    @lru_cache(maxsize=8192)
+    def _normalize_rules_text_cached(text: str) -> str:
+        """Normalize Wahapedia-style text for rule pattern matching."""
+        raw = str(text or "")
+        if not raw:
+            return ""
+        raw = KeywordsDetachmentsMixin._RULE_TEXT_HTML_TAG_RE.sub(" ", raw)
+        raw = raw.replace("\n", " ").replace("\r", " ")
+        return KeywordsDetachmentsMixin._RULE_TEXT_WHITESPACE_RE.sub(" ", raw).strip()
+
+    def _normalize_rules_text(self, text: str) -> str:
+        return KeywordsDetachmentsMixin._normalize_rules_text_cached(str(text or ""))
+
+    @staticmethod
+    @lru_cache(maxsize=8192)
     def _normalize_keyword_phrase(value: str) -> str:
         t = str(value or "").lower()
+        if not t:
+            return ""
         t = t.replace("\u2019", "'").replace("\u0192?T", "'")
-        t = re.sub(r"[^a-z0-9]+", " ", t)
-        return re.sub(r"\s+", " ", t).strip()
+        out_chars: list[str] = []
+        prev_space = True
+        for ch in t:
+            is_ascii_alnum = ("a" <= ch <= "z") or ("0" <= ch <= "9")
+            if is_ascii_alnum:
+                out_chars.append(ch)
+                prev_space = False
+                continue
+            if not prev_space:
+                out_chars.append(" ")
+                prev_space = True
+        if out_chars and out_chars[-1] == " ":
+            out_chars.pop()
+        return "".join(out_chars)
 
     @classmethod
     def _unit_matches_keyword_phrase(cls, unit, phrase: str, *, use_effective: bool = True) -> bool:
@@ -5776,4 +5794,3 @@ class KeywordsDetachmentsMixin:
         mods["hit_reasons"] = tuple(hit_reasons)
         mods["wound_reasons"] = tuple(wound_reasons)
         return mods
-

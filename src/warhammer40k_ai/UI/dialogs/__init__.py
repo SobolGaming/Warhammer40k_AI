@@ -15,6 +15,9 @@ from .weapon_choice_dialog import WeaponChoiceDialog
 from .transport_embark_dialog import TransportEmbarkDialog
 from .transport_disembark_dialog import TransportDisembarkDialog
 from .leader_attachment_dialog import LeaderAttachmentDialog
+from .player_color_picker_dialog import PlayerColorPickerDialog
+from .settings_dialog import SettingsDialog
+from .developer_menu_dialog import DeveloperMenuDialog
 from .dialog_manager import DialogManager
 from .mission_selection_modal import MissionSelectionModal
 from .transport_assignment_dialog import TransportAssignmentDialog
@@ -78,6 +81,9 @@ __all__ = [
     'TransportEmbarkDialog',
     'TransportDisembarkDialog',
     'LeaderAttachmentDialog',
+    'PlayerColorPickerDialog',
+    'SettingsDialog',
+    'DeveloperMenuDialog',
     'DialogManager',
     'MissionSelectionModal',
     'TransportAssignmentDialog',

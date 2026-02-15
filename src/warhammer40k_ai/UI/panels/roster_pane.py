@@ -23,6 +23,12 @@ from ..ui_utils import (
     draw_generic_icon,
     draw_aspect_shrine_token_icon
 )
+from ..player_colors import (
+    get_active_roster_header_rgb,
+    get_contrasting_text_rgb,
+    get_player_color_rgb,
+)
+from ..ui_constants import PLAYER_SWATCH_SIZE
 import logging
 logger = logging.getLogger(__name__)
 
@@ -42,7 +48,6 @@ TEXT_PRIMARY = (255, 255, 255)  # Primary text
 TEXT_SECONDARY = (200, 200, 200)  # Secondary text
 TEXT_ACCENT = (100, 149, 237)  # Accent text
 DARK_GREY = (30, 30, 30)  # Dark grey for headers
-ACTIVE_PLAYER_BG = (57, 255, 20)  # Neon green for active player banner
 
 # Button dimensions
 ROSTER_PANE_BUTTON_HEIGHT = 80
@@ -270,11 +275,14 @@ class RosterPane(pygame.sprite.Sprite):
         # Draw header
         header_rect = pygame.Rect(self.rect.left, self.rect.top, self.rect.width, 35)
         header_color = DARK_GREY
+        header_text_color = TEXT_PRIMARY
+        waiting_id = None
         if game is not None:
-            try:
-                waiting_id = game.get_waiting_player_id()
-            except Exception:
-                waiting_id = None
+            if self.game_view is not None and hasattr(self.game_view, "get_required_input_player_id"):
+                waiting_id = self.game_view.get_required_input_player_id()
+            if waiting_id is None:
+                get_waiting_player_id = getattr(game, "get_waiting_player_id", None)
+                waiting_id = get_waiting_player_id() if callable(get_waiting_player_id) else None
             if self.game_view is not None:
                 last_id = getattr(self.game_view, "_last_highlighted_player_id", None)
                 if waiting_id != last_id:
@@ -298,7 +306,8 @@ class RosterPane(pygame.sprite.Sprite):
                         logger.debug(f"DEBUG: Active player highlight -> {label or waiting_id}")
                     self.game_view._last_highlighted_player_id = waiting_id
             if self.player is not None and waiting_id and str(self.player.id) == str(waiting_id):
-                header_color = ACTIVE_PLAYER_BG
+                header_color = get_active_roster_header_rgb(self.player, base_header_rgb=DARK_GREY)
+                header_text_color = get_contrasting_text_rgb(header_color)
         pygame.draw.rect(surface, header_color, header_rect)
         
         # Player name with control indicator
@@ -307,8 +316,20 @@ class RosterPane(pygame.sprite.Sprite):
             player_control_str = f" ({self.player.control.name})"
 
         player_display_name = f"{self.player_name}{player_control_str}"
-        player_text = self.font_medium.render(player_display_name, True, TEXT_PRIMARY)
-        surface.blit(player_text, (self.rect.left + 10, self.rect.top + 5))
+        player_text = self.font_medium.render(player_display_name, True, header_text_color)
+        player_text_x = self.rect.left + 10
+        player_text_y = self.rect.top + 5
+        surface.blit(player_text, (player_text_x, player_text_y))
+
+        swatch_size = int(PLAYER_SWATCH_SIZE)
+        swatch_x_max = self.rect.right - 90 - swatch_size
+        swatch_x = min(player_text_x + player_text.get_width() + 8, swatch_x_max)
+        swatch_x = max(self.rect.left + 10, swatch_x)
+        swatch_y = self.rect.top + (header_rect.height - swatch_size) // 2
+        swatch_rect = pygame.Rect(swatch_x, swatch_y, swatch_size, swatch_size)
+        swatch_rgb = get_player_color_rgb(self.player)
+        pygame.draw.rect(surface, swatch_rgb, swatch_rect, border_radius=2)
+        pygame.draw.rect(surface, PANEL_BORDER, swatch_rect, 1, border_radius=2)
         
         # Army points total (include attached leaders/support with their bodyguard for display)
         if self.roster:

@@ -3,9 +3,13 @@ import pytest
 from warhammer40k_ai.engine.battlefield import Battlefield
 from warhammer40k_ai.engine.command_kinds import CMD_SET_DEPLOYMENT_WAITING
 from warhammer40k_ai.engine.commands import GameCommand
+from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_PLAYER_COLOR
+from warhammer40k_ai.engine.decision_requests import build_player_color_selection_requests
 from warhammer40k_ai.engine.game import Game
 from warhammer40k_ai.network.messages import CommandMessage, ErrorMessage, EventMessage, ResyncMessage, parse_message
 from warhammer40k_ai.network.protocol import EventStreamCursor, build_resync_message, handle_command_message
+from warhammer40k_ai.roster.player import Player
+from warhammer40k_ai.utility.decision_utils import resolve_decision_command
 
 
 def test_command_message_roundtrip():
@@ -94,6 +98,53 @@ def test_build_resync_message():
     assert resync.snapshot.get("events", None) == []
     assert resync.reason == "test"
     assert len(resync.events) >= 1
+
+
+def test_resync_snapshot_includes_player_color_state_and_pending_color_decisions():
+    player_one = Player("Player One")
+    player_two = Player("Player Two")
+    game = Game(Battlefield(width=60, height=44), players=[player_one, player_two])
+    game.turn = 1
+
+    player_one.set_ui_color([31, 62, 93], hue_degrees=120, selected=True, source="selected")
+    created = build_player_color_selection_requests(game, [player_two], queue_requests=True)
+    assert len(created) == 1
+    request = created[0]
+    chosen = request.options[3]
+
+    pending_resync = build_resync_message(game, since_event_id=0, reason="pending_player_color")
+    players_by_id = {
+        str(entry.get("id", "") or ""): dict(entry.get("state", {}) or {})
+        for entry in list(pending_resync.snapshot.get("players", []) or [])
+    }
+    assert players_by_id[player_one.id]["ui_color_rgb"] == [31, 62, 93]
+    assert players_by_id[player_one.id]["ui_color_hue_degrees"] == 120
+    assert players_by_id[player_one.id]["ui_color_selected"] is True
+    pending_decisions = [
+        d
+        for d in list(pending_resync.snapshot.get("decisions", []) or [])
+        if d.get("decision_type") == DECISION_CHOOSE_PLAYER_COLOR
+    ]
+    assert len(pending_decisions) == 1
+    pending_action_ids = [str(c.get("action_id", "") or "") for c in list(pending_decisions[0].get("candidates", []) or [])]
+    assert pending_action_ids == sorted(pending_action_ids)
+
+    applied = resolve_decision_command(game, request, chosen.option_id, player_id=player_two.id)
+    assert bool(getattr(applied, "ok", False))
+
+    resolved_resync = build_resync_message(game, since_event_id=0, reason="resolved_player_color")
+    resolved_players = {
+        str(entry.get("id", "") or ""): dict(entry.get("state", {}) or {})
+        for entry in list(resolved_resync.snapshot.get("players", []) or [])
+    }
+    assert resolved_players[player_two.id]["ui_color_rgb"] == list(chosen.payload["rgb"])
+    assert resolved_players[player_two.id]["ui_color_hue_degrees"] == int(chosen.payload["hue_degrees"])
+    assert resolved_players[player_two.id]["ui_color_selected"] is True
+    assert resolved_players[player_two.id]["ui_color_source"] == "selected"
+    assert all(
+        d.get("decision_type") != DECISION_CHOOSE_PLAYER_COLOR
+        for d in list(resolved_resync.snapshot.get("decisions", []) or [])
+    )
 
 
 def test_game_snapshot_api_roundtrip():

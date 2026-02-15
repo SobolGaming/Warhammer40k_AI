@@ -32,7 +32,6 @@ class OverwatchShooterDialog(BaseDialog):
         *,
         decision_request=None,
     ):
-        super().show()
         self.decision_request = decision_request
         self.candidates, self._option_entries = self._build_candidates(candidates)
         self.enemy_unit = enemy_unit
@@ -41,7 +40,16 @@ class OverwatchShooterDialog(BaseDialog):
         self.on_cancel = on_cancel
         self._title = title
         self._subtitle = subtitle
+        if not self.candidates:
+            self.buttons.clear()
+            self.button_states.clear()
+            self.visible = False
+            if callable(on_cancel):
+                on_cancel()
+            return False
         self._create_buttons()
+        super().show()
+        return True
 
     def hide(self):
         super().hide()
@@ -152,7 +160,12 @@ class OverwatchShooterDialog(BaseDialog):
             for unit in list(candidates or []):
                 if unit is None:
                     continue
-                unit_by_id[str(get_entity_id(unit))] = unit
+                try:
+                    unit_id = get_entity_id(unit)
+                except (AttributeError, TypeError, ValueError):
+                    unit_id = None
+                if unit_id:
+                    unit_by_id[str(unit_id)] = unit
         for opt in options:
             payload = dict(getattr(opt, "payload", {}) or {})
             unit_id = str(payload.get("unit_id", payload.get("unit", "")) or "")

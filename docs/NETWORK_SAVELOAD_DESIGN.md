@@ -157,8 +157,11 @@ Setup / Mission:
 - mission_selection_dialog: CHOOSE_MISSION {mission_id}
 - mission_selection_modal: CHOOSE_MISSION {mission_id}
 - side_by_side_modal: CONFIRM_MODAL {choice_id}
+- settings_dialog: LOCAL_UI_SETTINGS {enable_developer_controls} (client-local UI state only; no engine command emitted)
+- developer_menu_dialog: LOCAL_UI_TOOLING {profiling_enabled} (client-local debugging control; no engine command emitted)
 
 Deployment / Pre-battle:
+- player_color_picker_dialog: CHOOSE_PLAYER_COLOR {player_id, hue_degrees, rgb} (context `selection_kind="player_color"`, `hue_step_degrees=15`)
 - leader_attachment_dialog: ATTACH_LEADER {leader_unit_id, bodyguard_unit_id}
 - support_artillery_attachment_dialog: ATTACH_SUPPORT_ARTILLERY {support_unit_id, bodyguard_unit_id} (used for joined support/retinue attachments)
 - reserves_allocation_dialog: DECLARE_RESERVES {unit_ids_by_bucket}

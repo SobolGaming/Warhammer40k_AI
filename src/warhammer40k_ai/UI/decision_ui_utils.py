@@ -41,6 +41,20 @@ def option_id_for_payload(request: Optional[DecisionRequest], key: str, value: o
     return ""
 
 
+def option_id_for_hue_degrees(request: Optional[DecisionRequest], hue_degrees: int) -> str:
+    if request is None:
+        return ""
+    hue = int(hue_degrees) % 360
+    for opt in list(getattr(request, "options", []) or []):
+        payload = dict(getattr(opt, "payload", {}) or {})
+        raw = payload.get("hue_degrees", None)
+        if raw is None:
+            continue
+        if int(raw) % 360 == hue:
+            return opt.option_id
+    return ""
+
+
 def first_option_id(request: Optional[DecisionRequest]) -> str:
     options = list(getattr(request, "options", []) or [])
     if options:

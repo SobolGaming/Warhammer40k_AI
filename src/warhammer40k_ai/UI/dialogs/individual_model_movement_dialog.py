@@ -642,39 +642,11 @@ class IndividualModelMovementDialog(BaseDialog):
             # print(f" DEBUG: {dialog_name} - Delegating to coherency dialog")
             return self.coherency_dialog.handle_event(event)
 
-        # Handle floor selection dialog if open
+        # Handle floor selection dialog if open.
+        # IMPORTANT: while this sub-dialog is visible, consume all events here so clicks
+        # do not leak through to battlefield placement/movement handlers.
         if hasattr(self, 'floor_selection_dialog') and self.floor_selection_dialog and self.floor_selection_dialog.visible:
-            result = self.floor_selection_dialog.handle_event(event)
-            if result:
-                action = result.get('action')
-                if action == 'confirm':
-                    selected_level = result.get('floor', 0)
-                    # Convert selected level to Z (prefer pending mapping if available)
-                    surface_z = float(selected_level) * float(RUINS_FLOOR_HEIGHT)
-                    try:
-                        if isinstance(self._pending_floor_z_by_level, dict) and selected_level in self._pending_floor_z_by_level:
-                            surface_z = float(self._pending_floor_z_by_level[selected_level])
-                    except Exception:
-                        pass
-                    if self._pending_click_position is not None:
-                        dest_x, dest_y = self._pending_click_position
-                        self.floor_selection_dialog.hide()
-                        # Proceed with move/deploy using selected Z
-                        if self.movement_type == 'deploy':
-                            self._finalize_deploy_click_with_z(dest_x, dest_y, surface_z)
-                        else:
-                            self._finalize_click_with_z(dest_x, dest_y, surface_z)
-                        self._pending_click_position = None
-                        self._pending_floor_z_by_level = None
-                        return True
-                elif action == 'cancel':
-                    # Cancel selection; do nothing (user can click again)
-                    self.floor_selection_dialog.hide()
-                    self._pending_click_position = None
-                    self._pending_floor_z_by_level = None
-                    return True
-            # IMPORTANT: While floor selection is visible, consume ALL events here
-            # to prevent battlefield clicks from placing models underneath.
+            self.floor_selection_dialog.handle_event(event)
             return True
 
         # Handle ESC key to close dialog
@@ -866,7 +838,10 @@ class IndividualModelMovementDialog(BaseDialog):
                 self.floor_selection_dialog = dialog
                 self._pending_click_position = (battlefield_x, battlefield_y)
                 self._pending_floor_z_by_level = dict(z_by_level or {})
-                dialog.show()
+                dialog.show(
+                    on_confirm=self._on_floor_selection_confirm,
+                    on_cancel=self._on_floor_selection_cancel,
+                )
                 try:
                     logger.info(f"INFO: Floor selection dialog visible={getattr(dialog, 'visible', None)}")
                 except Exception:
@@ -989,6 +964,26 @@ class IndividualModelMovementDialog(BaseDialog):
             logger.info(f"INFO: Model remains selected. Try clicking on a valid location.")
         
         return success
+
+    def _on_floor_selection_confirm(self, _option_id: str, selected_level: int) -> None:
+        """Resolve pending battlefield click with a selected RUINS floor."""
+        pending = self._pending_click_position
+        z_by_level = self._pending_floor_z_by_level if isinstance(self._pending_floor_z_by_level, dict) else {}
+        self._pending_click_position = None
+        self._pending_floor_z_by_level = None
+        if pending is None:
+            return
+        dest_x, dest_y = pending
+        surface_z = float(z_by_level.get(int(selected_level), float(selected_level) * float(RUINS_FLOOR_HEIGHT)))
+        if self.movement_type == 'deploy':
+            self._finalize_deploy_click_with_z(dest_x, dest_y, surface_z)
+        else:
+            self._finalize_click_with_z(dest_x, dest_y, surface_z)
+
+    def _on_floor_selection_cancel(self) -> None:
+        """Clear pending floor-selection click state without moving/deploying."""
+        self._pending_click_position = None
+        self._pending_floor_z_by_level = None
 
     def _finalize_deploy_click_with_z(self, x: float, y: float, z: float) -> None:
         """Finalize a pending battlefield click after floor selection by DEPLOYING the model with chosen Z."""

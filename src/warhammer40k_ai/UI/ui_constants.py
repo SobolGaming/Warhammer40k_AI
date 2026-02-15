@@ -78,6 +78,13 @@ HEALTH_GOOD = (76, 175, 80)  # Green for good health
 HEALTH_DAMAGED = (255, 193, 7)  # Yellow for damaged
 HEALTH_CRITICAL = (244, 67, 54)  # Red for critical
 
+# Dynamic player-color UI tuning
+PLAYER_UI_FALLBACK_RGB = (128, 128, 128)
+PLAYER_ACTIVE_HEADER_BLEND = 0.52
+PLAYER_ZONE_ALPHA = 96
+PLAYER_ZONE_BORDER_SHADE = 0.72
+PLAYER_SWATCH_SIZE = 12
+
 # Reserves UI Colors
 RESERVES_BUTTON_BG = (140, 80, 200)  # Brighter purple for reserves
 RESERVES_BUTTON_HOVER = (160, 100, 220)  # Lighter purple

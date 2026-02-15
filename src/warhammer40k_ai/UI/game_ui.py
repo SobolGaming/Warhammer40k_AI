@@ -11,6 +11,7 @@ from warhammer40k_ai.roster.player import Player
 from warhammer40k_ai.utility.dice import get_roll
 from warhammer40k_ai.utility.ability_support import ABILITY_BLESSINGS_OF_KHORNE, army_has_ability_id
 from warhammer40k_ai.utility.entity_ids import get_entity_id
+from warhammer40k_ai.utility.profiling_controller import ProfilingController
 
 # Import UI panels
 from .panels.roster_pane import RosterPane
@@ -196,7 +197,13 @@ class GameView:
         # Stratagem interaction dialogs
         screen_width, screen_height = self.screen.get_size()
         # Generic Yes/No prompt dialog (used for optional abilities, confirmations, etc.)
-        from .dialogs import YesNoDialog, FrenzyChoiceDialog, DiceRollDialog
+        from .dialogs import (
+            YesNoDialog,
+            FrenzyChoiceDialog,
+            DiceRollDialog,
+            SettingsDialog,
+            DeveloperMenuDialog,
+        )
         self.yes_no_dialog = YesNoDialog(screen_width, screen_height)
         self.frenzy_choice_dialog = FrenzyChoiceDialog(screen_width, screen_height)
         self.dice_roll_dialog = DiceRollDialog(screen_width, screen_height)
@@ -204,6 +211,10 @@ class GameView:
         self.secondary_discard_dialog = SecondaryDiscardDialog(screen_width, screen_height)
         self.overwatch_shooter_dialog = OverwatchShooterDialog(screen_width, screen_height)
         self.battle_focus_dialog = OverwatchShooterDialog(screen_width, screen_height)
+        self.settings_dialog = SettingsDialog(screen_width, screen_height)
+        self.developer_menu_dialog = DeveloperMenuDialog(screen_width, screen_height)
+        self._enable_developer_controls = False
+        self._profiling_controller = ProfilingController(out_dir="profiles", sort_by="tottime", lines=120)
         # Blessings of Khorne dialog (lazy-create only if needed)
         self.blessings_of_khorne_dialog = None
         self.blood_tithe_dialog = None
@@ -459,26 +470,44 @@ class GameView:
                 pass
         self._request_secondary_discard = _request_secondary_discard
 
-        def _request_overwatch_shooter(player, game, enemy_unit, on_chosen):
+        def _request_overwatch_shooter(player, game, enemy_unit, on_chosen, candidates=None):
             from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
 
-            # Build candidate list as StratagemManager did, but UI-driven
-            candidates = []
-            for unit in player.get_army().units or []:
-                if not unit.is_alive() or not unit.deployed:
+            # Prefer reaction-supplied candidates when present to keep UI and manager eligibility aligned.
+            cand = []
+            for unit in list(candidates or []):
+                if unit is None:
+                    continue
+                try:
+                    if not unit.is_alive() or not unit.deployed:
+                        continue
+                except Exception:
                     continue
                 if getattr(unit, 'is_titanic', False):
                     continue
-                dist = self.game.map.get_distance_between_units(unit, enemy_unit)
-                if dist is not None and dist <= 24.0:
-                    candidates.append(unit)
-            if not candidates:
+                if enemy_unit is not None:
+                    dist = self.game.map.get_distance_between_units(unit, enemy_unit)
+                    if dist is None or dist > 24.0:
+                        continue
+                cand.append(unit)
+
+            # Fallback to live recomputation when reaction payload did not include candidates.
+            if not cand:
+                for unit in player.get_army().units or []:
+                    if not unit.is_alive() or not unit.deployed:
+                        continue
+                    if getattr(unit, 'is_titanic', False):
+                        continue
+                    dist = self.game.map.get_distance_between_units(unit, enemy_unit)
+                    if dist is not None and dist <= 24.0:
+                        cand.append(unit)
+            if not cand:
                 on_chosen(None)
                 return
             enemy_name = getattr(enemy_unit, "name", "enemy unit") if enemy_unit else "enemy unit"
             _resolve_unit_selection_dialog(
                 player=player,
-                candidates=candidates,
+                candidates=cand,
                 on_chosen=on_chosen,
                 decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
                 prompt="Select Overwatch shooter.",
@@ -3115,6 +3144,36 @@ class GameView:
             if pid is not None and str(pid) == str(player_id):
                 return p
         return None
+
+    def get_required_input_player_id(self) -> str | None:
+        """
+        Resolve which player id should be highlighted as the current input owner.
+
+        Preference order:
+        1) Topmost active modal dialog's decision_request.player_id (actual current UI prompt owner).
+        2) Topmost active modal dialog's player.id (for non-decision dialogs that still carry ownership).
+        3) Game-level waiting player id fallback.
+        """
+        top_dialog = self.dialog_manager.top() if self.dialog_manager is not None else None
+        if top_dialog is not None:
+            request = getattr(top_dialog, "decision_request", None)
+            request_player_id = getattr(request, "player_id", None) if request is not None else None
+            if request_player_id:
+                return str(request_player_id)
+
+            owner = getattr(top_dialog, "player", None)
+            owner_id = getattr(owner, "id", None) if owner is not None else None
+            if owner_id:
+                return str(owner_id)
+
+        game = self.game
+        if game is None:
+            return None
+        get_waiting_player_id = getattr(game, "get_waiting_player_id", None)
+        if not callable(get_waiting_player_id):
+            return None
+        waiting_player_id = get_waiting_player_id()
+        return str(waiting_player_id) if waiting_player_id else None
 
     def _resolve_unit_by_id(self, unit_id: str | None):
         if not unit_id:
@@ -12587,7 +12646,7 @@ class GameView:
 
         self._battle_focus_flow_active = True
         self.battle_focus_dialog.show(
-            list(options.keys()),
+            [unit],
             None,
             _on_confirm,
             title=title,
@@ -12681,7 +12740,6 @@ class GameView:
         )
         if self.game is not None:
             self.game.request_decision(req)
-        choices = [opt.label for opt in req_options]
         subtitle = f"Choose an Agile Manoeuvre for {getattr(unit, 'name', 'unit')} (Tokens: {tokens})"
 
         def _on_confirm(option_id: str):
@@ -12700,7 +12758,7 @@ class GameView:
 
         self._battle_focus_flow_active = True
         self.battle_focus_dialog.show(
-            choices,
+            [unit],
             None,
             _on_confirm,
             title=title,
@@ -16538,6 +16596,22 @@ class GameView:
         # Optionally clamp offsets to keep view in bounds
         self.offset_x = max(min(self.offset_x, scaled_battlefield_width), -scaled_battlefield_width)
         self.offset_y = max(min(self.offset_y, scaled_battlefield_height), -scaled_battlefield_height)
+
+        # Keep global dialogs aligned with current screen bounds.
+        self.settings_dialog.screen_width = screen_width
+        self.settings_dialog.screen_height = screen_height
+        self.developer_menu_dialog.screen_width = screen_width
+        self.developer_menu_dialog.screen_height = screen_height
+        self.developer_menu_dialog.x = max(
+            0,
+            min(self.developer_menu_dialog.x, screen_width - self.developer_menu_dialog.width),
+        )
+        self.developer_menu_dialog.y = max(
+            0,
+            min(self.developer_menu_dialog.y, screen_height - self.developer_menu_dialog.height),
+        )
+        self.developer_menu_dialog._update_title_bar()
+        self.developer_menu_dialog._update_buttons()
     
     def refresh_roster_panes(self):
         """Refresh roster panes when armies are loaded during setup phases."""
@@ -16611,6 +16685,72 @@ class GameView:
                 self.left_stratagem_pane.player_name = f"Player 1 ({self.player1.name})"
                 self.right_stratagem_pane.player_name = f"Player 2 ({self.player2.name})"
 
+    def _open_settings_dialog(self) -> None:
+        if self.settings_dialog.visible:
+            return
+
+        def _on_apply(enable_developer_controls: bool) -> None:
+            self._apply_global_settings(enable_developer_controls=enable_developer_controls)
+
+        self.settings_dialog.show(
+            enable_developer_controls=self._enable_developer_controls,
+            on_apply=_on_apply,
+            on_cancel=None,
+        )
+        self.dialog_manager.open(self.settings_dialog, modal=True)
+
+    def _apply_global_settings(self, *, enable_developer_controls: bool) -> None:
+        self._enable_developer_controls = bool(enable_developer_controls)
+        if self._enable_developer_controls:
+            self._show_developer_menu()
+            logger.info("Developer controls enabled.")
+            return
+
+        if self._profiling_controller.enabled:
+            self._disable_profiling_and_dump(label="developer_controls_disabled")
+        self._hide_developer_menu()
+        logger.info("Developer controls disabled.")
+
+    def _show_developer_menu(self) -> None:
+        if self.developer_menu_dialog.visible:
+            self.developer_menu_dialog.set_profiling_enabled(self._profiling_controller.enabled)
+            return
+        self.developer_menu_dialog.show(
+            profiling_enabled=self._profiling_controller.enabled,
+            on_toggle_profiling=self._toggle_profiling_from_menu,
+            on_close=self._hide_developer_menu,
+        )
+
+    def _hide_developer_menu(self) -> None:
+        if self.developer_menu_dialog.visible:
+            self.developer_menu_dialog.hide()
+
+    def _disable_profiling_and_dump(self, *, label: str) -> bool:
+        self._profiling_controller.disable()
+        try:
+            txt_path, prof_path = self._profiling_controller.dump(label=label, write_binary_prof=True)
+        except RuntimeError:
+            logger.info("Profiling disabled. No profiling data was collected.")
+            return False
+
+        if prof_path is None:
+            logger.info(f"Profiling disabled. Report saved to {txt_path}.")
+        else:
+            logger.info(f"Profiling disabled. Reports saved to {txt_path} and {prof_path}.")
+        return True
+
+    def _toggle_profiling_from_menu(self, desired_enabled: bool) -> bool:
+        if desired_enabled:
+            self._profiling_controller.reset()
+            self._profiling_controller.enable()
+            logger.info("Profiling enabled. Reproduce the slowdown, then disable profiling to save reports.")
+            self.developer_menu_dialog.set_profiling_enabled(True)
+            return True
+
+        self._disable_profiling_and_dump(label="ui_profile")
+        self.developer_menu_dialog.set_profiling_enabled(False)
+        return False
+
     def handle_pygame_event(self, event):
         """Handle pygame events using phase-based routing."""
         # Debug: Log all events received by GameView
@@ -16643,13 +16783,19 @@ class GameView:
                     self.close_unit_details()
                     return True
 
+        top_dialog = self.dialog_manager.top() if self.dialog_manager else None
+
+        # Floating developer menu receives input only when no modal dialog is active.
+        if (
+            self.developer_menu_dialog.visible
+            and top_dialog is None
+            and not (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE)
+        ):
+            if self.developer_menu_dialog.handle_event(event):
+                return True
+
         # PRIORITY 1: Top pane and overlay handling BEFORE phase-specific handlers
-        dialog_active = False
-        try:
-            if self.dialog_manager and self.dialog_manager.top():
-                dialog_active = True
-        except Exception:
-            dialog_active = False
+        dialog_active = top_dialog is not None
         if event.type == pygame.MOUSEBUTTONDOWN and not dialog_active:
             # Mission popup overlay closes on any click
             if getattr(self, '_cp_history_popup', None):
@@ -16807,6 +16953,9 @@ class GameView:
                 self.rule_detail_panel.hide()
                 self._rule_panel_state = None
                 return True
+            if event.key == pygame.K_ESCAPE and (self.dialog_manager.top() is None):
+                self._open_settings_dialog()
+                return True
             # Handle unit detail panel scrolling
             if self.detailed_unit:
                 if event.key == pygame.K_UP or event.key == pygame.K_w:
@@ -16856,7 +17005,14 @@ class GameView:
         if name_u in ("FIRE OVERWATCH", "OVERWATCH") and "shooter_unit" not in context:
             if callable(getattr(self, "_request_overwatch_shooter", None)):
                 enemy = context.get("enemy_unit")
-                self._request_overwatch_shooter(player, self.game, enemy, lambda shooter: self._finalize_overwatch(player, name, context, shooter))
+                candidates = context.get("candidates")
+                self._request_overwatch_shooter(
+                    player,
+                    self.game,
+                    enemy,
+                    lambda shooter: self._finalize_overwatch(player, name, context, shooter),
+                    candidates=candidates,
+                )
             return
 
         if name_u == "A GRIM WARNING" and "objective" not in context and "objective_marker" not in context:
@@ -19910,11 +20066,13 @@ class GameView:
 
         # Draw deployment zones (with transparency)
         if hasattr(self.game, 'deployment_zones') and self.game.deployment_zones:
+            sync_zones = getattr(self.game, "sync_deployment_zones_to_attacker_defender", None)
+            if callable(sync_zones):
+                sync_zones()
             draw_deployment_zones(
                 battlefield_surface,
                 self.game.deployment_zones,
-                self.player1,
-                self.player2,
+                self.game,
                 self.zoom_level,
                 self.offset_x,
                 self.offset_y,
@@ -20156,6 +20314,10 @@ class GameView:
         # Draw UI interface components (non-dialog overlays like reserves arrival panel)
         if self.ui_interface:
             self.ui_interface.update(self.screen)
+
+        # Draw floating developer controls (non-modal overlay).
+        if self.developer_menu_dialog.visible:
+            self.developer_menu_dialog.draw(self.screen)
 
         # Draw all dialogs via the centralized modal stack (includes UI-interface dialogs).
         if hasattr(self, 'dialog_manager') and self.dialog_manager:
