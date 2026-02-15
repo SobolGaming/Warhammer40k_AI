@@ -3409,6 +3409,10 @@ class StateAttachmentMixin:
 
     def has_super_heavy_walker(self) -> bool:
         """True if this unit has the Super-heavy Walker (or War Engine) ability."""
+        if 'super_heavy_walker' in getattr(self, '_ability_cache', {}):
+            return bool(self._ability_cache['super_heavy_walker'])
+
+        found = False
         try:
             found, _ = self._find_ability_with_patterns(
                 [
@@ -3417,9 +3421,13 @@ class StateAttachmentMixin:
                     "super heavy war engine",
                 ]
             )
-            return bool(found)
         except Exception:
-            return False
+            found = False
+
+        if not hasattr(self, '_ability_cache'):
+            self._ability_cache = {}
+        self._ability_cache['super_heavy_walker'] = bool(found)
+        return bool(found)
 
     def has_hover(self) -> bool:
         """True if this unit has the Hover core ability."""

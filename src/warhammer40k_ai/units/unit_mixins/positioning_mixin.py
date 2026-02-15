@@ -3970,80 +3970,90 @@ class PositioningMixin:
     def _find_ability_with_patterns(self, patterns: List[str], extract_value: bool = False, value_pattern: str = None) -> Tuple[bool, Optional[str]]:
         r"""
         Helper method to find abilities matching given patterns and optionally extract values.
-        
+
         Args:
             patterns: List of patterns to search for (case-insensitive)
             extract_value: Whether to extract a value from the matched text
             value_pattern: Regex pattern to extract value (e.g., r'(\d+)' for numbers, r'(\d+|D\d+)' for dice)
-        
+
         Returns:
             Tuple[bool, Optional[str]]: (found, extracted_value)
         """
+        pattern_lowers = tuple(
+            str(pattern or "").strip().lower()
+            for pattern in (patterns or [])
+            if str(pattern or "").strip()
+        )
+        if not pattern_lowers:
+            return False, None
+
+        value_matchers: tuple[tuple[str, "re.Pattern"], ...] = tuple()
+        if extract_value and value_pattern:
+            value_matchers = tuple(
+                (pattern, re.compile(rf"{re.escape(pattern)}\s*\(?{value_pattern}"))
+                for pattern in pattern_lowers
+            )
+
+        def _scan_text(text: str, *, context: str, parameter_text: Optional[str] = None) -> Tuple[bool, Optional[str]]:
+            low = str(text or "").lower()
+            for idx, pattern in enumerate(pattern_lowers):
+                if pattern not in low:
+                    continue
+                if not value_matchers:
+                    return True, None
+                matcher = value_matchers[idx][1]
+                match = matcher.search(low)
+                if match:
+                    return True, match.group(1)
+                if parameter_text:
+                    param_match = re.search(value_pattern, str(parameter_text))
+                    if param_match:
+                        return True, param_match.group(1)
+                raise ValueError(
+                    f"{pattern} ability found in {context} but could not extract value for unit '{self.name}'"
+                )
+            return False, None
+
         # Check keywords first
-        for keyword in self.keywords:
-            for pattern in patterns:
-                if pattern.lower() in keyword.lower():
-                    if extract_value and value_pattern:
-                        match = re.search(rf'{pattern.lower()}\s*\(?{value_pattern}', keyword.lower())
-                        if match:
-                            return True, match.group(1)
-                        else:
-                            raise ValueError(f"{pattern} ability found in keyword '{keyword}' but could not extract value for unit '{self.name}'")
-                    else:
-                        return True, None
-        
+        for keyword in (self.keywords or []):
+            found, value = _scan_text(str(keyword), context=f"keyword '{keyword}'")
+            if found:
+                return True, value
+
         # Check unit-level abilities (possible_abilities)
         for ability in self._iter_active_possible_abilities():
             if isinstance(ability, str):
                 for segment in self._iter_conditioned_text_segments(ability):
-                    for pattern in patterns:
-                        if pattern.lower() in segment.lower():
-                            if extract_value and value_pattern:
-                                match = re.search(rf'{pattern.lower()}\s*\(?{value_pattern}', segment.lower())
-                                if match:
-                                    return True, match.group(1)
-                                else:
-                                    raise ValueError(f"{pattern} ability found in ability string '{ability}' but could not extract value for unit '{self.name}'")
-                            else:
-                                return True, None
+                    found, value = _scan_text(segment, context=f"ability string '{ability}'")
+                    if found:
+                        return True, value
             else:
                 # Ability object with name and description attributes
                 ability_name_matched = False
-                if hasattr(ability, 'name') and ability.name:
-                    for pattern in patterns:
-                        if pattern.lower() in ability.name.lower():
-                            ability_name_matched = True
-                            if extract_value and value_pattern:
-                                match = re.search(rf'{pattern.lower()}\s*\(?{value_pattern}', ability.name.lower())
-                                if match:
-                                    return True, match.group(1)
-                                else:
-                                    # Check if ability has a parameter attribute
-                                    if hasattr(ability, 'parameter') and ability.parameter:
-                                        param_match = re.search(value_pattern, ability.parameter)
-                                        if param_match:
-                                            return True, param_match.group(1)
-                                        else:
-                                            raise ValueError(f"{pattern} ability found in ability name '{ability.name}' with parameter '{ability.parameter}' but could not extract value for unit '{self.name}'")
-                                    else:
-                                        raise ValueError(f"{pattern} ability found in ability name '{ability.name}' but could not extract value for unit '{self.name}'")
-                            else:
-                                return True, None
-                
+                if hasattr(ability, "name") and ability.name:
+                    name_text = str(ability.name)
+                    name_low = name_text.lower()
+                    ability_name_matched = any(pattern in name_low for pattern in pattern_lowers)
+                    if ability_name_matched:
+                        parameter_text = str(getattr(ability, "parameter", "") or "")
+                        found, value = _scan_text(
+                            name_text,
+                            context=f"ability name '{ability.name}'",
+                            parameter_text=parameter_text,
+                        )
+                        if found:
+                            return True, value
+
                 # Only check description if ability name didn't match
-                if not ability_name_matched and hasattr(ability, 'description') and ability.description:
+                if not ability_name_matched and hasattr(ability, "description") and ability.description:
                     for segment in self._iter_conditioned_text_segments(ability.description):
-                        for pattern in patterns:
-                            if pattern.lower() in segment.lower():
-                                if extract_value and value_pattern:
-                                    match = re.search(rf'{pattern.lower()}\s*\(?{value_pattern}', segment.lower())
-                                    if match:
-                                        return True, match.group(1)
-                                    else:
-                                        raise ValueError(f"{pattern} ability found in ability description '{ability.description}' but could not extract value for unit '{self.name}'")
-                                else:
-                                    return True, None
-        
+                        found, value = _scan_text(
+                            segment,
+                            context=f"ability description '{ability.description}'",
+                        )
+                        if found:
+                            return True, value
+
         # Check model-level abilities
         for ability in self.abilities:
             try:
@@ -4053,54 +4063,36 @@ class PositioningMixin:
                 pass
             if isinstance(ability, str):
                 for segment in self._iter_conditioned_text_segments(ability):
-                    for pattern in patterns:
-                        if pattern.lower() in segment.lower():
-                            if extract_value and value_pattern:
-                                match = re.search(rf'{pattern.lower()}\s*\(?{value_pattern}', segment.lower())
-                                if match:
-                                    return True, match.group(1)
-                                else:
-                                    raise ValueError(f"{pattern} ability found in model ability string '{ability}' but could not extract value for unit '{self.name}'")
-                            else:
-                                return True, None
+                    found, value = _scan_text(segment, context=f"model ability string '{ability}'")
+                    if found:
+                        return True, value
             else:
                 # Ability object with name and description attributes
                 ability_name_matched = False
-                if hasattr(ability, 'name') and ability.name:
-                    for pattern in patterns:
-                        if pattern.lower() in ability.name.lower():
-                            ability_name_matched = True
-                            if extract_value and value_pattern:
-                                match = re.search(rf'{pattern.lower()}\s*\(?{value_pattern}', ability.name.lower())
-                                if match:
-                                    return True, match.group(1)
-                                else:
-                                    # Check if ability has a parameter attribute
-                                    if hasattr(ability, 'parameter') and ability.parameter:
-                                        param_match = re.search(value_pattern, ability.parameter)
-                                        if param_match:
-                                            return True, param_match.group(1)
-                                        else:
-                                            raise ValueError(f"{pattern} ability found in model ability name '{ability.name}' with parameter '{ability.parameter}' but could not extract value for unit '{self.name}'")
-                                    else:
-                                        raise ValueError(f"{pattern} ability found in model ability name '{ability.name}' but could not extract value for unit '{self.name}'")
-                            else:
-                                return True, None
-                
+                if hasattr(ability, "name") and ability.name:
+                    name_text = str(ability.name)
+                    name_low = name_text.lower()
+                    ability_name_matched = any(pattern in name_low for pattern in pattern_lowers)
+                    if ability_name_matched:
+                        parameter_text = str(getattr(ability, "parameter", "") or "")
+                        found, value = _scan_text(
+                            name_text,
+                            context=f"model ability name '{ability.name}'",
+                            parameter_text=parameter_text,
+                        )
+                        if found:
+                            return True, value
+
                 # Only check description if ability name didn't match
-                if not ability_name_matched and hasattr(ability, 'description') and ability.description:
+                if not ability_name_matched and hasattr(ability, "description") and ability.description:
                     for segment in self._iter_conditioned_text_segments(ability.description):
-                        for pattern in patterns:
-                            if pattern.lower() in segment.lower():
-                                if extract_value and value_pattern:
-                                    match = re.search(rf'{pattern.lower()}\s*\(?{value_pattern}', segment.lower())
-                                    if match:
-                                        return True, match.group(1)
-                                    else:
-                                        raise ValueError(f"{pattern} ability found in model ability description '{ability.description}' but could not extract value for unit '{self.name}'")
-                                else:
-                                    return True, None
-        
+                        found, value = _scan_text(
+                            segment,
+                            context=f"model ability description '{ability.description}'",
+                        )
+                        if found:
+                            return True, value
+
         return False, None
 
     def has_deep_strike(self) -> bool:
