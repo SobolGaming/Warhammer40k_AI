@@ -276,11 +276,13 @@ class RosterPane(pygame.sprite.Sprite):
         header_rect = pygame.Rect(self.rect.left, self.rect.top, self.rect.width, 35)
         header_color = DARK_GREY
         header_text_color = TEXT_PRIMARY
+        waiting_id = None
         if game is not None:
-            try:
-                waiting_id = game.get_waiting_player_id()
-            except Exception:
-                waiting_id = None
+            if self.game_view is not None and hasattr(self.game_view, "get_required_input_player_id"):
+                waiting_id = self.game_view.get_required_input_player_id()
+            if waiting_id is None:
+                get_waiting_player_id = getattr(game, "get_waiting_player_id", None)
+                waiting_id = get_waiting_player_id() if callable(get_waiting_player_id) else None
             if self.game_view is not None:
                 last_id = getattr(self.game_view, "_last_highlighted_player_id", None)
                 if waiting_id != last_id:

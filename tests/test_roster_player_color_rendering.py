@@ -1,5 +1,4 @@
 import os
-from types import SimpleNamespace
 
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
@@ -34,10 +33,21 @@ class _GameStub:
         return self._waiting_player_id
 
 
-def _build_pane(player: Player) -> RosterPane:
+class _GameViewStub:
+    def __init__(self, required_input_player_id=None):
+        self._last_highlighted_player_id = None
+        self._required_input_player_id = (
+            str(required_input_player_id) if required_input_player_id else None
+        )
+
+    def get_required_input_player_id(self):
+        return self._required_input_player_id
+
+
+def _build_pane(player: Player, *, required_input_player_id=None) -> RosterPane:
     pane = RosterPane(0, 0, 320, 240, [], "Player One")
     pane.player = player
-    pane.game_view = SimpleNamespace(_last_highlighted_player_id=None)
+    pane.game_view = _GameViewStub(required_input_player_id=required_input_player_id)
     return pane
 
 
@@ -92,3 +102,18 @@ def test_inactive_roster_keeps_persistent_swatch():
 
     swatch_sample = tuple(surface.get_at(_swatch_center(pane))[:3])
     assert swatch_sample == get_player_color_rgb(player)
+
+
+def test_roster_highlight_prefers_required_input_owner_from_game_view():
+    player = Player("Player One")
+    other_player = Player("Player Two")
+    other_player.set_ui_color([20, 110, 210], hue_degrees=210, selected=True, source="selected")
+    pane = _build_pane(other_player, required_input_player_id=other_player.id)
+    game = _GameStub([player, other_player], waiting_player_id=player.id)
+    surface = pygame.Surface((360, 280), pygame.SRCALPHA)
+
+    pane.draw(surface, game)
+
+    expected_header_rgb = get_active_roster_header_rgb(other_player, base_header_rgb=ROSTER_DARK_GREY)
+    header_sample = tuple(surface.get_at(_header_sample_point(pane))[:3])
+    assert header_sample == expected_header_rgb

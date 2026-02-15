@@ -3127,6 +3127,36 @@ class GameView:
                 return p
         return None
 
+    def get_required_input_player_id(self) -> str | None:
+        """
+        Resolve which player id should be highlighted as the current input owner.
+
+        Preference order:
+        1) Topmost active modal dialog's decision_request.player_id (actual current UI prompt owner).
+        2) Topmost active modal dialog's player.id (for non-decision dialogs that still carry ownership).
+        3) Game-level waiting player id fallback.
+        """
+        top_dialog = self.dialog_manager.top() if self.dialog_manager is not None else None
+        if top_dialog is not None:
+            request = getattr(top_dialog, "decision_request", None)
+            request_player_id = getattr(request, "player_id", None) if request is not None else None
+            if request_player_id:
+                return str(request_player_id)
+
+            owner = getattr(top_dialog, "player", None)
+            owner_id = getattr(owner, "id", None) if owner is not None else None
+            if owner_id:
+                return str(owner_id)
+
+        game = self.game
+        if game is None:
+            return None
+        get_waiting_player_id = getattr(game, "get_waiting_player_id", None)
+        if not callable(get_waiting_player_id):
+            return None
+        waiting_player_id = get_waiting_player_id()
+        return str(waiting_player_id) if waiting_player_id else None
+
     def _resolve_unit_by_id(self, unit_id: str | None):
         if not unit_id:
             return None

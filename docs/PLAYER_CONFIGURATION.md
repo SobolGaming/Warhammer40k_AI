@@ -105,6 +105,8 @@ Optional hooks for automation:
 - Unit health indicators and deployment status
 - Interactive selection for deployment and details
 - Active player header highlight uses the waiting player's selected color across the full roster identifier row.
+- If a modal decision dialog is open, roster highlighting prioritizes that dialog's `decision_request.player_id`
+  so the highlighted player always matches the side currently expected to provide input.
 - Each roster identifier row includes a persistent color swatch so player-color ownership is always visible.
 
 ### Info Panel

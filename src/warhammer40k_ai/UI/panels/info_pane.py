@@ -94,6 +94,11 @@ class InfoPane(pygame.sprite.Sprite):
         # Get game information
         current_player = game.get_current_player()
         opponent = game.get_opponent()
+        waiting_player_id = None
+        if game_view is not None and hasattr(game_view, "get_required_input_player_id"):
+            waiting_player_id = game_view.get_required_input_player_id()
+        if waiting_player_id is None and hasattr(game, "get_waiting_player_id"):
+            waiting_player_id = game.get_waiting_player_id()
         
         y_offset = self.rect.top + 10
         x_left = self.rect.left + 15
@@ -266,15 +271,15 @@ class InfoPane(pygame.sprite.Sprite):
             player2 = game.players[1] if len(game.players) > 1 else None
             
             if player1:
-                # Highlight current player with accent color
-                player1_color = TEXT_ACCENT if current_player == player1 else TEXT_SECONDARY
+                # Highlight the input owner so UI emphasis matches whose action is required.
+                player1_color = TEXT_ACCENT if waiting_player_id and str(getattr(player1, "id", "")) == str(waiting_player_id) else TEXT_SECONDARY
                 player1_text = f"{player1.name}: {player1.command_points} CP | Score: {player1.score}"
                 player1_surface = self.font_small.render(player1_text, True, player1_color)
                 surface.blit(player1_surface, (x_left, y_offset))
             
             if player2:
-                # Highlight current player with accent color
-                player2_color = TEXT_ACCENT if current_player == player2 else TEXT_SECONDARY
+                # Highlight the input owner so UI emphasis matches whose action is required.
+                player2_color = TEXT_ACCENT if waiting_player_id and str(getattr(player2, "id", "")) == str(waiting_player_id) else TEXT_SECONDARY
                 player2_text = f"{player2.name}: {player2.command_points} CP | Score: {player2.score}"
                 player2_surface = self.font_small.render(player2_text, True, player2_color)
                 player2_rect = player2_surface.get_rect()
