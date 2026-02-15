@@ -470,26 +470,44 @@ class GameView:
                 pass
         self._request_secondary_discard = _request_secondary_discard
 
-        def _request_overwatch_shooter(player, game, enemy_unit, on_chosen):
+        def _request_overwatch_shooter(player, game, enemy_unit, on_chosen, candidates=None):
             from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
 
-            # Build candidate list as StratagemManager did, but UI-driven
-            candidates = []
-            for unit in player.get_army().units or []:
-                if not unit.is_alive() or not unit.deployed:
+            # Prefer reaction-supplied candidates when present to keep UI and manager eligibility aligned.
+            cand = []
+            for unit in list(candidates or []):
+                if unit is None:
+                    continue
+                try:
+                    if not unit.is_alive() or not unit.deployed:
+                        continue
+                except Exception:
                     continue
                 if getattr(unit, 'is_titanic', False):
                     continue
-                dist = self.game.map.get_distance_between_units(unit, enemy_unit)
-                if dist is not None and dist <= 24.0:
-                    candidates.append(unit)
-            if not candidates:
+                if enemy_unit is not None:
+                    dist = self.game.map.get_distance_between_units(unit, enemy_unit)
+                    if dist is None or dist > 24.0:
+                        continue
+                cand.append(unit)
+
+            # Fallback to live recomputation when reaction payload did not include candidates.
+            if not cand:
+                for unit in player.get_army().units or []:
+                    if not unit.is_alive() or not unit.deployed:
+                        continue
+                    if getattr(unit, 'is_titanic', False):
+                        continue
+                    dist = self.game.map.get_distance_between_units(unit, enemy_unit)
+                    if dist is not None and dist <= 24.0:
+                        cand.append(unit)
+            if not cand:
                 on_chosen(None)
                 return
             enemy_name = getattr(enemy_unit, "name", "enemy unit") if enemy_unit else "enemy unit"
             _resolve_unit_selection_dialog(
                 player=player,
-                candidates=candidates,
+                candidates=cand,
                 on_chosen=on_chosen,
                 decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
                 prompt="Select Overwatch shooter.",
@@ -12628,7 +12646,7 @@ class GameView:
 
         self._battle_focus_flow_active = True
         self.battle_focus_dialog.show(
-            list(options.keys()),
+            [unit],
             None,
             _on_confirm,
             title=title,
@@ -12722,7 +12740,6 @@ class GameView:
         )
         if self.game is not None:
             self.game.request_decision(req)
-        choices = [opt.label for opt in req_options]
         subtitle = f"Choose an Agile Manoeuvre for {getattr(unit, 'name', 'unit')} (Tokens: {tokens})"
 
         def _on_confirm(option_id: str):
@@ -12741,7 +12758,7 @@ class GameView:
 
         self._battle_focus_flow_active = True
         self.battle_focus_dialog.show(
-            choices,
+            [unit],
             None,
             _on_confirm,
             title=title,
@@ -16988,7 +17005,14 @@ class GameView:
         if name_u in ("FIRE OVERWATCH", "OVERWATCH") and "shooter_unit" not in context:
             if callable(getattr(self, "_request_overwatch_shooter", None)):
                 enemy = context.get("enemy_unit")
-                self._request_overwatch_shooter(player, self.game, enemy, lambda shooter: self._finalize_overwatch(player, name, context, shooter))
+                candidates = context.get("candidates")
+                self._request_overwatch_shooter(
+                    player,
+                    self.game,
+                    enemy,
+                    lambda shooter: self._finalize_overwatch(player, name, context, shooter),
+                    candidates=candidates,
+                )
             return
 
         if name_u == "A GRIM WARNING" and "objective" not in context and "objective_marker" not in context:

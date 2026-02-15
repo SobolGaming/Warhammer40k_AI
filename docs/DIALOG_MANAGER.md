@@ -38,6 +38,8 @@ This lets "targeting mode" behave like a modal overlay even if it does not use `
 - It scans known dialog attributes on `GameView` (and some on `HumanUIInterface`)
 - If it finds a dialog that has become active since the last check, it is moved to the **top** of the stack
 - Inactive dialogs are **pruned** automatically
+- Discovery order is a tie-breaker when multiple dialogs activate in the same frame.
+  Reactive selectors (`overwatch_shooter_dialog`, `battle_focus_dialog`) are intentionally kept late in that order so they correctly take focus/highlight over movement dialogs.
 
 This means most dialogs do not need to manually call `dialog_manager.open()` to be drawn/handled.
 We still call `open()` in a few places (e.g. setup modals) to make the "last opened is topmost" intent explicit.
