@@ -487,23 +487,31 @@ class WargearProfile:
             }
         return None
 
-    def _supernova_launcher_bonuses(self, attacker: 'Model') -> Tuple[int, int, int, str]:
-        try:
-            if not (self.parent_wargear and self.parent_wargear.is_ranged()):
-                return 0, 0, 0, ""
-        except Exception:
+    def _selected_ranged_enhancement_bonuses(
+        self,
+        attacker: 'Model',
+        *,
+        flag_key: str,
+        key_prefix: str,
+        source_default: str,
+    ) -> Tuple[int, int, int, str]:
+        parent_wargear = self.parent_wargear
+        if parent_wargear is None:
+            return 0, 0, 0, ""
+        is_ranged = getattr(parent_wargear, "is_ranged", None)
+        if not callable(is_ranged) or not bool(is_ranged()):
             return 0, 0, 0, ""
         sr = self._unit_special_rules(attacker)
-        if not isinstance(sr, dict) or not sr.get("enhancement_supernova_launcher"):
+        if not isinstance(sr, dict) or not sr.get(str(flag_key)):
             return 0, 0, 0, ""
         if not self._attacker_is_enhancement_bearer(attacker, sr):
             return 0, 0, 0, ""
 
-        selected_weapon_name = str(sr.get("enhancement_supernova_launcher_weapon_name", "") or "").strip()
+        selected_weapon_name = str(sr.get(f"{str(key_prefix)}_weapon_name", "") or "").strip()
         if selected_weapon_name and not self._weapon_name_matches_for_attacker(attacker, selected_weapon_name):
             return 0, 0, 0, ""
 
-        selected_slot = int(sr.get("enhancement_supernova_launcher_weapon_slot_index", -1))
+        selected_slot = int(sr.get(f"{str(key_prefix)}_weapon_slot_index", -1))
         if selected_slot >= 0:
             current_slot = -1
             for idx, wargear in enumerate(list(getattr(attacker, "wargear", []) or [])):
@@ -513,15 +521,31 @@ class WargearProfile:
             if current_slot >= 0 and current_slot != selected_slot:
                 return 0, 0, 0, ""
 
-        s_bonus = int(sr.get("enhancement_supernova_launcher_strength_bonus", 0) or 0)
-        ap_bonus = int(sr.get("enhancement_supernova_launcher_ap_bonus", 0) or 0)
-        d_bonus = int(sr.get("enhancement_supernova_launcher_damage_bonus", 0) or 0)
+        s_bonus = int(sr.get(f"{str(key_prefix)}_strength_bonus", 0) or 0)
+        ap_bonus = int(sr.get(f"{str(key_prefix)}_ap_bonus", 0) or 0)
+        d_bonus = int(sr.get(f"{str(key_prefix)}_damage_bonus", 0) or 0)
         if s_bonus <= 0 and ap_bonus <= 0 and d_bonus <= 0:
             return 0, 0, 0, ""
-        source = str(sr.get("enhancement_supernova_launcher_source", "") or "Supernova Launcher").strip()
+        source = str(sr.get(f"{str(key_prefix)}_source", "") or source_default).strip()
         if not source:
-            source = "Supernova Launcher"
+            source = str(source_default)
         return s_bonus, ap_bonus, d_bonus, source
+
+    def _supernova_launcher_bonuses(self, attacker: 'Model') -> Tuple[int, int, int, str]:
+        return self._selected_ranged_enhancement_bonuses(
+            attacker,
+            flag_key="enhancement_supernova_launcher",
+            key_prefix="enhancement_supernova_launcher",
+            source_default="Supernova Launcher",
+        )
+
+    def _thermoneutronic_projector_bonuses(self, attacker: 'Model') -> Tuple[int, int, int, str]:
+        return self._selected_ranged_enhancement_bonuses(
+            attacker,
+            flag_key="enhancement_thermoneutronic_projector",
+            key_prefix="enhancement_thermoneutronic_projector",
+            source_default="Thermoneutronic Projector",
+        )
 
     def _radiant_champion_extra_mortal_wounds(self, attacker: 'Model') -> int:
         unit = getattr(attacker, "parent_unit", None)
@@ -1883,6 +1907,9 @@ class WargearProfile:
                 _s_bonus, sp_ap_bonus, _d_bonus, _source = self._supernova_launcher_bonuses(attacker)
                 if sp_ap_bonus:
                     ap_val -= int(sp_ap_bonus)
+                _s_bonus, tp_ap_bonus, _d_bonus, _source = self._thermoneutronic_projector_bonuses(attacker)
+                if tp_ap_bonus:
+                    ap_val -= int(tp_ap_bonus)
         except Exception:
             pass
         try:
@@ -9768,6 +9795,13 @@ class WargearProfile:
                 wound_result.setdefault("modifiers", []).append(
                     f"+{int(sp_s_bonus)}S from {source_name} (selected weapon)"
                 )
+            tp_s_bonus, _tp_ap_bonus, _tp_d_bonus, tp_source = self._thermoneutronic_projector_bonuses(attacker)
+            if tp_s_bonus:
+                strength = strength + int(tp_s_bonus)
+                source_name = str(tp_source or "Thermoneutronic Projector").strip() or "Thermoneutronic Projector"
+                wound_result.setdefault("modifiers", []).append(
+                    f"+{int(tp_s_bonus)}S from {source_name} (selected weapon)"
+                )
         if (
             self.parent_wargear
             and getattr(self.parent_wargear, "is_ranged", lambda: False)()
@@ -13750,6 +13784,17 @@ class WargearProfile:
                     )
                     source_name = str(sp_source or "Supernova Launcher").strip() or "Supernova Launcher"
                     damage_result["special_effects"].append(f"{source_name} +{int(sp_d_bonus)}D (selected weapon)")
+                _tp_s_bonus, _tp_ap_bonus, tp_d_bonus, tp_source = self._thermoneutronic_projector_bonuses(attacker)
+                if tp_d_bonus:
+                    damage_mods.append(
+                        Modifier(
+                            ModifierOp.ADD,
+                            int(tp_d_bonus),
+                            source="enhancement:thermoneutronic_projector_damage_add",
+                        )
+                    )
+                    source_name = str(tp_source or "Thermoneutronic Projector").strip() or "Thermoneutronic Projector"
+                    damage_result["special_effects"].append(f"{source_name} +{int(tp_d_bonus)}D (selected weapon)")
         except Exception:
             pass
 

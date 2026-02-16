@@ -325,6 +325,20 @@ _EXPERIMENTAL_PROTOTYPE_CADRE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] 
             "damage_bonus": 1,
         },
     ),
+    "000009983003": EnhancementToolDescriptor(
+        enhancement_id="000009983003",
+        name="Thermoneutronic Projector",
+        timing="passive",
+        target="bearer_selected_tau_flamer",
+        duration="constant",
+        effect="selected_ranged_weapon_strength_ap_damage_bonus",
+        effect_params={
+            "weapon_name": "t'au flamer",
+            "strength_bonus": 2,
+            "ap_bonus": 1,
+            "damage_bonus": 1,
+        },
+    ),
 }
 
 _EXPERIMENTAL_PROTOTYPE_CADRE_BY_NAME = {

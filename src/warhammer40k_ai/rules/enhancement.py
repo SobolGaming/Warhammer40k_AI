@@ -116,6 +116,73 @@ def _select_bearer_weapon(unit, bearer, *, weapon_name: str, require_ranged: boo
         return name, int(idx)
     return "", -1
 
+
+def _coerce_int(value, *, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return int(default)
+
+
+def _descriptor_params(desc) -> dict:
+    raw_params = getattr(desc, "effect_params", {}) if desc is not None else {}
+    if isinstance(raw_params, dict):
+        return dict(raw_params)
+    try:
+        return dict(raw_params or {})
+    except (TypeError, ValueError):
+        return {}
+
+
+def _apply_selected_ranged_weapon_bonus_enhancement(
+    unit,
+    *,
+    special_rule_flag: str,
+    descriptor_params: dict,
+    bearer,
+    bearer_id: str,
+    default_weapon_name: str,
+    default_strength_bonus: int,
+    default_ap_bonus: int,
+    default_damage_bonus: int,
+    source_name: str,
+) -> None:
+    unit.special_rules[str(special_rule_flag)] = True
+    selected_weapon_name = str(descriptor_params.get("weapon_name", default_weapon_name) or default_weapon_name).strip()
+    selected_weapon_slot = -1
+    if bearer is not None:
+        chosen_name, chosen_slot = _select_bearer_weapon(
+            unit,
+            bearer,
+            weapon_name=selected_weapon_name,
+            require_ranged=True,
+        )
+        if chosen_name:
+            selected_weapon_name = chosen_name
+        selected_weapon_slot = int(chosen_slot)
+    strength_bonus = _coerce_int(
+        descriptor_params.get("strength_bonus", default_strength_bonus) or default_strength_bonus,
+        default=default_strength_bonus,
+    )
+    ap_bonus = _coerce_int(
+        descriptor_params.get("ap_bonus", default_ap_bonus) or default_ap_bonus,
+        default=default_ap_bonus,
+    )
+    damage_bonus = _coerce_int(
+        descriptor_params.get("damage_bonus", default_damage_bonus) or default_damage_bonus,
+        default=default_damage_bonus,
+    )
+
+    prefix = str(special_rule_flag)
+    unit.special_rules[f"{prefix}_weapon_name"] = selected_weapon_name
+    unit.special_rules[f"{prefix}_weapon_slot_index"] = int(selected_weapon_slot)
+    unit.special_rules[f"{prefix}_strength_bonus"] = int(max(0, strength_bonus))
+    unit.special_rules[f"{prefix}_ap_bonus"] = int(max(0, ap_bonus))
+    unit.special_rules[f"{prefix}_damage_bonus"] = int(max(0, damage_bonus))
+    unit.special_rules[f"{prefix}_source"] = str(source_name or "Enhancement").strip() or "Enhancement"
+    if bearer_id:
+        unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
 from .enhancement_effects import (
     EnhancementEffectSpec,
     apply_enhancement_effects,
@@ -398,46 +465,38 @@ class Enhancement:
         if name == "supernova launcher" or enh_id == "000009983002":
             if not is_experimental_prototype_cadre:
                 return
-            unit.special_rules["enhancement_supernova_launcher"] = True
             desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
-            try:
-                params = dict(getattr(desc, "effect_params", {}) or {})
-            except Exception:
-                params = {}
-            selected_weapon_name = str(
-                params.get("weapon_name", "airbursting fragmentation projector") or "airbursting fragmentation projector"
-            ).strip()
-            selected_weapon_slot = -1
-            if bearer is not None:
-                chosen_name, chosen_slot = _select_bearer_weapon(
-                    unit,
-                    bearer,
-                    weapon_name=selected_weapon_name,
-                    require_ranged=True,
-                )
-                if chosen_name:
-                    selected_weapon_name = chosen_name
-                selected_weapon_slot = int(chosen_slot)
-            try:
-                strength_bonus = int(params.get("strength_bonus", 3) or 3)
-            except Exception:
-                strength_bonus = 3
-            try:
-                ap_bonus = int(params.get("ap_bonus", 1) or 1)
-            except Exception:
-                ap_bonus = 1
-            try:
-                damage_bonus = int(params.get("damage_bonus", 1) or 1)
-            except Exception:
-                damage_bonus = 1
-            unit.special_rules["enhancement_supernova_launcher_weapon_name"] = selected_weapon_name
-            unit.special_rules["enhancement_supernova_launcher_weapon_slot_index"] = int(selected_weapon_slot)
-            unit.special_rules["enhancement_supernova_launcher_strength_bonus"] = int(max(0, strength_bonus))
-            unit.special_rules["enhancement_supernova_launcher_ap_bonus"] = int(max(0, ap_bonus))
-            unit.special_rules["enhancement_supernova_launcher_damage_bonus"] = int(max(0, damage_bonus))
-            unit.special_rules["enhancement_supernova_launcher_source"] = "Supernova Launcher"
-            if bearer_id:
-                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+            params = _descriptor_params(desc)
+            _apply_selected_ranged_weapon_bonus_enhancement(
+                unit,
+                special_rule_flag="enhancement_supernova_launcher",
+                descriptor_params=params,
+                bearer=bearer,
+                bearer_id=bearer_id,
+                default_weapon_name="airbursting fragmentation projector",
+                default_strength_bonus=3,
+                default_ap_bonus=1,
+                default_damage_bonus=1,
+                source_name="Supernova Launcher",
+            )
+
+        if name == "thermoneutronic projector" or enh_id == "000009983003":
+            if not is_experimental_prototype_cadre:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            _apply_selected_ranged_weapon_bonus_enhancement(
+                unit,
+                special_rule_flag="enhancement_thermoneutronic_projector",
+                descriptor_params=params,
+                bearer=bearer,
+                bearer_id=bearer_id,
+                default_weapon_name="t'au flamer",
+                default_strength_bonus=2,
+                default_ap_bonus=1,
+                default_damage_bonus=1,
+                source_name="Thermoneutronic Projector",
+            )
 
         if name == "saintly example" or enh_id == "000008470002":
             if not is_hallowed_martyrs:
