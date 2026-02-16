@@ -237,6 +237,11 @@ class Unit(
         
         # Ability cache for performance optimization
         self._ability_cache = {}
+        # Ability cache generations:
+        # - structure: ability sources/text changed (attach/detach/split/add/remove abilities, etc.)
+        # - activity: runtime activation changed while ability text remained the same.
+        self._ability_structure_generation = 0
+        self._ability_activity_generation = 0
         # Aspect Shrine Token tracking (Aeldari wargear ability)
         self._aspect_shrine_tokens_total = 0
         self._aspect_shrine_tokens_used = 0

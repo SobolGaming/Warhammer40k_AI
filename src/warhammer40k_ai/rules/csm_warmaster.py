@@ -72,6 +72,10 @@ def _invalidate_warmaster_caches(unit) -> None:
         root = unit.get_attached_unit_root()
     except Exception:
         root = unit
+    invalidate = getattr(root, "_invalidate_ability_activity_cache", None)
+    if callable(invalidate):
+        invalidate()
+        return
     cache = getattr(root, "_ability_cache", None)
     if isinstance(cache, dict):
         cache.clear()

@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Optional
 import pstats
 
+from .regex_hotspot_metrics import format_report as format_regex_hotspot_report
+
 
 class ProfilingController:
     """
@@ -103,6 +105,8 @@ class ProfilingController:
                 if self._include_callees:
                     stream.write("\n--- CALLEES ---\n")
                     stats.print_callees(self._lines)
+                stream.write("\n--- REGEX HOTSPOT COUNTERS ---\n")
+                stream.write(format_regex_hotspot_report())
 
             if was_enabled:
                 self._prof.enable()

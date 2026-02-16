@@ -3540,7 +3540,14 @@ class StateAttachmentMixin:
         """True if this unit has the Flip Belt ability (ignore vertical distance for certain moves)."""
         if 'flip_belt' in getattr(self, '_ability_cache', {}):
             return bool(self._ability_cache['flip_belt'])
-        found, _ = self._find_ability_with_patterns(["flip belt"])
+        found = False
+        try:
+            if hasattr(self, "_trait_flag"):
+                found = bool(self._trait_flag("flip_belt", default=False))
+            if not found:
+                found, _ = self._find_ability_with_patterns(["flip belt"])
+        except Exception:
+            found = False
         if not hasattr(self, '_ability_cache'):
             self._ability_cache = {}
         self._ability_cache['flip_belt'] = bool(found)
@@ -3556,7 +3563,14 @@ class StateAttachmentMixin:
         """Check if the unit has the Kill Team ability (Imperial Agents)."""
         if 'kill_team' in getattr(self, '_ability_cache', {}):
             return self._ability_cache['kill_team']
-        found, _ = self._find_ability_with_patterns(["kill team"])
+        found = False
+        try:
+            if hasattr(self, "_trait_flag"):
+                found = bool(self._trait_flag("kill_team", default=False))
+            if not found:
+                found, _ = self._find_ability_with_patterns(["kill team"])
+        except Exception:
+            found = False
         if not hasattr(self, '_ability_cache'):
             self._ability_cache = {}
         self._ability_cache['kill_team'] = found

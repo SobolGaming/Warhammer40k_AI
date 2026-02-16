@@ -34,6 +34,7 @@ def test_enable_disable_dump_writes_text_and_binary_reports(tmp_path) -> None:
     text = txt_path.read_text(encoding="utf-8")
     assert "cProfile report:" in text
     assert "sorted by:" in text
+    assert "--- REGEX HOTSPOT COUNTERS ---" in text
 
 
 def test_dump_while_enabled_resumes_capture_state(tmp_path) -> None:

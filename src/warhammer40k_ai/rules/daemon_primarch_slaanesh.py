@@ -88,11 +88,15 @@ def _invalidate_daemon_primarch_caches(unit) -> None:
         root = unit
     cache = getattr(root, "_ability_cache", None)
     if not isinstance(cache, dict):
-        return
-    for key in list(cache.keys()):
-        if key == "fight_first" or str(key).startswith("target_hit_penalty:"):
-            cache.pop(key, None)
-    root._ability_cache = cache
+        cache = None
+    else:
+        for key in list(cache.keys()):
+            if key == "fight_first" or str(key).startswith("target_hit_penalty:"):
+                cache.pop(key, None)
+        root._ability_cache = cache
+    invalidate = getattr(root, "_invalidate_ability_activity_cache", None)
+    if callable(invalidate):
+        invalidate()
 
 
 def ability_name_to_key(name: str) -> Optional[str]:

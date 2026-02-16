@@ -12,6 +12,15 @@ class KeywordsDetachmentsMixin:
                 - A boolean indicating if the unit has Firing Deck ability
                 - The number of weapons that can fire from the deck (0 if no Firing Deck ability)
         """
+        try:
+            if hasattr(self, "_trait_flag") and bool(self._trait_flag("firing_deck", default=False)):
+                value = 0
+                if hasattr(self, "_trait_value"):
+                    value = int(self._trait_value("firing_deck", default=0) or 0)
+                if value > 0:
+                    return True, int(value)
+        except Exception:
+            pass
         found, number_str = self._find_ability_with_patterns(["firing deck"], extract_value=True, value_pattern=r'(\d+)')
         if found:
             return True, int(number_str)

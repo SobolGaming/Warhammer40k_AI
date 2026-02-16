@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import re
+import threading
+from functools import lru_cache
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
 from .aura_utils import model_within_range_of_unit, unit_within_range_of_unit
 from .entity_ids import get_entity_id
+from .regex_hotspot_metrics import increment as increment_regex_hotspot
 
 
 @dataclass(frozen=True)
@@ -77,6 +80,80 @@ def _norm(s: str) -> str:
 
 def _norm_name(s: str) -> str:
     return _norm((s or "").replace("\u2019", "'"))
+
+
+def _count_regex_hotspot(name: str) -> None:
+    increment_regex_hotspot(f"aura_effects:{str(name or '').strip()}")
+
+
+_AURA_PARSE_CACHE: dict[tuple[str, str, str, str], object] = {}
+_AURA_PARSE_CACHE_LOCK = threading.RLock()
+
+
+def _clone_aura_parse_value(value):
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, list):
+        return list(value)
+    return value
+
+
+def _normalize_cache_key_text(value: str) -> str:
+    text = str(value or "").lower()
+    text = (
+        text.replace("\u00a0", " ")
+        .replace("\u2019", "'")
+        .replace("\u2018", "'")
+        .replace("\u201c", '"')
+        .replace("\u201d", '"')
+    )
+    out_chars: list[str] = []
+    prev_space = False
+    for ch in text:
+        is_ascii_alnum = ("a" <= ch <= "z") or ("0" <= ch <= "9")
+        if is_ascii_alnum:
+            out_chars.append(ch)
+            prev_space = False
+            continue
+        if not prev_space:
+            out_chars.append(" ")
+            prev_space = True
+    if out_chars and out_chars[-1] == " ":
+        out_chars.pop()
+    return "".join(out_chars)
+
+
+def _aura_parse_cache_key(parser_key: str, ability) -> tuple[str, str, str, str]:
+    if isinstance(ability, str):
+        name = ""
+        desc = str(ability or "")
+        parameter = ""
+    else:
+        name = str(getattr(ability, "name", "") or "")
+        desc = str(getattr(ability, "description", "") or "")
+        parameter = str(getattr(ability, "parameter", "") or "")
+    return (
+        str(parser_key or "").strip(),
+        _normalize_cache_key_text(name),
+        _normalize_cache_key_text(desc),
+        _normalize_cache_key_text(parameter),
+    )
+
+
+def _cached_parse_aura_spec(parser_key: str, ability, parser):
+    key = _aura_parse_cache_key(parser_key, ability)
+    with _AURA_PARSE_CACHE_LOCK:
+        if key in _AURA_PARSE_CACHE:
+            return _clone_aura_parse_value(_AURA_PARSE_CACHE[key])
+    parsed = parser(ability)
+    with _AURA_PARSE_CACHE_LOCK:
+        _AURA_PARSE_CACHE[key] = _clone_aura_parse_value(parsed)
+    return _clone_aura_parse_value(parsed)
+
+
+def clear_aura_parse_cache() -> None:
+    with _AURA_PARSE_CACHE_LOCK:
+        _AURA_PARSE_CACHE.clear()
 
 def _normalize_desc(desc: str) -> str:
     text = str(desc or "")
@@ -259,10 +336,16 @@ def _attacker_in_own_shooting_phase(attacker_unit) -> bool:
 
 
 def _requires_own_shooting_phase(ability) -> bool:
+    _count_regex_hotspot("_requires_own_shooting_phase")
     desc = str(getattr(ability, "description", "") or "")
     if not desc:
         return False
-    return bool(re.search(r"\byour shooting phase\b", desc, flags=re.IGNORECASE))
+    return _requires_own_shooting_phase_text(_normalize_desc(desc))
+
+
+@lru_cache(maxsize=4096)
+def _requires_own_shooting_phase_text(desc: str) -> bool:
+    return bool(re.search(r"\byour shooting phase\b", str(desc or ""), flags=re.IGNORECASE))
 
 
 def _weapon_is_melee(weapon_profile) -> bool:
@@ -321,7 +404,9 @@ def _excluded_by_battleshocked_state(unit, excluded_keywords: Iterable[str]) -> 
     return bool(getattr(unit, "battle_shocked", False))
 
 
+@lru_cache(maxsize=4096)
 def _parse_excluded_keywords(desc: str) -> tuple[str, ...]:
+    _count_regex_hotspot("_parse_excluded_keywords")
     if not desc:
         return ()
     ex = re.search(r"\(excluding (?P<ex>[^)]+)\)", desc, flags=re.IGNORECASE)
@@ -398,6 +483,7 @@ def _target_is_closest_enemy_unit(attacker_unit, target_unit, game_map) -> bool:
 
 
 def _parse_simple_plus_one_aura(ability) -> Optional[dict]:
+    _count_regex_hotspot("_parse_simple_plus_one_aura")
     """
     Parse a strict subset of Wahapedia aura text into a structured spec.
 
@@ -444,6 +530,7 @@ def _parse_simple_plus_one_aura(ability) -> Optional[dict]:
     }
 
 def _parse_reroll_ones_aura(ability) -> Optional[dict]:
+    _count_regex_hotspot("_parse_reroll_ones_aura")
     """
     Strict parser for:
       "While a friendly X unit is within N\" of this unit, you can re-roll Hit rolls of 1."
@@ -485,6 +572,7 @@ def _parse_reroll_ones_aura(ability) -> Optional[dict]:
 
 
 def _parse_full_hit_reroll_aura(ability) -> Optional[dict]:
+    _count_regex_hotspot("_parse_full_hit_reroll_aura")
     """
     Strict parser for:
       "While a friendly X unit is within N\" ... each time a model in that unit makes an attack,
@@ -512,6 +600,7 @@ def _parse_full_hit_reroll_aura(ability) -> Optional[dict]:
 
 
 def _parse_add_oc_aura(ability) -> Optional[dict]:
+    _count_regex_hotspot("_parse_add_oc_aura")
     """
     Strict parser for:
       "While a friendly X unit is within N\" of this model/unit, add Y to the Objective Control characteristic of models in that unit."
@@ -544,6 +633,7 @@ def _parse_add_oc_aura(ability) -> Optional[dict]:
     }
 
 def _parse_leadership_oc_aura(ability) -> Optional[dict]:
+    _count_regex_hotspot("_parse_leadership_oc_aura")
     """
     Strict parser for:
       "While a friendly X model/unit is within N\" of this model/unit, improve that X model's Leadership and
@@ -570,6 +660,7 @@ def _parse_leadership_oc_aura(ability) -> Optional[dict]:
 
 
 def _parse_leadership_only_aura(ability) -> Optional[dict]:
+    _count_regex_hotspot("_parse_leadership_only_aura")
     """
     Strict parser for:
       "While a friendly X model/unit is within N\" (or wholly within N\") of this model/unit/fortification,
@@ -596,6 +687,7 @@ def _parse_leadership_only_aura(ability) -> Optional[dict]:
 
 
 def _parse_battleshock_leadership_test_reroll_aura(ability) -> Optional[dict]:
+    _count_regex_hotspot("_parse_battleshock_leadership_test_reroll_aura")
     """
     Strict parser for:
       "While a friendly X unit is within N\" ... you can re-roll Leadership and/or Battle-shock tests taken for that unit."
@@ -628,6 +720,7 @@ def _parse_battleshock_leadership_test_reroll_aura(ability) -> Optional[dict]:
 
 
 def _parse_enemy_leadership_characteristic_penalty_aura(ability) -> Optional[dict]:
+    _count_regex_hotspot("_parse_enemy_leadership_characteristic_penalty_aura")
     """
     Strict parser for:
       "While an enemy unit is within N\" of this model/unit/the bearer, worsen the Leadership
@@ -654,6 +747,7 @@ def _parse_enemy_leadership_characteristic_penalty_aura(ability) -> Optional[dic
 
 
 def _parse_advance_charge_roll_aura(ability) -> Optional[dict]:
+    _count_regex_hotspot("_parse_advance_charge_roll_aura")
     """
     Strict parser for:
       "While a friendly X unit is within N\" of this model/unit, add Y to Advance and Charge rolls made for that unit."
@@ -677,6 +771,7 @@ def _parse_advance_charge_roll_aura(ability) -> Optional[dict]:
 
 
 def _parse_strength_aura(ability) -> Optional[dict]:
+    _count_regex_hotspot("_parse_strength_aura")
     """
     Strict parser for:
       "While a friendly X unit is within N\" of this model/the bearer, add Y to the Strength characteristic
@@ -729,6 +824,7 @@ def _parse_strength_aura(ability) -> Optional[dict]:
 
 
 def _parse_melee_ap_aura(ability) -> Optional[dict]:
+    _count_regex_hotspot("_parse_melee_ap_aura")
     """
     Strict parser for:
       "While a friendly X unit is within N\" of this model/the bearer, improve the Armour Penetration
@@ -757,6 +853,7 @@ def _parse_melee_ap_aura(ability) -> Optional[dict]:
     }
 
 def _parse_closest_enemy_ap_aura(ability) -> Optional[dict]:
+    _count_regex_hotspot("_parse_closest_enemy_ap_aura")
     """
     Strict parser for:
       "While a friendly X model/unit is within N\" of this model/unit, each time that X model makes an attack
@@ -790,6 +887,7 @@ def _parse_closest_enemy_ap_aura(ability) -> Optional[dict]:
 
 
 def _parse_toughness_aura(ability) -> Optional[dict]:
+    _count_regex_hotspot("_parse_toughness_aura")
     """
     Strict parser for:
       "While a friendly X unit is within N\" of this model/the bearer, add Y to the Toughness characteristic
@@ -829,6 +927,7 @@ def _parse_toughness_aura(ability) -> Optional[dict]:
 
 
 def _parse_battleshock_leadership_test_aura(ability) -> Optional[dict]:
+    _count_regex_hotspot("_parse_battleshock_leadership_test_aura")
     """
     Strict parser for enemy-test auras like:
       "While an enemy unit is within N\" of this model, subtract X from Battle-shock tests taken for that unit."
@@ -867,6 +966,7 @@ def _parse_battleshock_leadership_test_aura(ability) -> Optional[dict]:
 
 
 def _parse_enemy_move_oc_penalty_aura(ability) -> Optional[dict]:
+    _count_regex_hotspot("_parse_enemy_move_oc_penalty_aura")
     """
     Strict parser for enemy auras like:
       "While an enemy unit is within N\" of this model, subtract X from the Move characteristic and
@@ -923,6 +1023,7 @@ def _parse_enemy_move_oc_penalty_aura(ability) -> Optional[dict]:
 
 
 def _parse_enemy_psychic_hazardous_aura(ability) -> Optional[dict]:
+    _count_regex_hotspot("_parse_enemy_psychic_hazardous_aura")
     """
     Strict parser for enemy auras like:
       "While an enemy PSYKER unit is within 12\" of this model, Psychic weapons equipped by models in that unit
@@ -952,6 +1053,7 @@ def _parse_enemy_psychic_hazardous_aura(ability) -> Optional[dict]:
 
 
 def _parse_enemy_psychic_wound_penalty_aura(ability) -> Optional[dict]:
+    _count_regex_hotspot("_parse_enemy_psychic_wound_penalty_aura")
     """
     Strict parser for enemy auras like:
       "While an enemy unit is within 12\" of this model, each time a model in that unit makes a Psychic Attack,
@@ -1033,6 +1135,7 @@ def _nurgles_gift(attacker_unit, target_unit, source_unit) -> AuraAttackModifier
 
 
 def get_aura_attack_modifiers(attacker_unit, target_unit, weapon_profile, *, game_map=None) -> AuraAttackModifiers:
+    _count_regex_hotspot("get_aura_attack_modifiers")
     """
     Return aggregated aura modifiers that apply to this attack.
 
@@ -1100,7 +1203,7 @@ def get_aura_attack_modifiers(attacker_unit, target_unit, weapon_profile, *, gam
                 continue
 
             # Generic strict parser for "+1 to hit" auras (very limited subset).
-            spec = _parse_simple_plus_one_aura(ab)
+            spec = _cached_parse_aura_spec("_parse_simple_plus_one_aura", ab, _parse_simple_plus_one_aura)
             if not spec:
                 spec = None
 
@@ -1133,7 +1236,7 @@ def get_aura_attack_modifiers(attacker_unit, target_unit, weapon_profile, *, gam
                     out = out.merge(AuraAttackModifiers(wound=1, wound_reasons=(wound_reason,)))
 
             # Generic strict parser: reroll 1s (hit/wound), friendly within X.
-            rr = _parse_reroll_ones_aura(ab)
+            rr = _cached_parse_aura_spec("_parse_reroll_ones_aura", ab, _parse_reroll_ones_aura)
             if rr:
                 if rr["faction_keyword"] and not attacker_unit.has_any_keyword(rr["faction_keyword"]):
                     continue
@@ -1161,7 +1264,7 @@ def get_aura_attack_modifiers(attacker_unit, target_unit, weapon_profile, *, gam
                     )
 
             # Generic strict parser: full Hit re-roll aura.
-            full_hit = _parse_full_hit_reroll_aura(ab)
+            full_hit = _cached_parse_aura_spec("_parse_full_hit_reroll_aura", ab, _parse_full_hit_reroll_aura)
             if full_hit:
                 if full_hit["faction_keyword"]:
                     matches = _unit_matches_keyword_phrase(attacker_unit, full_hit["faction_keyword"])
@@ -1209,6 +1312,7 @@ def get_aura_attack_modifiers(attacker_unit, target_unit, weapon_profile, *, gam
 
 
 def get_enemy_aura_psychic_hazardous(attacker_unit, weapon_profile, *, game_map=None) -> tuple[bool, tuple[str, ...]]:
+    _count_regex_hotspot("get_enemy_aura_psychic_hazardous")
     """
     Return (is_hazardous, reasons) for enemy auras that make Psychic weapons hazardous.
     Dedupe by Aura name (same aura never double-applies).
@@ -1229,7 +1333,7 @@ def get_enemy_aura_psychic_hazardous(attacker_unit, weapon_profile, *, game_map=
     applied_aura_names: set[str] = set()
     for source in list(game_map.get_enemy_units(attacker_unit)):
         for ab in _iter_possible_abilities(source):
-            spec = _parse_enemy_psychic_hazardous_aura(ab)
+            spec = _cached_parse_aura_spec("_parse_enemy_psychic_hazardous_aura", ab, _parse_enemy_psychic_hazardous_aura)
             if not spec:
                 continue
             ab_name = str(getattr(ab, "name", "") or "")
@@ -1251,6 +1355,7 @@ def get_enemy_aura_psychic_hazardous(attacker_unit, weapon_profile, *, game_map=
 
 
 def get_enemy_aura_psychic_wound_penalties(attacker_unit, weapon_profile, *, game_map=None) -> list[tuple[int, str]]:
+    _count_regex_hotspot("get_enemy_aura_psychic_wound_penalties")
     """
     Return wound roll penalties from enemy auras that affect Psychic attacks.
     Dedupe by Aura name (same aura never double-applies).
@@ -1271,7 +1376,7 @@ def get_enemy_aura_psychic_wound_penalties(attacker_unit, weapon_profile, *, gam
     applied_aura_names: set[str] = set()
     for source in list(game_map.get_enemy_units(attacker_unit)):
         for ab in _iter_possible_abilities(source):
-            spec = _parse_enemy_psychic_wound_penalty_aura(ab)
+            spec = _cached_parse_aura_spec("_parse_enemy_psychic_wound_penalty_aura", ab, _parse_enemy_psychic_wound_penalty_aura)
             if not spec:
                 continue
             ab_name = str(getattr(ab, "name", "") or "")
@@ -1289,6 +1394,7 @@ def get_enemy_aura_psychic_wound_penalties(attacker_unit, weapon_profile, *, gam
 
 
 def get_aura_objective_control_bonus(unit, *, game_map=None) -> int:
+    _count_regex_hotspot("get_aura_objective_control_bonus")
     """
     Return additive OC bonus from friendly OC auras affecting this unit.
     Only supports strict "add N to OC while within X" patterns to avoid over-applying.
@@ -1303,9 +1409,9 @@ def get_aura_objective_control_bonus(unit, *, game_map=None) -> int:
     applied_aura_names: set[str] = set()
     for source in list(game_map.get_friendly_units(unit)):
         for ab in _iter_possible_abilities(source):
-            spec = _parse_add_oc_aura(ab)
+            spec = _cached_parse_aura_spec("_parse_add_oc_aura", ab, _parse_add_oc_aura)
             if not spec:
-                spec = _parse_leadership_oc_aura(ab)
+                spec = _cached_parse_aura_spec("_parse_leadership_oc_aura", ab, _parse_leadership_oc_aura)
             if not spec:
                 continue
             ab_name = str(getattr(ab, "name", "") or "")
@@ -1334,6 +1440,7 @@ def get_aura_objective_control_bonus(unit, *, game_map=None) -> int:
     return int(total)
 
 def get_aura_leadership_bonus(unit, *, game_map=None) -> int:
+    _count_regex_hotspot("get_aura_leadership_bonus")
     """
     Return additive Leadership bonus (negative improves Ld) from friendly auras affecting this unit.
     Only supports strict "improve Leadership and OC by N" patterns to avoid over-applying.
@@ -1348,9 +1455,9 @@ def get_aura_leadership_bonus(unit, *, game_map=None) -> int:
     applied_aura_names: set[str] = set()
     for source in list(game_map.get_friendly_units(unit)):
         for ab in _iter_possible_abilities(source):
-            spec = _parse_leadership_oc_aura(ab)
+            spec = _cached_parse_aura_spec("_parse_leadership_oc_aura", ab, _parse_leadership_oc_aura)
             if not spec:
-                spec = _parse_leadership_only_aura(ab)
+                spec = _cached_parse_aura_spec("_parse_leadership_only_aura", ab, _parse_leadership_only_aura)
             if not spec:
                 continue
             ab_name = str(getattr(ab, "name", "") or "")
@@ -1370,6 +1477,7 @@ def get_aura_leadership_bonus(unit, *, game_map=None) -> int:
 
 
 def get_aura_advance_charge_roll_modifiers(unit, *, game_map=None) -> tuple[list[tuple[int, str]], list[tuple[int, str]]]:
+    _count_regex_hotspot("get_aura_advance_charge_roll_modifiers")
     """
     Return (advance_mods, charge_mods) from friendly Advance/Charge roll auras affecting this unit.
     Dedupe by Aura name (same aura never double-applies).
@@ -1387,7 +1495,7 @@ def get_aura_advance_charge_roll_modifiers(unit, *, game_map=None) -> tuple[list
 
     for source in list(game_map.get_friendly_units(unit)):
         for ab in _iter_possible_abilities(source):
-            spec = _parse_advance_charge_roll_aura(ab)
+            spec = _cached_parse_aura_spec("_parse_advance_charge_roll_aura", ab, _parse_advance_charge_roll_aura)
             if not spec:
                 continue
             ab_name = str(getattr(ab, "name", "") or "")
@@ -1423,6 +1531,7 @@ def get_aura_advance_charge_roll_modifiers(unit, *, game_map=None) -> tuple[list
 
 
 def get_aura_battleshock_test_modifiers(unit, *, game_map=None) -> list[tuple[int, str]]:
+    _count_regex_hotspot("get_aura_battleshock_test_modifiers")
     """
     Return roll modifiers from enemy auras that affect Battle-shock and Leadership tests.
     Dedupe by Aura name (same aura never double-applies).
@@ -1438,7 +1547,7 @@ def get_aura_battleshock_test_modifiers(unit, *, game_map=None) -> list[tuple[in
     applied_aura_names: set[str] = set()
     for source in list(game_map.get_enemy_units(unit)):
         for ab in _iter_possible_abilities(source):
-            spec = _parse_battleshock_leadership_test_aura(ab)
+            spec = _cached_parse_aura_spec("_parse_battleshock_leadership_test_aura", ab, _parse_battleshock_leadership_test_aura)
             if not spec:
                 continue
             ab_name = str(getattr(ab, "name", "") or "")
@@ -1456,6 +1565,7 @@ def get_aura_battleshock_test_modifiers(unit, *, game_map=None) -> list[tuple[in
 
 
 def get_enemy_aura_move_oc_penalties(unit, *, game_map=None) -> tuple[int, int]:
+    _count_regex_hotspot("get_enemy_aura_move_oc_penalties")
     """
     Return (move_penalty, oc_penalty) from enemy auras affecting this unit.
     Dedupe by Aura name (same aura never double-applies).
@@ -1472,7 +1582,7 @@ def get_enemy_aura_move_oc_penalties(unit, *, game_map=None) -> tuple[int, int]:
     applied_aura_names: set[str] = set()
     for source in list(game_map.get_enemy_units(unit)):
         for ab in _iter_possible_abilities(source):
-            spec = _parse_enemy_move_oc_penalty_aura(ab)
+            spec = _cached_parse_aura_spec("_parse_enemy_move_oc_penalty_aura", ab, _parse_enemy_move_oc_penalty_aura)
             if not spec:
                 continue
             ab_name = str(getattr(ab, "name", "") or "")
@@ -1491,6 +1601,7 @@ def get_enemy_aura_move_oc_penalties(unit, *, game_map=None) -> tuple[int, int]:
 
 
 def get_enemy_aura_leadership_characteristic_penalty(unit, *, game_map=None) -> int:
+    _count_regex_hotspot("get_enemy_aura_leadership_characteristic_penalty")
     """
     Return additive Leadership characteristic penalties from enemy auras affecting this unit.
     Positive values worsen Leadership (higher target number to pass tests).
@@ -1506,7 +1617,7 @@ def get_enemy_aura_leadership_characteristic_penalty(unit, *, game_map=None) -> 
     applied_aura_names: set[str] = set()
     for source in list(game_map.get_enemy_units(unit)):
         for ab in _iter_possible_abilities(source):
-            spec = _parse_enemy_leadership_characteristic_penalty_aura(ab)
+            spec = _cached_parse_aura_spec("_parse_enemy_leadership_characteristic_penalty_aura", ab, _parse_enemy_leadership_characteristic_penalty_aura)
             if not spec:
                 continue
             ab_name = str(getattr(ab, "name", "") or "")
@@ -1526,6 +1637,7 @@ def get_enemy_aura_leadership_characteristic_penalty(unit, *, game_map=None) -> 
 
 
 def get_aura_battleshock_test_reroll_sources(unit, *, game_map=None) -> list[str]:
+    _count_regex_hotspot("get_aura_battleshock_test_reroll_sources")
     """
     Return reroll sources from friendly auras that allow re-rolling Battle-shock tests.
     Dedupe by Aura name (same aura never double-applies).
@@ -1621,7 +1733,7 @@ def get_aura_battleshock_test_reroll_sources(unit, *, game_map=None) -> list[str
                 sources.append(str(ab_name or "Shadow of Khorne (Aura)"))
                 continue
 
-            spec = _parse_battleshock_leadership_test_reroll_aura(ab)
+            spec = _cached_parse_aura_spec("_parse_battleshock_leadership_test_reroll_aura", ab, _parse_battleshock_leadership_test_reroll_aura)
             if not spec:
                 continue
             if spec.get("faction_keyword"):
@@ -1645,6 +1757,7 @@ def get_aura_battleshock_test_reroll_sources(unit, *, game_map=None) -> list[str
 
 
 def _parse_melee_attacks_aura(ability) -> Optional[dict]:
+    _count_regex_hotspot("_parse_melee_attacks_aura")
     """
     Strict parser for:
       "While a friendly X unit is within N\" of this model, add M to the Attacks characteristic of melee weapons equipped by models in that unit."
@@ -1669,6 +1782,7 @@ def _parse_melee_attacks_aura(ability) -> Optional[dict]:
 
 
 def _parse_melee_weapon_sustained_hits_aura(ability) -> Optional[dict]:
+    _count_regex_hotspot("_parse_melee_weapon_sustained_hits_aura")
     """
     Strict parser for:
       "While a friendly X unit is within N\" of this model, melee weapons in that unit have the [SUSTAINED HITS Y] ability."
@@ -1693,6 +1807,7 @@ def _parse_melee_weapon_sustained_hits_aura(ability) -> Optional[dict]:
 
 
 def get_aura_melee_attacks_bonus(attacker_unit, weapon_profile, *, game_map=None) -> tuple[int, tuple[str, ...]]:
+    _count_regex_hotspot("get_aura_melee_attacks_bonus")
     """
     Return (bonus_attacks, reasons) from strict "melee Attacks characteristic" auras affecting attacker_unit.
     Dedupe by Aura name (same aura never double-applies).
@@ -1713,7 +1828,7 @@ def get_aura_melee_attacks_bonus(attacker_unit, weapon_profile, *, game_map=None
 
     for source in list(game_map.get_friendly_units(attacker_unit)):
         for ab in _iter_possible_abilities(source):
-            spec = _parse_melee_attacks_aura(ab)
+            spec = _cached_parse_aura_spec("_parse_melee_attacks_aura", ab, _parse_melee_attacks_aura)
             if not spec:
                 continue
             ab_name = str(getattr(ab, "name", "") or "")
@@ -1734,6 +1849,7 @@ def get_aura_melee_attacks_bonus(attacker_unit, weapon_profile, *, game_map=None
 
 
 def get_aura_weapon_keyword_bonuses(attacker_unit, weapon_profile, *, game_map=None) -> list[dict]:
+    _count_regex_hotspot("get_aura_weapon_keyword_bonuses")
     """
     Return aura-granted weapon keyword bonuses (e.g., Sustained Hits) affecting attacker_unit.
     """
@@ -1752,7 +1868,7 @@ def get_aura_weapon_keyword_bonuses(attacker_unit, weapon_profile, *, game_map=N
 
     for source in list(game_map.get_friendly_units(attacker_unit)):
         for ab in _iter_possible_abilities(source):
-            spec = _parse_melee_weapon_sustained_hits_aura(ab)
+            spec = _cached_parse_aura_spec("_parse_melee_weapon_sustained_hits_aura", ab, _parse_melee_weapon_sustained_hits_aura)
             if not spec:
                 continue
             ab_name = str(getattr(ab, "name", "") or "")
@@ -1783,6 +1899,7 @@ def get_aura_weapon_keyword_bonuses(attacker_unit, weapon_profile, *, game_map=N
 
 
 def _parse_stealth_aura(ability) -> Optional[dict]:
+    _count_regex_hotspot("_parse_stealth_aura")
     """
     Strict parser for:
       "While a friendly X unit is within N\" of this model, models in that unit have the Stealth ability."
@@ -1808,6 +1925,7 @@ def _parse_stealth_aura(ability) -> Optional[dict]:
     }
 
 def _parse_benefit_of_cover_aura(ability) -> Optional[dict]:
+    _count_regex_hotspot("_parse_benefit_of_cover_aura")
     """
     Strict parser for:
       "While a friendly X model/unit is within N\" of this model/unit, that X model has the Benefit of Cover."
@@ -1846,6 +1964,7 @@ def _parse_benefit_of_cover_aura(ability) -> Optional[dict]:
 
 
 def get_aura_stealth(target_unit, *, game_map=None) -> tuple[bool, tuple[str, ...]]:
+    _count_regex_hotspot("get_aura_stealth")
     """
     Return (has_stealth, reasons) from strict Stealth auras affecting target_unit.
     Dedupe by Aura name (same aura never double-applies).
@@ -1886,7 +2005,7 @@ def get_aura_stealth(target_unit, *, game_map=None) -> tuple[bool, tuple[str, ..
 
     for source in list(game_map.get_friendly_units(target_unit)):
         for ab in _iter_possible_abilities(source):
-            spec = _parse_stealth_aura(ab)
+            spec = _cached_parse_aura_spec("_parse_stealth_aura", ab, _parse_stealth_aura)
             if not spec:
                 continue
             ab_name = str(getattr(ab, "name", "") or "")
@@ -1912,6 +2031,7 @@ def get_aura_stealth(target_unit, *, game_map=None) -> tuple[bool, tuple[str, ..
     return False, ()
 
 def get_aura_benefit_of_cover(target_unit, *, game_map=None) -> tuple[bool, tuple[str, ...]]:
+    _count_regex_hotspot("get_aura_benefit_of_cover")
     """
     Return (has_benefit_of_cover, reasons) from strict Benefit of Cover auras affecting target_unit.
     Dedupe by Aura name (same aura never double-applies).
@@ -1928,7 +2048,7 @@ def get_aura_benefit_of_cover(target_unit, *, game_map=None) -> tuple[bool, tupl
 
     for source in list(game_map.get_friendly_units(target_unit)):
         for ab in _iter_possible_abilities(source):
-            spec = _parse_benefit_of_cover_aura(ab)
+            spec = _cached_parse_aura_spec("_parse_benefit_of_cover_aura", ab, _parse_benefit_of_cover_aura)
             if not spec:
                 continue
             ab_name = str(getattr(ab, "name", "") or "")
@@ -1955,6 +2075,7 @@ def get_aura_benefit_of_cover(target_unit, *, game_map=None) -> tuple[bool, tupl
 
 
 def get_aura_strength_bonus(attacker_unit, weapon_profile, *, game_map=None) -> tuple[int, tuple[str, ...]]:
+    _count_regex_hotspot("get_aura_strength_bonus")
     """
     Return (bonus_strength, reasons) from strict "Strength characteristic" auras affecting attacker_unit.
     Dedupe by Aura name (same aura never double-applies).
@@ -1972,7 +2093,7 @@ def get_aura_strength_bonus(attacker_unit, weapon_profile, *, game_map=None) -> 
 
     for source in list(game_map.get_friendly_units(attacker_unit)):
         for ab in _iter_possible_abilities(source):
-            spec = _parse_strength_aura(ab)
+            spec = _cached_parse_aura_spec("_parse_strength_aura", ab, _parse_strength_aura)
             if not spec:
                 continue
             ab_name = str(getattr(ab, "name", "") or "")
@@ -1997,6 +2118,7 @@ def get_aura_strength_bonus(attacker_unit, weapon_profile, *, game_map=None) -> 
 
 
 def get_aura_toughness_bonus(unit, *, game_map=None) -> tuple[int, tuple[str, ...]]:
+    _count_regex_hotspot("get_aura_toughness_bonus")
     """
     Return (bonus_toughness, reasons) from strict "Toughness characteristic" auras affecting unit.
     Dedupe by Aura name (same aura never double-applies).
@@ -2014,7 +2136,7 @@ def get_aura_toughness_bonus(unit, *, game_map=None) -> tuple[int, tuple[str, ..
 
     for source in list(game_map.get_friendly_units(unit)):
         for ab in _iter_possible_abilities(source):
-            spec = _parse_toughness_aura(ab)
+            spec = _cached_parse_aura_spec("_parse_toughness_aura", ab, _parse_toughness_aura)
             if not spec:
                 continue
             ab_name = str(getattr(ab, "name", "") or "")
@@ -2035,6 +2157,7 @@ def get_aura_toughness_bonus(unit, *, game_map=None) -> tuple[int, tuple[str, ..
 
 
 def get_aura_melee_ap_bonus(attacker_unit, weapon_profile, *, game_map=None) -> tuple[int, tuple[str, ...]]:
+    _count_regex_hotspot("get_aura_melee_ap_bonus")
     """
     Return (ap_bonus, reasons) from strict "melee AP" auras affecting attacker_unit.
     Dedupe by Aura name (same aura never double-applies).
@@ -2056,7 +2179,7 @@ def get_aura_melee_ap_bonus(attacker_unit, weapon_profile, *, game_map=None) -> 
 
     for source in list(game_map.get_friendly_units(attacker_unit)):
         for ab in _iter_possible_abilities(source):
-            spec = _parse_melee_ap_aura(ab)
+            spec = _cached_parse_aura_spec("_parse_melee_ap_aura", ab, _parse_melee_ap_aura)
             if not spec:
                 continue
             ab_name = str(getattr(ab, "name", "") or "")
@@ -2079,6 +2202,7 @@ def get_aura_melee_ap_bonus(attacker_unit, weapon_profile, *, game_map=None) -> 
     return int(total), tuple(reasons)
 
 def get_aura_ap_bonus(attacker_model, weapon_profile, target_unit, *, game_map=None) -> tuple[int, tuple[str, ...]]:
+    _count_regex_hotspot("get_aura_ap_bonus")
     """
     Return (ap_bonus, reasons) from strict "closest enemy" AP auras affecting attacker_model.
     Dedupe by Aura name (same aura never double-applies).
@@ -2117,7 +2241,7 @@ def get_aura_ap_bonus(attacker_model, weapon_profile, target_unit, *, game_map=N
 
     for source in list(game_map.get_friendly_units(attacker_unit)):
         for ab in _iter_possible_abilities(source):
-            spec = _parse_closest_enemy_ap_aura(ab)
+            spec = _cached_parse_aura_spec("_parse_closest_enemy_ap_aura", ab, _parse_closest_enemy_ap_aura)
             if not spec:
                 continue
             ab_name = str(getattr(ab, "name", "") or "")

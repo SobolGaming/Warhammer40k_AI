@@ -136,6 +136,13 @@ def set_active_wrathful_presence(unit, key: str, *, battle_round: int) -> None:
     sr[_ACTIVE_KEY] = str(key or "").strip().upper()
     sr[_ACTIVE_ROUND] = int(battle_round or 0)
     unit.special_rules = sr
+    invalidate = getattr(unit, "_invalidate_ability_activity_cache", None)
+    if callable(invalidate):
+        invalidate()
+    else:
+        invalidate = getattr(unit, "_invalidate_ability_cache", None)
+        if callable(invalidate):
+            invalidate()
 
 
 def clear_active_wrathful_presence(unit) -> None:
@@ -147,6 +154,13 @@ def clear_active_wrathful_presence(unit) -> None:
     sr.pop(_ACTIVE_KEY, None)
     sr.pop(_ACTIVE_ROUND, None)
     unit.special_rules = sr
+    invalidate = getattr(unit, "_invalidate_ability_activity_cache", None)
+    if callable(invalidate):
+        invalidate()
+    else:
+        invalidate = getattr(unit, "_invalidate_ability_cache", None)
+        if callable(invalidate):
+            invalidate()
 
 
 def _unit_is_valid_wrathful_presence_source(unit) -> bool:

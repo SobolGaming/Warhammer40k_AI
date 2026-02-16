@@ -188,56 +188,123 @@ This reduces both runtime cost and maintenance drift.
 4. Add a performance guard test that monkeypatches `re.Pattern.search`/`sub` counters for representative movement/pathing and aura-resolution flows and fails on regressions in hot-loop regex activity.
 5. Increase cache observability by recording hit/miss stats for key parse caches (`_normalize_rules_text_cached`, `_parse_ability_condition_metadata`, `_parse_conditioned_text_segment_guards`, aura-spec cache) during profiling runs.
 
-## Roadmap PRs (proposed, not implemented)
+## Roadmap PRs (execution plan)
+
+Execution order is fixed and each step must land with tests/doc updates before moving to the next.
 
 ### PR 1: Profiling baseline refresh and hotspot instrumentation
-Scope:
-- Re-run deterministic profiling on current head for local UI and client/server action loops.
-- Add optional counters for regex invocations in hot paths (movement + aura evaluation).
+Status: `implemented`
 
-Acceptance criteria:
-- New profile artifacts committed under `profiles/` with date-stamped names.
-- Call-count table in this doc updated using current data.
-- Repeatable command list documented.
+Scope:
+- Add lightweight regex invocation counters for representative hot paths (movement + aura evaluation).
+- Document deterministic profiling command(s) and instrumentation toggle(s) in this file.
+- Capture a fresh baseline profile artifact on current head.
+
+Results:
+- Added opt-in regex hotspot counters in `src/warhammer40k_ai/utility/regex_hotspot_metrics.py`.
+- Added profiling report integration in `src/warhammer40k_ai/utility/profiling_controller.py` (`--- REGEX HOTSPOT COUNTERS ---` section).
+- Added baseline capture script `scripts/profile_regex_hotspots_baseline.py`.
+- Captured baseline artifacts:
+  - `profiles/regex_hotspot_baseline_20260216_172110.txt`
+  - `profiles/regex_hotspot_baseline_20260216_172110.prof`
+- Repeatable command:
+  - `python scripts/profile_regex_hotspots_baseline.py --iterations 4000 --label regex_hotspot_baseline`
 
 ### PR 2: AbilityTraitIndex (parse-once trait flags)
-Scope:
-- Add a generation-scoped parsed trait index per unit/root.
-- Include stable boolean fields for common trait checks (`has_super_heavy_walker`, leading/not-leading gates, other high-frequency tags).
-- Route high-frequency trait checks to index reads.
+Status: `implemented`
 
-Acceptance criteria:
-- Hot-loop callsites read booleans/specs without regex.
-- Trait index invalidates on ability/attachment/special-rules mutation.
-- Regression tests cover correctness and invalidation.
+Scope:
+- Add generation-scoped parsed trait index per unit/root.
+- Split static ability structure from dynamic activity state using explicit cache generations.
+- Route high-frequency trait checks (`has_super_heavy_walker`, leading/not-leading gating metadata, other repeated scans) to index reads.
+
+Results:
+- Added explicit ability cache generations on `Unit`:
+  - `_ability_structure_generation`
+  - `_ability_activity_generation`
+- Extended cache invalidation API in `src/warhammer40k_ai/units/unit_mixins/datasheet_wargear_mixin.py`:
+  - `_invalidate_ability_cache()` now bumps structure+activity generations.
+  - `_invalidate_ability_activity_cache()` bumps activity generation only.
+- Added generation-scoped trait index in `src/warhammer40k_ai/units/unit_mixins/positioning_mixin.py`:
+  - `_get_cached_ability_trait_index()`
+  - `_trait_flag(...)`
+  - `_trait_value(...)`
+- Routed high-frequency checks to indexed trait reads first:
+  - `has_super_heavy_walker`, `has_flip_belt`, `has_kill_team`
+  - `has_firing_deck`
+- Added invalidation wiring for activity toggles in:
+  - `src/warhammer40k_ai/rules/wrathful_presence.py`
+  - `src/warhammer40k_ai/rules/daemon_primarch_slaanesh.py`
+  - `src/warhammer40k_ai/rules/csm_warmaster.py`
+  - `src/warhammer40k_ai/rules/thousand_sons_crimson_king.py`
 
 ### PR 3: AuraSpec parse cache and runtime evaluator split
-Scope:
-- Add parse-once aura spec extraction (regex allowed) keyed by normalized text + ability identity.
-- Refactor `utility/aura_effects.py` runtime to consume `AuraSpec` objects only (no regex in per-query loop).
+Status: `implemented`
 
-Acceptance criteria:
-- Regex parsers run at parse time only.
-- Runtime aura evaluation performs boolean/range/keyword checks only.
-- Existing aura behavior tests remain green; add targeted cache/invalidation tests.
+Scope:
+- Add parse-once `AuraSpec` extraction cache keyed by ability identity + normalized text.
+- Ensure regex parsing occurs only during spec build, never in per-query loop.
+- Refactor aura evaluation entry points to consume structured specs.
+
+Results:
+- Added parse-once aura spec cache in `src/warhammer40k_ai/utility/aura_effects.py`:
+  - `_cached_parse_aura_spec(...)`
+  - `_aura_parse_cache_key(...)`
+  - `clear_aura_parse_cache()`
+- Refactored aura runtime evaluators to use cached parser output instead of direct parser invocation.
+- Cache-key normalization for aura parse cache is regex-free (`_normalize_cache_key_text`), preventing regex usage on cache-hit paths.
+- Added tests for parse-cache behavior:
+  - `tests/test_aura_parse_cache.py`
 
 ### PR 4: `_find_ability_with_patterns` migration to indexed lookups
-Scope:
-- Identify high-frequency callers and replace with trait/index lookups.
-- Keep `_find_ability_with_patterns` as compatibility fallback for non-indexed long-tail checks.
+Status: `implemented`
 
-Acceptance criteria:
-- Reduced call frequency of `_find_ability_with_patterns` in profiled hot paths.
-- No behavior regression in movement/pathing and detachment/enhancement checks.
+Scope:
+- Add indexed lookup path for common string-pattern checks and value extraction.
+- Migrate highest-frequency callers to indexed lookup helpers.
+- Keep `_find_ability_with_patterns` compatibility fallback for non-indexed long-tail checks.
+
+Results:
+- Added indexed fast-path in `src/warhammer40k_ai/units/unit_mixins/positioning_mixin.py::_find_ability_with_patterns(...)` for high-frequency pattern families.
+- Retained existing scanner as compatibility fallback.
+- Migrated additional high-frequency ability checks to index-first flow:
+  - `has_deep_strike`
+  - `has_infiltrate`
+  - `has_stealth`
+- Added focused coverage:
+  - `tests/test_ability_trait_index_cache.py`
 
 ### PR 5: Performance guardrails in CI
-Scope:
-- Add lightweight tests asserting no regex usage in representative hot loops.
-- Add optional benchmark/profiling smoke checks for regression detection.
+Status: `implemented`
 
-Acceptance criteria:
-- CI fails on reintroduced regex in guarded hot loops.
-- Doc includes troubleshooting guide and known exceptions.
+Scope:
+- Add tests that fail when regex is reintroduced into representative hot loops.
+- Add troubleshooting notes for expected exceptions and how to extend guarded paths safely.
+
+Results:
+- Added regex guardrail tests in `tests/test_regex_hotloop_guardrails.py`:
+  - Aura parse cache-hit path asserts no regex usage.
+  - Indexed `_find_ability_with_patterns` cache-hit path asserts no regex usage.
+- These tests are deterministic and designed to fail if regex is reintroduced into guarded hot paths.
+
+## Execution validation (2026-02-16)
+
+Targeted test runs:
+- `python -m pytest tests/test_profiling_controller.py tests/test_regex_hotspot_metrics.py tests/test_aura_advance_charge_bonus.py -q`
+  - Result: `6 passed`
+- `python -m pytest tests/test_ability_trait_index_cache.py tests/test_aura_parse_cache.py tests/test_super_heavy_walker.py tests/test_aura_advance_charge_bonus.py tests/test_war_dog_auras.py tests/test_hover_mode.py tests/test_profiling_controller.py tests/test_regex_hotspot_metrics.py -q`
+  - Result: `22 passed`
+- `python -m pytest tests/test_regex_hotloop_guardrails.py tests/test_ability_trait_index_cache.py tests/test_aura_parse_cache.py tests/test_aura_advance_charge_bonus.py tests/test_war_dog_auras.py tests/test_super_heavy_walker.py tests/test_hover_mode.py tests/test_profiling_controller.py tests/test_regex_hotspot_metrics.py -q`
+  - Result: `24 passed`
+- Regression confirmation for corrected conditional-gating behavior:
+  - `python -m pytest tests/test_bearer_unit_common_abilities.py::TestBearerUnitCommonAbilities::test_bearer_leading_deep_strike_requires_leading_and_applies_when_attached tests/test_world_eaters_enhancements.py::TestWorldEatersEnhancements::test_butcher_lord_attachment_and_conditional_infiltrators tests/test_adeptus_custodes_lions_enhancements.py::test_praesidius_grants_lone_operative_and_stealth_without_leaking tests/test_grey_knights_batch1_abilities.py::TestGreyKnightsBatch1Abilities::test_retinue_requires_techmarine_leading_for_deep_strike_and_teleport_assault tests/test_aspect_training.py::TestAspectTraining::test_aspect_training_banshees_only_grants_fight_first tests/test_attached_battleline_infiltrators_scouts.py::TestAttachedBattlelineInfiltratorsScouts::test_attached_to_ec_battleline_grants_infiltrators_and_scouts tests/test_regex_hotloop_refactors.py::test_has_super_heavy_walker_uses_cache_and_respects_invalidation tests/test_lord_of_eightbound_attachment.py::TestLordOfTheEightboundAttachment::test_attached_possessed_grants_deep_strike_and_scouts -q`
+  - Result: `8 passed`
+- `python -m pytest tests/test_regex_hotloop_guardrails.py tests/test_ability_trait_index_cache.py tests/test_aura_parse_cache.py tests/test_profiling_controller.py tests/test_regex_hotspot_metrics.py -q`
+  - Result: `12 passed`
+
+Full suite run (required for broad rule-behavior changes):
+- `python -m pytest tests/`
+  - Result: `2042 passed`
 
 ## Final recommendation
 Continue using cached normalization for pure text transforms, but prioritize parse-once structured evaluation for aura resolution and high-frequency ability trait checks. `has_super_heavy_walker` is already in a good cached state; the next major wins are aura parser caching and indexed trait lookups that remove regex from runtime loops.

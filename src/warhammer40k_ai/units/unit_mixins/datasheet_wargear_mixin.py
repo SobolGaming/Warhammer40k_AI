@@ -2101,9 +2101,66 @@ class DatasheetWargearMixin:
         # Invalidate ability cache since abilities changed
         self._invalidate_ability_cache()
 
+    def _ability_cache_owner(self):
+        try:
+            return self.get_attached_unit_root()
+        except Exception:
+            return self
+
+    def _ensure_ability_cache_generations(self) -> None:
+        owner = self._ability_cache_owner()
+        if owner is None:
+            return
+        if not hasattr(owner, "_ability_structure_generation"):
+            owner._ability_structure_generation = 0
+        if not hasattr(owner, "_ability_activity_generation"):
+            owner._ability_activity_generation = 0
+
+    def _bump_ability_structure_generation(self) -> None:
+        owner = self._ability_cache_owner()
+        if owner is None:
+            return
+        self._ensure_ability_cache_generations()
+        owner._ability_structure_generation = int(getattr(owner, "_ability_structure_generation", 0) or 0) + 1
+        # Structure changes always imply activity generation changes as well.
+        owner._ability_activity_generation = int(getattr(owner, "_ability_activity_generation", 0) or 0) + 1
+
+    def _bump_ability_activity_generation(self) -> None:
+        owner = self._ability_cache_owner()
+        if owner is None:
+            return
+        self._ensure_ability_cache_generations()
+        owner._ability_activity_generation = int(getattr(owner, "_ability_activity_generation", 0) or 0) + 1
+
     def _invalidate_ability_cache(self) -> None:
         """Invalidate ability cache when unit state changes."""
-        if hasattr(self, '_ability_cache'):
+        owner = self._ability_cache_owner()
+        if owner is None:
+            owner = self
+        try:
+            self._bump_ability_structure_generation()
+        except Exception:
+            pass
+        if hasattr(owner, '_ability_cache'):
+            owner._ability_cache.clear()
+        # Keep local cache object in sync for callers that read from self directly.
+        if owner is not self and hasattr(self, "_ability_cache"):
+            self._ability_cache.clear()
+
+    def _invalidate_ability_activity_cache(self) -> None:
+        """
+        Invalidate caches tied to ability activation state without marking structure changed.
+        """
+        owner = self._ability_cache_owner()
+        if owner is None:
+            owner = self
+        try:
+            self._bump_ability_activity_generation()
+        except Exception:
+            pass
+        if hasattr(owner, "_ability_cache"):
+            owner._ability_cache.clear()
+        if owner is not self and hasattr(self, "_ability_cache"):
             self._ability_cache.clear()
 
     # Remove a Model from a Unit (e.g., when it dies)

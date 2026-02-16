@@ -77,10 +77,14 @@ def _invalidate_crimson_king_caches(unit) -> None:
         root = unit.get_attached_unit_root()
     except Exception:
         root = unit
-    cache = getattr(root, "_ability_cache", None)
-    if isinstance(cache, dict):
-        cache.clear()
-        root._ability_cache = cache
+    invalidate = getattr(root, "_invalidate_ability_activity_cache", None)
+    if callable(invalidate):
+        invalidate()
+    else:
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict):
+            cache.clear()
+            root._ability_cache = cache
     try:
         parse_fn = getattr(root, "_parse_against_attack_characteristic_defensive_rules", None)
         if callable(parse_fn):
