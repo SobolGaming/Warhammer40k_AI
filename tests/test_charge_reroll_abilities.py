@@ -164,6 +164,37 @@ class TestChargeRerollAbilities(unittest.TestCase):
             target.models[0].set_location(50, 50, 0, 0)
         self.assertFalse(charger.can_reroll_charge_roll(target_unit=target, game_map=game_map))
 
+    def test_charge_reroll_requires_objective_target_raiders_due_wording(self):
+        from types import SimpleNamespace
+
+        ability = {
+            "name": "Raider's Due",
+            "description": (
+                "Each time this unit declares a Charge that targets one or more units that are within range of one or "
+                "more objective markers, you can re-roll the Charge roll."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        charger = _make_unit("Red Corsairs Reave-Captain", abilities=[ability])
+        target = _make_unit("Target")
+        charger.deployed = True
+        target.deployed = True
+
+        if charger.models:
+            charger.models[0].set_location(0, 0, 0, 0)
+        if target.models:
+            target.models[0].set_location(0, 0, 0, 0)
+
+        objective = SimpleNamespace(location=SimpleNamespace(x=0.0, y=0.0, control_radius=3.0))
+        game_map = SimpleNamespace(objectives=[objective])
+
+        self.assertTrue(charger.can_reroll_charge_roll(target_unit=target, game_map=game_map))
+
+        if target.models:
+            target.models[0].set_location(50, 50, 0, 0)
+        self.assertFalse(charger.can_reroll_charge_roll(target_unit=target, game_map=game_map))
+
     def test_charge_reroll_requires_closest_eligible_target(self):
         from warhammer40k_ai.roster.army import Army
         from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game

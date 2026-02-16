@@ -2011,7 +2011,10 @@ class Unit(
         re.IGNORECASE,
     )
     _REROLL_CHARGE_OBJECTIVE_RE = re.compile(
-        r"bearer'?s\s+unit\s+declares\s+a\s+charge.*?targets?\s+of\s+that\s+charge.*?within\s+range\s+of\s+an?\s+objective\s+marker.*?re-?roll\s+the\s+charge\s+roll",
+        r"(?:this|that|the\s+bearer'?s)\s+unit\s+declares\s+a\s+charge"
+        r".*?(?:if\s+one\s+or\s+more\s+targets?\s+of\s+that\s+charge\s+are|that\s+targets?\s+one\s+or\s+more\s+units?\s+that\s+are)"
+        r"\s+within\s+range\s+of\s+(?:an|one\s+or\s+more)\s+objective\s+marker(?:s)?"
+        r".*?re-?roll\s+the\s+charge\s+roll",
         re.IGNORECASE,
     )
     _UNIT_OBJECTIVE_CONTROLLED_FULL_WOUND_REROLL_RE = re.compile(

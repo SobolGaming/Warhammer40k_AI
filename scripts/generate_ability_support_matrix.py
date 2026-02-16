@@ -2022,6 +2022,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Once per battle, start of Fight phase: improve S/A/AP/D of the bearer's melee weapons by 1 until end of phase.",
         ),
         ("CSM", "Despoilers"): ("Supported", "After making a Dark Pact, unit re-rolls Hit rolls until end of phase."),
+        ("CSM", "Raider's Due"): (
+            "Supported",
+            "Charge declarations can re-roll the Charge roll when one or more targets are within range of an objective marker.",
+        ),
         ("CSM", "Unholy Bloodshed"): (
             "Supported",
             "Once per battle, when making a Dark Pact, unit weapons gain [DEVASTATING WOUNDS] until end of phase.",
