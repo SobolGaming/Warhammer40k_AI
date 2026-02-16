@@ -191,6 +191,20 @@ def _support_status(row: EnhRow) -> Tuple[str, str]:
             f"Selected bearer plasma rifle gets +{m.group(1)}S and +{m.group(2)}A/+{m.group(2)}AP/+{m.group(2)}D.",
         )
 
+    m = re.search(
+        r"select\s+one\s+fusion\s+blaster\s+equipped\s+by\s+the\s+bearer\.\s*"
+        r"improve\s+the\s+attacks\s+characteristic\s+of\s+that\s+weapon\s+by\s+(\d+),\s+"
+        r"improve\s+the\s+strength\s+characteristic\s+of\s+that\s+weapon\s+by\s+(\d+),\s+"
+        r"and\s+that\s+weapon\s+has\s+the\s+\[melta\s+(\d+)\]\s+ability\.",
+        rules,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        return (
+            "Supported",
+            f"Selected bearer fusion blaster gets +{m.group(1)}A, +{m.group(2)}S, and MELTA {m.group(3)}.",
+        )
+
     return ("Partial", "Loadable/assignable + points counted + UI display; rules effects not executed yet.")
 
 

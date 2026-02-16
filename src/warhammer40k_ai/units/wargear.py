@@ -494,22 +494,22 @@ class WargearProfile:
         flag_key: str,
         key_prefix: str,
         source_default: str,
-    ) -> Tuple[int, int, int, int, str]:
+    ) -> Tuple[int, int, int, int, int, str]:
         parent_wargear = self.parent_wargear
         if parent_wargear is None:
-            return 0, 0, 0, 0, ""
+            return 0, 0, 0, 0, 0, ""
         is_ranged = getattr(parent_wargear, "is_ranged", None)
         if not callable(is_ranged) or not bool(is_ranged()):
-            return 0, 0, 0, 0, ""
+            return 0, 0, 0, 0, 0, ""
         sr = self._unit_special_rules(attacker)
         if not isinstance(sr, dict) or not sr.get(str(flag_key)):
-            return 0, 0, 0, 0, ""
+            return 0, 0, 0, 0, 0, ""
         if not self._attacker_is_enhancement_bearer(attacker, sr):
-            return 0, 0, 0, 0, ""
+            return 0, 0, 0, 0, 0, ""
 
         selected_weapon_name = str(sr.get(f"{str(key_prefix)}_weapon_name", "") or "").strip()
         if selected_weapon_name and not self._weapon_name_matches_for_attacker(attacker, selected_weapon_name):
-            return 0, 0, 0, 0, ""
+            return 0, 0, 0, 0, 0, ""
 
         selected_slot = int(sr.get(f"{str(key_prefix)}_weapon_slot_index", -1))
         if selected_slot >= 0:
@@ -519,20 +519,21 @@ class WargearProfile:
                     current_slot = int(idx)
                     break
             if current_slot >= 0 and current_slot != selected_slot:
-                return 0, 0, 0, 0, ""
+                return 0, 0, 0, 0, 0, ""
 
         a_bonus = int(sr.get(f"{str(key_prefix)}_attacks_bonus", 0) or 0)
+        m_bonus = int(sr.get(f"{str(key_prefix)}_melta_bonus", 0) or 0)
         s_bonus = int(sr.get(f"{str(key_prefix)}_strength_bonus", 0) or 0)
         ap_bonus = int(sr.get(f"{str(key_prefix)}_ap_bonus", 0) or 0)
         d_bonus = int(sr.get(f"{str(key_prefix)}_damage_bonus", 0) or 0)
-        if a_bonus <= 0 and s_bonus <= 0 and ap_bonus <= 0 and d_bonus <= 0:
-            return 0, 0, 0, 0, ""
+        if a_bonus <= 0 and m_bonus <= 0 and s_bonus <= 0 and ap_bonus <= 0 and d_bonus <= 0:
+            return 0, 0, 0, 0, 0, ""
         source = str(sr.get(f"{str(key_prefix)}_source", "") or source_default).strip()
         if not source:
             source = str(source_default)
-        return s_bonus, ap_bonus, d_bonus, a_bonus, source
+        return s_bonus, ap_bonus, d_bonus, a_bonus, m_bonus, source
 
-    def _supernova_launcher_bonuses(self, attacker: 'Model') -> Tuple[int, int, int, int, str]:
+    def _supernova_launcher_bonuses(self, attacker: 'Model') -> Tuple[int, int, int, int, int, str]:
         return self._selected_ranged_enhancement_bonuses(
             attacker,
             flag_key="enhancement_supernova_launcher",
@@ -540,7 +541,7 @@ class WargearProfile:
             source_default="Supernova Launcher",
         )
 
-    def _thermoneutronic_projector_bonuses(self, attacker: 'Model') -> Tuple[int, int, int, int, str]:
+    def _thermoneutronic_projector_bonuses(self, attacker: 'Model') -> Tuple[int, int, int, int, int, str]:
         return self._selected_ranged_enhancement_bonuses(
             attacker,
             flag_key="enhancement_thermoneutronic_projector",
@@ -548,12 +549,20 @@ class WargearProfile:
             source_default="Thermoneutronic Projector",
         )
 
-    def _plasma_accelerator_rifle_bonuses(self, attacker: 'Model') -> Tuple[int, int, int, int, str]:
+    def _plasma_accelerator_rifle_bonuses(self, attacker: 'Model') -> Tuple[int, int, int, int, int, str]:
         return self._selected_ranged_enhancement_bonuses(
             attacker,
             flag_key="enhancement_plasma_accelerator_rifle",
             key_prefix="enhancement_plasma_accelerator_rifle",
             source_default="Plasma Accelerator Rifle",
+        )
+
+    def _fusion_blades_bonuses(self, attacker: 'Model') -> Tuple[int, int, int, int, int, str]:
+        return self._selected_ranged_enhancement_bonuses(
+            attacker,
+            flag_key="enhancement_fusion_blades",
+            key_prefix="enhancement_fusion_blades",
+            source_default="Fusion Blades",
         )
 
     def _radiant_champion_extra_mortal_wounds(self, attacker: 'Model') -> int:
@@ -1913,15 +1922,18 @@ class WargearProfile:
                     ap_val -= int(char_ap_bonus)
         try:
             if self.parent_wargear and self.parent_wargear.is_ranged():
-                _s_bonus, sp_ap_bonus, _d_bonus, _a_bonus, _source = self._supernova_launcher_bonuses(attacker)
+                _s_bonus, sp_ap_bonus, _d_bonus, _a_bonus, _m_bonus, _source = self._supernova_launcher_bonuses(attacker)
                 if sp_ap_bonus:
                     ap_val -= int(sp_ap_bonus)
-                _s_bonus, tp_ap_bonus, _d_bonus, _a_bonus, _source = self._thermoneutronic_projector_bonuses(attacker)
+                _s_bonus, tp_ap_bonus, _d_bonus, _a_bonus, _m_bonus, _source = self._thermoneutronic_projector_bonuses(attacker)
                 if tp_ap_bonus:
                     ap_val -= int(tp_ap_bonus)
-                _s_bonus, pa_ap_bonus, _d_bonus, _a_bonus, _source = self._plasma_accelerator_rifle_bonuses(attacker)
+                _s_bonus, pa_ap_bonus, _d_bonus, _a_bonus, _m_bonus, _source = self._plasma_accelerator_rifle_bonuses(attacker)
                 if pa_ap_bonus:
                     ap_val -= int(pa_ap_bonus)
+                _s_bonus, fb_ap_bonus, _d_bonus, _a_bonus, _m_bonus, _source = self._fusion_blades_bonuses(attacker)
+                if fb_ap_bonus:
+                    ap_val -= int(fb_ap_bonus)
         except Exception:
             pass
         try:
@@ -3124,7 +3136,7 @@ class WargearProfile:
                     attack_result.attacks_special_modifiers.append(f"Possessed Blade +{pb_bonus}A ({weapon_label})")
         try:
             if self.parent_wargear and self.parent_wargear.is_ranged():
-                _pa_s_bonus, _pa_ap_bonus, _pa_d_bonus, pa_a_bonus, pa_source = self._plasma_accelerator_rifle_bonuses(attacker)
+                _pa_s_bonus, _pa_ap_bonus, _pa_d_bonus, pa_a_bonus, _pa_m_bonus, pa_source = self._plasma_accelerator_rifle_bonuses(attacker)
                 if pa_a_bonus:
                     atk_mods.append(
                         Modifier(
@@ -3135,6 +3147,17 @@ class WargearProfile:
                     )
                     source_name = str(pa_source or "Plasma Accelerator Rifle").strip() or "Plasma Accelerator Rifle"
                     attack_result.attacks_special_modifiers.append(f"{source_name} +{int(pa_a_bonus)}A (selected weapon)")
+                _fb_s_bonus, _fb_ap_bonus, _fb_d_bonus, fb_a_bonus, _fb_m_bonus, fb_source = self._fusion_blades_bonuses(attacker)
+                if fb_a_bonus:
+                    atk_mods.append(
+                        Modifier(
+                            ModifierOp.ADD,
+                            int(fb_a_bonus),
+                            source="enhancement:fusion_blades_attacks_add",
+                        )
+                    )
+                    source_name = str(fb_source or "Fusion Blades").strip() or "Fusion Blades"
+                    attack_result.attacks_special_modifiers.append(f"{source_name} +{int(fb_a_bonus)}A (selected weapon)")
         except Exception:
             pass
         try:
@@ -9815,26 +9838,33 @@ class WargearProfile:
                     wound_result.setdefault("modifiers", []).append(
                         f"+{shadow_extra}S from Enhancement bearer (Shadow of Chaos)"
                     )
-            sp_s_bonus, _sp_ap_bonus, _sp_d_bonus, _sp_a_bonus, sp_source = self._supernova_launcher_bonuses(attacker)
+            sp_s_bonus, _sp_ap_bonus, _sp_d_bonus, _sp_a_bonus, _sp_m_bonus, sp_source = self._supernova_launcher_bonuses(attacker)
             if sp_s_bonus:
                 strength = strength + int(sp_s_bonus)
                 source_name = str(sp_source or "Supernova Launcher").strip() or "Supernova Launcher"
                 wound_result.setdefault("modifiers", []).append(
                     f"+{int(sp_s_bonus)}S from {source_name} (selected weapon)"
                 )
-            tp_s_bonus, _tp_ap_bonus, _tp_d_bonus, _tp_a_bonus, tp_source = self._thermoneutronic_projector_bonuses(attacker)
+            tp_s_bonus, _tp_ap_bonus, _tp_d_bonus, _tp_a_bonus, _tp_m_bonus, tp_source = self._thermoneutronic_projector_bonuses(attacker)
             if tp_s_bonus:
                 strength = strength + int(tp_s_bonus)
                 source_name = str(tp_source or "Thermoneutronic Projector").strip() or "Thermoneutronic Projector"
                 wound_result.setdefault("modifiers", []).append(
                     f"+{int(tp_s_bonus)}S from {source_name} (selected weapon)"
                 )
-            pa_s_bonus, _pa_ap_bonus, _pa_d_bonus, _pa_a_bonus, pa_source = self._plasma_accelerator_rifle_bonuses(attacker)
+            pa_s_bonus, _pa_ap_bonus, _pa_d_bonus, _pa_a_bonus, _pa_m_bonus, pa_source = self._plasma_accelerator_rifle_bonuses(attacker)
             if pa_s_bonus:
                 strength = strength + int(pa_s_bonus)
                 source_name = str(pa_source or "Plasma Accelerator Rifle").strip() or "Plasma Accelerator Rifle"
                 wound_result.setdefault("modifiers", []).append(
                     f"+{int(pa_s_bonus)}S from {source_name} (selected weapon)"
+                )
+            fb_s_bonus, _fb_ap_bonus, _fb_d_bonus, _fb_a_bonus, _fb_m_bonus, fb_source = self._fusion_blades_bonuses(attacker)
+            if fb_s_bonus:
+                strength = strength + int(fb_s_bonus)
+                source_name = str(fb_source or "Fusion Blades").strip() or "Fusion Blades"
+                wound_result.setdefault("modifiers", []).append(
+                    f"+{int(fb_s_bonus)}S from {source_name} (selected weapon)"
                 )
         if (
             self.parent_wargear
@@ -13676,15 +13706,38 @@ class WargearProfile:
         defensive_damage_entries = []
         allocated_damage_entries = []
 
-        if self.is_melta() and attack_instance.get('below_half_distance', False):
-            # Support Melta N / Melta D3 / Melta D6+X, etc.
-            try:
-                melta = self.get_melta_bonus()
-                melta_bonus = int(melta.resolve())
-                damage_mods.append(Modifier(ModifierOp.ADD, melta_bonus, source="weapon:melta"))
-                damage_result['special_effects'].append(f"Melta +{melta_bonus} ({melta})")
-            except Exception as exc:
-                logger.warning(f"WARN: Melta bonus parsing failed for {self.name}: {exc}")
+        fusion_melta_bonus = 0
+        fusion_melta_source = ""
+        try:
+            if self.parent_wargear and self.parent_wargear.is_ranged():
+                _fb_s_bonus, _fb_ap_bonus, _fb_d_bonus, _fb_a_bonus, fb_m_bonus, fb_source = self._fusion_blades_bonuses(attacker)
+                fusion_melta_bonus = int(fb_m_bonus or 0)
+                fusion_melta_source = str(fb_source or "Fusion Blades").strip() or "Fusion Blades"
+        except Exception:
+            fusion_melta_bonus = 0
+            fusion_melta_source = ""
+
+        if attack_instance.get('below_half_distance', False):
+            if fusion_melta_bonus > 0:
+                damage_mods.append(
+                    Modifier(
+                        ModifierOp.ADD,
+                        int(fusion_melta_bonus),
+                        source="enhancement:fusion_blades_melta_add",
+                    )
+                )
+                damage_result['special_effects'].append(
+                    f"{fusion_melta_source} [MELTA {int(fusion_melta_bonus)}] (+{int(fusion_melta_bonus)}D)"
+                )
+            elif self.is_melta():
+                # Support Melta N / Melta D3 / Melta D6+X, etc.
+                try:
+                    melta = self.get_melta_bonus()
+                    melta_bonus = int(melta.resolve())
+                    damage_mods.append(Modifier(ModifierOp.ADD, melta_bonus, source="weapon:melta"))
+                    damage_result['special_effects'].append(f"Melta +{melta_bonus} ({melta})")
+                except Exception as exc:
+                    logger.warning(f"WARN: Melta bonus parsing failed for {self.name}: {exc}")
 
         # Enhancement: improve melee weapons' Damage by X (bearer enhancement).
         try:
@@ -13811,14 +13864,14 @@ class WargearProfile:
 
         try:
             if self.parent_wargear and self.parent_wargear.is_ranged():
-                _sp_s_bonus, _sp_ap_bonus, sp_d_bonus, _sp_a_bonus, sp_source = self._supernova_launcher_bonuses(attacker)
+                _sp_s_bonus, _sp_ap_bonus, sp_d_bonus, _sp_a_bonus, _sp_m_bonus, sp_source = self._supernova_launcher_bonuses(attacker)
                 if sp_d_bonus:
                     damage_mods.append(
                         Modifier(ModifierOp.ADD, int(sp_d_bonus), source="enhancement:supernova_launcher_damage_add")
                     )
                     source_name = str(sp_source or "Supernova Launcher").strip() or "Supernova Launcher"
                     damage_result["special_effects"].append(f"{source_name} +{int(sp_d_bonus)}D (selected weapon)")
-                _tp_s_bonus, _tp_ap_bonus, tp_d_bonus, _tp_a_bonus, tp_source = self._thermoneutronic_projector_bonuses(attacker)
+                _tp_s_bonus, _tp_ap_bonus, tp_d_bonus, _tp_a_bonus, _tp_m_bonus, tp_source = self._thermoneutronic_projector_bonuses(attacker)
                 if tp_d_bonus:
                     damage_mods.append(
                         Modifier(
@@ -13829,7 +13882,7 @@ class WargearProfile:
                     )
                     source_name = str(tp_source or "Thermoneutronic Projector").strip() or "Thermoneutronic Projector"
                     damage_result["special_effects"].append(f"{source_name} +{int(tp_d_bonus)}D (selected weapon)")
-                _pa_s_bonus, _pa_ap_bonus, pa_d_bonus, _pa_a_bonus, pa_source = self._plasma_accelerator_rifle_bonuses(attacker)
+                _pa_s_bonus, _pa_ap_bonus, pa_d_bonus, _pa_a_bonus, _pa_m_bonus, pa_source = self._plasma_accelerator_rifle_bonuses(attacker)
                 if pa_d_bonus:
                     damage_mods.append(
                         Modifier(
@@ -13840,6 +13893,17 @@ class WargearProfile:
                     )
                     source_name = str(pa_source or "Plasma Accelerator Rifle").strip() or "Plasma Accelerator Rifle"
                     damage_result["special_effects"].append(f"{source_name} +{int(pa_d_bonus)}D (selected weapon)")
+                _fb_s_bonus, _fb_ap_bonus, fb_d_bonus, _fb_a_bonus, _fb_m_bonus, fb_source = self._fusion_blades_bonuses(attacker)
+                if fb_d_bonus:
+                    damage_mods.append(
+                        Modifier(
+                            ModifierOp.ADD,
+                            int(fb_d_bonus),
+                            source="enhancement:fusion_blades_damage_add",
+                        )
+                    )
+                    source_name = str(fb_source or "Fusion Blades").strip() or "Fusion Blades"
+                    damage_result["special_effects"].append(f"{source_name} +{int(fb_d_bonus)}D (selected weapon)")
         except Exception:
             pass
 

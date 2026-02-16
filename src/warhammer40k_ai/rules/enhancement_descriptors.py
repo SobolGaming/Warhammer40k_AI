@@ -354,6 +354,20 @@ _EXPERIMENTAL_PROTOTYPE_CADRE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] 
             "damage_bonus": 1,
         },
     ),
+    "000009983005": EnhancementToolDescriptor(
+        enhancement_id="000009983005",
+        name="Fusion Blades",
+        timing="passive",
+        target="bearer_selected_fusion_blaster",
+        duration="constant",
+        effect="selected_ranged_weapon_strength_ap_damage_bonus",
+        effect_params={
+            "weapon_name": "fusion blaster",
+            "attacks_bonus": 1,
+            "strength_bonus": 3,
+            "melta_bonus": 4,
+        },
+    ),
 }
 
 _EXPERIMENTAL_PROTOTYPE_CADRE_BY_NAME = {

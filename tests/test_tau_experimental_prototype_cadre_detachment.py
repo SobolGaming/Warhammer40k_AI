@@ -126,6 +126,20 @@ def _plasma_accelerator_rifle_enhancement() -> Enhancement:
     )
 
 
+def _fusion_blades_enhancement() -> Enhancement:
+    return Enhancement(
+        id="000009983005",
+        name="Fusion Blades",
+        faction_id="TAU",
+        detachment="Experimental Prototype Cadre",
+        description=(
+            "T'AU EMPIRE model only. Select one fusion blaster equipped by the bearer. Improve the Attacks "
+            "characteristic of that weapon by 1, improve the Strength characteristic of that weapon by 3, "
+            "and that weapon has the [MELTA 4] ability."
+        ),
+    )
+
+
 def _build_tau_army(detachment_type: str) -> Army:
     army = Army("T'au Empire", detachment_type)
     army.faction_id = "TAU"
@@ -822,3 +836,173 @@ def test_plasma_accelerator_rifle_selects_single_matching_weapon_instance():
         for entry in first_wound.get("modifiers", [])
     )
     assert not any("Plasma Accelerator Rifle" in str(entry) for entry in second_wound.get("modifiers", []))
+
+
+def test_fusion_blades_has_tool_descriptor():
+    desc = get_enhancement_tool_descriptor(enhancement_id="000009983005")
+    assert desc is not None
+    assert desc.name == "Fusion Blades"
+    assert desc.effect == "selected_ranged_weapon_strength_ap_damage_bonus"
+    assert desc.effect_params.get("weapon_name") == "fusion blaster"
+    assert int(desc.effect_params.get("attacks_bonus", 0) or 0) == 1
+    assert int(desc.effect_params.get("strength_bonus", 0) or 0) == 3
+    assert int(desc.effect_params.get("melta_bonus", 0) or 0) == 4
+
+
+def test_fusion_blades_buffs_selected_fusion_blaster_only():
+    army = _build_tau_army("Experimental Prototype Cadre")
+    unit = create_unit(
+        "Commander",
+        keywords=["BATTLESUIT", "CHARACTER"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    army.add_unit(unit)
+    attacker = unit.models[0]
+
+    fusion_profile, fusion_wargear = make_named_ranged_profile("Fusion Blaster")
+    burst_profile, burst_wargear = make_named_ranged_profile("Burst Cannon")
+    attacker.wargear.extend([fusion_wargear, burst_wargear])
+
+    enhancement = _fusion_blades_enhancement()
+    unit.enhancement = enhancement
+    enhancement.apply_to_unit(unit)
+
+    target = create_unit(
+        "Enemy Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    fusion_wound = fusion_profile._wound_target_with_tracking(
+        target,
+        attacker,
+        {"_aura_attack_mods": _aura_stub()},
+        roll_value=4,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    burst_wound = burst_profile._wound_target_with_tracking(
+        target,
+        attacker,
+        {"_aura_attack_mods": _aura_stub()},
+        roll_value=4,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+
+    assert fusion_profile.get_effective_ap(attacker, target) == 0
+    assert burst_profile.get_effective_ap(attacker, target) == 0
+    assert any("Fusion Blades" in str(entry) and "+3S" in str(entry) for entry in fusion_wound.get("modifiers", []))
+    assert not any("Fusion Blades" in str(entry) for entry in burst_wound.get("modifiers", []))
+
+    selected_attack_count = fusion_profile.preview_attack_count(target, attacker, publish_roll_event=False)
+    other_attack_count = burst_profile.preview_attack_count(target, attacker, publish_roll_event=False)
+    assert selected_attack_count.num_attacks == 2
+    assert other_attack_count.num_attacks == 1
+    assert any("Fusion Blades +1A" in str(entry) for entry in selected_attack_count.special_modifiers)
+    assert not any("Fusion Blades +1A" in str(entry) for entry in other_attack_count.special_modifiers)
+
+    selected_damage_target = create_unit(
+        "Selected Damage Target",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    other_damage_target = create_unit(
+        "Other Damage Target",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    selected_damage = fusion_profile._damage_target_with_tracking(
+        selected_damage_target.models[0],
+        attacker,
+        {"_aura_attack_mods": _aura_stub(), "below_half_distance": True},
+        allow_rerolls=False,
+    )
+    other_damage = burst_profile._damage_target_with_tracking(
+        other_damage_target.models[0],
+        attacker,
+        {"_aura_attack_mods": _aura_stub(), "below_half_distance": True},
+        allow_rerolls=False,
+    )
+    assert any("Fusion Blades [MELTA 4]" in str(entry) for entry in selected_damage.get("special_effects", []))
+    assert not any("Fusion Blades [MELTA 4]" in str(entry) for entry in other_damage.get("special_effects", []))
+
+
+def test_fusion_blades_selects_single_matching_weapon_instance():
+    army = _build_tau_army("Experimental Prototype Cadre")
+    unit = create_unit(
+        "Commander",
+        keywords=["BATTLESUIT", "CHARACTER"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    army.add_unit(unit)
+    attacker = unit.models[0]
+
+    first_profile, first_wargear = make_named_ranged_profile("Fusion Blaster")
+    second_profile, second_wargear = make_named_ranged_profile("Fusion Blaster")
+    attacker.wargear.extend([first_wargear, second_wargear])
+
+    enhancement = _fusion_blades_enhancement()
+    unit.enhancement = enhancement
+    enhancement.apply_to_unit(unit)
+
+    assert bool(unit.special_rules.get("enhancement_fusion_blades", False))
+    assert int(unit.special_rules.get("enhancement_fusion_blades_weapon_slot_index", -1)) == 0
+
+    target = create_unit(
+        "Enemy Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    first_wound = first_profile._wound_target_with_tracking(
+        target,
+        attacker,
+        {"_aura_attack_mods": _aura_stub()},
+        roll_value=4,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    second_wound = second_profile._wound_target_with_tracking(
+        target,
+        attacker,
+        {"_aura_attack_mods": _aura_stub()},
+        roll_value=4,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+
+    first_attack_count = first_profile.preview_attack_count(target, attacker, publish_roll_event=False)
+    second_attack_count = second_profile.preview_attack_count(target, attacker, publish_roll_event=False)
+
+    assert first_profile.get_effective_ap(attacker, target) == 0
+    assert second_profile.get_effective_ap(attacker, target) == 0
+    assert first_attack_count.num_attacks == 2
+    assert second_attack_count.num_attacks == 1
+    assert any("Fusion Blades +1A" in str(entry) for entry in first_attack_count.special_modifiers)
+    assert not any("Fusion Blades +1A" in str(entry) for entry in second_attack_count.special_modifiers)
+    assert any("Fusion Blades" in str(entry) and "+3S" in str(entry) for entry in first_wound.get("modifiers", []))
+    assert not any("Fusion Blades" in str(entry) for entry in second_wound.get("modifiers", []))
+
+    first_damage_target = create_unit(
+        "First Damage Target",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    second_damage_target = create_unit(
+        "Second Damage Target",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    first_damage = first_profile._damage_target_with_tracking(
+        first_damage_target.models[0],
+        attacker,
+        {"_aura_attack_mods": _aura_stub(), "below_half_distance": True},
+        allow_rerolls=False,
+    )
+    second_damage = second_profile._damage_target_with_tracking(
+        second_damage_target.models[0],
+        attacker,
+        {"_aura_attack_mods": _aura_stub(), "below_half_distance": True},
+        allow_rerolls=False,
+    )
+    assert any("Fusion Blades [MELTA 4]" in str(entry) for entry in first_damage.get("special_effects", []))
+    assert not any("Fusion Blades [MELTA 4]" in str(entry) for entry in second_damage.get("special_effects", []))
