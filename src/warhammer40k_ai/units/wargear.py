@@ -487,6 +487,42 @@ class WargearProfile:
             }
         return None
 
+    def _supernova_launcher_bonuses(self, attacker: 'Model') -> Tuple[int, int, int, str]:
+        try:
+            if not (self.parent_wargear and self.parent_wargear.is_ranged()):
+                return 0, 0, 0, ""
+        except Exception:
+            return 0, 0, 0, ""
+        sr = self._unit_special_rules(attacker)
+        if not isinstance(sr, dict) or not sr.get("enhancement_supernova_launcher"):
+            return 0, 0, 0, ""
+        if not self._attacker_is_enhancement_bearer(attacker, sr):
+            return 0, 0, 0, ""
+
+        selected_weapon_name = str(sr.get("enhancement_supernova_launcher_weapon_name", "") or "").strip()
+        if selected_weapon_name and not self._weapon_name_matches_for_attacker(attacker, selected_weapon_name):
+            return 0, 0, 0, ""
+
+        selected_slot = int(sr.get("enhancement_supernova_launcher_weapon_slot_index", -1))
+        if selected_slot >= 0:
+            current_slot = -1
+            for idx, wargear in enumerate(list(getattr(attacker, "wargear", []) or [])):
+                if wargear is self.parent_wargear:
+                    current_slot = int(idx)
+                    break
+            if current_slot >= 0 and current_slot != selected_slot:
+                return 0, 0, 0, ""
+
+        s_bonus = int(sr.get("enhancement_supernova_launcher_strength_bonus", 0) or 0)
+        ap_bonus = int(sr.get("enhancement_supernova_launcher_ap_bonus", 0) or 0)
+        d_bonus = int(sr.get("enhancement_supernova_launcher_damage_bonus", 0) or 0)
+        if s_bonus <= 0 and ap_bonus <= 0 and d_bonus <= 0:
+            return 0, 0, 0, ""
+        source = str(sr.get("enhancement_supernova_launcher_source", "") or "Supernova Launcher").strip()
+        if not source:
+            source = "Supernova Launcher"
+        return s_bonus, ap_bonus, d_bonus, source
+
     def _radiant_champion_extra_mortal_wounds(self, attacker: 'Model') -> int:
         unit = getattr(attacker, "parent_unit", None)
         if unit is None:
@@ -1842,6 +1878,13 @@ class WargearProfile:
                     char_ap_bonus = 1
                 if char_ap_bonus:
                     ap_val -= int(char_ap_bonus)
+        try:
+            if self.parent_wargear and self.parent_wargear.is_ranged():
+                _s_bonus, sp_ap_bonus, _d_bonus, _source = self._supernova_launcher_bonuses(attacker)
+                if sp_ap_bonus:
+                    ap_val -= int(sp_ap_bonus)
+        except Exception:
+            pass
         try:
             if self.parent_wargear and self.parent_wargear.is_melee():
                 bonus = int(getattr(attacker, "get_temporary_melee_ap_bonus", lambda: 0)() or 0)
@@ -9718,6 +9761,13 @@ class WargearProfile:
                     wound_result.setdefault("modifiers", []).append(
                         f"+{shadow_extra}S from Enhancement bearer (Shadow of Chaos)"
                     )
+            sp_s_bonus, _sp_ap_bonus, _sp_d_bonus, sp_source = self._supernova_launcher_bonuses(attacker)
+            if sp_s_bonus:
+                strength = strength + int(sp_s_bonus)
+                source_name = str(sp_source or "Supernova Launcher").strip() or "Supernova Launcher"
+                wound_result.setdefault("modifiers", []).append(
+                    f"+{int(sp_s_bonus)}S from {source_name} (selected weapon)"
+                )
         if (
             self.parent_wargear
             and getattr(self.parent_wargear, "is_ranged", lambda: False)()
@@ -13688,6 +13738,18 @@ class WargearProfile:
                         Modifier(ModifierOp.ADD, int(d_bonus), source="enhancement:melee_damage_add_no_extra")
                     )
                     damage_result['special_effects'].append(f"Berzerker Glaive +{d_bonus}D (melee)")
+        except Exception:
+            pass
+
+        try:
+            if self.parent_wargear and self.parent_wargear.is_ranged():
+                _sp_s_bonus, _sp_ap_bonus, sp_d_bonus, sp_source = self._supernova_launcher_bonuses(attacker)
+                if sp_d_bonus:
+                    damage_mods.append(
+                        Modifier(ModifierOp.ADD, int(sp_d_bonus), source="enhancement:supernova_launcher_damage_add")
+                    )
+                    source_name = str(sp_source or "Supernova Launcher").strip() or "Supernova Launcher"
+                    damage_result["special_effects"].append(f"{source_name} +{int(sp_d_bonus)}D (selected weapon)")
         except Exception:
             pass
 

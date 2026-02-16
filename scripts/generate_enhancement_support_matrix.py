@@ -154,6 +154,18 @@ def _support_status(row: EnhRow) -> Tuple[str, str]:
             return ("Partial", "Conditional damage reduction (unconditional portion supported).")
         return ("Supported", f"Reduce damage allocated to bearer by {m.group(1)} (min 1).")
 
+    m = re.search(
+        r"select\s+one\s+airbursting\s+fragmentation\s+projector\s+equipped\s+by\s+the\s+bearer\.\s*"
+        r"improve\s+the\s+strength\s+characteristic\s+of\s+that\s+weapon\s+by\s+(\d+),\s+and\s+improve\s+the\s+armour\s+penetration\s+and\s+damage\s+characteristics\s+of\s+that\s+weapon\s+by\s+(\d+)\.",
+        rules,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        return (
+            "Supported",
+            f"Selected bearer Airbursting Fragmentation Projector gets +{m.group(1)}S and +{m.group(2)}AP/+{m.group(2)}D.",
+        )
+
     return ("Partial", "Loadable/assignable + points counted + UI display; rules effects not executed yet.")
 
 
@@ -237,4 +249,3 @@ def main() -> None:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     main()
-

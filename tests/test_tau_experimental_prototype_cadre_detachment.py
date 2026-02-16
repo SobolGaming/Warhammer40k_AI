@@ -1,6 +1,8 @@
 from types import SimpleNamespace
 
 from warhammer40k_ai.roster.army import Army
+from warhammer40k_ai.rules.enhancement import Enhancement
+from warhammer40k_ai.rules.enhancement_descriptors import get_enhancement_tool_descriptor
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.units.wargear import WargearProfile
 
@@ -55,6 +57,45 @@ def make_profile(*, range_val: str, is_ranged: bool) -> WargearProfile:
         "description": "",
     }
     return WargearProfile("Profile", wargear_data=data, parent_wargear=parent)
+
+
+def make_named_ranged_profile(
+    wargear_name: str,
+    *,
+    range_val: str = "24",
+    strength: str = "4",
+    ap: str = "0",
+    damage: str = "1",
+) -> tuple[WargearProfile, object]:
+    parent = SimpleNamespace(
+        name=str(wargear_name),
+        is_melee=lambda: False,
+        is_ranged=lambda: True,
+    )
+    data = {
+        "range": str(range_val),
+        "A": "1",
+        "BS_WS": "4",
+        "S": str(strength),
+        "AP": str(ap),
+        "D": str(damage),
+        "description": "",
+    }
+    return WargearProfile("Profile", wargear_data=data, parent_wargear=parent), parent
+
+
+def _supernova_launcher_enhancement() -> Enhancement:
+    return Enhancement(
+        id="000009983002",
+        name="Supernova Launcher",
+        faction_id="TAU",
+        detachment="Experimental Prototype Cadre",
+        description=(
+            "T'AU EMPIRE model only. Select one airbursting fragmentation projector equipped by the bearer. "
+            "Improve the Strength characteristic of that weapon by 3, and improve the Armour Penetration and "
+            "Damage characteristics of that weapon by 1."
+        ),
+    )
 
 
 def _build_tau_army(detachment_type: str) -> Army:
@@ -333,3 +374,134 @@ def test_killing_blow_lethal_hits_require_guided_unit():
     assert hit_result["hit"] is True
     assert attack_instance.get("lethal_hit") is not True
     assert "Lethal Hits" not in hit_result.get("special_effects", [])
+
+
+def test_supernova_launcher_has_tool_descriptor():
+    desc = get_enhancement_tool_descriptor(enhancement_id="000009983002")
+    assert desc is not None
+    assert desc.name == "Supernova Launcher"
+    assert desc.effect == "selected_ranged_weapon_strength_ap_damage_bonus"
+    assert desc.effect_params.get("weapon_name") == "airbursting fragmentation projector"
+    assert int(desc.effect_params.get("strength_bonus", 0) or 0) == 3
+    assert int(desc.effect_params.get("ap_bonus", 0) or 0) == 1
+    assert int(desc.effect_params.get("damage_bonus", 0) or 0) == 1
+
+
+def test_supernova_launcher_buffs_selected_airbursting_weapon_only():
+    army = _build_tau_army("Experimental Prototype Cadre")
+    unit = create_unit(
+        "Commander",
+        keywords=["BATTLESUIT", "CHARACTER"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    army.add_unit(unit)
+    attacker = unit.models[0]
+
+    airburst_profile, airburst_wargear = make_named_ranged_profile("Airbursting Fragmentation Projector")
+    burst_profile, burst_wargear = make_named_ranged_profile("Burst Cannon")
+    attacker.wargear.extend([airburst_wargear, burst_wargear])
+
+    enhancement = _supernova_launcher_enhancement()
+    unit.enhancement = enhancement
+    enhancement.apply_to_unit(unit)
+
+    target_for_wound = create_unit(
+        "Enemy Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    airburst_wound = airburst_profile._wound_target_with_tracking(
+        target_for_wound,
+        attacker,
+        {"_aura_attack_mods": _aura_stub()},
+        roll_value=4,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    burst_wound = burst_profile._wound_target_with_tracking(
+        target_for_wound,
+        attacker,
+        {"_aura_attack_mods": _aura_stub()},
+        roll_value=4,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+
+    assert airburst_profile.get_effective_ap(attacker, target_for_wound) == -1
+    assert burst_profile.get_effective_ap(attacker, target_for_wound) == 0
+    assert any("Supernova Launcher" in str(entry) and "+3S" in str(entry) for entry in airburst_wound.get("modifiers", []))
+    assert not any("Supernova Launcher" in str(entry) for entry in burst_wound.get("modifiers", []))
+
+    selected_damage_target = create_unit(
+        "Selected Damage Target",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    other_damage_target = create_unit(
+        "Other Damage Target",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    selected_damage = airburst_profile._damage_target_with_tracking(
+        selected_damage_target.models[0],
+        attacker,
+        {"_aura_attack_mods": _aura_stub()},
+        allow_rerolls=False,
+    )
+    other_damage = burst_profile._damage_target_with_tracking(
+        other_damage_target.models[0],
+        attacker,
+        {"_aura_attack_mods": _aura_stub()},
+        allow_rerolls=False,
+    )
+    assert any("Supernova Launcher +1D" in str(entry) for entry in selected_damage.get("special_effects", []))
+    assert not any("Supernova Launcher +1D" in str(entry) for entry in other_damage.get("special_effects", []))
+
+
+def test_supernova_launcher_selects_single_matching_weapon_instance():
+    army = _build_tau_army("Experimental Prototype Cadre")
+    unit = create_unit(
+        "Commander",
+        keywords=["BATTLESUIT", "CHARACTER"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    army.add_unit(unit)
+    attacker = unit.models[0]
+
+    first_profile, first_wargear = make_named_ranged_profile("Airbursting Fragmentation Projector")
+    second_profile, second_wargear = make_named_ranged_profile("Airbursting Fragmentation Projector")
+    attacker.wargear.extend([first_wargear, second_wargear])
+
+    enhancement = _supernova_launcher_enhancement()
+    unit.enhancement = enhancement
+    enhancement.apply_to_unit(unit)
+
+    assert bool(unit.special_rules.get("enhancement_supernova_launcher", False))
+    assert int(unit.special_rules.get("enhancement_supernova_launcher_weapon_slot_index", -1)) == 0
+
+    target = create_unit(
+        "Enemy Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    first_wound = first_profile._wound_target_with_tracking(
+        target,
+        attacker,
+        {"_aura_attack_mods": _aura_stub()},
+        roll_value=4,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    second_wound = second_profile._wound_target_with_tracking(
+        target,
+        attacker,
+        {"_aura_attack_mods": _aura_stub()},
+        roll_value=4,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+
+    assert first_profile.get_effective_ap(attacker, target) == -1
+    assert second_profile.get_effective_ap(attacker, target) == 0
+    assert any("Supernova Launcher" in str(entry) and "+3S" in str(entry) for entry in first_wound.get("modifiers", []))
+    assert not any("Supernova Launcher" in str(entry) for entry in second_wound.get("modifiers", []))

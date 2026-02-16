@@ -310,6 +310,27 @@ _AELDARI_GUARDIAN_BATTLEHOST_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _AELDARI_GUARDIAN_BATTLEHOST_DESCRIPTORS.values()
 }
 
+_EXPERIMENTAL_PROTOTYPE_CADRE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009983002": EnhancementToolDescriptor(
+        enhancement_id="000009983002",
+        name="Supernova Launcher",
+        timing="passive",
+        target="bearer_selected_airbursting_fragmentation_projector",
+        duration="constant",
+        effect="selected_ranged_weapon_strength_ap_damage_bonus",
+        effect_params={
+            "weapon_name": "airbursting fragmentation projector",
+            "strength_bonus": 3,
+            "ap_bonus": 1,
+            "damage_bonus": 1,
+        },
+    ),
+}
+
+_EXPERIMENTAL_PROTOTYPE_CADRE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _EXPERIMENTAL_PROTOTYPE_CADRE_DESCRIPTORS.values()
+}
+
 _INVASION_FLEET_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008348002": EnhancementToolDescriptor(
         enhancement_id="000008348002",
@@ -915,6 +936,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _AELDARI_GUARDIAN_BATTLEHOST_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _EXPERIMENTAL_PROTOTYPE_CADRE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _INVASION_FLEET_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -964,6 +988,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _POSSESSED_SLAUGHTERBAND_BY_NAME.get(key)
         or _VESSELS_OF_WRATH_BY_NAME.get(key)
         or _AELDARI_GUARDIAN_BATTLEHOST_BY_NAME.get(key)
+        or _EXPERIMENTAL_PROTOTYPE_CADRE_BY_NAME.get(key)
         or _INVASION_FLEET_BY_NAME.get(key)
         or _CABAL_OF_CHAOS_BY_NAME.get(key)
         or _SPECTACLE_OF_SPITE_BY_NAME.get(key)

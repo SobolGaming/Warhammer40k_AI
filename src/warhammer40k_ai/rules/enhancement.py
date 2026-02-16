@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Set, Tuple
+import re
 
 
 def _ensure_enhancement_fnp_entry(
@@ -78,6 +79,42 @@ def maybe_upgrade_adaptive_biology(unit) -> bool:
     sr["enhancement_adaptive_biology_upgraded"] = True
     unit.special_rules = sr
     return True
+
+
+def _normalize_weapon_name_key(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(value or "").strip().lower())
+
+
+def _weapon_name_matches(unit, expected_name: str, candidate_name: str) -> bool:
+    expected = str(expected_name or "").strip()
+    candidate = str(candidate_name or "").strip()
+    if not expected or not candidate:
+        return False
+    if unit is not None and hasattr(unit, "_weapon_name_matches"):
+        return bool(unit._weapon_name_matches([expected], candidate))
+    exp_key = _normalize_weapon_name_key(expected)
+    cand_key = _normalize_weapon_name_key(candidate)
+    return bool(exp_key and cand_key and (exp_key == cand_key or exp_key in cand_key or cand_key in exp_key))
+
+
+def _select_bearer_weapon(unit, bearer, *, weapon_name: str, require_ranged: bool) -> tuple[str, int]:
+    if bearer is None:
+        return "", -1
+    desired_name = str(weapon_name or "").strip()
+    for idx, wargear in enumerate(list(getattr(bearer, "wargear", []) or [])):
+        if wargear is None:
+            continue
+        if require_ranged:
+            is_ranged = getattr(wargear, "is_ranged", None)
+            if not callable(is_ranged) or not bool(is_ranged()):
+                continue
+        name = str(getattr(wargear, "name", "") or "").strip()
+        if not name:
+            continue
+        if desired_name and not _weapon_name_matches(unit, desired_name, name):
+            continue
+        return name, int(idx)
+    return "", -1
 
 from .enhancement_effects import (
     EnhancementEffectSpec,
@@ -210,6 +247,7 @@ class Enhancement:
         cd_mgr = getattr(army, "chaos_daemons_detachments", None) if army is not None else None
         csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
         lov_mgr = getattr(army, "leagues_of_votann_detachments", None) if army is not None else None
+        tau_mgr = getattr(army, "tau_empire_detachments", None) if army is not None else None
         ec_mgr = getattr(army, "emperors_children_detachments", None) if army is not None else None
         if ec_mgr is None and army is not None:
             ec_mgr = getattr(army, "emperors_children", None)
@@ -291,6 +329,10 @@ class Enhancement:
         except Exception:
             is_needgaard_oathband = False
         try:
+            is_experimental_prototype_cadre = bool(tau_mgr and tau_mgr.is_experimental_prototype_cadre())
+        except Exception:
+            is_experimental_prototype_cadre = False
+        try:
             is_coterie_of_conceited = bool(ec_mgr and ec_mgr.is_coterie_of_conceited())
         except Exception:
             is_coterie_of_conceited = False
@@ -352,6 +394,50 @@ class Enhancement:
             bearer = get_bearer()
             if bearer is not None:
                 bearer_id = str(getattr(bearer, "id", getattr(bearer, "_id", "")) or "")
+
+        if name == "supernova launcher" or enh_id == "000009983002":
+            if not is_experimental_prototype_cadre:
+                return
+            unit.special_rules["enhancement_supernova_launcher"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            try:
+                params = dict(getattr(desc, "effect_params", {}) or {})
+            except Exception:
+                params = {}
+            selected_weapon_name = str(
+                params.get("weapon_name", "airbursting fragmentation projector") or "airbursting fragmentation projector"
+            ).strip()
+            selected_weapon_slot = -1
+            if bearer is not None:
+                chosen_name, chosen_slot = _select_bearer_weapon(
+                    unit,
+                    bearer,
+                    weapon_name=selected_weapon_name,
+                    require_ranged=True,
+                )
+                if chosen_name:
+                    selected_weapon_name = chosen_name
+                selected_weapon_slot = int(chosen_slot)
+            try:
+                strength_bonus = int(params.get("strength_bonus", 3) or 3)
+            except Exception:
+                strength_bonus = 3
+            try:
+                ap_bonus = int(params.get("ap_bonus", 1) or 1)
+            except Exception:
+                ap_bonus = 1
+            try:
+                damage_bonus = int(params.get("damage_bonus", 1) or 1)
+            except Exception:
+                damage_bonus = 1
+            unit.special_rules["enhancement_supernova_launcher_weapon_name"] = selected_weapon_name
+            unit.special_rules["enhancement_supernova_launcher_weapon_slot_index"] = int(selected_weapon_slot)
+            unit.special_rules["enhancement_supernova_launcher_strength_bonus"] = int(max(0, strength_bonus))
+            unit.special_rules["enhancement_supernova_launcher_ap_bonus"] = int(max(0, ap_bonus))
+            unit.special_rules["enhancement_supernova_launcher_damage_bonus"] = int(max(0, damage_bonus))
+            unit.special_rules["enhancement_supernova_launcher_source"] = "Supernova Launcher"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 
         if name == "saintly example" or enh_id == "000008470002":
             if not is_hallowed_martyrs:
