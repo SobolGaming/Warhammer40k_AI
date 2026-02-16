@@ -2013,6 +2013,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Once per battle, start of any phase: bearer gains a 3+ invulnerable save until end of phase.",
         ),
         ("CSM", "Cruel Hunter"): ("Supported", "Leading: pile-in/consolidate up to 6\"."),
+        ("CSM", "Brutal Raider"): (
+            "Supported",
+            "Charge end: this model's melee weapons gain +1 Strength and +1 AP until end of turn.",
+        ),
         ("CSM", "Chance for Glory"): (
             "Supported",
             "Once per battle, start of Fight phase: improve S/A/AP/D of the bearer's melee weapons by 1 until end of phase.",

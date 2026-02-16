@@ -8281,6 +8281,47 @@ class ActionsMovementMixin:
             "source": str(source or "Charge move ability"),
         }
 
+    def _grant_charge_end_model_melee_strength_ap_bonus(
+        self,
+        model: 'Model',
+        *,
+        strength_bonus: int = 0,
+        ap_bonus: int = 0,
+        source: str = "",
+    ) -> bool:
+        if model is None:
+            return False
+        try:
+            strength_bonus = int(strength_bonus or 0)
+        except Exception:
+            strength_bonus = 0
+        try:
+            ap_bonus = int(ap_bonus or 0)
+        except Exception:
+            ap_bonus = 0
+        if strength_bonus <= 0 and ap_bonus <= 0:
+            return False
+        if not isinstance(getattr(model, "_temporary_effects", None), dict):
+            model._temporary_effects = {}
+        source_label = str(source or "Charge move ability").strip() or "Charge move ability"
+        model_id = str(get_entity_id(model) or "")
+        source_key = self._normalize_keyword_phrase(source_label) or source_label.lower()
+        key = (
+            f"charge_end_model_melee_strength_ap:{model_id}:{source_key}:"
+            f"{int(strength_bonus)}:{int(ap_bonus)}"
+        ).lower()
+        entry = {
+            "expires_phase": "FIGHT_PHASE",
+            "source": source_label,
+        }
+        if strength_bonus:
+            entry["melee_strength_bonus"] = int(strength_bonus)
+            entry["melee_strength_bonus_source"] = source_label
+        if ap_bonus:
+            entry["melee_ap_bonus"] = int(ap_bonus)
+        model._temporary_effects[key] = entry
+        return True
+
     def _apply_charge_move_devastating_wounds(self) -> bool:
         """
         Apply temporary Devastating Wounds (melee) to models when the unit completes a charge move.
@@ -8334,6 +8375,64 @@ class ActionsMovementMixin:
                             applied = True
                             break
 
+        return applied
+
+    def _apply_charge_end_model_melee_strength_ap_bonuses(self) -> bool:
+        """
+        Apply temporary model-only melee Strength/AP bonuses when the unit completes a charge move.
+
+        Supports rules like:
+          "Each time this model's unit ends a Charge move, until the end of the turn, add 1 to the
+           Strength characteristic of melee weapons equipped by this model and improve the Armour
+           Penetration characteristics of those weapons by 1."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        applied = False
+        for unit in members:
+            if unit is None:
+                continue
+            for model in list(getattr(unit, "models", []) or []):
+                if model is None or not getattr(model, "is_alive", True):
+                    continue
+                for name, desc in unit._iter_model_specific_ability_entries(model):
+                    text_src = desc or name or ""
+                    if not text_src:
+                        continue
+                    text_src = unit._strip_eligibility_prefix(text_src)
+                    normalized = unit._normalize_rules_text(text_src)
+                    normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                    normalized = normalized.lower()
+                    normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                    normalized = re.sub(r"\s+", " ", normalized).strip()
+                    m = self._CHARGE_END_MODEL_MELEE_STRENGTH_AP_BONUS_RE.fullmatch(normalized)
+                    if not m:
+                        continue
+                    try:
+                        strength_bonus = int(m.group("strength") or 0)
+                    except Exception:
+                        strength_bonus = 0
+                    try:
+                        ap_bonus = int(m.group("ap") or 0)
+                    except Exception:
+                        ap_bonus = 0
+                    source = str(name or "Charge move ability").strip() or "Charge move ability"
+                    if self._grant_charge_end_model_melee_strength_ap_bonus(
+                        model,
+                        strength_bonus=int(strength_bonus),
+                        ap_bonus=int(ap_bonus),
+                        source=source,
+                    ):
+                        applied = True
         return applied
 
     def unit_charge_end_weapon_keyword_bonus_specs(self) -> list[dict]:

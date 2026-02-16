@@ -7152,6 +7152,7 @@ class Game(
                     except Exception:
                         pass
                 charging_unit._apply_charge_move_devastating_wounds()
+                charging_unit._apply_charge_end_model_melee_strength_ap_bonuses()
                 charging_unit._apply_charge_move_weapon_keyword_bonuses()
                 logger.info(f"Charge successful: {charging_unit.name} achieved {final_distance:.1f}\" "
                     f"edge-to-edge distance with {target_unit.name}")

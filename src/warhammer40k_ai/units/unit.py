@@ -3025,6 +3025,14 @@ class Unit(
         r"have\s+the\s+(?P<keyword>[a-z0-9 \-]+)\s+ability",
         re.IGNORECASE,
     )
+    _CHARGE_END_MODEL_MELEE_STRENGTH_AP_BONUS_RE = re.compile(
+        r"(?:while\s+this\s+model\s+is\s+leading\s+a\s+unit\s+)?"
+        r"each\s+time\s+(?:this\s+model\s+s\s+unit|that\s+unit|this\s+unit)\s+ends?\s+a\s+charge\s+move\s+"
+        r"until\s+the\s+end\s+of\s+the\s+turn\s+"
+        r"add\s+(?P<strength>\d+)\s+to\s+the\s+strength\s+characteristic\s+of\s+melee\s+weapons\s+equipped\s+by\s+this\s+model\s+"
+        r"and\s+improve\s+the\s+armou?r\s+penetration\s+characteristics?\s+of\s+those\s+weapons\s+by\s+(?P<ap>\d+)",
+        re.IGNORECASE,
+    )
     _CHARGE_END_MORTAL_TABLE_RE = re.compile(
         r"each\s+time\s+(?:this\s+model'?s\s+unit|this\s+unit)\s+ends?\s+a\s+charge\s+move.*?"
         r"(?:select|choose)\s+one\s+enemy\s+unit\s+within\s+engagement\s+range.*?"
