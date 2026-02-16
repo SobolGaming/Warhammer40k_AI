@@ -1341,6 +1341,26 @@ _ASPECT_HOST_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _ASPECT_HOST_STRATAGEM_DESCRIPTORS.values()
 }
 
+_EXPERIMENTAL_PROTOTYPE_CADRE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009984002": StratagemToolDescriptor(
+        stratagem_id="000009984002",
+        name="Automated Repair Drones",
+        timing="command_phase",
+        target="tau_empire_battlesuit_unit_with_wounded_battlesuit_model",
+        duration="immediate",
+        effect="heal_battlesuit_model",
+        cp_cost=1,
+        effect_params={
+            "model_keyword": "BATTLESUIT",
+            "heal_roll": "D3+1",
+        },
+    ),
+}
+
+_EXPERIMENTAL_PROTOTYPE_CADRE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _EXPERIMENTAL_PROTOTYPE_CADRE_STRATAGEM_DESCRIPTORS.values()
+}
+
 _NEEDGAARD_OATHBAND_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010436005": StratagemToolDescriptor(
         stratagem_id="000010436005",
@@ -1475,6 +1495,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _ASPECT_HOST_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _EXPERIMENTAL_PROTOTYPE_CADRE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _NEEDGAARD_OATHBAND_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -1501,5 +1524,6 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _RAPID_EVISCERATION_STRATAGEM_BY_NAME.get(key)
         or _ARMOURED_WARHOST_STRATAGEM_BY_NAME.get(key)
         or _ASPECT_HOST_STRATAGEM_BY_NAME.get(key)
+        or _EXPERIMENTAL_PROTOTYPE_CADRE_STRATAGEM_BY_NAME.get(key)
         or _NEEDGAARD_OATHBAND_STRATAGEM_BY_NAME.get(key)
     )

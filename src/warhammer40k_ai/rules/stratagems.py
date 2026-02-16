@@ -17,6 +17,7 @@ from .stratagem_descriptors import get_stratagem_tool_descriptor
 from .stratagems_chaos_knights import ChaosKnightsStratagemMixin
 from .stratagems_necrons import NecronsStratagemMixin
 from .stratagems_orks import OrksStratagemMixin
+from .stratagems_tau_empire import TauEmpireStratagemMixin
 from .stratagems_votann import VotannStratagemMixin
 from .stratagems_world_eaters import WorldEatersStratagemMixin
 from .stratagems_grey_knights import GreyKnightsStratagemMixin
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 IMPLEMENTED_STRATAGEM_NAMES = {
     "A CHALLENGE MET",
     "A GRIM WARNING",
+    "AUTOMATED REPAIR DRONES",
     "ANTI-GRAV REPULSION",
     "ANTI‑GRAV REPULSION",
     "ARMOUR OF CONTEMPT",
@@ -1097,6 +1099,7 @@ class StratagemManager(
     NecronsStratagemMixin,
     AeldariStratagemMixin,
     VotannStratagemMixin,
+    TauEmpireStratagemMixin,
     OrksStratagemMixin,
 ):
     def __init__(self, player) -> None:
@@ -2416,6 +2419,13 @@ class StratagemManager(
                     return result
             result["reason"] = "Requires Duty and Honour! unit within a controlled objective marker"
             return result
+        if name_u == "AUTOMATED REPAIR DRONES":
+            if self._tau_automated_repair_drones_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires a wounded T'AU EMPIRE BATTLESUIT unit on the battlefield"
+            return result
         if stratagem.can_use(self.player, self.game, **context):
             result["available"] = True
             result["reason"] = None
@@ -2442,6 +2452,7 @@ class StratagemManager(
         name_u = (name or "").strip().upper()
         hints = {
             "A GRIM WARNING": "Objective: destroyed BLOOD ANGELS unit on your objective",
+            "AUTOMATED REPAIR DRONES": "Target: T'AU EMPIRE BATTLESUIT unit with a wounded BATTLESUIT model",
             "ARMOUR OF CONTEMPT": "Target: ADEPTUS ASTARTES unit",
             "DEATHLESS DUTY": "Target: DEATH COMPANY unit",
             "INSENSATE RAMPAGE": "Target: DEATH COMPANY unit",
@@ -11960,6 +11971,9 @@ class StratagemManager(
         votann_result = self._use_votann_needgaard_stratagem(s, **kwargs)
         if votann_result is not None:
             return votann_result
+        tau_result = self._use_tau_experimental_prototype_cadre_stratagem(s, **kwargs)
+        if tau_result is not None:
+            return tau_result
 
         # Rage-cursed Onslaught: RED WRATH (advance then shoot/charge choice; Red Thirst for both)
         if s.name.upper() == "RED WRATH":
