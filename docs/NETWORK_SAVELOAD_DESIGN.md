@@ -232,6 +232,7 @@ Movement:
 - hazard_objective_select_dialog: PICK_OBJECTIVE {objective_id}
 - move_over_mortal_wounds_target_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `mortal_wounds_kind="move_over"`, `unit_id`, `model_id` optional, `ability_name`, `spec`)
 - bomb_squigs_target_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `mortal_wounds_kind="bomb_squigs"`, `unit_id`, `ability_name`, `spec.max_uses`, `spec.remaining_uses`)
+- plunder_target_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `mortal_wounds_kind="plunder"`, `unit_id`, `ability_name`, `spec`)
 - cult_ambush_reinforcements_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="cult_ambush_reinforcements"`, `marker_id`, `remaining_marker_ids`, `available_unit_ids`)
 Battle-shock:
 - cankerblight_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="cankerblight"`, `target_unit_id`, `source_unit_id`, `source_model_id`)
@@ -375,7 +376,7 @@ Dice Rolls:
 - dice_roll_dialog: REQUEST_DICE_ROLL {roll_id, action_id="roll"}
 - dice_roll_dialog (reroll): SELECT_DICE_REROLL {roll_id, action_id, selected_die_ids[]}
 - damage_allocation_dialog: ALLOCATE_DAMAGE {unit_id, model_id} (context `selection_kind`, `allowed_model_ids`, `remaining_wounds`, `sequence_id`/`save_index` when tied to attack resolution)
-  Selection kinds in use: `wound_allocation`, `hazardous`, `mortal_wound` (attack sequence), `unit_mortal_wound` (non-attack), `reverberating_summons_return`, `bodyguard_return`, `bodyguard_loss`, `daemonic_patrons_loss`.
+  Selection kinds in use: `wound_allocation`, `hazardous`, `mortal_wound` (attack sequence), `unit_mortal_wound` (non-attack), `reverberating_summons_return`, `bodyguard_return`, `bodyguard_loss`, `daemonic_patrons_loss`, `choice_samples`.
 - overwatch_shooter_dialog: SELECT_RISE_TO_CHALLENGE {unit_id | skip}
 
 Faction / Detachment / Ability choices:
@@ -431,6 +432,7 @@ Note: modifier ignore dialogs are used by abilities like Driven by Ultimate Rage
 - example_dialog: CONFIRM_EXAMPLE {choice_id}
 - reverberating_summons_unit_dialog: SELECT_REVERBERATING_SUMMONS_UNIT {unit_id | skip}
 - reverberating_summons_return_model_dialog: ALLOCATE_DAMAGE {unit_id, model_id | skip} (context `selection_kind="reverberating_summons_return"`)
+- choice_samples_dialog: ALLOCATE_DAMAGE {model_id | gain_cp | skip} (context `selection_kind="choice_samples"`, `unit_id`, `cp_gain`, `allowed_model_ids`)
 
 Note: CAREEN! resolutions queue MOVE_UNIT with context `reactive_move_kind="careen"` and `movement_type="careen"`.
 

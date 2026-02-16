@@ -2983,6 +2983,90 @@ class Game(
         except Exception:
             pass
 
+    def _on_unit_move_ended_plunder(self, unit=None, action: str | None = None, **_kwargs) -> None:
+        if unit is None:
+            return
+        action_key = str(action or "").strip().lower()
+        if action_key != "move":
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None or not root.is_alive() or not getattr(root, "deployed", True):
+            return
+        try:
+            if root.is_in_reserves() or root.is_embarked:
+                return
+        except Exception:
+            pass
+
+        try:
+            specs = list(root.unit_plunder_specs() or [])
+        except Exception:
+            specs = []
+        if not specs:
+            return
+        try:
+            player = root.get_parent_army().player
+        except Exception:
+            player = None
+        if player is None:
+            return
+
+        unit_id = str(get_entity_id(root) or "")
+        if unit_id:
+            queue = getattr(self, "decision_queue", None)
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                        continue
+                    ctx = dict(getattr(req, "context", {}) or {})
+                    if not bool(ctx.get("engine_flow", False)):
+                        continue
+                    if str(ctx.get("mortal_wounds_kind", "") or "").strip().lower() != "plunder":
+                        continue
+                    if str(ctx.get("unit_id", "") or "") == unit_id:
+                        return
+
+        sorted_specs = sorted(
+            list(specs),
+            key=lambda s: str(s.get("source", "") or "").strip().lower(),
+        )
+        for base_spec in sorted_specs:
+            spec = dict(base_spec or {})
+            move_types = set(spec.get("move_types") or ["move"])
+            if action_key not in move_types:
+                continue
+            if spec.get("once_per_battle"):
+                ability_key = str(spec.get("ability_key") or "").strip().lower()
+                if ability_key and root.has_used_unit_once_per_battle(ability_key):
+                    continue
+            try:
+                range_value = int(spec.get("range", 0) or 0)
+            except Exception:
+                range_value = 0
+            if range_value <= 0:
+                continue
+            candidates = self._collect_grenade_pack_flyover_candidates(root, {"range": int(range_value)}, game_map)
+            if not candidates:
+                continue
+            self._queue_mortal_wounds_target_decision(
+                player=player,
+                unit=root,
+                candidates=list(candidates),
+                spec=spec,
+                kind="plunder",
+                allow_skip=True,
+                phase="Movement phase",
+            )
+            return
+
     def _on_unit_move_ended_bomb_squigs(self, unit=None, action: str | None = None, **_kwargs) -> None:
         if unit is None:
             return
@@ -5790,6 +5874,7 @@ class Game(
             self._maybe_queue_reverberating_summons_followup(request, result)
             self._maybe_apply_optional_ability_confirmation(request, result)
             self._maybe_queue_bodyguard_return_followup(request, result)
+            self._maybe_apply_choice_samples_followup(request, result)
             self._maybe_apply_spirit_snare_followup(request, result)
             self._maybe_apply_mortal_wounds_followup(request, result)
             self._maybe_apply_bodyguard_loss_followup(request, result)

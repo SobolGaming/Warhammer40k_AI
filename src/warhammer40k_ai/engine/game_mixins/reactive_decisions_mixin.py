@@ -1908,7 +1908,7 @@ class GameReactiveDecisionsMixin:
         if not candidates:
             return None
         kind_key = str(kind or "").strip().lower()
-        if kind_key not in ("charge_end", "move_over", "fight_phase_end", "bomb_squigs"):
+        if kind_key not in ("charge_end", "move_over", "fight_phase_end", "bomb_squigs", "plunder"):
             return None
         unit_id = maybe_entity_id(unit)
         if not unit_id:
@@ -2439,6 +2439,87 @@ class GameReactiveDecisionsMixin:
         request = DecisionRequest.create(
             DECISION_ALLOCATE_DAMAGE,
             f"{ability_name}: Return bodyguard model",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+        return request
+
+    def _queue_choice_samples_decision(
+        self,
+        *,
+        player,
+        unit,
+        ability_name: str,
+        return_models: list | None = None,
+        cp_gain: int = 0,
+    ) -> DecisionRequest | None:
+        if player is None or unit is None:
+            return None
+        unit_id = maybe_entity_id(unit)
+        if not unit_id:
+            return None
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None:
+            for req in list(queue.list() or []):
+                if getattr(req, "decision_type", None) != DECISION_ALLOCATE_DAMAGE:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("selection_kind", "") or "") != "choice_samples":
+                    continue
+                if str(ctx.get("unit_id", "") or "") != str(unit_id):
+                    continue
+                return req
+
+        models = [m for m in list(return_models or []) if m is not None]
+        try:
+            models = sorted(models, key=lambda m: str(get_entity_id(m) or ""))
+        except Exception:
+            models = list(models)
+        options = [DecisionOption.create("None", payload={"action": "skip"})]
+        used_labels = set()
+        allowed_model_ids = []
+        for model in models:
+            model_id = get_entity_id(model)
+            if not model_id:
+                continue
+            allowed_model_ids.append(str(model_id))
+            label = str(getattr(model, "name", "") or "Model")
+            base = label
+            idx = 2
+            while label in used_labels:
+                label = f"{base} [{idx}]"
+                idx += 1
+            used_labels.add(label)
+            options.append(
+                DecisionOption.create(
+                    f"Return: {label}",
+                    payload={"action": "return_model", "model_id": model_id},
+                )
+            )
+        if int(cp_gain or 0) > 0:
+            options.append(
+                DecisionOption.create(
+                    f"Gain {int(cp_gain)}CP",
+                    payload={"action": "gain_cp", "cp_gain": int(cp_gain)},
+                )
+            )
+        if len(options) <= 1:
+            return None
+
+        ctx = {
+            "selection_kind": "choice_samples",
+            "ability_name": str(ability_name or "Choice Samples").strip() or "Choice Samples",
+            "phase": "Command phase",
+            "unit_id": str(unit_id),
+            "allowed_model_ids": list(allowed_model_ids),
+            "cp_gain": int(max(0, int(cp_gain or 0))),
+            "allow_skip": True,
+        }
+        request = DecisionRequest.create(
+            DECISION_ALLOCATE_DAMAGE,
+            f"{ctx['ability_name']}: Select one option.",
             player_id=getattr(player, "id", None),
             options=options,
             context=ctx,
@@ -5116,6 +5197,70 @@ class GameReactiveDecisionsMixin:
             allow_skip=bool(ctx.get("allow_skip", True)),
         )
 
+    def _maybe_apply_choice_samples_followup(self, request: DecisionRequest, result: DecisionResult) -> None:
+        if request is None or result is None:
+            return
+        if str(getattr(request, "decision_type", "") or "") != DECISION_ALLOCATE_DAMAGE:
+            return
+        ctx = dict(getattr(request, "context", {}) or {})
+        if str(ctx.get("selection_kind", "") or "") != "choice_samples":
+            return
+
+        payload = self._decision_option_payload(request, result)
+        action = str(payload.get("action", "") or "").strip().lower()
+        if self._decision_is_skip(request, result) or action == "skip":
+            return
+
+        ability_name = str(ctx.get("ability_name", "") or "Choice Samples").strip() or "Choice Samples"
+        unit_id = str(ctx.get("unit_id", "") or "")
+        player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+        unit = self._resolve_unit_by_id(unit_id) if unit_id else None
+
+        if action == "gain_cp":
+            if player is None:
+                return
+            try:
+                cp_gain = int(payload.get("cp_gain", ctx.get("cp_gain", 0)) or 0)
+            except Exception:
+                cp_gain = 0
+            if cp_gain <= 0:
+                return
+            try:
+                gained = int(player.gain_command_points(int(cp_gain), reason=ability_name) or 0)
+            except Exception:
+                gained = 0
+            try:
+                from ...utility.event_bus import append_action
+
+                append_action(player, f"{ability_name}: gained {int(gained)}CP.")
+            except Exception:
+                pass
+            return
+
+        model_id = payload.get("model_id")
+        if model_id in (None, ""):
+            return
+        model = self._resolve_model_by_id(str(model_id))
+        if model is None or unit is None:
+            return
+        returned = unit.return_destroyed_bodyguard_models(
+            1,
+            game_map=getattr(self, "map", None),
+            chosen_models=[model],
+        )
+        if returned <= 0:
+            return
+        try:
+            from ...utility.event_bus import append_action
+
+            if player is not None:
+                append_action(
+                    player,
+                    f"{ability_name}: returned {getattr(model, 'name', 'Model')} to {getattr(unit, 'name', 'Unit')}.",
+                )
+        except Exception:
+            pass
+
     def _maybe_apply_spirit_snare_followup(self, request: DecisionRequest, result: DecisionResult) -> None:
         if request is None or result is None:
             return
@@ -5152,7 +5297,7 @@ class GameReactiveDecisionsMixin:
         if not bool(ctx.get("engine_flow", False)):
             return
         kind = str(ctx.get("mortal_wounds_kind", "") or "").strip().lower()
-        if kind not in ("charge_end", "move_over", "fight_phase_end", "bomb_squigs"):
+        if kind not in ("charge_end", "move_over", "fight_phase_end", "bomb_squigs", "plunder"):
             return
         if self._decision_is_skip(request, result):
             return
@@ -5171,7 +5316,7 @@ class GameReactiveDecisionsMixin:
             return
         model_id = str(ctx.get("model_id", "") or "")
         model = self._resolve_model_by_id(model_id) if model_id else None
-        if kind == "move_over":
+        if kind in ("move_over", "plunder"):
             self.resolve_move_over_mortal_wounds(unit, model, target_unit, spec)
             if spec.get("once_per_battle"):
                 ability_key = str(spec.get("ability_key") or "").strip().lower()

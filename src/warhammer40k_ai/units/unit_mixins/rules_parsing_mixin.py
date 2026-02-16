@@ -535,13 +535,53 @@ class RulesParsingMixin:
                     amount = 0
             if amount <= 0:
                 continue
-            return {
+            parsed = {
                 "amount": int(amount),
                 "amount_roll": amount_roll,
                 "name": name or "Command phase model return",
                 "description": desc or "",
                 "exclude_character": ("excluding character" in low),
             }
+            if "select one of the following" in low and ("you gain 1cp" in low or "you gain 1 cp" in low):
+                cp_gain = 1
+                m_cp = re.search(r"you gain\s+(\d+)\s*cp", low)
+                if m_cp:
+                    try:
+                        cp_gain = int(m_cp.group(1) or 1)
+                    except Exception:
+                        cp_gain = 1
+                cp_range = 0
+                m_range = re.search(r"within\s+(\d+)\s*\"?\s+of\s+this\s+unit,\s*you\s+gain\s+\d+\s*cp", low)
+                if m_range:
+                    try:
+                        cp_range = int(m_range.group(1) or 0)
+                    except Exception:
+                        cp_range = 0
+                keyword_phrase = ""
+                m_kw = re.search(
+                    r"one\s+or\s+more\s+(.+?)\s+units?\s+from\s+your\s+army\s+are\s+below\s+starting\s+strength",
+                    low,
+                )
+                if m_kw:
+                    keyword_phrase = str(m_kw.group(1) or "").strip()
+                required_model_name = ""
+                m_anchor = re.search(
+                    r"while\s+this\s+unit(?:'s|\s+s)?\s+([^,]+?)\s+is\s+on\s+the\s+battlefield",
+                    low,
+                )
+                if m_anchor:
+                    required_model_name = str(m_anchor.group(1) or "").strip()
+                parsed.update(
+                    {
+                        "single_choice": True,
+                        "cp_gain": int(max(0, cp_gain)),
+                        "cp_condition_range": int(max(0, cp_range)),
+                        "cp_condition_keyword_phrase": keyword_phrase,
+                        "cp_condition_requires_below_starting_strength": True,
+                        "required_model_name": required_model_name,
+                    }
+                )
+            return parsed
         return None
 
     def _scan_charge_phase_bodyguard_loss_ability(self):

@@ -842,11 +842,113 @@ class GamePhaseHandlersMixin:
                 continue
             if len(root.models or []) <= 0:
                 continue
-            if not list(root.models_lost or []):
-                continue
 
             ability = root.get_command_phase_unit_return_ability()
             if not ability:
+                continue
+
+            if bool(ability.get("single_choice", False)):
+                required_model_name = str(ability.get("required_model_name", "") or "").strip()
+                if required_model_name:
+                    anchor = None
+                    find_model = getattr(root, "_find_model_named", None)
+                    if callable(find_model):
+                        anchor = find_model(required_model_name)
+                    if anchor is None:
+                        try:
+                            members = list(root.get_attached_unit_members() or [])
+                        except Exception:
+                            members = [root]
+                        for member in list(members or []):
+                            if member is None or member is root:
+                                continue
+                            find_member_model = getattr(member, "_find_model_named", None)
+                            if not callable(find_member_model):
+                                continue
+                            anchor = find_member_model(required_model_name)
+                            if anchor is not None:
+                                break
+                    if anchor is None:
+                        continue
+
+                return_models = list(getattr(root, "models_lost", []) or [])
+                if bool(ability.get("exclude_character", False)):
+                    return_models = [m for m in list(return_models) if not bool(getattr(m, "is_character", False))]
+
+                try:
+                    cp_gain = int(ability.get("cp_gain", 0) or 0)
+                except Exception:
+                    cp_gain = 0
+                try:
+                    range_value = int(ability.get("cp_condition_range", 0) or 0)
+                except Exception:
+                    range_value = 0
+                keyword_phrase = str(ability.get("cp_condition_keyword_phrase", "") or "").strip()
+                require_below_starting_strength = bool(ability.get("cp_condition_requires_below_starting_strength", False))
+                cp_available = False
+                if cp_gain > 0:
+                    match_phrase = getattr(root, "_unit_matches_keyword_phrase", None)
+                    in_range = getattr(root, "_model_within_range_of_unit", None)
+                    try:
+                        source_models = list(root.get_attached_unit_models() or [])
+                    except Exception:
+                        source_models = list(getattr(root, "models", []) or [])
+                    source_models = [m for m in list(source_models or []) if bool(getattr(m, "is_alive", True))]
+                    seen_candidates: set[str] = set()
+                    for other in list(getattr(army, "units", []) or []):
+                        if other is None:
+                            continue
+                        try:
+                            other_root = other.get_attached_unit_root()
+                        except Exception:
+                            other_root = other
+                        oid = str(get_entity_id(other_root) or "")
+                        if not oid or oid in seen_candidates:
+                            continue
+                        seen_candidates.add(oid)
+                        if not other_root.is_alive():
+                            continue
+                        if not getattr(other_root, "deployed", True):
+                            continue
+                        if str(getattr(other_root, "reserve_status", "deployed")) != "deployed":
+                            continue
+                        if other_root.is_in_reserves():
+                            continue
+                        if bool(getattr(other_root, "embarked_in", None)):
+                            continue
+                        if other_root.is_embarked:
+                            continue
+                        if keyword_phrase:
+                            if callable(match_phrase):
+                                if not match_phrase(other_root, keyword_phrase):
+                                    continue
+                            elif not other_root.has_any_keyword(keyword_phrase):
+                                continue
+                        if require_below_starting_strength:
+                            below_fn = getattr(other_root, "is_below_starting_strength", None)
+                            if not callable(below_fn) or not bool(below_fn()):
+                                continue
+                        if range_value > 0:
+                            if not callable(in_range) or not source_models:
+                                continue
+                            if not any(in_range(model, other_root, float(range_value)) for model in list(source_models or [])):
+                                continue
+                        cp_available = True
+                        break
+
+                if not return_models and not cp_available:
+                    continue
+
+                self._queue_choice_samples_decision(
+                    player=player,
+                    unit=root,
+                    ability_name=str(ability.get("name", "") or "Choice Samples"),
+                    return_models=list(return_models),
+                    cp_gain=(int(cp_gain) if cp_available else 0),
+                )
+                continue
+
+            if not list(root.models_lost or []):
                 continue
 
             amount_roll = str(ability.get("amount_roll", "") or "").strip().upper()

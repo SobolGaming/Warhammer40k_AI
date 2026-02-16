@@ -795,6 +795,131 @@ class AbilitySpecsMixin:
         root._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def unit_plunder_specs(self) -> List[dict]:
+        """
+        Unit-level rule: once per battle after ending a Normal move, select a visible enemy in range
+        and roll one D6 to inflict mortal wounds on a threshold.
+
+        Returns specs with keys:
+            - source: ability name
+            - move_types: list[str] (always ["move"])
+            - range: int
+            - threshold: int
+            - mortal_per_success: int
+            - mortal_per_success_die: str
+            - once_per_battle: bool
+            - ability_key: str
+            - disable_move_over_rerolls: bool
+            - roll_type: str
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_plunder_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple] = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                source = str(name or "Plunder").strip() or "Plunder"
+                source_key = unit._normalize_keyword_phrase(source)
+                if source_key != "plunder":
+                    continue
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text_src = unit._strip_eligibility_prefix(text_src)
+                normalized = unit._normalize_rules_text(text_src)
+                if not normalized:
+                    continue
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9+]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+
+                if "after this unit ends a normal move" not in normalized:
+                    continue
+                if "select one visible enemy unit within" not in normalized:
+                    continue
+                if "roll one d6" not in normalized:
+                    continue
+                if "mortal wound" not in normalized:
+                    continue
+
+                m = re.search(
+                    r"select one visible enemy unit within (?P<range>\d+)\s+of it and roll one d6 on a (?P<threshold>\d)\+\s+that enemy unit suffers (?P<mw>(?:d\d+(?:\+\d+)?|\d+)) mortal wound",
+                    normalized,
+                )
+                if not m:
+                    continue
+
+                try:
+                    range_value = int(m.group("range") or 0)
+                except Exception:
+                    range_value = 0
+                try:
+                    threshold = int(m.group("threshold") or 0)
+                except Exception:
+                    threshold = 0
+                mw_raw = str(m.group("mw") or "").strip().lower()
+                if range_value <= 0 or threshold <= 0 or not mw_raw:
+                    continue
+
+                mortal_per = 0
+                mortal_die = ""
+                if mw_raw.startswith("d"):
+                    mortal_die = mw_raw.upper()
+                else:
+                    try:
+                        mortal_per = int(mw_raw or 0)
+                    except Exception:
+                        mortal_per = 0
+                if mortal_per <= 0 and not mortal_die:
+                    continue
+
+                once_per_battle = "once per battle" in normalized
+                key = (
+                    source.lower(),
+                    int(range_value),
+                    int(threshold),
+                    int(mortal_per),
+                    str(mortal_die),
+                    bool(once_per_battle),
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "move_types": ["move"],
+                        "range": int(range_value),
+                        "dice": 1,
+                        "threshold": int(threshold),
+                        "mortal_per_success": int(mortal_per),
+                        "mortal_per_success_die": str(mortal_die),
+                        "once_per_battle": bool(once_per_battle),
+                        "ability_key": "plunder",
+                        "disable_move_over_rerolls": True,
+                        "roll_type": "plunder",
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_post_shoot_mortal_wounds_battleshock_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model-specific rule: after this model's unit has shot, select a hit enemy INFANTRY unit;

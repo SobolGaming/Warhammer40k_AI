@@ -1792,6 +1792,18 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Once per battle, start of any phase: select a Battle-shocked friendly HERETIC ASTARTES unit within 12\" of a DARK APOSTLE model to clear Battle-shock.",
         ),
+        ("CSM", "Fleet Command"): (
+            "Supported",
+            "After deployment, if source (or embarked transport) is on the battlefield, redeploy up to three HERETIC ASTARTES units and optionally place them into Strategic Reserves regardless of limits.",
+        ),
+        ("CSM", "Plunder"): (
+            "Supported",
+            "Once per battle after a Normal move: optional visible enemy within 12\"; roll D6 and on 2+ it suffers D3+1 mortal wounds.",
+        ),
+        ("CSM", "Choice Samples"): (
+            "Supported",
+            "Command phase single choice while Garreon the Corpsemaster is alive: return one destroyed non-CHARACTER model to this unit or gain 1CP if a friendly HERETIC ASTARTES INFANTRY unit within 3\" is below Starting Strength.",
+        ),
         ("CD", "Tally of Pestilence"): (
             "Supported",
             "Track enemy models destroyed by NURGLE LEGIONES DAEMONICA units; at the start of your Command phase if tally >= 7, gain 1CP and reset the tally.",

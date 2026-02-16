@@ -5196,6 +5196,13 @@ class PositioningMixin:
                     redeploy_filter_any_groups = [["JAKHALS"], ["GOREMONGERS"]]
                 if "tyranids units" in text or "tyranids unit" in text:
                     redeploy_filters = ["TYRANIDS"]
+                if (
+                    "heretic astartes units" in text
+                    or "heretic astartes unit" in text
+                    or "<heretic astartes> units" in text
+                    or "<heretic astartes> unit" in text
+                ):
+                    redeploy_filters = ["HERETIC ASTARTES"]
 
         result = (has_redeploy, count, can_place_in_reserves)
         # Cache the result
