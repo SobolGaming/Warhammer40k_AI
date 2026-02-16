@@ -2505,6 +2505,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Post-deployment redeploy support, including Strategic Reserves placement regardless of current reserves count.",
         ),
+        ("CSM", "MASTERS OF THE MAELSTROM"): (
+            "Supported",
+            "Declare Battle Formations: this unit can join CHOSEN, LEGIONARIES, or RED CORSAIRS RAIDERS that are not already Attached units; after joining, only Huron Blackheart can attach as Leader to that unit.",
+        ),
         ("CSM", "Annihilator"): (
             "Supported",
             "Ranged attacks against MONSTER/VEHICLE apply model-level Damage re-roll support.",

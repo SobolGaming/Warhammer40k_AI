@@ -44,6 +44,13 @@ _BODYGUARD_NO_DUPLICATE_LEADERS_RE = re.compile(
     re.IGNORECASE,
 )
 
+_MASTERS_OF_THE_MAELSTROM_TARGET_UNIT_NAMES = {
+    "chosen",
+    "legionaries",
+    "red corsairs raiders",
+}
+_HURON_BLACKHEART_DATASHEET_ID = "000000925"
+
 
 def _normalize_unit_name_for_rules(value: str) -> str:
     text = re.sub(r"[^a-z0-9]+", " ", str(value or "").lower())
@@ -2228,11 +2235,17 @@ class StateAttachmentMixin:
         current_leaders: Optional[list["Unit"]] = None,
     ) -> str:
         spec = self._get_bodyguard_two_leader_spec()
-        if spec is None:
-            return ""
         leaders = list(current_leaders or list(getattr(self, "attached_leaders", []) or []))
         if candidate_leader not in leaders:
             leaders.append(candidate_leader)
+        if self._bodyguard_has_masters_of_the_maelstrom_joined_support():
+            if not self._is_huron_blackheart_unit_for_attachment(candidate_leader):
+                return (
+                    f"Unit '{self.name}' can only have Huron Blackheart attached while joined by "
+                    "MASTERS OF THE MAELSTROM."
+                )
+        if spec is None:
+            return ""
         if len(leaders) <= 1:
             return ""
 
@@ -2261,6 +2274,30 @@ class StateAttachmentMixin:
                     )
                 seen.add(key)
         return ""
+
+    def _is_huron_blackheart_unit_for_attachment(self, leader: "Unit") -> bool:
+        if leader is None:
+            return False
+        name = _normalize_unit_name_for_rules(getattr(leader, "name", "") or "")
+        if name == "huron blackheart":
+            return True
+        get_dsid = getattr(leader, "get_datasheet_id", None)
+        if callable(get_dsid):
+            dsid = str(get_dsid() or "").strip()
+            if dsid and dsid == _HURON_BLACKHEART_DATASHEET_ID:
+                return True
+        return False
+
+    def _bodyguard_has_masters_of_the_maelstrom_joined_support(self) -> bool:
+        supports = list(getattr(self, "attached_support_units", []) or [])
+        for support in supports:
+            if support is None:
+                continue
+            kind_fn = getattr(support, "_joined_support_rule_kind", None)
+            kind = str(kind_fn() or "").strip().lower() if callable(kind_fn) else ""
+            if kind == "masters_of_the_maelstrom":
+                return True
+        return False
 
     def has_support_artillery_ability(self) -> bool:
         """True if this unit has the Support Artillery join rule."""
@@ -2334,6 +2371,24 @@ class StateAttachmentMixin:
             pass
         return False
 
+    def has_masters_of_the_maelstrom_ability(self) -> bool:
+        """True if this unit has the CSM MASTERS OF THE MAELSTROM joined-support join rule."""
+        try:
+            for ab in getattr(self, "possible_abilities", []) or []:
+                name = str(getattr(ab, "name", "") or "").strip().lower()
+                if name == "masters of the maelstrom":
+                    return True
+                desc = str(getattr(ab, "description", "") or "").lower().replace("\u2019", "'")
+                if (
+                    "declare battle formations" in desc
+                    and "this unit cannot join an attached unit" in desc
+                    and "only huron blackheart can join a unit this unit has joined" in desc
+                ):
+                    return True
+        except Exception:
+            pass
+        return False
+
     def has_joined_support_ability(self) -> bool:
         """True if this unit can join another unit via joined-support style rules."""
         return bool(
@@ -2341,6 +2396,7 @@ class StateAttachmentMixin:
             or self.has_cryptek_retinue_ability()
             or self.has_canoptek_retinue_ability()
             or self.has_loyal_protector_ability()
+            or self.has_masters_of_the_maelstrom_ability()
         )
 
     def _joined_support_rule_kind(self) -> str:
@@ -2360,6 +2416,8 @@ class StateAttachmentMixin:
             return "canoptek_retinue"
         if self.has_loyal_protector_ability():
             return "loyal_protector"
+        if self.has_masters_of_the_maelstrom_ability():
+            return "masters_of_the_maelstrom"
         return ""
 
     def joined_support_requires_attachment(self) -> bool:
@@ -2385,6 +2443,12 @@ class StateAttachmentMixin:
             except Exception:
                 pass
         return False
+
+    def _is_masters_of_the_maelstrom_target_unit(self, bodyguard: "Unit") -> bool:
+        if bodyguard is None:
+            return False
+        name = _normalize_unit_name_for_rules(getattr(bodyguard, "name", "") or "")
+        return name in _MASTERS_OF_THE_MAELSTROM_TARGET_UNIT_NAMES
 
     def has_support_weapon_ability(self) -> bool:
         """True if this unit has the Support Weapon toughness override rule."""
@@ -2792,6 +2856,11 @@ class StateAttachmentMixin:
         elif rule_kind == "loyal_protector":
             # LOYAL PROTECTOR: must join one Command Squad unit.
             if not self._is_command_squad_unit(bodyguard):
+                return False
+        elif rule_kind == "masters_of_the_maelstrom":
+            if not self._is_masters_of_the_maelstrom_target_unit(bodyguard):
+                return False
+            if list(getattr(bodyguard, "attached_leaders", []) or []):
                 return False
         else:
             return False
