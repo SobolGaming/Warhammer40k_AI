@@ -142,6 +142,7 @@ def _apply_selected_ranged_weapon_bonus_enhancement(
     bearer,
     bearer_id: str,
     default_weapon_name: str,
+    default_attacks_bonus: int,
     default_strength_bonus: int,
     default_ap_bonus: int,
     default_damage_bonus: int,
@@ -160,6 +161,10 @@ def _apply_selected_ranged_weapon_bonus_enhancement(
         if chosen_name:
             selected_weapon_name = chosen_name
         selected_weapon_slot = int(chosen_slot)
+    attacks_bonus = _coerce_int(
+        descriptor_params.get("attacks_bonus", default_attacks_bonus) or default_attacks_bonus,
+        default=default_attacks_bonus,
+    )
     strength_bonus = _coerce_int(
         descriptor_params.get("strength_bonus", default_strength_bonus) or default_strength_bonus,
         default=default_strength_bonus,
@@ -176,6 +181,7 @@ def _apply_selected_ranged_weapon_bonus_enhancement(
     prefix = str(special_rule_flag)
     unit.special_rules[f"{prefix}_weapon_name"] = selected_weapon_name
     unit.special_rules[f"{prefix}_weapon_slot_index"] = int(selected_weapon_slot)
+    unit.special_rules[f"{prefix}_attacks_bonus"] = int(max(0, attacks_bonus))
     unit.special_rules[f"{prefix}_strength_bonus"] = int(max(0, strength_bonus))
     unit.special_rules[f"{prefix}_ap_bonus"] = int(max(0, ap_bonus))
     unit.special_rules[f"{prefix}_damage_bonus"] = int(max(0, damage_bonus))
@@ -474,6 +480,7 @@ class Enhancement:
                 bearer=bearer,
                 bearer_id=bearer_id,
                 default_weapon_name="airbursting fragmentation projector",
+                default_attacks_bonus=0,
                 default_strength_bonus=3,
                 default_ap_bonus=1,
                 default_damage_bonus=1,
@@ -492,10 +499,30 @@ class Enhancement:
                 bearer=bearer,
                 bearer_id=bearer_id,
                 default_weapon_name="t'au flamer",
+                default_attacks_bonus=0,
                 default_strength_bonus=2,
                 default_ap_bonus=1,
                 default_damage_bonus=1,
                 source_name="Thermoneutronic Projector",
+            )
+
+        if name == "plasma accelerator rifle" or enh_id == "000009983004":
+            if not is_experimental_prototype_cadre:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            _apply_selected_ranged_weapon_bonus_enhancement(
+                unit,
+                special_rule_flag="enhancement_plasma_accelerator_rifle",
+                descriptor_params=params,
+                bearer=bearer,
+                bearer_id=bearer_id,
+                default_weapon_name="plasma rifle",
+                default_attacks_bonus=1,
+                default_strength_bonus=2,
+                default_ap_bonus=1,
+                default_damage_bonus=1,
+                source_name="Plasma Accelerator Rifle",
             )
 
         if name == "saintly example" or enh_id == "000008470002":

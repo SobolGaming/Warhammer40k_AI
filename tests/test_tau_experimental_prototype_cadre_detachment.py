@@ -112,6 +112,20 @@ def _thermoneutronic_projector_enhancement() -> Enhancement:
     )
 
 
+def _plasma_accelerator_rifle_enhancement() -> Enhancement:
+    return Enhancement(
+        id="000009983004",
+        name="Plasma Accelerator Rifle",
+        faction_id="TAU",
+        detachment="Experimental Prototype Cadre",
+        description=(
+            "T'AU EMPIRE model only. Select one plasma rifle equipped by the bearer. Improve the Strength "
+            "characteristic of that weapon by 2, and improve the Attacks, Armour Penetration and Damage "
+            "characteristics of that weapon by 1."
+        ),
+    )
+
+
 def _build_tau_army(detachment_type: str) -> Army:
     army = Army("T'au Empire", detachment_type)
     army.faction_id = "TAU"
@@ -656,3 +670,155 @@ def test_thermoneutronic_projector_selects_single_matching_weapon_instance():
         for entry in first_wound.get("modifiers", [])
     )
     assert not any("Thermoneutronic Projector" in str(entry) for entry in second_wound.get("modifiers", []))
+
+
+def test_plasma_accelerator_rifle_has_tool_descriptor():
+    desc = get_enhancement_tool_descriptor(enhancement_id="000009983004")
+    assert desc is not None
+    assert desc.name == "Plasma Accelerator Rifle"
+    assert desc.effect == "selected_ranged_weapon_strength_ap_damage_bonus"
+    assert desc.effect_params.get("weapon_name") == "plasma rifle"
+    assert int(desc.effect_params.get("strength_bonus", 0) or 0) == 2
+    assert int(desc.effect_params.get("attacks_bonus", 0) or 0) == 1
+    assert int(desc.effect_params.get("ap_bonus", 0) or 0) == 1
+    assert int(desc.effect_params.get("damage_bonus", 0) or 0) == 1
+
+
+def test_plasma_accelerator_rifle_buffs_selected_plasma_rifle_only():
+    army = _build_tau_army("Experimental Prototype Cadre")
+    unit = create_unit(
+        "Commander",
+        keywords=["BATTLESUIT", "CHARACTER"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    army.add_unit(unit)
+    attacker = unit.models[0]
+
+    plasma_profile, plasma_wargear = make_named_ranged_profile("Plasma Rifle")
+    burst_profile, burst_wargear = make_named_ranged_profile("Burst Cannon")
+    attacker.wargear.extend([plasma_wargear, burst_wargear])
+
+    enhancement = _plasma_accelerator_rifle_enhancement()
+    unit.enhancement = enhancement
+    enhancement.apply_to_unit(unit)
+
+    target = create_unit(
+        "Enemy Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    plasma_wound = plasma_profile._wound_target_with_tracking(
+        target,
+        attacker,
+        {"_aura_attack_mods": _aura_stub()},
+        roll_value=4,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    burst_wound = burst_profile._wound_target_with_tracking(
+        target,
+        attacker,
+        {"_aura_attack_mods": _aura_stub()},
+        roll_value=4,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+
+    assert plasma_profile.get_effective_ap(attacker, target) == -1
+    assert burst_profile.get_effective_ap(attacker, target) == 0
+    assert any(
+        "Plasma Accelerator Rifle" in str(entry) and "+2S" in str(entry)
+        for entry in plasma_wound.get("modifiers", [])
+    )
+    assert not any("Plasma Accelerator Rifle" in str(entry) for entry in burst_wound.get("modifiers", []))
+
+    selected_attack_count = plasma_profile.preview_attack_count(target, attacker, publish_roll_event=False)
+    other_attack_count = burst_profile.preview_attack_count(target, attacker, publish_roll_event=False)
+    assert selected_attack_count.num_attacks == 2
+    assert other_attack_count.num_attacks == 1
+    assert any("Plasma Accelerator Rifle +1A" in str(entry) for entry in selected_attack_count.special_modifiers)
+    assert not any("Plasma Accelerator Rifle +1A" in str(entry) for entry in other_attack_count.special_modifiers)
+
+    selected_damage_target = create_unit(
+        "Selected Damage Target",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    other_damage_target = create_unit(
+        "Other Damage Target",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    selected_damage = plasma_profile._damage_target_with_tracking(
+        selected_damage_target.models[0],
+        attacker,
+        {"_aura_attack_mods": _aura_stub()},
+        allow_rerolls=False,
+    )
+    other_damage = burst_profile._damage_target_with_tracking(
+        other_damage_target.models[0],
+        attacker,
+        {"_aura_attack_mods": _aura_stub()},
+        allow_rerolls=False,
+    )
+    assert any("Plasma Accelerator Rifle +1D" in str(entry) for entry in selected_damage.get("special_effects", []))
+    assert not any("Plasma Accelerator Rifle +1D" in str(entry) for entry in other_damage.get("special_effects", []))
+
+
+def test_plasma_accelerator_rifle_selects_single_matching_weapon_instance():
+    army = _build_tau_army("Experimental Prototype Cadre")
+    unit = create_unit(
+        "Commander",
+        keywords=["BATTLESUIT", "CHARACTER"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    army.add_unit(unit)
+    attacker = unit.models[0]
+
+    first_profile, first_wargear = make_named_ranged_profile("Plasma Rifle")
+    second_profile, second_wargear = make_named_ranged_profile("Plasma Rifle")
+    attacker.wargear.extend([first_wargear, second_wargear])
+
+    enhancement = _plasma_accelerator_rifle_enhancement()
+    unit.enhancement = enhancement
+    enhancement.apply_to_unit(unit)
+
+    assert bool(unit.special_rules.get("enhancement_plasma_accelerator_rifle", False))
+    assert int(unit.special_rules.get("enhancement_plasma_accelerator_rifle_weapon_slot_index", -1)) == 0
+
+    target = create_unit(
+        "Enemy Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    first_wound = first_profile._wound_target_with_tracking(
+        target,
+        attacker,
+        {"_aura_attack_mods": _aura_stub()},
+        roll_value=4,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    second_wound = second_profile._wound_target_with_tracking(
+        target,
+        attacker,
+        {"_aura_attack_mods": _aura_stub()},
+        roll_value=4,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+
+    first_attack_count = first_profile.preview_attack_count(target, attacker, publish_roll_event=False)
+    second_attack_count = second_profile.preview_attack_count(target, attacker, publish_roll_event=False)
+
+    assert first_profile.get_effective_ap(attacker, target) == -1
+    assert second_profile.get_effective_ap(attacker, target) == 0
+    assert first_attack_count.num_attacks == 2
+    assert second_attack_count.num_attacks == 1
+    assert any("Plasma Accelerator Rifle +1A" in str(entry) for entry in first_attack_count.special_modifiers)
+    assert not any("Plasma Accelerator Rifle +1A" in str(entry) for entry in second_attack_count.special_modifiers)
+    assert any(
+        "Plasma Accelerator Rifle" in str(entry) and "+2S" in str(entry)
+        for entry in first_wound.get("modifiers", [])
+    )
+    assert not any("Plasma Accelerator Rifle" in str(entry) for entry in second_wound.get("modifiers", []))

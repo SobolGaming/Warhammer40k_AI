@@ -339,6 +339,21 @@ _EXPERIMENTAL_PROTOTYPE_CADRE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] 
             "damage_bonus": 1,
         },
     ),
+    "000009983004": EnhancementToolDescriptor(
+        enhancement_id="000009983004",
+        name="Plasma Accelerator Rifle",
+        timing="passive",
+        target="bearer_selected_plasma_rifle",
+        duration="constant",
+        effect="selected_ranged_weapon_strength_ap_damage_bonus",
+        effect_params={
+            "weapon_name": "plasma rifle",
+            "strength_bonus": 2,
+            "attacks_bonus": 1,
+            "ap_bonus": 1,
+            "damage_bonus": 1,
+        },
+    ),
 }
 
 _EXPERIMENTAL_PROTOTYPE_CADRE_BY_NAME = {
