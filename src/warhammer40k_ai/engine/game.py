@@ -3798,6 +3798,80 @@ class Game(
             reason=source,
         )
 
+    def _apply_kill_reward_objective_control_bonus(
+        self,
+        *,
+        attacker_unit=None,
+        spec: Optional[dict] = None,
+    ) -> None:
+        """Apply persistent Objective Control bonuses granted by on-destroy kill-reward specs."""
+        if attacker_unit is None or not isinstance(spec, dict):
+            return
+        try:
+            oc_bonus = int(spec.get("objective_control_bonus", 0) or 0)
+        except Exception:
+            oc_bonus = 0
+        if oc_bonus <= 0:
+            return
+
+        try:
+            root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            root = attacker_unit
+        if root is None:
+            return
+
+        source = str(spec.get("source_ability", "") or "Kill reward").strip() or "Kill reward"
+        source_norm = str(source).replace("\u2019", "'").replace("\u2018", "'").lower()
+        source_norm = re.sub(r"[^a-z0-9]+", " ", source_norm)
+        source_norm = re.sub(r"\s+", " ", source_norm).strip()
+        if not source_norm:
+            source_norm = "kill reward"
+
+        first_time = bool(spec.get("first_time", False))
+        requires_not_battle_shocked = bool(spec.get("requires_not_battle_shocked", False))
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+
+        entries_raw = list(sr.get("kill_reward_objective_control_bonus_entries", []) or [])
+        entries: list[dict] = [e for e in entries_raw if isinstance(e, dict)]
+
+        existing_entry: Optional[dict] = None
+        for entry in entries:
+            entry_norm = str(entry.get("source_norm", "") or "").strip().lower()
+            if entry_norm and entry_norm == source_norm:
+                existing_entry = entry
+                break
+
+        if existing_entry is not None:
+            if first_time:
+                return
+            try:
+                stacks = int(existing_entry.get("stacks", 1) or 1)
+            except Exception:
+                stacks = 1
+            existing_entry["stacks"] = int(max(1, stacks + 1))
+            existing_entry["bonus"] = int(oc_bonus)
+            existing_entry["source"] = source
+            existing_entry["source_norm"] = source_norm
+            existing_entry["requires_not_battle_shocked"] = bool(requires_not_battle_shocked)
+        else:
+            entries.append(
+                {
+                    "source": source,
+                    "source_norm": source_norm,
+                    "bonus": int(oc_bonus),
+                    "stacks": 1,
+                    "requires_not_battle_shocked": bool(requires_not_battle_shocked),
+                }
+            )
+
+        entries.sort(key=lambda e: str(e.get("source_norm", "") or ""))
+        sr["kill_reward_objective_control_bonus_entries"] = entries
+        root.special_rules = sr
+
     def _on_model_destroyed_rules(self, attacker_model=None, attacker_unit=None, target_model=None, target_unit=None, **_kwargs) -> None:
         # Generic partial support for "gain CP when this model destroys an enemy KEYWORD unit/model".
         if attacker_unit is None or target_unit is None:
@@ -3878,6 +3952,12 @@ class Game(
                         attacker_unit=attacker_unit,
                         target_unit=target_unit,
                         target_model=target_model,
+                        spec=spec,
+                    )
+
+                if spec.get("type") == "objective_control_bonus_on_destroy":
+                    self._apply_kill_reward_objective_control_bonus(
+                        attacker_unit=attacker_unit,
                         spec=spec,
                     )
 
@@ -4347,6 +4427,12 @@ class Game(
                         attacker_unit=destroyed_by_unit,
                         target_unit=unit,
                         target_model=None,
+                        spec=spec,
+                    )
+
+                if spec.get("type") == "objective_control_bonus_on_destroy":
+                    self._apply_kill_reward_objective_control_bonus(
+                        attacker_unit=destroyed_by_unit,
                         spec=spec,
                     )
 

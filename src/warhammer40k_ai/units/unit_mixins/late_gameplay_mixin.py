@@ -335,6 +335,83 @@ class LateGameplayMixin:
             }
         ]
 
+    def _parse_objective_control_bonus_on_kill_specs_from_text(self, ability_name: str, ability_desc: str) -> List[dict]:
+        """
+        Parse support for abilities that grant persistent Objective Control bonuses on kill, e.g.:
+        "The first time this unit destroys an enemy unit, until the end of the battle, while this
+         unit is not Battle-shocked, add 1 to the Objective Control characteristic of models in this unit."
+        """
+        normalized = self._normalize_rules_text(ability_desc)
+        if not normalized:
+            return []
+        txt = normalized.lower().replace("\u2019", "'").replace("\u0192?T", "'")
+        txt = re.sub(r"'s\b", "s", txt)
+        txt = re.sub(r"[^a-z0-9]+", " ", txt)
+        txt = re.sub(r"\s+", " ", txt).strip()
+        if not txt:
+            return []
+
+        if "destroys" not in txt or "enemy" not in txt:
+            return []
+        if "until the end of the battle" not in txt:
+            return []
+        if "objective control characteristic" not in txt:
+            return []
+
+        # Restrict this parser to "models in this/that unit" wording.
+        m_bonus = re.search(
+            r"add\s+(\d+)\s+to\s+the\s+objective\s+control\s+characteristic\s+of\s+models\s+in\s+(?:this|that)\s+unit",
+            txt,
+            flags=re.IGNORECASE,
+        )
+        if not m_bonus:
+            return []
+        try:
+            oc_bonus = int(m_bonus.group(1) or 0)
+        except Exception:
+            oc_bonus = 0
+        if oc_bonus <= 0:
+            return []
+
+        trigger = "model_destroyed"
+        try:
+            if re.search(r"destroys\s+(?:an?\s+|one\s+or\s+more\s+)?(?:enemy\s+)?\b.*\bunit\b", txt):
+                trigger = "unit_destroyed"
+            if re.search(r"destroys\s+(?:an?\s+|one\s+or\s+more\s+)?(?:enemy\s+)?\b.*\bmodel\b", txt):
+                trigger = "model_destroyed"
+        except Exception:
+            trigger = "model_destroyed"
+
+        requires_melee = False
+        try:
+            if (
+                "melee attack" in txt
+                or "with a melee" in txt
+                or "as the result of a melee attack" in txt
+            ):
+                requires_melee = True
+        except Exception:
+            requires_melee = False
+        requires_fight_phase = "fight phase" in txt
+        requires_not_battle_shocked = (
+            "while this unit is not battle shocked" in txt
+            or "while this models unit is not battle shocked" in txt
+        )
+        first_time = "first time" in txt
+
+        return [
+            {
+                "type": "objective_control_bonus_on_destroy",
+                "trigger": trigger,
+                "objective_control_bonus": int(oc_bonus),
+                "requires_melee": bool(requires_melee),
+                "requires_fight_phase": bool(requires_fight_phase),
+                "requires_not_battle_shocked": bool(requires_not_battle_shocked),
+                "first_time": bool(first_time),
+                "source_ability": ability_name or "",
+            }
+        ]
+
     def get_kill_reward_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """Return parsed 'on destroy' reward specs for this unit (and optionally a specific model).
 
@@ -351,6 +428,7 @@ class LateGameplayMixin:
                 base_specs.extend(self._parse_cp_on_kill_specs_from_text(n, d))
                 base_specs.extend(self._parse_heal_on_kill_specs_from_text(n, d))
                 base_specs.extend(self._parse_weapon_attacks_bonus_on_kill_specs_from_text(n, d))
+                base_specs.extend(self._parse_objective_control_bonus_on_kill_specs_from_text(n, d))
             if not hasattr(self, "_ability_cache"):
                 self._ability_cache = {}
             self._ability_cache[cache_key] = base_specs
@@ -368,6 +446,7 @@ class LateGameplayMixin:
             model_specs.extend(self._parse_cp_on_kill_specs_from_text(n, d))
             model_specs.extend(self._parse_heal_on_kill_specs_from_text(n, d))
             model_specs.extend(self._parse_weapon_attacks_bonus_on_kill_specs_from_text(n, d))
+            model_specs.extend(self._parse_objective_control_bonus_on_kill_specs_from_text(n, d))
 
         return list(base_specs) + model_specs
     

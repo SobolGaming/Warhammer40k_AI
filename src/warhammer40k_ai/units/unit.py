@@ -648,6 +648,38 @@ class Unit(
             except Exception:
                 pass
 
+            # Kill-reward persistent Objective Control bonuses (e.g. Trophy Takers).
+            try:
+                sr_root = getattr(root, "special_rules", None)
+                entries = sr_root.get("kill_reward_objective_control_bonus_entries") if isinstance(sr_root, dict) else None
+                if isinstance(entries, list):
+                    for entry in entries:
+                        if not isinstance(entry, dict):
+                            continue
+                        try:
+                            bonus = int(entry.get("bonus", 0) or 0)
+                        except Exception:
+                            continue
+                        if bonus <= 0:
+                            continue
+                        try:
+                            stacks = int(entry.get("stacks", 1) or 1)
+                        except Exception:
+                            stacks = 1
+                        stacks = max(1, int(stacks))
+                        if bool(entry.get("requires_not_battle_shocked", False)) and root.is_battle_shocked():
+                            continue
+                        source = str(entry.get("source", "") or "Kill reward").strip() or "Kill reward"
+                        mods.append(
+                            Modifier(
+                                ModifierOp.ADD,
+                                int(bonus * stacks),
+                                source=f"ability:kill_reward_objective_control:{source}",
+                            )
+                        )
+            except Exception:
+                pass
+
             # OC: strict enemy engagement-range halving (e.g. Chitinous Horrors).
             try:
                 if game_map is None:

@@ -531,6 +531,9 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Rush to the Fray": (
             r"each time a world eaters unit from your army disembarks from a transport until the end of the turn add \d+ to charge rolls made for that unit and that units melee weapons have the lance ability",
         ),
+        "Trophy Takers": (
+            r"the first time this unit destroys an enemy unit until the end of the battle while this unit is not battle shocked add \d+ to the objective control characteristic of models in this unit",
+        ),
         "Wrath of Khorne": (
             r"at the start of the battle round after activating blessings of khorne you can select one or more models from your army from those listed below including models that are embarked within transports",
             r"you can select the same type of model multiple times",
@@ -2025,6 +2028,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("CSM", "Raider's Due"): (
             "Supported",
             "Charge declarations can re-roll the Charge roll when one or more targets are within range of an objective marker.",
+        ),
+        ("CSM", "Trophy Takers"): (
+            "Supported",
+            "First enemy unit destroyed by this unit grants +1 Objective Control to its models until end of battle while the unit is not Battle-shocked.",
         ),
         ("CSM", "Unholy Bloodshed"): (
             "Supported",
