@@ -2029,6 +2029,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Charge declarations can re-roll the Charge roll when one or more targets are within range of an objective marker.",
         ),
+        ("CSM", "Lord of Badab (Aura)"): (
+            "Supported",
+            "Friendly HERETIC ASTARTES INFANTRY units within 6\" gain +1 Objective Control, excluding Battle-shocked and DAMNED units.",
+        ),
         ("CSM", "Trophy Takers"): (
             "Supported",
             "First enemy unit destroyed by this unit grants +1 Objective Control to its models until end of battle while the unit is not Battle-shocked.",

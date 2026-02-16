@@ -1315,8 +1315,14 @@ def get_aura_objective_control_bonus(unit, *, game_map=None) -> int:
                 if aura_key in applied_aura_names:
                     continue
                 applied_aura_names.add(aura_key)
-            if spec["faction_keyword"] and not unit.has_any_keyword(spec["faction_keyword"]):
-                continue
+            if spec.get("faction_keyword"):
+                matches = _unit_matches_keyword_phrase(unit, spec["faction_keyword"])
+                if not matches:
+                    has_any_keyword = getattr(unit, "has_any_keyword", None)
+                    if callable(has_any_keyword):
+                        matches = bool(has_any_keyword(spec["faction_keyword"]))
+                if not matches:
+                    continue
             excluded_keywords = tuple(spec.get("excluded_keywords", ()) or ())
             if excluded_keywords and _excluded_by_unit_keywords(unit, excluded_keywords):
                 continue
