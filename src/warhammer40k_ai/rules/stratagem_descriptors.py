@@ -1773,6 +1773,16 @@ _NEEDGAARD_OATHBAND_STRATAGEM_BY_NAME = {
 }
 
 _VALOURSTRIKE_LANCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010494004": StratagemToolDescriptor(
+        stratagem_id="000010494004",
+        name="Full Tilt",
+        timing="movement_phase_before_select_to_move",
+        target="imperial_knights_unit_not_yet_selected_to_move",
+        duration="until_end_of_phase",
+        effect="movement_and_advance_bonus",
+        cp_cost=2,
+        effect_params={"move_bonus": 2, "advance_roll_bonus": 2},
+    ),
     "000010494005": StratagemToolDescriptor(
         stratagem_id="000010494005",
         name="Vow of Retribution",
@@ -1791,6 +1801,20 @@ _VALOURSTRIKE_LANCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = 
         effect="invulnerable_save",
         cp_cost=1,
         effect_params={"invulnerable_save": 4},
+    ),
+    "000010494006": StratagemToolDescriptor(
+        stratagem_id="000010494006",
+        name="Tactical Foil",
+        timing="opponent_movement_phase_on_enemy_move_end",
+        target="imperial_knights_unit_within_9_of_moved_enemy_unit",
+        duration="immediate",
+        effect="reactive_normal_move",
+        cp_cost=1,
+        range_in=9.0,
+        effect_params={
+            "distance_roll": "D6",
+            "trigger_actions": ["move", "advance", "fall_back"],
+        },
     ),
 }
 

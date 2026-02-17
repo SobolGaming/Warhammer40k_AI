@@ -8331,6 +8331,8 @@ def _stratagem_support(
         "SNAP TO IT": "Any phase: ASTRA MILITARUM OFFICER issues one Voice of Command order immediately (local prompt or explicit remote officer/order/target payload).",
         "VETERAN SHARPSHOOTERS": "Shooting phase: ASTRA MILITARUM unit that has not yet shot gains Ignores Cover on ranged attacks this phase.",
         "VOW OF RETRIBUTION": "Shooting phase: IMPERIAL KNIGHTS unit that has not yet shot gains Lethal Hits on ranged attacks until end of phase.",
+        "FULL TILT": "Movement phase: IMPERIAL KNIGHTS unit that has not been selected to move gains +2\" Move and +2 to Advance rolls until end of phase.",
+        "TACTICAL FOIL": "Opponent Movement phase reaction after an enemy ends a Normal/Advance/Fall Back move: IMPERIAL KNIGHTS unit within 9\" can make a reactive Normal move of up to D6\".",
         "RIGHTEOUS VENGEANCE": "Fight phase: selected ADEPTA SORORITAS unit that has not fought re-rolls melee Hit rolls, and re-rolls melee Wound rolls against Below Half-strength targets, until end of phase.",
         "SUFFERING AND SACRIFICE": "Fight phase start: selected ADEPTA SORORITAS INFANTRY/WALKER forces enemy units in Engagement Range to select it as a Fight target this phase when possible.",
         "SPIRIT OF THE MARTYR": "Opponent Fight phase reaction: targeted ADEPTA SORORITAS unit that has not fought gains fight-on-death sequencing after the attacker finishes its attacks this phase.",

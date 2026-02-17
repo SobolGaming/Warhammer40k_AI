@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Optional
 import logging
 
+from ..utility import dice as dice_module
 from ..utility.entity_ids import maybe_entity_id
 
 logger = logging.getLogger(__name__)
@@ -119,6 +120,201 @@ class ImperialKnightsStratagemMixin:
             out.append(root)
         return sorted(out, key=self._ik_sort_key)
 
+    @staticmethod
+    def _ik_selected_to_move_this_phase(unit: Any) -> bool:
+        round_state = getattr(unit, "round_state", None)
+        return bool(
+            getattr(round_state, "moved_this_round", False)
+            or getattr(round_state, "advanced_this_round", False)
+            or getattr(round_state, "fell_back_this_round", False)
+        )
+
+    def _imperial_knights_full_tilt_candidates(self) -> list[Any]:
+        if not self._is_valourstrike_lance():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._ik_root(unit)
+            if root is None:
+                continue
+            uid = self._ik_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ik_owned_by_player(root, self.player):
+                continue
+            if not self._is_imperial_knights_unit(root):
+                continue
+            if not self._ik_on_battlefield(root, require_targetable=True):
+                continue
+            if self._ik_selected_to_move_this_phase(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ik_sort_key)
+
+    @staticmethod
+    def _ik_unit_in_candidates(root: Any, candidates: list[Any]) -> bool:
+        if root is None:
+            return False
+        rid = str(maybe_entity_id(root) or "")
+        for cand in list(candidates or []):
+            cand_root = cand
+            get_root = getattr(cand, "get_attached_unit_root", None)
+            if callable(get_root):
+                cand_root = get_root()
+            if cand_root is root:
+                return True
+            cid = str(maybe_entity_id(cand_root) or "")
+            if rid and cid and rid == cid:
+                return True
+        return False
+
+    def _ik_distance_between_units(self, source_unit: Any, target_unit: Any) -> Optional[float]:
+        game = getattr(self, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        get_dist = getattr(game_map, "get_distance_between_units", None) if game_map is not None else None
+        if not callable(get_dist):
+            return None
+        source_root = self._ik_root(source_unit)
+        target_root = self._ik_root(target_unit)
+        if source_root is None or target_root is None:
+            return None
+        try:
+            return float(get_dist(source_root, target_root))
+        except (TypeError, ValueError):
+            return None
+
+    def _imperial_knights_tactical_foil_candidates(
+        self,
+        *,
+        enemy_unit: Any,
+        action: str = "",
+    ) -> list[Any]:
+        if not self._is_valourstrike_lance():
+            return []
+        if enemy_unit is None:
+            return []
+        action_key = str(action or "").strip().lower()
+        if action_key and action_key not in {"move", "advance", "fall_back"}:
+            return []
+        enemy_root = self._ik_root(enemy_unit)
+        if enemy_root is None:
+            return []
+        if self._ik_owned_by_player(enemy_root, self.player):
+            return []
+        if not self._ik_on_battlefield(enemy_root, require_targetable=False):
+            return []
+
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._ik_root(unit)
+            if root is None:
+                continue
+            uid = self._ik_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ik_owned_by_player(root, self.player):
+                continue
+            if not self._is_imperial_knights_unit(root):
+                continue
+            if not self._ik_on_battlefield(root, require_targetable=True):
+                continue
+            dist = self._ik_distance_between_units(root, enemy_root)
+            if dist is None or float(dist) > 9.0 + 1e-6:
+                continue
+            out.append(root)
+        return sorted(out, key=self._ik_sort_key)
+
+    def _ik_reaction_already_queued(
+        self,
+        *,
+        event_name: str,
+        stratagem_name: str,
+        phase_name: str,
+        enemy_unit: Any = None,
+    ) -> bool:
+        wanted_name = str(stratagem_name or "").strip().upper()
+        wanted_phase = str(phase_name or "").strip().lower()
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != str(event_name):
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != wanted_name:
+                continue
+            if str(reaction.get("phase_name", "") or "").strip().lower() != wanted_phase:
+                continue
+            if enemy_unit is not None and self._ik_root(reaction.get("enemy_unit")) is not self._ik_root(enemy_unit):
+                continue
+            return True
+        return False
+
+    def _queue_imperial_knights_valourstrike_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if not self._is_valourstrike_lance():
+            return
+        if unit is None or self.game is None:
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "movement phase":
+            return
+        action_key = str(action or "").strip().lower()
+        if action_key not in {"move", "advance", "fall_back"}:
+            return
+        enemy_root = self._ik_root(unit)
+        if enemy_root is None:
+            return
+        if self._ik_owned_by_player(enemy_root, self.player):
+            return
+        if not self._ik_is_alive(enemy_root) or not self._ik_on_battlefield(enemy_root, require_targetable=False):
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+
+        stratagem = self.get_by_name("TACTICAL FOIL")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        if self._ik_reaction_already_queued(
+            event_name="unit_move_ended",
+            stratagem_name=stratagem.name,
+            phase_name="Movement phase",
+            enemy_unit=enemy_root,
+        ):
+            return
+
+        candidates = self._imperial_knights_tactical_foil_candidates(enemy_unit=enemy_root, action=action_key)
+        if not candidates:
+            return
+
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": enemy_root,
+            "action": action_key,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
     def _ik_spend_cp(self, stratagem: Any, *, target_unit: Any = None) -> bool:
         cp_cost = int(getattr(stratagem, "cp_cost", 0) or 0)
         apply_fn = getattr(self.player, "apply_stratagem_cp_cost", None)
@@ -146,6 +342,10 @@ class ImperialKnightsStratagemMixin:
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
         if name_u == "VOW OF RETRIBUTION":
             return self._use_valourstrike_vow_of_retribution(stratagem, **kwargs)
+        if name_u == "FULL TILT":
+            return self._use_valourstrike_full_tilt(stratagem, **kwargs)
+        if name_u == "TACTICAL FOIL":
+            return self._use_valourstrike_tactical_foil(stratagem, **kwargs)
         return None
 
     def _use_valourstrike_vow_of_retribution(self, stratagem: Any, **kwargs) -> bool:
@@ -198,5 +398,185 @@ class ImperialKnightsStratagemMixin:
         self._ik_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
         logger.info(
             f"INFO: VOW OF RETRIBUTION: {getattr(root, 'name', 'Unit')} gains Lethal Hits with ranged weapons this phase."
+        )
+        return True
+
+    def _use_valourstrike_full_tilt(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_valourstrike_lance():
+            return False
+
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: FULL TILT: wrong phase")
+            return False
+
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: FULL TILT: not your Movement phase")
+            return False
+
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: FULL TILT: no target unit provided")
+            return False
+
+        root = self._ik_root(unit)
+        if root is None:
+            return False
+        if not self._ik_owned_by_player(root, self.player):
+            logger.error("ERROR: FULL TILT: target unit is not yours")
+            return False
+        if not self._ik_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_imperial_knights_unit(root):
+            logger.error("ERROR: FULL TILT: target must be an IMPERIAL KNIGHTS unit")
+            return False
+        if candidates and not self._ik_unit_in_candidates(root, candidates):
+            logger.error("ERROR: FULL TILT: target is not currently eligible")
+            return False
+        if self._ik_selected_to_move_this_phase(root):
+            logger.error("ERROR: FULL TILT: target has already been selected to move this phase")
+            return False
+        if not self._ik_spend_cp(stratagem, target_unit=root):
+            return False
+
+        from ..utility.modifiers import Modifier, ModifierOp
+
+        root.remove_characteristic_modifiers_by_source("stratagem:imperial_knights_full_tilt")
+        root.add_characteristic_modifier(
+            "movement",
+            Modifier(ModifierOp.ADD, 2, source="stratagem:imperial_knights_full_tilt"),
+        )
+
+        effect_tag = "stratagem:imperial_knights_full_tilt"
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        adv_mods = list(sr.get("advance_roll_modifiers", []) or [])
+        adv_mods = [
+            entry
+            for entry in adv_mods
+            if not (isinstance(entry, dict) and str(entry.get("tag", "") or "") == effect_tag)
+        ]
+        adv_mods.append(
+            {
+                "value": 2,
+                "source": str(getattr(stratagem, "name", "") or "FULL TILT"),
+                "tag": effect_tag,
+            }
+        )
+        sr["advance_roll_modifiers"] = adv_mods
+        sr["full_tilt_active"] = True
+        sr["full_tilt_expires_phase"] = "MOVEMENT_PHASE"
+        sr["full_tilt_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["full_tilt_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["full_tilt_source"] = str(getattr(stratagem, "name", "") or "FULL TILT")
+        root.special_rules = sr
+
+        self._ik_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: FULL TILT: %s gains +2\" Move and +2 to Advance rolls this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_valourstrike_tactical_foil(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_valourstrike_lance():
+            return False
+
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        enemy_unit = kwargs.get("enemy_unit") or kwargs.get("moving_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        from_pending = False
+        if unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "TACTICAL FOIL":
+                    continue
+                from_pending = True
+                unit = reaction.get("unit") or reaction.get("target_unit")
+                enemy_unit = enemy_unit or reaction.get("enemy_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                kwargs.setdefault("action", reaction.get("action"))
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: TACTICAL FOIL: no target unit provided")
+            return False
+
+        root = self._ik_root(unit)
+        enemy_root = self._ik_root(enemy_unit)
+        if root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: TACTICAL FOIL: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: TACTICAL FOIL: not opponent's Movement phase")
+            return False
+        action_key = str(kwargs.get("action") or kwargs.get("trigger") or "").strip().lower()
+        if action_key and action_key not in {"move", "advance", "fall_back"}:
+            logger.error("ERROR: TACTICAL FOIL: invalid trigger action")
+            return False
+        if candidates and not self._ik_unit_in_candidates(root, candidates):
+            logger.error("ERROR: TACTICAL FOIL: target is not currently eligible")
+            return False
+        if not self._ik_owned_by_player(root, self.player):
+            logger.error("ERROR: TACTICAL FOIL: target unit is not yours")
+            return False
+        if not self._ik_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_imperial_knights_unit(root):
+            logger.error("ERROR: TACTICAL FOIL: target must be an IMPERIAL KNIGHTS unit")
+            return False
+        if enemy_root is None:
+            logger.error("ERROR: TACTICAL FOIL: missing enemy trigger unit")
+            return False
+        if self._ik_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: TACTICAL FOIL: trigger unit is not enemy")
+            return False
+        if not self._ik_on_battlefield(enemy_root, require_targetable=False):
+            return False
+        dist = self._ik_distance_between_units(root, enemy_root)
+        if dist is None or float(dist) > 9.0 + 1e-6:
+            logger.error("ERROR: TACTICAL FOIL: target must be within 9\" of the enemy unit")
+            return False
+        if not from_pending and not action_key:
+            logger.error("ERROR: TACTICAL FOIL: missing movement trigger context")
+            return False
+        queue_move = getattr(self.game, "_queue_reactive_move_movement_decision", None) if self.game is not None else None
+        if not callable(queue_move):
+            logger.error("ERROR: TACTICAL FOIL: reactive move queue is unavailable")
+            return False
+        if not self._ik_spend_cp(stratagem, target_unit=root):
+            return False
+
+        move_max = max(0, int(dice_module.get_roll("D6") or 0))
+        req = queue_move(
+            player=self.player,
+            unit=root,
+            max_distance=int(move_max),
+            kind="tactical_foil",
+            movement_type="reactive",
+            source=stratagem.name,
+            moving_unit=enemy_root,
+        )
+        if req is None:
+            logger.error("ERROR: TACTICAL FOIL: failed to queue reactive move")
+            return False
+
+        self._ik_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: TACTICAL FOIL: %s can make a Normal move up to %d\".",
+            getattr(root, "name", "Unit"),
+            int(move_max),
         )
         return True

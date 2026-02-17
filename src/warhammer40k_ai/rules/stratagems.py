@@ -125,6 +125,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SKULLS FOR THE SKULL THRONE!",
     "SUMMONED BY SLAUGHTER",
     "SWIFT AS THE EAGLE",
+    "TACTICAL FOIL",
     "TERRIFYING SPECTACLE",
     "TANK SHOCK",
     "THE FOE FORESEEN",
@@ -146,6 +147,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "RED WRATH",
     "DEADLY DEBUT",
     "FEIGNED WEAKNESS",
+    "FULL TILT",
     "ORKS IS NEVER BEATEN",
     "ERE WE GO",
     "MOB RULE",
@@ -2470,6 +2472,28 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires IMPERIAL KNIGHTS unit on battlefield that has not shot"
             return result
+        if name_u == "FULL TILT":
+            if self._imperial_knights_full_tilt_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires IMPERIAL KNIGHTS unit on battlefield that has not been selected to move"
+            return result
+        if name_u == "TACTICAL FOIL":
+            enemy_unit = context.get("enemy_unit") or context.get("moving_unit")
+            action = str(context.get("action", "") or "")
+            candidates = list(context.get("candidates") or [])
+            if not candidates and enemy_unit is not None:
+                candidates = self._imperial_knights_tactical_foil_candidates(enemy_unit=enemy_unit, action=action)
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            if enemy_unit is None:
+                result["reason"] = "Requires opponent Movement trigger after an enemy unit ends a move"
+            else:
+                result["reason"] = "Requires IMPERIAL KNIGHTS target within 9\" of the enemy unit that moved"
+            return result
         if name_u == "VETERAN SHARPSHOOTERS":
             if self._grizzled_veteran_sharpshooters_candidates():
                 result["available"] = True
@@ -2902,6 +2926,8 @@ class StratagemManager(
             "SNAP TO IT": "Target: ASTRA MILITARUM OFFICER unit; issue one Order now",
             "VETERAN SHARPSHOOTERS": "Target: ASTRA MILITARUM unit (not shot)",
             "VOW OF RETRIBUTION": "Target: IMPERIAL KNIGHTS unit that has not been selected to shoot this phase; ranged weapons gain Lethal Hits this phase",
+            "FULL TILT": "Target: IMPERIAL KNIGHTS unit that has not been selected to move this phase; +2\" Move and +2 Advance rolls this phase",
+            "TACTICAL FOIL": "Target: IMPERIAL KNIGHTS unit within 9\" of enemy mover after it ends a Normal/Advance/Fall Back move; make a reactive Normal move of D6\"",
             "INEXORABLE ADVANCE": "Target: your RUBRICAE unit not yet selected to move; it ignores Move/Advance modifiers and gains ranged [ASSAULT] this turn",
             "RIGHTEOUS VENGEANCE": "Target: ADEPTA SORORITAS unit that has not fought",
             "SUFFERING AND SACRIFICE": "Target: ADEPTA SORORITAS INFANTRY or WALKER unit",
@@ -4715,6 +4741,30 @@ class StratagemManager(
                                 "tau_aggressive_mobility_source",
                             ):
                                 sr.pop(key, None)
+                        exp = str(sr.get("full_tilt_expires_phase", "") or "").strip().upper()
+                        if sr.get("full_tilt_active") and (not exp or exp == "MOVEMENT_PHASE"):
+                            root.remove_characteristic_modifiers_by_source("stratagem:imperial_knights_full_tilt")
+                            adv_mods = list(sr.get("advance_roll_modifiers", []) or [])
+                            adv_kept = [
+                                entry
+                                for entry in adv_mods
+                                if not (
+                                    isinstance(entry, dict)
+                                    and str(entry.get("tag", "") or "") == "stratagem:imperial_knights_full_tilt"
+                                )
+                            ]
+                            if adv_kept:
+                                sr["advance_roll_modifiers"] = adv_kept
+                            else:
+                                sr.pop("advance_roll_modifiers", None)
+                            for key in (
+                                "full_tilt_active",
+                                "full_tilt_expires_phase",
+                                "full_tilt_owner",
+                                "full_tilt_turn",
+                                "full_tilt_source",
+                            ):
+                                sr.pop(key, None)
                         exp = str(sr.get("chronoshift_expires_phase", "") or "").strip().upper()
                         if sr.get("chronoshift_active") and (not exp or exp == "MOVEMENT_PHASE"):
                             sr.pop("chronoshift_active", None)
@@ -5967,6 +6017,7 @@ class StratagemManager(
         self._queue_emperors_children_mercurial_move_end_reactions(unit=unit, action=action)
         self._queue_aeldari_armoured_move_end_reactions(unit=unit, action=action)
         self._queue_votann_needgaard_move_end_reactions(unit=unit, action=action)
+        self._queue_imperial_knights_valourstrike_move_end_reactions(unit=unit, action=action)
 
     def _on_charge_declared(self, unit=None, target_units=None, **_kwargs):
         self._queue_aeldari_armoured_charge_declared_reactions(
