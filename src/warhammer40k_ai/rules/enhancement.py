@@ -450,6 +450,11 @@ class Enhancement:
             is_infernal_lance = bool(ck_mgr and ck_mgr.is_infernal_lance())
         except Exception:
             is_infernal_lance = False
+        ik_mgr = getattr(army, "imperial_knights_detachments", None) if army is not None else None
+        try:
+            is_valourstrike_lance = bool(ik_mgr and ik_mgr.is_valourstrike_lance())
+        except Exception:
+            is_valourstrike_lance = False
         gk_mgr = getattr(army, "grey_knights_detachments", None) if army is not None else None
         try:
             is_warpbane_task_force = bool(gk_mgr and gk_mgr.is_warpbane_task_force())
@@ -1832,6 +1837,38 @@ class Enhancement:
                 return
             unit.special_rules["enhancement_bestial_aspect"] = True
             unit.special_rules["bearer_unit_assault_ranged"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "bearer of the iron chalice" or enh_id == "000010493002":
+            if not is_valourstrike_lance:
+                return
+            unit.special_rules["enhancement_iron_chalice"] = True
+            unit.special_rules["enhancement_iron_chalice_range"] = 12
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "bearer of the evanescent ion" or enh_id == "000010493003":
+            if not is_valourstrike_lance:
+                return
+            unit.special_rules["enhancement_evanescent_ion"] = True
+            unit.special_rules["enhancement_evanescent_ion_range"] = 12
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "bearer of the judicant's helm" or enh_id == "000010493004":
+            if not is_valourstrike_lance:
+                return
+            unit.special_rules["enhancement_judicants_helm"] = True
+            unit.special_rules["enhancement_judicants_helm_range"] = 12
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "bearer of the lancer's sigil" or enh_id == "000010493005":
+            if not is_valourstrike_lance:
+                return
+            unit.special_rules["enhancement_lancers_sigil"] = True
+            unit.special_rules["enhancement_lancers_sigil_range"] = 12
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 

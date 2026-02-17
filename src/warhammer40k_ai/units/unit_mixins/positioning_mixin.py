@@ -5141,6 +5141,9 @@ class PositioningMixin:
         # Start of opponent Shooting phase effects (e.g., Hallucinogen Grenades) can grant Stealth until end of phase.
         if isinstance(sr, dict) and sr.get("opponent_shooting_phase_stealth_active") is True:
             return True
+        # Imperial Knights Valourstrike Lance: Bearer of the Evanescent Ion.
+        if isinstance(sr, dict) and sr.get("imperial_knights_evanescent_ion_stealth_active") is True:
+            return True
         # Use cached result if available
         if 'stealth' in getattr(self, '_ability_cache', {}):
             found = self._ability_cache['stealth']

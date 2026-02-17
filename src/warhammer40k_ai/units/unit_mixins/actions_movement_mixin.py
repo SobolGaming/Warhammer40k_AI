@@ -5587,6 +5587,12 @@ class ActionsMovementMixin:
         except Exception:
             pass
         try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("imperial_knights_lancers_sigil_charge_reroll"):
+                return True
+        except Exception:
+            pass
+        try:
             enh = getattr(self, "enhancement", None)
             if enh is not None and str(getattr(enh, "name", "") or "").strip().lower() == "battle-lust":
                 return True

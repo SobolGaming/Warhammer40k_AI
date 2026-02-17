@@ -6068,6 +6068,210 @@ class GamePhaseHandlersMixin:
                 )
                 self.request_decision(request)
 
+    def _queue_imperial_knights_valourstrike_enhancement_targets(
+        self,
+        *,
+        player,
+        army,
+        enhancement_flag: str,
+        range_key: str,
+        ability_key: str,
+        ability_name: str,
+        phase_label: str,
+    ) -> None:
+        if player is None or army is None:
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return
+
+        from ...utility.entity_ids import get_entity_id
+
+        def _unit_sort_key(unit_obj):
+            try:
+                return str(get_entity_id(unit_obj))
+            except Exception:
+                return str(getattr(unit_obj, "name", "") or "")
+
+        def _attached_root(unit_obj):
+            get_root = getattr(unit_obj, "get_attached_unit_root", None)
+            return get_root() if callable(get_root) else unit_obj
+
+        seen_sources: set[str] = set()
+        for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            source_sr = getattr(unit, "special_rules", None)
+            if not isinstance(source_sr, dict) or not bool(source_sr.get(enhancement_flag)):
+                continue
+            source_root = _attached_root(unit)
+            if source_root is None:
+                continue
+            source_unit_id = str(get_entity_id(source_root) or "")
+            if not source_unit_id or source_unit_id in seen_sources:
+                continue
+            seen_sources.add(source_unit_id)
+            if not self._unit_on_battlefield_for_reposition(source_root):
+                continue
+            if not bool(getattr(source_root, "has_any_keyword", lambda _k: False)("IMPERIAL KNIGHTS")):
+                continue
+            get_bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+            bearer = get_bearer() if callable(get_bearer) else None
+            if bearer is None or not bool(getattr(bearer, "is_alive", False)):
+                continue
+            try:
+                range_inches = int(source_sr.get(range_key, 12) or 12)
+            except (TypeError, ValueError):
+                range_inches = 12
+            range_inches = max(1, int(range_inches))
+
+            candidates: list[Any] = []
+            seen_targets: set[str] = set()
+            for cand in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+                if cand is None:
+                    continue
+                target_root = _attached_root(cand)
+                if target_root is None:
+                    continue
+                target_unit_id = str(get_entity_id(target_root) or "")
+                if not target_unit_id or target_unit_id in seen_targets:
+                    continue
+                seen_targets.add(target_unit_id)
+                if target_root is source_root:
+                    continue
+                if not self._unit_on_battlefield_for_reposition(target_root):
+                    continue
+                if not bool(getattr(target_root, "has_any_keyword", lambda _k: False)("IMPERIAL KNIGHTS")):
+                    continue
+                if not self._unit_within_range_of_model(bearer, target_root, range_value=float(range_inches)):
+                    continue
+                if not self._model_can_see_unit(bearer, target_root, game_map=game_map):
+                    continue
+                candidates.append(target_root)
+
+            if not candidates:
+                continue
+
+            self._queue_imperial_knights_valourstrike_target(
+                player=player,
+                source_unit=source_root,
+                model=bearer,
+                candidates=list(candidates),
+                ability_key=str(ability_key),
+                ability_name=str(ability_name),
+                phase_label=str(phase_label),
+                range_inches=int(range_inches),
+                allow_skip=False,
+            )
+
+    def _on_phase_start_imperial_knights_enhancements(self, player=None, phase=None, **_kwargs) -> None:
+        """Imperial Knights Valourstrike Lance enhancements that trigger at phase start."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname not in ("MOVEMENT_PHASE", "SHOOTING_PHASE", "CHARGE_PHASE"):
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        mgr = getattr(army, "imperial_knights_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_valourstrike_lance", lambda: False)()):
+            return
+
+        if pname == "MOVEMENT_PHASE":
+            owner_id = str(getattr(player, "id", "") or "")
+            from ...utility.entity_ids import get_entity_id
+
+            def _unit_sort_key(unit_obj):
+                try:
+                    return str(get_entity_id(unit_obj))
+                except Exception:
+                    return str(getattr(unit_obj, "name", "") or "")
+
+            seen_roots: set[str] = set()
+            for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+                if unit is None:
+                    continue
+                get_root = getattr(unit, "get_attached_unit_root", None)
+                root = get_root() if callable(get_root) else unit
+                if root is None:
+                    continue
+                root_id = str(get_entity_id(root) or "")
+                if not root_id or root_id in seen_roots:
+                    continue
+                seen_roots.add(root_id)
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict) or not sr.get("imperial_knights_evanescent_ion_stealth_active"):
+                    continue
+                if owner_id and str(sr.get("imperial_knights_evanescent_ion_stealth_owner", "") or "") != owner_id:
+                    continue
+                for key in (
+                    "imperial_knights_evanescent_ion_stealth_active",
+                    "imperial_knights_evanescent_ion_stealth_owner",
+                    "imperial_knights_evanescent_ion_stealth_turn",
+                    "imperial_knights_evanescent_ion_stealth_source",
+                ):
+                    sr.pop(key, None)
+                root.special_rules = sr
+            return
+
+        if pname == "SHOOTING_PHASE":
+            self._queue_imperial_knights_valourstrike_enhancement_targets(
+                player=player,
+                army=army,
+                enhancement_flag="enhancement_judicants_helm",
+                range_key="enhancement_judicants_helm_range",
+                ability_key="imperial_knights_judicants_helm",
+                ability_name="Bearer of the Judicant's Helm",
+                phase_label="Shooting phase",
+            )
+            return
+
+        if pname == "CHARGE_PHASE":
+            self._queue_imperial_knights_valourstrike_enhancement_targets(
+                player=player,
+                army=army,
+                enhancement_flag="enhancement_lancers_sigil",
+                range_key="enhancement_lancers_sigil_range",
+                ability_key="imperial_knights_lancers_sigil",
+                ability_name="Bearer of the Lancer's Sigil",
+                phase_label="Charge phase",
+            )
+
+    def _on_phase_end_imperial_knights_enhancements(self, player=None, phase=None, **_kwargs) -> None:
+        """Imperial Knights Valourstrike Lance enhancements that trigger at Movement phase end."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "MOVEMENT_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        mgr = getattr(army, "imperial_knights_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_valourstrike_lance", lambda: False)()):
+            return
+        self._queue_imperial_knights_valourstrike_enhancement_targets(
+            player=player,
+            army=army,
+            enhancement_flag="enhancement_iron_chalice",
+            range_key="enhancement_iron_chalice_range",
+            ability_key="imperial_knights_iron_chalice",
+            ability_name="Bearer of the Iron Chalice",
+            phase_label="Movement phase",
+        )
+        self._queue_imperial_knights_valourstrike_enhancement_targets(
+            player=player,
+            army=army,
+            enhancement_flag="enhancement_evanescent_ion",
+            range_key="enhancement_evanescent_ion_range",
+            ability_key="imperial_knights_evanescent_ion",
+            ability_name="Bearer of the Evanescent Ion",
+            phase_label="Movement phase",
+        )
+
     def _on_phase_start_world_eaters_enhancements(self, player=None, phase=None, **_kwargs) -> None:
         """Goretrack Onslaught enhancements that trigger at the start of the Shooting phase."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
@@ -6689,6 +6893,26 @@ class GamePhaseHandlersMixin:
                         "enhancement_fight_first_active",
                         "enhancement_fight_first_expires_phase",
                         "enhancement_fight_first_source",
+                    ):
+                        sr.pop(k, None)
+                exp = str(sr.get("imperial_knights_judicants_helm_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "imperial_knights_judicants_helm_ignores_cover_ranged",
+                        "imperial_knights_judicants_helm_owner",
+                        "imperial_knights_judicants_helm_turn",
+                        "imperial_knights_judicants_helm_source",
+                        "imperial_knights_judicants_helm_expires_phase",
+                    ):
+                        sr.pop(k, None)
+                exp = str(sr.get("imperial_knights_lancers_sigil_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "imperial_knights_lancers_sigil_charge_reroll",
+                        "imperial_knights_lancers_sigil_owner",
+                        "imperial_knights_lancers_sigil_turn",
+                        "imperial_knights_lancers_sigil_source",
+                        "imperial_knights_lancers_sigil_expires_phase",
                     ):
                         sr.pop(k, None)
                 exp = str(sr.get("empowered_by_death_expires_phase", "") or "").strip().upper()

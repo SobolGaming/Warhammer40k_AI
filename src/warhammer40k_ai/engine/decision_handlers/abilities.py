@@ -1776,6 +1776,47 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
             if unit_id not in allowed_ids:
                 return ("Strike Swiftly selection includes an ineligible unit.",)
         return ()
+    if ability in (
+        "imperial_knights_iron_chalice",
+        "imperial_knights_evanescent_ion",
+        "imperial_knights_judicants_helm",
+        "imperial_knights_lancers_sigil",
+    ):
+        if is_skip_choice(request, result):
+            return ("This Imperial Knights enhancement selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Imperial Knights source unit was not found.",)
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"))
+        if target_unit is None:
+            return ("Imperial Knights target unit was not found.",)
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        if source_root is None or target_root is None:
+            return ("Imperial Knights source/target unit root was not found.",)
+        if target_root is source_root:
+            return ("Imperial Knights enhancement requires selecting another unit.",)
+        if not bool(getattr(source_root, "has_any_keyword", lambda _k: False)("IMPERIAL KNIGHTS")):
+            return ("Imperial Knights source must have the IMPERIAL KNIGHTS keyword.",)
+        if not bool(getattr(target_root, "has_any_keyword", lambda _k: False)("IMPERIAL KNIGHTS")):
+            return ("Imperial Knights target must have the IMPERIAL KNIGHTS keyword.",)
+        model = resolve_model(game, ctx.get("model_id"))
+        if model is None:
+            return ("Imperial Knights bearer model was not found.",)
+        try:
+            range_inches = float(ctx.get("range", 12) or 12)
+        except (TypeError, ValueError):
+            range_inches = 12.0
+        in_range_fn = getattr(game, "_unit_within_range_of_model", None)
+        if callable(in_range_fn):
+            if not bool(in_range_fn(model, target_root, range_value=float(range_inches))):
+                return ("Imperial Knights target is out of range.",)
+        can_see_fn = getattr(game, "_model_can_see_unit", None)
+        if callable(can_see_fn):
+            if not bool(can_see_fn(model, target_root, game_map=getattr(game, "map", None))):
+                return ("Imperial Knights target must be visible to the bearer.",)
+        return ()
     if is_skip_choice(request, result):
         return ()
     if ability != "strategic_conqueror":
@@ -4374,6 +4415,126 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 _log_action_for_players(game, player, f"{ability_name}: {tname} regains up to {int(heal)} wounds.")
             except Exception:
                 pass
+    if str(ctx.get("ability", "") or "") in (
+        "imperial_knights_iron_chalice",
+        "imperial_knights_evanescent_ion",
+        "imperial_knights_judicants_helm",
+        "imperial_knights_lancers_sigil",
+    ):
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is not None and chosen is not None:
+            source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+            target_root = chosen.get_attached_unit_root() if hasattr(chosen, "get_attached_unit_root") else chosen
+            if source_root is None or target_root is None or target_root is source_root:
+                return None
+            player = _resolve_player(game, request, payload)
+            if player is None:
+                source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+                player = getattr(source_army, "player", None) if source_army is not None else None
+            owner_id = str(getattr(player, "id", "") or "")
+            try:
+                turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            ability_key = str(ctx.get("ability", "") or "").strip().lower()
+            ability_name = str(ctx.get("ability_name", "") or "Imperial Knights enhancement").strip() or "Imperial Knights enhancement"
+
+            if ability_key == "imperial_knights_iron_chalice":
+                try:
+                    from ...utility.dice import get_roll
+                    from ...utility.event_bus import append_dice
+                except Exception:
+                    get_roll = None
+                    append_dice = None
+                try:
+                    source_army = source_root.get_parent_army()
+                except Exception:
+                    source_army = None
+                honoured = bool(getattr(source_army, "code_chivalric_honoured", False)) if source_army is not None else False
+                mgr = getattr(source_army, "code_chivalric", None) if source_army is not None else None
+                if mgr is not None and bool(getattr(mgr, "honoured", False)):
+                    honoured = True
+                if honoured:
+                    heal = 3
+                else:
+                    heal = int(get_roll("D3") or 0) if callable(get_roll) else 0
+                    if callable(append_dice) and player is not None:
+                        append_dice(player, f"{ability_name} roll: {int(heal)}")
+                if heal > 0:
+                    try:
+                        models = list(target_root.get_attached_unit_models() or [])
+                    except Exception:
+                        models = list(getattr(target_root, "models", []) or [])
+                    wounded = []
+                    for m in models:
+                        try:
+                            if not getattr(m, "is_alive", True):
+                                continue
+                        except Exception:
+                            continue
+                        base = getattr(m, "_base_wounds", getattr(m, "wounds", 0))
+                        if int(getattr(m, "wounds", 0) or 0) < int(base or 0):
+                            wounded.append(m)
+                    if wounded:
+                        try:
+                            wounded.sort(key=lambda m: str(getattr(m, "id", getattr(m, "_id", "")) or ""))
+                        except Exception:
+                            wounded = list(wounded)
+                        target_model = wounded[0]
+                        heal_fn = getattr(target_model, "heal", None)
+                        if callable(heal_fn):
+                            heal_fn(int(heal))
+                try:
+                    tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                    _log_action_for_players(game, player, f"{ability_name}: {tname} regains up to {int(heal)} wounds.")
+                except Exception:
+                    pass
+                return target_root
+
+            tsr = getattr(target_root, "special_rules", None)
+            if not isinstance(tsr, dict):
+                tsr = {}
+
+            if ability_key == "imperial_knights_evanescent_ion":
+                tsr["imperial_knights_evanescent_ion_stealth_active"] = True
+                tsr["imperial_knights_evanescent_ion_stealth_owner"] = owner_id
+                tsr["imperial_knights_evanescent_ion_stealth_turn"] = int(turn)
+                tsr["imperial_knights_evanescent_ion_stealth_source"] = ability_name
+                target_root.special_rules = tsr
+                try:
+                    tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                    _log_action_for_players(game, player, f"{ability_name}: {tname} gains Stealth until your next Movement phase.")
+                except Exception:
+                    pass
+                return target_root
+
+            if ability_key == "imperial_knights_judicants_helm":
+                tsr["imperial_knights_judicants_helm_ignores_cover_ranged"] = True
+                tsr["imperial_knights_judicants_helm_owner"] = owner_id
+                tsr["imperial_knights_judicants_helm_turn"] = int(turn)
+                tsr["imperial_knights_judicants_helm_source"] = ability_name
+                tsr["imperial_knights_judicants_helm_expires_phase"] = "SHOOTING_PHASE"
+                target_root.special_rules = tsr
+                try:
+                    tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                    _log_action_for_players(game, player, f"{ability_name}: {tname} ranged weapons gain [IGNORES COVER] this phase.")
+                except Exception:
+                    pass
+                return target_root
+
+            if ability_key == "imperial_knights_lancers_sigil":
+                tsr["imperial_knights_lancers_sigil_charge_reroll"] = True
+                tsr["imperial_knights_lancers_sigil_owner"] = owner_id
+                tsr["imperial_knights_lancers_sigil_turn"] = int(turn)
+                tsr["imperial_knights_lancers_sigil_source"] = ability_name
+                tsr["imperial_knights_lancers_sigil_expires_phase"] = "CHARGE_PHASE"
+                target_root.special_rules = tsr
+                try:
+                    tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                    _log_action_for_players(game, player, f"{ability_name}: {tname} can re-roll Charge rolls this phase.")
+                except Exception:
+                    pass
+                return target_root
     if str(ctx.get("ability", "") or "") == "spirit_mark_friendly":
         source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
         model = resolve_model(game, ctx.get("model_id"))

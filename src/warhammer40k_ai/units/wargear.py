@@ -6422,6 +6422,12 @@ class WargearProfile:
             except Exception:
                 pass
             try:
+                sr = getattr(attacker.parent_unit, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("imperial_knights_judicants_helm_ignores_cover_ranged"):
+                    attack_instance["ignores_cover"] = True
+            except Exception:
+                pass
+            try:
                 if self._veteran_sharpshooters_ignores_cover_active(attacker):
                     attack_instance["ignores_cover"] = True
             except Exception:

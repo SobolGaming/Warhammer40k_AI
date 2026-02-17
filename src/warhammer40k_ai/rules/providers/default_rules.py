@@ -316,6 +316,8 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("fight_sequence_complete", "_on_fight_sequence_complete_code_chivalric"),
                 ("model_destroyed", "_on_model_destroyed_code_chivalric"),
                 ("unit_destroyed", "_on_unit_destroyed_code_chivalric"),
+                ("phase_start", "_on_phase_start_imperial_knights_enhancements"),
+                ("phase_end", "_on_phase_end_imperial_knights_enhancements"),
                 ("phase_start", "_on_phase_start_bondsman"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_bondsman"),
                 ("fight_sequence_complete", "_on_fight_sequence_complete_bondsman"),
