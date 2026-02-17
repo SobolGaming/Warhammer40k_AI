@@ -2258,6 +2258,14 @@ class Army:
                 continue
             self._destroy_unit_models(unit, game_map=game_map)
 
+    def on_prebattle_rules_start(self, *, game=None) -> None:
+        """Army-level hook for setup-phase pre-battle rules (before Scout moves)."""
+        if game is None:
+            game = getattr(getattr(self, "player", None), "game", None)
+        mgr = getattr(self, "tau_empire_detachments", None)
+        if mgr is not None and hasattr(mgr, "on_prebattle_rules_start"):
+            mgr.on_prebattle_rules_start(game=game)
+
     def on_battle_round_start(self, battle_round: int) -> None:
         """Army-level start-of-battle-round hook for faction rules/state resets."""
         game = getattr(getattr(self, "player", None), "game", None)
@@ -2314,6 +2322,9 @@ class Army:
         if mgr is not None:
             mgr.on_battle_round_start(int(battle_round), game=game)
         mgr = getattr(self, "tyranids_detachments", None)
+        if mgr is not None:
+            mgr.on_battle_round_start(int(battle_round), game=game)
+        mgr = getattr(self, "tau_empire_detachments", None)
         if mgr is not None:
             mgr.on_battle_round_start(int(battle_round), game=game)
         mgr = getattr(self, "cult_ambush", None)

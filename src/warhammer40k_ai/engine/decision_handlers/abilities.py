@@ -74,6 +74,7 @@ from ..decision_kinds import (
 from ..decisions import DecisionRequest, DecisionResult
 from ...utility.entity_ids import get_entity_id
 from ._helpers import (
+    get_objective,
     is_skip_choice,
     resolve_model,
     resolve_player,
@@ -1738,14 +1739,199 @@ def _apply_choose_pledge(game: object, request: DecisionRequest, result: Decisio
 
 
 def _validate_choose_quarry(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    ctx = dict(getattr(request, "context", {}) or {})
+    ability = str(ctx.get("ability", "") or "")
+    if ability == "strike_swiftly":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Strike Swiftly source unit was not found.",)
+        source_army = getattr(source_unit, "get_parent_army", lambda: None)()
+        mgr = getattr(source_army, "tau_empire_detachments", None) if source_army is not None else None
+        if mgr is None or not bool(getattr(mgr, "is_montka", lambda: False)()):
+            return ("Strike Swiftly requires a T'au Empire Mont'ka army.",)
+        if is_skip_choice(request, result):
+            return ()
+
+        selected_vals = payload.get("selected_unit_ids")
+        if not isinstance(selected_vals, list):
+            selected_vals = []
+        if not selected_vals:
+            one_target = payload.get("target_unit_id") or payload.get("unit_id")
+            if one_target:
+                selected_vals = [one_target]
+
+        selected_ids = [str(v or "").strip() for v in list(selected_vals or []) if str(v or "").strip()]
+        if len(selected_ids) > 2:
+            return ("Strike Swiftly can select at most two units.",)
+        if len(selected_ids) != len(set(selected_ids)):
+            return ("Strike Swiftly selected_unit_ids must be unique.",)
+
+        selectable = list(getattr(mgr, "strike_swiftly_selectable_units")(source_unit, game=game) or [])
+        allowed_ids = {str(get_entity_id(unit) or "") for unit in selectable}
+        for unit_id in selected_ids:
+            if unit_id not in allowed_ids:
+                return ("Strike Swiftly selection includes an ineligible unit.",)
+        return ()
     if is_skip_choice(request, result):
         return ()
-    return validate_option_choice(request, result)
+    if ability != "strategic_conqueror":
+        return ()
+    payload = _option_payload(request, result)
+    objective_id = payload.get("objective_id") or ctx.get("objective_id")
+    if not objective_id:
+        return ("Strategic Conqueror selection requires objective_id.",)
+    if get_objective(game, str(objective_id or "")) is None:
+        return ("Selected objective marker was not found.",)
+    return ()
 
 
 def _apply_choose_quarry(game: object, request: DecisionRequest, result: DecisionResult):
     ctx = dict(getattr(request, "context", {}) or {})
     ability = str(ctx.get("ability", "") or "")
+    if ability == "strategic_conqueror":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        objective_id = str(payload.get("objective_id") or ctx.get("objective_id") or "").strip()
+        if not objective_id:
+            return None
+        objective = get_objective(game, objective_id)
+        if objective is None:
+            return None
+        sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["enhancement_strategic_conqueror"] = True
+        sr["enhancement_strategic_conqueror_selected_objective_id"] = objective_id
+        if "enhancement_strategic_conqueror_oc_bonus" not in sr:
+            sr["enhancement_strategic_conqueror_oc_bonus"] = 1
+        source_unit.special_rules = sr
+        try:
+            player = getattr(source_unit.get_parent_army(), "player", None)
+        except Exception:
+            player = None
+        try:
+            source_name = str(getattr(source_unit, "name", "Unit") or "Unit")
+            objective_name = str(getattr(objective, "name", "") or "Objective marker")
+            _log_action_for_players(
+                game,
+                player,
+                f"Strategic Conqueror: {source_name} selected {objective_name}.",
+            )
+        except Exception:
+            pass
+        return objective
+    if ability == "strike_swiftly":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_army = getattr(source_unit, "get_parent_army", lambda: None)()
+        mgr = getattr(source_army, "tau_empire_detachments", None) if source_army is not None else None
+        if mgr is None:
+            return None
+
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict):
+            source_sr = {}
+        try:
+            scout_distance = float(
+                source_sr.get(
+                    "enhancement_strike_swiftly_scouts_distance",
+                    ctx.get("scout_distance", 6),
+                )
+                or 6
+            )
+        except Exception:
+            scout_distance = 6.0
+        scout_distance = max(0.0, float(scout_distance))
+
+        selected_vals = payload.get("selected_unit_ids")
+        if not isinstance(selected_vals, list):
+            selected_vals = []
+        if not selected_vals:
+            one_target = payload.get("target_unit_id") or payload.get("unit_id")
+            if one_target:
+                selected_vals = [one_target]
+        if is_skip_choice(request, result):
+            selected_vals = []
+
+        selectable_units = list(getattr(mgr, "strike_swiftly_selectable_units")(source_unit, game=game) or [])
+        selectable_by_id = {str(get_entity_id(unit) or ""): unit for unit in selectable_units}
+
+        selected_roots = []
+        seen_ids: set[str] = set()
+        for unit_id in list(selected_vals or []):
+            unit_id_str = str(unit_id or "").strip()
+            if not unit_id_str or unit_id_str in seen_ids:
+                continue
+            root = selectable_by_id.get(unit_id_str)
+            if root is None:
+                continue
+            seen_ids.add(unit_id_str)
+            selected_roots.append(root)
+            if len(selected_roots) >= 2:
+                break
+
+        source_unit_id = str(get_entity_id(source_unit) or "")
+        selected_unit_ids = []
+        for root in selected_roots:
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = []
+            if not members:
+                members = [root]
+            for member in members:
+                member_sr = getattr(member, "special_rules", None)
+                if not isinstance(member_sr, dict):
+                    member_sr = {}
+                try:
+                    current = float(member_sr.get("enhancement_scout_distance", 0) or 0)
+                except Exception:
+                    current = 0.0
+                if scout_distance > current:
+                    member_sr["enhancement_scout_distance"] = float(scout_distance)
+                member_sr["enhancement_strike_swiftly_source_unit_id"] = source_unit_id
+                member_sr["enhancement_strike_swiftly_scouts_distance"] = float(scout_distance)
+                member.special_rules = member_sr
+                invalidate_cache = getattr(member, "_invalidate_ability_cache", None)
+                if callable(invalidate_cache):
+                    invalidate_cache()
+            selected_unit_ids.append(str(get_entity_id(root) or ""))
+
+        source_sr["enhancement_strike_swiftly"] = True
+        source_sr["enhancement_strike_swiftly_resolved"] = True
+        source_sr["enhancement_strike_swiftly_selected_unit_ids"] = sorted(
+            [uid for uid in selected_unit_ids if uid]
+        )
+        source_unit.special_rules = source_sr
+
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(source_army, "player", None) if source_army is not None else None
+        source_name = str(getattr(source_unit, "name", "Unit") or "Unit")
+        if selected_roots:
+            names = ", ".join(str(getattr(unit_obj, "name", "Unit") or "Unit") for unit_obj in selected_roots)
+            _log_action_for_players(
+                game,
+                player,
+                f"Strike Swiftly: {source_name} selected {names}; selected units gain Scouts {int(scout_distance)}\".",
+            )
+        else:
+            _log_action_for_players(
+                game,
+                player,
+                f"Strike Swiftly: {source_name} selected none.",
+            )
+        return selected_roots
     if ability == "aeldari_guileful_strategist":
         skipped = is_skip_choice(request, result)
         apply_fn = getattr(game, "_apply_redeploy_choice", None)

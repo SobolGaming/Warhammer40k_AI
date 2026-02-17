@@ -127,6 +127,30 @@ def _support_status(row: EnhRow) -> Tuple[str, str]:
     """
     rules = _strip_eligibility_prefix(row.description)
 
+    if row.id == "000008811002":
+        return (
+            "Supported",
+            "While bearer is leading an Observer unit, guided attacks against its Spotted unit gain Sustained Hits 1 until end of phase.",
+        )
+
+    if row.id == "000008811003":
+        return (
+            "Supported",
+            "While bearer is leading, Killing Blow applies to the bearer's unit during battle round 4.",
+        )
+
+    if row.id == "000008811004":
+        return (
+            "Supported",
+            "At battle round 1 start, select an objective marker; while bearer is on the battlefield, friendly T'AU EMPIRE models within range gain +1 Objective Control.",
+        )
+
+    if row.id == "000008811005":
+        return (
+            "Supported",
+            "Before Scout moves, optionally select up to two friendly T'AU EMPIRE units within 6\" of bearer that do not have Scouts; selected units gain Scouts 6\" for the battle.",
+        )
+
     # Supported patterns:
     m = re.search(r"add\s+(\d+)\s*\"\s+to\s+the\s+bearer'?s\s+move\s+characteristic\.", rules, flags=re.IGNORECASE)
     if m:

@@ -374,6 +374,54 @@ _EXPERIMENTAL_PROTOTYPE_CADRE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _EXPERIMENTAL_PROTOTYPE_CADRE_DESCRIPTORS.values()
 }
 
+_MONTKA_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008811002": EnhancementToolDescriptor(
+        enhancement_id="000008811002",
+        name="Coordinated Exploitation",
+        timing="on_becoming_observer_while_bearer_is_leading",
+        target="guided_units_targeting_spotted_unit",
+        duration="until_end_of_phase",
+        effect="grant_ranged_sustained_hits_vs_spotted",
+        effect_params={"sustained_hits_value": 1},
+    ),
+    "000008811003": EnhancementToolDescriptor(
+        enhancement_id="000008811003",
+        name="Exemplar of the Mont'ka",
+        timing="passive_while_bearer_is_leading",
+        target="bearer_unit",
+        duration="battle_round_4",
+        effect="extend_killing_blow_to_round_four",
+    ),
+    "000008811004": EnhancementToolDescriptor(
+        enhancement_id="000008811004",
+        name="Strategic Conqueror",
+        timing="start_of_first_battle_round_before_first_turn",
+        target="friendly_tau_empire_models_within_selected_objective_while_bearer_on_battlefield",
+        duration="constant",
+        effect="add_objective_control_near_selected_objective",
+        effect_params={"objective_control_bonus": 1},
+    ),
+    "000008811005": EnhancementToolDescriptor(
+        enhancement_id="000008811005",
+        name="Strike Swiftly",
+        timing="start_of_battle_before_scout_moves",
+        target="up_to_two_friendly_tau_empire_units_within_range_without_scouts",
+        duration="until_end_of_battle",
+        effect="grant_scouts_to_selected_units",
+        effect_params={
+            "max_units": 2,
+            "selection_range": 6,
+            "scouts_distance": 6,
+            "requires_no_existing_scouts": True,
+            "optional": True,
+        },
+    ),
+}
+
+_MONTKA_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _MONTKA_DESCRIPTORS.values()
+}
+
 _INVASION_FLEET_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008348002": EnhancementToolDescriptor(
         enhancement_id="000008348002",
@@ -982,6 +1030,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _EXPERIMENTAL_PROTOTYPE_CADRE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _MONTKA_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _INVASION_FLEET_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -1032,6 +1083,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _VESSELS_OF_WRATH_BY_NAME.get(key)
         or _AELDARI_GUARDIAN_BATTLEHOST_BY_NAME.get(key)
         or _EXPERIMENTAL_PROTOTYPE_CADRE_BY_NAME.get(key)
+        or _MONTKA_BY_NAME.get(key)
         or _INVASION_FLEET_BY_NAME.get(key)
         or _CABAL_OF_CHAOS_BY_NAME.get(key)
         or _SPECTACLE_OF_SPITE_BY_NAME.get(key)

@@ -1400,6 +1400,8 @@ class GameSetupDeploymentReservesMixin:
             return True
         else:
             self.setup_phase = SetupPhase(next_phase_value)
+            if self.setup_phase == SetupPhase.RESOLVE_PREBATTLE_RULES:
+                self._queue_prebattle_rules_start_requests()
             logger.info(f"Advanced to setup phase: {self.setup_phase.name}")
             return False
 
@@ -2471,13 +2473,27 @@ class GameSetupDeploymentReservesMixin:
     def execute_resolve_prebattle_rules_phase(self) -> None:
         """Phase 8: Resolve Pre-battle Rules - Resolve any pre-battle rules, abilities, or stratagems."""
         logger.info("RESOLVE PREBATTLE RULES: Resolving pre-battle rules...")
-        
+
+        self._queue_prebattle_rules_start_requests()
+
         # Handle Scout moves for all players
         self._handle_scout_moves()
 
         # TODO - other pre-battle rules (e.g., Detachment stuff like WE dice rolls, etc.)
         
         logger.info("INFO: Pre-battle rules resolved")
+
+    def _queue_prebattle_rules_start_requests(self) -> None:
+        """Queue pre-battle decision requests that must resolve before Scout moves."""
+        for player in list(self.players or []):
+            if player is None:
+                continue
+            army = player.get_army()
+            if army is None:
+                continue
+            queue_hook = getattr(army, "on_prebattle_rules_start", None)
+            if callable(queue_hook):
+                queue_hook(game=self)
 
     def _handle_scout_moves(self) -> None:
         """Handle scout moves for all players during pre-battle rules phase."""

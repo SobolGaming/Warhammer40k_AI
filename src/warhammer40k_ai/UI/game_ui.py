@@ -6719,7 +6719,13 @@ class GameView:
         if decision_type == DECISION_CHOOSE_QUARRY:
             ctx = dict(getattr(request, "context", {}) or {})
             ability_key = str(ctx.get("ability", "") or "")
-            if ability_key not in ("monarch_of_the_hunt", "methodical_destruction", "unearthly_power"):
+            if ability_key not in (
+                "monarch_of_the_hunt",
+                "methodical_destruction",
+                "unearthly_power",
+                "strategic_conqueror",
+                "strike_swiftly",
+            ):
                 return
             unit = self._resolve_unit_by_id(ctx.get("source_unit_id"))
             if unit is None:
@@ -6931,6 +6937,7 @@ class GameView:
             self._queue_monarch_of_the_hunt_prompts(game)
             self._queue_methodical_destruction_prompts(game)
             self._queue_prey_selection_prompts(game)
+            self._queue_strategic_conqueror_prompts(game)
 
     # ---------------- Optional ability prompt windows (UI-driven) ----------------
 
@@ -14821,6 +14828,14 @@ class GameView:
                 pending_unit_ids.add((str(existing[2]), str(get_entity_id(existing[1]))))
             except Exception:
                 continue
+        active_dialog = getattr(self, "quarry_selection_dialog", None)
+        if active_dialog is not None and bool(getattr(active_dialog, "visible", False)):
+            active_req = getattr(active_dialog, "decision_request", None)
+            active_ctx = dict(getattr(active_req, "context", {}) or {})
+            active_ability = str(active_ctx.get("ability", "") or "")
+            active_source_id = str(active_ctx.get("source_unit_id", "") or "")
+            if active_ability and active_source_id:
+                pending_unit_ids.add((active_ability, active_source_id))
 
         for req, ctx in pending_reqs:
             player = self._resolve_player_by_id(getattr(req, "player_id", None))
@@ -14865,6 +14880,14 @@ class GameView:
         At BR1 start (and on prey destruction when applicable): prompt each human player who has a unit with prey selection to pick a prey.
         """
         self._queue_quarry_selection_prompts(game, ability_key="prey_selection")
+
+    def _queue_strategic_conqueror_prompts(self, game):
+        """At BR1 start: prompt each human player to select objective markers for Strategic Conqueror."""
+        self._queue_quarry_selection_prompts(game, ability_key="strategic_conqueror")
+
+    def _queue_strike_swiftly_prompts(self, game):
+        """At pre-battle rules start: prompt each human player to select Strike Swiftly target units."""
+        self._queue_quarry_selection_prompts(game, ability_key="strike_swiftly")
 
     def _open_next_quarry_prompt(self):
         if not self._pending_quarry_queue:
@@ -14942,6 +14965,14 @@ class GameView:
             title = ability_name or "Prey selection"
             subtitle = "Select an enemy unit to be this model's prey."
             header = f"{getattr(source_unit, 'name', 'Model')} selects prey."
+        elif str(ability_key) == "strategic_conqueror":
+            title = ability_name or "Strategic Conqueror"
+            subtitle = "Select one objective marker on the battlefield."
+            header = f"{getattr(source_unit, 'name', 'Model')} selects an objective marker."
+        elif str(ability_key) == "strike_swiftly":
+            title = ability_name or "Strike Swiftly"
+            subtitle = "Select up to two friendly T'AU EMPIRE units within 6\" that do not have Scouts."
+            header = f"{getattr(source_unit, 'name', 'Model')} selects units to gain Scouts 6\"."
         else:
             title = ability_name or "Select Quarry"
             subtitle = ""

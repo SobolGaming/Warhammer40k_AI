@@ -412,6 +412,10 @@ class Enhancement:
         except Exception:
             is_experimental_prototype_cadre = False
         try:
+            is_montka = bool(tau_mgr and tau_mgr.is_montka())
+        except Exception:
+            is_montka = False
+        try:
             is_coterie_of_conceited = bool(ec_mgr and ec_mgr.is_coterie_of_conceited())
         except Exception:
             is_coterie_of_conceited = False
@@ -553,6 +557,60 @@ class Enhancement:
                 default_damage_bonus=0,
                 source_name="Fusion Blades",
             )
+
+        if name == "coordinated exploitation" or enh_id == "000008811002":
+            if not is_montka:
+                return
+            unit.special_rules["enhancement_coordinated_exploitation"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                sustained_value = int(params.get("sustained_hits_value", 1) or 1)
+            except Exception:
+                sustained_value = 1
+            unit.special_rules["enhancement_coordinated_exploitation_sustained_hits_value"] = int(max(1, sustained_value))
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "exemplar of the mont'ka" or enh_id == "000008811003":
+            if not is_montka:
+                return
+            unit.special_rules["enhancement_exemplar_of_montka"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "strategic conqueror" or enh_id == "000008811004":
+            if not is_montka:
+                return
+            unit.special_rules["enhancement_strategic_conqueror"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                oc_bonus = int(params.get("objective_control_bonus", 1) or 1)
+            except Exception:
+                oc_bonus = 1
+            unit.special_rules["enhancement_strategic_conqueror_oc_bonus"] = int(max(0, oc_bonus))
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "strike swiftly" or enh_id == "000008811005":
+            if not is_montka:
+                return
+            unit.special_rules["enhancement_strike_swiftly"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                scout_distance = int(params.get("scouts_distance", 6) or 6)
+            except Exception:
+                scout_distance = 6
+            try:
+                selection_range = float(params.get("selection_range", 6.0) or 6.0)
+            except Exception:
+                selection_range = 6.0
+            unit.special_rules["enhancement_strike_swiftly_scouts_distance"] = int(max(0, scout_distance))
+            unit.special_rules["enhancement_strike_swiftly_selection_range"] = float(max(0.0, selection_range))
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 
         if name == "saintly example" or enh_id == "000008470002":
             if not is_hallowed_martyrs:

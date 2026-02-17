@@ -5584,8 +5584,7 @@ class PhaseManager:
                 # Start the scout phase if not already started for this phase
                 if not hasattr(self.prebattle_handler, 'scout_phase_started') or not self.prebattle_handler.scout_phase_started:
                     logger.info("Starting scout phase...")
-                    self.prebattle_handler.start_scout_phase()
-                    self.prebattle_handler.scout_phase_started = True
+                    self.prebattle_handler.scout_phase_started = bool(self.prebattle_handler.start_scout_phase())
                 return self.prebattle_handler
             else:
                 return self.setup_handler
@@ -5726,7 +5725,7 @@ class PreBattlePhaseHandler(BasePhaseHandler):
         self.scout_distance = 0
         self.mouse_pos = None  # Track mouse position for visual feedback
 
-    def start_scout_phase(self):
+    def start_scout_phase(self) -> bool:
         """Initialize the queue of eligible human scout units."""
         logger.info("Initializing scout phase...")
         self.scout_units_queue = []
@@ -5736,8 +5735,31 @@ class PreBattlePhaseHandler(BasePhaseHandler):
         self.scout_callback = None
         self.scout_distance = 0
         self.mouse_pos = None
+
         # Get all eligible human scout units in correct order
         game = self.game_view.game
+        if game is None:
+            return False
+
+        # Strike Swiftly selections can grant Scouts and must resolve before scout queueing.
+        queue_prompts = getattr(self.game_view, "_queue_strike_swiftly_prompts", None)
+        if callable(queue_prompts):
+            queue_prompts(game)
+        try:
+            from ...engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        except Exception:
+            DECISION_CHOOSE_QUARRY = None
+        if DECISION_CHOOSE_QUARRY:
+            queue = getattr(game, "decision_queue", None)
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                        continue
+                    ctx = dict(getattr(req, "context", {}) or {})
+                    if str(ctx.get("ability", "") or "") != "strike_swiftly":
+                        continue
+                    logger.info("Waiting for Strike Swiftly selections before Scout moves.")
+                    return False
         
         # During setup phase, use first_turn_player_index instead of current_player_index
         if game.first_turn_player_index is not None:
@@ -5761,6 +5783,7 @@ class PreBattlePhaseHandler(BasePhaseHandler):
         
         logger.debug(f"DEBUG: Scout queue has {len(self.scout_units_queue)} units: {[unit.name for unit, player, distance in self.scout_units_queue]}")
         self._next_scout_unit()
+        return True
 
     def _next_scout_unit(self):
         logger.debug(f"DEBUG: _next_scout_unit called, queue has {len(self.scout_units_queue)} units")

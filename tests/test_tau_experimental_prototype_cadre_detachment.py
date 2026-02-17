@@ -1,5 +1,8 @@
 from types import SimpleNamespace
 
+from warhammer40k_ai.engine.decision_dispatcher import dispatch_decision
+from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+from warhammer40k_ai.engine.decisions import DecisionOption, DecisionQueue, DecisionRequest, DecisionResult
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.rules.enhancement import Enhancement
 from warhammer40k_ai.rules.enhancement_descriptors import get_enhancement_tool_descriptor
@@ -140,6 +143,61 @@ def _fusion_blades_enhancement() -> Enhancement:
     )
 
 
+def _coordinated_exploitation_enhancement() -> Enhancement:
+    return Enhancement(
+        id="000008811002",
+        name="Coordinated Exploitation",
+        faction_id="TAU",
+        detachment="Mont'ka",
+        description=(
+            "T'AU EMPIRE model only (excluding Kroot Shaper models). While the bearer is leading a unit, each time that "
+            "unit is an Observer unit, until the end of the phase, ranged weapons equipped by models in a Guided unit "
+            "have the [SUSTAINED HITS 1] ability while targeting their Spotted unit."
+        ),
+    )
+
+
+def _exemplar_of_montka_enhancement() -> Enhancement:
+    return Enhancement(
+        id="000008811003",
+        name="Exemplar of the Mont'ka",
+        faction_id="TAU",
+        detachment="Mont'ka",
+        description=(
+            "T'AU EMPIRE model only (excluding Kroot Shaper models). While the bearer is leading a unit, the Killing Blow "
+            "Detachment rule applies to that unit during the fourth battle round as well."
+        ),
+    )
+
+
+def _strategic_conqueror_enhancement() -> Enhancement:
+    return Enhancement(
+        id="000008811004",
+        name="Strategic Conqueror",
+        faction_id="TAU",
+        detachment="Mont'ka",
+        description=(
+            "T'AU EMPIRE model only. At the start of the first battle round, before the first turn begins, select one objective "
+            "marker on the battlefield. While a friendly T'AU EMPIRE model is within range of that objective marker and the bearer "
+            "is on the battlefield, add 1 to that friendly model's Objective Control characteristic."
+        ),
+    )
+
+
+def _strike_swiftly_enhancement() -> Enhancement:
+    return Enhancement(
+        id="000008811005",
+        name="Strike Swiftly",
+        faction_id="TAU",
+        detachment="Mont'ka",
+        description=(
+            "T'AU EMPIRE model only. At the start of the battle, before any moves are made using the Scouts ability, you can "
+            "select up to two friendly T'AU EMPIRE units within 6\" of the bearer that do not have the Scouts ability. Until "
+            "the end of the battle, all models in the selected units have the Scouts 6\" ability."
+        ),
+    )
+
+
 def _build_tau_army(detachment_type: str) -> Army:
     army = Army("T'au Empire", detachment_type)
     army.faction_id = "TAU"
@@ -180,6 +238,23 @@ def _configure_tau_shooting_game(army: Army, *, battle_round: int):
     )
     player = SimpleNamespace(id="P1", name="Player 1", game=game)
     game.get_current_player = lambda: player
+    army.player = player
+    return game, player
+
+
+def _configure_tau_round_start_game(army: Army, *, objectives: list, battle_round: int = 1):
+    game = SimpleNamespace(
+        turn=int(battle_round),
+        map=SimpleNamespace(objectives=list(objectives)),
+        objectives=list(objectives),
+        players=[],
+        is_authoritative=True,
+        decision_queue=DecisionQueue(),
+    )
+    player = SimpleNamespace(id="P1", name="Player 1", game=game, army=army, get_army=lambda: army, has_control=lambda: True)
+    game.players = [player]
+    game.get_current_player = lambda: player
+    game.request_decision = lambda req: game.decision_queue.add(req)
     army.player = player
     return game, player
 
@@ -416,6 +491,593 @@ def test_killing_blow_lethal_hits_require_guided_unit():
     assert hit_result["hit"] is True
     assert attack_instance.get("lethal_hit") is not True
     assert "Lethal Hits" not in hit_result.get("special_effects", [])
+
+
+def test_coordinated_exploitation_has_tool_descriptor():
+    desc = get_enhancement_tool_descriptor(enhancement_id="000008811002")
+    assert desc is not None
+    assert desc.name == "Coordinated Exploitation"
+    assert desc.effect == "grant_ranged_sustained_hits_vs_spotted"
+    assert int(desc.effect_params.get("sustained_hits_value", 0) or 0) == 1
+
+
+def test_exemplar_of_montka_has_tool_descriptor():
+    desc = get_enhancement_tool_descriptor(enhancement_id="000008811003")
+    assert desc is not None
+    assert desc.name == "Exemplar of the Mont'ka"
+    assert desc.effect == "extend_killing_blow_to_round_four"
+
+
+def test_strategic_conqueror_has_tool_descriptor():
+    desc = get_enhancement_tool_descriptor(enhancement_id="000008811004")
+    assert desc is not None
+    assert desc.name == "Strategic Conqueror"
+    assert desc.effect == "add_objective_control_near_selected_objective"
+    assert int(desc.effect_params.get("objective_control_bonus", 0) or 0) == 1
+
+
+def test_strike_swiftly_has_tool_descriptor():
+    desc = get_enhancement_tool_descriptor(enhancement_id="000008811005")
+    assert desc is not None
+    assert desc.name == "Strike Swiftly"
+    assert desc.effect == "grant_scouts_to_selected_units"
+    assert int(desc.effect_params.get("max_units", 0) or 0) == 2
+    assert int(desc.effect_params.get("scouts_distance", 0) or 0) == 6
+    assert int(desc.effect_params.get("selection_range", 0) or 0) == 6
+
+
+def test_coordinated_exploitation_grants_guided_sustained_hits_when_observer_has_bearer():
+    from warhammer40k_ai.rules.for_the_greater_good import ForTheGreaterGoodManager
+
+    army = _build_tau_army("Mont'ka")
+    game, player = _configure_tau_shooting_game(army, battle_round=2)
+
+    attacker_unit = create_unit(
+        "Strike Team",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    observer_unit = create_unit(
+        "Pathfinders",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    observer_leader = create_unit(
+        "Cadre Fireblade",
+        keywords=["INFANTRY", "CHARACTER"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    target_unit = create_unit(
+        "Enemy Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    observer_unit.attached_leaders = [observer_leader]
+    observer_leader.attached_to = observer_unit
+
+    army.add_unit(attacker_unit)
+    army.add_unit(observer_unit)
+    army.add_unit(observer_leader)
+
+    enhancement = _coordinated_exploitation_enhancement()
+    observer_leader.enhancement = enhancement
+    enhancement.apply_to_unit(observer_leader)
+
+    observer_profile = make_profile(range_val="24", is_ranged=True)
+    _attach_ranged_profile(observer_unit, observer_profile)
+
+    ftgg = ForTheGreaterGoodManager(army)
+    army.for_the_greater_good = ftgg
+    assert ftgg.mark_spotted(observer_unit, target_unit, game=game, player=player) is True
+
+    attack_profile = make_profile(range_val="24", is_ranged=True)
+    attacker_model = attacker_unit.models[0]
+    attack_instance = {"_aura_attack_mods": _aura_stub()}
+    hit_result = attack_profile._hit_target_with_tracking(
+        target_unit,
+        attacker_model,
+        attack_instance,
+        roll_value=6,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+
+    assert hit_result["hit"] is True
+    assert int(attack_instance.get("sustained_hit", 0) or 0) == 1
+    assert any("Coordinated Exploitation" in str(effect) for effect in hit_result.get("special_effects", []))
+
+
+def test_coordinated_exploitation_requires_bearer_to_be_leading_observer_unit():
+    from warhammer40k_ai.rules.for_the_greater_good import ForTheGreaterGoodManager
+
+    army = _build_tau_army("Mont'ka")
+    game, player = _configure_tau_shooting_game(army, battle_round=2)
+
+    attacker_unit = create_unit(
+        "Strike Team",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    observer_unit = create_unit(
+        "Pathfinders",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    unjoined_leader = create_unit(
+        "Cadre Fireblade",
+        keywords=["INFANTRY", "CHARACTER"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    target_unit = create_unit(
+        "Enemy Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+
+    army.add_unit(attacker_unit)
+    army.add_unit(observer_unit)
+    army.add_unit(unjoined_leader)
+
+    enhancement = _coordinated_exploitation_enhancement()
+    unjoined_leader.enhancement = enhancement
+    enhancement.apply_to_unit(unjoined_leader)
+
+    observer_profile = make_profile(range_val="24", is_ranged=True)
+    _attach_ranged_profile(observer_unit, observer_profile)
+
+    ftgg = ForTheGreaterGoodManager(army)
+    army.for_the_greater_good = ftgg
+    assert ftgg.mark_spotted(observer_unit, target_unit, game=game, player=player) is True
+
+    attack_profile = make_profile(range_val="24", is_ranged=True)
+    attacker_model = attacker_unit.models[0]
+    attack_instance = {"_aura_attack_mods": _aura_stub()}
+    hit_result = attack_profile._hit_target_with_tracking(
+        target_unit,
+        attacker_model,
+        attack_instance,
+        roll_value=6,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+
+    assert hit_result["hit"] is True
+    assert int(attack_instance.get("sustained_hit", 0) or 0) == 0
+    assert not any("Coordinated Exploitation" in str(effect) for effect in hit_result.get("special_effects", []))
+
+
+def test_exemplar_of_montka_extends_killing_blow_assault_to_round_four_for_bearers_unit():
+    army = _build_tau_army("Mont'ka")
+    army.player.game.turn = 4
+    bodyguard = create_unit(
+        "Strike Team",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    leader = create_unit(
+        "Cadre Fireblade",
+        keywords=["INFANTRY", "CHARACTER"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    bodyguard.attached_leaders = [leader]
+    leader.attached_to = bodyguard
+    army.add_unit(bodyguard)
+    army.add_unit(leader)
+
+    enhancement = _exemplar_of_montka_enhancement()
+    leader.enhancement = enhancement
+    enhancement.apply_to_unit(leader)
+
+    profile = make_profile(range_val="24", is_ranged=True)
+    assert bodyguard.can_shoot_after_advance(profile) is True
+
+
+def test_exemplar_of_montka_extends_guided_lethal_hits_to_round_four_for_bearers_unit():
+    from warhammer40k_ai.rules.for_the_greater_good import ForTheGreaterGoodManager
+
+    army = _build_tau_army("Mont'ka")
+    game, player = _configure_tau_shooting_game(army, battle_round=4)
+
+    attacker_unit = create_unit(
+        "Strike Team",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    attacker_leader = create_unit(
+        "Cadre Fireblade",
+        keywords=["INFANTRY", "CHARACTER"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    attacker_unit.attached_leaders = [attacker_leader]
+    attacker_leader.attached_to = attacker_unit
+
+    observer_unit = create_unit(
+        "Pathfinders",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    target_unit = create_unit(
+        "Enemy Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    army.add_unit(attacker_unit)
+    army.add_unit(attacker_leader)
+    army.add_unit(observer_unit)
+
+    enhancement = _exemplar_of_montka_enhancement()
+    attacker_leader.enhancement = enhancement
+    enhancement.apply_to_unit(attacker_leader)
+
+    observer_profile = make_profile(range_val="24", is_ranged=True)
+    _attach_ranged_profile(observer_unit, observer_profile)
+
+    ftgg = ForTheGreaterGoodManager(army)
+    army.for_the_greater_good = ftgg
+    assert ftgg.mark_spotted(observer_unit, target_unit, game=game, player=player) is True
+
+    attack_profile = make_profile(range_val="24", is_ranged=True)
+    attacker_model = attacker_unit.models[0]
+    attack_instance = {"_aura_attack_mods": _aura_stub()}
+    hit_result = attack_profile._hit_target_with_tracking(
+        target_unit,
+        attacker_model,
+        attack_instance,
+        roll_value=6,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+
+    assert hit_result["hit"] is True
+    assert attack_instance.get("lethal_hit") is True
+    assert "Lethal Hits" in hit_result.get("special_effects", [])
+
+
+def test_strategic_conqueror_queues_objective_selection_at_start_of_first_battle_round():
+    army = _build_tau_army("Mont'ka")
+    leader = create_unit(
+        "Cadre Fireblade",
+        keywords=["INFANTRY", "CHARACTER"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    army.add_unit(leader)
+
+    enhancement = _strategic_conqueror_enhancement()
+    leader.enhancement = enhancement
+    enhancement.apply_to_unit(leader)
+
+    objective_b = SimpleNamespace(
+        id="obj-b",
+        name="Objective B",
+        location=SimpleNamespace(x=12.0, y=12.0, control_radius=3.0, removed=False),
+    )
+    objective_a = SimpleNamespace(
+        id="obj-a",
+        name="Objective A",
+        location=SimpleNamespace(x=4.0, y=4.0, control_radius=3.0, removed=False),
+    )
+    game, _player = _configure_tau_round_start_game(army, objectives=[objective_b, objective_a], battle_round=1)
+
+    army.on_battle_round_start(1)
+
+    pending = list(game.decision_queue.list() or [])
+    assert len(pending) == 1
+    request = pending[0]
+    assert request.decision_type == DECISION_CHOOSE_QUARRY
+    assert str(request.context.get("ability", "") or "") == "strategic_conqueror"
+    assert str(request.context.get("source_unit_id", "") or "") == str(leader.id)
+    objective_ids = [str((getattr(opt, "payload", {}) or {}).get("objective_id", "") or "") for opt in request.options]
+    assert objective_ids == ["obj-a", "obj-b"]
+
+
+def test_strategic_conqueror_selected_objective_grants_oc_bonus_while_bearer_on_battlefield():
+    army = _build_tau_army("Mont'ka")
+    leader = create_unit(
+        "Cadre Fireblade",
+        keywords=["INFANTRY", "CHARACTER"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    army.add_unit(leader)
+
+    enhancement = _strategic_conqueror_enhancement()
+    leader.enhancement = enhancement
+    enhancement.apply_to_unit(leader)
+
+    selected_objective = SimpleNamespace(
+        id="obj-selected",
+        name="Objective Selected",
+        location=SimpleNamespace(x=0.0, y=0.0, control_radius=3.0, removed=False),
+    )
+    other_objective = SimpleNamespace(
+        id="obj-other",
+        name="Objective Other",
+        location=SimpleNamespace(x=30.0, y=30.0, control_radius=3.0, removed=False),
+    )
+    game, player = _configure_tau_round_start_game(
+        army,
+        objectives=[selected_objective, other_objective],
+        battle_round=1,
+    )
+
+    army.on_battle_round_start(1)
+    request = list(game.decision_queue.list() or [])[0]
+    option_id = None
+    for opt in list(request.options or []):
+        payload = dict(getattr(opt, "payload", {}) or {})
+        if str(payload.get("objective_id", "") or "") == "obj-selected":
+            option_id = getattr(opt, "option_id", None)
+            break
+    assert option_id is not None
+
+    decision_result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=getattr(player, "id", None),
+        option_id=str(option_id),
+        payload={},
+    )
+    apply_result = dispatch_decision(game, request, decision_result)
+    assert apply_result.ok is True
+    assert str(leader.special_rules.get("enhancement_strategic_conqueror_selected_objective_id", "") or "") == "obj-selected"
+
+    bearer_model = leader.models[0]
+    bearer_model.set_location(0.0, 0.0, 0.0, 0.0)
+    assert bearer_model.objective_control == 2
+
+    bearer_model.set_location(24.0, 24.0, 0.0, 0.0)
+    assert bearer_model.objective_control == 1
+
+    bearer_model.wounds = 0
+    bearer_model.set_location(0.0, 0.0, 0.0, 0.0)
+    assert bearer_model.objective_control == 1
+
+
+def test_strategic_conqueror_rejects_invalid_objective_choice():
+    army = _build_tau_army("Mont'ka")
+    leader = create_unit(
+        "Cadre Fireblade",
+        keywords=["INFANTRY", "CHARACTER"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    army.add_unit(leader)
+
+    enhancement = _strategic_conqueror_enhancement()
+    leader.enhancement = enhancement
+    enhancement.apply_to_unit(leader)
+
+    existing_objective = SimpleNamespace(
+        id="obj-existing",
+        name="Objective Existing",
+        location=SimpleNamespace(x=10.0, y=10.0, control_radius=3.0, removed=False),
+    )
+    game, player = _configure_tau_round_start_game(army, objectives=[existing_objective], battle_round=1)
+
+    request = DecisionRequest.create(
+        DECISION_CHOOSE_QUARRY,
+        "Strategic Conqueror: select one objective marker on the battlefield.",
+        player_id=getattr(player, "id", None),
+        options=[DecisionOption.create("Invalid objective", payload={"objective_id": "obj-missing"})],
+        context={
+            "ability": "strategic_conqueror",
+            "ability_name": "Strategic Conqueror",
+            "source_unit_id": str(leader.id),
+            "unit_id": str(leader.id),
+            "optional": False,
+        },
+    )
+    option_id = str(request.options[0].option_id)
+    decision_result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=getattr(player, "id", None),
+        option_id=option_id,
+        payload={},
+    )
+    apply_result = dispatch_decision(game, request, decision_result)
+
+    assert apply_result.ok is False
+    assert any("objective marker" in str(err).lower() for err in apply_result.errors)
+
+
+def test_strike_swiftly_queues_up_to_two_unit_selection_before_scout_moves():
+    army = _build_tau_army("Mont'ka")
+    leader = create_unit(
+        "Cadre Fireblade",
+        keywords=["INFANTRY", "CHARACTER"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    near_a = create_unit(
+        "Strike Team A",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    near_b = create_unit(
+        "Strike Team B",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    far_unit = create_unit(
+        "Strike Team Far",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    has_scout = create_unit(
+        "Pathfinders",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    has_scout.special_rules["enhancement_scout_distance"] = 6
+    for unit in (leader, near_a, near_b, far_unit, has_scout):
+        army.add_unit(unit)
+
+    leader.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+    near_a.models[0].set_location(4.0, 0.0, 0.0, 0.0)
+    near_b.models[0].set_location(0.0, 5.0, 0.0, 0.0)
+    far_unit.models[0].set_location(12.0, 0.0, 0.0, 0.0)
+    has_scout.models[0].set_location(3.0, 3.0, 0.0, 0.0)
+
+    enhancement = _strike_swiftly_enhancement()
+    leader.enhancement = enhancement
+    enhancement.apply_to_unit(leader)
+
+    game, _player = _configure_tau_round_start_game(army, objectives=[], battle_round=1)
+    army.on_prebattle_rules_start(game=game)
+
+    pending = list(game.decision_queue.list() or [])
+    assert len(pending) == 1
+    request = pending[0]
+    assert request.decision_type == DECISION_CHOOSE_QUARRY
+    assert str(request.context.get("ability", "") or "") == "strike_swiftly"
+    assert str(request.context.get("source_unit_id", "") or "") == str(leader.id)
+
+    options = list(request.options or [])
+    assert options
+    first_payload = dict(getattr(options[0], "payload", {}) or {})
+    assert str(first_payload.get("action", "") or "").lower() == "skip"
+
+    near_a_id = str(near_a.id)
+    near_b_id = str(near_b.id)
+    far_id = str(far_unit.id)
+    has_scout_id = str(has_scout.id)
+    selected_sets = {
+        frozenset(
+            str(v or "") for v in list((dict(getattr(opt, "payload", {}) or {}).get("selected_unit_ids") or []))
+        )
+        for opt in options
+    }
+    assert frozenset({near_a_id}) in selected_sets
+    assert frozenset({near_b_id}) in selected_sets
+    assert frozenset({near_a_id, near_b_id}) in selected_sets
+    assert frozenset({far_id}) not in selected_sets
+    assert frozenset({has_scout_id}) not in selected_sets
+
+
+def test_strike_swiftly_selected_units_gain_scouts_six_for_battle():
+    army = _build_tau_army("Mont'ka")
+    leader = create_unit(
+        "Cadre Fireblade",
+        keywords=["INFANTRY", "CHARACTER"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    near_a = create_unit(
+        "Strike Team A",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    near_b = create_unit(
+        "Strike Team B",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    far_unit = create_unit(
+        "Strike Team Far",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    for unit in (leader, near_a, near_b, far_unit):
+        army.add_unit(unit)
+
+    leader.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+    near_a.models[0].set_location(4.0, 0.0, 0.0, 0.0)
+    near_b.models[0].set_location(0.0, 5.0, 0.0, 0.0)
+    far_unit.models[0].set_location(12.0, 0.0, 0.0, 0.0)
+
+    enhancement = _strike_swiftly_enhancement()
+    leader.enhancement = enhancement
+    enhancement.apply_to_unit(leader)
+
+    game, player = _configure_tau_round_start_game(army, objectives=[], battle_round=1)
+    army.on_prebattle_rules_start(game=game)
+    request = list(game.decision_queue.list() or [])[0]
+
+    near_ids = {str(near_a.id), str(near_b.id)}
+    option_id = None
+    for opt in list(request.options or []):
+        payload = dict(getattr(opt, "payload", {}) or {})
+        ids = {str(v or "") for v in list(payload.get("selected_unit_ids") or []) if str(v or "")}
+        if ids == near_ids:
+            option_id = str(getattr(opt, "option_id", "") or "")
+            break
+    assert option_id
+
+    before_a, dist_a = near_a.has_scout()
+    before_b, dist_b = near_b.has_scout()
+    before_far, dist_far = far_unit.has_scout()
+    assert before_a is False and float(dist_a) == 0.0
+    assert before_b is False and float(dist_b) == 0.0
+    assert before_far is False and float(dist_far) == 0.0
+
+    decision_result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=getattr(player, "id", None),
+        option_id=option_id,
+        payload={},
+    )
+    apply_result = dispatch_decision(game, request, decision_result)
+    assert apply_result.ok is True
+
+    after_a, dist_a = near_a.has_scout()
+    after_b, dist_b = near_b.has_scout()
+    after_far, dist_far = far_unit.has_scout()
+    assert after_a is True and float(dist_a) == 6.0
+    assert after_b is True and float(dist_b) == 6.0
+    assert after_far is False and float(dist_far) == 0.0
+
+    selected_ids = sorted(str(v or "") for v in list(leader.special_rules.get("enhancement_strike_swiftly_selected_unit_ids", []) or []))
+    assert selected_ids == sorted(list(near_ids))
+    assert bool(leader.special_rules.get("enhancement_strike_swiftly_resolved")) is True
+
+
+def test_strike_swiftly_rejects_ineligible_selection():
+    army = _build_tau_army("Mont'ka")
+    leader = create_unit(
+        "Cadre Fireblade",
+        keywords=["INFANTRY", "CHARACTER"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    near_unit = create_unit(
+        "Strike Team Near",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    far_unit = create_unit(
+        "Strike Team Far",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    for unit in (leader, near_unit, far_unit):
+        army.add_unit(unit)
+
+    leader.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+    near_unit.models[0].set_location(4.0, 0.0, 0.0, 0.0)
+    far_unit.models[0].set_location(12.0, 0.0, 0.0, 0.0)
+
+    enhancement = _strike_swiftly_enhancement()
+    leader.enhancement = enhancement
+    enhancement.apply_to_unit(leader)
+
+    game, player = _configure_tau_round_start_game(army, objectives=[], battle_round=1)
+    request = DecisionRequest.create(
+        DECISION_CHOOSE_QUARRY,
+        "Strike Swiftly: select up to two friendly T'AU EMPIRE units within 6\" that do not have Scouts.",
+        player_id=getattr(player, "id", None),
+        options=[DecisionOption.create("Invalid far unit", payload={"selected_unit_ids": [str(far_unit.id)]})],
+        context={
+            "ability": "strike_swiftly",
+            "ability_name": "Strike Swiftly",
+            "source_unit_id": str(leader.id),
+            "unit_id": str(leader.id),
+            "optional": True,
+        },
+    )
+    decision_result = DecisionResult(
+        decision_id=request.decision_id,
+        player_id=getattr(player, "id", None),
+        option_id=str(request.options[0].option_id),
+        payload={},
+    )
+    apply_result = dispatch_decision(game, request, decision_result)
+
+    assert apply_result.ok is False
+    assert any("ineligible" in str(err).lower() for err in apply_result.errors)
 
 
 def test_supernova_launcher_has_tool_descriptor():

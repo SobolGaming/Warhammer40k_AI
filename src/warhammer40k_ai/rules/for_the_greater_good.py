@@ -15,6 +15,10 @@ class ForTheGreaterGoodManager:
     - Guided units (non-Observers with the ability) gain +1 BS vs Spotted targets.
     - If the Observer had MARKERLIGHT, Guided attacks also gain Ignores Cover.
     """
+    _COORDINATED_EXPLOITATION_FLAG = "enhancement_coordinated_exploitation"
+    _COORDINATED_EXPLOITATION_ID = "000008811002"
+    _COORDINATED_EXPLOITATION_NAME = "coordinated exploitation"
+    _COORDINATED_EXPLOITATION_VALUE_KEY = "enhancement_coordinated_exploitation_sustained_hits_value"
 
     def __init__(self, army=None):
         self.army = army
@@ -22,12 +26,14 @@ class ForTheGreaterGoodManager:
         self._observer_to_target: dict[str, str] = {}
         self._spotted_by: dict[str, str] = {}
         self._spotted_markerlight: dict[str, bool] = {}
+        self._spotted_coordinated_exploitation: dict[str, int] = {}
 
     def reset_for_phase(self) -> None:
         self._observer_unit_ids = set()
         self._observer_to_target = {}
         self._spotted_by = {}
         self._spotted_markerlight = {}
+        self._spotted_coordinated_exploitation = {}
 
     def on_shooting_phase_start(self, *, game=None, player=None) -> None:
         self.reset_for_phase()
@@ -135,6 +141,80 @@ class ForTheGreaterGoodManager:
         except Exception:
             pass
         return False
+
+    @staticmethod
+    def _attached_root(unit):
+        if unit is None:
+            return None
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        return root
+
+    @staticmethod
+    def _enhancement_bearer_alive(unit) -> bool:
+        if unit is None:
+            return False
+        sr = getattr(unit, "special_rules", None)
+        bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "") if isinstance(sr, dict) else ""
+        if bearer_id:
+            for model in list(getattr(unit, "models", []) or []):
+                model_id = str(getattr(model, "id", getattr(model, "_id", "")) or "")
+                if model_id != bearer_id:
+                    continue
+                alive_attr = getattr(model, "is_alive", True)
+                return bool(alive_attr() if callable(alive_attr) else alive_attr)
+            return False
+        get_bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+        if callable(get_bearer):
+            return get_bearer() is not None
+        return False
+
+    def _coordinated_exploitation_sustained_value(self, observer) -> int:
+        root = self._attached_root(observer)
+        if root is None:
+            return 0
+        leaders = list(getattr(root, "attached_leaders", []) or [])
+        if not leaders:
+            return 0
+
+        checker = getattr(root, "_attached_unit_has_active_enhancement", None)
+        if callable(checker):
+            if not bool(
+                checker(
+                    self._COORDINATED_EXPLOITATION_FLAG,
+                    enhancement_id=self._COORDINATED_EXPLOITATION_ID,
+                    enhancement_name=self._COORDINATED_EXPLOITATION_NAME,
+                )
+            ):
+                return 0
+
+        best = 0
+        for leader in leaders:
+            sr = getattr(leader, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            has_rule = bool(sr.get(self._COORDINATED_EXPLOITATION_FLAG))
+            if not has_rule:
+                enh = getattr(leader, "enhancement", None)
+                if enh is not None:
+                    enh_id = str(getattr(enh, "id", "") or "").strip()
+                    enh_name = str(getattr(enh, "name", "") or "").strip().lower()
+                    has_rule = bool(
+                        enh_id == self._COORDINATED_EXPLOITATION_ID
+                        or enh_name == self._COORDINATED_EXPLOITATION_NAME
+                    )
+            if not has_rule:
+                continue
+            if not self._enhancement_bearer_alive(leader):
+                continue
+            try:
+                val = int(sr.get(self._COORDINATED_EXPLOITATION_VALUE_KEY, 1) or 1)
+            except Exception:
+                val = 1
+            best = max(best, max(1, val))
+        return int(best)
 
     def _unit_is_visible_to_unit(self, observer, target, *, game=None) -> bool:
         if observer is None or target is None:
@@ -331,6 +411,9 @@ class ForTheGreaterGoodManager:
         self._observer_to_target[obs_id] = tgt_id
         self._spotted_by[tgt_id] = obs_id
         self._spotted_markerlight[tgt_id] = self._unit_has_markerlight(observer)
+        coordinated_sustained = self._coordinated_exploitation_sustained_value(observer)
+        if coordinated_sustained > 0:
+            self._spotted_coordinated_exploitation[tgt_id] = coordinated_sustained
         return True
 
     def is_observer(self, unit) -> bool:
@@ -371,7 +454,11 @@ class ForTheGreaterGoodManager:
             except Exception:
                 pass
         tid = self._unit_id(target_unit)
-        return {
+        out = {
             "bs_improve": 1,
             "ignores_cover": bool(self._spotted_markerlight.get(tid, False)),
         }
+        coordinated_sustained = int(self._spotted_coordinated_exploitation.get(tid, 0) or 0)
+        if coordinated_sustained > 0:
+            out["sustained_hits_value"] = coordinated_sustained
+        return out

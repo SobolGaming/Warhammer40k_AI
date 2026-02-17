@@ -6162,6 +6162,7 @@ class WargearProfile:
 
         base_skill = self.skill
         skill_mods: list[tuple[int, str]] = []
+        ftgg_guided_bonus: dict = {}
 
         def _add_skill_mod(delta, reason: str):
             try:
@@ -6181,6 +6182,8 @@ class WargearProfile:
             mgr = getattr(army, "for_the_greater_good", None) if army is not None else None
             if mgr is not None:
                 bonus = mgr.guided_attack_bonus(unit, target)
+                if isinstance(bonus, dict):
+                    ftgg_guided_bonus = dict(bonus)
                 if isinstance(bonus, dict) and bonus.get("bs_improve"):
                     try:
                         val = int(bonus.get("bs_improve", 0) or 0)
@@ -6409,6 +6412,9 @@ class WargearProfile:
             bonus_anti_specs = _merge_anti_specs(bonus_anti_specs, tuple(bonus.get("anti_specs") or ()))
             if bool(bonus.get("ignores_cover")) and attack_is_ranged:
                 attack_instance["ignores_cover"] = True
+
+        if attack_is_ranged and isinstance(ftgg_guided_bonus, dict):
+            _apply_keyword_bonus(ftgg_guided_bonus, sustained_label="For the Greater Good: Coordinated Exploitation")
 
         try:
             unit = getattr(attacker, "parent_unit", None)

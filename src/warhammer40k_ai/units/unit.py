@@ -653,6 +653,27 @@ class Unit(
             except Exception:
                 pass
 
+            # Strategic Conqueror (Mont'ka): +1 OC while within range of the selected objective marker
+            # and the bearer is on the battlefield.
+            try:
+                army = self.get_parent_army()
+            except Exception:
+                army = None
+            try:
+                tau_mgr = getattr(army, "tau_empire_detachments", None) if army is not None else None
+                if tau_mgr is not None:
+                    bonus = int(
+                        tau_mgr.strategic_conqueror_objective_control_bonus(
+                            model,
+                            game_map=game_map,
+                        )
+                        or 0
+                    )
+                    if bonus:
+                        mods.append(Modifier(ModifierOp.ADD, int(bonus), source="enhancement:strategic_conqueror"))
+            except Exception:
+                pass
+
             # Kill-reward persistent Objective Control bonuses (e.g. Trophy Takers).
             try:
                 sr_root = getattr(root, "special_rules", None)
