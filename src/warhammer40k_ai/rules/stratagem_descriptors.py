@@ -1355,6 +1355,32 @@ _EXPERIMENTAL_PROTOTYPE_CADRE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDesc
             "heal_roll": "D3+1",
         },
     ),
+    "000009984003": StratagemToolDescriptor(
+        stratagem_id="000009984003",
+        name="Reactive Impact Dampeners",
+        timing="shooting_or_fight_phase_after_enemy_targets_selected",
+        target="tau_empire_battlesuit_unit_targeted",
+        duration="until_end_of_phase",
+        effect="defensive_wound_penalty_if_strength_gt_toughness",
+        cp_cost=1,
+        effect_params={
+            "wound_roll_modifier": -1,
+            "condition": "attacker_strength_greater_than_target_toughness",
+        },
+    ),
+    "000009984007": StratagemToolDescriptor(
+        stratagem_id="000009984007",
+        name="Neuroweb System Jammer",
+        timing="opponent_shooting_phase_after_enemy_targets_selected",
+        target="tau_empire_crisis_unit_selected_as_target",
+        duration="until_end_of_phase",
+        effect="ranged_targeting_distance_cap",
+        cp_cost=1,
+        effect_params={
+            "max_targeting_distance": 18,
+            "attack_type": "ranged",
+        },
+    ),
     "000009984004": StratagemToolDescriptor(
         stratagem_id="000009984004",
         name="Experimental Weaponry",

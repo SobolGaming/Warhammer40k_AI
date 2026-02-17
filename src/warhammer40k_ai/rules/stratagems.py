@@ -31,6 +31,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "AUTOMATED REPAIR DRONES",
     "EXPERIMENTAL AMMUNITION",
     "EXPERIMENTAL WEAPONRY",
+    "NEUROWEB SYSTEM JAMMER",
+    "REACTIVE IMPACT DAMPENERS",
     "THREAT ASSESSMENT ANALYSER",
     "ANTI-GRAV REPULSION",
     "ANTI‑GRAV REPULSION",
@@ -263,6 +265,8 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "MURDER-CALL",
     "LIGHTNING-FAST REACTIONS",
     "MARTIAL PERFECTION",
+    "NEUROWEB SYSTEM JAMMER",
+    "REACTIVE IMPACT DAMPENERS",
     "SKULLS FOR THE SKULL THRONE!",
     "SMOKESCREEN",
     "SKYBORNE SANCTUARY",
@@ -1338,6 +1342,7 @@ class StratagemManager(
             "GO TO GROUND",
             "SMOKESCREEN",
             "ARMOUR OF CONTEMPT",
+            "REACTIVE IMPACT DAMPENERS",
             "CAPRICIOUS REACTIONS",
             "PRAISE THE FALLEN",
             "THE FOE FORESEEN",
@@ -1361,6 +1366,7 @@ class StratagemManager(
             "BEAUTIFUL DEATH",
             "COMBAT STIMMS",
             "CONTEMPTUOUS DISREGARD",
+            "REACTIVE IMPACT DAMPENERS",
             "DEFIANT TO THE LAST",
             "DEATHLESS DUTY",
             "DEATH ECSTASY",
@@ -2450,6 +2456,44 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires a T'AU EMPIRE unit on the battlefield that has not been selected to shoot this phase and is not targeted by EXPERIMENTAL AMMUNITION"
             return result
+        if name_u == "REACTIVE IMPACT DAMPENERS":
+            attacking_unit = (
+                context.get("attacking_unit")
+                or context.get("attacker_unit")
+                or context.get("enemy_unit")
+            )
+            target_units = context.get("target_units") or context.get("targets")
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._tau_reactive_impact_dampeners_candidates(
+                    attacking_unit=attacking_unit,
+                    target_units=target_units,
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires Shooting/Fight target-selection trigger with an enemy unit that selected one of your T'AU EMPIRE BATTLESUIT units as a target"
+            return result
+        if name_u == "NEUROWEB SYSTEM JAMMER":
+            attacking_unit = (
+                context.get("attacking_unit")
+                or context.get("attacker_unit")
+                or context.get("enemy_unit")
+            )
+            target_units = context.get("target_units") or context.get("targets")
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._tau_neuroweb_system_jammer_candidates(
+                    attacking_unit=attacking_unit,
+                    target_units=target_units,
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires opponent Shooting phase trigger with an enemy unit that selected one of your T'AU EMPIRE CRISIS units as a target"
+            return result
         if stratagem.can_use(self.player, self.game, **context):
             result["available"] = True
             result["reason"] = None
@@ -2479,6 +2523,8 @@ class StratagemManager(
             "AUTOMATED REPAIR DRONES": "Target: T'AU EMPIRE BATTLESUIT unit with a wounded BATTLESUIT model",
             "EXPERIMENTAL AMMUNITION": "Target: T'AU EMPIRE unit not yet selected to shoot; choose +1S or +1S/+1AP/[HAZARDOUS] (cannot also target with THREAT ASSESSMENT ANALYSER this phase)",
             "EXPERIMENTAL WEAPONRY": "Target: T'AU EMPIRE unit not yet selected to shoot; may re-roll attack-count dice for its weapons this phase",
+            "NEUROWEB SYSTEM JAMMER": "Target: T'AU EMPIRE CRISIS unit selected as a target by an enemy shooter; until end of phase it can only be targeted by ranged attacks from within 18\"",
+            "REACTIVE IMPACT DAMPENERS": "Target: T'AU EMPIRE BATTLESUIT unit selected as an enemy attack target; incoming attacks suffer -1 to wound while attacker Strength is greater than target Toughness this phase",
             "THREAT ASSESSMENT ANALYSER": "Target: T'AU EMPIRE unit not yet selected to shoot; choose Sustained Hits 1 or Lethal Hits, or gain both plus [HAZARDOUS] (cannot also target with EXPERIMENTAL AMMUNITION this phase)",
             "ARMOUR OF CONTEMPT": "Target: ADEPTUS ASTARTES unit",
             "DEATHLESS DUTY": "Target: DEATH COMPANY unit",
@@ -6455,6 +6501,13 @@ class StratagemManager(
             )
         except Exception:
             raise
+        try:
+            self._queue_tau_experimental_prototype_shooting_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
         # GO TO GROUND
         try:
             s = self.get_by_name("GO TO GROUND")
@@ -7227,6 +7280,13 @@ class StratagemManager(
             raise
         try:
             self._queue_votann_needgaard_fight_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_tau_experimental_prototype_fight_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )

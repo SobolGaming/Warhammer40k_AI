@@ -305,6 +305,295 @@ def test_experimental_ammunition_descriptor_registered():
     assert bool(desc.effect_params.get("choices", {}).get("hazardous", {}).get("grant_hazardous", False)) is True
 
 
+def test_neuroweb_system_jammer_queues_and_applies_ranged_targeting_cap():
+    game, tau_player, enemy_player, tau_army, enemy_army = _build_game()
+    defender = _make_unit(
+        "Crisis Fireknife Battlesuits",
+        keywords=["INFANTRY", "BATTLESUIT", "CRISIS"],
+        faction_keywords=["T'AU EMPIRE"],
+        wounds="6",
+    )
+    attacker = _make_unit(
+        "Enemy Shooters",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+        wounds="6",
+    )
+    tau_army.add_unit(defender)
+    enemy_army.add_unit(attacker)
+    _deploy_unit(game, defender, 10.0, 10.0)
+    _deploy_unit(game, attacker, 31.0, 10.0)  # 21" from defender.
+
+    _set_phase(game, enemy_player, "SHOOTING_PHASE", 1)
+    game.event_system.publish("shooting_targets_selected", attacking_unit=attacker, target_units=[defender])
+    pending = [
+        r for r in list(tau_player.stratagems.get_pending_reactions() or [])
+        if str(r.get("stratagem", "") or "").strip().upper() == "NEUROWEB SYSTEM JAMMER"
+    ]
+    assert len(pending) == 1
+
+    ok = tau_player.stratagems.use(
+        "NEUROWEB SYSTEM JAMMER",
+        unit=defender,
+        attacking_unit=attacker,
+        dequeue=True,
+    )
+    assert ok
+    assert int(tau_player.command_points or 0) == 9
+
+    weapon = Wargear(
+        {
+            "name": "Ranged Weapon",
+            "type": "Ranged",
+            "range": "30",
+            "A": "1",
+            "BS_WS": "4+",
+            "S": "4",
+            "AP": "0",
+            "D": "1",
+            "description": "",
+        }
+    )
+    profile = weapon.profiles["default"]
+    profile.is_indirect_fire = lambda: True
+
+    can_target_far = attacker._can_model_shoot_weapon_at_target(
+        attacker.models[0],
+        profile,
+        defender,
+        game.map,
+    )
+    assert not can_target_far
+
+    attacker.models[0].set_location(26.0, 10.0, 0.0, 0.0)  # 16"
+    can_target_close = attacker._can_model_shoot_weapon_at_target(
+        attacker.models[0],
+        profile,
+        defender,
+        game.map,
+    )
+    assert can_target_close
+
+
+def test_neuroweb_system_jammer_rejects_unit_not_selected_by_attacker():
+    game, tau_player, enemy_player, tau_army, enemy_army = _build_game()
+    selected_target = _make_unit(
+        "Crisis Sunforge Battlesuits",
+        keywords=["INFANTRY", "BATTLESUIT", "CRISIS"],
+        faction_keywords=["T'AU EMPIRE"],
+        wounds="6",
+    )
+    other_crisis = _make_unit(
+        "Crisis Starscythe Battlesuits",
+        keywords=["INFANTRY", "BATTLESUIT", "CRISIS"],
+        faction_keywords=["T'AU EMPIRE"],
+        wounds="6",
+    )
+    attacker = _make_unit(
+        "Enemy Shooters",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+        wounds="6",
+    )
+    tau_army.add_unit(selected_target)
+    tau_army.add_unit(other_crisis)
+    enemy_army.add_unit(attacker)
+    _deploy_unit(game, selected_target, 10.0, 10.0)
+    _deploy_unit(game, other_crisis, 12.0, 10.0)
+    _deploy_unit(game, attacker, 20.0, 10.0)
+
+    _set_phase(game, enemy_player, "SHOOTING_PHASE", 1)
+    game.event_system.publish("shooting_targets_selected", attacking_unit=attacker, target_units=[selected_target])
+
+    blocked = tau_player.stratagems.use(
+        "NEUROWEB SYSTEM JAMMER",
+        unit=other_crisis,
+        attacking_unit=attacker,
+        target_units=[selected_target],
+        phase_name="Shooting phase",
+    )
+    assert not blocked
+    assert int(tau_player.command_points or 0) == 10
+
+
+def test_reactive_impact_dampeners_queues_and_applies_conditional_wound_penalty_in_shooting():
+    game, tau_player, enemy_player, tau_army, enemy_army = _build_game()
+    defender = _make_unit(
+        "Crisis Team",
+        keywords=["INFANTRY", "BATTLESUIT"],
+        faction_keywords=["T'AU EMPIRE"],
+        wounds="6",
+    )
+    attacker = _make_unit(
+        "Enemy Shooters",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+        wounds="6",
+    )
+    tau_army.add_unit(defender)
+    enemy_army.add_unit(attacker)
+    _deploy_unit(game, defender, 10.0, 10.0)
+    _deploy_unit(game, attacker, 16.0, 10.0)
+
+    _set_phase(game, enemy_player, "SHOOTING_PHASE", 1)
+    game.event_system.publish("shooting_targets_selected", attacking_unit=attacker, target_units=[defender])
+    pending = [
+        r for r in list(tau_player.stratagems.get_pending_reactions() or [])
+        if str(r.get("stratagem", "") or "").strip().upper() == "REACTIVE IMPACT DAMPENERS"
+    ]
+    assert len(pending) == 1
+
+    ok = tau_player.stratagems.use(
+        "REACTIVE IMPACT DAMPENERS",
+        unit=defender,
+        attacking_unit=attacker,
+        dequeue=True,
+    )
+    assert ok
+    assert int(tau_player.command_points or 0) == 9
+
+    high_strength_weapon = Wargear(
+        {
+            "name": "Test Gun High",
+            "type": "Ranged",
+            "range": "24",
+            "A": "1",
+            "BS_WS": "4+",
+            "S": "6",
+            "AP": "0",
+            "D": "1",
+            "description": "",
+        }
+    )
+    high_profile = high_strength_weapon.profiles["default"]
+    high_wound = high_profile._wound_target_with_tracking(
+        defender,
+        attacker.models[0],
+        {},
+        roll_value=4,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert any("REACTIVE IMPACT DAMPENERS" in str(m) for m in list(high_wound.get("modifiers", []) or []))
+
+    equal_strength_weapon = Wargear(
+        {
+            "name": "Test Gun Equal",
+            "type": "Ranged",
+            "range": "24",
+            "A": "1",
+            "BS_WS": "4+",
+            "S": "5",
+            "AP": "0",
+            "D": "1",
+            "description": "",
+        }
+    )
+    equal_profile = equal_strength_weapon.profiles["default"]
+    equal_wound = equal_profile._wound_target_with_tracking(
+        defender,
+        attacker.models[0],
+        {},
+        roll_value=4,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert not any("REACTIVE IMPACT DAMPENERS" in str(m) for m in list(equal_wound.get("modifiers", []) or []))
+
+
+def test_reactive_impact_dampeners_queues_and_applies_in_fight_phase():
+    game, tau_player, _enemy_player, tau_army, enemy_army = _build_game()
+    defender = _make_unit(
+        "Broadside Battlesuits",
+        keywords=["INFANTRY", "BATTLESUIT"],
+        faction_keywords=["T'AU EMPIRE"],
+        wounds="6",
+    )
+    attacker = _make_unit(
+        "Enemy Fighters",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+        wounds="6",
+    )
+    tau_army.add_unit(defender)
+    enemy_army.add_unit(attacker)
+    _deploy_unit(game, defender, 10.0, 10.0)
+    _deploy_unit(game, attacker, 16.0, 10.0)
+
+    _set_phase(game, tau_player, "FIGHT_PHASE", 0)
+    game.event_system.publish("fight_targets_selected", attacking_unit=attacker, target_units=[defender])
+    pending = [
+        r for r in list(tau_player.stratagems.get_pending_reactions() or [])
+        if str(r.get("stratagem", "") or "").strip().upper() == "REACTIVE IMPACT DAMPENERS"
+    ]
+    assert len(pending) == 1
+
+    ok = tau_player.stratagems.use(
+        "REACTIVE IMPACT DAMPENERS",
+        unit=defender,
+        attacking_unit=attacker,
+        phase_name="Fight phase",
+        dequeue=True,
+    )
+    assert ok
+    assert int(tau_player.command_points or 0) == 9
+
+    melee_weapon = Wargear(
+        {
+            "name": "Test Blade",
+            "type": "Melee",
+            "range": "Melee",
+            "A": "1",
+            "BS_WS": "3+",
+            "S": "6",
+            "AP": "0",
+            "D": "1",
+            "description": "",
+        }
+    )
+    melee_profile = melee_weapon.profiles["default"]
+    melee_wound = melee_profile._wound_target_with_tracking(
+        defender,
+        attacker.models[0],
+        {},
+        roll_value=4,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert any("REACTIVE IMPACT DAMPENERS" in str(m) for m in list(melee_wound.get("modifiers", []) or []))
+
+
+def test_reactive_impact_dampeners_rejects_non_battlesuit_target():
+    game, tau_player, enemy_player, tau_army, enemy_army = _build_game()
+    defender = _make_unit(
+        "Strike Team",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+        wounds="6",
+    )
+    attacker = _make_unit(
+        "Enemy Shooters",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+        wounds="6",
+    )
+    tau_army.add_unit(defender)
+    enemy_army.add_unit(attacker)
+    _deploy_unit(game, defender, 10.0, 10.0)
+    _deploy_unit(game, attacker, 16.0, 10.0)
+
+    _set_phase(game, enemy_player, "SHOOTING_PHASE", 1)
+    blocked = tau_player.stratagems.use(
+        "REACTIVE IMPACT DAMPENERS",
+        unit=defender,
+        attacking_unit=attacker,
+        target_units=[defender],
+        phase_name="Shooting phase",
+    )
+    assert not blocked
+    assert int(tau_player.command_points or 0) == 10
+
+
 def test_experimental_weaponry_rerolls_attack_count_dice_for_ranged_weapons():
     game, tau_player, _enemy_player, tau_army, enemy_army = _build_game()
     shooter = _make_unit(
@@ -560,3 +849,19 @@ def test_threat_assessment_analyser_descriptor_registered():
     assert desc.name == "Threat Assessment Analyser"
     assert desc.effect == "ranged_keyword_choice_with_optional_hazardous"
     assert bool(desc.effect_params.get("choices", {}).get("all", {}).get("grant_hazardous", False)) is True
+
+
+def test_neuroweb_system_jammer_descriptor_registered():
+    desc = get_stratagem_tool_descriptor(stratagem_id="000009984007")
+    assert desc is not None
+    assert desc.name == "Neuroweb System Jammer"
+    assert desc.effect == "ranged_targeting_distance_cap"
+    assert int(desc.effect_params.get("max_targeting_distance", 0) or 0) == 18
+
+
+def test_reactive_impact_dampeners_descriptor_registered():
+    desc = get_stratagem_tool_descriptor(stratagem_id="000009984003")
+    assert desc is not None
+    assert desc.name == "Reactive Impact Dampeners"
+    assert desc.effect == "defensive_wound_penalty_if_strength_gt_toughness"
+    assert str(desc.effect_params.get("condition", "")).lower() == "attacker_strength_greater_than_target_toughness"

@@ -74,6 +74,16 @@ class TauEmpireStratagemMixin:
             return False
         return self._tau_has_any_keyword(root, "BATTLESUIT")
 
+    def _is_tau_crisis_unit(self, unit: Any) -> bool:
+        root = self._tau_root(unit)
+        if root is None:
+            return False
+        if not self._is_tau_empire_unit(root):
+            return False
+        if self._tau_has_any_keyword(root, "CRISIS"):
+            return True
+        return "CRISIS" in str(getattr(root, "name", "") or "").strip().upper()
+
     @staticmethod
     def _tau_is_alive(unit: Any) -> bool:
         if unit is None:
@@ -389,6 +399,220 @@ class TauEmpireStratagemMixin:
             out.append(root)
         return sorted(out, key=self._tau_sort_key)
 
+    def _tau_neuroweb_system_jammer_candidates(
+        self,
+        *,
+        attacking_unit: Any = None,
+        target_units: Any = None,
+    ) -> list[Any]:
+        if not self._is_tau_experimental_prototype_cadre_detachment():
+            return []
+        if attacking_unit is not None:
+            attacker_root = self._tau_root(attacking_unit)
+            if attacker_root is None:
+                return []
+            if self._tau_owned_by_player(attacker_root, self.player):
+                return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._tau_root(unit)
+            if root is None:
+                continue
+            uid = self._tau_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._tau_owned_by_player(root, self.player):
+                continue
+            if not self._tau_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_tau_crisis_unit(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._tau_sort_key)
+
+    def _tau_reactive_impact_dampeners_candidates(
+        self,
+        *,
+        attacking_unit: Any = None,
+        target_units: Any = None,
+    ) -> list[Any]:
+        if not self._is_tau_experimental_prototype_cadre_detachment():
+            return []
+        if attacking_unit is not None:
+            attacker_root = self._tau_root(attacking_unit)
+            if attacker_root is None:
+                return []
+            if self._tau_owned_by_player(attacker_root, self.player):
+                return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._tau_root(unit)
+            if root is None:
+                continue
+            uid = self._tau_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._tau_owned_by_player(root, self.player):
+                continue
+            if not self._tau_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_tau_battlesuit_unit(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._tau_sort_key)
+
+    def _queue_tau_experimental_prototype_shooting_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: Any,
+    ) -> None:
+        if attacking_unit is None:
+            return
+        if not self._is_tau_experimental_prototype_cadre_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "SHOOTING_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+
+        # NEUROWEB SYSTEM JAMMER
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("NEUROWEB SYSTEM JAMMER")
+        if stratagem is not None:
+            if int(getattr(self.player, "command_points", 0) or 0) >= int(getattr(stratagem, "cp_cost", 0) or 0):
+                if str(getattr(stratagem, "name", "") or "").strip().upper() not in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+                    candidates = self._tau_neuroweb_system_jammer_candidates(
+                        attacking_unit=attacking_unit,
+                        target_units=target_units,
+                    )
+                    if candidates:
+                        already = False
+                        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                            if (
+                                reaction.get("event") == "shooting_targets_selected"
+                                and str(reaction.get("stratagem", "") or "").strip().upper() == str(getattr(stratagem, "name", "") or "").strip().upper()
+                                and reaction.get("attacking_unit") is attacking_unit
+                            ):
+                                already = True
+                                break
+                        if not already:
+                            payload = {
+                                "event": "shooting_targets_selected",
+                                "phase_name": "Shooting phase",
+                                "stratagem": stratagem.name,
+                                "cp_cost": stratagem.cp_cost,
+                                "attacking_unit": attacking_unit,
+                                "target_units": list(target_units or []),
+                                "candidates": candidates,
+                            }
+                            if len(candidates) == 1:
+                                payload["target_unit"] = candidates[0]
+                            queue_reaction = getattr(self, "_queue_reaction", None)
+                            if callable(queue_reaction):
+                                queue_reaction(payload)
+
+        # REACTIVE IMPACT DAMPENERS
+        reactive = getattr(self, "get_by_name", lambda _name: None)("REACTIVE IMPACT DAMPENERS")
+        if reactive is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(reactive, "cp_cost", 0) or 0):
+            return
+        if str(getattr(reactive, "name", "") or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        reactive_candidates = self._tau_reactive_impact_dampeners_candidates(
+            attacking_unit=attacking_unit,
+            target_units=target_units,
+        )
+        if not reactive_candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                reaction.get("event") == "shooting_targets_selected"
+                and str(reaction.get("stratagem", "") or "").strip().upper() == str(getattr(reactive, "name", "") or "").strip().upper()
+                and reaction.get("attacking_unit") is attacking_unit
+            ):
+                return
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": reactive.name,
+            "cp_cost": reactive.cp_cost,
+            "attacking_unit": attacking_unit,
+            "target_units": list(target_units or []),
+            "candidates": reactive_candidates,
+        }
+        if len(reactive_candidates) == 1:
+            payload["target_unit"] = reactive_candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload)
+
+    def _queue_tau_experimental_prototype_fight_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: Any,
+    ) -> None:
+        if attacking_unit is None:
+            return
+        if not self._is_tau_experimental_prototype_cadre_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "FIGHT_PHASE":
+            return
+        attacker_root = self._tau_root(attacking_unit)
+        if attacker_root is None:
+            return
+        if self._tau_owned_by_player(attacker_root, self.player):
+            return
+
+        reactive = getattr(self, "get_by_name", lambda _name: None)("REACTIVE IMPACT DAMPENERS")
+        if reactive is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(reactive, "cp_cost", 0) or 0):
+            return
+        if str(getattr(reactive, "name", "") or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        reactive_candidates = self._tau_reactive_impact_dampeners_candidates(
+            attacking_unit=attacking_unit,
+            target_units=target_units,
+        )
+        if not reactive_candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                reaction.get("event") == "fight_targets_selected"
+                and str(reaction.get("stratagem", "") or "").strip().upper() == str(getattr(reactive, "name", "") or "").strip().upper()
+                and reaction.get("attacking_unit") is attacking_unit
+            ):
+                return
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": reactive.name,
+            "cp_cost": reactive.cp_cost,
+            "attacking_unit": attacking_unit,
+            "target_units": list(target_units or []),
+            "candidates": reactive_candidates,
+        }
+        if len(reactive_candidates) == 1:
+            payload["target_unit"] = reactive_candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload)
+
     @staticmethod
     def _tau_parse_experimental_ammunition_mode(raw_mode: Any) -> Optional[str]:
         mode = raw_mode
@@ -507,6 +731,10 @@ class TauEmpireStratagemMixin:
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
         if name_u == "AUTOMATED REPAIR DRONES":
             return self._use_tau_automated_repair_drones(stratagem, **kwargs)
+        if name_u == "REACTIVE IMPACT DAMPENERS":
+            return self._use_tau_reactive_impact_dampeners(stratagem, **kwargs)
+        if name_u == "NEUROWEB SYSTEM JAMMER":
+            return self._use_tau_neuroweb_system_jammer(stratagem, **kwargs)
         if name_u == "EXPERIMENTAL WEAPONRY":
             return self._use_tau_experimental_weaponry(stratagem, **kwargs)
         if name_u == "EXPERIMENTAL AMMUNITION":
@@ -514,6 +742,194 @@ class TauEmpireStratagemMixin:
         if name_u == "THREAT ASSESSMENT ANALYSER":
             return self._use_tau_threat_assessment_analyser(stratagem, **kwargs)
         return None
+
+    def _use_tau_reactive_impact_dampeners(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit") or kwargs.get("enemy_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        target_units = list(kwargs.get("target_units") or [])
+
+        if target_unit is None or attacking_unit is None or not candidates:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != str(getattr(stratagem, "name", "") or "").strip().upper():
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if attacking_unit is None:
+                    attacking_unit = reaction.get("attacking_unit") or reaction.get("enemy_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not target_units:
+                    target_units = list(reaction.get("target_units") or [])
+                break
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: REACTIVE IMPACT DAMPENERS: no target unit provided")
+            return False
+
+        root = self._tau_root(target_unit)
+        if root is None:
+            return False
+        if not self._tau_owned_by_player(root, self.player):
+            logger.error("ERROR: REACTIVE IMPACT DAMPENERS: target unit is not yours")
+            return False
+        if not self._tau_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_tau_battlesuit_unit(root):
+            logger.error("ERROR: REACTIVE IMPACT DAMPENERS: target must be a T'AU EMPIRE BATTLESUIT unit")
+            return False
+
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: REACTIVE IMPACT DAMPENERS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if phase_name == "shooting phase" and active_player is self.player:
+            logger.error("ERROR: REACTIVE IMPACT DAMPENERS: not opponent's Shooting phase")
+            return False
+
+        attacker_root = self._tau_root(attacking_unit)
+        if attacker_root is None:
+            logger.error("ERROR: REACTIVE IMPACT DAMPENERS: missing attacking unit context")
+            return False
+        if self._tau_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: REACTIVE IMPACT DAMPENERS: attacker is not an enemy unit")
+            return False
+
+        eligible = candidates or self._tau_reactive_impact_dampeners_candidates(
+            attacking_unit=attacker_root,
+            target_units=target_units,
+        )
+        if not eligible or not self._tau_unit_in_candidates(root, eligible):
+            logger.error(
+                "ERROR: REACTIVE IMPACT DAMPENERS: target must be one of the attacking unit's selected targets"
+            )
+            return False
+        phase_label = "Shooting phase" if phase_name == "shooting phase" else "Fight phase"
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name=phase_label):
+            logger.error("ERROR: REACTIVE IMPACT DAMPENERS: cannot be used in current state")
+            return False
+        if not self._tau_spend_cp(stratagem, target_unit=root):
+            return False
+
+        phase_key_fn = getattr(self, "_phase_key_from_name", None)
+        phase_key = phase_key_fn(phase_name) if callable(phase_key_fn) else ""
+        if not phase_key:
+            phase_key = "SHOOTING_PHASE" if phase_name == "shooting phase" else "FIGHT_PHASE"
+        entry = {
+            "value": 1,
+            "attack_type": "any",
+            "expires_phase": str(phase_key),
+            "source": str(getattr(stratagem, "name", "") or "REACTIVE IMPACT DAMPENERS"),
+            "requires_strength_gt_toughness": True,
+        }
+        append_defensive_effect = getattr(self, "_append_defensive_effect", None)
+        if callable(append_defensive_effect):
+            append_defensive_effect(root, "defensive_wound_mods", entry)
+        else:
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            items = list(sr.get("defensive_wound_mods", []) or [])
+            items.append(entry)
+            sr["defensive_wound_mods"] = items
+            root.special_rules = sr
+
+        self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: REACTIVE IMPACT DAMPENERS: %s gains conditional -1 to wound this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_tau_neuroweb_system_jammer(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit") or kwargs.get("enemy_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        target_units = list(kwargs.get("target_units") or [])
+
+        if target_unit is None or attacking_unit is None or not candidates:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != str(getattr(stratagem, "name", "") or "").strip().upper():
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if attacking_unit is None:
+                    attacking_unit = reaction.get("attacking_unit") or reaction.get("enemy_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not target_units:
+                    target_units = list(reaction.get("target_units") or [])
+                break
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: NEUROWEB SYSTEM JAMMER: no target unit provided")
+            return False
+
+        root = self._tau_root(target_unit)
+        if root is None:
+            return False
+        if not self._tau_owned_by_player(root, self.player):
+            logger.error("ERROR: NEUROWEB SYSTEM JAMMER: target unit is not yours")
+            return False
+        if not self._tau_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_tau_crisis_unit(root):
+            logger.error("ERROR: NEUROWEB SYSTEM JAMMER: target must be a T'AU EMPIRE CRISIS unit")
+            return False
+
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name != "shooting phase":
+            logger.error("ERROR: NEUROWEB SYSTEM JAMMER: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: NEUROWEB SYSTEM JAMMER: not opponent's Shooting phase")
+            return False
+
+        attacker_root = self._tau_root(attacking_unit)
+        if attacker_root is None:
+            logger.error("ERROR: NEUROWEB SYSTEM JAMMER: missing attacking unit context")
+            return False
+        if self._tau_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: NEUROWEB SYSTEM JAMMER: attacker is not an enemy unit")
+            return False
+
+        eligible = candidates or self._tau_neuroweb_system_jammer_candidates(
+            attacking_unit=attacker_root,
+            target_units=target_units,
+        )
+        if not eligible or not self._tau_unit_in_candidates(root, eligible):
+            logger.error("ERROR: NEUROWEB SYSTEM JAMMER: target must be one of the attacking unit's selected targets")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name="Shooting phase"):
+            logger.error("ERROR: NEUROWEB SYSTEM JAMMER: cannot be used in current state")
+            return False
+        if not self._tau_spend_cp(stratagem, target_unit=root):
+            return False
+
+        owner_id = str(getattr(self.player, "id", "") or get_entity_id(self.player) or "")
+        current_turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        source_name = str(getattr(stratagem, "name", "") or "NEUROWEB SYSTEM JAMMER")
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["tau_neuroweb_system_jammer_active"] = True
+        sr["tau_neuroweb_system_jammer_targeting_range"] = 18
+        sr["tau_neuroweb_system_jammer_expires_phase"] = "SHOOTING_PHASE"
+        sr["tau_neuroweb_system_jammer_turn_owner"] = owner_id
+        sr["tau_neuroweb_system_jammer_turn"] = int(current_turn)
+        sr["tau_neuroweb_system_jammer_source"] = source_name
+        root.special_rules = sr
+
+        self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: NEUROWEB SYSTEM JAMMER: %s can only be targeted by ranged attacks from within 18\" until end of phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
 
     def _use_tau_experimental_weaponry(self, stratagem: Any, **kwargs) -> bool:
         target_unit = kwargs.get("unit") or kwargs.get("target_unit")
