@@ -378,6 +378,37 @@ class ThousandSonsStratagemMixin:
             out.append(root)
         return sorted(out, key=self._ts_sort_key)
 
+    def _ts_unwavering_phalanx_candidates(
+        self,
+        *,
+        attacking_unit: Any = None,
+    ) -> list[Any]:
+        if not self._is_thousand_sons_rubricae_phalanx_detachment():
+            return []
+        attacker_root = self._ts_root(attacking_unit)
+        if attacker_root is None:
+            return []
+        if self._ts_owned_by_player(attacker_root, self.player):
+            return []
+        if not self._ts_on_battlefield(attacker_root, require_targetable=False):
+            return []
+        game = getattr(self, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        if game_map is None or not hasattr(game_map, "is_within_engagement_range"):
+            return []
+
+        out: list[Any] = []
+        for root in self._ts_rubricae_battlefield_candidates(require_fell_back=False):
+            if not self._is_rubric_marines_unit(root):
+                continue
+            try:
+                if not bool(game_map.is_within_engagement_range(root, attacker_root)):
+                    continue
+            except (AttributeError, TypeError, ValueError):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ts_sort_key)
+
     def _ts_revenge_of_the_rubricae_candidates(
         self,
         *,
@@ -484,6 +515,74 @@ class ThousandSonsStratagemMixin:
                 "candidates": [root],
             }
         )
+
+    def _queue_thousand_sons_rubricae_phalanx_charge_reactions(
+        self,
+        *,
+        charging_unit: Any = None,
+        action: str = "",
+    ) -> None:
+        if str(action or "").strip().lower() != "charge":
+            return
+        if not self._is_thousand_sons_rubricae_phalanx_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "CHARGE_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+
+        attacker_root = self._ts_root(charging_unit)
+        if attacker_root is None or self._ts_owned_by_player(attacker_root, self.player):
+            return
+        if not self._ts_on_battlefield(attacker_root, require_targetable=False):
+            return
+
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("UNWAVERING PHALANX")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._ts_unwavering_phalanx_candidates(attacking_unit=attacker_root)
+        if not candidates:
+            return
+        if self._ts_reaction_exists(
+            "unit_move_ended",
+            stratagem.name,
+            enemy_unit=attacker_root,
+        ):
+            return
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            phase_name="Charge phase",
+            attacking_unit=attacker_root,
+            enemy_unit=attacker_root,
+        ):
+            return
+
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Charge phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": attacker_root,
+            "attacking_unit": attacker_root,
+            "action": "charge",
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+            payload["unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload)
 
     def _queue_thousand_sons_rubricae_phalanx_shooting_target_reactions(
         self,
@@ -764,6 +863,8 @@ class ThousandSonsStratagemMixin:
             return self._use_thousand_sons_infernal_fusillade(stratagem, **kwargs)
         if name_u == "IMPLACABLE GUARDIANS":
             return self._use_thousand_sons_implacable_guardians(stratagem, **kwargs)
+        if name_u == "UNWAVERING PHALANX":
+            return self._use_thousand_sons_unwavering_phalanx(stratagem, **kwargs)
         if name_u == "REVENGE OF THE RUBRICAE":
             return self._use_thousand_sons_revenge_of_the_rubricae(stratagem, **kwargs)
         return None
@@ -1073,6 +1174,99 @@ class ThousandSonsStratagemMixin:
         self._ts_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
         logger.info(
             "INFO: IMPLACABLE GUARDIANS: %s reduces incoming Damage by 1 this phase (excluding attacks allocated to PSYKER models).",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_thousand_sons_unwavering_phalanx(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit") or kwargs.get("enemy_unit")
+        candidates = list(kwargs.get("candidates") or [])
+
+        if target_unit is None or attacking_unit is None or not candidates:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != str(getattr(stratagem, "name", "") or "").strip().upper():
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if attacking_unit is None:
+                    attacking_unit = reaction.get("attacking_unit") or reaction.get("enemy_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                break
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: UNWAVERING PHALANX: no target unit provided")
+            return False
+
+        root = self._ts_root(target_unit)
+        if root is None:
+            return False
+        if not self._ts_owned_by_player(root, self.player):
+            logger.error("ERROR: UNWAVERING PHALANX: target unit is not yours")
+            return False
+        if not self._ts_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_rubric_marines_unit(root):
+            logger.error("ERROR: UNWAVERING PHALANX: target must be a RUBRIC MARINES unit")
+            return False
+
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name != "charge phase":
+            logger.error("ERROR: UNWAVERING PHALANX: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: UNWAVERING PHALANX: not opponent's Charge phase")
+            return False
+
+        attacker_root = self._ts_root(attacking_unit)
+        if attacker_root is None:
+            logger.error("ERROR: UNWAVERING PHALANX: missing attacking unit context")
+            return False
+        if self._ts_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: UNWAVERING PHALANX: attacker is not an enemy unit")
+            return False
+
+        eligible = candidates or self._ts_unwavering_phalanx_candidates(attacking_unit=attacker_root)
+        if not eligible or not self._ts_unit_in_candidates(root, eligible):
+            logger.error("ERROR: UNWAVERING PHALANX: target must be within Engagement Range of the charging unit")
+            return False
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=root,
+            phase_name="Charge phase",
+            attacking_unit=attacker_root,
+            enemy_unit=attacker_root,
+        ):
+            logger.error("ERROR: UNWAVERING PHALANX: cannot be used in current state")
+            return False
+        if not self._ts_spend_cp(stratagem, target_unit=root):
+            return False
+
+        entry = {
+            "value": 1,
+            "attack_type": "any",
+            "expires_phase": "FIGHT_PHASE",
+            "source": str(getattr(stratagem, "name", "") or "UNWAVERING PHALANX"),
+        }
+        append_defensive_effect = getattr(self, "_append_defensive_effect", None)
+        if callable(append_defensive_effect):
+            append_defensive_effect(root, "defensive_wound_mods", entry)
+        else:
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            items = list(sr.get("defensive_wound_mods", []) or [])
+            items.append(entry)
+            sr["defensive_wound_mods"] = items
+            root.special_rules = sr
+
+        self._ts_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: UNWAVERING PHALANX: %s imposes -1 to wound against incoming attacks in the Fight phase this turn.",
             getattr(root, "name", "Unit"),
         )
         return True

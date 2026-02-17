@@ -8251,6 +8251,7 @@ def _stratagem_support(
         "ARDENT AUTOMATA": "Movement phase reaction after a RUBRICAE unit Falls Back: selected unit can shoot and declare a charge this turn despite Falling Back.",
         "IMPLACABLE GUARDIANS": "Opponent Shooting phase defensive reaction after enemy targets are selected: selected RUBRIC MARINES PSYKER unit reduces the Damage characteristic of incoming attacks by 1 this phase, excluding attacks allocated to PSYKER models.",
         "INFERNAL FUSILLADE": "Shooting phase: selected THOUSAND SONS PSYKER unit not yet selected to shoot has inferno bolt pistol/boltguns/combi-bolters/combi-weapons gain [PSYCHIC] and set Strength 5 until end of phase.",
+        "UNWAVERING PHALANX": "Opponent Charge phase reaction after an enemy unit ends a Charge move: selected RUBRIC MARINES unit within Engagement Range of that enemy imposes -1 to Wound rolls for attacks that target it until end of turn.",
         "ADRENAL SURGE": "Fight phase: selected TYRANIDS unit gains melee critical hits on 5+ this phase; can target up to two eligible TYRANIDS units when both are within Synapse Range.",
         "DEATH FRENZY": "Fight phase defensive reaction after enemy targets are selected: selected TYRANIDS unit gains melee fight-on-death on 4+ after the attacker finishes its attacks this phase.",
         "ENDLESS SWARM": "Command phase: selected ENDLESS MULTITUDE unit with destroyed models returns up to D3+3 destroyed models, or target up to two such units when both are within Synapse Range.",

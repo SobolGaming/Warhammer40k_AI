@@ -417,6 +417,104 @@ def test_revenge_of_the_rubricae_queues_after_attacker_resolves_and_sets_reactiv
     assert queued_kwargs.get("target_unit") is attacker
 
 
+def test_unwavering_phalanx_queues_after_enemy_charge_and_applies_wound_penalty():
+    game, ts_player, enemy_player, ts_army, enemy_army = _build_game()
+    defender = _make_unit(
+        "Rubric Marines",
+        keywords=["INFANTRY", "RUBRICAE"],
+        faction_keywords=["THOUSAND SONS"],
+    )
+    far_defender = _make_unit(
+        "Rubric Marines Far",
+        keywords=["INFANTRY", "RUBRICAE"],
+        faction_keywords=["THOUSAND SONS"],
+    )
+    attacker = _make_unit(
+        "Enemy Chargers",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+    )
+    ts_army.add_unit(defender)
+    ts_army.add_unit(far_defender)
+    enemy_army.add_unit(attacker)
+    _deploy_unit(game, defender, 10.0, 10.0)
+    _deploy_unit(game, far_defender, 24.0, 24.0)
+    _deploy_unit(game, attacker, 12.0, 10.0)
+
+    _set_phase(game, enemy_player, "CHARGE_PHASE", 1)
+    game.event_system.publish("unit_move_ended", unit=attacker, action="charge")
+    pending = [
+        r for r in list(ts_player.stratagems.get_pending_reactions() or [])
+        if str(r.get("stratagem", "") or "").strip().upper() == "UNWAVERING PHALANX"
+    ]
+    assert len(pending) == 1
+    candidates = list(pending[0].get("candidates") or [])
+    assert defender in candidates
+    assert far_defender not in candidates
+
+    ok = ts_player.stratagems.use(
+        "UNWAVERING PHALANX",
+        unit=defender,
+        attacking_unit=attacker,
+        dequeue=True,
+    )
+    assert ok
+    assert int(ts_player.command_points or 0) == 9
+
+    _set_phase(game, enemy_player, "FIGHT_PHASE", 1)
+    profile = Wargear(
+        {
+            "name": "Enemy Blade",
+            "type": "Melee",
+            "range": "Melee",
+            "A": "1",
+            "BS_WS": "3+",
+            "S": "4",
+            "AP": "0",
+            "D": "1",
+            "description": "",
+        }
+    ).profiles["default"]
+    wound_result = profile._wound_target_with_tracking(
+        defender,
+        attacker.models[0],
+        {},
+        roll_value=4,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert bool(wound_result.get("wound")) is False
+    assert any("UNWAVERING PHALANX" in str(m) for m in list(wound_result.get("modifiers", []) or []))
+
+
+def test_unwavering_phalanx_rejects_target_not_in_engagement_range_of_charger():
+    game, ts_player, enemy_player, ts_army, enemy_army = _build_game()
+    defender = _make_unit(
+        "Rubric Marines",
+        keywords=["INFANTRY", "RUBRICAE"],
+        faction_keywords=["THOUSAND SONS"],
+    )
+    attacker = _make_unit(
+        "Enemy Chargers",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+    )
+    ts_army.add_unit(defender)
+    enemy_army.add_unit(attacker)
+    _deploy_unit(game, defender, 10.0, 10.0)
+    _deploy_unit(game, attacker, 20.0, 10.0)
+
+    _set_phase(game, enemy_player, "CHARGE_PHASE", 1)
+    blocked = ts_player.stratagems.use(
+        "UNWAVERING PHALANX",
+        unit=defender,
+        attacking_unit=attacker,
+        phase_name="Charge phase",
+    )
+    assert not blocked
+    assert int(ts_player.command_points or 0) == 10
+
+
 def test_rubricae_phalanx_stratagem_descriptors_registered():
     ardent = get_stratagem_tool_descriptor(stratagem_id="000010206002")
     assert ardent is not None
@@ -446,3 +544,9 @@ def test_rubricae_phalanx_stratagem_descriptors_registered():
     assert guardians.name == "Implacable Guardians"
     assert guardians.effect == "reduce_damage_allocated_except_psyker_models"
     assert str(guardians.effect_params.get("exclude_allocated_model_keyword", "") or "") == "PSYKER"
+
+    unwavering = get_stratagem_tool_descriptor(stratagem_id="000010206007")
+    assert unwavering is not None
+    assert unwavering.name == "Unwavering Phalanx"
+    assert unwavering.effect == "defensive_wound_penalty"
+    assert int(unwavering.effect_params.get("wound_roll_modifier", 0) or 0) == -1

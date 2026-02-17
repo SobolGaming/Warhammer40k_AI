@@ -1594,6 +1594,19 @@ _RUBRICAE_PHALANX_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "attack_type": "any",
         },
     ),
+    "000010206007": StratagemToolDescriptor(
+        stratagem_id="000010206007",
+        name="Unwavering Phalanx",
+        timing="opponent_charge_phase_after_enemy_charge_move_end",
+        target="rubric_marines_unit_within_engagement_range_of_charger",
+        duration="until_end_of_turn",
+        effect="defensive_wound_penalty",
+        cp_cost=1,
+        effect_params={
+            "wound_roll_modifier": -1,
+            "attack_type": "any",
+        },
+    ),
 }
 
 _RUBRICAE_PHALANX_STRATAGEM_BY_NAME = {

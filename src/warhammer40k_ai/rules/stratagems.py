@@ -45,6 +45,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "RAPID REGENERATION",
     "REACTIVE IMPACT DAMPENERS",
     "REVENGE OF THE RUBRICAE",
+    "UNWAVERING PHALANX",
     "THREAT ASSESSMENT ANALYSER",
     "ANTI-GRAV REPULSION",
     "ANTI‑GRAV REPULSION",
@@ -285,6 +286,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "RAPID REGENERATION",
     "REACTIVE IMPACT DAMPENERS",
     "REVENGE OF THE RUBRICAE",
+    "UNWAVERING PHALANX",
     "SKULLS FOR THE SKULL THRONE!",
     "SMOKESCREEN",
     "SKYBORNE SANCTUARY",
@@ -1282,6 +1284,7 @@ class StratagemManager(
             "TANK SHOCK",
             "HEROIC INTERVENTION",
             "ARDENT AUTOMATA",
+            "UNWAVERING PHALANX",
             "FEIGNED RETREAT",
             "FEIGNED WEAKNESS",
             "CUT DOWN THE WEAK",
@@ -2565,6 +2568,21 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires opponent Shooting phase target-selection trigger with an enemy unit that selected one of your RUBRIC MARINES PSYKER units as a target"
             return result
+        if name_u == "UNWAVERING PHALANX":
+            attacking_unit = (
+                context.get("attacking_unit")
+                or context.get("attacker_unit")
+                or context.get("enemy_unit")
+            )
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._ts_unwavering_phalanx_candidates(attacking_unit=attacking_unit)
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires opponent Charge phase trigger after an enemy unit ends a Charge move with one of your RUBRIC MARINES units in Engagement Range"
+            return result
         if name_u == "REVENGE OF THE RUBRICAE":
             attacking_unit = (
                 context.get("attacking_unit")
@@ -2707,6 +2725,7 @@ class StratagemManager(
             "RAPID REGENERATION": "Target: TYRANIDS unit selected as an enemy unit's attack target in Shooting/Fight; gains Feel No Pain 6+ (or 5+ while within Synapse Range) this phase",
             "REACTIVE IMPACT DAMPENERS": "Target: T'AU EMPIRE BATTLESUIT unit selected as an enemy attack target; incoming attacks suffer -1 to wound while attacker Strength is greater than target Toughness this phase",
             "REVENGE OF THE RUBRICAE": "Target: your RUBRICAE unit within 6\" of a destroyed THOUSAND SONS PSYKER model; after the enemy unit shoots, it can shoot reactively into that attacker",
+            "UNWAVERING PHALANX": "Target: your RUBRIC MARINES unit within Engagement Range of an enemy unit that just ended a Charge move; attacks targeting it suffer -1 to wound until end of turn",
             "THREAT ASSESSMENT ANALYSER": "Target: T'AU EMPIRE unit not yet selected to shoot; choose Sustained Hits 1 or Lethal Hits, or gain both plus [HAZARDOUS] (cannot also target with EXPERIMENTAL AMMUNITION this phase)",
             "ARMOUR OF CONTEMPT": "Target: ADEPTUS ASTARTES unit",
             "DEATHLESS DUTY": "Target: DEATH COMPANY unit",
@@ -5758,6 +5777,7 @@ class StratagemManager(
         self._maybe_queue_tank_shock(unit, action)
         self._maybe_queue_heroic_intervention(unit, action)
         self._queue_thousand_sons_rubricae_phalanx_fall_back_reactions(unit=unit, action=action)
+        self._queue_thousand_sons_rubricae_phalanx_charge_reactions(charging_unit=unit, action=action)
         self._maybe_queue_feigned_retreat(unit, action)
         self._maybe_queue_feigned_weakness(unit, action)
         self._maybe_queue_red_wrath(unit, action)
