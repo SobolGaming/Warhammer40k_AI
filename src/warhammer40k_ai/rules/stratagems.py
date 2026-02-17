@@ -126,6 +126,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SUMMONED BY SLAUGHTER",
     "SWIFT AS THE EAGLE",
     "TACTICAL FOIL",
+    "THUNDERSTOMP",
     "TERRIFYING SPECTACLE",
     "TANK SHOCK",
     "THE FOE FORESEEN",
@@ -151,6 +152,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ORKS IS NEVER BEATEN",
     "ERE WE GO",
     "MOB RULE",
+    "RUN THEM THROUGH!",
     "CAREEN!",
     "'ARD AS NAILS",
     "\u2019ARD AS NAILS",
@@ -1513,6 +1515,8 @@ class StratagemManager(
             "ANTI‑GRAV REPULSION",
             "CLOUDSTRIKE",
             "FULL-THROTTLE ASSAULT",
+            "RUN THEM THROUGH!",
+            "THUNDERSTOMP",
             "DAEMONIC STRENGTH",
             "IMMORTAL FURY",
             "LIGHTNING-FAST REACTIONS",
@@ -2479,6 +2483,22 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires IMPERIAL KNIGHTS unit on battlefield that has not been selected to move"
             return result
+        if name_u == "RUN THEM THROUGH!":
+            if self._imperial_knights_run_them_through_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires IMPERIAL KNIGHTS unit on battlefield that has not been selected to fight"
+            return result
+        if name_u == "THUNDERSTOMP":
+            if self._imperial_knights_thunderstomp_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires IMPERIAL KNIGHTS model with armoured or titanic feet on battlefield that has not been selected to fight"
+            )
+            return result
         if name_u == "TACTICAL FOIL":
             enemy_unit = context.get("enemy_unit") or context.get("moving_unit")
             action = str(context.get("action", "") or "")
@@ -2927,6 +2947,8 @@ class StratagemManager(
             "VETERAN SHARPSHOOTERS": "Target: ASTRA MILITARUM unit (not shot)",
             "VOW OF RETRIBUTION": "Target: IMPERIAL KNIGHTS unit that has not been selected to shoot this phase; ranged weapons gain Lethal Hits this phase",
             "FULL TILT": "Target: IMPERIAL KNIGHTS unit that has not been selected to move this phase; +2\" Move and +2 Advance rolls this phase",
+            "RUN THEM THROUGH!": "Target: IMPERIAL KNIGHTS unit that has not been selected to fight this phase; melee weapons gain [LANCE] this phase",
+            "THUNDERSTOMP": "Target: IMPERIAL KNIGHTS model in a unit not yet selected to fight this phase; Armoured/Titanic Feet attacks set to 8/12 and AP improves by 1",
             "TACTICAL FOIL": "Target: IMPERIAL KNIGHTS unit within 9\" of enemy mover after it ends a Normal/Advance/Fall Back move; make a reactive Normal move of D6\"",
             "INEXORABLE ADVANCE": "Target: your RUBRICAE unit not yet selected to move; it ignores Move/Advance modifiers and gains ranged [ASSAULT] this turn",
             "RIGHTEOUS VENGEANCE": "Target: ADEPTA SORORITAS unit that has not fought",
@@ -4632,6 +4654,30 @@ class StratagemManager(
                             sr.pop("daemonic_fury_lance_active", None)
                             sr.pop("daemonic_fury_lance_turn_owner", None)
                             sr.pop("daemonic_fury_lance_turn", None)
+                        if isinstance(sr, dict) and sr.get("imperial_knights_run_them_through_active") is True:
+                            exp = str(sr.get("imperial_knights_run_them_through_expires_phase", "") or "").strip().upper()
+                            if not exp or exp == "FIGHT_PHASE":
+                                for key in (
+                                    "imperial_knights_run_them_through_active",
+                                    "imperial_knights_run_them_through_expires_phase",
+                                    "imperial_knights_run_them_through_turn",
+                                    "imperial_knights_run_them_through_source",
+                                ):
+                                    sr.pop(key, None)
+                        if isinstance(sr, dict) and sr.get("imperial_knights_thunderstomp_active") is True:
+                            exp = str(sr.get("imperial_knights_thunderstomp_expires_phase", "") or "").strip().upper()
+                            if not exp or exp == "FIGHT_PHASE":
+                                for key in (
+                                    "imperial_knights_thunderstomp_active",
+                                    "imperial_knights_thunderstomp_expires_phase",
+                                    "imperial_knights_thunderstomp_turn",
+                                    "imperial_knights_thunderstomp_source",
+                                    "imperial_knights_thunderstomp_model_id",
+                                    "imperial_knights_thunderstomp_armoured_feet_attacks",
+                                    "imperial_knights_thunderstomp_titanic_feet_attacks",
+                                    "imperial_knights_thunderstomp_ap_bonus",
+                                ):
+                                    sr.pop(key, None)
                         if isinstance(sr, dict) and sr.get("death_ecstasy_active") is True:
                             sr.pop("death_ecstasy_active", None)
                             sr.pop("death_ecstasy_expires_phase", None)

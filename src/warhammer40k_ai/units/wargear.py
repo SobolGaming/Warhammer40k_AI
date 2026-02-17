@@ -438,6 +438,64 @@ class WargearProfile:
             return bool(unit._weapon_name_matches([target_name], candidate))
         return self._normalize_weapon_name_key(candidate) == self._normalize_weapon_name_key(target_name)
 
+    def _imperial_knights_thunderstomp_bonus(self, attacker: 'Model') -> tuple[int, int, str]:
+        """
+        Return (attacks_set, ap_bonus, source) for THUNDERSTOMP when active.
+
+        Applies only to the selected model's Armoured/Titanic Feet melee weapons.
+        """
+        parent = getattr(self, "parent_wargear", None)
+        if parent is None:
+            return 0, 0, ""
+        is_melee = getattr(parent, "is_melee", None)
+        if not callable(is_melee) or not bool(is_melee()):
+            return 0, 0, ""
+        unit = getattr(attacker, "parent_unit", None) if attacker is not None else None
+        if unit is None:
+            return 0, 0, ""
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("imperial_knights_thunderstomp_active")):
+            return 0, 0, ""
+
+        game = None
+        try:
+            army = root.get_parent_army() if root is not None else None
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        except Exception:
+            game = None
+
+        expires_phase = str(sr.get("imperial_knights_thunderstomp_expires_phase", "") or "").strip().upper()
+        if expires_phase:
+            current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+            if current_phase and current_phase != expires_phase:
+                return 0, 0, ""
+        effect_turn = int(sr.get("imperial_knights_thunderstomp_turn", 0) or 0)
+        if effect_turn and game is not None:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+            if current_turn and current_turn != effect_turn:
+                return 0, 0, ""
+
+        selected_model_id = str(sr.get("imperial_knights_thunderstomp_model_id", "") or "")
+        if selected_model_id:
+            attacker_id = str(get_entity_id(attacker) or "")
+            if attacker_id and attacker_id != selected_model_id:
+                return 0, 0, ""
+
+        weapon_name = str(getattr(parent, "name", "") or getattr(self, "name", "") or "").replace("\u2019", "'").strip().lower()
+        if "armoured feet" in weapon_name:
+            attacks_set = int(sr.get("imperial_knights_thunderstomp_armoured_feet_attacks", 8) or 8)
+        elif "titanic feet" in weapon_name:
+            attacks_set = int(sr.get("imperial_knights_thunderstomp_titanic_feet_attacks", 12) or 12)
+        else:
+            return 0, 0, ""
+        ap_bonus = int(sr.get("imperial_knights_thunderstomp_ap_bonus", 1) or 1)
+        source = str(sr.get("imperial_knights_thunderstomp_source", "") or "THUNDERSTOMP").strip() or "THUNDERSTOMP"
+        return int(attacks_set), int(ap_bonus), source
+
     def _get_possessed_blade_state(self, attacker: 'Model') -> Optional[dict]:
         unit = getattr(attacker, "parent_unit", None)
         if unit is None:
@@ -2138,6 +2196,13 @@ class WargearProfile:
                     ap_val -= bonus
         except Exception:
             pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                _set_attacks, thunderstomp_ap_bonus, _thunderstomp_source = self._imperial_knights_thunderstomp_bonus(attacker)
+                if thunderstomp_ap_bonus:
+                    ap_val -= int(thunderstomp_ap_bonus)
+        except Exception:
+            pass
         if self.parent_wargear and self.parent_wargear.is_melee():
             unit = getattr(attacker, "parent_unit", None)
             get_bonus = getattr(unit, "get_empyric_wellspring_melee_ap_bonus", None) if unit is not None else None
@@ -3445,6 +3510,23 @@ class WargearProfile:
                 if bonus:
                     atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="enhancement:melee_attacks_add_no_extra"))
                     attack_result.attacks_special_modifiers.append(f"Berzerker Glaive +{bonus}A (melee)")
+        except Exception:
+            pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                thunderstomp_set_attacks, _thunderstomp_ap_bonus, thunderstomp_source = self._imperial_knights_thunderstomp_bonus(attacker)
+                if thunderstomp_set_attacks:
+                    atk_mods.append(
+                        Modifier(
+                            ModifierOp.SET,
+                            int(thunderstomp_set_attacks),
+                            source="stratagem:imperial_knights_thunderstomp_attacks_set",
+                        )
+                    )
+                    source_name = str(thunderstomp_source or "THUNDERSTOMP").strip() or "THUNDERSTOMP"
+                    attack_result.attacks_special_modifiers.append(
+                        f"{source_name}: set Attacks to {int(thunderstomp_set_attacks)}"
+                    )
         except Exception:
             pass
 
@@ -10644,9 +10726,51 @@ class WargearProfile:
                                 goretrack_lance = False
             except Exception:
                 goretrack_lance = False
+            run_them_through_lance = False
+            run_them_through_source = ""
+            try:
+                attacker_unit = getattr(attacker, "parent_unit", None)
+                attacker_root = attacker_unit.get_attached_unit_root() if hasattr(attacker_unit, "get_attached_unit_root") else attacker_unit
+                sr = getattr(attacker_root, "special_rules", None) if attacker_root is not None else None
+                if isinstance(sr, dict) and sr.get("imperial_knights_run_them_through_active") is True:
+                    run_them_through_lance = True
+                    run_them_through_source = str(
+                        sr.get("imperial_knights_run_them_through_source", "") or "RUN THEM THROUGH!"
+                    ).strip() or "RUN THEM THROUGH!"
+                    exp = str(sr.get("imperial_knights_run_them_through_expires_phase", "") or "").strip().upper()
+                    if exp:
+                        try:
+                            army = attacker_root.get_parent_army() if attacker_root is not None else None
+                            game = getattr(getattr(army, "player", None), "game", None)
+                            pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+                        except Exception:
+                            pname = ""
+                        if pname and pname != exp:
+                            run_them_through_lance = False
+                    turn = int(sr.get("imperial_knights_run_them_through_turn", 0) or 0)
+                    if turn:
+                        try:
+                            army = attacker_root.get_parent_army() if attacker_root is not None else None
+                            game = getattr(getattr(army, "player", None), "game", None)
+                            current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                        except Exception:
+                            current_turn = 0
+                        if current_turn and current_turn != turn:
+                            run_them_through_lance = False
+            except Exception:
+                run_them_through_lance = False
+                run_them_through_source = ""
             bonus_lance = bool(attack_instance.get("bonus_lance"))
             bonus_lance_source = str(attack_instance.get("bonus_lance_source") or "")
-            if is_melee and (self.is_lance() or bondsman_lance or blood_tithe_lance or daemonic_fury_lance or goretrack_lance or bonus_lance):
+            if is_melee and (
+                self.is_lance()
+                or bondsman_lance
+                or blood_tithe_lance
+                or daemonic_fury_lance
+                or goretrack_lance
+                or run_them_through_lance
+                or bonus_lance
+            ):
                 charged = bool(getattr(attacker.parent_unit.round_state, "charged_this_round", False))
                 if charged:
                     dice_modifier += 1
@@ -10663,6 +10787,8 @@ class WargearProfile:
                         wound_result['modifiers'].append("+1 to wound from Lance (Daemonic Fury)")
                     elif goretrack_lance and not self.is_lance():
                         wound_result['modifiers'].append("+1 to wound from Lance (Goretrack Onslaught)")
+                    elif run_them_through_lance and not self.is_lance():
+                        wound_result['modifiers'].append(f"+1 to wound from Lance ({run_them_through_source})")
                     else:
                         wound_result['modifiers'].append("+1 to wound from Lance (charged)")
         except Exception:

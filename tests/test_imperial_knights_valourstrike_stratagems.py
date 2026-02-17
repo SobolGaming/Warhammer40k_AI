@@ -252,6 +252,168 @@ class TestImperialKnightsValourstrikeStratagems(unittest.TestCase):
         self.assertFalse(ok)
         self.assertEqual(int(ik_player.command_points), before_cp)
 
+    def test_run_them_through_grants_melee_lance_until_phase_end(self):
+        ik_player, _enemy_player, game, knight, enemy = self._setup_env(
+            phase_name="FIGHT_PHASE",
+            active_is_player=True,
+        )
+        knight.round_state.charged_this_round = True
+        weapon = Wargear(
+            {
+                "name": "Knight Blade",
+                "type": "Melee",
+                "range": "Melee",
+                "A": "2",
+                "BS_WS": "3+",
+                "S": "8",
+                "AP": "-2",
+                "D": "3",
+                "description": "",
+            }
+        )
+        profile = weapon.profiles["default"]
+
+        before = profile._wound_target_with_tracking(
+            enemy,
+            knight.models[0],
+            {},
+            roll_value=4,
+            allow_rerolls=False,
+            log_roll=False,
+        )
+        self.assertFalse(bool(before.get("wound")))
+
+        before_cp = int(ik_player.command_points)
+        ok = ik_player.stratagems.use("RUN THEM THROUGH!", unit=knight, phase_name="Fight phase")
+        self.assertTrue(ok)
+        self.assertEqual(int(ik_player.command_points), before_cp - 1)
+
+        during = profile._wound_target_with_tracking(
+            enemy,
+            knight.models[0],
+            {},
+            roll_value=4,
+            allow_rerolls=False,
+            log_roll=False,
+        )
+        self.assertTrue(bool(during.get("wound")))
+        self.assertTrue(any("RUN THEM THROUGH" in str(m or "").upper() for m in list(during.get("modifiers", []) or [])))
+
+        game.event_system.publish("phase_end", player=ik_player, phase=SimpleNamespace(name="FIGHT_PHASE"))
+        after = profile._wound_target_with_tracking(
+            enemy,
+            knight.models[0],
+            {},
+            roll_value=4,
+            allow_rerolls=False,
+            log_roll=False,
+        )
+        self.assertFalse(bool(after.get("wound")))
+
+    def test_thunderstomp_sets_feet_attacks_and_improves_ap_until_phase_end(self):
+        ik_player, _enemy_player, game, knight, enemy = self._setup_env(
+            phase_name="FIGHT_PHASE",
+            active_is_player=True,
+        )
+        armoured_feet = Wargear(
+            {
+                "name": "Armoured Feet",
+                "type": "Melee",
+                "range": "Melee",
+                "A": "4",
+                "BS_WS": "3+",
+                "S": "8",
+                "AP": "-1",
+                "D": "2",
+                "description": "",
+            }
+        )
+        titanic_feet = Wargear(
+            {
+                "name": "Titanic Feet",
+                "type": "Melee",
+                "range": "Melee",
+                "A": "6",
+                "BS_WS": "3+",
+                "S": "10",
+                "AP": "-2",
+                "D": "3",
+                "description": "",
+            }
+        )
+        non_feet = Wargear(
+            {
+                "name": "Reaper Chainsword",
+                "type": "Melee",
+                "range": "Melee",
+                "A": "3",
+                "BS_WS": "3+",
+                "S": "14",
+                "AP": "-1",
+                "D": "6",
+                "description": "",
+            }
+        )
+        armoured_profile = armoured_feet.profiles["default"]
+        titanic_profile = titanic_feet.profiles["default"]
+        non_feet_profile = non_feet.profiles["default"]
+        knight.models[0].wargear = [armoured_feet, titanic_feet, non_feet]
+
+        before_armoured_ap = int(armoured_profile.get_effective_ap(knight.models[0], enemy))
+        before_titanic_ap = int(titanic_profile.get_effective_ap(knight.models[0], enemy))
+        before_non_feet_ap = int(non_feet_profile.get_effective_ap(knight.models[0], enemy))
+
+        before_armoured = armoured_profile.attack(enemy, knight.models[0], game_map=game.map)
+        before_titanic = titanic_profile.attack(enemy, knight.models[0], game_map=game.map)
+        self.assertIsNotNone(before_armoured)
+        self.assertIsNotNone(before_titanic)
+        self.assertEqual(int(before_armoured.attacks_rolled), 4)
+        self.assertEqual(int(before_titanic.attacks_rolled), 6)
+        self.assertEqual(before_armoured_ap, -1)
+        self.assertEqual(before_titanic_ap, -2)
+        self.assertEqual(before_non_feet_ap, -1)
+
+        before_cp = int(ik_player.command_points)
+        ok = ik_player.stratagems.use(
+            "THUNDERSTOMP",
+            unit=knight,
+            model=knight.models[0],
+            phase_name="Fight phase",
+        )
+        self.assertTrue(ok)
+        self.assertEqual(int(ik_player.command_points), before_cp - 1)
+
+        during_armoured = armoured_profile.attack(enemy, knight.models[0], game_map=game.map)
+        during_titanic = titanic_profile.attack(enemy, knight.models[0], game_map=game.map)
+        during_non_feet = non_feet_profile.attack(enemy, knight.models[0], game_map=game.map)
+        self.assertIsNotNone(during_armoured)
+        self.assertIsNotNone(during_titanic)
+        self.assertIsNotNone(during_non_feet)
+        self.assertEqual(int(during_armoured.attacks_rolled), 8)
+        self.assertEqual(int(during_titanic.attacks_rolled), 12)
+        self.assertEqual(int(during_non_feet.attacks_rolled), 3)
+        self.assertEqual(int(armoured_profile.get_effective_ap(knight.models[0], enemy)), -2)
+        self.assertEqual(int(titanic_profile.get_effective_ap(knight.models[0], enemy)), -3)
+        self.assertEqual(int(non_feet_profile.get_effective_ap(knight.models[0], enemy)), -1)
+
+        game.event_system.publish("phase_end", player=ik_player, phase=SimpleNamespace(name="FIGHT_PHASE"))
+        after_armoured = armoured_profile.attack(enemy, knight.models[0], game_map=game.map)
+        self.assertIsNotNone(after_armoured)
+        self.assertEqual(int(after_armoured.attacks_rolled), 4)
+        self.assertEqual(int(armoured_profile.get_effective_ap(knight.models[0], enemy)), -1)
+
+    def test_thunderstomp_rejects_unit_already_selected_to_fight(self):
+        ik_player, _enemy_player, _game, knight, _enemy = self._setup_env(
+            phase_name="FIGHT_PHASE",
+            active_is_player=True,
+        )
+        knight.round_state.fought_this_phase = True
+
+        before_cp = int(ik_player.command_points)
+        ok = ik_player.stratagems.use("THUNDERSTOMP", unit=knight, model=knight.models[0], phase_name="Fight phase")
+        self.assertFalse(ok)
+        self.assertEqual(int(ik_player.command_points), before_cp)
+
     def test_tactical_foil_queues_reaction_and_creates_reactive_move_decision(self):
         from warhammer40k_ai.utility import dice as dice_module
 
@@ -337,6 +499,18 @@ class TestImperialKnightsValourstrikeStratagems(unittest.TestCase):
         self.assertEqual(int(save_result.get("final_save", 0) or 0), 4)
 
     def test_valourstrike_stratagem_descriptors_registered(self):
+        run_them_through = get_stratagem_tool_descriptor(stratagem_id="000010494002")
+        self.assertIsNotNone(run_them_through)
+        self.assertEqual(run_them_through.effect, "melee_weapons_gain_lance")
+        self.assertEqual(str(run_them_through.effect_params.get("keyword", "") or "").upper(), "LANCE")
+
+        thunderstomp = get_stratagem_tool_descriptor(stratagem_id="000010494003")
+        self.assertIsNotNone(thunderstomp)
+        self.assertEqual(thunderstomp.effect, "feet_weapon_attacks_set_and_ap_bonus")
+        self.assertEqual(int(thunderstomp.effect_params.get("armoured_feet_attacks", 0) or 0), 8)
+        self.assertEqual(int(thunderstomp.effect_params.get("titanic_feet_attacks", 0) or 0), 12)
+        self.assertEqual(int(thunderstomp.effect_params.get("ap_bonus", 0) or 0), 1)
+
         full_tilt = get_stratagem_tool_descriptor(stratagem_id="000010494004")
         self.assertIsNotNone(full_tilt)
         self.assertEqual(full_tilt.effect, "movement_and_advance_bonus")

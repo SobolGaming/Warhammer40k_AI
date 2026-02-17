@@ -129,6 +129,10 @@ class ImperialKnightsStratagemMixin:
             or getattr(round_state, "fell_back_this_round", False)
         )
 
+    @staticmethod
+    def _ik_selected_to_fight_this_phase(unit: Any) -> bool:
+        return bool(getattr(getattr(unit, "round_state", None), "fought_this_phase", False))
+
     def _imperial_knights_full_tilt_candidates(self) -> list[Any]:
         if not self._is_valourstrike_lance():
             return []
@@ -155,6 +159,108 @@ class ImperialKnightsStratagemMixin:
             if not self._ik_on_battlefield(root, require_targetable=True):
                 continue
             if self._ik_selected_to_move_this_phase(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ik_sort_key)
+
+    def _imperial_knights_run_them_through_candidates(self) -> list[Any]:
+        if not self._is_valourstrike_lance():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._ik_root(unit)
+            if root is None:
+                continue
+            uid = self._ik_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ik_owned_by_player(root, self.player):
+                continue
+            if not self._is_imperial_knights_unit(root):
+                continue
+            if not self._ik_on_battlefield(root, require_targetable=True):
+                continue
+            if self._ik_selected_to_fight_this_phase(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ik_sort_key)
+
+    @staticmethod
+    def _ik_normalize_weapon_name(value: str) -> str:
+        name = str(value or "").replace("\u2019", "'").replace("\u0192?T", "'").strip().lower()
+        return " ".join(name.split())
+
+    @classmethod
+    def _ik_is_feet_weapon_name(cls, value: str) -> bool:
+        name = cls._ik_normalize_weapon_name(value)
+        return ("armoured feet" in name) or ("titanic feet" in name)
+
+    @staticmethod
+    def _ik_model_is_alive(model: Any) -> bool:
+        if model is None:
+            return False
+        checker = getattr(model, "is_alive", None)
+        if callable(checker):
+            return bool(checker())
+        try:
+            return int(getattr(model, "wounds", 1) or 0) > 0
+        except (TypeError, ValueError):
+            return True
+
+    @classmethod
+    def _ik_model_has_feet_melee_weapon(cls, model: Any) -> bool:
+        for weapon in list(getattr(model, "wargear", []) or []):
+            is_melee = getattr(weapon, "is_melee", None)
+            if callable(is_melee):
+                if not bool(is_melee()):
+                    continue
+            elif str(getattr(weapon, "type", "") or "").strip().lower() != "melee":
+                continue
+            if cls._ik_is_feet_weapon_name(getattr(weapon, "name", "")):
+                return True
+        return False
+
+    def _ik_select_thunderstomp_model(self, unit: Any, *, requested_model: Any = None) -> Any:
+        root = self._ik_root(unit)
+        if root is None:
+            return None
+        models = list(getattr(root, "models", []) or [])
+        if not models:
+            return None
+        if requested_model is not None:
+            wanted_id = str(maybe_entity_id(requested_model) or "")
+            for model in models:
+                model_id = str(maybe_entity_id(model) or "")
+                if model is not requested_model and (not wanted_id or not model_id or model_id != wanted_id):
+                    continue
+                if not self._ik_model_is_alive(model):
+                    return None
+                if not self._ik_model_has_feet_melee_weapon(model):
+                    return None
+                return model
+            return None
+        ordered_models = sorted(models, key=lambda m: str(maybe_entity_id(m) or ""))
+        for model in ordered_models:
+            if not self._ik_model_is_alive(model):
+                continue
+            if not self._ik_model_has_feet_melee_weapon(model):
+                continue
+            return model
+        return None
+
+    def _imperial_knights_thunderstomp_candidates(self) -> list[Any]:
+        units = self._imperial_knights_run_them_through_candidates()
+        out: list[Any] = []
+        for root in list(units or []):
+            if self._ik_select_thunderstomp_model(root) is None:
                 continue
             out.append(root)
         return sorted(out, key=self._ik_sort_key)
@@ -344,6 +450,10 @@ class ImperialKnightsStratagemMixin:
             return self._use_valourstrike_vow_of_retribution(stratagem, **kwargs)
         if name_u == "FULL TILT":
             return self._use_valourstrike_full_tilt(stratagem, **kwargs)
+        if name_u == "RUN THEM THROUGH!":
+            return self._use_valourstrike_run_them_through(stratagem, **kwargs)
+        if name_u == "THUNDERSTOMP":
+            return self._use_valourstrike_thunderstomp(stratagem, **kwargs)
         if name_u == "TACTICAL FOIL":
             return self._use_valourstrike_tactical_foil(stratagem, **kwargs)
         return None
@@ -479,6 +589,124 @@ class ImperialKnightsStratagemMixin:
         self._ik_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
         logger.info(
             "INFO: FULL TILT: %s gains +2\" Move and +2 to Advance rolls this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_valourstrike_run_them_through(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_valourstrike_lance():
+            return False
+
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: RUN THEM THROUGH!: wrong phase")
+            return False
+
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: RUN THEM THROUGH!: no target unit provided")
+            return False
+
+        root = self._ik_root(unit)
+        if root is None:
+            return False
+        if not self._ik_owned_by_player(root, self.player):
+            logger.error("ERROR: RUN THEM THROUGH!: target unit is not yours")
+            return False
+        if not self._ik_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_imperial_knights_unit(root):
+            logger.error("ERROR: RUN THEM THROUGH!: target must be an IMPERIAL KNIGHTS unit")
+            return False
+        if candidates and not self._ik_unit_in_candidates(root, candidates):
+            logger.error("ERROR: RUN THEM THROUGH!: target is not currently eligible")
+            return False
+        if self._ik_selected_to_fight_this_phase(root):
+            logger.error("ERROR: RUN THEM THROUGH!: target has already been selected to fight this phase")
+            return False
+        if not self._ik_spend_cp(stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["imperial_knights_run_them_through_active"] = True
+        sr["imperial_knights_run_them_through_expires_phase"] = "FIGHT_PHASE"
+        sr["imperial_knights_run_them_through_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game else 0
+        sr["imperial_knights_run_them_through_source"] = str(getattr(stratagem, "name", "") or "RUN THEM THROUGH!")
+        root.special_rules = sr
+
+        self._ik_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: RUN THEM THROUGH!: %s gains [LANCE] on melee weapons this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_valourstrike_thunderstomp(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_valourstrike_lance():
+            return False
+
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: THUNDERSTOMP: wrong phase")
+            return False
+
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        model = kwargs.get("model") or kwargs.get("target_model")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and model is not None:
+            unit = getattr(model, "parent_unit", None)
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            logger.error("ERROR: THUNDERSTOMP: no target unit provided")
+            return False
+
+        root = self._ik_root(unit)
+        if root is None:
+            return False
+        if not self._ik_owned_by_player(root, self.player):
+            logger.error("ERROR: THUNDERSTOMP: target unit is not yours")
+            return False
+        if not self._ik_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_imperial_knights_unit(root):
+            logger.error("ERROR: THUNDERSTOMP: target must be an IMPERIAL KNIGHTS model")
+            return False
+        if candidates and not self._ik_unit_in_candidates(root, candidates):
+            logger.error("ERROR: THUNDERSTOMP: target is not currently eligible")
+            return False
+        if self._ik_selected_to_fight_this_phase(root):
+            logger.error("ERROR: THUNDERSTOMP: target has already been selected to fight this phase")
+            return False
+
+        chosen_model = self._ik_select_thunderstomp_model(root, requested_model=model)
+        if chosen_model is None:
+            logger.error("ERROR: THUNDERSTOMP: selected model must be an IMPERIAL KNIGHTS model with armoured/titanic feet")
+            return False
+        if not self._ik_spend_cp(stratagem, target_unit=root):
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["imperial_knights_thunderstomp_active"] = True
+        sr["imperial_knights_thunderstomp_expires_phase"] = "FIGHT_PHASE"
+        sr["imperial_knights_thunderstomp_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game else 0
+        sr["imperial_knights_thunderstomp_source"] = str(getattr(stratagem, "name", "") or "THUNDERSTOMP")
+        sr["imperial_knights_thunderstomp_model_id"] = str(maybe_entity_id(chosen_model) or "")
+        sr["imperial_knights_thunderstomp_armoured_feet_attacks"] = 8
+        sr["imperial_knights_thunderstomp_titanic_feet_attacks"] = 12
+        sr["imperial_knights_thunderstomp_ap_bonus"] = 1
+        root.special_rules = sr
+
+        self._ik_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: THUNDERSTOMP: %s gains enhanced Armoured/Titanic Feet profiles this phase.",
             getattr(root, "name", "Unit"),
         )
         return True

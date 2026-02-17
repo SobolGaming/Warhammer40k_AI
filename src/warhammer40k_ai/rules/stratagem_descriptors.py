@@ -1773,6 +1773,31 @@ _NEEDGAARD_OATHBAND_STRATAGEM_BY_NAME = {
 }
 
 _VALOURSTRIKE_LANCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010494002": StratagemToolDescriptor(
+        stratagem_id="000010494002",
+        name="Run Them Through!",
+        timing="fight_phase_on_select_to_fight",
+        target="imperial_knights_unit_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="melee_weapons_gain_lance",
+        cp_cost=1,
+        effect_params={"keyword": "LANCE"},
+    ),
+    "000010494003": StratagemToolDescriptor(
+        stratagem_id="000010494003",
+        name="Thunderstomp",
+        timing="fight_phase_on_select_to_fight",
+        target="imperial_knights_model_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="feet_weapon_attacks_set_and_ap_bonus",
+        cp_cost=1,
+        effect_params={
+            "weapon_names": ["armoured feet", "titanic feet"],
+            "armoured_feet_attacks": 8,
+            "titanic_feet_attacks": 12,
+            "ap_bonus": 1,
+        },
+    ),
     "000010494004": StratagemToolDescriptor(
         stratagem_id="000010494004",
         name="Full Tilt",
