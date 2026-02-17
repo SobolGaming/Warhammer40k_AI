@@ -1355,6 +1355,22 @@ _EXPERIMENTAL_PROTOTYPE_CADRE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDesc
             "heal_roll": "D3+1",
         },
     ),
+    "000009984005": StratagemToolDescriptor(
+        stratagem_id="000009984005",
+        name="Experimental Ammunition",
+        timing="shooting_phase_on_select_to_shoot",
+        target="tau_empire_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="ranged_strength_or_strength_ap_hazardous_bonus",
+        cp_cost=1,
+        effect_params={
+            "choices": {
+                "strength": {"strength_bonus": 1, "ap_bonus": 0, "grant_hazardous": False},
+                "hazardous": {"strength_bonus": 1, "ap_bonus": 1, "grant_hazardous": True},
+            },
+            "restriction": "cannot_target_same_unit_as_threat_assessment_analyser_same_phase",
+        },
+    ),
 }
 
 _EXPERIMENTAL_PROTOTYPE_CADRE_STRATAGEM_BY_NAME = {

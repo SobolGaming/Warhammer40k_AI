@@ -872,6 +872,32 @@ class WargearProfile:
         source = str(sr.get("mordian_minute_source", "") or "MORDIAN MINUTE").strip() or "MORDIAN MINUTE"
         return (s_bonus, source)
 
+    def _tau_experimental_ammunition_bonus(self, attacker: 'Model') -> Tuple[int, int, bool, str]:
+        """Return (strength_bonus, ap_bonus, ranged_hazardous, source) for EXPERIMENTAL AMMUNITION if active."""
+        sr = self._phase_effect_special_rules(
+            attacker,
+            active_key="tau_experimental_ammunition_active",
+            expires_key="tau_experimental_ammunition_expires_phase",
+            owner_key="tau_experimental_ammunition_turn_owner",
+            turn_key="tau_experimental_ammunition_turn",
+        )
+        if sr is None:
+            return (0, 0, False, "")
+        try:
+            s_bonus = int(sr.get("tau_experimental_ammunition_strength_bonus", 0) or 0)
+        except (TypeError, ValueError):
+            s_bonus = 0
+        try:
+            a_bonus = int(sr.get("tau_experimental_ammunition_ap_bonus", 0) or 0)
+        except (TypeError, ValueError):
+            a_bonus = 0
+        hazardous = bool(sr.get("tau_experimental_ammunition_ranged_hazardous"))
+        source = (
+            str(sr.get("tau_experimental_ammunition_source", "") or "EXPERIMENTAL AMMUNITION").strip()
+            or "EXPERIMENTAL AMMUNITION"
+        )
+        return (s_bonus, a_bonus, hazardous, source)
+
     def _post_shoot_keyword_strength_bonus(
         self,
         attacker: Optional['Model'],
@@ -1891,6 +1917,13 @@ class WargearProfile:
             if py_ap_bonus:
                 ap_val -= int(py_ap_bonus)
         except Exception:
+            pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_ranged():
+                _s_bonus, tau_ap_bonus, _tau_hazardous, _tau_source = self._tau_experimental_ammunition_bonus(attacker)
+                if tau_ap_bonus:
+                    ap_val -= int(tau_ap_bonus)
+        except (AttributeError, TypeError, ValueError):
             pass
         try:
             if self.parent_wargear and self.parent_wargear.is_melee():
@@ -4291,6 +4324,16 @@ class WargearProfile:
         if target_melee_hazardous:
             hazardous_active = True
         target_ranged_hazardous = False
+        attacker_ranged_hazardous = False
+        if is_ranged_weapon:
+            _tau_s, _tau_ap, tau_hazardous, tau_source = self._tau_experimental_ammunition_bonus(attacker)
+            if tau_hazardous:
+                attacker_ranged_hazardous = True
+                hazardous_active = True
+                source_name = str(tau_source or "EXPERIMENTAL AMMUNITION").strip() or "EXPERIMENTAL AMMUNITION"
+                note = f"{source_name}: [HAZARDOUS] (ranged)"
+                if note not in attack_result.attacks_special_modifiers:
+                    attack_result.attacks_special_modifiers.append(note)
         if is_ranged_weapon:
             target_root = target.get_attached_unit_root() if (target is not None and hasattr(target, "get_attached_unit_root")) else target
             tsr = getattr(target_root, "special_rules", None) if target_root is not None else None
@@ -4400,7 +4443,7 @@ class WargearProfile:
                         root_unit,
                         include_melee_non_character=bool(pain_hazardous),
                         include_melee_all=bool(target_melee_hazardous),
-                        include_ranged_all=bool(target_ranged_hazardous),
+                        include_ranged_all=bool(target_ranged_hazardous or attacker_ranged_hazardous),
                     )
                 except Exception:
                     eligible = []
@@ -9757,6 +9800,14 @@ class WargearProfile:
                     strength = strength + int(mm_s_bonus)
                     wound_result.setdefault("modifiers", []).append(f"+{int(mm_s_bonus)}S from {mm_source}")
         except Exception:
+            pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_ranged():
+                tau_s_bonus, _tau_ap_bonus, _tau_hazardous, tau_source = self._tau_experimental_ammunition_bonus(attacker)
+                if tau_s_bonus and isinstance(strength, int):
+                    strength = strength + int(tau_s_bonus)
+                    wound_result.setdefault("modifiers", []).append(f"+{int(tau_s_bonus)}S from {tau_source}")
+        except (AttributeError, TypeError, ValueError):
             pass
         # Thousand Sons: Ensorcelled Destruction (+1 Strength vs non-MONSTER/VEHICLE marked by Psychic hits).
         try:

@@ -217,6 +217,170 @@ class TauEmpireStratagemMixin:
             out.append(root)
         return sorted(out, key=self._tau_sort_key)
 
+    @staticmethod
+    def _tau_has_shot_this_phase(unit: Any) -> bool:
+        round_state = getattr(unit, "round_state", None)
+        return bool(getattr(round_state, "shot_this_round", False))
+
+    def _tau_phase_effect_active(
+        self,
+        unit: Any,
+        *,
+        active_keys: tuple[str, ...],
+        owner_keys: tuple[str, ...] = (),
+        turn_keys: tuple[str, ...] = (),
+        phase_keys: tuple[str, ...] = (),
+        default_phase: str = "",
+    ) -> bool:
+        root = self._tau_root(unit)
+        if root is None:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        if not any(bool(sr.get(key)) for key in tuple(active_keys or ())):
+            return False
+
+        owner_id = str(getattr(self.player, "id", "") or get_entity_id(self.player) or "")
+        if owner_id:
+            effect_owner = ""
+            for key in tuple(owner_keys or ()):
+                value = str(sr.get(key, "") or "").strip()
+                if value:
+                    effect_owner = value
+                    break
+            if effect_owner and effect_owner != owner_id:
+                return False
+
+        game = getattr(self, "game", None)
+        current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        effect_turn = 0
+        for key in tuple(turn_keys or ()):
+            try:
+                val = int(sr.get(key, 0) or 0)
+            except (TypeError, ValueError):
+                val = 0
+            if val:
+                effect_turn = val
+                break
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return False
+
+        current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+        effect_phase = ""
+        for key in tuple(phase_keys or ()):
+            value = str(sr.get(key, "") or "").strip().upper()
+            if value:
+                effect_phase = value
+                break
+        if not effect_phase:
+            effect_phase = str(default_phase or "").strip().upper()
+        if effect_phase and current_phase and effect_phase != current_phase:
+            return False
+        return True
+
+    def _tau_threat_assessment_analyser_active(self, unit: Any) -> bool:
+        return self._tau_phase_effect_active(
+            unit,
+            active_keys=(
+                "tau_threat_assessment_analyser_active",
+                "threat_assessment_analyser_active",
+                "threat_assessment_analyzer_active",
+            ),
+            owner_keys=(
+                "tau_threat_assessment_analyser_owner",
+                "tau_threat_assessment_analyser_turn_owner",
+                "threat_assessment_analyser_owner",
+                "threat_assessment_analyser_turn_owner",
+                "threat_assessment_analyzer_owner",
+                "threat_assessment_analyzer_turn_owner",
+            ),
+            turn_keys=(
+                "tau_threat_assessment_analyser_turn",
+                "threat_assessment_analyser_turn",
+                "threat_assessment_analyzer_turn",
+            ),
+            phase_keys=(
+                "tau_threat_assessment_analyser_phase",
+                "tau_threat_assessment_analyser_expires_phase",
+                "threat_assessment_analyser_phase",
+                "threat_assessment_analyser_expires_phase",
+                "threat_assessment_analyzer_phase",
+                "threat_assessment_analyzer_expires_phase",
+            ),
+            default_phase="SHOOTING_PHASE",
+        )
+
+    def _tau_experimental_ammunition_candidates(self) -> list[Any]:
+        if not self._is_tau_experimental_prototype_cadre_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._tau_root(unit)
+            if root is None:
+                continue
+            uid = self._tau_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._tau_owned_by_player(root, self.player):
+                continue
+            if not self._tau_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_tau_empire_unit(root):
+                continue
+            if self._tau_has_shot_this_phase(root):
+                continue
+            if self._tau_threat_assessment_analyser_active(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._tau_sort_key)
+
+    @staticmethod
+    def _tau_parse_experimental_ammunition_mode(raw_mode: Any) -> Optional[str]:
+        mode = raw_mode
+        if isinstance(mode, dict):
+            mode = (
+                mode.get("mode")
+                or mode.get("choice")
+                or mode.get("selection")
+                or mode.get("effect")
+                or mode.get("option")
+            )
+        mode_key = str(mode or "").strip().lower().replace("_", " ").replace("-", " ")
+        mode_key = " ".join(mode_key.split())
+        if not mode_key:
+            return "strength"
+        strength_modes = {
+            "strength",
+            "strength only",
+            "s",
+            "option 1",
+            "1",
+            "basic",
+        }
+        hazardous_modes = {
+            "strength ap hazardous",
+            "strength and ap hazardous",
+            "strength ap",
+            "ap hazardous",
+            "hazardous",
+            "high output",
+            "option 2",
+            "2",
+        }
+        if mode_key in strength_modes:
+            return "strength"
+        if mode_key in hazardous_modes:
+            return "hazardous"
+        return None
+
     def _tau_spend_cp(self, stratagem: Any, *, target_unit: Any = None) -> bool:
         effective_cost = int(getattr(stratagem, "cp_cost", 0) or 0)
         preview_fn = getattr(self.player, "apply_stratagem_cp_cost", None)
@@ -248,7 +412,106 @@ class TauEmpireStratagemMixin:
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
         if name_u == "AUTOMATED REPAIR DRONES":
             return self._use_tau_automated_repair_drones(stratagem, **kwargs)
+        if name_u == "EXPERIMENTAL AMMUNITION":
+            return self._use_tau_experimental_ammunition(stratagem, **kwargs)
         return None
+
+    def _use_tau_experimental_ammunition(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: EXPERIMENTAL AMMUNITION: no target unit provided")
+            return False
+
+        root = self._tau_root(target_unit)
+        if root is None:
+            return False
+        if not self._tau_owned_by_player(root, self.player):
+            logger.error("ERROR: EXPERIMENTAL AMMUNITION: target unit is not yours")
+            return False
+        if not self._tau_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_tau_empire_unit(root):
+            logger.error("ERROR: EXPERIMENTAL AMMUNITION: target must be a T'AU EMPIRE unit")
+            return False
+
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name != "shooting phase":
+            logger.error("ERROR: EXPERIMENTAL AMMUNITION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: EXPERIMENTAL AMMUNITION: not your Shooting phase")
+            return False
+
+        eligible = candidates or self._tau_experimental_ammunition_candidates()
+        if eligible and not self._tau_unit_in_candidates(root, eligible):
+            logger.error("ERROR: EXPERIMENTAL AMMUNITION: target is not currently eligible")
+            return False
+        if self._tau_has_shot_this_phase(root):
+            logger.error("ERROR: EXPERIMENTAL AMMUNITION: target has already been selected to shoot")
+            return False
+        if self._tau_threat_assessment_analyser_active(root):
+            logger.error(
+                "ERROR: EXPERIMENTAL AMMUNITION: target unit cannot also be targeted by THREAT ASSESSMENT ANALYSER in this phase"
+            )
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name="Shooting phase"):
+            logger.error("ERROR: EXPERIMENTAL AMMUNITION: cannot be used in current state")
+            return False
+
+        mode = self._tau_parse_experimental_ammunition_mode(
+            kwargs.get("mode")
+            or kwargs.get("experimental_ammunition_mode")
+            or kwargs.get("choice")
+            or kwargs.get("selection")
+            or kwargs.get("effect")
+        )
+        if mode is None:
+            logger.error("ERROR: EXPERIMENTAL AMMUNITION: invalid mode selection")
+            return False
+
+        if not self._tau_spend_cp(stratagem, target_unit=root):
+            return False
+
+        hazardous = mode == "hazardous"
+        ap_bonus = 1 if hazardous else 0
+        source_name = str(getattr(stratagem, "name", "") or "EXPERIMENTAL AMMUNITION")
+        owner_id = str(getattr(self.player, "id", "") or get_entity_id(self.player) or "")
+        current_turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["tau_experimental_ammunition_active"] = True
+        sr["tau_experimental_ammunition_strength_bonus"] = 1
+        sr["tau_experimental_ammunition_ap_bonus"] = int(ap_bonus)
+        sr["tau_experimental_ammunition_ranged_hazardous"] = bool(hazardous)
+        sr["tau_experimental_ammunition_expires_phase"] = "SHOOTING_PHASE"
+        sr["tau_experimental_ammunition_turn_owner"] = owner_id
+        sr["tau_experimental_ammunition_turn"] = int(current_turn)
+        sr["tau_experimental_ammunition_source"] = source_name
+        # Marker used for same-phase incompatibility checks versus THREAT ASSESSMENT ANALYSER.
+        sr["tau_experimental_ammunition_phase_active"] = True
+        sr["tau_experimental_ammunition_phase_owner"] = owner_id
+        sr["tau_experimental_ammunition_phase_turn"] = int(current_turn)
+        sr["tau_experimental_ammunition_phase"] = "SHOOTING_PHASE"
+        root.special_rules = sr
+
+        self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        if hazardous:
+            logger.info(
+                "INFO: EXPERIMENTAL AMMUNITION: %s gains +1 Strength, +1 AP, and [HAZARDOUS] on ranged weapons this phase.",
+                getattr(root, "name", "Unit"),
+            )
+        else:
+            logger.info(
+                "INFO: EXPERIMENTAL AMMUNITION: %s gains +1 Strength on ranged weapons this phase.",
+                getattr(root, "name", "Unit"),
+            )
+        return True
 
     def _use_tau_automated_repair_drones(self, stratagem: Any, **kwargs) -> bool:
         target_unit = kwargs.get("unit") or kwargs.get("target_unit")

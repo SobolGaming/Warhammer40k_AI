@@ -8248,6 +8248,7 @@ def _stratagem_support(
         "RED WRATH": "Movement phase: advanced BLOOD ANGELS unit chooses shoot or charge; Red Thirst grants both and applies Battle-shock until end of turn.",
         "A CHALLENGE MET": "End of opponent Movement phase reaction: WYCH CULT unit within 9\" charges an enemy unit that moved or was set up this phase; successful charge grants no Charge bonus.",
         "AUTOMATED REPAIR DRONES": "Command phase: selected T'AU EMPIRE BATTLESUIT unit heals one selected BATTLESUIT model for D3+1 lost wounds.",
+        "EXPERIMENTAL AMMUNITION": "Shooting phase: selected T'AU EMPIRE unit not yet selected to shoot gains +1 Strength on ranged weapons, or +1 Strength/+1 AP and [HAZARDOUS] until end of phase (cannot target same unit as THREAT ASSESSMENT ANALYSER this phase).",
         "BERSERK FUGUE": "Fight phase defensive reaction after targets selected: targeted WYCH CULT unit fights on death after attacker finishes attacks until end of phase.",
         "DEADLY DEBUT": "Fight phase: DRUKHARI unit that charged and has not fought gains melee Lethal Hits; WYCHES units also gain +1 AP on melee weapons until end of phase.",
         "FEIGNED WEAKNESS": "Movement phase: DRUKHARI unit that Fell Back can shoot and charge this turn.",

@@ -29,6 +29,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "A CHALLENGE MET",
     "A GRIM WARNING",
     "AUTOMATED REPAIR DRONES",
+    "EXPERIMENTAL AMMUNITION",
     "ANTI-GRAV REPULSION",
     "ANTI‑GRAV REPULSION",
     "ARMOUR OF CONTEMPT",
@@ -2426,6 +2427,13 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires a wounded T'AU EMPIRE BATTLESUIT unit on the battlefield"
             return result
+        if name_u == "EXPERIMENTAL AMMUNITION":
+            if self._tau_experimental_ammunition_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires a T'AU EMPIRE unit on the battlefield that has not been selected to shoot this phase"
+            return result
         if stratagem.can_use(self.player, self.game, **context):
             result["available"] = True
             result["reason"] = None
@@ -2453,6 +2461,7 @@ class StratagemManager(
         hints = {
             "A GRIM WARNING": "Objective: destroyed BLOOD ANGELS unit on your objective",
             "AUTOMATED REPAIR DRONES": "Target: T'AU EMPIRE BATTLESUIT unit with a wounded BATTLESUIT model",
+            "EXPERIMENTAL AMMUNITION": "Target: T'AU EMPIRE unit not yet selected to shoot; choose +1S or +1S/+1AP/[HAZARDOUS] (cannot also target with THREAT ASSESSMENT ANALYSER this phase)",
             "ARMOUR OF CONTEMPT": "Target: ADEPTUS ASTARTES unit",
             "DEATHLESS DUTY": "Target: DEATH COMPANY unit",
             "INSENSATE RAMPAGE": "Target: DEATH COMPANY unit",

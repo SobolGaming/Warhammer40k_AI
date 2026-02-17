@@ -8,6 +8,7 @@ from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.rules.stratagem_descriptors import get_stratagem_tool_descriptor
 from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.units.wargear import Wargear
 
 
 class _MockDatasheet:
@@ -149,3 +150,156 @@ def test_automated_repair_drones_descriptor_registered():
     assert desc.name == "Automated Repair Drones"
     assert desc.effect == "heal_battlesuit_model"
     assert str(desc.effect_params.get("heal_roll", "")).upper() == "D3+1"
+
+
+def test_experimental_ammunition_strength_mode_adds_ranged_strength():
+    game, tau_player, _enemy_player, tau_army, enemy_army = _build_game()
+    shooter = _make_unit(
+        "Strike Team",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+        wounds="6",
+    )
+    target = _make_unit(
+        "Target",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+        wounds="6",
+    )
+    tau_army.add_unit(shooter)
+    enemy_army.add_unit(target)
+    _deploy_unit(game, shooter, 10.0, 10.0)
+    _deploy_unit(game, target, 16.0, 10.0)
+
+    _set_phase(game, tau_player, "SHOOTING_PHASE", 0)
+    ok = tau_player.stratagems.use(
+        "EXPERIMENTAL AMMUNITION",
+        unit=shooter,
+        mode="strength",
+        phase_name="Shooting phase",
+    )
+    assert ok
+    assert int(tau_player.command_points or 0) == 9
+
+    weapon = Wargear(
+        {
+            "name": "Pulse Rifle",
+            "type": "Ranged",
+            "range": "30",
+            "A": "1",
+            "BS_WS": "4+",
+            "S": "4",
+            "AP": "0",
+            "D": "1",
+            "description": "",
+        }
+    )
+    profile = weapon.profiles["default"]
+    wound = profile._wound_target_with_tracking(
+        target,
+        shooter.models[0],
+        {},
+        roll_value=4,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert int(wound.get("needed", 0) or 0) == 4
+    assert any("EXPERIMENTAL AMMUNITION" in m for m in wound.get("modifiers", []))
+
+
+def test_experimental_ammunition_hazardous_mode_adds_ap_and_hazardous():
+    game, tau_player, _enemy_player, tau_army, enemy_army = _build_game()
+    shooter = _make_unit(
+        "Breach Team",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+        wounds="6",
+    )
+    target = _make_unit(
+        "Target",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+        wounds="6",
+    )
+    tau_army.add_unit(shooter)
+    enemy_army.add_unit(target)
+    _deploy_unit(game, shooter, 10.0, 10.0)
+    _deploy_unit(game, target, 16.0, 10.0)
+
+    _set_phase(game, tau_player, "SHOOTING_PHASE", 0)
+    ok = tau_player.stratagems.use(
+        "EXPERIMENTAL AMMUNITION",
+        unit=shooter,
+        mode="hazardous",
+        phase_name="Shooting phase",
+    )
+    assert ok
+
+    weapon = Wargear(
+        {
+            "name": "Pulse Blaster",
+            "type": "Ranged",
+            "range": "10",
+            "A": "1",
+            "BS_WS": "4+",
+            "S": "5",
+            "AP": "0",
+            "D": "1",
+            "description": "",
+        }
+    )
+    profile = weapon.profiles["default"]
+    shooter_model = shooter.models[0]
+    shooter_model.wargear = [weapon]
+
+    assert profile.get_effective_ap(shooter_model, target) == -1
+    with patch("warhammer40k_ai.units.wargear.get_roll", return_value=1):
+        result = profile.attack(target, shooter_model, game_map=game.map)
+    assert int(result.hazardous_roll or 0) == 1
+    assert int(result.hazardous_damage or 0) == 3
+    assert int(shooter_model.wounds or 0) == 3
+
+
+def test_experimental_ammunition_rejects_shot_or_threat_assessment_marked_target():
+    game, tau_player, _enemy_player, tau_army, _enemy_army = _build_game()
+    shooter = _make_unit(
+        "Pathfinders",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+        wounds="6",
+    )
+    tau_army.add_unit(shooter)
+    _deploy_unit(game, shooter, 10.0, 10.0)
+
+    _set_phase(game, tau_player, "SHOOTING_PHASE", 0)
+    shooter.round_state.shot_this_round = True
+    blocked_after_shooting = tau_player.stratagems.use(
+        "EXPERIMENTAL AMMUNITION",
+        unit=shooter,
+        mode="strength",
+        phase_name="Shooting phase",
+    )
+    assert not blocked_after_shooting
+
+    shooter.round_state.shot_this_round = False
+    shooter.special_rules["threat_assessment_analyser_active"] = True
+    shooter.special_rules["threat_assessment_analyser_owner"] = str(tau_player.id)
+    shooter.special_rules["threat_assessment_analyser_turn"] = int(getattr(game, "turn", 0) or 0)
+    shooter.special_rules["threat_assessment_analyser_expires_phase"] = "SHOOTING_PHASE"
+    blocked_by_threat_assessment = tau_player.stratagems.use(
+        "EXPERIMENTAL AMMUNITION",
+        unit=shooter,
+        mode="hazardous",
+        phase_name="Shooting phase",
+    )
+    assert not blocked_by_threat_assessment
+    assert int(tau_player.command_points or 0) == 10
+
+
+def test_experimental_ammunition_descriptor_registered():
+    desc = get_stratagem_tool_descriptor(stratagem_id="000009984005")
+    assert desc is not None
+    assert desc.name == "Experimental Ammunition"
+    assert desc.effect == "ranged_strength_or_strength_ap_hazardous_bonus"
+    assert int(desc.effect_params.get("choices", {}).get("strength", {}).get("strength_bonus", 0) or 0) == 1
+    assert bool(desc.effect_params.get("choices", {}).get("hazardous", {}).get("grant_hazardous", False)) is True
