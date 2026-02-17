@@ -35,6 +35,11 @@ class TauEmpireStratagemMixin:
         checker = getattr(mgr, "is_experimental_prototype_cadre", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_tau_montka_detachment(self) -> bool:
+        mgr = self._tau_detachment_mgr()
+        checker = getattr(mgr, "is_montka", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     @staticmethod
     def _tau_has_any_keyword(entity: Any, keyword: str) -> bool:
         if entity is None:
@@ -65,6 +70,14 @@ class TauEmpireStratagemMixin:
         if self._tau_has_any_keyword(root, "TAU EMPIRE"):
             return True
         return False
+
+    def _is_tau_kroot_unit(self, unit: Any) -> bool:
+        root = self._tau_root(unit)
+        if root is None:
+            return False
+        if self._tau_has_any_keyword(root, "KROOT"):
+            return True
+        return "KROOT" in str(getattr(root, "name", "") or "").strip().upper()
 
     def _is_tau_battlesuit_unit(self, unit: Any) -> bool:
         root = self._tau_root(unit)
@@ -183,6 +196,332 @@ class TauEmpireStratagemMixin:
             if rid and self._tau_sort_key(cand_root) == rid:
                 return True
         return False
+
+    @staticmethod
+    def _tau_selected_to_move_this_phase(unit: Any) -> bool:
+        round_state = getattr(unit, "round_state", None)
+        return bool(
+            getattr(round_state, "moved_this_round", False)
+            or getattr(round_state, "advanced_this_round", False)
+            or getattr(round_state, "fell_back_this_round", False)
+        )
+
+    def _tau_aggressive_mobility_candidates(self) -> list[Any]:
+        if not self._is_tau_montka_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._tau_root(unit)
+            if root is None:
+                continue
+            uid = self._tau_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._tau_owned_by_player(root, self.player):
+                continue
+            if not self._tau_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_tau_empire_unit(root):
+                continue
+            if self._tau_selected_to_move_this_phase(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._tau_sort_key)
+
+    def _tau_counterfire_defence_systems_candidates(
+        self,
+        *,
+        attacking_unit: Any = None,
+        target_units: Any = None,
+    ) -> list[Any]:
+        if not self._is_tau_montka_detachment():
+            return []
+        if attacking_unit is not None:
+            attacker_root = self._tau_root(attacking_unit)
+            if attacker_root is None:
+                return []
+            if self._tau_owned_by_player(attacker_root, self.player):
+                return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._tau_root(unit)
+            if root is None:
+                continue
+            uid = self._tau_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._tau_owned_by_player(root, self.player):
+                continue
+            if not self._tau_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_tau_empire_unit(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._tau_sort_key)
+
+    def _tau_pinpoint_counter_offensive_target_eligible(self, unit: Any) -> bool:
+        root = self._tau_root(unit)
+        if root is None:
+            return False
+        if not self._tau_owned_by_player(root, self.player):
+            return False
+        if not self._is_tau_empire_unit(root):
+            return False
+        if self._is_tau_kroot_unit(root):
+            return False
+        if self._tau_is_alive(root):
+            return False
+        return True
+
+    def _tau_pinpoint_counter_offensive_candidates(self, *, destroyed_unit: Any = None) -> list[Any]:
+        if not self._is_tau_montka_detachment():
+            return []
+        root = self._tau_root(destroyed_unit)
+        if root is None:
+            return []
+        if not self._tau_pinpoint_counter_offensive_target_eligible(root):
+            return []
+        return [root]
+
+    def tau_montka_pinpoint_counter_offensive_applies(self, attacker_unit: Any, target_unit: Any) -> bool:
+        attacker_root = self._tau_root(attacker_unit)
+        target_root = self._tau_root(target_unit)
+        if attacker_root is None or target_root is None:
+            return False
+        if not self._is_tau_montka_detachment():
+            return False
+        if not self._tau_owned_by_player(attacker_root, self.player):
+            return False
+        if not self._is_tau_empire_unit(attacker_root):
+            return False
+        if self._is_tau_kroot_unit(attacker_root):
+            return False
+        enemy_ids = getattr(self, "_tau_montka_pinpoint_counter_offensive_enemy_ids", set())
+        if not isinstance(enemy_ids, set):
+            return False
+        target_id = self._tau_sort_key(target_root)
+        return bool(target_id and target_id in enemy_ids)
+
+    @staticmethod
+    def _tau_has_disembarked_this_round(unit: Any) -> bool:
+        round_state = getattr(unit, "round_state", None)
+        return bool(getattr(round_state, "disembarked_this_round", False))
+
+    @staticmethod
+    def _tau_unit_is_monster_or_vehicle(unit: Any) -> bool:
+        if unit is None:
+            return False
+        has_any = getattr(unit, "has_any_keyword", None)
+        if callable(has_any):
+            if has_any("MONSTER") or has_any("VEHICLE"):
+                return True
+        has_kw = getattr(unit, "has_keyword", None)
+        if callable(has_kw):
+            if has_kw("MONSTER") or has_kw("VEHICLE"):
+                return True
+        return bool(getattr(unit, "is_monster", False) or getattr(unit, "is_vehicle", False))
+
+    def _tau_current_battle_round(self) -> int:
+        game = getattr(self, "game", None)
+        if game is None:
+            return 0
+        get_battle_round = getattr(game, "get_battle_round", None)
+        if callable(get_battle_round):
+            try:
+                return int(get_battle_round() or 0)
+            except (TypeError, ValueError):
+                return 0
+        try:
+            return int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def _tau_resolve_friendly_transport_for_disembarked_unit(self, unit: Any) -> Any:
+        root = self._tau_root(unit)
+        if root is None:
+            return None
+        round_state = getattr(root, "round_state", None)
+        transport_id = str(getattr(round_state, "disembarked_from_transport_id", "") or "")
+        if not transport_id:
+            return None
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return None
+        for unit_entry in list(getattr(army, "units", []) or []):
+            candidate = self._tau_root(unit_entry)
+            if candidate is None:
+                continue
+            if self._tau_sort_key(candidate) != transport_id:
+                continue
+            if not self._tau_owned_by_player(candidate, self.player):
+                continue
+            return candidate
+        return None
+
+    def _tau_enemy_units_on_battlefield(self, *, require_targetable: bool = True) -> list[Any]:
+        game = getattr(self, "game", None)
+        if game is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for other_player in list(getattr(game, "players", []) or []):
+            if other_player is None or other_player is self.player:
+                continue
+            get_army = getattr(other_player, "get_army", None)
+            enemy_army = get_army() if callable(get_army) else getattr(other_player, "army", None)
+            if enemy_army is None:
+                continue
+            for enemy_unit in list(getattr(enemy_army, "units", []) or []):
+                root = self._tau_root(enemy_unit)
+                if root is None:
+                    continue
+                uid = self._tau_sort_key(root)
+                if uid and uid in seen:
+                    continue
+                if uid:
+                    seen.add(uid)
+                if self._tau_owned_by_player(root, self.player):
+                    continue
+                if not self._tau_on_battlefield(root, require_targetable=require_targetable):
+                    continue
+                out.append(root)
+        return sorted(out, key=self._tau_sort_key)
+
+    def _tau_resolve_unit_list(self, value: Any) -> list[Any]:
+        if value is None:
+            return []
+        raw_items = list(value) if isinstance(value, (list, tuple, set)) else [value]
+        out: list[Any] = []
+        seen: set[str] = set()
+        for item in raw_items:
+            root = self._tau_root(item)
+            if root is None:
+                continue
+            uid = self._tau_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            out.append(root)
+        return out
+
+    def _tau_combat_debarkation_candidates(self) -> list[Any]:
+        if not self._is_tau_montka_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._tau_root(unit)
+            if root is None:
+                continue
+            uid = self._tau_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._tau_owned_by_player(root, self.player):
+                continue
+            if not self._tau_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_tau_empire_unit(root):
+                continue
+            if not self._tau_has_any_keyword(root, "INFANTRY"):
+                continue
+            if not self._tau_has_disembarked_this_round(root):
+                continue
+            transport = self._tau_resolve_friendly_transport_for_disembarked_unit(root)
+            if transport is None:
+                continue
+            if not self._tau_has_any_keyword(transport, "TRANSPORT"):
+                continue
+            out.append(root)
+        return sorted(out, key=self._tau_sort_key)
+
+    def _tau_focused_fire_friendly_candidates(self) -> list[Any]:
+        if not self._is_tau_montka_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._tau_root(unit)
+            if root is None:
+                continue
+            uid = self._tau_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._tau_owned_by_player(root, self.player):
+                continue
+            if not self._tau_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._is_tau_empire_unit(root):
+                continue
+            if self._tau_has_shot_this_phase(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._tau_sort_key)
+
+    def _tau_focused_fire_enemy_candidates(self) -> list[Any]:
+        if not self._is_tau_montka_detachment():
+            return []
+        return self._tau_enemy_units_on_battlefield(require_targetable=True)
+
+    def _tau_pulse_onslaught_enemy_candidates(
+        self,
+        *,
+        attacker_unit: Any = None,
+        hits_by_target: Any = None,
+    ) -> list[Any]:
+        if not self._is_tau_montka_detachment():
+            return []
+        attacker_root = self._tau_root(attacker_unit)
+        if attacker_root is None or not self._tau_owned_by_player(attacker_root, self.player):
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        if isinstance(hits_by_target, dict):
+            for unit, hits in list(hits_by_target.items()):
+                try:
+                    if int(hits or 0) <= 0:
+                        continue
+                except (TypeError, ValueError):
+                    continue
+                root = self._tau_root(unit)
+                if root is None:
+                    continue
+                uid = self._tau_sort_key(root)
+                if uid and uid in seen:
+                    continue
+                if uid:
+                    seen.add(uid)
+                if self._tau_owned_by_player(root, self.player):
+                    continue
+                if not self._tau_on_battlefield(root, require_targetable=True):
+                    continue
+                if self._tau_unit_is_monster_or_vehicle(root):
+                    continue
+                out.append(root)
+        return sorted(out, key=self._tau_sort_key)
 
     def _tau_resolve_selected_model(self, selection: Any, models: list[Any]) -> Any:
         if selection is None:
@@ -557,6 +896,192 @@ class TauEmpireStratagemMixin:
         if callable(queue_reaction):
             queue_reaction(payload)
 
+    def _queue_tau_montka_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_tau_montka_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "SHOOTING_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return
+        if self._tau_current_battle_round() >= 4:
+            return
+
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("FOCUSED FIRE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+
+        friendly_candidates = self._tau_focused_fire_friendly_candidates()
+        if len(friendly_candidates) < 2:
+            return
+        enemy_candidates = self._tau_focused_fire_enemy_candidates()
+        if not enemy_candidates:
+            return
+
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "phase_start":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                continue
+            if str(reaction.get("phase", "") or reaction.get("phase_name", "")).strip().lower() != "shooting phase":
+                continue
+            return
+
+        payload = {
+            "event": "phase_start",
+            "phase": "Shooting phase",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "friendly_candidates": list(friendly_candidates),
+            "enemy_candidates": list(enemy_candidates),
+        }
+        if len(friendly_candidates) == 2:
+            payload["selected_units"] = list(friendly_candidates)
+            if len(enemy_candidates) == 1:
+                payload["enemy_unit"] = enemy_candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload, use_timer=False)
+
+    def _queue_tau_montka_shooting_reactions(
+        self,
+        *,
+        attacking_unit: Any = None,
+        target_units: Any = None,
+    ) -> None:
+        if not self._is_tau_montka_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "SHOOTING_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        attacker_root = self._tau_root(attacking_unit)
+        if attacker_root is None or self._tau_owned_by_player(attacker_root, self.player):
+            return
+
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("COUNTERFIRE DEFENCE SYSTEMS")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._tau_counterfire_defence_systems_candidates(
+            attacking_unit=attacker_root,
+            target_units=target_units,
+        )
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                reaction.get("event") == "shooting_targets_selected"
+                and str(reaction.get("stratagem", "") or "").strip().upper() == name_u
+                and reaction.get("attacking_unit") is attacker_root
+            ):
+                return
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "enemy_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload)
+
+    def _queue_tau_montka_shooting_resolved_reactions(
+        self,
+        *,
+        attacker_unit: Any = None,
+        hits_by_target: Any = None,
+    ) -> None:
+        if not self._is_tau_montka_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() != "SHOOTING_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return
+        attacker_root = self._tau_root(attacker_unit)
+        if attacker_root is None:
+            return
+        if not self._tau_owned_by_player(attacker_root, self.player):
+            return
+        if not self._tau_on_battlefield(attacker_root, require_targetable=True):
+            return
+        if not self._is_tau_empire_unit(attacker_root):
+            return
+        if self._is_tau_kroot_unit(attacker_root):
+            return
+        if not self._tau_has_any_keyword(attacker_root, "INFANTRY"):
+            return
+
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("PULSE ONSLAUGHT")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+
+        enemy_candidates = self._tau_pulse_onslaught_enemy_candidates(
+            attacker_unit=attacker_root,
+            hits_by_target=hits_by_target,
+        )
+        if not enemy_candidates:
+            return
+
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "unit_shooting_resolved":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != name_u:
+                continue
+            if reaction.get("unit") is attacker_root or reaction.get("attacker_unit") is attacker_root:
+                return
+
+        payload = {
+            "event": "unit_shooting_resolved",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": attacker_root,
+            "attacker_unit": attacker_root,
+            "friendly_unit": attacker_root,
+            "enemy_candidates": list(enemy_candidates),
+            "candidates": list(enemy_candidates),
+        }
+        if len(enemy_candidates) == 1:
+            payload["target_unit"] = enemy_candidates[0]
+            payload["enemy_unit"] = enemy_candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload)
+
     def _queue_tau_experimental_prototype_fight_reactions(
         self,
         *,
@@ -609,6 +1134,58 @@ class TauEmpireStratagemMixin:
         }
         if len(reactive_candidates) == 1:
             payload["target_unit"] = reactive_candidates[0]
+        queue_reaction = getattr(self, "_queue_reaction", None)
+        if callable(queue_reaction):
+            queue_reaction(payload)
+
+    def _queue_tau_montka_unit_destroyed_reactions(
+        self,
+        *,
+        unit: Any,
+        destroyed_by_unit: Any,
+    ) -> None:
+        if unit is None or destroyed_by_unit is None:
+            return
+        if not self._is_tau_montka_detachment():
+            return
+        root = self._tau_root(unit)
+        enemy_root = self._tau_root(destroyed_by_unit)
+        if root is None or enemy_root is None:
+            return
+        if not self._tau_pinpoint_counter_offensive_target_eligible(root):
+            return
+        if self._tau_owned_by_player(enemy_root, self.player):
+            return
+
+        stratagem = getattr(self, "get_by_name", lambda _name: None)("PINPOINT COUNTER-OFFENSIVE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if str(getattr(stratagem, "name", "") or "").strip().upper() in set(
+            getattr(self, "_used_stratagems_this_phase", set()) or set()
+        ):
+            return
+
+        phase_name = str(getattr(self, "_current_phase_name", "") or "").strip() or "Any phase"
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "unit_destroyed":
+                continue
+            if str(reaction.get("stratagem", "") or "").strip().upper() != str(getattr(stratagem, "name", "") or "").strip().upper():
+                continue
+            if reaction.get("target_unit") is root and reaction.get("enemy_unit") is enemy_root:
+                return
+
+        payload = {
+            "event": "unit_destroyed",
+            "phase_name": phase_name,
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": root,
+            "target_unit": root,
+            "enemy_unit": enemy_root,
+            "candidates": [root],
+        }
         queue_reaction = getattr(self, "_queue_reaction", None)
         if callable(queue_reaction):
             queue_reaction(payload)
@@ -723,6 +1300,12 @@ class TauEmpireStratagemMixin:
             if raw_name:
                 used.add(raw_name)
 
+    def _use_tau_empire_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        result = self._use_tau_experimental_prototype_cadre_stratagem(stratagem, **kwargs)
+        if result is not None:
+            return result
+        return self._use_tau_montka_stratagem(stratagem, **kwargs)
+
     def _use_tau_experimental_prototype_cadre_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None:
             return None
@@ -742,6 +1325,587 @@ class TauEmpireStratagemMixin:
         if name_u == "THREAT ASSESSMENT ANALYSER":
             return self._use_tau_threat_assessment_analyser(stratagem, **kwargs)
         return None
+
+    def _use_tau_montka_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
+        if stratagem is None:
+            return None
+        if not self._is_tau_montka_detachment():
+            return None
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "AGGRESSIVE MOBILITY":
+            return self._use_tau_aggressive_mobility(stratagem, **kwargs)
+        if name_u == "COMBAT DEBARKATION":
+            return self._use_tau_combat_debarkation(stratagem, **kwargs)
+        if name_u == "FOCUSED FIRE":
+            return self._use_tau_focused_fire(stratagem, **kwargs)
+        if name_u == "COUNTERFIRE DEFENCE SYSTEMS":
+            return self._use_tau_counterfire_defence_systems(stratagem, **kwargs)
+        if name_u == "PINPOINT COUNTER-OFFENSIVE":
+            return self._use_tau_pinpoint_counter_offensive(stratagem, **kwargs)
+        if name_u == "PULSE ONSLAUGHT":
+            return self._use_tau_pulse_onslaught(stratagem, **kwargs)
+        return None
+
+    def _use_tau_aggressive_mobility(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: AGGRESSIVE MOBILITY: no target unit provided")
+            return False
+
+        root = self._tau_root(target_unit)
+        if root is None:
+            return False
+        if not self._tau_owned_by_player(root, self.player):
+            logger.error("ERROR: AGGRESSIVE MOBILITY: target unit is not yours")
+            return False
+        if not self._tau_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_tau_empire_unit(root):
+            logger.error("ERROR: AGGRESSIVE MOBILITY: target must be a T'AU EMPIRE unit")
+            return False
+
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name != "movement phase":
+            logger.error("ERROR: AGGRESSIVE MOBILITY: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: AGGRESSIVE MOBILITY: not your turn")
+            return False
+
+        eligible = candidates or self._tau_aggressive_mobility_candidates()
+        if eligible and not self._tau_unit_in_candidates(root, eligible):
+            logger.error("ERROR: AGGRESSIVE MOBILITY: target is not currently eligible")
+            return False
+        if self._tau_selected_to_move_this_phase(root):
+            logger.error("ERROR: AGGRESSIVE MOBILITY: target has already been selected to move this phase")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name="Movement phase"):
+            logger.error("ERROR: AGGRESSIVE MOBILITY: cannot be used in current state")
+            return False
+        if not self._tau_spend_cp(stratagem, target_unit=root):
+            return False
+
+        source_name = str(getattr(stratagem, "name", "") or "AGGRESSIVE MOBILITY")
+        owner_id = str(getattr(self.player, "id", "") or get_entity_id(self.player) or "")
+        current_turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        effect_tag = "stratagem:tau_aggressive_mobility"
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        effects = [
+            entry
+            for entry in list(sr.get("advance_no_roll_effects", []) or [])
+            if not (isinstance(entry, dict) and str(entry.get("tag", "") or "") == effect_tag)
+        ]
+        effects.append(
+            {
+                "distance": 6,
+                "source": source_name,
+                "tag": effect_tag,
+                "expires_phase": "MOVEMENT_PHASE",
+            }
+        )
+        sr["advance_no_roll_effects"] = effects
+        sr["tau_aggressive_mobility_active"] = True
+        sr["tau_aggressive_mobility_expires_phase"] = "MOVEMENT_PHASE"
+        sr["tau_aggressive_mobility_turn_owner"] = owner_id
+        sr["tau_aggressive_mobility_turn"] = int(current_turn)
+        sr["tau_aggressive_mobility_source"] = source_name
+        root.special_rules = sr
+
+        self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: AGGRESSIVE MOBILITY: %s adds 6\" to Move when it Advances this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_tau_combat_debarkation(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: COMBAT DEBARKATION: no target unit provided")
+            return False
+
+        root = self._tau_root(target_unit)
+        if root is None:
+            return False
+        if not self._tau_owned_by_player(root, self.player):
+            logger.error("ERROR: COMBAT DEBARKATION: target unit is not yours")
+            return False
+        if not self._tau_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_tau_empire_unit(root):
+            logger.error("ERROR: COMBAT DEBARKATION: target must be a T'AU EMPIRE unit")
+            return False
+        if not self._tau_has_any_keyword(root, "INFANTRY"):
+            logger.error("ERROR: COMBAT DEBARKATION: target must be T'AU EMPIRE INFANTRY")
+            return False
+        if not self._tau_has_disembarked_this_round(root):
+            logger.error("ERROR: COMBAT DEBARKATION: target must have disembarked this turn")
+            return False
+        transport = self._tau_resolve_friendly_transport_for_disembarked_unit(root)
+        if transport is None or not self._tau_has_any_keyword(transport, "TRANSPORT"):
+            logger.error("ERROR: COMBAT DEBARKATION: target must have disembarked from a friendly TRANSPORT this turn")
+            return False
+
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name != "shooting phase":
+            logger.error("ERROR: COMBAT DEBARKATION: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: COMBAT DEBARKATION: not your Shooting phase")
+            return False
+
+        eligible = candidates or self._tau_combat_debarkation_candidates()
+        if eligible and not self._tau_unit_in_candidates(root, eligible):
+            logger.error("ERROR: COMBAT DEBARKATION: target is not currently eligible")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name="Shooting phase"):
+            logger.error("ERROR: COMBAT DEBARKATION: cannot be used in current state")
+            return False
+        if not self._tau_spend_cp(stratagem, target_unit=root):
+            return False
+
+        owner_id = str(getattr(self.player, "id", "") or get_entity_id(self.player) or "")
+        current_turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        source_name = str(getattr(stratagem, "name", "") or "COMBAT DEBARKATION")
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["tau_combat_debarkation_active"] = True
+        sr["tau_combat_debarkation_expires_phase"] = "SHOOTING_PHASE"
+        sr["tau_combat_debarkation_turn_owner"] = owner_id
+        sr["tau_combat_debarkation_turn"] = int(current_turn)
+        sr["tau_combat_debarkation_source"] = source_name
+        root.special_rules = sr
+
+        self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: COMBAT DEBARKATION: %s can re-roll Wound rolls when targeting the closest eligible enemy unit this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_tau_focused_fire(self, stratagem: Any, **kwargs) -> bool:
+        selected_units = (
+            kwargs.get("units")
+            or kwargs.get("selected_units")
+            or kwargs.get("target_units")
+            or kwargs.get("unit")
+            or kwargs.get("target_unit")
+        )
+        enemy_unit = (
+            kwargs.get("enemy_unit")
+            or kwargs.get("attacking_unit")
+            or kwargs.get("attacker_unit")
+            or kwargs.get("enemy_target")
+            or kwargs.get("target_enemy_unit")
+        )
+        friendly_candidates = list(kwargs.get("friendly_candidates") or [])
+        enemy_candidates = list(kwargs.get("enemy_candidates") or [])
+        if not friendly_candidates or not enemy_candidates or selected_units is None or enemy_unit is None:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != str(getattr(stratagem, "name", "") or "").strip().upper():
+                    continue
+                if selected_units is None:
+                    selected_units = (
+                        reaction.get("selected_units")
+                        or reaction.get("units")
+                        or reaction.get("target_units")
+                    )
+                if enemy_unit is None:
+                    enemy_unit = reaction.get("enemy_unit") or reaction.get("target_unit")
+                if not friendly_candidates:
+                    friendly_candidates = list(reaction.get("friendly_candidates") or [])
+                if not enemy_candidates:
+                    enemy_candidates = list(reaction.get("enemy_candidates") or [])
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name") or reaction.get("phase")
+                break
+
+        selected_roots = self._tau_resolve_unit_list(selected_units)
+        if not selected_roots:
+            logger.error("ERROR: FOCUSED FIRE: no friendly target units provided")
+            return False
+        if len(selected_roots) != 2:
+            logger.error("ERROR: FOCUSED FIRE: must select exactly two friendly T'AU EMPIRE units")
+            return False
+        enemy_root = self._tau_root(enemy_unit)
+        if enemy_root is None:
+            if len(enemy_candidates) == 1:
+                enemy_root = self._tau_root(enemy_candidates[0])
+            else:
+                logger.error("ERROR: FOCUSED FIRE: no enemy target unit provided")
+                return False
+
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name != "shooting phase":
+            logger.error("ERROR: FOCUSED FIRE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: FOCUSED FIRE: not your Shooting phase")
+            return False
+        if self._tau_current_battle_round() >= 4:
+            logger.error("ERROR: FOCUSED FIRE: cannot be used in battle rounds 4 or 5")
+            return False
+
+        eligible_friendly = friendly_candidates or self._tau_focused_fire_friendly_candidates()
+        if len(eligible_friendly) < 2:
+            logger.error("ERROR: FOCUSED FIRE: requires two eligible friendly units that have not been selected to shoot")
+            return False
+        for root in list(selected_roots):
+            if not self._tau_unit_in_candidates(root, eligible_friendly):
+                logger.error("ERROR: FOCUSED FIRE: one or more selected friendly units are not eligible")
+                return False
+            if not self._tau_owned_by_player(root, self.player):
+                logger.error("ERROR: FOCUSED FIRE: selected friendly unit is not yours")
+                return False
+            if not self._is_tau_empire_unit(root):
+                logger.error("ERROR: FOCUSED FIRE: selected friendly units must be T'AU EMPIRE")
+                return False
+            if self._tau_has_shot_this_phase(root):
+                logger.error("ERROR: FOCUSED FIRE: selected friendly units must not have been selected to shoot")
+                return False
+
+        if self._tau_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: FOCUSED FIRE: enemy target is invalid")
+            return False
+        eligible_enemy = enemy_candidates or self._tau_focused_fire_enemy_candidates()
+        if eligible_enemy and not self._tau_unit_in_candidates(enemy_root, eligible_enemy):
+            logger.error("ERROR: FOCUSED FIRE: enemy target is not currently eligible")
+            return False
+        if not self._tau_on_battlefield(enemy_root, require_targetable=True):
+            return False
+
+        first = selected_roots[0]
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=first,
+            target_unit=enemy_root,
+            phase_name="Shooting phase",
+        ):
+            logger.error("ERROR: FOCUSED FIRE: cannot be used in current state")
+            return False
+        if not self._tau_spend_cp(stratagem, target_unit=first):
+            return False
+
+        owner_id = str(getattr(self.player, "id", "") or get_entity_id(self.player) or "")
+        current_turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        enemy_id = self._tau_sort_key(enemy_root)
+        source_name = str(getattr(stratagem, "name", "") or "FOCUSED FIRE")
+        for root in list(selected_roots):
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["tau_focused_fire_active"] = True
+            sr["tau_focused_fire_target_id"] = enemy_id
+            sr["tau_focused_fire_ap_bonus"] = 1
+            sr["tau_focused_fire_expires_phase"] = "SHOOTING_PHASE"
+            sr["tau_focused_fire_turn_owner"] = owner_id
+            sr["tau_focused_fire_turn"] = int(current_turn)
+            sr["tau_focused_fire_source"] = source_name
+            root.special_rules = sr
+
+        self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: FOCUSED FIRE: %s and %s can only target %s this phase and improve AP by 1 when doing so.",
+            getattr(selected_roots[0], "name", "Unit 1"),
+            getattr(selected_roots[1], "name", "Unit 2"),
+            getattr(enemy_root, "name", "Enemy"),
+        )
+        return True
+
+    def _use_tau_counterfire_defence_systems(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit") or kwargs.get("enemy_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        target_units = list(kwargs.get("target_units") or kwargs.get("targets") or [])
+
+        if target_unit is None or attacking_unit is None or not candidates:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != str(getattr(stratagem, "name", "") or "").strip().upper():
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if attacking_unit is None:
+                    attacking_unit = reaction.get("attacking_unit") or reaction.get("enemy_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if not target_units:
+                    target_units = list(reaction.get("target_units") or [])
+                break
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: COUNTERFIRE DEFENCE SYSTEMS: no target unit provided")
+            return False
+
+        root = self._tau_root(target_unit)
+        if root is None:
+            return False
+        if not self._tau_owned_by_player(root, self.player):
+            logger.error("ERROR: COUNTERFIRE DEFENCE SYSTEMS: target unit is not yours")
+            return False
+        if not self._tau_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_tau_empire_unit(root):
+            logger.error("ERROR: COUNTERFIRE DEFENCE SYSTEMS: target must be a T'AU EMPIRE unit")
+            return False
+
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name != "shooting phase":
+            logger.error("ERROR: COUNTERFIRE DEFENCE SYSTEMS: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: COUNTERFIRE DEFENCE SYSTEMS: not opponent's Shooting phase")
+            return False
+
+        attacker_root = self._tau_root(attacking_unit)
+        if attacker_root is None:
+            logger.error("ERROR: COUNTERFIRE DEFENCE SYSTEMS: missing attacking unit context")
+            return False
+        if self._tau_owned_by_player(attacker_root, self.player):
+            logger.error("ERROR: COUNTERFIRE DEFENCE SYSTEMS: attacker is not an enemy unit")
+            return False
+
+        eligible = candidates or self._tau_counterfire_defence_systems_candidates(
+            attacking_unit=attacker_root,
+            target_units=target_units,
+        )
+        if not eligible or not self._tau_unit_in_candidates(root, eligible):
+            logger.error("ERROR: COUNTERFIRE DEFENCE SYSTEMS: target must be one of the attacking unit's selected targets")
+            return False
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=root,
+            phase_name="Shooting phase",
+            attacking_unit=attacker_root,
+            target_units=list(target_units or []),
+        ):
+            logger.error("ERROR: COUNTERFIRE DEFENCE SYSTEMS: cannot be used in current state")
+            return False
+        if not self._tau_spend_cp(stratagem, target_unit=root):
+            return False
+
+        entry = {
+            "value": 1,
+            "attack_type": "any",
+            "expires_phase": "SHOOTING_PHASE",
+            "source": str(getattr(stratagem, "name", "") or "COUNTERFIRE DEFENCE SYSTEMS"),
+        }
+        append_defensive_effect = getattr(self, "_append_defensive_effect", None)
+        if callable(append_defensive_effect):
+            append_defensive_effect(root, "defensive_damage_reductions", entry)
+        else:
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            items = list(sr.get("defensive_damage_reductions", []) or [])
+            items.append(entry)
+            sr["defensive_damage_reductions"] = items
+            root.special_rules = sr
+
+        self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: COUNTERFIRE DEFENCE SYSTEMS: %s reduces incoming Damage by 1 this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
+
+    def _use_tau_pinpoint_counter_offensive(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        enemy_unit = kwargs.get("enemy_unit") or kwargs.get("attacking_unit") or kwargs.get("attacker_unit")
+        candidates = list(kwargs.get("candidates") or [])
+
+        if target_unit is None or enemy_unit is None or not candidates:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != str(getattr(stratagem, "name", "") or "").strip().upper():
+                    continue
+                if target_unit is None:
+                    target_unit = reaction.get("target_unit") or reaction.get("unit")
+                if enemy_unit is None:
+                    enemy_unit = reaction.get("enemy_unit") or reaction.get("attacking_unit") or reaction.get("attacker_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                break
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: PINPOINT COUNTER-OFFENSIVE: no target unit provided")
+            return False
+        if enemy_unit is None:
+            logger.error("ERROR: PINPOINT COUNTER-OFFENSIVE: missing enemy unit context")
+            return False
+
+        root = self._tau_root(target_unit)
+        enemy_root = self._tau_root(enemy_unit)
+        if root is None or enemy_root is None:
+            return False
+        if not self._is_tau_montka_detachment():
+            return False
+        if candidates and not self._tau_unit_in_candidates(root, candidates):
+            logger.error("ERROR: PINPOINT COUNTER-OFFENSIVE: target was not selected")
+            return False
+        if not self._tau_pinpoint_counter_offensive_target_eligible(root):
+            logger.error(
+                "ERROR: PINPOINT COUNTER-OFFENSIVE: target must be your destroyed non-KROOT T'AU EMPIRE unit"
+            )
+            return False
+        if self._tau_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: PINPOINT COUNTER-OFFENSIVE: enemy context is invalid")
+            return False
+
+        enemy_id = self._tau_sort_key(enemy_root)
+        if not enemy_id:
+            return False
+        if not self._tau_spend_cp(stratagem, target_unit=root):
+            return False
+        if not isinstance(getattr(self, "_tau_montka_pinpoint_counter_offensive_enemy_ids", None), set):
+            self._tau_montka_pinpoint_counter_offensive_enemy_ids = set()
+        self._tau_montka_pinpoint_counter_offensive_enemy_ids.add(enemy_id)
+        self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: PINPOINT COUNTER-OFFENSIVE: non-KROOT T'AU EMPIRE units can re-roll Hit rolls against %s for the battle.",
+            getattr(enemy_root, "name", "Enemy"),
+        )
+        return True
+
+    def _use_tau_pulse_onslaught(self, stratagem: Any, **kwargs) -> bool:
+        friendly_unit = (
+            kwargs.get("unit")
+            or kwargs.get("friendly_unit")
+            or kwargs.get("attacker_unit")
+            or kwargs.get("attacking_unit")
+        )
+        enemy_unit = kwargs.get("enemy_unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or kwargs.get("enemy_candidates") or [])
+        hits_by_target = kwargs.get("hits_by_target")
+        if friendly_unit is None or enemy_unit is None or not candidates:
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != str(getattr(stratagem, "name", "") or "").strip().upper():
+                    continue
+                if friendly_unit is None:
+                    friendly_unit = reaction.get("friendly_unit") or reaction.get("unit") or reaction.get("attacker_unit")
+                if enemy_unit is None:
+                    enemy_unit = reaction.get("enemy_unit") or reaction.get("target_unit")
+                if not candidates:
+                    candidates = list(reaction.get("enemy_candidates") or reaction.get("candidates") or [])
+                if hits_by_target is None:
+                    hits_by_target = reaction.get("hits_by_target")
+                if not kwargs.get("phase_name"):
+                    kwargs["phase_name"] = reaction.get("phase_name")
+                break
+        if enemy_unit is None and len(candidates) == 1:
+            enemy_unit = candidates[0]
+        if friendly_unit is None:
+            logger.error("ERROR: PULSE ONSLAUGHT: no friendly unit provided")
+            return False
+        if enemy_unit is None:
+            logger.error("ERROR: PULSE ONSLAUGHT: no enemy unit provided")
+            return False
+
+        friendly_root = self._tau_root(friendly_unit)
+        enemy_root = self._tau_root(enemy_unit)
+        if friendly_root is None or enemy_root is None:
+            return False
+        if not self._tau_owned_by_player(friendly_root, self.player):
+            logger.error("ERROR: PULSE ONSLAUGHT: friendly unit must be yours")
+            return False
+        if not self._tau_on_battlefield(friendly_root, require_targetable=True):
+            return False
+        if not self._is_tau_empire_unit(friendly_root):
+            logger.error("ERROR: PULSE ONSLAUGHT: friendly unit must be T'AU EMPIRE")
+            return False
+        if self._is_tau_kroot_unit(friendly_root):
+            logger.error("ERROR: PULSE ONSLAUGHT: friendly unit cannot be KROOT")
+            return False
+        if not self._tau_has_any_keyword(friendly_root, "INFANTRY"):
+            logger.error("ERROR: PULSE ONSLAUGHT: friendly unit must be INFANTRY")
+            return False
+        if not self._tau_has_shot_this_phase(friendly_root):
+            logger.error("ERROR: PULSE ONSLAUGHT: friendly unit must have just shot")
+            return False
+        if self._tau_owned_by_player(enemy_root, self.player):
+            logger.error("ERROR: PULSE ONSLAUGHT: enemy context is invalid")
+            return False
+        if not self._tau_on_battlefield(enemy_root, require_targetable=True):
+            return False
+        if self._tau_unit_is_monster_or_vehicle(enemy_root):
+            logger.error("ERROR: PULSE ONSLAUGHT: enemy unit cannot be MONSTER or VEHICLE")
+            return False
+
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name != "shooting phase":
+            logger.error("ERROR: PULSE ONSLAUGHT: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: PULSE ONSLAUGHT: not your Shooting phase")
+            return False
+
+        eligible_enemy = candidates or self._tau_pulse_onslaught_enemy_candidates(
+            attacker_unit=friendly_root,
+            hits_by_target=hits_by_target,
+        )
+        if eligible_enemy and not self._tau_unit_in_candidates(enemy_root, eligible_enemy):
+            logger.error("ERROR: PULSE ONSLAUGHT: enemy unit was not hit by that unit's attacks or is not eligible")
+            return False
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=friendly_root,
+            target_unit=enemy_root,
+            phase_name="Shooting phase",
+        ):
+            logger.error("ERROR: PULSE ONSLAUGHT: cannot be used in current state")
+            return False
+        if not self._tau_spend_cp(stratagem, target_unit=friendly_root):
+            return False
+
+        owner_id = str(getattr(self.player, "id", "") or get_entity_id(self.player) or "")
+        turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        source_name = str(getattr(stratagem, "name", "") or "PULSE ONSLAUGHT")
+        apply_aflame = getattr(enemy_root, "apply_aflame", None)
+        if callable(apply_aflame):
+            apply_aflame(
+                owner_id=owner_id,
+                turn=turn,
+                source=source_name,
+                move_penalty=-2,
+                advance_penalty=-2,
+                charge_penalty=-2,
+            )
+        else:
+            sr = getattr(enemy_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["aflame_active"] = True
+            sr["aflame_owner"] = owner_id
+            sr["aflame_turn"] = int(turn)
+            sr["aflame_source"] = source_name
+            sr["aflame_move_penalty"] = -2
+            sr["aflame_advance_penalty"] = -2
+            sr["aflame_charge_penalty"] = -2
+            enemy_root.special_rules = sr
+
+        self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: PULSE ONSLAUGHT: %s is shaken (-2 Move, -2 Advance, -2 Charge) until end of opponent's next turn.",
+            getattr(enemy_root, "name", "Enemy"),
+        )
+        return True
 
     def _use_tau_reactive_impact_dampeners(self, stratagem: Any, **kwargs) -> bool:
         target_unit = kwargs.get("unit") or kwargs.get("target_unit")

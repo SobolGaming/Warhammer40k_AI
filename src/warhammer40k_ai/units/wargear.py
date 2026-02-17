@@ -1255,6 +1255,27 @@ class WargearProfile:
         except Exception:
             return False
 
+    def _tau_montka_pinpoint_counter_offensive_applies(
+        self,
+        attacker_unit: Optional['Unit'],
+        target_unit: Optional['Unit'],
+    ) -> bool:
+        if attacker_unit is None or target_unit is None:
+            return False
+        try:
+            army = attacker_unit.get_parent_army()
+        except Exception:
+            army = None
+        player = getattr(army, "player", None) if army is not None else None
+        stratagems = getattr(player, "stratagems", None) if player is not None else None
+        check = getattr(stratagems, "tau_montka_pinpoint_counter_offensive_applies", None) if stratagems is not None else None
+        if not callable(check):
+            return False
+        try:
+            return bool(check(attacker_unit, target_unit))
+        except Exception:
+            return False
+
     def _possessed_daemonic_strength_damage_bonus(
         self,
         attacker: Optional['Model'],
@@ -1996,6 +2017,65 @@ class WargearProfile:
                 if tau_ap_bonus:
                     ap_val -= int(tau_ap_bonus)
         except (AttributeError, TypeError, ValueError):
+            pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_ranged():
+                attacker_unit = getattr(attacker, "parent_unit", None)
+                sr = getattr(attacker_unit, "special_rules", None) if attacker_unit is not None else None
+                if isinstance(sr, dict) and sr.get("tau_focused_fire_active"):
+                    apply_bonus = True
+                    effect_phase = str(sr.get("tau_focused_fire_expires_phase", "") or "").strip().upper()
+                    owner_id = str(sr.get("tau_focused_fire_turn_owner", "") or "")
+                    try:
+                        effect_turn = int(sr.get("tau_focused_fire_turn", 0) or 0)
+                    except Exception:
+                        effect_turn = 0
+                    current_phase = ""
+                    current_owner = ""
+                    current_turn = 0
+                    game = None
+                    try:
+                        army = attacker_unit.get_parent_army() if attacker_unit is not None else None
+                        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    except Exception:
+                        game = None
+                    if game is not None:
+                        try:
+                            current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                        except Exception:
+                            current_phase = ""
+                        try:
+                            current_turn = int(getattr(game, "turn", 0) or 0)
+                        except Exception:
+                            current_turn = 0
+                        try:
+                            current_player = getattr(game, "get_current_player", lambda: None)()
+                            current_owner = str(getattr(current_player, "id", "") or "")
+                        except Exception:
+                            current_owner = ""
+                    if effect_phase and current_phase and effect_phase != current_phase:
+                        apply_bonus = False
+                    if owner_id and current_owner and owner_id != current_owner:
+                        apply_bonus = False
+                    if effect_turn and current_turn and effect_turn != current_turn:
+                        apply_bonus = False
+                    target_id = str(sr.get("tau_focused_fire_target_id", "") or "")
+                    if target_id:
+                        try:
+                            target_root = target.get_attached_unit_root()
+                        except Exception:
+                            target_root = target
+                        current_target_id = str(get_entity_id(target_root) or "")
+                        if current_target_id and current_target_id != target_id:
+                            apply_bonus = False
+                    if apply_bonus:
+                        try:
+                            ff_bonus = int(sr.get("tau_focused_fire_ap_bonus", 1) or 1)
+                        except Exception:
+                            ff_bonus = 1
+                        if ff_bonus:
+                            ap_val -= int(ff_bonus)
+        except Exception:
             pass
         try:
             if self.parent_wargear and self.parent_wargear.is_melee():
@@ -3895,6 +3975,63 @@ class WargearProfile:
                                 closest_enemy_hit_reroll_rule = rule
         except Exception:
             closest_enemy_hit_reroll_rule = None
+        closest_enemy_wound_reroll_rule = None
+        try:
+            is_ranged = bool(getattr(getattr(self, "parent_wargear", None), "is_ranged", lambda: False)())
+            if is_ranged:
+                unit = getattr(attacker, "parent_unit", None)
+                sr = getattr(unit, "special_rules", None) if unit is not None else None
+                if isinstance(sr, dict) and sr.get("tau_combat_debarkation_active"):
+                    apply_bonus = True
+                    owner_id = str(sr.get("tau_combat_debarkation_turn_owner", "") or "")
+                    current_owner = ""
+                    current_turn = 0
+                    phase_name = ""
+                    try:
+                        game = unit.get_parent_army().player.game if unit is not None else None
+                    except Exception:
+                        game = None
+                    if game is not None:
+                        try:
+                            current_turn = int(getattr(game, "turn", 0) or 0)
+                        except Exception:
+                            current_turn = 0
+                        try:
+                            phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                        except Exception:
+                            phase_name = ""
+                        try:
+                            current_player = getattr(game, "get_current_player", lambda: None)()
+                            current_owner = str(getattr(current_player, "id", "") or "")
+                        except Exception:
+                            current_owner = ""
+                    effect_phase = str(sr.get("tau_combat_debarkation_expires_phase", "") or "").strip().upper()
+                    if effect_phase and phase_name and phase_name != effect_phase:
+                        apply_bonus = False
+                    if owner_id and current_owner and owner_id != current_owner:
+                        apply_bonus = False
+                    try:
+                        marked_turn = int(sr.get("tau_combat_debarkation_turn", 0) or 0)
+                    except Exception:
+                        marked_turn = 0
+                    if marked_turn and current_turn and marked_turn != current_turn:
+                        apply_bonus = False
+                    if apply_bonus:
+                        gm = game_map
+                        if gm is None:
+                            try:
+                                gm = unit.get_parent_army().player.game.map
+                            except Exception:
+                                gm = None
+                        if gm is not None and getattr(unit, "is_target_closest_eligible", None):
+                            if unit.is_target_closest_eligible(attacker, self, target, gm):
+                                source_name = str(sr.get("tau_combat_debarkation_source", "") or "Combat Debarkation").strip()
+                                closest_enemy_wound_reroll_rule = {
+                                    "reroll_wound": True,
+                                    "source": source_name or "Combat Debarkation",
+                                }
+        except Exception:
+            closest_enemy_wound_reroll_rule = None
         closest_monster_vehicle_rule = None
         try:
             is_ranged = bool(getattr(getattr(self, "parent_wargear", None), "is_ranged", lambda: False)())
@@ -4111,6 +4248,8 @@ class WargearProfile:
                 attack_instance["furious_onslaught_applies"] = True
             if closest_enemy_hit_reroll_rule:
                 attack_instance["closest_enemy_hit_reroll_rule"] = closest_enemy_hit_reroll_rule
+            if closest_enemy_wound_reroll_rule:
+                attack_instance["closest_enemy_wound_reroll_rule"] = closest_enemy_wound_reroll_rule
             if closest_monster_vehicle_rule:
                 attack_instance["closest_monster_vehicle_reroll_rule"] = closest_monster_vehicle_rule
             if monster_vehicle_reroll_rule:
@@ -4154,6 +4293,8 @@ class WargearProfile:
                             extra_instance["furious_onslaught_applies"] = True
                         if closest_enemy_hit_reroll_rule:
                             extra_instance["closest_enemy_hit_reroll_rule"] = closest_enemy_hit_reroll_rule
+                        if closest_enemy_wound_reroll_rule:
+                            extra_instance["closest_enemy_wound_reroll_rule"] = closest_enemy_wound_reroll_rule
                         if closest_monster_vehicle_rule:
                             extra_instance["closest_monster_vehicle_reroll_rule"] = closest_monster_vehicle_rule
                         if monster_vehicle_reroll_rule:
@@ -7956,6 +8097,13 @@ class WargearProfile:
                 reroll_full_reasons.append("Bloody Vengeance")
         except Exception:
             pass
+        # T'au Empire (Mont'ka): PINPOINT COUNTER-OFFENSIVE.
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            if self._tau_montka_pinpoint_counter_offensive_applies(unit, target):
+                reroll_full_reasons.append("Pinpoint Counter-Offensive")
+        except Exception:
+            pass
         # Grey Knights: Hallowed Ground (Warpbane Task Force) hit rerolls.
         unit = getattr(attacker, "parent_unit", None)
         army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
@@ -11228,6 +11376,13 @@ class WargearProfile:
             rule = attack_instance.get("monster_vehicle_reroll_rule")
             if rule and bool(rule.get("reroll_wound")):
                 reason = str(rule.get("source", "") or "Monster/Vehicle rerolls").strip() or "Monster/Vehicle rerolls"
+                reroll_full_reasons.append(reason)
+        except Exception:
+            pass
+        try:
+            rule = attack_instance.get("closest_enemy_wound_reroll_rule")
+            if rule and bool(rule.get("reroll_wound")):
+                reason = str(rule.get("source", "") or "Closest eligible enemy").strip() or "Closest eligible enemy"
                 reroll_full_reasons.append(reason)
         except Exception:
             pass

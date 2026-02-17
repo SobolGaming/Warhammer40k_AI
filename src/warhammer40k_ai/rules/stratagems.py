@@ -29,10 +29,13 @@ logger = logging.getLogger(__name__)
 
 IMPLEMENTED_STRATAGEM_NAMES = {
     "ADRENAL SURGE",
+    "AGGRESSIVE MOBILITY",
     "ARDENT AUTOMATA",
     "A CHALLENGE MET",
     "A GRIM WARNING",
     "AUTOMATED REPAIR DRONES",
+    "COMBAT DEBARKATION",
+    "FOCUSED FIRE",
     "DEATH FRENZY",
     "ENDLESS SWARM",
     "EXPERIMENTAL AMMUNITION",
@@ -41,6 +44,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "INFERNAL FUSILLADE",
     "NEUROWEB SYSTEM JAMMER",
     "OVERRUN",
+    "PINPOINT COUNTER-OFFENSIVE",
+    "PULSE ONSLAUGHT",
     "PREDATORY IMPERATIVE",
     "RAPID REGENERATION",
     "REACTIVE IMPACT DAMPENERS",
@@ -188,6 +193,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "OVERWHELMING GENEROSITY",
     "CAPRICIOUS REACTIONS",
     "COMBAT STIMMS",
+    "COUNTERFIRE DEFENCE SYSTEMS",
     "CREEPING BLIGHT",
     "CRUEL RAIDERS",
     "PUTRID DETONATION",
@@ -283,6 +289,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "LIGHTNING-FAST REACTIONS",
     "MARTIAL PERFECTION",
     "NEUROWEB SYSTEM JAMMER",
+    "PINPOINT COUNTER-OFFENSIVE",
     "RAPID REGENERATION",
     "REACTIVE IMPACT DAMPENERS",
     "REVENGE OF THE RUBRICAE",
@@ -336,6 +343,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "VENGEFUL SURGE",
     "CAPRICIOUS REACTIONS",
     "COMBAT STIMMS",
+    "COUNTERFIRE DEFENCE SYSTEMS",
     "CLOUDSTRIKE",
     "CONTEMPTUOUS DISREGARD",
     "DIVINE INTERVENTION",
@@ -1301,7 +1309,20 @@ class StratagemManager(
         if names & {"FIRES OF COVENANT", "A CHALLENGE MET"}:
             add("unit_set_up", self._on_unit_set_up)
 
-        if names & {"A GRIM WARNING", "BLOOD OFFERING", "BLOODY VENGEANCE", "DRAWN TO THE SLAUGHTER", "HEIGHTENED JEALOUSY", "ONTO THE NEXT", "UNBOUND ARROGANCE", "TERRIFYING SPECTACLE", "DIVINE INTERVENTION", "SUSTAINED BY AGONY", "ECSTATIC SLAUGHTER"}:
+        if names & {
+            "A GRIM WARNING",
+            "BLOOD OFFERING",
+            "BLOODY VENGEANCE",
+            "DRAWN TO THE SLAUGHTER",
+            "HEIGHTENED JEALOUSY",
+            "ONTO THE NEXT",
+            "PINPOINT COUNTER-OFFENSIVE",
+            "UNBOUND ARROGANCE",
+            "TERRIFYING SPECTACLE",
+            "DIVINE INTERVENTION",
+            "SUSTAINED BY AGONY",
+            "ECSTATIC SLAUGHTER",
+        }:
             add("unit_destroyed", self._on_unit_destroyed)
 
         if names & {"SKULLS FOR THE SKULL THRONE!", "FICKLEFIRE", "GORY DEDICATION", "REVENGE OF THE RUBRICAE"}:
@@ -1340,6 +1361,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_needgaard_reactive_reprisal)
         if "REVENGE OF THE RUBRICAE" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_thousand_sons_rubricae_revenge)
+        if "PULSE ONSLAUGHT" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_tau_pulse_onslaught)
         if names & {"DIABOLIC MAJESTY", "HEIGHTENED JEALOUSY"}:
             add("emperors_children_favoured_champions_updated", self._on_emperors_children_favoured_champions_updated)
 
@@ -1372,6 +1395,7 @@ class StratagemManager(
             "IMPLACABLE GUARDIANS",
             "SMOKESCREEN",
             "ARMOUR OF CONTEMPT",
+            "COUNTERFIRE DEFENCE SYSTEMS",
             "REACTIVE IMPACT DAMPENERS",
             "CAPRICIOUS REACTIONS",
             "PRAISE THE FALLEN",
@@ -1470,6 +1494,7 @@ class StratagemManager(
             "OUTFLANKING STRIKE",
         }
         phase_end_cleanup_names = {
+            "AGGRESSIVE MOBILITY",
             "ASPIRE TO INFAMY",
             "BLOODTHIRSTY HORDE",
             "BRAZEN CONTEMPT",
@@ -2469,6 +2494,107 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires a wounded T'AU EMPIRE BATTLESUIT unit on the battlefield"
             return result
+        if name_u == "AGGRESSIVE MOBILITY":
+            if self._tau_aggressive_mobility_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires one of your T'AU EMPIRE units on the battlefield that has not been selected to move this phase"
+            return result
+        if name_u == "COMBAT DEBARKATION":
+            if self._tau_combat_debarkation_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires a T'AU EMPIRE INFANTRY unit on the battlefield that disembarked from a friendly TRANSPORT this turn"
+            )
+            return result
+        if name_u == "FOCUSED FIRE":
+            game = getattr(self, "game", None)
+            battle_round = 0
+            if game is not None:
+                get_battle_round = getattr(game, "get_battle_round", None)
+                try:
+                    if callable(get_battle_round):
+                        battle_round = int(get_battle_round() or 0)
+                    else:
+                        battle_round = int(getattr(game, "turn", 0) or 0)
+                except (TypeError, ValueError):
+                    battle_round = 0
+            if battle_round >= 4:
+                result["reason"] = "Cannot be used in battle rounds 4 or 5"
+                return result
+            friendly = self._tau_focused_fire_friendly_candidates()
+            enemy = self._tau_focused_fire_enemy_candidates()
+            if len(friendly) >= 2 and enemy:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires your Shooting phase with two T'AU EMPIRE units not yet selected to shoot and one enemy unit on the battlefield"
+            )
+            return result
+        if name_u == "COUNTERFIRE DEFENCE SYSTEMS":
+            attacking_unit = (
+                context.get("attacking_unit")
+                or context.get("attacker_unit")
+                or context.get("enemy_unit")
+            )
+            target_units = context.get("target_units") or context.get("targets")
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._tau_counterfire_defence_systems_candidates(
+                    attacking_unit=attacking_unit,
+                    target_units=target_units,
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires opponent Shooting phase target-selection trigger with an enemy unit that selected one of your T'AU EMPIRE units as a target"
+            return result
+        if name_u == "PINPOINT COUNTER-OFFENSIVE":
+            enemy_unit = (
+                context.get("enemy_unit")
+                or context.get("attacking_unit")
+                or context.get("attacker_unit")
+            )
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._tau_pinpoint_counter_offensive_candidates(
+                    destroyed_unit=context.get("target_unit") or context.get("unit"),
+                )
+            if enemy_unit is not None and candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires any-phase unit-destroyed trigger with your destroyed non-KROOT T'AU EMPIRE unit and the enemy unit that destroyed it"
+            )
+            return result
+        if name_u == "PULSE ONSLAUGHT":
+            attacker_unit = (
+                context.get("unit")
+                or context.get("friendly_unit")
+                or context.get("attacking_unit")
+                or context.get("attacker_unit")
+            )
+            hits_by_target = context.get("hits_by_target")
+            candidates = list(context.get("candidates") or context.get("enemy_candidates") or [])
+            if not candidates and attacker_unit is not None:
+                candidates = self._tau_pulse_onslaught_enemy_candidates(
+                    attacker_unit=attacker_unit,
+                    hits_by_target=hits_by_target,
+                )
+            if attacker_unit is not None and candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires your Shooting phase just-after-shooting trigger with a non-KROOT T'AU EMPIRE INFANTRY unit and a hit non-MONSTER/non-VEHICLE enemy unit"
+            )
+            return result
         if name_u == "EXPERIMENTAL AMMUNITION":
             if self._tau_experimental_ammunition_candidates():
                 result["available"] = True
@@ -2710,7 +2836,11 @@ class StratagemManager(
         name_u = (name or "").strip().upper()
         hints = {
             "A GRIM WARNING": "Objective: destroyed BLOOD ANGELS unit on your objective",
+            "AGGRESSIVE MOBILITY": "Target: your T'AU EMPIRE unit that has not been selected to move; if it Advances this phase, add 6\" instead of rolling",
             "AUTOMATED REPAIR DRONES": "Target: T'AU EMPIRE BATTLESUIT unit with a wounded BATTLESUIT model",
+            "COMBAT DEBARKATION": "Target: your T'AU EMPIRE INFANTRY unit that disembarked from a friendly TRANSPORT this turn; re-roll Wound rolls against the closest eligible enemy unit this phase",
+            "COUNTERFIRE DEFENCE SYSTEMS": "Target: your T'AU EMPIRE unit selected as an enemy shooting target; subtract 1 from incoming Damage this phase",
+            "FOCUSED FIRE": "Target: two of your T'AU EMPIRE units not yet selected to shoot, and one enemy unit; selected friendly units can only target that enemy unit and improve AP by 1 this phase (not battle rounds 4-5)",
             "ARDENT AUTOMATA": "Target: your RUBRICAE unit that just Fell Back this phase; it can shoot and charge this turn",
             "IMPLACABLE GUARDIANS": "Target: your RUBRIC MARINES PSYKER unit selected as an enemy shooting target; subtract 1 from Damage allocated to non-PSYKER models this phase",
             "INFERNAL FUSILLADE": "Target: your THOUSAND SONS PSYKER unit not yet selected to shoot; inferno bolt weapons gain [PSYCHIC] and Strength 5 this phase",
@@ -2722,6 +2852,7 @@ class StratagemManager(
             "NEUROWEB SYSTEM JAMMER": "Target: T'AU EMPIRE CRISIS unit selected as a target by an enemy shooter; until end of phase it can only be targeted by ranged attacks from within 18\"",
             "OVERRUN": "Target: TYRANIDS unit just before it consolidates; gets +3\" consolidate (if it can end in Engagement Range), and if within Synapse and not in Engagement Range it can make a 6\" Normal move instead",
             "PREDATORY IMPERATIVE": "Target: one TYRANIDS unit, or up to two TYRANIDS units if both are within Synapse Range; choose one Hyper-adaptation (other than the one chosen at battle round 1) for selected units until your next Command phase",
+            "PULSE ONSLAUGHT": "Target: one enemy non-MONSTER/non-VEHICLE unit hit by your non-KROOT T'AU EMPIRE INFANTRY unit that just shot; enemy is shaken (-2 Move, -2 Advance, -2 Charge) until end of opponent's next turn",
             "RAPID REGENERATION": "Target: TYRANIDS unit selected as an enemy unit's attack target in Shooting/Fight; gains Feel No Pain 6+ (or 5+ while within Synapse Range) this phase",
             "REACTIVE IMPACT DAMPENERS": "Target: T'AU EMPIRE BATTLESUIT unit selected as an enemy attack target; incoming attacks suffer -1 to wound while attacker Strength is greater than target Toughness this phase",
             "REVENGE OF THE RUBRICAE": "Target: your RUBRICAE unit within 6\" of a destroyed THOUSAND SONS PSYKER model; after the enemy unit shoots, it can shoot reactively into that attacker",
@@ -3397,6 +3528,10 @@ class StratagemManager(
             raise
         try:
             self._queue_votann_needgaard_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_tau_montka_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
 
@@ -4534,6 +4669,29 @@ class StratagemManager(
                     if not isinstance(sr, dict):
                         continue
                     if phase_name == "MOVEMENT_PHASE":
+                        exp = str(sr.get("tau_aggressive_mobility_expires_phase", "") or "").strip().upper()
+                        if sr.get("tau_aggressive_mobility_active") and (not exp or exp == "MOVEMENT_PHASE"):
+                            effects = list(sr.get("advance_no_roll_effects", []) or [])
+                            kept = [
+                                entry
+                                for entry in effects
+                                if not (
+                                    isinstance(entry, dict)
+                                    and str(entry.get("tag", "") or "") == "stratagem:tau_aggressive_mobility"
+                                )
+                            ]
+                            if kept:
+                                sr["advance_no_roll_effects"] = kept
+                            else:
+                                sr.pop("advance_no_roll_effects", None)
+                            for key in (
+                                "tau_aggressive_mobility_active",
+                                "tau_aggressive_mobility_expires_phase",
+                                "tau_aggressive_mobility_turn_owner",
+                                "tau_aggressive_mobility_turn",
+                                "tau_aggressive_mobility_source",
+                            ):
+                                sr.pop(key, None)
                         exp = str(sr.get("chronoshift_expires_phase", "") or "").strip().upper()
                         if sr.get("chronoshift_active") and (not exp or exp == "MOVEMENT_PHASE"):
                             sr.pop("chronoshift_active", None)
@@ -6497,6 +6655,15 @@ class StratagemManager(
         except Exception:
             raise
 
+    def _on_unit_shooting_resolved_tau_pulse_onslaught(self, attacker_unit=None, hits_by_target=None, **_kwargs):
+        try:
+            self._queue_tau_montka_shooting_resolved_reactions(
+                attacker_unit=attacker_unit,
+                hits_by_target=hits_by_target,
+            )
+        except Exception:
+            raise
+
     def _on_unit_shooting_resolved_slaanesh_vengeful_surge(self, attacker_unit=None, **_kwargs):
         try:
             self._resolve_emperors_children_slaanesh_vengeful_surge_after_shooting(
@@ -6751,6 +6918,13 @@ class StratagemManager(
             raise
         try:
             self._queue_tau_experimental_prototype_shooting_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_tau_montka_shooting_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -9655,6 +9829,13 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_tau_montka_unit_destroyed_reactions(
+                unit=unit,
+                destroyed_by_unit=kwargs.get("destroyed_by_unit"),
+            )
+        except Exception:
+            raise
+        try:
             self._queue_hallowed_martyrs_unit_destroyed_reactions(
                 unit=unit,
                 last_model=last_model,
@@ -12343,7 +12524,7 @@ class StratagemManager(
         votann_result = self._use_votann_needgaard_stratagem(s, **kwargs)
         if votann_result is not None:
             return votann_result
-        tau_result = self._use_tau_experimental_prototype_cadre_stratagem(s, **kwargs)
+        tau_result = self._use_tau_empire_stratagem(s, **kwargs)
         if tau_result is not None:
             return tau_result
         thousand_sons_result = self._use_thousand_sons_rubricae_phalanx_stratagem(s, **kwargs)

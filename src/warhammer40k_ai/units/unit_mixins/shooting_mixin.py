@@ -832,6 +832,61 @@ class ShootingMixin:
         except Exception:
             pass
 
+        # Tau Empire (Mont'ka): Focused Fire target lock.
+        try:
+            root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+        except Exception:
+            root = self
+        try:
+            sr = getattr(root, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("tau_focused_fire_active"):
+                apply_lock = True
+                effect_phase = str(sr.get("tau_focused_fire_expires_phase", "") or "").strip().upper()
+                owner_id = str(sr.get("tau_focused_fire_turn_owner", "") or "")
+                try:
+                    effect_turn = int(sr.get("tau_focused_fire_turn", 0) or 0)
+                except Exception:
+                    effect_turn = 0
+                game = None
+                current_phase = ""
+                current_owner = ""
+                current_turn = 0
+                try:
+                    game = getattr(self.get_parent_army().player, "game", None)
+                except Exception:
+                    game = None
+                if game is not None:
+                    try:
+                        current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    except Exception:
+                        current_phase = ""
+                    try:
+                        current_turn = int(getattr(game, "turn", 0) or 0)
+                    except Exception:
+                        current_turn = 0
+                    try:
+                        current_player = getattr(game, "get_current_player", lambda: None)()
+                        current_owner = str(getattr(current_player, "id", "") or "")
+                    except Exception:
+                        current_owner = ""
+                if effect_phase and current_phase and current_phase != effect_phase:
+                    apply_lock = False
+                if owner_id and current_owner and owner_id != current_owner:
+                    apply_lock = False
+                if effect_turn and current_turn and effect_turn != current_turn:
+                    apply_lock = False
+                target_id = str(sr.get("tau_focused_fire_target_id", "") or "")
+                if apply_lock and target_id:
+                    try:
+                        target_root = target_unit.get_attached_unit_root()
+                    except Exception:
+                        target_root = target_unit
+                    current_target_id = str(get_entity_id(target_root) or "")
+                    if current_target_id and current_target_id != target_id:
+                        return False
+        except Exception:
+            pass
+
         # TARGET LEGALITY: Locked in Combat targeting restrictions (10e).
         # - Units that are Locked in Combat normally cannot be selected as targets of ranged attacks.
         # - Exception: in the controlling player's Shooting phase, VEHICLE/MONSTER units can be targeted even while Locked.

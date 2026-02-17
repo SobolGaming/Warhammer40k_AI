@@ -1430,6 +1430,91 @@ _EXPERIMENTAL_PROTOTYPE_CADRE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _EXPERIMENTAL_PROTOTYPE_CADRE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_MONTKA_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008812004": StratagemToolDescriptor(
+        stratagem_id="000008812004",
+        name="Focused Fire",
+        timing="start_of_your_shooting_phase",
+        target="two_tau_empire_units_not_yet_selected_to_shoot_and_one_enemy_unit",
+        duration="until_end_of_phase",
+        effect="target_lock_and_ranged_ap_bonus",
+        cp_cost=1,
+        effect_params={
+            "friendly_unit_count": 2,
+            "enemy_target_count": 1,
+            "ap_bonus": 1,
+            "restriction": "cannot_use_in_battle_rounds_4_to_5",
+        },
+    ),
+    "000008812005": StratagemToolDescriptor(
+        stratagem_id="000008812005",
+        name="Combat Debarkation",
+        timing="your_shooting_phase_after_select_to_shoot",
+        target="tau_empire_infantry_unit_disembarked_from_friendly_transport_this_turn",
+        duration="until_end_of_phase",
+        effect="closest_eligible_enemy_wound_reroll",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "any",
+            "reroll_wound_full": True,
+            "closest_target_only": True,
+        },
+    ),
+    "000008812006": StratagemToolDescriptor(
+        stratagem_id="000008812006",
+        name="Pulse Onslaught",
+        timing="your_shooting_phase_after_friendly_unit_shoots",
+        target="non_kroot_tau_empire_infantry_unit_that_just_shot_and_hit_enemy_non_monster_non_vehicle_unit",
+        duration="until_end_of_opponents_next_turn",
+        effect="apply_shaken_mobility_debuff",
+        cp_cost=1,
+        effect_params={
+            "move_penalty": -2,
+            "advance_penalty": -2,
+            "charge_penalty": -2,
+        },
+    ),
+    "000008812003": StratagemToolDescriptor(
+        stratagem_id="000008812003",
+        name="Aggressive Mobility",
+        timing="movement_phase_before_select_to_move",
+        target="tau_empire_unit_not_yet_moved",
+        duration="until_end_of_phase",
+        effect="advance_no_roll_plus_6",
+        cp_cost=1,
+        effect_params={"advance_distance": 6},
+    ),
+    "000008812007": StratagemToolDescriptor(
+        stratagem_id="000008812007",
+        name="Counterfire Defence Systems",
+        timing="opponent_shooting_phase_after_enemy_targets_selected",
+        target="tau_empire_unit_targeted_by_enemy_shooter",
+        duration="until_end_of_phase",
+        effect="defensive_damage_reduction",
+        cp_cost=2,
+        effect_params={"damage_reduction": 1},
+    ),
+    "000008812002": StratagemToolDescriptor(
+        stratagem_id="000008812002",
+        name="Pinpoint Counter-Offensive",
+        timing="any_phase_after_friendly_non_kroot_tau_unit_destroyed",
+        target="destroyed_non_kroot_tau_empire_unit",
+        duration="until_end_of_battle",
+        effect="tau_non_kroot_hit_reroll_vs_destroying_enemy",
+        cp_cost=1,
+        effect_params={
+            "trigger_enemy_is_marked_target": True,
+            "attacker_required_keywords_any": ["T'AU EMPIRE"],
+            "attacker_excluded_keywords_any": ["KROOT"],
+            "reroll_hit_full": True,
+        },
+    ),
+}
+
+_MONTKA_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _MONTKA_STRATAGEM_DESCRIPTORS.values()
+}
+
 _INVASION_FLEET_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008349002": StratagemToolDescriptor(
         stratagem_id="000008349002",
@@ -1750,6 +1835,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _EXPERIMENTAL_PROTOTYPE_CADRE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _MONTKA_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _INVASION_FLEET_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -1783,6 +1871,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _ARMOURED_WARHOST_STRATAGEM_BY_NAME.get(key)
         or _ASPECT_HOST_STRATAGEM_BY_NAME.get(key)
         or _EXPERIMENTAL_PROTOTYPE_CADRE_STRATAGEM_BY_NAME.get(key)
+        or _MONTKA_STRATAGEM_BY_NAME.get(key)
         or _INVASION_FLEET_STRATAGEM_BY_NAME.get(key)
         or _RUBRICAE_PHALANX_STRATAGEM_BY_NAME.get(key)
         or _NEEDGAARD_OATHBAND_STRATAGEM_BY_NAME.get(key)
