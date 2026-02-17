@@ -448,6 +448,9 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time a necrons model from your army makes an attack that targets a unit within range of one or more objective markers add \d+ to the hit roll",
             r"in addition ranged weapons equipped by necrons vehicle and necrons mounted models excluding titanic models from your army have the assault ability",
         ),
+        "Bold Gallantry": (
+            r"each time an imperial knights unit from your army advances until the end of the turn ranged weapons equipped by imperial knights models from your army have the assault ability",
+        ),
         "Get Stuck In": (
             r"melee weapons equipped by orks models from your army have the sustained hits \d+ ability",
         ),
@@ -1669,6 +1672,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
             "Scintillating Legion: Flux tokens tracked and transferable; TZEENTCH LEGIONES DAEMONICA units can spend tokens for Advance/Hit/Wound/Save/Damage/Hazardous re-rolls (multi-die selections supported), opponents can spend tokens on Advance/Hit/Wound/Save re-rolls unless they also have Fates in Flux, and Command phase token gain applies when the opponent has tokens.",
         ),
         "Martial Grace": ("Supported", "Warhost: +1 Battle Focus token; Swift as the Wind +1\" move; +1 to D6 Agile Manoeuvre rolls."),
+        "Bold Gallantry": (
+            "Supported",
+            "Valourstrike Lance: IMPERIAL KNIGHTS ranged weapons count as [ASSAULT] when checking Advance-and-shoot eligibility.",
+        ),
         "Relentless Onslaught": ("Supported", "Starshatter Arsenal: +1 to hit vs targets within objective range; VEHICLE/MOUNTED (non-TITANIC) ranged weapons gain Assault."),
         "Ruthless Discipline": (
             "Supported",

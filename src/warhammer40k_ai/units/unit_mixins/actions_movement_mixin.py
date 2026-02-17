@@ -9490,6 +9490,14 @@ class ActionsMovementMixin:
             pass
         try:
             army = self.get_parent_army()
+            mgr = getattr(army, "imperial_knights_detachments", None) if army is not None else None
+            if mgr is not None and callable(getattr(mgr, "bold_gallantry_assault_applies", None)):
+                if mgr.bold_gallantry_assault_applies(self, profile):
+                    return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
             mgr = getattr(army, "combat_doctrines", None) if army is not None else None
             if mgr is not None and getattr(mgr, "can_shoot_after_advance", None):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
