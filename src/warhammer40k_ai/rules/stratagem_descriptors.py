@@ -1772,6 +1772,32 @@ _NEEDGAARD_OATHBAND_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _NEEDGAARD_OATHBAND_STRATAGEM_DESCRIPTORS.values()
 }
 
+_VALOURSTRIKE_LANCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010494005": StratagemToolDescriptor(
+        stratagem_id="000010494005",
+        name="Vow of Retribution",
+        timing="shooting_phase_on_select_to_shoot",
+        target="imperial_knights_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="ranged_lethal_hits",
+        cp_cost=1,
+    ),
+    "000010494007": StratagemToolDescriptor(
+        stratagem_id="000010494007",
+        name="Rotate Ion Shields",
+        timing="opponent_shooting_phase_after_targets_selected",
+        target="imperial_knights_unit_targeted",
+        duration="until_end_of_phase",
+        effect="invulnerable_save",
+        cp_cost=1,
+        effect_params={"invulnerable_save": 4},
+    ),
+}
+
+_VALOURSTRIKE_LANCE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _VALOURSTRIKE_LANCE_STRATAGEM_DESCRIPTORS.values()
+}
+
 
 def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> Optional[StratagemToolDescriptor]:
     if stratagem_id:
@@ -1847,6 +1873,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _NEEDGAARD_OATHBAND_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _VALOURSTRIKE_LANCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
     key = _normalize_name(name)
     if not key:
         return None
@@ -1875,4 +1904,5 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _INVASION_FLEET_STRATAGEM_BY_NAME.get(key)
         or _RUBRICAE_PHALANX_STRATAGEM_BY_NAME.get(key)
         or _NEEDGAARD_OATHBAND_STRATAGEM_BY_NAME.get(key)
+        or _VALOURSTRIKE_LANCE_STRATAGEM_BY_NAME.get(key)
     )

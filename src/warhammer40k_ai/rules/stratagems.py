@@ -23,6 +23,7 @@ from .stratagems_tyranids import TyranidsStratagemMixin
 from .stratagems_votann import VotannStratagemMixin
 from .stratagems_world_eaters import WorldEatersStratagemMixin
 from .stratagems_grey_knights import GreyKnightsStratagemMixin
+from .stratagems_imperial_knights import ImperialKnightsStratagemMixin
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +134,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "UNLEASH THE LIONS",
     "UNBRIDLED CARNAGE",
     "VETERAN SHARPSHOOTERS",
+    "VOW OF RETRIBUTION",
     "VENGEFUL SURGE",
     "WEBWAY TUNNEL",
     "UNYIELDING FORMS",
@@ -1139,6 +1141,7 @@ class StratagemManager(
     ThousandSonsStratagemMixin,
     TyranidsStratagemMixin,
     OrksStratagemMixin,
+    ImperialKnightsStratagemMixin,
 ):
     def __init__(self, player) -> None:
         # Lazy import to avoid cycles
@@ -2460,6 +2463,13 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires ordered ASTRA MILITARUM unit within objective range that has not shot"
             return result
+        if name_u == "VOW OF RETRIBUTION":
+            if self._imperial_knights_vow_of_retribution_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires IMPERIAL KNIGHTS unit on battlefield that has not shot"
+            return result
         if name_u == "VETERAN SHARPSHOOTERS":
             if self._grizzled_veteran_sharpshooters_candidates():
                 result["available"] = True
@@ -2891,6 +2901,7 @@ class StratagemManager(
             "PURGING FIRE": "Target: ASTRA MILITARUM unit with an active Order within objective range (not shot)",
             "SNAP TO IT": "Target: ASTRA MILITARUM OFFICER unit; issue one Order now",
             "VETERAN SHARPSHOOTERS": "Target: ASTRA MILITARUM unit (not shot)",
+            "VOW OF RETRIBUTION": "Target: IMPERIAL KNIGHTS unit that has not been selected to shoot this phase; ranged weapons gain Lethal Hits this phase",
             "INEXORABLE ADVANCE": "Target: your RUBRICAE unit not yet selected to move; it ignores Move/Advance modifiers and gains ranged [ASSAULT] this turn",
             "RIGHTEOUS VENGEANCE": "Target: ADEPTA SORORITAS unit that has not fought",
             "SUFFERING AND SACRIFICE": "Target: ADEPTA SORORITAS INFANTRY or WALKER unit",
@@ -4503,6 +4514,18 @@ class StratagemManager(
                                     "purging_fire_owner",
                                     "purging_fire_turn",
                                     "purging_fire_source",
+                                ):
+                                    sr.pop(key, None)
+                                u.special_rules = sr
+                        if isinstance(sr, dict) and sr.get("vow_of_retribution_active") is True:
+                            exp = str(sr.get("vow_of_retribution_expires_phase", "") or "").strip().upper()
+                            if not exp or exp == "SHOOTING_PHASE":
+                                for key in (
+                                    "vow_of_retribution_active",
+                                    "vow_of_retribution_expires_phase",
+                                    "vow_of_retribution_owner",
+                                    "vow_of_retribution_turn",
+                                    "vow_of_retribution_source",
                                 ):
                                     sr.pop(key, None)
                                 u.special_rules = sr
@@ -12533,6 +12556,9 @@ class StratagemManager(
         tyranids_result = self._use_tyranids_invasion_fleet_stratagem(s, **kwargs)
         if tyranids_result is not None:
             return tyranids_result
+        imperial_knights_result = self._use_imperial_knights_valourstrike_stratagem(s, **kwargs)
+        if imperial_knights_result is not None:
+            return imperial_knights_result
 
         # Rage-cursed Onslaught: RED WRATH (advance then shoot/charge choice; Red Thirst for both)
         if s.name.upper() == "RED WRATH":
