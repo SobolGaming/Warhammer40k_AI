@@ -2652,6 +2652,93 @@ class PositioningMixin:
                             ]
         except Exception:
             pass
+        try:
+            root = self.get_attached_unit_root()
+            sr = getattr(root, "special_rules", None)
+            if isinstance(sr, dict) and (
+                sr.get("tau_threat_assessment_analyser_active") or sr.get("threat_assessment_analyser_active")
+            ):
+                apply_bonus = True
+                exp = str(
+                    sr.get("tau_threat_assessment_analyser_expires_phase", "")
+                    or sr.get("threat_assessment_analyser_expires_phase", "")
+                    or ""
+                ).strip().upper()
+                owner_id = str(
+                    sr.get("tau_threat_assessment_analyser_turn_owner", "")
+                    or sr.get("threat_assessment_analyser_owner", "")
+                    or ""
+                )
+                try:
+                    turn = int(
+                        sr.get("tau_threat_assessment_analyser_turn", sr.get("threat_assessment_analyser_turn", 0)) or 0
+                    )
+                except (TypeError, ValueError):
+                    turn = 0
+                if exp or owner_id or turn:
+                    game = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
+                    if game is not None:
+                        try:
+                            cur_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                        except Exception:
+                            cur_phase = ""
+                        try:
+                            cur_owner = str(getattr(game.get_current_player(), "id", "") or "")
+                        except Exception:
+                            cur_owner = ""
+                        try:
+                            cur_turn = int(getattr(game, "turn", 0) or 0)
+                        except (TypeError, ValueError):
+                            cur_turn = 0
+                        if exp and cur_phase and cur_phase != exp:
+                            apply_bonus = False
+                        if owner_id and cur_owner and owner_id != cur_owner:
+                            apply_bonus = False
+                        if turn and cur_turn and turn != cur_turn:
+                            apply_bonus = False
+                atype = str(attack_type or "").strip().lower()
+                if atype and atype not in ("any", "ranged"):
+                    apply_bonus = False
+                if apply_bonus:
+                    source = str(
+                        sr.get("tau_threat_assessment_analyser_source", "")
+                        or sr.get("threat_assessment_analyser_source", "")
+                        or "THREAT ASSESSMENT ANALYSER"
+                    ).strip()
+                    source = source or "THREAT ASSESSMENT ANALYSER"
+                    if bool(
+                        sr.get("tau_threat_assessment_analyser_lethal_hits")
+                        or sr.get("threat_assessment_analyser_lethal_hits")
+                    ):
+                        rules = list(rules or []) + [
+                            {"attack_type": "ranged", "keyword": "LETHAL HITS", "source": source}
+                        ]
+                    sustained_value = 0
+                    try:
+                        sustained_value = int(
+                            sr.get(
+                                "tau_threat_assessment_analyser_sustained_hits_value",
+                                sr.get("threat_assessment_analyser_sustained_hits_value", 0),
+                            )
+                            or 0
+                        )
+                    except (TypeError, ValueError):
+                        sustained_value = 0
+                    if sustained_value <= 0 and bool(
+                        sr.get("tau_threat_assessment_analyser_sustained_hits")
+                        or sr.get("threat_assessment_analyser_sustained_hits")
+                    ):
+                        sustained_value = 1
+                    if sustained_value > 0:
+                        rules = list(rules or []) + [
+                            {
+                                "attack_type": "ranged",
+                                "keyword": f"SUSTAINED HITS {int(sustained_value)}",
+                                "source": source,
+                            }
+                        ]
+        except Exception:
+            pass
         if not rules:
             return {}
         return self._resolve_attack_keyword_bonuses_from_rules(rules, attack_type=attack_type)

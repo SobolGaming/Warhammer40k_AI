@@ -2031,6 +2031,35 @@ class AttackResolutionManager:
                 attacker_ranged_hazardous = bool(apply_hazardous)
                 if attacker_ranged_hazardous:
                     hazardous_active = True
+            if isinstance(attacker_sr, dict) and attacker_sr.get("tau_threat_assessment_analyser_active"):
+                apply_hazardous = bool(attacker_sr.get("tau_threat_assessment_analyser_ranged_hazardous"))
+                exp = str(attacker_sr.get("tau_threat_assessment_analyser_expires_phase", "") or "").strip().upper()
+                if exp and exp != "SHOOTING_PHASE":
+                    apply_hazardous = False
+                if apply_hazardous:
+                    owner_id = str(attacker_sr.get("tau_threat_assessment_analyser_turn_owner", "") or "")
+                    if owner_id:
+                        attacker_army = (
+                            attacker_unit.get_parent_army()
+                            if attacker_unit is not None and hasattr(attacker_unit, "get_parent_army")
+                            else None
+                        )
+                        attacker_player = getattr(attacker_army, "player", None)
+                        attacker_owner = str(getattr(attacker_player, "id", "") or "")
+                        if not attacker_owner and attacker_player is not None:
+                            attacker_owner = str(get_entity_id(attacker_player) or "")
+                        if attacker_owner and attacker_owner != owner_id:
+                            apply_hazardous = False
+                if apply_hazardous:
+                    try:
+                        turn = int(attacker_sr.get("tau_threat_assessment_analyser_turn", 0) or 0)
+                    except (TypeError, ValueError):
+                        turn = 0
+                    if turn and int(getattr(game, "turn", 0) or 0) != int(turn):
+                        apply_hazardous = False
+                if apply_hazardous:
+                    attacker_ranged_hazardous = True
+                    hazardous_active = True
         pain_hazardous = False
         try:
             sr = getattr(attacker_unit, "special_rules", None)

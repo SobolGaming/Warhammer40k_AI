@@ -1355,6 +1355,16 @@ _EXPERIMENTAL_PROTOTYPE_CADRE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDesc
             "heal_roll": "D3+1",
         },
     ),
+    "000009984004": StratagemToolDescriptor(
+        stratagem_id="000009984004",
+        name="Experimental Weaponry",
+        timing="shooting_phase_on_select_to_shoot",
+        target="tau_empire_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="reroll_attack_count_rolls",
+        cp_cost=1,
+        effect_params={"attack_type": "ranged"},
+    ),
     "000009984005": StratagemToolDescriptor(
         stratagem_id="000009984005",
         name="Experimental Ammunition",
@@ -1369,6 +1379,23 @@ _EXPERIMENTAL_PROTOTYPE_CADRE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDesc
                 "hazardous": {"strength_bonus": 1, "ap_bonus": 1, "grant_hazardous": True},
             },
             "restriction": "cannot_target_same_unit_as_threat_assessment_analyser_same_phase",
+        },
+    ),
+    "000009984006": StratagemToolDescriptor(
+        stratagem_id="000009984006",
+        name="Threat Assessment Analyser",
+        timing="shooting_phase_on_select_to_shoot",
+        target="tau_empire_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="ranged_keyword_choice_with_optional_hazardous",
+        cp_cost=1,
+        effect_params={
+            "choices": {
+                "sustained": {"grant_sustained_hits": 1, "grant_lethal_hits": False, "grant_hazardous": False},
+                "lethal": {"grant_sustained_hits": 0, "grant_lethal_hits": True, "grant_hazardous": False},
+                "all": {"grant_sustained_hits": 1, "grant_lethal_hits": True, "grant_hazardous": True},
+            },
+            "restriction": "cannot_target_same_unit_as_experimental_ammunition_same_phase",
         },
     ),
 }

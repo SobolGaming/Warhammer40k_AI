@@ -311,7 +311,37 @@ class TauEmpireStratagemMixin:
             default_phase="SHOOTING_PHASE",
         )
 
-    def _tau_experimental_ammunition_candidates(self) -> list[Any]:
+    def _tau_experimental_ammunition_phase_active(self, unit: Any) -> bool:
+        return self._tau_phase_effect_active(
+            unit,
+            active_keys=(
+                "tau_experimental_ammunition_phase_active",
+                "tau_experimental_ammunition_active",
+                "experimental_ammunition_phase_active",
+                "experimental_ammunition_active",
+            ),
+            owner_keys=(
+                "tau_experimental_ammunition_phase_owner",
+                "tau_experimental_ammunition_turn_owner",
+                "experimental_ammunition_phase_owner",
+                "experimental_ammunition_owner",
+            ),
+            turn_keys=(
+                "tau_experimental_ammunition_phase_turn",
+                "tau_experimental_ammunition_turn",
+                "experimental_ammunition_phase_turn",
+                "experimental_ammunition_turn",
+            ),
+            phase_keys=(
+                "tau_experimental_ammunition_phase",
+                "tau_experimental_ammunition_expires_phase",
+                "experimental_ammunition_phase",
+                "experimental_ammunition_expires_phase",
+            ),
+            default_phase="SHOOTING_PHASE",
+        )
+
+    def _tau_experimental_prototype_shooting_candidates(self) -> list[Any]:
         if not self._is_tau_experimental_prototype_cadre_detachment():
             return []
         get_army = getattr(self.player, "get_army", None)
@@ -337,7 +367,24 @@ class TauEmpireStratagemMixin:
                 continue
             if self._tau_has_shot_this_phase(root):
                 continue
+            out.append(root)
+        return sorted(out, key=self._tau_sort_key)
+
+    def _tau_experimental_ammunition_candidates(self) -> list[Any]:
+        out = []
+        for root in self._tau_experimental_prototype_shooting_candidates():
             if self._tau_threat_assessment_analyser_active(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._tau_sort_key)
+
+    def _tau_experimental_weaponry_candidates(self) -> list[Any]:
+        return self._tau_experimental_prototype_shooting_candidates()
+
+    def _tau_threat_assessment_analyser_candidates(self) -> list[Any]:
+        out = []
+        for root in self._tau_experimental_prototype_shooting_candidates():
+            if self._tau_experimental_ammunition_phase_active(root):
                 continue
             out.append(root)
         return sorted(out, key=self._tau_sort_key)
@@ -381,6 +428,54 @@ class TauEmpireStratagemMixin:
             return "hazardous"
         return None
 
+    @staticmethod
+    def _tau_parse_threat_assessment_analyser_mode(raw_mode: Any) -> Optional[str]:
+        mode = raw_mode
+        if isinstance(mode, dict):
+            mode = (
+                mode.get("mode")
+                or mode.get("choice")
+                or mode.get("selection")
+                or mode.get("effect")
+                or mode.get("option")
+            )
+        mode_key = str(mode or "").strip().lower().replace("_", " ").replace("-", " ")
+        mode_key = " ".join(mode_key.split())
+        if not mode_key:
+            return "sustained"
+        sustained_modes = {
+            "sustained",
+            "sustained hits",
+            "sustained hits 1",
+            "sustained 1",
+            "option 1 sustained",
+            "1 sustained",
+        }
+        lethal_modes = {
+            "lethal",
+            "lethal hits",
+            "option 1 lethal",
+            "1 lethal",
+        }
+        all_modes = {
+            "all",
+            "both",
+            "combined",
+            "triple",
+            "hazardous",
+            "sustained lethal hazardous",
+            "sustained hits lethal hits hazardous",
+            "option 2",
+            "2",
+        }
+        if mode_key in sustained_modes:
+            return "sustained"
+        if mode_key in lethal_modes:
+            return "lethal"
+        if mode_key in all_modes:
+            return "all"
+        return None
+
     def _tau_spend_cp(self, stratagem: Any, *, target_unit: Any = None) -> bool:
         effective_cost = int(getattr(stratagem, "cp_cost", 0) or 0)
         preview_fn = getattr(self.player, "apply_stratagem_cp_cost", None)
@@ -412,9 +507,76 @@ class TauEmpireStratagemMixin:
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
         if name_u == "AUTOMATED REPAIR DRONES":
             return self._use_tau_automated_repair_drones(stratagem, **kwargs)
+        if name_u == "EXPERIMENTAL WEAPONRY":
+            return self._use_tau_experimental_weaponry(stratagem, **kwargs)
         if name_u == "EXPERIMENTAL AMMUNITION":
             return self._use_tau_experimental_ammunition(stratagem, **kwargs)
+        if name_u == "THREAT ASSESSMENT ANALYSER":
+            return self._use_tau_threat_assessment_analyser(stratagem, **kwargs)
         return None
+
+    def _use_tau_experimental_weaponry(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: EXPERIMENTAL WEAPONRY: no target unit provided")
+            return False
+
+        root = self._tau_root(target_unit)
+        if root is None:
+            return False
+        if not self._tau_owned_by_player(root, self.player):
+            logger.error("ERROR: EXPERIMENTAL WEAPONRY: target unit is not yours")
+            return False
+        if not self._tau_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_tau_empire_unit(root):
+            logger.error("ERROR: EXPERIMENTAL WEAPONRY: target must be a T'AU EMPIRE unit")
+            return False
+
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name != "shooting phase":
+            logger.error("ERROR: EXPERIMENTAL WEAPONRY: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: EXPERIMENTAL WEAPONRY: not your Shooting phase")
+            return False
+
+        eligible = candidates or self._tau_experimental_weaponry_candidates()
+        if eligible and not self._tau_unit_in_candidates(root, eligible):
+            logger.error("ERROR: EXPERIMENTAL WEAPONRY: target is not currently eligible")
+            return False
+        if self._tau_has_shot_this_phase(root):
+            logger.error("ERROR: EXPERIMENTAL WEAPONRY: target has already been selected to shoot")
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name="Shooting phase"):
+            logger.error("ERROR: EXPERIMENTAL WEAPONRY: cannot be used in current state")
+            return False
+        if not self._tau_spend_cp(stratagem, target_unit=root):
+            return False
+
+        owner_id = str(getattr(self.player, "id", "") or get_entity_id(self.player) or "")
+        current_turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        source_name = str(getattr(stratagem, "name", "") or "EXPERIMENTAL WEAPONRY")
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["tau_experimental_weaponry_active"] = True
+        sr["tau_experimental_weaponry_expires_phase"] = "SHOOTING_PHASE"
+        sr["tau_experimental_weaponry_turn_owner"] = owner_id
+        sr["tau_experimental_weaponry_turn"] = int(current_turn)
+        sr["tau_experimental_weaponry_source"] = source_name
+        root.special_rules = sr
+
+        self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: EXPERIMENTAL WEAPONRY: %s can re-roll attack-count dice for ranged weapons this phase.",
+            getattr(root, "name", "Unit"),
+        )
+        return True
 
     def _use_tau_experimental_ammunition(self, stratagem: Any, **kwargs) -> bool:
         target_unit = kwargs.get("unit") or kwargs.get("target_unit")
@@ -509,6 +671,109 @@ class TauEmpireStratagemMixin:
         else:
             logger.info(
                 "INFO: EXPERIMENTAL AMMUNITION: %s gains +1 Strength on ranged weapons this phase.",
+                getattr(root, "name", "Unit"),
+            )
+        return True
+
+    def _use_tau_threat_assessment_analyser(self, stratagem: Any, **kwargs) -> bool:
+        target_unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if target_unit is None and len(candidates) == 1:
+            target_unit = candidates[0]
+        if target_unit is None:
+            logger.error("ERROR: THREAT ASSESSMENT ANALYSER: no target unit provided")
+            return False
+
+        root = self._tau_root(target_unit)
+        if root is None:
+            return False
+        if not self._tau_owned_by_player(root, self.player):
+            logger.error("ERROR: THREAT ASSESSMENT ANALYSER: target unit is not yours")
+            return False
+        if not self._tau_on_battlefield(root, require_targetable=True):
+            return False
+        if not self._is_tau_empire_unit(root):
+            logger.error("ERROR: THREAT ASSESSMENT ANALYSER: target must be a T'AU EMPIRE unit")
+            return False
+
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower().replace("_", " ")
+        if phase_name != "shooting phase":
+            logger.error("ERROR: THREAT ASSESSMENT ANALYSER: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: THREAT ASSESSMENT ANALYSER: not your Shooting phase")
+            return False
+
+        eligible = candidates or self._tau_threat_assessment_analyser_candidates()
+        if eligible and not self._tau_unit_in_candidates(root, eligible):
+            logger.error("ERROR: THREAT ASSESSMENT ANALYSER: target is not currently eligible")
+            return False
+        if self._tau_has_shot_this_phase(root):
+            logger.error("ERROR: THREAT ASSESSMENT ANALYSER: target has already been selected to shoot")
+            return False
+        if self._tau_experimental_ammunition_phase_active(root):
+            logger.error(
+                "ERROR: THREAT ASSESSMENT ANALYSER: target unit cannot also be targeted by EXPERIMENTAL AMMUNITION in this phase"
+            )
+            return False
+        if not stratagem.can_use(self.player, self.game, unit=root, phase_name="Shooting phase"):
+            logger.error("ERROR: THREAT ASSESSMENT ANALYSER: cannot be used in current state")
+            return False
+
+        mode = self._tau_parse_threat_assessment_analyser_mode(
+            kwargs.get("mode")
+            or kwargs.get("threat_assessment_mode")
+            or kwargs.get("choice")
+            or kwargs.get("selection")
+            or kwargs.get("effect")
+        )
+        if mode is None:
+            logger.error("ERROR: THREAT ASSESSMENT ANALYSER: invalid mode selection")
+            return False
+        if not self._tau_spend_cp(stratagem, target_unit=root):
+            return False
+
+        grant_lethal = mode in {"lethal", "all"}
+        grant_sustained = mode in {"sustained", "all"}
+        grant_hazardous = mode == "all"
+        owner_id = str(getattr(self.player, "id", "") or get_entity_id(self.player) or "")
+        current_turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        source_name = str(getattr(stratagem, "name", "") or "THREAT ASSESSMENT ANALYSER")
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["tau_threat_assessment_analyser_active"] = True
+        sr["tau_threat_assessment_analyser_lethal_hits"] = bool(grant_lethal)
+        sr["tau_threat_assessment_analyser_sustained_hits"] = bool(grant_sustained)
+        sr["tau_threat_assessment_analyser_sustained_hits_value"] = 1 if grant_sustained else 0
+        sr["tau_threat_assessment_analyser_ranged_hazardous"] = bool(grant_hazardous)
+        sr["tau_threat_assessment_analyser_mode"] = mode
+        sr["tau_threat_assessment_analyser_expires_phase"] = "SHOOTING_PHASE"
+        sr["tau_threat_assessment_analyser_turn_owner"] = owner_id
+        sr["tau_threat_assessment_analyser_turn"] = int(current_turn)
+        sr["tau_threat_assessment_analyser_source"] = source_name
+        # Alias keys retained for compatibility with broader stratagem checks.
+        sr["threat_assessment_analyser_active"] = True
+        sr["threat_assessment_analyser_owner"] = owner_id
+        sr["threat_assessment_analyser_turn"] = int(current_turn)
+        sr["threat_assessment_analyser_expires_phase"] = "SHOOTING_PHASE"
+        root.special_rules = sr
+
+        self._tau_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        if mode == "all":
+            logger.info(
+                "INFO: THREAT ASSESSMENT ANALYSER: %s gains [SUSTAINED HITS 1], [LETHAL HITS], and [HAZARDOUS] on ranged weapons this phase.",
+                getattr(root, "name", "Unit"),
+            )
+        elif mode == "lethal":
+            logger.info(
+                "INFO: THREAT ASSESSMENT ANALYSER: %s gains [LETHAL HITS] on ranged weapons this phase.",
+                getattr(root, "name", "Unit"),
+            )
+        else:
+            logger.info(
+                "INFO: THREAT ASSESSMENT ANALYSER: %s gains [SUSTAINED HITS 1] on ranged weapons this phase.",
                 getattr(root, "name", "Unit"),
             )
         return True

@@ -898,6 +898,24 @@ class WargearProfile:
         )
         return (s_bonus, a_bonus, hazardous, source)
 
+    def _tau_threat_assessment_analyser_hazardous(self, attacker: 'Model') -> Tuple[bool, str]:
+        """Return (ranged_hazardous, source) for THREAT ASSESSMENT ANALYSER if active."""
+        sr = self._phase_effect_special_rules(
+            attacker,
+            active_key="tau_threat_assessment_analyser_active",
+            expires_key="tau_threat_assessment_analyser_expires_phase",
+            owner_key="tau_threat_assessment_analyser_turn_owner",
+            turn_key="tau_threat_assessment_analyser_turn",
+        )
+        if sr is None:
+            return (False, "")
+        hazardous = bool(sr.get("tau_threat_assessment_analyser_ranged_hazardous"))
+        source = (
+            str(sr.get("tau_threat_assessment_analyser_source", "") or "THREAT ASSESSMENT ANALYSER").strip()
+            or "THREAT ASSESSMENT ANALYSER"
+        )
+        return (hazardous, source)
+
     def _post_shoot_keyword_strength_bonus(
         self,
         attacker: Optional['Model'],
@@ -3111,6 +3129,85 @@ class WargearProfile:
                                     attack_result.attacks_special_modifiers.append(f"{source}: re-rolled attacks")
             except Exception:
                 pass
+
+            # Tau Empire: Experimental Weaponry attack-count rerolls in Shooting phase.
+            try:
+                already_rerolled = any(
+                    "re-rolled attacks" in str(reason or "").lower()
+                    for reason in list(attack_result.attacks_special_modifiers or [])
+                )
+                if (
+                    not already_rerolled
+                    and roll_value is None
+                    and isinstance(self.attacks, Count)
+                    and self.attacks.ctype.name == "DICE"
+                ):
+                    unit = getattr(attacker, "parent_unit", None)
+                    root = unit.get_attached_unit_root() if unit is not None and hasattr(unit, "get_attached_unit_root") else unit
+                    if (
+                        unit is not None
+                        and root is not None
+                        and self.parent_wargear is not None
+                        and callable(getattr(self.parent_wargear, "is_ranged", None))
+                        and self.parent_wargear.is_ranged()
+                    ):
+                        usr = getattr(root, "special_rules", None)
+                        if isinstance(usr, dict) and usr.get("tau_experimental_weaponry_active"):
+                            apply_reroll = True
+                            army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
+                            player_obj = getattr(army, "player", None) if army is not None else None
+                            game = getattr(player_obj, "game", None) if player_obj is not None else None
+                            owner_id = str(usr.get("tau_experimental_weaponry_turn_owner", "") or "").strip()
+                            if owner_id:
+                                current_owner = str(getattr(player_obj, "id", "") or "").strip() if player_obj is not None else ""
+                                if current_owner and current_owner != owner_id:
+                                    apply_reroll = False
+                            exp_phase = str(usr.get("tau_experimental_weaponry_expires_phase", "") or "").strip().upper()
+                            if apply_reroll and exp_phase and game is not None:
+                                current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                                if current_phase and current_phase != exp_phase:
+                                    apply_reroll = False
+                            if apply_reroll and game is not None:
+                                try:
+                                    effect_turn = int(usr.get("tau_experimental_weaponry_turn", 0) or 0)
+                                except (TypeError, ValueError):
+                                    effect_turn = 0
+                                if effect_turn:
+                                    try:
+                                        current_turn = int(getattr(game, "turn", 0) or 0)
+                                    except (TypeError, ValueError):
+                                        current_turn = 0
+                                    if current_turn and current_turn != effect_turn:
+                                        apply_reroll = False
+                            if apply_reroll:
+                                do_reroll = False
+                                provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None) if game is not None else None
+                                source = str(usr.get("tau_experimental_weaponry_source", "") or "EXPERIMENTAL WEAPONRY").strip()
+                                source = source or "EXPERIMENTAL WEAPONRY"
+                                if provider is not None:
+                                    do_reroll = bool(
+                                        provider(
+                                            player=player_obj,
+                                            unit=unit,
+                                            roll_type="attacks",
+                                            value=num_attacks,
+                                            dice=dice_rolls,
+                                            reason=source,
+                                        )
+                                    )
+                                else:
+                                    try:
+                                        avg = float(self.attacks.stat_average())
+                                        do_reroll = float(num_attacks) < avg
+                                    except Exception:
+                                        do_reroll = False
+                                if do_reroll:
+                                    new_num, new_rolls = _reroll_attacks()
+                                    num_attacks = new_num
+                                    dice_rolls = list(new_rolls or [])
+                                    attack_result.attacks_special_modifiers.append(f"{source}: re-rolled attacks")
+            except Exception:
+                pass
         else:
             num_attacks = self.attacks or 0
             attack_result.attacks_rolled = num_attacks
@@ -4331,6 +4428,14 @@ class WargearProfile:
                 attacker_ranged_hazardous = True
                 hazardous_active = True
                 source_name = str(tau_source or "EXPERIMENTAL AMMUNITION").strip() or "EXPERIMENTAL AMMUNITION"
+                note = f"{source_name}: [HAZARDOUS] (ranged)"
+                if note not in attack_result.attacks_special_modifiers:
+                    attack_result.attacks_special_modifiers.append(note)
+            taa_hazardous, taa_source = self._tau_threat_assessment_analyser_hazardous(attacker)
+            if taa_hazardous:
+                attacker_ranged_hazardous = True
+                hazardous_active = True
+                source_name = str(taa_source or "THREAT ASSESSMENT ANALYSER").strip() or "THREAT ASSESSMENT ANALYSER"
                 note = f"{source_name}: [HAZARDOUS] (ranged)"
                 if note not in attack_result.attacks_special_modifiers:
                     attack_result.attacks_special_modifiers.append(note)

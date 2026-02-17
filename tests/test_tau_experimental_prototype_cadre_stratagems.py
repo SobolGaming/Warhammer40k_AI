@@ -303,3 +303,260 @@ def test_experimental_ammunition_descriptor_registered():
     assert desc.effect == "ranged_strength_or_strength_ap_hazardous_bonus"
     assert int(desc.effect_params.get("choices", {}).get("strength", {}).get("strength_bonus", 0) or 0) == 1
     assert bool(desc.effect_params.get("choices", {}).get("hazardous", {}).get("grant_hazardous", False)) is True
+
+
+def test_experimental_weaponry_rerolls_attack_count_dice_for_ranged_weapons():
+    game, tau_player, _enemy_player, tau_army, enemy_army = _build_game()
+    shooter = _make_unit(
+        "Strike Team",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+        wounds="6",
+    )
+    target = _make_unit(
+        "Target",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+        wounds="6",
+    )
+    tau_army.add_unit(shooter)
+    enemy_army.add_unit(target)
+    _deploy_unit(game, shooter, 10.0, 10.0)
+    _deploy_unit(game, target, 16.0, 10.0)
+
+    _set_phase(game, tau_player, "SHOOTING_PHASE", 0)
+    ok = tau_player.stratagems.use(
+        "EXPERIMENTAL WEAPONRY",
+        unit=shooter,
+        phase_name="Shooting phase",
+    )
+    assert ok
+    assert int(tau_player.command_points or 0) == 9
+
+    weapon = Wargear(
+        {
+            "name": "Burst Cannon",
+            "type": "Ranged",
+            "range": "18",
+            "A": "D6",
+            "BS_WS": "4+",
+            "S": "5",
+            "AP": "0",
+            "D": "1",
+            "description": "",
+        }
+    )
+    profile = weapon.profiles["default"]
+    with patch("warhammer40k_ai.utility.dice.get_dice_roll", side_effect=[1, 5]):
+        info = profile.preview_attack_count(target, shooter.models[0], game_map=game.map, publish_roll_event=False)
+    assert int(info.num_attacks or 0) == 5
+    assert any("EXPERIMENTAL WEAPONRY" in str(mod) for mod in list(info.special_modifiers or []))
+
+
+def test_threat_assessment_analyser_sustained_or_lethal_modes_apply_keyword_bonuses():
+    game, tau_player, _enemy_player, tau_army, enemy_army = _build_game()
+    shooter = _make_unit(
+        "Pathfinders",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+        wounds="6",
+    )
+    target = _make_unit(
+        "Target",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+        wounds="6",
+    )
+    tau_army.add_unit(shooter)
+    enemy_army.add_unit(target)
+    _deploy_unit(game, shooter, 10.0, 10.0)
+    _deploy_unit(game, target, 16.0, 10.0)
+
+    weapon = Wargear(
+        {
+            "name": "Pulse Carbine",
+            "type": "Ranged",
+            "range": "18",
+            "A": "1",
+            "BS_WS": "4+",
+            "S": "5",
+            "AP": "0",
+            "D": "1",
+            "description": "",
+        }
+    )
+    profile = weapon.profiles["default"]
+
+    _set_phase(game, tau_player, "SHOOTING_PHASE", 0)
+    ok_sustained = tau_player.stratagems.use(
+        "THREAT ASSESSMENT ANALYSER",
+        unit=shooter,
+        mode="sustained",
+        phase_name="Shooting phase",
+    )
+    assert ok_sustained
+    sustained_attack = {}
+    sustained_hit = profile._hit_target_with_tracking(
+        target,
+        shooter.models[0],
+        sustained_attack,
+        roll_value=6,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert sustained_hit.get("hit") is True
+    assert int(sustained_attack.get("sustained_hit", 0) or 0) == 1
+    assert not bool(sustained_attack.get("lethal_hit", False))
+
+
+def test_threat_assessment_analyser_lethal_mode_applies_keyword_bonus():
+    game, tau_player, _enemy_player, tau_army, enemy_army = _build_game()
+    shooter = _make_unit(
+        "Strike Team",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+        wounds="6",
+    )
+    target = _make_unit(
+        "Target",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+        wounds="6",
+    )
+    tau_army.add_unit(shooter)
+    enemy_army.add_unit(target)
+    _deploy_unit(game, shooter, 10.0, 10.0)
+    _deploy_unit(game, target, 16.0, 10.0)
+
+    weapon = Wargear(
+        {
+            "name": "Pulse Carbine",
+            "type": "Ranged",
+            "range": "18",
+            "A": "1",
+            "BS_WS": "4+",
+            "S": "5",
+            "AP": "0",
+            "D": "1",
+            "description": "",
+        }
+    )
+    profile = weapon.profiles["default"]
+
+    _set_phase(game, tau_player, "SHOOTING_PHASE", 0)
+    ok_lethal = tau_player.stratagems.use(
+        "THREAT ASSESSMENT ANALYSER",
+        unit=shooter,
+        mode="lethal",
+        phase_name="Shooting phase",
+    )
+    assert ok_lethal
+    lethal_attack = {}
+    lethal_hit = profile._hit_target_with_tracking(
+        target,
+        shooter.models[0],
+        lethal_attack,
+        roll_value=6,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert lethal_hit.get("hit") is True
+    assert bool(lethal_attack.get("lethal_hit", False)) is True
+    assert int(lethal_attack.get("sustained_hit", 0) or 0) == 0
+
+
+def test_threat_assessment_analyser_all_mode_grants_hazardous():
+    game, tau_player, _enemy_player, tau_army, enemy_army = _build_game()
+    shooter = _make_unit(
+        "Fire Warriors",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+        wounds="6",
+    )
+    target = _make_unit(
+        "Target",
+        keywords=["INFANTRY"],
+        faction_keywords=["ENEMY"],
+        wounds="6",
+    )
+    tau_army.add_unit(shooter)
+    enemy_army.add_unit(target)
+    _deploy_unit(game, shooter, 10.0, 10.0)
+    _deploy_unit(game, target, 16.0, 10.0)
+
+    _set_phase(game, tau_player, "SHOOTING_PHASE", 0)
+    ok = tau_player.stratagems.use(
+        "THREAT ASSESSMENT ANALYSER",
+        unit=shooter,
+        mode="all",
+        phase_name="Shooting phase",
+    )
+    assert ok
+
+    weapon = Wargear(
+        {
+            "name": "Pulse Rifle",
+            "type": "Ranged",
+            "range": "30",
+            "A": "1",
+            "BS_WS": "4+",
+            "S": "5",
+            "AP": "0",
+            "D": "1",
+            "description": "",
+        }
+    )
+    profile = weapon.profiles["default"]
+    shooter_model = shooter.models[0]
+    shooter_model.wargear = [weapon]
+
+    with patch("warhammer40k_ai.units.wargear.get_roll", return_value=1):
+        result = profile.attack(target, shooter_model, game_map=game.map)
+    assert int(result.hazardous_roll or 0) == 1
+    assert int(result.hazardous_damage or 0) == 3
+    assert int(shooter_model.wounds or 0) == 3
+
+
+def test_threat_assessment_analyser_rejects_experimental_ammunition_marked_target():
+    game, tau_player, _enemy_player, tau_army, _enemy_army = _build_game()
+    shooter = _make_unit(
+        "Stealth Team",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+        wounds="6",
+    )
+    tau_army.add_unit(shooter)
+    _deploy_unit(game, shooter, 10.0, 10.0)
+
+    _set_phase(game, tau_player, "SHOOTING_PHASE", 0)
+    used_ammo = tau_player.stratagems.use(
+        "EXPERIMENTAL AMMUNITION",
+        unit=shooter,
+        mode="strength",
+        phase_name="Shooting phase",
+    )
+    assert used_ammo
+    blocked = tau_player.stratagems.use(
+        "THREAT ASSESSMENT ANALYSER",
+        unit=shooter,
+        mode="all",
+        phase_name="Shooting phase",
+    )
+    assert not blocked
+    assert int(tau_player.command_points or 0) == 9
+
+
+def test_experimental_weaponry_descriptor_registered():
+    desc = get_stratagem_tool_descriptor(stratagem_id="000009984004")
+    assert desc is not None
+    assert desc.name == "Experimental Weaponry"
+    assert desc.effect == "reroll_attack_count_rolls"
+    assert str(desc.effect_params.get("attack_type", "")).lower() == "ranged"
+
+
+def test_threat_assessment_analyser_descriptor_registered():
+    desc = get_stratagem_tool_descriptor(stratagem_id="000009984006")
+    assert desc is not None
+    assert desc.name == "Threat Assessment Analyser"
+    assert desc.effect == "ranged_keyword_choice_with_optional_hazardous"
+    assert bool(desc.effect_params.get("choices", {}).get("all", {}).get("grant_hazardous", False)) is True

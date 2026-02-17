@@ -30,6 +30,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "A GRIM WARNING",
     "AUTOMATED REPAIR DRONES",
     "EXPERIMENTAL AMMUNITION",
+    "EXPERIMENTAL WEAPONRY",
+    "THREAT ASSESSMENT ANALYSER",
     "ANTI-GRAV REPULSION",
     "ANTI‑GRAV REPULSION",
     "ARMOUR OF CONTEMPT",
@@ -2434,6 +2436,20 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires a T'AU EMPIRE unit on the battlefield that has not been selected to shoot this phase"
             return result
+        if name_u == "EXPERIMENTAL WEAPONRY":
+            if self._tau_experimental_weaponry_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires a T'AU EMPIRE unit on the battlefield that has not been selected to shoot this phase"
+            return result
+        if name_u == "THREAT ASSESSMENT ANALYSER":
+            if self._tau_threat_assessment_analyser_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires a T'AU EMPIRE unit on the battlefield that has not been selected to shoot this phase and is not targeted by EXPERIMENTAL AMMUNITION"
+            return result
         if stratagem.can_use(self.player, self.game, **context):
             result["available"] = True
             result["reason"] = None
@@ -2462,6 +2478,8 @@ class StratagemManager(
             "A GRIM WARNING": "Objective: destroyed BLOOD ANGELS unit on your objective",
             "AUTOMATED REPAIR DRONES": "Target: T'AU EMPIRE BATTLESUIT unit with a wounded BATTLESUIT model",
             "EXPERIMENTAL AMMUNITION": "Target: T'AU EMPIRE unit not yet selected to shoot; choose +1S or +1S/+1AP/[HAZARDOUS] (cannot also target with THREAT ASSESSMENT ANALYSER this phase)",
+            "EXPERIMENTAL WEAPONRY": "Target: T'AU EMPIRE unit not yet selected to shoot; may re-roll attack-count dice for its weapons this phase",
+            "THREAT ASSESSMENT ANALYSER": "Target: T'AU EMPIRE unit not yet selected to shoot; choose Sustained Hits 1 or Lethal Hits, or gain both plus [HAZARDOUS] (cannot also target with EXPERIMENTAL AMMUNITION this phase)",
             "ARMOUR OF CONTEMPT": "Target: ADEPTUS ASTARTES unit",
             "DEATHLESS DUTY": "Target: DEATH COMPANY unit",
             "INSENSATE RAMPAGE": "Target: DEATH COMPANY unit",
