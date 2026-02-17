@@ -18,6 +18,7 @@ from .stratagems_chaos_knights import ChaosKnightsStratagemMixin
 from .stratagems_necrons import NecronsStratagemMixin
 from .stratagems_orks import OrksStratagemMixin
 from .stratagems_tau_empire import TauEmpireStratagemMixin
+from .stratagems_thousand_sons import ThousandSonsStratagemMixin
 from .stratagems_tyranids import TyranidsStratagemMixin
 from .stratagems_votann import VotannStratagemMixin
 from .stratagems_world_eaters import WorldEatersStratagemMixin
@@ -28,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 IMPLEMENTED_STRATAGEM_NAMES = {
     "ADRENAL SURGE",
+    "ARDENT AUTOMATA",
     "A CHALLENGE MET",
     "A GRIM WARNING",
     "AUTOMATED REPAIR DRONES",
@@ -35,11 +37,14 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ENDLESS SWARM",
     "EXPERIMENTAL AMMUNITION",
     "EXPERIMENTAL WEAPONRY",
+    "IMPLACABLE GUARDIANS",
+    "INFERNAL FUSILLADE",
     "NEUROWEB SYSTEM JAMMER",
     "OVERRUN",
     "PREDATORY IMPERATIVE",
     "RAPID REGENERATION",
     "REACTIVE IMPACT DAMPENERS",
+    "REVENGE OF THE RUBRICAE",
     "THREAT ASSESSMENT ANALYSER",
     "ANTI-GRAV REPULSION",
     "ANTI‑GRAV REPULSION",
@@ -93,6 +98,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "GILDED CHAMPION",
     "HEROIC INTERVENTION",
     "INSANE BRAVERY",
+    "INEXORABLE ADVANCE",
     "MANOEUVRE AND FIRE",
     "MARTIAL PERFECTION",
     "MORDIAN MINUTE",
@@ -233,6 +239,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
 REACTION_ONLY_STRATAGEM_NAMES = {
     "A CHALLENGE MET",
     "A GRIM WARNING",
+    "ARDENT AUTOMATA",
     "ANTI-GRAV REPULSION",
     "ANTI‑GRAV REPULSION",
     "ARMOUR OF ABHORRENCE",
@@ -256,6 +263,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "FRENZIED RESILIENCE",
     "FEIGNED WEAKNESS",
     "FEIGNED RETREAT",
+    "IMPLACABLE GUARDIANS",
     "KHAINE'S VENGEANCE",
     "KHAINE’S VENGEANCE",
     "COMMAND RE-ROLL",
@@ -276,6 +284,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "NEUROWEB SYSTEM JAMMER",
     "RAPID REGENERATION",
     "REACTIVE IMPACT DAMPENERS",
+    "REVENGE OF THE RUBRICAE",
     "SKULLS FOR THE SKULL THRONE!",
     "SMOKESCREEN",
     "SKYBORNE SANCTUARY",
@@ -1117,6 +1126,7 @@ class StratagemManager(
     AeldariStratagemMixin,
     VotannStratagemMixin,
     TauEmpireStratagemMixin,
+    ThousandSonsStratagemMixin,
     TyranidsStratagemMixin,
     OrksStratagemMixin,
 ):
@@ -1271,6 +1281,7 @@ class StratagemManager(
             "FIRE OVERWATCH",
             "TANK SHOCK",
             "HEROIC INTERVENTION",
+            "ARDENT AUTOMATA",
             "FEIGNED RETREAT",
             "FEIGNED WEAKNESS",
             "CUT DOWN THE WEAK",
@@ -1290,7 +1301,7 @@ class StratagemManager(
         if names & {"A GRIM WARNING", "BLOOD OFFERING", "BLOODY VENGEANCE", "DRAWN TO THE SLAUGHTER", "HEIGHTENED JEALOUSY", "ONTO THE NEXT", "UNBOUND ARROGANCE", "TERRIFYING SPECTACLE", "DIVINE INTERVENTION", "SUSTAINED BY AGONY", "ECSTATIC SLAUGHTER"}:
             add("unit_destroyed", self._on_unit_destroyed)
 
-        if names & {"SKULLS FOR THE SKULL THRONE!", "FICKLEFIRE", "GORY DEDICATION"}:
+        if names & {"SKULLS FOR THE SKULL THRONE!", "FICKLEFIRE", "GORY DEDICATION", "REVENGE OF THE RUBRICAE"}:
             add("model_destroyed", self._on_model_destroyed)
 
         if names & {"SUMMONED BY SLAUGHTER", "PUTRID DETONATION", "SANCTIFIED IMMOLATION"}:
@@ -1324,6 +1335,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_slaanesh_vengeful_surge)
         if "REACTIVE REPRISAL" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_needgaard_reactive_reprisal)
+        if "REVENGE OF THE RUBRICAE" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_thousand_sons_rubricae_revenge)
         if names & {"DIABOLIC MAJESTY", "HEIGHTENED JEALOUSY"}:
             add("emperors_children_favoured_champions_updated", self._on_emperors_children_favoured_champions_updated)
 
@@ -1353,6 +1366,7 @@ class StratagemManager(
                 has_charge_melee_ap_spec = bool(self._get_charge_melee_ap_spec(s))
         shooting_reaction_names = {
             "GO TO GROUND",
+            "IMPLACABLE GUARDIANS",
             "SMOKESCREEN",
             "ARMOUR OF CONTEMPT",
             "REACTIVE IMPACT DAMPENERS",
@@ -2511,6 +2525,77 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires opponent Shooting phase trigger with an enemy unit that selected one of your T'AU EMPIRE CRISIS units as a target"
             return result
+        if name_u == "ARDENT AUTOMATA":
+            if self._ts_ardent_automata_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires one of your RUBRICAE units to have Fallen Back this phase"
+            return result
+        if name_u == "INEXORABLE ADVANCE":
+            if self._ts_inexorable_advance_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires one of your RUBRICAE units on the battlefield"
+            return result
+        if name_u == "INFERNAL FUSILLADE":
+            if self._ts_infernal_fusillade_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires one of your THOUSAND SONS PSYKER units on the battlefield that has not been selected to shoot this phase"
+            return result
+        if name_u == "IMPLACABLE GUARDIANS":
+            attacking_unit = (
+                context.get("attacking_unit")
+                or context.get("attacker_unit")
+                or context.get("enemy_unit")
+            )
+            target_units = context.get("target_units") or context.get("targets")
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._ts_implacable_guardians_candidates(
+                    attacking_unit=attacking_unit,
+                    target_units=target_units,
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires opponent Shooting phase target-selection trigger with an enemy unit that selected one of your RUBRIC MARINES PSYKER units as a target"
+            return result
+        if name_u == "REVENGE OF THE RUBRICAE":
+            attacking_unit = (
+                context.get("attacking_unit")
+                or context.get("attacker_unit")
+                or context.get("enemy_unit")
+            )
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                for reaction in list(getattr(self, "_pending_reactions", []) or []):
+                    if str(reaction.get("stratagem", "") or "").strip().upper() != "REVENGE OF THE RUBRICAE":
+                        continue
+                    if attacking_unit is not None:
+                        reaction_enemy = reaction.get("enemy_unit") or reaction.get("attacking_unit")
+                        try:
+                            reaction_enemy = reaction_enemy.get_attached_unit_root()
+                        except Exception:
+                            pass
+                        try:
+                            expected_enemy = attacking_unit.get_attached_unit_root()
+                        except Exception:
+                            expected_enemy = attacking_unit
+                        if reaction_enemy is not expected_enemy:
+                            continue
+                    candidates = list(reaction.get("candidates") or [])
+                    break
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires opponent Shooting phase trigger where an enemy unit destroyed one of your THOUSAND SONS PSYKER models and a friendly RUBRICAE unit is within 6\" of that destroyed model"
+            return result
         if name_u == "ADRENAL SURGE":
             if self._tyr_adrenal_surge_candidates():
                 result["available"] = True
@@ -2608,6 +2693,9 @@ class StratagemManager(
         hints = {
             "A GRIM WARNING": "Objective: destroyed BLOOD ANGELS unit on your objective",
             "AUTOMATED REPAIR DRONES": "Target: T'AU EMPIRE BATTLESUIT unit with a wounded BATTLESUIT model",
+            "ARDENT AUTOMATA": "Target: your RUBRICAE unit that just Fell Back this phase; it can shoot and charge this turn",
+            "IMPLACABLE GUARDIANS": "Target: your RUBRIC MARINES PSYKER unit selected as an enemy shooting target; subtract 1 from Damage allocated to non-PSYKER models this phase",
+            "INFERNAL FUSILLADE": "Target: your THOUSAND SONS PSYKER unit not yet selected to shoot; inferno bolt weapons gain [PSYCHIC] and Strength 5 this phase",
             "ADRENAL SURGE": "Target: one TYRANIDS unit eligible to fight, or up to two TYRANIDS units eligible to fight if both are within Synapse Range",
             "DEATH FRENZY": "Target: TYRANIDS unit selected as a target of an enemy unit's fight attacks",
             "ENDLESS SWARM": "Target: one ENDLESS MULTITUDE unit with destroyed models, or up to two such units if both are within Synapse Range; each selected unit returns up to D3+3 destroyed models",
@@ -2618,6 +2706,7 @@ class StratagemManager(
             "PREDATORY IMPERATIVE": "Target: one TYRANIDS unit, or up to two TYRANIDS units if both are within Synapse Range; choose one Hyper-adaptation (other than the one chosen at battle round 1) for selected units until your next Command phase",
             "RAPID REGENERATION": "Target: TYRANIDS unit selected as an enemy unit's attack target in Shooting/Fight; gains Feel No Pain 6+ (or 5+ while within Synapse Range) this phase",
             "REACTIVE IMPACT DAMPENERS": "Target: T'AU EMPIRE BATTLESUIT unit selected as an enemy attack target; incoming attacks suffer -1 to wound while attacker Strength is greater than target Toughness this phase",
+            "REVENGE OF THE RUBRICAE": "Target: your RUBRICAE unit within 6\" of a destroyed THOUSAND SONS PSYKER model; after the enemy unit shoots, it can shoot reactively into that attacker",
             "THREAT ASSESSMENT ANALYSER": "Target: T'AU EMPIRE unit not yet selected to shoot; choose Sustained Hits 1 or Lethal Hits, or gain both plus [HAZARDOUS] (cannot also target with EXPERIMENTAL AMMUNITION this phase)",
             "ARMOUR OF CONTEMPT": "Target: ADEPTUS ASTARTES unit",
             "DEATHLESS DUTY": "Target: DEATH COMPANY unit",
@@ -2652,6 +2741,7 @@ class StratagemManager(
             "PURGING FIRE": "Target: ASTRA MILITARUM unit with an active Order within objective range (not shot)",
             "SNAP TO IT": "Target: ASTRA MILITARUM OFFICER unit; issue one Order now",
             "VETERAN SHARPSHOOTERS": "Target: ASTRA MILITARUM unit (not shot)",
+            "INEXORABLE ADVANCE": "Target: your RUBRICAE unit not yet selected to move; it ignores Move/Advance modifiers and gains ranged [ASSAULT] this turn",
             "RIGHTEOUS VENGEANCE": "Target: ADEPTA SORORITAS unit that has not fought",
             "SUFFERING AND SACRIFICE": "Target: ADEPTA SORORITAS INFANTRY or WALKER unit",
             "SPIRIT OF THE MARTYR": "Target: ADEPTA SORORITAS unit targeted in Fight phase (not fought)",
@@ -3175,6 +3265,11 @@ class StratagemManager(
         try:
             if hasattr(self, "_recent_shooting_targets"):
                 self._recent_shooting_targets.clear()
+        except Exception:
+            raise
+        try:
+            if hasattr(self, "_thousand_sons_revenge_pending"):
+                self._thousand_sons_revenge_pending = []
         except Exception:
             raise
         # Reset once-per-turn limits on your turn start
@@ -5662,6 +5757,7 @@ class StratagemManager(
         self._maybe_queue_overwatch(unit, action, when='end')
         self._maybe_queue_tank_shock(unit, action)
         self._maybe_queue_heroic_intervention(unit, action)
+        self._queue_thousand_sons_rubricae_phalanx_fall_back_reactions(unit=unit, action=action)
         self._maybe_queue_feigned_retreat(unit, action)
         self._maybe_queue_feigned_weakness(unit, action)
         self._maybe_queue_red_wrath(unit, action)
@@ -6367,6 +6463,20 @@ class StratagemManager(
         except Exception:
             raise
 
+    def _on_unit_shooting_resolved_thousand_sons_rubricae_revenge(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        **_kwargs,
+    ):
+        try:
+            self._queue_thousand_sons_rubricae_revenge_after_shooting_resolved(
+                attacker_unit=attacker_unit,
+                hits_by_target=hits_by_target,
+            )
+        except Exception:
+            raise
+
     def _on_unit_shooting_resolved_slaanesh_vengeful_surge(self, attacker_unit=None, **_kwargs):
         try:
             self._resolve_emperors_children_slaanesh_vengeful_surge_after_shooting(
@@ -6621,6 +6731,13 @@ class StratagemManager(
             raise
         try:
             self._queue_tau_experimental_prototype_shooting_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_thousand_sons_rubricae_phalanx_shooting_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -9125,6 +9242,15 @@ class StratagemManager(
         try:
             self._on_model_destroyed_world_eaters_vessels_gory_dedication(
                 attacker_unit=attacker_unit,
+                target_unit=target_unit,
+                weapon_profile=weapon_profile,
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_thousand_sons_rubricae_revenge_on_model_destroyed(
+                attacker_unit=attacker_unit,
+                target_model=target_model,
                 target_unit=target_unit,
                 weapon_profile=weapon_profile,
             )
@@ -12200,6 +12326,9 @@ class StratagemManager(
         tau_result = self._use_tau_experimental_prototype_cadre_stratagem(s, **kwargs)
         if tau_result is not None:
             return tau_result
+        thousand_sons_result = self._use_thousand_sons_rubricae_phalanx_stratagem(s, **kwargs)
+        if thousand_sons_result is not None:
+            return thousand_sons_result
         tyranids_result = self._use_tyranids_invasion_fleet_stratagem(s, **kwargs)
         if tyranids_result is not None:
             return tyranids_result

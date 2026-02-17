@@ -1523,6 +1523,83 @@ _INVASION_FLEET_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _INVASION_FLEET_STRATAGEM_DESCRIPTORS.values()
 }
 
+_RUBRICAE_PHALANX_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010206002": StratagemToolDescriptor(
+        stratagem_id="000010206002",
+        name="Ardent Automata",
+        timing="movement_phase_after_fall_back",
+        target="rubricae_unit_that_fell_back",
+        duration="until_end_of_turn",
+        effect="eligible_to_shoot_and_charge_after_fall_back",
+        cp_cost=1,
+    ),
+    "000010206003": StratagemToolDescriptor(
+        stratagem_id="000010206003",
+        name="Inexorable Advance",
+        timing="movement_phase",
+        target="rubricae_unit_not_yet_moved",
+        duration="until_end_of_turn",
+        effect="ignore_move_and_advance_modifiers_and_gain_ranged_assault",
+        cp_cost=1,
+        effect_params={
+            "ignore_modifiers": ["move_characteristic", "advance_roll"],
+            "grant_ranged_assault": True,
+        },
+    ),
+    "000010206004": StratagemToolDescriptor(
+        stratagem_id="000010206004",
+        name="Infernal Fusillade",
+        timing="shooting_phase",
+        target="thousand_sons_psyker_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="inferno_weapons_gain_psychic_and_set_strength",
+        cp_cost=2,
+        effect_params={
+            "weapon_names": [
+                "inferno bolt pistol",
+                "inferno boltgun",
+                "inferno combi-bolter",
+                "inferno combi-weapon",
+            ],
+            "set_strength": 5,
+            "grant_keyword": "PSYCHIC",
+            "attack_type": "ranged",
+        },
+    ),
+    "000010206005": StratagemToolDescriptor(
+        stratagem_id="000010206005",
+        name="Revenge of the Rubricae",
+        timing="opponent_shooting_phase_after_enemy_shoots_with_psyker_model_destroyed",
+        target="rubricae_unit_within_6_of_destroyed_model",
+        duration="immediate",
+        effect="reactive_shooting_at_attacker",
+        cp_cost=1,
+        effect_params={
+            "max_distance_inches": 6.0,
+            "force_target_attacker": True,
+            "trigger_requires_destroyed_model_keyword": "PSYKER",
+        },
+    ),
+    "000010206006": StratagemToolDescriptor(
+        stratagem_id="000010206006",
+        name="Implacable Guardians",
+        timing="opponent_shooting_phase_after_enemy_targets_selected",
+        target="rubric_marines_psyker_unit_selected_by_attacker",
+        duration="until_end_of_phase",
+        effect="reduce_damage_allocated_except_psyker_models",
+        cp_cost=2,
+        effect_params={
+            "damage_reduction": 1,
+            "exclude_allocated_model_keyword": "PSYKER",
+            "attack_type": "any",
+        },
+    ),
+}
+
+_RUBRICAE_PHALANX_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _RUBRICAE_PHALANX_STRATAGEM_DESCRIPTORS.values()
+}
+
 _NEEDGAARD_OATHBAND_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010436005": StratagemToolDescriptor(
         stratagem_id="000010436005",
@@ -1663,6 +1740,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _INVASION_FLEET_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _RUBRICAE_PHALANX_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _NEEDGAARD_OATHBAND_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -1691,5 +1771,6 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _ASPECT_HOST_STRATAGEM_BY_NAME.get(key)
         or _EXPERIMENTAL_PROTOTYPE_CADRE_STRATAGEM_BY_NAME.get(key)
         or _INVASION_FLEET_STRATAGEM_BY_NAME.get(key)
+        or _RUBRICAE_PHALANX_STRATAGEM_BY_NAME.get(key)
         or _NEEDGAARD_OATHBAND_STRATAGEM_BY_NAME.get(key)
     )

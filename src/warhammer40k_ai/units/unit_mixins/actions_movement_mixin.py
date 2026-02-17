@@ -2942,6 +2942,60 @@ class ActionsMovementMixin:
                 return False
         return True
 
+    def _thousand_sons_rubricae_stratagem_active(
+        self,
+        *,
+        active_key: str,
+        owner_key: str,
+        turn_key: str,
+        expires_phase_key: str = "",
+        game=None,
+    ) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(active_key)):
+            return False
+        owner_id = str(sr.get(owner_key, "") or "")
+        try:
+            effect_turn = int(sr.get(turn_key, 0) or 0)
+        except Exception:
+            effect_turn = 0
+        if game is None:
+            try:
+                army = root.get_parent_army()
+            except Exception:
+                army = None
+            try:
+                game = getattr(getattr(army, "player", None), "game", None)
+            except Exception:
+                game = None
+        if game is None:
+            return True
+        if owner_id:
+            try:
+                current = game.get_current_player()
+            except Exception:
+                current = None
+            current_id = str(getattr(current, "id", "") or "") if current is not None else ""
+            if current_id and current_id != owner_id:
+                return False
+        if effect_turn:
+            try:
+                if int(getattr(game, "turn", 0) or 0) != effect_turn:
+                    return False
+            except Exception:
+                return False
+        if expires_phase_key:
+            exp = str(sr.get(expires_phase_key, "") or "").strip().upper()
+            if exp:
+                phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                if phase_name and phase_name != exp:
+                    return False
+        return True
+
     def get_unit_hit_reroll_modifiers(self, attack_type: str, *, target=None, attacker_model=None) -> dict:
         """
         Return unit-level hit modifiers for this attached unit, parsed via attack_roll_parser.
@@ -9239,6 +9293,15 @@ class ActionsMovementMixin:
         except Exception:
             pass
         try:
+            if self._thousand_sons_rubricae_stratagem_active(
+                active_key="thousand_sons_ardent_automata_active",
+                owner_key="thousand_sons_ardent_automata_turn_owner",
+                turn_key="thousand_sons_ardent_automata_turn",
+            ):
+                return True
+        except Exception:
+            pass
+        try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("feigned_retreat_active"):
                 owner = str(sr.get("feigned_retreat_turn_owner", "") or "")
@@ -9352,6 +9415,17 @@ class ActionsMovementMixin:
             if isinstance(sr, dict):
                 mode = str(sr.get("red_wrath_mode", "") or "").strip().lower()
                 if mode in ("shoot", "both"):
+                    return True
+        except Exception:
+            pass
+        try:
+            if self._thousand_sons_rubricae_stratagem_active(
+                active_key="thousand_sons_inexorable_advance_assault_active",
+                owner_key="thousand_sons_inexorable_advance_turn_owner",
+                turn_key="thousand_sons_inexorable_advance_turn",
+                expires_phase_key="thousand_sons_inexorable_advance_assault_expires_phase",
+            ):
+                if getattr(profile, "parent_wargear", None) is not None and profile.parent_wargear.is_ranged():
                     return True
         except Exception:
             pass
@@ -9716,6 +9790,15 @@ class ActionsMovementMixin:
             return True
         try:
             if self._needgaard_ordered_retreat_active_this_turn():
+                return True
+        except Exception:
+            pass
+        try:
+            if self._thousand_sons_rubricae_stratagem_active(
+                active_key="thousand_sons_ardent_automata_active",
+                owner_key="thousand_sons_ardent_automata_turn_owner",
+                turn_key="thousand_sons_ardent_automata_turn",
+            ):
                 return True
         except Exception:
             pass

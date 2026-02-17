@@ -1,4 +1,4 @@
-from typing import Union, Dict, List, Optional, Tuple
+from typing import Any, Union, Dict, List, Optional, Tuple
 from enum import Enum, auto
 from collections import namedtuple
 import copy
@@ -898,6 +898,60 @@ class WargearProfile:
         )
         return (s_bonus, a_bonus, hazardous, source)
 
+    @staticmethod
+    def _normalize_weapon_name(text: Any) -> str:
+        return re.sub(r"[^a-z0-9]+", " ", str(text or "").strip().lower()).strip()
+
+    def _thousand_sons_infernal_fusillade_active(self, attacker: Optional['Model']) -> bool:
+        try:
+            return bool(
+                self._unit_temp_ranged_effect_active(
+                    attacker,
+                    "thousand_sons_infernal_fusillade",
+                    expected_phase="SHOOTING_PHASE",
+                )
+            )
+        except Exception:
+            return False
+
+    def _thousand_sons_infernal_fusillade_weapon_matches(self, attacker: Optional['Model']) -> bool:
+        if attacker is None:
+            return False
+        if not self._thousand_sons_infernal_fusillade_active(attacker):
+            return False
+        try:
+            is_ranged = bool(getattr(self.parent_wargear, "is_ranged", lambda: False)())
+        except Exception:
+            is_ranged = False
+        if not is_ranged:
+            return False
+        weapon_name = ""
+        try:
+            if getattr(self, "parent_wargear", None) is not None:
+                weapon_name = str(getattr(self.parent_wargear, "name", "") or "")
+            if not weapon_name:
+                weapon_name = str(getattr(self, "name", "") or "")
+        except Exception:
+            weapon_name = ""
+        name_norm = self._normalize_weapon_name(weapon_name)
+        if not name_norm:
+            return False
+        infernal_names = (
+            "inferno bolt pistol",
+            "inferno boltgun",
+            "inferno boltguns",
+            "inferno combi bolter",
+            "inferno combi bolters",
+            "inferno combi weapon",
+            "inferno combi weapons",
+        )
+        return any(token in name_norm for token in infernal_names)
+
+    def _is_psychic_attack(self, attacker: Optional['Model']) -> bool:
+        if self.is_psychic():
+            return True
+        return bool(self._thousand_sons_infernal_fusillade_weapon_matches(attacker))
+
     def _tau_threat_assessment_analyser_hazardous(self, attacker: 'Model') -> Tuple[bool, str]:
         """Return (ranged_hazardous, source) for THREAT ASSESSMENT ANALYSER if active."""
         sr = self._phase_effect_special_rules(
@@ -1419,7 +1473,7 @@ class WargearProfile:
         if attacker is None or target is None:
             return (0, 0, "")
         try:
-            if not bool(self.is_psychic()):
+            if not bool(self._is_psychic_attack(attacker)):
                 return (0, 0, "")
         except Exception:
             return (0, 0, "")
@@ -4615,7 +4669,7 @@ class WargearProfile:
                     except Exception:
                         pass
                 try:
-                    if self.is_psychic():
+                    if self._is_psychic_attack(attacker):
                         hit_models_by_target_psychic = attack_context.get("hit_models_by_target_psychic")
                         if hit_models_by_target_psychic is None:
                             hit_models_by_target_psychic = {}
@@ -7328,7 +7382,7 @@ class WargearProfile:
                 _add_hit_mod(1, "+1 to hit from Psychic Guidance")
         # Temporary Psychic attack bonuses (e.g., Sacrificial Dagger).
         try:
-            if self.is_psychic():
+            if self._is_psychic_attack(attacker):
                 attacker_unit = getattr(attacker, "parent_unit", None)
                 army = attacker_unit.get_parent_army() if attacker_unit is not None else None
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
@@ -9975,6 +10029,12 @@ class WargearProfile:
                     wound_result.setdefault("modifiers", []).append(f"+{int(tau_s_bonus)}S from {tau_source}")
         except (AttributeError, TypeError, ValueError):
             pass
+        try:
+            if self._thousand_sons_infernal_fusillade_weapon_matches(attacker) and isinstance(strength, int):
+                strength = 5
+                wound_result.setdefault("modifiers", []).append("Set Strength 5 from INFERNAL FUSILLADE")
+        except Exception:
+            pass
         # Thousand Sons: Ensorcelled Destruction (+1 Strength vs non-MONSTER/VEHICLE marked by Psychic hits).
         try:
             s_bonus, _ap_bonus, source = self._ensorcelled_destruction_bonus(attacker, target)
@@ -10125,7 +10185,7 @@ class WargearProfile:
             if (
                 psychic_bonus
                 and self._attacker_is_enhancement_bearer(attacker, sr)
-                and self.is_psychic()
+                and self._is_psychic_attack(attacker)
             ):
                 strength = strength + psychic_bonus
                 wound_result.setdefault("modifiers", []).append(
@@ -10517,7 +10577,7 @@ class WargearProfile:
             pass
         # Temporary Psychic attack bonuses (e.g., Sacrificial Dagger).
         try:
-            if self.is_psychic():
+            if self._is_psychic_attack(attacker):
                 attacker_unit = getattr(attacker, "parent_unit", None)
                 army = attacker_unit.get_parent_army() if attacker_unit is not None else None
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
@@ -13403,10 +13463,14 @@ class WargearProfile:
             
             # Check if the attacking weapon has this keyword
             weapon_keywords = [kw.lower() for kw in self.get_keywords()]
-            
+
             # Special case mappings for common keywords
             if keyword_to_check == "psychic":
-                return "psychic" in weapon_keywords
+                try:
+                    attacker_model = attack_instance.get("attacker_model") if isinstance(attack_instance, dict) else None
+                except Exception:
+                    attacker_model = None
+                return bool("psychic" in weapon_keywords or self._is_psychic_attack(attacker_model))
             elif keyword_to_check == "melee":
                 return self.parent_wargear and self.parent_wargear.is_melee()
             elif keyword_to_check == "ranged":
@@ -14129,7 +14193,7 @@ class WargearProfile:
             if (
                 self.parent_wargear
                 and self.parent_wargear.is_ranged()
-                and self.is_psychic()
+                and self._is_psychic_attack(attacker)
             ):
                 d_bonus = int(
                     getattr(attacker.parent_unit, "special_rules", {}).get(
@@ -14145,7 +14209,7 @@ class WargearProfile:
         except Exception:
             pass
         try:
-            if self.is_psychic():
+            if self._is_psychic_attack(attacker):
                 sr = self._unit_special_rules(attacker)
                 d_bonus = int(sr.get("enhancement_bearer_psychic_damage_bonus", 0) or 0)
                 if d_bonus and self._attacker_is_enhancement_bearer(attacker, sr):
@@ -14350,6 +14414,24 @@ class WargearProfile:
                 attack_type=attack_type,
                 phase_key=phase_key,
             ):
+                exclude_keyword = str(entry.get("exclude_allocated_model_keyword", "") or "").strip()
+                if exclude_keyword:
+                    skip_entry = False
+                    try:
+                        has_any = getattr(target_model, "has_any_keyword", None)
+                        if callable(has_any) and bool(has_any(exclude_keyword)):
+                            skip_entry = True
+                    except Exception:
+                        skip_entry = False
+                    if not skip_entry:
+                        try:
+                            has_kw = getattr(target_model, "has_keyword", None)
+                            if callable(has_kw) and bool(has_kw(exclude_keyword)):
+                                skip_entry = True
+                        except Exception:
+                            skip_entry = False
+                    if skip_entry:
+                        continue
                 red = int(entry.get("value", 0) or 0)
                 if red:
                     damage_mods.append(Modifier(ModifierOp.SUB, int(red), source="stratagem:defensive_damage"))

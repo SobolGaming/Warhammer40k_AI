@@ -1320,9 +1320,29 @@ def get_enemy_aura_psychic_hazardous(attacker_unit, weapon_profile, *, game_map=
     if attacker_unit is None or weapon_profile is None:
         return False, ()
     try:
-        if not weapon_profile.is_psychic():
-            return False, ()
+        is_psychic_attack = bool(weapon_profile.is_psychic())
     except Exception:
+        return False, ()
+    if not is_psychic_attack:
+        try:
+            models = list(getattr(attacker_unit, "models", []) or [])
+        except Exception:
+            models = []
+        probe_model = None
+        for model in models:
+            try:
+                if bool(getattr(model, "is_alive", True)):
+                    probe_model = model
+                    break
+            except Exception:
+                continue
+        matcher = getattr(weapon_profile, "_thousand_sons_infernal_fusillade_weapon_matches", None)
+        if callable(matcher):
+            try:
+                is_psychic_attack = bool(matcher(probe_model))
+            except Exception:
+                is_psychic_attack = False
+    if not is_psychic_attack:
         return False, ()
     if game_map is None:
         game_map = _get_map_from_attacker_unit(attacker_unit)
@@ -1363,9 +1383,29 @@ def get_enemy_aura_psychic_wound_penalties(attacker_unit, weapon_profile, *, gam
     if attacker_unit is None or weapon_profile is None:
         return []
     try:
-        if not weapon_profile.is_psychic():
-            return []
+        is_psychic_attack = bool(weapon_profile.is_psychic())
     except Exception:
+        return []
+    if not is_psychic_attack:
+        try:
+            models = list(getattr(attacker_unit, "models", []) or [])
+        except Exception:
+            models = []
+        probe_model = None
+        for model in models:
+            try:
+                if bool(getattr(model, "is_alive", True)):
+                    probe_model = model
+                    break
+            except Exception:
+                continue
+        matcher = getattr(weapon_profile, "_thousand_sons_infernal_fusillade_weapon_matches", None)
+        if callable(matcher):
+            try:
+                is_psychic_attack = bool(matcher(probe_model))
+            except Exception:
+                is_psychic_attack = False
+    if not is_psychic_attack:
         return []
     if game_map is None:
         game_map = _get_map_from_attacker_unit(attacker_unit)
