@@ -1105,8 +1105,11 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
     if blocking_enemy_models:
         trees['enemy_models_blocking'] = STRtree(blocking_enemy_models)
 
-    # Add engagement range buffers based on movement type
-    if movement_type in [MovementType.MOVE, MovementType.ADVANCE]:
+    # Add engagement range buffers based on movement type.
+    overrun_normal_move = bool(
+        movement_type == MovementType.CONSOLIDATE and _tyranids_overrun_normal_move_active(moving_unit)
+    )
+    if movement_type in [MovementType.MOVE, MovementType.ADVANCE] or overrun_normal_move:
         # Standard movement: 1" engagement range buffer around enemy models
         if all_enemy_shapes:
             if enemy_cache_key in _enemy_engagement_buffer_cache:
@@ -1154,6 +1157,54 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
     return trees
 
 
+def _tyranids_overrun_normal_move_active(moving_unit: 'Unit') -> bool:
+    if moving_unit is None:
+        return False
+    try:
+        sr = getattr(moving_unit, "special_rules", None)
+    except Exception:
+        return False
+    if not isinstance(sr, dict):
+        return False
+    if not bool(sr.get("tyranids_overrun_normal_move_active")):
+        return False
+
+    phase_name = ""
+    current_turn = 0
+    current_owner = ""
+    try:
+        army = moving_unit.get_parent_army()
+    except Exception:
+        army = None
+    try:
+        player = getattr(army, "player", None) if army is not None else None
+        current_owner = str(getattr(player, "id", "") or "").strip()
+        game = getattr(player, "game", None) if player is not None else None
+    except Exception:
+        game = None
+    if game is not None:
+        try:
+            phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        except Exception:
+            phase_name = ""
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+    try:
+        marked_turn = int(sr.get("tyranids_overrun_turn", 0) or 0)
+    except Exception:
+        marked_turn = 0
+    marked_owner = str(sr.get("tyranids_overrun_turn_owner", "") or "").strip()
+    exp = str(sr.get("tyranids_overrun_expires_phase", "") or "").strip().upper()
+
+    if exp and phase_name and exp != phase_name:
+        return False
+    if marked_turn and current_turn and marked_turn != current_turn:
+        return False
+    if marked_owner and current_owner and marked_owner != current_owner:
+        return False
+    return True
 
 
 def get_validation_rules(
@@ -1300,6 +1351,23 @@ def get_validation_rules(
                     base_rules['must_end_closer_to_enemies_or_objectives'] = False
         except Exception:
             pass
+        if _tyranids_overrun_normal_move_active(moving_unit):
+            normal_move_distance = 6.0
+            try:
+                sr = getattr(moving_unit, "special_rules", None)
+                if isinstance(sr, dict):
+                    normal_move_distance = float(sr.get("tyranids_overrun_normal_move_distance", 6.0) or 6.0)
+            except Exception:
+                normal_move_distance = 6.0
+            base_rules['max_distance_override'] = max(
+                float(base_rules.get("max_distance_override", 0.0) or 0.0),
+                float(normal_move_distance),
+            )
+            base_rules['must_end_closer_to_enemies_or_objectives'] = False
+            base_rules['prefer_base_contact'] = False
+            base_rules['consolidate_requires_engagement'] = False
+            base_rules['cannot_move_within_engagement_range'] = True
+            base_rules['cannot_end_in_engagement_range'] = True
 
     elif movement_type in (MovementType.BLOOD_SURGE, MovementType.BRAZEN_FURY, MovementType.HORDE_MOVE):
         if movement_type == MovementType.BLOOD_SURGE:

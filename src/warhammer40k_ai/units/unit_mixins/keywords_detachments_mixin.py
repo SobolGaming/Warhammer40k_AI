@@ -718,6 +718,60 @@ class KeywordsDetachmentsMixin:
         except Exception:
             pass
 
+        # Temporary effect hook: DEATH FRENZY (Tyranids Invasion Fleet).
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("tyranids_death_frenzy_active"):
+                phase_name = ""
+                current_turn = 0
+                try:
+                    army = self.get_parent_army()
+                except Exception:
+                    army = None
+                try:
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                except Exception:
+                    game = None
+                if game is not None:
+                    try:
+                        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    except Exception:
+                        phase_name = ""
+                    try:
+                        current_turn = int(getattr(game, "turn", 0) or 0)
+                    except Exception:
+                        current_turn = 0
+                try:
+                    marked_turn = int(sr.get("tyranids_death_frenzy_turn", 0) or 0)
+                except Exception:
+                    marked_turn = 0
+                exp = str(sr.get("tyranids_death_frenzy_expires_phase", "") or "").strip().upper()
+                if phase_name == "FIGHT_PHASE" and (not exp or exp == "FIGHT_PHASE"):
+                    if not (marked_turn and current_turn and marked_turn != current_turn):
+                        source = str(sr.get("tyranids_death_frenzy_source", "") or "DEATH FRENZY").strip()
+                        source = source or "DEATH FRENZY"
+                        try:
+                            threshold = int(sr.get("tyranids_death_frenzy_threshold", 4) or 4)
+                        except Exception:
+                            threshold = 4
+                        return {
+                            "threshold": max(2, min(6, int(threshold))),
+                            "source": source,
+                        }
+                if phase_name and phase_name != "FIGHT_PHASE":
+                    for key in (
+                        "tyranids_death_frenzy_active",
+                        "tyranids_death_frenzy_threshold",
+                        "tyranids_death_frenzy_expires_phase",
+                        "tyranids_death_frenzy_source",
+                        "tyranids_death_frenzy_owner",
+                        "tyranids_death_frenzy_turn",
+                    ):
+                        sr.pop(key, None)
+                    self.special_rules = sr
+        except Exception:
+            pass
+
         # Temporary effect hook: TO THEIR FINAL BREATH (Aeldari).
         try:
             rule = self._aeldari_to_their_final_breath_rule()

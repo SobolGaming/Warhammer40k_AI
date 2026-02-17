@@ -1430,6 +1430,99 @@ _EXPERIMENTAL_PROTOTYPE_CADRE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _EXPERIMENTAL_PROTOTYPE_CADRE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_INVASION_FLEET_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008349002": StratagemToolDescriptor(
+        stratagem_id="000008349002",
+        name="Rapid Regeneration",
+        timing="opponent_shooting_or_either_fight_phase_after_enemy_targets_selected",
+        target="tyranids_unit_selected_as_target",
+        duration="until_end_of_phase",
+        effect="conditional_feel_no_pain_by_synapse",
+        cp_cost=1,
+        effect_params={
+            "base_fnp": 6,
+            "boosted_fnp": 5,
+            "boost_condition": "within_synapse_range",
+        },
+    ),
+    "000008349003": StratagemToolDescriptor(
+        stratagem_id="000008349003",
+        name="Adrenal Surge",
+        timing="fight_phase",
+        target="one_tyranids_unit_eligible_to_fight_or_up_to_two_within_synapse",
+        duration="until_end_of_phase",
+        effect="melee_critical_hits_on_5plus",
+        cp_cost=2,
+        effect_params={
+            "critical_hit_threshold": 5,
+            "max_units": 2,
+            "two_units_requires_synapse": True,
+        },
+    ),
+    "000008349004": StratagemToolDescriptor(
+        stratagem_id="000008349004",
+        name="Death Frenzy",
+        timing="fight_phase_after_enemy_targets_selected",
+        target="tyranids_unit_selected_as_target",
+        duration="until_end_of_phase",
+        effect="fight_on_death_after_attacks",
+        cp_cost=1,
+        effect_params={
+            "roll_required": True,
+            "roll_threshold": 4,
+            "attack_type": "melee",
+        },
+    ),
+    "000008349005": StratagemToolDescriptor(
+        stratagem_id="000008349005",
+        name="Overrun",
+        timing="fight_phase_before_consolidate",
+        target="tyranids_unit_before_consolidating",
+        duration="until_end_of_phase",
+        effect="consolidate_plus_3_with_synapse_normal_move_option",
+        cp_cost=1,
+        effect_params={
+            "consolidate_distance": 6,
+            "requires_engagement_for_consolidate": True,
+            "synapse_normal_move_distance": 6,
+            "normal_move_instead_when_not_in_engagement": True,
+        },
+    ),
+    "000008349006": StratagemToolDescriptor(
+        stratagem_id="000008349006",
+        name="Predatory Imperative",
+        timing="command_phase",
+        target="one_tyranids_unit_or_up_to_two_within_synapse",
+        duration="until_start_of_next_command_phase",
+        effect="grant_additional_hyper_adaptation",
+        cp_cost=1,
+        effect_params={
+            "max_units": 2,
+            "two_units_requires_synapse": True,
+            "cannot_select_first_round_hyper_adaptation": True,
+        },
+    ),
+    "000008349007": StratagemToolDescriptor(
+        stratagem_id="000008349007",
+        name="Endless Swarm",
+        timing="command_phase",
+        target="one_endless_multitude_unit_or_up_to_two_within_synapse",
+        duration="immediate",
+        effect="return_destroyed_models",
+        cp_cost=1,
+        effect_params={
+            "return_roll": "D3+3",
+            "max_units": 2,
+            "two_units_requires_synapse": True,
+            "required_keyword": "ENDLESS MULTITUDE",
+        },
+    ),
+}
+
+_INVASION_FLEET_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _INVASION_FLEET_STRATAGEM_DESCRIPTORS.values()
+}
+
 _NEEDGAARD_OATHBAND_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010436005": StratagemToolDescriptor(
         stratagem_id="000010436005",
@@ -1567,6 +1660,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _EXPERIMENTAL_PROTOTYPE_CADRE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _INVASION_FLEET_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _NEEDGAARD_OATHBAND_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -1594,5 +1690,6 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _ARMOURED_WARHOST_STRATAGEM_BY_NAME.get(key)
         or _ASPECT_HOST_STRATAGEM_BY_NAME.get(key)
         or _EXPERIMENTAL_PROTOTYPE_CADRE_STRATAGEM_BY_NAME.get(key)
+        or _INVASION_FLEET_STRATAGEM_BY_NAME.get(key)
         or _NEEDGAARD_OATHBAND_STRATAGEM_BY_NAME.get(key)
     )

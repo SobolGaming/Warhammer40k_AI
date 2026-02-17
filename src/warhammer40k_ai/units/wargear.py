@@ -6550,51 +6550,76 @@ class WargearProfile:
         # Tyranids: Hyper-adaptations (Invasion Fleet).
         try:
             unit = getattr(attacker, "parent_unit", None)
+            root_unit = unit.get_attached_unit_root() if unit is not None and hasattr(unit, "get_attached_unit_root") else unit
             army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
             mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+            adaptations = []
+            seen_adaptation_keys = set()
             if mgr is not None:
                 game = getattr(getattr(army, "player", None), "game", None)
                 adaptation = getattr(mgr, "get_active_hyper_adaptation_for_unit", lambda *_a, **_k: None)(
                     unit,
                     game=game,
                 )
-            else:
-                adaptation = None
-            if adaptation is not None:
+                if adaptation is not None:
+                    adaptation_key = str(getattr(adaptation, "key", "") or "").strip().upper()
+                    if not adaptation_key:
+                        adaptation_key = f"id:{id(adaptation)}"
+                    if adaptation_key not in seen_adaptation_keys:
+                        seen_adaptation_keys.add(adaptation_key)
+                        adaptations.append(adaptation)
+
+                sr = getattr(root_unit, "special_rules", None) if root_unit is not None else None
+                predatory_active = bool(isinstance(sr, dict) and sr.get("tyranids_predatory_imperative_active"))
+                predatory_key = str(sr.get("tyranids_predatory_imperative_adaptation_key", "") or "").strip().upper() if isinstance(sr, dict) else ""
+                if predatory_active and predatory_key:
+                    get_available = getattr(mgr, "get_available_hyper_adaptations", None)
+                    if callable(get_available):
+                        for option in list(get_available() or []):
+                            option_key = str(getattr(option, "key", "") or "").strip().upper()
+                            if option_key != predatory_key:
+                                continue
+                            if option_key in seen_adaptation_keys:
+                                continue
+                            seen_adaptation_keys.add(option_key)
+                            adaptations.append(option)
+                            break
+
+            def _target_has_any(keywords: tuple[str, ...]) -> bool:
+                if not keywords:
+                    return False
+                for kw in keywords:
+                    if not kw:
+                        continue
+                    try:
+                        if hasattr(target, "has_any_keyword") and target.has_any_keyword(kw):
+                            return True
+                    except Exception:
+                        pass
+                    try:
+                        attr_flag = f"is_{str(kw).strip().lower()}"
+                        if bool(getattr(target, attr_flag, False)):
+                            return True
+                    except Exception:
+                        pass
+                return False
+
+            for adaptation in list(adaptations or []):
                 try:
                     target_keywords = tuple(getattr(adaptation, "target_keywords", ()) or ())
                 except Exception:
                     target_keywords = ()
-
-                def _target_has_any(keywords: tuple[str, ...]) -> bool:
-                    if not keywords:
-                        return False
-                    for kw in keywords:
-                        if not kw:
-                            continue
-                        try:
-                            if hasattr(target, "has_any_keyword") and target.has_any_keyword(kw):
-                                return True
-                        except Exception:
-                            pass
-                        try:
-                            attr_flag = f"is_{str(kw).strip().lower()}"
-                            if bool(getattr(target, attr_flag, False)):
-                                return True
-                        except Exception:
-                            pass
-                    return False
-
-                if _target_has_any(target_keywords):
-                    if int(getattr(adaptation, "sustained_hits_value", 0) or 0) > 0:
-                        _set_bonus_sustained(
-                            int(getattr(adaptation, "sustained_hits_value", 0) or 0),
-                            f"Hyper-adaptations: {getattr(adaptation, 'name', '')}",
-                        )
-                    if bool(getattr(adaptation, "lethal_hits", False)):
-                        bonus_lethal = True
-                    if bool(getattr(adaptation, "precision_on_crit", False)):
-                        bonus_precision_on_crit = True
+                if not _target_has_any(target_keywords):
+                    continue
+                if int(getattr(adaptation, "sustained_hits_value", 0) or 0) > 0:
+                    _set_bonus_sustained(
+                        int(getattr(adaptation, "sustained_hits_value", 0) or 0),
+                        f"Hyper-adaptations: {getattr(adaptation, 'name', '')}",
+                    )
+                if bool(getattr(adaptation, "lethal_hits", False)):
+                    bonus_lethal = True
+                if bool(getattr(adaptation, "precision_on_crit", False)):
+                    bonus_precision_on_crit = True
         except Exception:
             pass
 
@@ -9101,6 +9126,42 @@ class WargearProfile:
                 if not exp or exp == phase_name:
                     crit_threshold = min(int(crit_threshold), 5)
                     crit_hit_reasons.append("Unbridled Carnage: critical hit on 5+")
+        except Exception:
+            pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            if unit is not None and hasattr(unit, "get_attached_unit_root"):
+                unit = unit.get_attached_unit_root()
+            sr = getattr(unit, "special_rules", None) if unit is not None else None
+            is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+            if is_melee and isinstance(sr, dict) and sr.get("tyranids_adrenal_surge_active"):
+                exp = str(sr.get("tyranids_adrenal_surge_expires_phase", "") or "").strip().upper()
+                phase_name = self._current_phase_name(attacker)
+                current_turn = 0
+                marked_turn = 0
+                owner_ok = True
+                try:
+                    army = unit.get_parent_army() if unit is not None else None
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                except Exception:
+                    current_turn = 0
+                try:
+                    marked_turn = int(sr.get("tyranids_adrenal_surge_turn", 0) or 0)
+                except Exception:
+                    marked_turn = 0
+                try:
+                    owner = str(sr.get("tyranids_adrenal_surge_turn_owner", "") or "").strip()
+                    if owner:
+                        army = unit.get_parent_army() if unit is not None else None
+                        current_owner = str(getattr(getattr(army, "player", None), "id", "") or "").strip()
+                        owner_ok = bool(current_owner and owner == current_owner)
+                except Exception:
+                    owner_ok = True
+                if owner_ok and (not exp or exp == phase_name) and not (marked_turn and current_turn and marked_turn != current_turn):
+                    threshold = int(sr.get("tyranids_adrenal_surge_crit_threshold", 5) or 5)
+                    crit_threshold = min(int(crit_threshold), int(threshold))
+                    crit_hit_reasons.append(f"Adrenal Surge: critical hit on {int(threshold)}+")
         except Exception:
             pass
 

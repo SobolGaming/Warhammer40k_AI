@@ -18,6 +18,7 @@ from .stratagems_chaos_knights import ChaosKnightsStratagemMixin
 from .stratagems_necrons import NecronsStratagemMixin
 from .stratagems_orks import OrksStratagemMixin
 from .stratagems_tau_empire import TauEmpireStratagemMixin
+from .stratagems_tyranids import TyranidsStratagemMixin
 from .stratagems_votann import VotannStratagemMixin
 from .stratagems_world_eaters import WorldEatersStratagemMixin
 from .stratagems_grey_knights import GreyKnightsStratagemMixin
@@ -26,12 +27,18 @@ logger = logging.getLogger(__name__)
 
 
 IMPLEMENTED_STRATAGEM_NAMES = {
+    "ADRENAL SURGE",
     "A CHALLENGE MET",
     "A GRIM WARNING",
     "AUTOMATED REPAIR DRONES",
+    "DEATH FRENZY",
+    "ENDLESS SWARM",
     "EXPERIMENTAL AMMUNITION",
     "EXPERIMENTAL WEAPONRY",
     "NEUROWEB SYSTEM JAMMER",
+    "OVERRUN",
+    "PREDATORY IMPERATIVE",
+    "RAPID REGENERATION",
     "REACTIVE IMPACT DAMPENERS",
     "THREAT ASSESSMENT ANALYSER",
     "ANTI-GRAV REPULSION",
@@ -242,6 +249,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "BEAUTIFUL DEATH",
     "CUT DOWN THE WEAK",
     "DEFIANT TO THE LAST",
+    "DEATH FRENZY",
     "DEATHLESS DUTY",
     "DEATH ECSTASY",
     "EMBRACE THE PAIN",
@@ -266,6 +274,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "LIGHTNING-FAST REACTIONS",
     "MARTIAL PERFECTION",
     "NEUROWEB SYSTEM JAMMER",
+    "RAPID REGENERATION",
     "REACTIVE IMPACT DAMPENERS",
     "SKULLS FOR THE SKULL THRONE!",
     "SMOKESCREEN",
@@ -326,6 +335,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "ADVANCE AND CLAIM",
     "ONTO THE NEXT",
     "OUTFLANKING STRIKE",
+    "OVERRUN",
     "REACTIVE DISEMBARKATION",
     "PROTECTION OF THE DARK PRINCE",
     "PRAISE THE FALLEN",
@@ -1107,6 +1117,7 @@ class StratagemManager(
     AeldariStratagemMixin,
     VotannStratagemMixin,
     TauEmpireStratagemMixin,
+    TyranidsStratagemMixin,
     OrksStratagemMixin,
 ):
     def __init__(self, player) -> None:
@@ -1336,6 +1347,8 @@ class StratagemManager(
                     defensive_duration_phase = True
             if not has_consolidate_spec:
                 has_consolidate_spec = bool(self._get_consolidate_move_spec(s))
+                if not has_consolidate_spec and str(getattr(s, "name", "") or "").strip().upper() == "OVERRUN":
+                    has_consolidate_spec = True
             if not has_charge_melee_ap_spec:
                 has_charge_melee_ap_spec = bool(self._get_charge_melee_ap_spec(s))
         shooting_reaction_names = {
@@ -1357,6 +1370,7 @@ class StratagemManager(
             "AEGIS ETERNAL",
             "CONTEMPTUOUS DISREGARD",
             "REACTIVE DISEMBARKATION",
+            "RAPID REGENERATION",
             "UNCANNY REACTIONS",
             "VENGEFUL SURGE",
             "VOID HARDENED",
@@ -1366,6 +1380,8 @@ class StratagemManager(
             "BEAUTIFUL DEATH",
             "COMBAT STIMMS",
             "CONTEMPTUOUS DISREGARD",
+            "DEATH FRENZY",
+            "RAPID REGENERATION",
             "REACTIVE IMPACT DAMPENERS",
             "DEFIANT TO THE LAST",
             "DEATHLESS DUTY",
@@ -1522,6 +1538,7 @@ class StratagemManager(
             "HUNTR'S MARK",
             "HUNTR’S MARK",
             "ORDERED RETREAT",
+            "RAPID REGENERATION",
             "VOID HARDENED",
         }
         needs_phase_end = bool(
@@ -2494,6 +2511,76 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires opponent Shooting phase trigger with an enemy unit that selected one of your T'AU EMPIRE CRISIS units as a target"
             return result
+        if name_u == "ADRENAL SURGE":
+            if self._tyr_adrenal_surge_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires one TYRANIDS unit eligible to fight (or up to two such units if both are within Synapse Range)"
+            return result
+        if name_u == "PREDATORY IMPERATIVE":
+            if self._tyr_predatory_imperative_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires one TYRANIDS unit on the battlefield, or up to two TYRANIDS units on the battlefield if both are within Synapse Range"
+            return result
+        if name_u == "ENDLESS SWARM":
+            if self._tyr_endless_swarm_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires one ENDLESS MULTITUDE unit with destroyed models, or up to two such units if both are within Synapse Range"
+            return result
+        if name_u == "RAPID REGENERATION":
+            attacking_unit = (
+                context.get("attacking_unit")
+                or context.get("attacker_unit")
+                or context.get("enemy_unit")
+            )
+            target_units = context.get("target_units") or context.get("targets")
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._tyr_rapid_regeneration_candidates(
+                    attacking_unit=attacking_unit,
+                    target_units=target_units,
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires Shooting/Fight target-selection trigger with an enemy unit that selected one of your TYRANIDS units as a target"
+            return result
+        if name_u == "DEATH FRENZY":
+            attacking_unit = (
+                context.get("attacking_unit")
+                or context.get("attacker_unit")
+                or context.get("enemy_unit")
+            )
+            target_units = context.get("target_units") or context.get("targets")
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._tyr_death_frenzy_candidates(
+                    attacking_unit=attacking_unit,
+                    target_units=target_units,
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires Fight target-selection trigger with an enemy unit that selected one of your TYRANIDS units as a target"
+            return result
+        if name_u == "OVERRUN":
+            target_unit = context.get("target_unit") or context.get("unit")
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._tyr_overrun_candidates(unit=target_unit)
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires Fight phase before-consolidate trigger for one of your TYRANIDS units"
+            return result
         if stratagem.can_use(self.player, self.game, **context):
             result["available"] = True
             result["reason"] = None
@@ -2521,9 +2608,15 @@ class StratagemManager(
         hints = {
             "A GRIM WARNING": "Objective: destroyed BLOOD ANGELS unit on your objective",
             "AUTOMATED REPAIR DRONES": "Target: T'AU EMPIRE BATTLESUIT unit with a wounded BATTLESUIT model",
+            "ADRENAL SURGE": "Target: one TYRANIDS unit eligible to fight, or up to two TYRANIDS units eligible to fight if both are within Synapse Range",
+            "DEATH FRENZY": "Target: TYRANIDS unit selected as a target of an enemy unit's fight attacks",
+            "ENDLESS SWARM": "Target: one ENDLESS MULTITUDE unit with destroyed models, or up to two such units if both are within Synapse Range; each selected unit returns up to D3+3 destroyed models",
             "EXPERIMENTAL AMMUNITION": "Target: T'AU EMPIRE unit not yet selected to shoot; choose +1S or +1S/+1AP/[HAZARDOUS] (cannot also target with THREAT ASSESSMENT ANALYSER this phase)",
             "EXPERIMENTAL WEAPONRY": "Target: T'AU EMPIRE unit not yet selected to shoot; may re-roll attack-count dice for its weapons this phase",
             "NEUROWEB SYSTEM JAMMER": "Target: T'AU EMPIRE CRISIS unit selected as a target by an enemy shooter; until end of phase it can only be targeted by ranged attacks from within 18\"",
+            "OVERRUN": "Target: TYRANIDS unit just before it consolidates; gets +3\" consolidate (if it can end in Engagement Range), and if within Synapse and not in Engagement Range it can make a 6\" Normal move instead",
+            "PREDATORY IMPERATIVE": "Target: one TYRANIDS unit, or up to two TYRANIDS units if both are within Synapse Range; choose one Hyper-adaptation (other than the one chosen at battle round 1) for selected units until your next Command phase",
+            "RAPID REGENERATION": "Target: TYRANIDS unit selected as an enemy unit's attack target in Shooting/Fight; gains Feel No Pain 6+ (or 5+ while within Synapse Range) this phase",
             "REACTIVE IMPACT DAMPENERS": "Target: T'AU EMPIRE BATTLESUIT unit selected as an enemy attack target; incoming attacks suffer -1 to wound while attacker Strength is greater than target Toughness this phase",
             "THREAT ASSESSMENT ANALYSER": "Target: T'AU EMPIRE unit not yet selected to shoot; choose Sustained Hits 1 or Lethal Hits, or gain both plus [HAZARDOUS] (cannot also target with EXPERIMENTAL AMMUNITION this phase)",
             "ARMOUR OF CONTEMPT": "Target: ADEPTUS ASTARTES unit",
@@ -3170,6 +3263,10 @@ class StratagemManager(
             raise
         try:
             self._clear_plaguesurge_bonus_if_expired(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_tyranids_invasion_fleet_phase_start_effects(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -4750,6 +4847,20 @@ class StratagemManager(
                             sr.pop("unbridled_carnage_active", None)
                             sr.pop("unbridled_carnage_expires_phase", None)
                             sr.pop("unbridled_carnage_source", None)
+                        if sr.get("tyranids_adrenal_surge_active") is True:
+                            sr.pop("tyranids_adrenal_surge_active", None)
+                            sr.pop("tyranids_adrenal_surge_crit_threshold", None)
+                            sr.pop("tyranids_adrenal_surge_expires_phase", None)
+                            sr.pop("tyranids_adrenal_surge_source", None)
+                            sr.pop("tyranids_adrenal_surge_turn_owner", None)
+                            sr.pop("tyranids_adrenal_surge_turn", None)
+                        if sr.get("tyranids_death_frenzy_active") is True:
+                            sr.pop("tyranids_death_frenzy_active", None)
+                            sr.pop("tyranids_death_frenzy_threshold", None)
+                            sr.pop("tyranids_death_frenzy_expires_phase", None)
+                            sr.pop("tyranids_death_frenzy_source", None)
+                            sr.pop("tyranids_death_frenzy_owner", None)
+                            sr.pop("tyranids_death_frenzy_turn", None)
                         if (
                             "stratagem_consolidate_distance_override" in sr
                             or sr.get("stratagem_consolidate_requires_engagement")
@@ -4758,6 +4869,13 @@ class StratagemManager(
                             sr.pop("stratagem_consolidate_requires_engagement", None)
                             sr.pop("stratagem_consolidate_expires_phase", None)
                             sr.pop("stratagem_consolidate_source", None)
+                        if sr.get("tyranids_overrun_normal_move_active") is True:
+                            sr.pop("tyranids_overrun_normal_move_active", None)
+                            sr.pop("tyranids_overrun_normal_move_distance", None)
+                            sr.pop("tyranids_overrun_expires_phase", None)
+                            sr.pop("tyranids_overrun_source", None)
+                            sr.pop("tyranids_overrun_turn_owner", None)
+                            sr.pop("tyranids_overrun_turn", None)
                         if sr.get("frenzied_resilience_active") is True:
                             sr.pop("frenzied_resilience_active", None)
                             sr.pop("frenzied_resilience_damage_reduction", None)
@@ -6508,6 +6626,13 @@ class StratagemManager(
             )
         except Exception:
             raise
+        try:
+            self._queue_tyranids_invasion_fleet_shooting_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
         # GO TO GROUND
         try:
             s = self.get_by_name("GO TO GROUND")
@@ -7287,6 +7412,13 @@ class StratagemManager(
             raise
         try:
             self._queue_tau_experimental_prototype_fight_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_tyranids_invasion_fleet_fight_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -8236,6 +8368,13 @@ class StratagemManager(
             try:
                 if _unit_cannot_be_target_of_stratagem(root):
                     return
+            except Exception:
+                raise
+            try:
+                self._queue_tyranids_invasion_fleet_before_consolidate_reactions(
+                    unit=root,
+                    target_unit=target_unit,
+                )
             except Exception:
                 raise
             phase_name = self._current_phase_name or "Fight phase"
@@ -12061,6 +12200,9 @@ class StratagemManager(
         tau_result = self._use_tau_experimental_prototype_cadre_stratagem(s, **kwargs)
         if tau_result is not None:
             return tau_result
+        tyranids_result = self._use_tyranids_invasion_fleet_stratagem(s, **kwargs)
+        if tyranids_result is not None:
+            return tyranids_result
 
         # Rage-cursed Onslaught: RED WRATH (advance then shoot/charge choice; Red Thirst for both)
         if s.name.upper() == "RED WRATH":
