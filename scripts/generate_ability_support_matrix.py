@@ -352,6 +352,18 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time a model in this unit makes an attack reroll a hit roll of \d+",
             r"each time a model in this unit makes an attack reroll a wound roll of \d+",
         ),
+        "Relentless Raiders": (
+            r"while an objective marker is under your control each time an enemy unit ends a normal advance fall back or charge move within range of that objective marker roll one d6",
+            r"on a \d+ that enemy unit suffers d3 mortal wounds",
+            r"anhrathe units from your army have the following ability",
+            r"at the end of a phase if this unit is within range of an objective marker you control that objective marker remains under your control until your opponents level of control over that objective marker is greater than yours at the end of a phase",
+        ),
+        "Veterans of the Void": (
+            r"each time you add an anhrathe unit to your army it can be given up to one corsair enhancement",
+            r"each corsair enhancement included in your army must be unique",
+            r"if a unit is given a corsair enhancement you must increase the points cost of that unit by the amount shown",
+            r"if this causes your army to exceed the points limit for the battle you are playing you cannot include that unit in your army",
+        ),
         "Empyric Wellspring": (
             r"each time a unit from your army makes a dark pact select one of the following abilities",
             r"your unit has that ability until the end of the phase",
@@ -1588,6 +1600,14 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Path of the Warrior": (
             "Supported",
             "Aspect Host: select re-roll Hit 1s or re-roll Wound 1s each time an Aspect Warriors or Avatar of Khaine unit is selected to shoot or fight (until end of phase).",
+        ),
+        "Relentless Raiders": (
+            "Supported",
+            "Corsair Coterie: when an enemy unit ends a Normal/Advance/Fall Back/Charge move within range of an objective you control, roll D6 and on 2+ that unit suffers D3 mortal wounds; ANHRATHE units also apply Void Thieves sticky objective control at phase end.",
+        ),
+        "Veterans of the Void": (
+            "Supported",
+            "Corsair Coterie/Eldritch Raiders: ANHRATHE units can take detachment Corsair Enhancements (including non-Character units), Corsair Enhancements remain unique, enhancement points are included in unit cost, and enhancement cap scales with ANHRATHE units.",
         ),
         "Defend at All Costs": (
             "Supported",

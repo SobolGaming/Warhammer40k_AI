@@ -2300,48 +2300,103 @@ class Game(
     def _on_unit_move_ended_detachment_rules(self, unit=None, action: str | None = None, **_kwargs) -> None:
         if unit is None:
             return
-        if (action or "").strip().lower() != "charge":
+        action_key = str(action or "").strip().lower()
+        if action_key not in ("move", "advance", "fall_back", "charge"):
             return
-        army = unit.get_parent_army()
+        try:
+            moving_root = unit.get_attached_unit_root()
+        except Exception:
+            moving_root = unit
+        if moving_root is None:
+            return
+        army = moving_root.get_parent_army()
         if army is None:
             raise RuntimeError("Detachment rule resolution requires a parent army.")
-        we_mgr = getattr(army, "world_eaters_detachments", None)
-        if we_mgr is not None and callable(getattr(we_mgr, "relentless_rage_applies", None)):
-            if bool(we_mgr.relentless_rage_applies(unit)):
-                # Relentless Rage applies only to WORLD EATERS units
-                sr = getattr(unit, "special_rules", None)
-                if not isinstance(sr, dict):
-                    sr = {}
-                sr["relentless_rage_melee_attacks_bonus"] = 1
-                sr["relentless_rage_melee_strength_bonus"] = 2
-                sr["relentless_rage_expires_phase"] = "FIGHT_PHASE"
-                unit.special_rules = sr
-                return
 
-        cd_mgr = getattr(army, "chaos_daemons_detachments", None)
-        if cd_mgr is not None and callable(getattr(cd_mgr, "seductive_gambit_applies", None)):
-            if bool(cd_mgr.seductive_gambit_applies(unit)):
-                # Seductive Gambit applies only to LEGIONES DAEMONICA SLAANESH units.
-                player = unit.get_parent_army().player
-                if player is None:
-                    raise RuntimeError("Seductive Gambit requires a player.")
-                unit_id = maybe_entity_id(unit)
-                ctx = {
-                    "unit": getattr(unit, "name", "") or "",
-                    "ability_name": "Seductive Gambit",
-                    "phase": "Charge phase",
-                    "unit_id": unit_id,
-                }
-                message = f"Use Seductive Gambit for {getattr(unit, 'name', 'Unit')}?"
-                self._queue_optional_ability_confirmation(
-                    player=player,
-                    ability_key="seductive_gambit",
-                    ability_name="Seductive Gambit",
-                    message=message,
-                    context=ctx,
-                    payload={"unit_id": unit_id},
-                    instance_key=str(unit_id or ""),
+        if action_key == "charge":
+            we_mgr = getattr(army, "world_eaters_detachments", None)
+            if we_mgr is not None and callable(getattr(we_mgr, "relentless_rage_applies", None)):
+                if bool(we_mgr.relentless_rage_applies(moving_root)):
+                    # Relentless Rage applies only to WORLD EATERS units.
+                    sr = getattr(moving_root, "special_rules", None)
+                    if not isinstance(sr, dict):
+                        sr = {}
+                    sr["relentless_rage_melee_attacks_bonus"] = 1
+                    sr["relentless_rage_melee_strength_bonus"] = 2
+                    sr["relentless_rage_expires_phase"] = "FIGHT_PHASE"
+                    moving_root.special_rules = sr
+
+            cd_mgr = getattr(army, "chaos_daemons_detachments", None)
+            if cd_mgr is not None and callable(getattr(cd_mgr, "seductive_gambit_applies", None)):
+                if bool(cd_mgr.seductive_gambit_applies(moving_root)):
+                    # Seductive Gambit applies only to LEGIONES DAEMONICA SLAANESH units.
+                    player = moving_root.get_parent_army().player
+                    if player is None:
+                        raise RuntimeError("Seductive Gambit requires a player.")
+                    unit_id = maybe_entity_id(moving_root)
+                    ctx = {
+                        "unit": getattr(moving_root, "name", "") or "",
+                        "ability_name": "Seductive Gambit",
+                        "phase": "Charge phase",
+                        "unit_id": unit_id,
+                    }
+                    message = f"Use Seductive Gambit for {getattr(moving_root, 'name', 'Unit')}?"
+                    self._queue_optional_ability_confirmation(
+                        player=player,
+                        ability_key="seductive_gambit",
+                        ability_name="Seductive Gambit",
+                        message=message,
+                        context=ctx,
+                        payload={"unit_id": unit_id},
+                        instance_key=str(unit_id or ""),
+                    )
+
+        game_map = getattr(self, "map", None)
+        from ..utility.event_bus import append_action, append_dice
+
+        for reacting_player in list(getattr(self, "players", []) or []):
+            if reacting_player is None:
+                continue
+            reacting_army = self._get_player_army(reacting_player)
+            if reacting_army is None or reacting_army is army:
+                continue
+            ae_mgr = getattr(reacting_army, "aeldari_detachments", None)
+            if ae_mgr is None:
+                continue
+            resolve_fn = getattr(ae_mgr, "resolve_relentless_raiders_enemy_move", None)
+            if not callable(resolve_fn):
+                continue
+            outcomes = list(
+                resolve_fn(
+                    moving_root,
+                    action=action_key,
+                    game=self,
+                    game_map=game_map,
                 )
+                or []
+            )
+            if not outcomes:
+                continue
+            mover_name = str(getattr(moving_root, "name", "Unit") or "Unit")
+            for outcome in outcomes:
+                objective_id = str(outcome.get("objective_id", "") or "")
+                roll = int(outcome.get("roll", 0) or 0)
+                mortal_wounds = int(outcome.get("mortal_wounds", 0) or 0)
+                objective_label = f"objective {objective_id}" if objective_id else "an objective marker"
+                append_dice(
+                    reacting_player,
+                    f"Relentless Raiders: {mover_name} near {objective_label}, rolled {roll} (2+).",
+                )
+                if mortal_wounds > 0:
+                    append_action(
+                        reacting_player,
+                        f"Relentless Raiders: {mover_name} suffers {mortal_wounds} mortal wound(s).",
+                    )
+                else:
+                    append_action(
+                        reacting_player,
+                        f"Relentless Raiders: no mortal wounds dealt to {mover_name}.",
+                    )
 
     def resolve_charge_end_mortal_wounds(self, unit, target_unit, spec) -> None:
         if unit is None or target_unit is None or not isinstance(spec, dict):

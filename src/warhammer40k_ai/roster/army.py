@@ -854,6 +854,30 @@ class Army:
         sr = getattr(unit, "special_rules", None)
         return bool(isinstance(sr, dict) and sr.get("spawn_only"))
 
+    def _veterans_of_the_void_allows_enhancement(self, unit: Unit, enhancement: Enhancement) -> bool:
+        ae_mgr = getattr(self, "aeldari_detachments", None)
+        if ae_mgr is None:
+            return False
+        allows_fn = getattr(ae_mgr, "veterans_of_the_void_allows_enhancement", None)
+        if not callable(allows_fn):
+            return False
+        return bool(allows_fn(unit, enhancement))
+
+    def _veterans_of_the_void_max_enhancements(self) -> int:
+        ae_mgr = getattr(self, "aeldari_detachments", None)
+        if ae_mgr is None:
+            return 3
+        has_fn = getattr(ae_mgr, "has_veterans_of_the_void", None)
+        if not callable(has_fn) or not bool(has_fn()):
+            return 3
+        cap_fn = getattr(ae_mgr, "veterans_of_the_void_max_enhancements", None)
+        if not callable(cap_fn):
+            return 3
+        try:
+            return max(0, int(cap_fn() or 0))
+        except (TypeError, ValueError):
+            return 3
+
     def validate_spawn_only_units(self):
         for unit in self.units:
             if self._unit_spawn_only(unit) and not getattr(unit, "spawned_in_battle", False):
@@ -963,7 +987,8 @@ class Army:
 
     def add_enhancement(self, enhancement, character_unit):
         # Assign an Enhancement to a Character unit
-        if not character_unit.is_character or character_unit.is_epic_hero:
+        veterans_override = self._veterans_of_the_void_allows_enhancement(character_unit, enhancement)
+        if not veterans_override and (not character_unit.is_character or character_unit.is_epic_hero):
             raise ArmyValidationError(f"Enhancements can only be assigned to non-Epic Hero Characters. '{character_unit.name}' is not eligible.")
         if self._unit_cannot_receive_enhancements(character_unit):
             raise ArmyValidationError(f"Character '{character_unit.name}' cannot be given Enhancements.")
@@ -1361,9 +1386,14 @@ class Army:
             )
 
     def validate_enhancements(self):
-        # Rule 1: Maximum of 3 Enhancements
-        if len(self.enhancements) > 3:
-            raise ArmyValidationError(f"Army has more than 3 Enhancements assigned.")
+        # Rule 1: Maximum enhancements (Veterans of the Void overrides core cap).
+        max_enhancements = int(self._veterans_of_the_void_max_enhancements() or 0)
+        if len(self.enhancements) > max_enhancements:
+            if max_enhancements == 3:
+                raise ArmyValidationError(f"Army has more than 3 Enhancements assigned.")
+            raise ArmyValidationError(
+                f"Veterans of the Void: army has {len(self.enhancements)} Enhancements assigned (max {max_enhancements})."
+            )
 
         # Rule 2: Enhancements cannot be duplicated
         enhancement_names = [enhancement.name for enhancement in self.enhancements]
@@ -1374,7 +1404,8 @@ class Army:
         # Rule 3: Enhancements can only be assigned to non-Epic Hero Characters
         for unit in self.units:
             if unit.enhancement:
-                if unit.is_epic_hero:
+                veterans_override = self._veterans_of_the_void_allows_enhancement(unit, unit.enhancement)
+                if unit.is_epic_hero and not veterans_override:
                     raise ArmyValidationError(f"Epic Hero '{unit.name}' cannot have Enhancements assigned.")
                 if self._unit_cannot_receive_enhancements(unit):
                     raise ArmyValidationError(f"Unit '{unit.name}' cannot be given Enhancements.")

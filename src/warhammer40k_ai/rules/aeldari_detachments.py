@@ -9,6 +9,7 @@ from .detachment_manager import DetachmentManagerBase
 
 class AeldariDetachmentManager(DetachmentManagerBase):
     faction_id = "AE"
+    _RELENTLESS_RAIDERS_MOVE_ACTIONS = {"move", "advance", "fall_back", "charge"}
     _DEFEND_AT_ALL_COSTS_MODEL_KEYWORDS = (
         "DIRE AVENGERS",
         "DIRE AVENGER",
@@ -242,8 +243,14 @@ class AeldariDetachmentManager(DetachmentManagerBase):
 
     def validate_detachment_rules(self) -> list[str]:
         errors: list[str] = []
-        if not self.is_devoted_of_ynnead():
-            return errors
+        if self.is_devoted_of_ynnead():
+            errors.extend(self._validate_devoted_of_ynnead_rules())
+        if self.has_veterans_of_the_void():
+            errors.extend(self._validate_veterans_of_the_void_rules())
+        return errors
+
+    def _validate_devoted_of_ynnead_rules(self) -> list[str]:
+        errors: list[str] = []
         army = self.army
         if army is None:
             return errors
@@ -269,6 +276,34 @@ class AeldariDetachmentManager(DetachmentManagerBase):
         warlord_name = self._normalize_unit_name(getattr(warlord, "name", "")) if warlord is not None else ""
         if warlord_name not in {"yvraine", "the yncarne"}:
             errors.append("Strength from Death (Servants of the Whispering God): Yvraine or The Yncarne must be your WARLORD.")
+        return errors
+
+    def _validate_veterans_of_the_void_rules(self) -> list[str]:
+        errors: list[str] = []
+        if self.army is None:
+            return errors
+
+        valid_assigned = 0
+        for unit in list(getattr(self.army, "units", []) or []):
+            if unit is None:
+                continue
+            enhancement = getattr(unit, "enhancement", None)
+            if enhancement is None:
+                continue
+            if not self.veterans_of_the_void_allows_enhancement(unit, enhancement):
+                errors.append(
+                    "Veterans of the Void: "
+                    f"unit '{getattr(unit, 'name', 'Unknown')}' cannot take enhancement "
+                    f"'{getattr(enhancement, 'name', 'Unknown')}' (requires an ANHRATHE unit and a matching Corsair Enhancement)."
+                )
+                continue
+            valid_assigned += 1
+
+        max_allowed = int(self.veterans_of_the_void_max_enhancements() or 0)
+        if valid_assigned > max_allowed:
+            errors.append(
+                f"Veterans of the Void: Corsair Enhancements assigned {int(valid_assigned)}/{int(max_allowed)}."
+            )
         return errors
 
     def is_warhost_detachment(self) -> bool:
@@ -479,6 +514,200 @@ class AeldariDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Spirit Conclave")
+
+    def is_eldritch_raiders(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Eldritch Raiders")
+
+    def is_corsair_coterie(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Corsair Coterie")
+
+    def has_veterans_of_the_void(self) -> bool:
+        return self.is_eldritch_raiders() or self.is_corsair_coterie()
+
+    def is_anhrathe_unit(self, unit) -> bool:
+        if unit is None:
+            return False
+        return self._unit_has_keyword(unit, "ANHRATHE")
+
+    def veterans_of_the_void_allows_enhancement(self, unit, enhancement) -> bool:
+        if not self.has_veterans_of_the_void():
+            return False
+        if unit is None or enhancement is None:
+            return False
+        if self.army is not None and hasattr(unit, "get_parent_army"):
+            if unit.get_parent_army() is not self.army:
+                return False
+        if not self.is_anhrathe_unit(unit):
+            return False
+        faction_id = str(getattr(enhancement, "faction_id", "") or "").strip().upper()
+        if faction_id and faction_id != self.faction_id:
+            return False
+        detachment_name = str(getattr(enhancement, "detachment", "") or "").strip()
+        if detachment_name and not self.detachment_matches(detachment_name):
+            return False
+        return True
+
+    def veterans_of_the_void_max_enhancements(self) -> int:
+        if not self.has_veterans_of_the_void() or self.army is None:
+            return 3
+        count = 0
+        for unit in list(getattr(self.army, "units", []) or []):
+            if unit is None:
+                continue
+            if self.is_anhrathe_unit(unit):
+                count += 1
+        return int(count)
+
+    @staticmethod
+    def _objective_sort_key(loc) -> tuple[str, float, float]:
+        objective_id = str(get_entity_id(loc) or "")
+        try:
+            x = float(getattr(loc, "x", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            x = 0.0
+        try:
+            y = float(getattr(loc, "y", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            y = 0.0
+        return (objective_id, x, y)
+
+    def apply_void_thieves_sticky_objectives(self, *, game=None, game_map=None) -> int:
+        if not self.is_corsair_coterie() or self.army is None:
+            return 0
+        player = getattr(self.army, "player", None)
+        if player is None:
+            return 0
+        resolved_map = self._resolve_game_map(game=game, game_map=game_map)
+        if resolved_map is None:
+            return 0
+
+        objective_locations: list = []
+        for obj in list(getattr(resolved_map, "objectives", []) or []):
+            loc = getattr(obj, "location", None)
+            if loc is None:
+                loc = obj
+            if loc is None or bool(getattr(loc, "removed", False)):
+                continue
+            update_control = getattr(loc, "update_control", None)
+            if callable(update_control) and game is not None:
+                update_control(game)
+            objective_locations.append(loc)
+        if not objective_locations:
+            return 0
+        objective_locations.sort(key=self._objective_sort_key)
+
+        applied = 0
+        for root in list(self._iter_unique_army_roots() or []):
+            if root is None:
+                continue
+            if not self.is_anhrathe_unit(root):
+                continue
+            if not bool(getattr(root, "deployed", False)):
+                continue
+            is_alive = getattr(root, "is_alive", None)
+            if callable(is_alive) and not bool(is_alive()):
+                continue
+            in_reserves = getattr(root, "is_in_reserves", None)
+            if callable(in_reserves) and bool(in_reserves()):
+                continue
+            if bool(getattr(root, "is_embarked", False)):
+                continue
+            within_objective = getattr(root, "is_within_objective_range", None)
+            if not callable(within_objective):
+                continue
+
+            for loc in objective_locations:
+                if getattr(loc, "controlling_player", None) is not player:
+                    continue
+                if not bool(within_objective(loc)):
+                    continue
+                if (
+                    getattr(loc, "sticky_controller", None) is player
+                    and str(getattr(loc, "sticky_source", "") or "").strip().lower() == "void_thieves"
+                ):
+                    continue
+                set_sticky = getattr(loc, "set_sticky_control", None)
+                if callable(set_sticky):
+                    set_sticky(player, source="void_thieves")
+                else:
+                    loc.sticky_controller = player
+                    loc.sticky_source = "void_thieves"
+                    loc.controlling_player = player
+                applied += 1
+        return int(applied)
+
+    def resolve_relentless_raiders_enemy_move(self, enemy_unit, *, action: str, game=None, game_map=None) -> list[dict]:
+        if not self.is_corsair_coterie() or self.army is None:
+            return []
+        action_key = str(action or "").strip().lower()
+        if action_key not in self._RELENTLESS_RAIDERS_MOVE_ACTIONS:
+            return []
+        if enemy_unit is None:
+            return []
+        if self._unit_in_army(enemy_unit):
+            return []
+        if not bool(getattr(enemy_unit, "deployed", False)):
+            return []
+        is_alive = getattr(enemy_unit, "is_alive", None)
+        if callable(is_alive) and not bool(is_alive()):
+            return []
+        in_reserves = getattr(enemy_unit, "is_in_reserves", None)
+        if callable(in_reserves) and bool(in_reserves()):
+            return []
+        if bool(getattr(enemy_unit, "is_embarked", False)):
+            return []
+        within_objective = getattr(enemy_unit, "is_within_objective_range", None)
+        if not callable(within_objective):
+            return []
+
+        player = getattr(self.army, "player", None)
+        if player is None:
+            return []
+        resolved_map = self._resolve_game_map(game=game, game_map=game_map)
+        if resolved_map is None:
+            return []
+
+        objective_locations: list = []
+        for obj in list(getattr(resolved_map, "objectives", []) or []):
+            loc = getattr(obj, "location", None)
+            if loc is None:
+                loc = obj
+            if loc is None or bool(getattr(loc, "removed", False)):
+                continue
+            update_control = getattr(loc, "update_control", None)
+            if callable(update_control) and game is not None:
+                update_control(game)
+            if getattr(loc, "controlling_player", None) is not player:
+                continue
+            if not bool(within_objective(loc)):
+                continue
+            objective_locations.append(loc)
+        if not objective_locations:
+            return []
+        objective_locations.sort(key=self._objective_sort_key)
+
+        outcomes: list[dict] = []
+        for loc in objective_locations:
+            roll = int(get_roll("D6") or 0)
+            mortal_wounds = 0
+            if roll >= 2:
+                mortal_wounds = int(get_roll("D3") or 0)
+                if mortal_wounds > 0 and hasattr(enemy_unit, "_apply_mortal_wounds_to_unit"):
+                    enemy_unit._apply_mortal_wounds_to_unit(enemy_unit, int(mortal_wounds), game_map=resolved_map)
+            outcomes.append(
+                {
+                    "objective_id": str(get_entity_id(loc) or ""),
+                    "objective_x": float(getattr(loc, "x", 0.0) or 0.0),
+                    "objective_y": float(getattr(loc, "y", 0.0) or 0.0),
+                    "roll": int(roll),
+                    "mortal_wounds": int(max(0, mortal_wounds)),
+                }
+            )
+        return outcomes
 
     def _unit_in_army(self, unit) -> bool:
         if unit is None or self.army is None:

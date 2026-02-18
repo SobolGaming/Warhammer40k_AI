@@ -7190,6 +7190,22 @@ class GamePhaseHandlersMixin:
                             loc.sticky_source = "unit_sticky_objective"
                             loc.controlling_player = player
 
+        # Aeldari Corsair Coterie: Void Thieves sticky objectives at end of any phase.
+        if bool(getattr(self, "is_authoritative", True)):
+            game_map = getattr(self, "map", None)
+            if game_map is not None:
+                for p in list(getattr(self, "players", []) or []):
+                    if p is None:
+                        continue
+                    army = self._get_player_army(p)
+                    if army is None:
+                        continue
+                    ae_mgr = getattr(army, "aeldari_detachments", None)
+                    apply_void_thieves = getattr(ae_mgr, "apply_void_thieves_sticky_objectives", None)
+                    if not callable(apply_void_thieves):
+                        continue
+                    apply_void_thieves(game=self, game_map=game_map)
+
         # Cabal of Sorcerers: Temporal Surge charge restriction ends at the end of the turn.
         if pname == "FIGHT_PHASE":
             if player is None:
