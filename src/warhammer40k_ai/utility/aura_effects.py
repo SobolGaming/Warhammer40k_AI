@@ -212,6 +212,53 @@ def _unit_matches_keyword_phrase(unit, phrase: str) -> bool:
     return dp[0]
 
 
+def _unit_matches_name_phrase(unit, phrase: str) -> bool:
+    name_phrase = _normalize_keyword_phrase(phrase)
+    if not name_phrase or unit is None:
+        return False
+    pattern = re.compile(rf"(?:^| ){re.escape(name_phrase)}(?: |$)")
+    candidates: list[str] = []
+
+    def _append_candidate(value) -> None:
+        norm = _normalize_keyword_phrase(str(value or ""))
+        if norm:
+            candidates.append(norm)
+
+    _append_candidate(getattr(unit, "name", ""))
+    _append_candidate(getattr(unit, "_id", ""))
+    datasheet = getattr(unit, "datasheet", None)
+    if datasheet is not None:
+        _append_candidate(getattr(datasheet, "name", ""))
+    try:
+        root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+    except Exception:
+        root = unit
+    if root is not None and root is not unit:
+        _append_candidate(getattr(root, "name", ""))
+        _append_candidate(getattr(root, "_id", ""))
+        root_datasheet = getattr(root, "datasheet", None)
+        if root_datasheet is not None:
+            _append_candidate(getattr(root_datasheet, "name", ""))
+    for model in list(getattr(unit, "models", []) or []):
+        _append_candidate(getattr(model, "name", ""))
+
+    for candidate in candidates:
+        if pattern.search(candidate):
+            return True
+    return False
+
+
+def _unit_matches_keyword_or_name_phrase(unit, phrase: str) -> bool:
+    if _unit_matches_keyword_phrase(unit, phrase):
+        return True
+    try:
+        if bool(unit.has_any_keyword(phrase)):
+            return True
+    except Exception:
+        pass
+    return _unit_matches_name_phrase(unit, phrase)
+
+
 def _iter_possible_abilities(unit) -> Iterable[object]:
     is_active = getattr(unit, "_ability_is_active", None)
     for ab in (getattr(unit, "possible_abilities", []) or []):
@@ -2029,6 +2076,13 @@ def _parse_benefit_of_cover_aura(ability) -> Optional[dict]:
             flags=re.IGNORECASE,
         )
     if not m:
+        m = re.search(
+            r'While a friendly (?P<faction_kw>.+?) (?:unit|model) is within (?P<rng>\d+)" of this (?:model|unit|the bearer), '
+            r"each time a ranged attack targets that model, (?:it|that model) has the Benefit of Cover(?: against that attack)?",
+            desc,
+            flags=re.IGNORECASE,
+        )
+    if not m:
         return None
     return {
         "faction_keyword": str(m.group("faction_kw") or "").strip(),
@@ -2131,13 +2185,7 @@ def get_aura_benefit_of_cover(target_unit, *, game_map=None) -> tuple[bool, tupl
                     continue
                 applied_aura_names.add(aura_key)
             if spec["faction_keyword"]:
-                matches = _unit_matches_keyword_phrase(target_unit, spec["faction_keyword"])
-                if not matches:
-                    try:
-                        matches = bool(target_unit.has_any_keyword(spec["faction_keyword"]))
-                    except Exception:
-                        matches = False
-                if not matches:
+                if not _unit_matches_keyword_or_name_phrase(target_unit, spec["faction_keyword"]):
                     continue
             if not _unit_within_aura_range(source, target_unit, float(spec["range"]), ability=ab):
                 continue

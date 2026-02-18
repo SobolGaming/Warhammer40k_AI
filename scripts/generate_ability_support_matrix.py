@@ -3166,6 +3166,7 @@ def _classify_ability_base(
     monster_vehicle_reroll_support = _monster_vehicle_reroll_support(description)
     unit_contains_oc_support = _unit_contains_oc_support(description)
     aura_oc_support = _aura_objective_control_support(description)
+    aura_benefit_of_cover_support = _aura_benefit_of_cover_support(description)
     enemy_aura_oc_penalty_support = _enemy_aura_objective_control_penalty_support(description)
     aura_adv_charge_support = _aura_advance_charge_roll_support(description)
     aura_hit_support = _aura_hit_bonus_support(description)
@@ -3351,6 +3352,8 @@ def _classify_ability_base(
         return unit_contains_oc_support
     if aura_oc_support:
         return aura_oc_support
+    if aura_benefit_of_cover_support:
+        return aura_benefit_of_cover_support
     if enemy_aura_oc_penalty_support:
         return enemy_aura_oc_penalty_support
     if aura_adv_charge_support:
@@ -4211,6 +4214,32 @@ def _aura_objective_control_support(description: str) -> Optional[Tuple[str, str
     rng = m.group("rng")
     amt = m.group("amt")
     return ("Supported", f"Aura: friendly {faction_kw} within {rng}\" gain Objective Control +{amt}.")
+
+
+def _aura_benefit_of_cover_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    patterns = (
+        r"while a friendly (?P<target>.+?) (?:unit|model) is within (?P<rng>\d+) of this (?:model|unit|the bearer) "
+        r"each time a ranged attack targets that model it has the benefit of cover(?: against that attack)?",
+        r"while a friendly (?P<target>.+?) (?:unit|model) is within (?P<rng>\d+) of this (?:model|unit|the bearer) "
+        r"each time a ranged attack is allocated to a model in that unit that model has the benefit of cover(?: against that attack)?",
+        r"while a friendly (?P<target>.+?) (?:unit|model) is within (?P<rng>\d+) of this (?:model|unit|the bearer) "
+        r"each time a ranged attack targets that unit models in that unit have the benefit of cover(?: against that attack)?",
+    )
+    match = None
+    for pattern in patterns:
+        match = re.fullmatch(pattern, norm)
+        if match:
+            break
+    if not match:
+        return None
+    target = str(match.group("target") or "").strip()
+    rng = str(match.group("rng") or "").strip()
+    return ("Supported", f"Aura: friendly {target} within {rng}\" gain Benefit of Cover against ranged attacks.")
 
 
 def _enemy_aura_objective_control_penalty_support(description: str) -> Optional[Tuple[str, str]]:

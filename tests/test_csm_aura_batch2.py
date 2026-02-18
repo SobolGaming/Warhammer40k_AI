@@ -1,4 +1,5 @@
 from unittest.mock import patch
+from types import SimpleNamespace
 
 from warhammer40k_ai.units.ability import Ability
 
@@ -130,6 +131,57 @@ def test_dark_blessing_aura_grants_benefit_of_cover():
         has_cover, _reasons = get_aura_benefit_of_cover(receiver, game_map=game_map)
 
     assert has_cover is True
+
+
+def test_ion_aegis_aura_matches_armiger_unit_name_without_keyword():
+    from warhammer40k_ai.utility.aura_effects import get_aura_benefit_of_cover
+
+    aura = Ability(
+        name="Ion Aegis (Aura)",
+        faction_id="",
+        description=(
+            "While a friendly Armiger model is within 6\" of this model, "
+            "each time a ranged attack targets that model, it has the Benefit of Cover against that attack."
+        ),
+        type="Datasheet",
+        parameter="",
+        legend=None,
+    )
+    receiver = _Unit("Armiger Helverin", keywords=["VEHICLE"])
+    source = _Unit("Knight Castellan", abilities=[aura], keywords=["IMPERIAL KNIGHTS"])
+    game_map = _Map(friendly_units=[receiver, source], enemy_units=[])
+
+    with patch("warhammer40k_ai.utility.aura_effects.unit_within_range_of_unit", return_value=True):
+        has_cover, reasons = get_aura_benefit_of_cover(receiver, game_map=game_map)
+
+    assert has_cover is True
+    assert any("Ion Aegis" in reason for reason in reasons)
+
+
+def test_benefit_of_cover_aura_matches_named_model_without_keyword():
+    from warhammer40k_ai.utility.aura_effects import get_aura_benefit_of_cover
+
+    aura = Ability(
+        name="Personal Guard Field (Aura)",
+        faction_id="",
+        description=(
+            "While a friendly Banner Bearer model is within 6\" of this model, "
+            "each time a ranged attack targets that model, it has the Benefit of Cover against that attack."
+        ),
+        type="Datasheet",
+        parameter="",
+        legend=None,
+    )
+    receiver = _Unit("Escort", keywords=["INFANTRY"])
+    receiver.models = [SimpleNamespace(name="Banner Bearer")]
+    source = _Unit("Captain", abilities=[aura], keywords=["CHARACTER"])
+    game_map = _Map(friendly_units=[receiver, source], enemy_units=[])
+
+    with patch("warhammer40k_ai.utility.aura_effects.unit_within_range_of_unit", return_value=True):
+        has_cover, reasons = get_aura_benefit_of_cover(receiver, game_map=game_map)
+
+    assert has_cover is True
+    assert any("Personal Guard Field" in reason for reason in reasons)
 
 
 def test_lord_of_traitor_legions_aura_grants_reroll_source():
