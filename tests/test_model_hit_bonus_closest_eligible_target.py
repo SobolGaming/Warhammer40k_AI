@@ -245,6 +245,142 @@ class TestModelHitBonusClosestEligibleTarget(unittest.TestCase):
 
         self.assertEqual(profile.get_effective_ap(attacker.models[0], far_target), 0)
 
+    def test_model_stationary_ranged_sustained_hits_applies_when_stationary_on_own_turn(self):
+        from warhammer40k_ai.units.wargear import WargearProfile
+
+        ability = {
+            "name": "Punishing Salvoes",
+            "description": (
+                "In your Movement phase, if this model Remains Stationary, until the end of the turn, "
+                "ranged weapons equipped by this model have the [SUSTAINED HITS 1] ability."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, army2 = _build_game()
+        attacker = _make_unit("Attacker", abilities=[ability], faction_name="Imperial Knights")
+        target = _make_unit("Target")
+        army1.add_unit(attacker)
+        army2.add_unit(target)
+
+        attacker.deployed = True
+        target.deployed = True
+        game.map.units = [attacker, target]
+        game.current_player_index = 0
+        attacker.round_state.remained_stationary_this_round = True
+
+        parent = SimpleNamespace(name="Test Gun", is_melee=lambda: False, is_ranged=lambda: True)
+        profile = WargearProfile(
+            profile_name="Ranged",
+            wargear_data={
+                "range": "24",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "4",
+                "AP": "0",
+                "D": "1",
+                "description": "",
+            },
+            parent_wargear=parent,
+        )
+        attack_instance = {"_aura_attack_mods": SimpleNamespace(hit=0, hit_reasons=())}
+
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=6):
+            hit_result = profile._hit_target_with_tracking(target, attacker.models[0], attack_instance)
+
+        self.assertTrue(bool(hit_result.get("hit")))
+        self.assertEqual(int(attack_instance.get("sustained_hit", 0) or 0), 1)
+
+    def test_model_stationary_ranged_sustained_hits_not_applied_when_not_stationary(self):
+        from warhammer40k_ai.units.wargear import WargearProfile
+
+        ability = {
+            "name": "Punishing Salvoes",
+            "description": (
+                "In your Movement phase, if this model Remains Stationary, until the end of the turn, "
+                "ranged weapons equipped by this model have the [SUSTAINED HITS 1] ability."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, army2 = _build_game()
+        attacker = _make_unit("Attacker", abilities=[ability], faction_name="Imperial Knights")
+        target = _make_unit("Target")
+        army1.add_unit(attacker)
+        army2.add_unit(target)
+
+        attacker.deployed = True
+        target.deployed = True
+        game.map.units = [attacker, target]
+        game.current_player_index = 0
+        attacker.round_state.remained_stationary_this_round = False
+
+        parent = SimpleNamespace(name="Test Gun", is_melee=lambda: False, is_ranged=lambda: True)
+        profile = WargearProfile(
+            profile_name="Ranged",
+            wargear_data={
+                "range": "24",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "4",
+                "AP": "0",
+                "D": "1",
+                "description": "",
+            },
+            parent_wargear=parent,
+        )
+        attack_instance = {"_aura_attack_mods": SimpleNamespace(hit=0, hit_reasons=())}
+
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=6):
+            profile._hit_target_with_tracking(target, attacker.models[0], attack_instance)
+
+        self.assertEqual(int(attack_instance.get("sustained_hit", 0) or 0), 0)
+
+    def test_model_stationary_ranged_sustained_hits_not_applied_on_opponent_turn(self):
+        from warhammer40k_ai.units.wargear import WargearProfile
+
+        ability = {
+            "name": "Punishing Salvoes",
+            "description": (
+                "In your Movement phase, if this model Remains Stationary, until the end of the turn, "
+                "ranged weapons equipped by this model have the [SUSTAINED HITS 1] ability."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, army2 = _build_game()
+        attacker = _make_unit("Attacker", abilities=[ability], faction_name="Imperial Knights")
+        target = _make_unit("Target")
+        army1.add_unit(attacker)
+        army2.add_unit(target)
+
+        attacker.deployed = True
+        target.deployed = True
+        game.map.units = [attacker, target]
+        game.current_player_index = 1
+        attacker.round_state.remained_stationary_this_round = True
+
+        parent = SimpleNamespace(name="Test Gun", is_melee=lambda: False, is_ranged=lambda: True)
+        profile = WargearProfile(
+            profile_name="Ranged",
+            wargear_data={
+                "range": "24",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "4",
+                "AP": "0",
+                "D": "1",
+                "description": "",
+            },
+            parent_wargear=parent,
+        )
+        attack_instance = {"_aura_attack_mods": SimpleNamespace(hit=0, hit_reasons=())}
+
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=6):
+            profile._hit_target_with_tracking(target, attacker.models[0], attack_instance)
+
+        self.assertEqual(int(attack_instance.get("sustained_hit", 0) or 0), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

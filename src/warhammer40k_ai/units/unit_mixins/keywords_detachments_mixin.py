@@ -4152,6 +4152,66 @@ class KeywordsDetachmentsMixin:
         self._ability_cache[cache_key] = rule
         return rule
 
+    def get_stationary_ranged_sustained_hits_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "In your Movement phase, if this model Remains Stationary, until the end of the turn,
+         ranged weapons equipped by this model have the [SUSTAINED HITS 1] ability."
+        """
+        if model is None:
+            return None
+        cache_key = f"stationary_ranged_sustained_hits_rule:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        rule = None
+        try:
+            for name, desc in self._iter_model_specific_ability_entries(model):
+                text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
+                if not text:
+                    continue
+                low = text.lower().replace("\u2019", "'")
+                if not re.search(r"\b(?:in|during)\s+your\s+movement\s+phase\b", low):
+                    continue
+                if not re.search(r"\bif\s+this\s+model\s+remain(?:s|ed)?\s+stationary\b", low):
+                    continue
+                if "ranged weapons equipped by this model" not in low:
+                    continue
+                if "sustained hits" not in low:
+                    continue
+                if not re.search(r"\buntil\s+(?:the\s+)?end\s+of\s+(?:your\s+|the\s+)?turn\b", low):
+                    continue
+                m = re.search(r"sustained\s+hits\s+(?P<val>\d+|d3|d6)", low)
+                if not m:
+                    continue
+                raw_val = str(m.group("val") or "").strip().upper()
+                source = str(name or "Remains Stationary").strip() or "Remains Stationary"
+                parsed_rule = {
+                    "attack_type": "ranged",
+                    "requires_remained_stationary": True,
+                    "requires_owner_turn": True,
+                    "source": source,
+                }
+                if raw_val in ("D3", "D6"):
+                    parsed_rule["sustained_hits_dice"] = raw_val
+                else:
+                    try:
+                        sustained_val = int(raw_val or 0)
+                    except Exception:
+                        sustained_val = 0
+                    if sustained_val <= 0:
+                        continue
+                    parsed_rule["sustained_hits_value"] = int(sustained_val)
+                rule = parsed_rule
+                break
+        except Exception:
+            rule = None
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = rule
+        return rule
+
     def get_closest_monster_vehicle_reroll_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
         """
         Return rule info for abilities like:

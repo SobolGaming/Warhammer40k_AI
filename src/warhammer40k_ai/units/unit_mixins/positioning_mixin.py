@@ -2266,6 +2266,22 @@ class PositioningMixin:
             text = Unit._strip_eligibility_prefix(text)
 
             for match in self._BEARER_WEAPON_ALWAYS_KEYWORD_RE.finditer(text):
+                try:
+                    prefix = str(text[: match.start()] or "").lower()
+                    is_stationary_conditional = (
+                        ("if this model remains stationary" in prefix)
+                        or ("if this model remained stationary" in prefix)
+                        or ("if the bearer remains stationary" in prefix)
+                        or ("if the bearer remained stationary" in prefix)
+                    )
+                    if is_stationary_conditional and (
+                        ("until the end of the turn" in prefix)
+                        or ("until end of the turn" in prefix)
+                        or ("until end of turn" in prefix)
+                    ):
+                        continue
+                except Exception:
+                    pass
                 keyword = str(match.group("keyword") or "").strip()
                 if not keyword:
                     continue
@@ -2280,6 +2296,22 @@ class PositioningMixin:
                 rules.append({"attack_type": atype, "keyword": keyword, "source": source})
 
             for match in self._WEAPON_ALWAYS_KEYWORD_MODEL_RE.finditer(text):
+                try:
+                    prefix = str(text[: match.start()] or "").lower()
+                    is_stationary_conditional = (
+                        ("if this model remains stationary" in prefix)
+                        or ("if this model remained stationary" in prefix)
+                        or ("if the bearer remains stationary" in prefix)
+                        or ("if the bearer remained stationary" in prefix)
+                    )
+                    if is_stationary_conditional and (
+                        ("until the end of the turn" in prefix)
+                        or ("until end of the turn" in prefix)
+                        or ("until end of turn" in prefix)
+                    ):
+                        continue
+                except Exception:
+                    pass
                 keyword = str(match.group("keyword") or "").strip()
                 if not keyword:
                     continue
@@ -2465,6 +2497,45 @@ class PositioningMixin:
                 aura_rules = get_aura_weapon_keyword_bonuses(self, weapon_profile)
                 if aura_rules:
                     rules = list(rules or []) + list(aura_rules or [])
+        except Exception:
+            pass
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            rule = None
+            get_rule = getattr(root, "get_stationary_ranged_sustained_hits_rule", None)
+            if callable(get_rule):
+                rule = get_rule(model)
+            if isinstance(rule, dict):
+                apply_bonus = True
+                atype = str(attack_type or "").strip().lower()
+                if atype and atype not in ("any", "ranged"):
+                    apply_bonus = False
+                unit = getattr(model, "parent_unit", None) or root
+                if bool(rule.get("requires_remained_stationary")):
+                    if not bool(getattr(getattr(unit, "round_state", None), "remained_stationary_this_round", False)):
+                        apply_bonus = False
+                if apply_bonus and bool(rule.get("requires_owner_turn")):
+                    owner_army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
+                    owner_player = getattr(owner_army, "player", None) if owner_army is not None else None
+                    game = getattr(owner_player, "game", None) if owner_player is not None else None
+                    current_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+                    if owner_player is None or current_player is not owner_player:
+                        apply_bonus = False
+                if apply_bonus:
+                    source = str(rule.get("source", "") or "Remains Stationary").strip() or "Remains Stationary"
+                    sustained_hits_value = int(rule.get("sustained_hits_value", 0) or 0)
+                    sustained_hits_dice = str(rule.get("sustained_hits_dice", "") or "").strip().upper()
+                    if sustained_hits_value > 0:
+                        rules = list(rules or []) + [
+                            {"attack_type": "ranged", "keyword": f"SUSTAINED HITS {int(sustained_hits_value)}", "source": source}
+                        ]
+                    elif sustained_hits_dice in ("D3", "D6"):
+                        rules = list(rules or []) + [
+                            {"attack_type": "ranged", "keyword": f"SUSTAINED HITS {sustained_hits_dice}", "source": source}
+                        ]
         except Exception:
             pass
         try:

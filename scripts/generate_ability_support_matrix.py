@@ -3319,6 +3319,7 @@ def _classify_ability_base(
     model_self_strength_support = _model_self_strength_hit_wound_support(description)
     model_attack_roll_bonus_support = _model_attack_roll_bonus_support(description)
     model_closest_target_ap_bonus_support = _model_closest_target_ap_bonus_support(description)
+    model_stationary_ranged_sustained_support = _model_stationary_ranged_sustained_hits_support(description)
     targeted_stratagem_refund_support = _targeted_stratagem_cp_refund_support(description)
     targeted_stratagem_discount_support = _targeted_stratagem_cp_discount_support(description)
     targeted_stratagem_increase_support = _targeted_stratagem_cp_increase_support(description)
@@ -3622,6 +3623,8 @@ def _classify_ability_base(
         return model_attack_roll_bonus_support
     if model_closest_target_ap_bonus_support:
         return model_closest_target_ap_bonus_support
+    if model_stationary_ranged_sustained_support:
+        return model_stationary_ranged_sustained_support
     if targeted_stratagem_refund_support:
         return targeted_stratagem_refund_support
     if targeted_stratagem_discount_support:
@@ -5393,6 +5396,26 @@ def _model_closest_target_ap_bonus_support(description: str) -> Optional[Tuple[s
         return None
     val = str(m.group("val") or "1")
     return ("Supported", f"Model ranged attacks improve AP by {val} when targeting the closest eligible target.")
+
+
+def _model_stationary_ranged_sustained_hits_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"(?:in|during) your movement phase if this model remains stationary until (?:the )?end of (?:the |your )?turn "
+        r"ranged weapons equipped by this model have the sustained hits (?P<val>\d+|d3|d6) ability",
+        norm,
+    )
+    if not m:
+        return None
+    val = str(m.group("val") or "1").upper()
+    return (
+        "Supported",
+        f"If this model remains stationary in your Movement phase, its ranged weapons gain [SUSTAINED HITS {val}] until end of turn.",
+    )
 
 
 def _model_target_strength_hit_wound_support(description: str) -> Optional[Tuple[str, str]]:
