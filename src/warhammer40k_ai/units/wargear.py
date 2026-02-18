@@ -6602,6 +6602,25 @@ class WargearProfile:
                     _add_skill_mod(1, "Knight Diabolus: +1 WS")
         except Exception:
             pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            sr = getattr(unit, "special_rules", None) if unit is not None else None
+            is_melee = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_melee())
+            if is_melee and isinstance(sr, dict) and bool(sr.get("data_spike_ws_penalty_active")):
+                expires_phase = str(sr.get("data_spike_ws_penalty_expires_phase", "") or "").strip().upper()
+                current_phase = ""
+                if unit is not None:
+                    army = unit.get_parent_army()
+                    player = getattr(army, "player", None) if army is not None else None
+                    game = getattr(player, "game", None) if player is not None else None
+                    current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                if (not expires_phase) or (not current_phase) or (expires_phase == current_phase):
+                    penalty = int(sr.get("data_spike_ws_penalty", 0) or 0)
+                    if penalty > 0:
+                        source = str(sr.get("data_spike_ws_penalty_source", "") or "Data-spike").strip() or "Data-spike"
+                        _add_skill_mod(-int(penalty), f"{source}: -{int(penalty)} WS")
+        except Exception:
+            pass
 
         # Drukhari: ignore cover from Deadly Retinue or Nowhere to Hide (Pain).
         try:

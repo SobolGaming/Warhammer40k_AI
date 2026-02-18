@@ -142,6 +142,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("phase_start", "_on_phase_start_command_phase_cp_rolls"),
                 ("phase_start", "_on_phase_start_fight_phase_target_attack_bonus"),
                 ("phase_start", "_on_phase_start_inflamed_infections"),
+                ("phase_start", "_on_phase_start_data_spike"),
                 ("phase_start", "_on_phase_start_malign_sacrifice"),
                 ("phase_start", "_on_phase_start_dark_ritual"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_tracking"),

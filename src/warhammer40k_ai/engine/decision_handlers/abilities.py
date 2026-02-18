@@ -1853,6 +1853,46 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         ):
             return ("Lucid Eye selection is not a legal Fate die adjustment.",)
         return ()
+    if ability == "data_spike":
+        if is_skip_choice(request, result):
+            return ()
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("attacker_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Data-spike source unit was not found.",)
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or ctx.get("target_unit_id"))
+        if target_unit is None:
+            return ("Data-spike target unit was not found.",)
+
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        if source_root is None or target_root is None:
+            return ("Data-spike source/target unit root was not found.",)
+        if source_root is target_root:
+            return ("Data-spike target must be an enemy VEHICLE unit.",)
+
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if source_army is not None and target_army is not None and source_army is target_army:
+            return ("Data-spike target must be an enemy VEHICLE unit.",)
+
+        is_vehicle = False
+        if hasattr(target_root, "has_any_keyword"):
+            is_vehicle = bool(target_root.has_any_keyword("VEHICLE"))
+        elif hasattr(target_root, "has_keyword"):
+            is_vehicle = bool(target_root.has_keyword("VEHICLE"))
+        if not is_vehicle:
+            return ("Data-spike target must have the VEHICLE keyword.",)
+
+        game_map = getattr(game, "map", None)
+        in_engagement = bool(
+            game_map is not None
+            and hasattr(game_map, "is_within_engagement_range")
+            and game_map.is_within_engagement_range(source_root, target_root)
+        )
+        if not in_engagement:
+            return ("Data-spike target must be within Engagement Range of the source unit.",)
+        return ()
     if is_skip_choice(request, result):
         return ()
     if ability != "strategic_conqueror":
@@ -5652,6 +5692,92 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 )
             except Exception:
                 pass
+    if str(ctx.get("ability", "") or "") == "data_spike":
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("attacker_unit_id") or ctx.get("unit_id"))
+        if source_unit is not None and chosen is not None:
+            source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+            target_root = chosen.get_attached_unit_root() if hasattr(chosen, "get_attached_unit_root") else chosen
+            if source_root is None or target_root is None:
+                return None
+            player = _resolve_player(game, request, _option_payload(request, result))
+            if player is None:
+                try:
+                    player = source_root.get_parent_army().player
+                except Exception:
+                    player = None
+            owner_id = str(getattr(player, "id", "") or "")
+            try:
+                turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            ability_name = str(ctx.get("ability_name", "") or "Data-spike").strip() or "Data-spike"
+            try:
+                threshold = int(ctx.get("threshold", 4) or 4)
+            except Exception:
+                threshold = 4
+            threshold = max(2, min(6, int(threshold)))
+            try:
+                ws_penalty = int(ctx.get("ws_penalty", 1) or 1)
+            except Exception:
+                ws_penalty = 1
+            ws_penalty = max(1, int(ws_penalty))
+            mw_spec = str(ctx.get("mortal_wounds", "D6") or "D6").strip().upper() or "D6"
+
+            try:
+                from ...utility.dice import get_roll
+                from ...utility.event_bus import append_action, append_dice
+            except Exception:
+                get_roll = None
+                append_action = None
+                append_dice = None
+            roll = int(get_roll("D6") or 0) if callable(get_roll) else 0
+            if callable(append_dice) and player is not None:
+                append_dice(player, f"{ability_name} roll: {int(roll)}")
+            if int(roll) < int(threshold):
+                if callable(append_action) and player is not None:
+                    append_action(
+                        player,
+                        f"{ability_name}: {getattr(target_root, 'name', 'Unit')} not affected (roll {int(roll)}, need {int(threshold)}+).",
+                    )
+                return target_root
+
+            total_mw = 0
+            if mw_spec == "D3":
+                total_mw = int(get_roll("D3") or 0) if callable(get_roll) else 0
+            elif mw_spec == "D6":
+                total_mw = int(get_roll("D6") or 0) if callable(get_roll) else 0
+            else:
+                try:
+                    total_mw = int(mw_spec or 0)
+                except Exception:
+                    total_mw = 0
+            if int(total_mw) > 0:
+                source_root._apply_mortal_wounds_to_unit(
+                    target_root,
+                    int(total_mw),
+                    game_map=getattr(game, "map", None),
+                )
+
+            tsr = getattr(target_root, "special_rules", None)
+            if not isinstance(tsr, dict):
+                tsr = {}
+            try:
+                existing_penalty = int(tsr.get("data_spike_ws_penalty", 0) or 0)
+            except Exception:
+                existing_penalty = 0
+            tsr["data_spike_ws_penalty_active"] = True
+            tsr["data_spike_ws_penalty"] = int(existing_penalty + ws_penalty)
+            tsr["data_spike_ws_penalty_owner"] = owner_id
+            tsr["data_spike_ws_penalty_turn"] = int(turn or 0)
+            tsr["data_spike_ws_penalty_source"] = ability_name
+            tsr["data_spike_ws_penalty_expires_phase"] = "FIGHT_PHASE"
+            target_root.special_rules = tsr
+            if callable(append_action) and player is not None:
+                append_action(
+                    player,
+                    f"{ability_name}: {getattr(target_root, 'name', 'Unit')} suffers {int(total_mw)} mortal wounds and melee Weapon Skill is worsened by {int(ws_penalty)} until end of phase.",
+                )
+            return target_root
     if str(ctx.get("ability", "") or "") == "boon_of_death":
         source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
         if source_unit is not None and chosen is not None:

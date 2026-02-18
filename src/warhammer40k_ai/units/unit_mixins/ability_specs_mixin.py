@@ -2670,6 +2670,72 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_start_fight_phase_data_spike_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: at the start of the Fight phase, optionally select one engaged enemy VEHICLE unit,
+        roll one D6 and on a threshold apply mortal wounds and worsen melee Weapon Skill until phase end.
+
+        Returns list of specs with keys:
+            - source: ability name
+            - threshold: int
+            - mortal_wounds: str
+            - ws_penalty: int
+        """
+        if model is None:
+            return []
+        cache_key = f"model_start_fight_phase_data_spike:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, str, int]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._FIGHT_PHASE_DATA_SPIKE_RE.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                threshold = int(m.group("threshold") or 0)
+            except Exception:
+                threshold = 0
+            threshold = max(2, min(6, int(threshold or 0)))
+            mw_value = str(m.group("mw") or "").strip().upper()
+            if not mw_value:
+                mw_value = "D6"
+            try:
+                ws_penalty = int(m.group("pen") or 0)
+            except Exception:
+                ws_penalty = 0
+            if threshold <= 0 or ws_penalty <= 0:
+                continue
+            source = str(name or "Data-spike").strip() or "Data-spike"
+            key = (source.lower(), int(threshold), str(mw_value), int(ws_penalty))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "threshold": int(threshold),
+                    "mortal_wounds": str(mw_value),
+                    "ws_penalty": int(ws_penalty),
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_start_fight_phase_melee_full_characteristic_boost_specs(
         self,
         model: Optional['Model'] = None,

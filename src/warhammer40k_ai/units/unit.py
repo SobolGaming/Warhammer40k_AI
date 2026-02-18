@@ -2794,6 +2794,12 @@ class Unit(
         r"each time a model in that enemy unit makes a melee attack subtract (?P<pen>\d+) from the wound roll",
         re.IGNORECASE,
     )
+    _FIGHT_PHASE_DATA_SPIKE_RE = re.compile(
+        r"at the start of the fight phase you can select one enemy vehicle unit within engagement range of this model s unit "
+        r"and roll one d6 on a (?P<threshold>\d)\+? that enemy unit suffers (?P<mw>d3|d6|\d+) mortal wounds? "
+        r"and until the end of the phase the weapon skill characteristic of melee weapons equipped by that enemy unit is worsened by (?P<pen>\d+)",
+        re.IGNORECASE,
+    )
     _HARBINGER_OF_DEATH_RE = re.compile(
         r"each time this model is selected to fight select one of the following abilities until the end of the phase this model s "
         r"hellforged weapons have that ability",
