@@ -5517,16 +5517,14 @@ def _targeted_stratagem_cp_discount_support(description: str) -> Optional[Tuple[
     if not norm:
         return None
     direct_patterns = [
-        (
-            r"once per battle round one (?:unit|model) from your army with this ability can use it when "
-            r"(?:its unit|this models unit|that models unit) is targeted with a stratagem(?: if it does)? reduce the cp cost of that "
-            r"(?:use|usage) of that stratagem by 1 ?cp"
-        ),
-        (
-            r"once per battle round you can select one model from your army with this ability "
-            r"(?:that models unit can be targeted with a stratagem|and target that models unit with a stratagem) "
-            r"(?:if it does)? reduce the cp cost of that (?:use|usage) of that stratagem by 1 ?cp"
-        ),
+        r"once per battle round one (?:unit|model) from your army with this ability can use it when "
+        r"(?:its unit|this models unit|that models unit) is targeted with a stratagem(?: if it does)? reduce the cp cost of that "
+        r"(?:use|usage) of that stratagem by 1 ?cp",
+        r"once per battle round you can select one model from your army with this ability "
+        r"(?:that models unit can be targeted with a stratagem|and target that models unit with a stratagem) "
+        r"(?:if it does)? reduce the cp cost of that (?:use|usage) of that stratagem by 1 ?cp",
+        r"once per (?P<limit>battle round|turn) when you target this (?:model|unit) with a stratagem(?: you may)? "
+        r"reduce the cp cost of that (?:use|usage) of that stratagem by 1 ?cp",
     ]
     aura_pattern = (
         r"once per battle round one (?:unit|model) from your army with this ability can use it when a friendly "
@@ -5545,17 +5543,23 @@ def _targeted_stratagem_cp_discount_support(description: str) -> Optional[Tuple[
         m = re.fullmatch(pattern, norm)
         if not m:
             continue
+        limit = "battle round"
+        if "limit" in m.groupdict():
+            parsed_limit = str(m.group("limit") or "").strip().lower()
+            if parsed_limit == "turn":
+                limit = "turn"
         if "keyword" in m.groupdict():
             kw = re.sub(r"\s+", " ", (m.group("keyword") or "").strip())
             rng = m.group("range") or "0"
             kw_label = kw.upper() if kw else "friendly"
             return (
                 "Supported",
-                f"Once per battle round, when a friendly {kw_label} unit within {rng}\" is targeted with a Stratagem, reduce its CP cost by 1.",
+                f"Once per {limit}, when a friendly {kw_label} unit within {rng}\" is targeted with a Stratagem, reduce its CP cost by 1.",
             )
+        subject = "this model" if "target this model with a stratagem" in norm else "this unit"
         return (
             "Supported",
-            "Once per battle round, when this unit is targeted with a Stratagem, you can reduce its CP cost by 1.",
+            f"Once per {limit}, when {subject} is targeted with a Stratagem, you can reduce its CP cost by 1.",
         )
     return None
 

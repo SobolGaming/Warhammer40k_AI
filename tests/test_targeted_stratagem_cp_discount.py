@@ -69,6 +69,12 @@ class TestTargetedStratagemCpDiscount(unittest.TestCase):
             "of that Stratagem by 1CP."
         )
 
+    def _once_per_turn_model_text(self):
+        return (
+            "Once per turn, when you target this model with a stratagem, you may reduce the CP cost of that use of that "
+            "stratagem by 1CP."
+        )
+
     def _select_model_ability_texts(self):
         return [
             (
@@ -107,6 +113,20 @@ class TestTargetedStratagemCpDiscount(unittest.TestCase):
                 sources = unit.special_rules.get("stratagem_target_cp_discount_sources", [])
                 self.assertIn("Strategic Coordination", sources)
 
+    def test_parses_once_per_turn_target_this_model_discount(self):
+        ability = {
+            "name": "Legendary Freeblade",
+            "description": self._once_per_turn_model_text(),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        unit = _make_unit("Canis Rex", abilities=[ability])
+        self.assertTrue(unit.special_rules.get("stratagem_target_cp_discount"))
+        specs = list(unit.special_rules.get("stratagem_target_cp_discount_specs", []) or [])
+        self.assertTrue(specs)
+        self.assertEqual(str(specs[0].get("limit", "") or "").lower(), "turn")
+        self.assertEqual(str(specs[0].get("usage_scope", "") or "").lower(), "source_model")
+
     def test_discount_applies_once_per_battle_round(self):
         from warhammer40k_ai.rules.stratagems import Stratagem
 
@@ -131,6 +151,33 @@ class TestTargetedStratagemCpDiscount(unittest.TestCase):
         player.command_points = 1
         ok2 = strat.can_use(player, player.game, target_unit=unit)
         self.assertFalse(ok2)
+
+    def test_once_per_turn_model_discount_resets_on_turn_change(self):
+        from warhammer40k_ai.rules.stratagems import Stratagem
+
+        ability = {
+            "name": "Legendary Freeblade",
+            "description": self._once_per_turn_model_text(),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        unit = _make_unit("Canis Rex", abilities=[ability])
+        player = self._make_player(unit, battle_round=1)
+        player.game.current_player_index = 0
+        player.decision_hook = lambda _p, key, _ctx: key == "TARGETED_STRATAGEM_DISCOUNT"
+        strat = Stratagem(id="x", name="Test", type="Core", description="", cp_cost=2, turn="Either", phase="Any phase", detachment="", faction_id="")
+
+        used = strat.use(player, player.game, target_unit=unit)
+        self.assertTrue(used)
+        self.assertEqual(int(player.command_points), 0)
+
+        player.command_points = 1
+        same_turn_ok = strat.can_use(player, player.game, target_unit=unit)
+        self.assertFalse(same_turn_ok)
+
+        player.game.current_player_index = 1
+        next_turn_ok = strat.can_use(player, player.game, target_unit=unit)
+        self.assertTrue(next_turn_ok)
 
     def test_no_auto_use_without_decision_hook(self):
         from warhammer40k_ai.rules.stratagems import Stratagem

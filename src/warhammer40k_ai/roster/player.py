@@ -724,49 +724,142 @@ class Player:
                 return 1
         return 0
 
-    def _target_unit_has_stratagem_target_cp_discount(self, target_unit) -> tuple[bool, list[str]]:
+    def _targeted_stratagem_cp_discount_usage_key(self, spec: dict, *, source_unit=None) -> str:
+        base = str(spec.get("usage_key", "") or "").strip().upper()
+        if not base:
+            base = "TARGETED_STRATAGEM_DISCOUNT"
+        scope = str(spec.get("usage_scope", "") or "army_ability").strip().lower()
+        if scope == "source_unit" and source_unit is not None:
+            try:
+                get_root = getattr(source_unit, "get_attached_unit_root", None)
+                root = get_root() if callable(get_root) else source_unit
+            except Exception:
+                root = source_unit
+            try:
+                unit_id = str(get_entity_id(root) or "").strip()
+            except Exception:
+                unit_id = ""
+            if unit_id:
+                return f"{base}:{unit_id}"
+        if scope == "source_model":
+            model_id = str(spec.get("source_model_id", "") or "").strip()
+            if model_id:
+                return f"{base}:{model_id}"
+        return base
+
+    def _targeted_stratagem_cp_discount_available(self, spec: dict) -> bool:
+        usage_key = str(spec.get("_effective_usage_key", "") or "").strip().upper()
+        if not usage_key:
+            usage_key = "TARGETED_STRATAGEM_DISCOUNT"
+        limit = str(spec.get("limit", "") or "battle_round").strip().lower().replace(" ", "_")
+        if limit == "turn":
+            return not self._ability_used_this_turn(usage_key)
+        br = self._battle_round()
+        if br <= 0:
+            return False
+        return int(self._ability_used_battle_round.get(usage_key, 0) or 0) != br
+
+    def _mark_targeted_stratagem_cp_discount_used(self, spec: dict) -> None:
+        usage_key = str(spec.get("_effective_usage_key", "") or "").strip().upper()
+        if not usage_key:
+            usage_key = "TARGETED_STRATAGEM_DISCOUNT"
+        limit = str(spec.get("limit", "") or "battle_round").strip().lower().replace(" ", "_")
+        if limit == "turn":
+            self._mark_ability_used_turn(usage_key)
+            return
+        br = self._battle_round()
+        if br > 0:
+            self._ability_used_battle_round[usage_key] = br
+
+    def _target_unit_has_stratagem_target_cp_discount(self, target_unit) -> tuple[list[dict], list[str]]:
         if target_unit is None:
-            return False, []
+            return [], []
         parent = self._target_unit_parent_army(target_unit)
         if parent is not None and parent is not self.get_army():
-            return False, []
+            return [], []
         members = self._attached_members(target_unit)
-        found = False
         names: list[str] = []
+        found_specs: list[dict] = []
         for u in members:
             sr = getattr(u, "special_rules", None)
             if not isinstance(sr, dict):
                 sr = {}
-            if not sr.get("stratagem_target_cp_discount"):
+            raw_specs = list(sr.get("stratagem_target_cp_discount_specs", []) or [])
+            if not raw_specs and sr.get("stratagem_target_cp_discount"):
+                raw_names = list(sr.get("stratagem_target_cp_discount_sources", []) or [])
+                if not raw_names:
+                    raw_names = ["Stratagem CP Discount"]
+                raw_specs = [
+                    {
+                        "name": str(nm or "Stratagem CP Discount"),
+                        "limit": "battle_round",
+                        "usage_scope": "army_ability",
+                        "usage_key": "TARGETED_STRATAGEM_DISCOUNT",
+                    }
+                    for nm in raw_names
+                ]
+            for spec in raw_specs:
+                if not isinstance(spec, dict):
+                    continue
+                resolved = dict(spec)
+                name = str(resolved.get("name", "") or "Stratagem CP Discount").strip() or "Stratagem CP Discount"
+                resolved["name"] = name
+                limit = str(resolved.get("limit", "") or "battle_round").strip().lower().replace(" ", "_")
+                if limit not in ("battle_round", "turn"):
+                    limit = "battle_round"
+                resolved["limit"] = limit
+                resolved["_effective_usage_key"] = self._targeted_stratagem_cp_discount_usage_key(resolved, source_unit=u)
+                source_model_id = str(resolved.get("source_model_id", "") or "").strip()
+                if source_model_id:
+                    model_alive = False
+                    models = list(getattr(u, "get_attached_unit_models", lambda: [])() or [])
+                    for model in models:
+                        model_id = str(getattr(model, "id", getattr(model, "_id", "")) or "").strip()
+                        if model_id != source_model_id:
+                            continue
+                        alive_attr = getattr(model, "is_alive", True)
+                        model_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                        break
+                    if not model_alive:
+                        continue
+                if not self._targeted_stratagem_cp_discount_available(resolved):
+                    continue
+                names.append(name)
+                found_specs.append(resolved)
+
+        seen_specs: set[str] = set()
+        deduped_specs: list[dict] = []
+        for spec in found_specs:
+            key = str(spec.get("_effective_usage_key", "") or "").strip().upper()
+            if not key:
+                key = f"TARGETED_STRATAGEM_DISCOUNT:{str(spec.get('name', '')).strip().upper()}"
+            if key in seen_specs:
                 continue
-            found = True
-            for nm in list(sr.get("stratagem_target_cp_discount_sources", []) or []):
-                if nm:
-                    names.append(str(nm))
-        if found and not names:
-            names.append("Stratagem CP Discount")
-        # Deduplicate while preserving order.
+            seen_specs.add(key)
+            deduped_specs.append(spec)
+
         seen = set()
-        deduped: list[str] = []
+        deduped_names: list[str] = []
         for n in names:
             key = str(n).strip().lower()
             if not key or key in seen:
                 continue
             seen.add(key)
-            deduped.append(str(n))
-        return bool(found), deduped
+            deduped_names.append(str(n))
+        return deduped_specs, deduped_names
 
-    def _target_unit_has_stratagem_target_cp_discount_aura(self, target_unit) -> tuple[bool, list[str]]:
+    def _target_unit_has_stratagem_target_cp_discount_aura(self, target_unit) -> tuple[list[dict], list[str]]:
         if target_unit is None:
-            return False, []
+            return [], []
         parent = self._target_unit_parent_army(target_unit)
         if parent is not None and parent is not self.get_army():
-            return False, []
+            return [], []
         army = self.get_army()
         if army is None:
-            return False, []
+            return [], []
 
         names: list[str] = []
+        found_specs: list[dict] = []
         for u in list(getattr(army, "units", []) or []):
             if not self._unit_is_alive_or_unknown(u):
                 continue
@@ -785,43 +878,85 @@ class Player:
                 kw = str(spec.get("keyword", "") or "").strip()
                 if kw and not self._unit_has_keyword(target_unit, kw):
                     continue
-                name = str(spec.get("name", "") or "Stratagem CP Discount").strip()
-                if self._source_model_within_range_for_ability(u, target_unit, rng, name):
-                    names.append(name or "Stratagem CP Discount")
+                resolved = dict(spec)
+                name = str(resolved.get("name", "") or "Stratagem CP Discount").strip() or "Stratagem CP Discount"
+                resolved["name"] = name
+                limit = str(resolved.get("limit", "") or "battle_round").strip().lower().replace(" ", "_")
+                if limit not in ("battle_round", "turn"):
+                    limit = "battle_round"
+                resolved["limit"] = limit
+                source_model_id = str(resolved.get("source_model_id", "") or "").strip()
+                if not self._source_model_within_range_for_ability(
+                    u,
+                    target_unit,
+                    rng,
+                    name,
+                    source_model_id=source_model_id,
+                ):
+                    continue
+                resolved["_effective_usage_key"] = self._targeted_stratagem_cp_discount_usage_key(resolved, source_unit=u)
+                if not self._targeted_stratagem_cp_discount_available(resolved):
+                    continue
+                names.append(name)
+                found_specs.append(resolved)
 
-        if not names:
-            return False, []
-        # Deduplicate while preserving order.
+        seen_specs: set[str] = set()
+        deduped_specs: list[dict] = []
+        for spec in found_specs:
+            key = str(spec.get("_effective_usage_key", "") or "").strip().upper()
+            if not key:
+                key = f"TARGETED_STRATAGEM_DISCOUNT_AURA:{str(spec.get('name', '')).strip().upper()}"
+            if key in seen_specs:
+                continue
+            seen_specs.add(key)
+            deduped_specs.append(spec)
+
         seen = set()
-        deduped: list[str] = []
+        deduped_names: list[str] = []
         for n in names:
             key = str(n).strip().lower()
             if not key or key in seen:
                 continue
             seen.add(key)
-            deduped.append(str(n))
-        return True, deduped
+            deduped_names.append(str(n))
+        return deduped_specs, deduped_names
 
-    def _preview_targeted_stratagem_cp_discount(self, *, target_unit=None) -> tuple[int, list[str]]:
+    def _preview_targeted_stratagem_cp_discount(self, *, target_unit=None) -> tuple[int, list[str], list[dict]]:
         """
         Generic targeted stratagem CP discount:
         Once per battle round, one unit from your army with this ability can use it when its unit
         is targeted with a Stratagem. If it does, reduce the CP cost by 1CP.
         """
         if target_unit is None:
-            return 0, []
+            return 0, [], []
         br = self._battle_round()
         if br <= 0:
-            return 0, []
-        if int(self._ability_used_battle_round.get("TARGETED_STRATAGEM_DISCOUNT", 0) or 0) == br:
-            return 0, []
-        found, names = self._target_unit_has_stratagem_target_cp_discount(target_unit)
-        aura_found, aura_names = self._target_unit_has_stratagem_target_cp_discount_aura(target_unit)
-        if not found and not aura_found:
-            return 0, []
-        combined = list(names or [])
+            return 0, [], []
+        direct_specs, direct_names = self._target_unit_has_stratagem_target_cp_discount(target_unit)
+        aura_specs, aura_names = self._target_unit_has_stratagem_target_cp_discount_aura(target_unit)
+        combined_specs = list(direct_specs or [])
+        combined_specs.extend(list(aura_specs or []))
+        if not combined_specs:
+            return 0, [], []
+        combined_specs.sort(
+            key=lambda spec: (
+                str(spec.get("_effective_usage_key", "") or "").strip().upper(),
+                str(spec.get("name", "") or "").strip().lower(),
+                str(spec.get("limit", "") or "").strip().lower(),
+            )
+        )
+        seen_specs: set[str] = set()
+        deduped_specs: list[dict] = []
+        for spec in combined_specs:
+            key = str(spec.get("_effective_usage_key", "") or "").strip().upper()
+            if not key:
+                key = f"TARGETED_STRATAGEM_DISCOUNT:{str(spec.get('name', '')).strip().upper()}"
+            if key in seen_specs:
+                continue
+            seen_specs.add(key)
+            deduped_specs.append(spec)
+        combined = list(direct_names or [])
         combined.extend(aura_names or [])
-        # Deduplicate while preserving order.
         seen = set()
         deduped: list[str] = []
         for n in combined:
@@ -830,7 +965,7 @@ class Player:
                 continue
             seen.add(key)
             deduped.append(str(n))
-        return 1, deduped
+        return 1, deduped, deduped_specs
 
     def _preview_seer_council_strands_of_fate_discount(self, *, stratagem=None) -> tuple[int, int]:
         if stratagem is None:
@@ -1577,7 +1712,7 @@ class Player:
                 discount += int(dts)
                 reasons.append("Direct the Slaughter: -1CP (once per battle round)")
 
-        tsd, tsd_names = self._preview_targeted_stratagem_cp_discount(target_unit=target_unit)
+        tsd, tsd_names, tsd_specs = self._preview_targeted_stratagem_cp_discount(target_unit=target_unit)
         if tsd:
             label = tsd_names[0] if tsd_names else "Stratagem CP Discount"
             ctx = {
@@ -1588,7 +1723,10 @@ class Player:
             }
             if self._should_preview_optional_ability("TARGETED_STRATAGEM_DISCOUNT", ctx, assume=assume_optional_discounts):
                 discount += int(tsd)
-                reasons.append(f"Targeted Stratagem Discount ({label}): -1CP (once per battle round)")
+                chosen = tsd_specs[0] if tsd_specs else {}
+                limit = str(chosen.get("limit", "") or "battle_round").strip().lower()
+                limit_label = "once per turn" if limit == "turn" else "once per battle round"
+                reasons.append(f"Targeted Stratagem Discount ({label}): -1CP ({limit_label})")
 
         seer_discount, seer_die_value = self._preview_seer_council_strands_of_fate_discount(stratagem=stratagem)
         if seer_discount:
@@ -2184,7 +2322,7 @@ class Player:
                     self._ability_used_battle_round["DIRECT_THE_SLAUGHTER"] = br
 
         # Decide whether to apply targeted stratagem discount if available.
-        tsd_available, tsd_names = self._preview_targeted_stratagem_cp_discount(target_unit=target_unit)
+        tsd_available, tsd_names, tsd_specs = self._preview_targeted_stratagem_cp_discount(target_unit=target_unit)
         if tsd_available:
             label = tsd_names[0] if tsd_names else "Stratagem CP Discount"
             ctx = {
@@ -2195,10 +2333,11 @@ class Player:
             }
             if self._should_use_optional_ability("TARGETED_STRATAGEM_DISCOUNT", ctx):
                 applied_discount += 1
-                reasons.append(f"Targeted Stratagem Discount ({label}): -1CP (used)")
-                br = self._battle_round()
-                if br > 0:
-                    self._ability_used_battle_round["TARGETED_STRATAGEM_DISCOUNT"] = br
+                chosen = tsd_specs[0] if tsd_specs else {}
+                limit = str(chosen.get("limit", "") or "battle_round").strip().lower()
+                limit_label = "once per turn" if limit == "turn" else "once per battle round"
+                reasons.append(f"Targeted Stratagem Discount ({label}): -1CP ({limit_label}; used)")
+                self._mark_targeted_stratagem_cp_discount_used(chosen)
 
         # Decide whether to apply Seer Council Strands of Fate discount if available.
         seer_available, seer_die_value = self._preview_seer_council_strands_of_fate_discount(stratagem=stratagem)

@@ -976,14 +976,60 @@ class RulesParsingMixin:
                 del sr["stratagem_target_cp_discount"]
             if "stratagem_target_cp_discount_sources" in sr:
                 del sr["stratagem_target_cp_discount_sources"]
+            if "stratagem_target_cp_discount_specs" in sr:
+                del sr["stratagem_target_cp_discount_specs"]
             if "stratagem_target_cp_discount_aura" in sr:
                 del sr["stratagem_target_cp_discount_aura"]
         except Exception:
             pass
 
         names: list[str] = []
+        direct_specs: list[dict] = []
         aura_specs: list[dict] = []
-        for name, desc in self._iter_ability_entries_for_rules(model=None):
+        entries: list[tuple[str, str, str]] = []
+        entries.extend((name, desc, "") for name, desc in self._iter_ability_entries_for_rules(model=None))
+        for model in list(getattr(self, "models", []) or []):
+            try:
+                model_id = str(get_entity_id(model) or "")
+            except Exception:
+                model_id = ""
+            entries.extend((name, desc, model_id) for name, desc in self._iter_ability_entries_for_rules(model=model))
+
+        model_level_signatures: set[tuple[str, str]] = set()
+        for name, desc, source_model_id in entries:
+            if not source_model_id:
+                continue
+            model_level_signatures.add(
+                (
+                    str(name or "").strip().lower(),
+                    str(desc or "").strip().lower(),
+                )
+            )
+
+        seen_entries: set[tuple[str, str, str]] = set()
+        self_target_discount_re = re.compile(
+            r"once\s+per\s+(?P<limit>battle\s+round|turn)\s+when\s+you\s+target\s+this\s+(?:model|unit)\s+with\s+a\s+stratagem\s+"
+            r"(?:you\s+may\s+)?reduce\s+the\s+cp\s+cost\s+of\s+that\s+(?:use|usage)\s+of\s+that\s+stratagem\s+by\s+1\s*cp",
+            re.IGNORECASE,
+        )
+
+        for name, desc, source_model_id in entries:
+            if (
+                not source_model_id
+                and (
+                    str(name or "").strip().lower(),
+                    str(desc or "").strip().lower(),
+                ) in model_level_signatures
+            ):
+                continue
+            entry_key = (
+                str(name or "").strip().lower(),
+                str(desc or "").strip().lower(),
+                str(source_model_id or "").strip(),
+            )
+            if entry_key in seen_entries:
+                continue
+            seen_entries.add(entry_key)
             text_src = self._strip_eligibility_prefix(desc or name)
             text = self._normalize_rules_text(text_src or "")
             if not text:
@@ -995,11 +1041,30 @@ class RulesParsingMixin:
             if not norm:
                 continue
 
+            limit = ""
+            usage_scope = "army_ability"
             if self._TARGETED_STRATAGEM_CP_DISCOUNT_RE.fullmatch(norm) or self._TARGETED_STRATAGEM_CP_DISCOUNT_SELECT_RE.fullmatch(norm):
-                if name:
-                    names.append(name)
-                else:
-                    names.append("Stratagem CP Discount")
+                limit = "battle_round"
+            else:
+                m_self = self_target_discount_re.fullmatch(norm)
+                if m_self:
+                    raw_limit = str(m_self.group("limit") or "").strip().lower()
+                    limit = "turn" if raw_limit == "turn" else "battle_round"
+                    usage_scope = "source_model" if source_model_id else "source_unit"
+            if limit:
+                ability_name = str(name or "Stratagem CP Discount").strip() or "Stratagem CP Discount"
+                names.append(ability_name)
+                key_token = re.sub(r"[^a-z0-9]+", "_", ability_name.lower()).strip("_") or "generic"
+                spec = {
+                    "name": ability_name,
+                    "description": desc or "",
+                    "limit": limit,
+                    "usage_scope": usage_scope,
+                    "usage_key": f"TARGETED_STRATAGEM_DISCOUNT:{key_token}:{str(limit).upper()}",
+                }
+                if source_model_id:
+                    spec["source_model_id"] = str(source_model_id)
+                direct_specs.append(spec)
                 continue
 
             for pat in (
@@ -1019,17 +1084,40 @@ class RulesParsingMixin:
                 kw = str(m.group("keyword") or "").strip()
                 if kw:
                     kw = re.sub(r"\s+", " ", kw).strip().upper()
+                ability_name = str(name or "Stratagem CP Discount").strip() or "Stratagem CP Discount"
+                key_token = re.sub(r"[^a-z0-9]+", "_", ability_name.lower()).strip("_") or "generic"
+                aura_usage = f"TARGETED_STRATAGEM_DISCOUNT_AURA:{key_token}:{int(rng)}:{kw.lower()}".rstrip(":")
                 spec = {
                     "range": rng,
                     "keyword": kw,
-                    "name": name or "Stratagem CP Discount",
+                    "name": ability_name,
                     "description": desc or "",
+                    "limit": "battle_round",
+                    "usage_scope": "army_ability",
+                    "usage_key": f"{aura_usage}:BATTLE_ROUND",
                 }
+                if source_model_id:
+                    spec["source_model_id"] = str(source_model_id)
                 aura_specs.append(spec)
                 break
 
-        if names:
+        if direct_specs:
             sr["stratagem_target_cp_discount"] = True
+            seen_specs: set[tuple] = set()
+            deduped_specs: list[dict] = []
+            for spec in direct_specs:
+                key = (
+                    str(spec.get("name", "") or "").strip().lower(),
+                    str(spec.get("limit", "") or "").strip().lower(),
+                    str(spec.get("usage_scope", "") or "").strip().lower(),
+                    str(spec.get("source_model_id", "") or "").strip(),
+                )
+                if key in seen_specs:
+                    continue
+                seen_specs.add(key)
+                deduped_specs.append(spec)
+            if deduped_specs:
+                sr["stratagem_target_cp_discount_specs"] = deduped_specs
             seen = set()
             deduped: list[str] = []
             for n in names:
@@ -1049,6 +1137,8 @@ class RulesParsingMixin:
                     int(spec.get("range", 0) or 0),
                     str(spec.get("keyword", "") or "").strip().lower(),
                     str(spec.get("name", "") or "").strip().lower(),
+                    str(spec.get("limit", "") or "").strip().lower(),
+                    str(spec.get("source_model_id", "") or "").strip(),
                 )
                 if key in seen_specs:
                     continue
