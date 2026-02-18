@@ -372,11 +372,13 @@ class Game(
                     setattr(source_unit, attr_name, alive_ids)
 
                     if not alive_ids:
+                        allow_skip = bool(rule.get("optional_repick_on_destroyed", False)) if isinstance(rule, dict) else False
                         req = request_builder(
                             game=self,
                             source_unit=source_unit,
                             enemy_units=list(self.get_enemy_units(player)),
                             ability_name=str(rule.get("source", "") or "") or None,
+                            allow_skip=allow_skip,
                         )
                         request_decision = getattr(self, "request_decision", None)
                         if req is not None and callable(request_decision):
@@ -391,7 +393,7 @@ class Game(
                 return None
             return {"source": "Monarch of the Hunt"}
 
-        def _monarch_request_builder(game, source_unit, enemy_units, ability_name=None):
+        def _monarch_request_builder(game, source_unit, enemy_units, ability_name=None, allow_skip=False):
             army = _resolve_unit_parent_army(source_unit)
             if army is None:
                 return None
@@ -411,7 +413,7 @@ class Game(
             getter = getattr(u, "get_victim_selection_rule", None)
             return getter() if callable(getter) else None
 
-        def _methodical_request_builder(game, source_unit, enemy_units, ability_name=None):
+        def _methodical_request_builder(game, source_unit, enemy_units, ability_name=None, allow_skip=False):
             army = _resolve_unit_parent_army(source_unit)
             if army is None:
                 return None
@@ -427,6 +429,34 @@ class Game(
 
         _handle_quarry_repick(_methodical_rule, "_methodical_destruction_victim_ids", _methodical_request_builder)
 
+        def _exemplar_rule(u):
+            getter = getattr(u, "get_exemplar_of_the_code_rule", None)
+            rule = getter() if callable(getter) else None
+            if not rule:
+                return None
+            if not bool(rule.get("repick_on_destroyed", False)):
+                return None
+            return rule
+
+        def _exemplar_request_builder(game, source_unit, enemy_units, ability_name=None, allow_skip=False):
+            army = _resolve_unit_parent_army(source_unit)
+            if army is None:
+                return None
+            get_rule = getattr(source_unit, "get_exemplar_of_the_code_rule", None)
+            rule = get_rule() if callable(get_rule) else None
+            build_request = getattr(army, "_build_exemplar_of_the_code_request", None)
+            if not callable(build_request):
+                return None
+            return build_request(
+                game=game,
+                source_unit=source_unit,
+                enemy_units=enemy_units,
+                rule=rule,
+                allow_skip=bool(allow_skip),
+            )
+
+        _handle_quarry_repick(_exemplar_rule, "_exemplar_of_the_code_quarry_ids", _exemplar_request_builder)
+
         def _prey_rule(u):
             getter = getattr(u, "get_prey_selection_rule", None)
             rule = getter() if callable(getter) else None
@@ -436,7 +466,7 @@ class Game(
                 return None
             return rule
 
-        def _prey_request_builder(game, source_unit, enemy_units, ability_name=None):
+        def _prey_request_builder(game, source_unit, enemy_units, ability_name=None, allow_skip=False):
             army = _resolve_unit_parent_army(source_unit)
             if army is None:
                 return None

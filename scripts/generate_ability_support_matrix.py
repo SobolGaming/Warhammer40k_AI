@@ -3027,6 +3027,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Bondsman effect: affected models add 1 to Hit rolls for ranged attacks.",
         ),
+        ("QI", "Exemplar of the Code"): (
+            "Supported",
+            "Start-of-battle quarry selection; attacks vs quarry can re-roll Wound rolls; when quarry is destroyed you can optionally select a new quarry.",
+        ),
         ("QI", "USING SIR HEKHTUR"): (
             "Supported",
             "When Canis Rex is destroyed, Sir Hekhtur is spawned and must Emergency Disembark as if from a destroyed Transport; Sir Hekhtur can only be targeted by Core Stratagems; Canis Rex unit-destroyed handling is deferred until Sir Hekhtur is destroyed.",

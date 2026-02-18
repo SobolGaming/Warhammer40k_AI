@@ -2036,6 +2036,114 @@ class KeywordsDetachmentsMixin:
         root._ability_cache[cache_key] = rule
         return rule
 
+    def get_exemplar_of_the_code_rule(self) -> Optional[dict]:
+        """
+        Detect abilities with text like:
+        "At the start of the battle, select one unit from your opponent's army to be this model's quarry.
+        Each time this model makes an attack that targets its quarry, you can re-roll the Wound roll.
+        Each time this model's quarry is destroyed, you can select a new unit from your opponent's army to be its quarry."
+
+        Returns a rule dict with:
+            - source: ability name
+            - reroll_wound: bool
+            - repick_on_destroyed: bool
+            - optional_repick_on_destroyed: bool
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "exemplar_of_the_code_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        def _norm(text: str) -> str:
+            if not text:
+                return ""
+            text = self._normalize_rules_text(text)
+            text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+            text = text.lower()
+            text = re.sub(r"[^a-z0-9]+", " ", text)
+            text = re.sub(r"\s+", " ", text).strip()
+            return text
+
+        def _has_phrase(text: str, *phrases: str) -> bool:
+            for phrase in phrases:
+                if phrase and phrase in text:
+                    return True
+            return False
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = _norm(text_src)
+                if not normalized:
+                    continue
+                key = (str(name or "").strip().lower(), normalized)
+                if key in seen:
+                    continue
+                seen.add(key)
+
+                if "start of the battle" not in normalized and "start of the first battle round" not in normalized:
+                    continue
+                if (
+                    "to be this model s quarry" not in normalized
+                    and "to be this unit s quarry" not in normalized
+                ):
+                    continue
+                if not _has_phrase(normalized, "targets its quarry", "targets that quarry"):
+                    continue
+                if not _has_phrase(normalized, "re roll the wound roll", "reroll the wound roll"):
+                    continue
+
+                repick_on_destroyed = (
+                    "quarry is destroyed" in normalized
+                    and _has_phrase(
+                        normalized,
+                        "select a new unit",
+                        "select one new unit",
+                        "select one new enemy unit",
+                    )
+                )
+                optional_repick = (
+                    bool(repick_on_destroyed)
+                    and _has_phrase(
+                        normalized,
+                        "you can select a new unit",
+                        "you can select one new unit",
+                        "you can select one new enemy unit",
+                    )
+                )
+
+                source = str(name or "Exemplar of the Code").strip() or "Exemplar of the Code"
+                rule = {
+                    "source": source,
+                    "reroll_wound": True,
+                    "repick_on_destroyed": bool(repick_on_destroyed),
+                    "optional_repick_on_destroyed": bool(optional_repick),
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
     def get_loping_speed_rule(self) -> Optional[dict]:
         """
         Return rule info for abilities like:

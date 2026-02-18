@@ -2378,6 +2378,7 @@ class Army:
         self._queue_monarch_of_the_hunt(game=game, battle_round=int(battle_round))
         self._queue_piratical_raiders(game=game, battle_round=int(battle_round))
         self._queue_methodical_destruction(game=game, battle_round=int(battle_round))
+        self._queue_exemplar_of_the_code(game=game, battle_round=int(battle_round))
         self._queue_prey_selection(game=game, battle_round=int(battle_round))
         self._assigned_agents_destroy_empty_transports(int(battle_round), game=game)
 
@@ -2436,6 +2437,7 @@ class Army:
         ability_name: Optional[str] = None,
         exclude_embarked: bool = False,
         context_extra: Optional[dict] = None,
+        allow_skip: bool = False,
     ) -> Optional[object]:
         try:
             from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
@@ -2472,11 +2474,15 @@ class Army:
             )
             for u in eligible
         ]
+        if bool(allow_skip):
+            options.append(DecisionOption.create("None", payload={"action": "skip", "skip": True}))
         if not options:
             return None
         context = {"ability": ability_key, "source_unit_id": source_id}
         if ability_name:
             context["ability_name"] = str(ability_name)
+        if allow_skip:
+            context["allow_skip"] = True
         if isinstance(context_extra, dict):
             context.update(context_extra)
         return DecisionRequest.create(
@@ -2650,6 +2656,68 @@ class Army:
             prompt=prompt,
             ability_name=label,
             exclude_embarked=False,
+        )
+
+    def _queue_exemplar_of_the_code(self, *, game, battle_round: int) -> None:
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return
+        if int(battle_round or 0) != 1:
+            return
+        player = getattr(self, "player", None)
+        if player is None:
+            return
+        try:
+            enemy_units = list(game.get_enemy_units(player))
+        except Exception:
+            enemy_units = []
+        if not enemy_units:
+            return
+        for unit in list(getattr(self, "units", []) or []):
+            if unit is None:
+                continue
+            try:
+                if not unit.is_alive():
+                    continue
+            except Exception:
+                continue
+            try:
+                rule = unit.get_exemplar_of_the_code_rule()
+            except Exception:
+                rule = None
+            if not rule:
+                continue
+            if getattr(unit, "_exemplar_of_the_code_quarry_ids", None):
+                continue
+            req = self._build_exemplar_of_the_code_request(
+                game=game,
+                source_unit=unit,
+                enemy_units=enemy_units,
+                rule=rule,
+            )
+            if req is not None and hasattr(game, "request_decision"):
+                game.request_decision(req)
+
+    def _build_exemplar_of_the_code_request(
+        self,
+        *,
+        game,
+        source_unit,
+        enemy_units: list,
+        rule: Optional[dict] = None,
+        allow_skip: bool = False,
+    ) -> Optional[object]:
+        ability_name = str(rule.get("source", "") or "Exemplar of the Code").strip() if isinstance(rule, dict) else "Exemplar of the Code"
+        label = ability_name or "Exemplar of the Code"
+        prompt = f"Select quarry ({label})."
+        return self._build_quarry_selection_request(
+            game=game,
+            source_unit=source_unit,
+            enemy_units=enemy_units,
+            ability_key="exemplar_of_the_code",
+            prompt=prompt,
+            ability_name=label,
+            exclude_embarked=False,
+            allow_skip=bool(allow_skip),
         )
 
     def _queue_prey_selection(self, *, game, battle_round: int) -> None:

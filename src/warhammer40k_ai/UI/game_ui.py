@@ -6936,6 +6936,7 @@ class GameView:
         if br == 1:
             self._queue_monarch_of_the_hunt_prompts(game)
             self._queue_methodical_destruction_prompts(game)
+            self._queue_exemplar_of_the_code_prompts(game)
             self._queue_prey_selection_prompts(game)
             self._queue_strategic_conqueror_prompts(game)
 
@@ -14881,6 +14882,12 @@ class GameView:
         """
         self._queue_quarry_selection_prompts(game, ability_key="prey_selection")
 
+    def _queue_exemplar_of_the_code_prompts(self, game):
+        """
+        At BR1 start (and on quarry destruction): prompt each human player who has Exemplar of the Code to pick a quarry.
+        """
+        self._queue_quarry_selection_prompts(game, ability_key="exemplar_of_the_code")
+
     def _queue_strategic_conqueror_prompts(self, game):
         """At BR1 start: prompt each human player to select objective markers for Strategic Conqueror."""
         self._queue_quarry_selection_prompts(game, ability_key="strategic_conqueror")
@@ -14965,6 +14972,10 @@ class GameView:
             title = ability_name or "Prey selection"
             subtitle = "Select an enemy unit to be this model's prey."
             header = f"{getattr(source_unit, 'name', 'Model')} selects prey."
+        elif str(ability_key) == "exemplar_of_the_code":
+            title = ability_name or "Exemplar of the Code"
+            subtitle = "Select an enemy unit to be this model's quarry."
+            header = f"{getattr(source_unit, 'name', 'Model')} selects a quarry."
         elif str(ability_key) == "strategic_conqueror":
             title = ability_name or "Strategic Conqueror"
             subtitle = "Select one objective marker on the battlefield."
@@ -15028,6 +15039,7 @@ class GameView:
             return
         self._queue_monarch_of_the_hunt_prompts(game)
         self._queue_methodical_destruction_prompts(game)
+        self._queue_exemplar_of_the_code_prompts(game)
         self._queue_prey_selection_prompts(game)
 
     def _open_next_blessings_prompt(self, battle_round: int) -> None:

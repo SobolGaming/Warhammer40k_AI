@@ -12594,6 +12594,85 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Exemplar of the Code: re-roll Wound roll vs this model's quarry (optional).
+        try:
+            if rerolls_allowed and "reroll" not in wound_result:
+                unit = attacker.parent_unit
+                quarry_ids = getattr(unit, "_exemplar_of_the_code_quarry_ids", None)
+                if quarry_ids:
+                    try:
+                        tid = getattr(target, "_id", None)
+                        rid = getattr(target.get_attached_unit_root(), "_id", None)
+                    except Exception:
+                        tid = getattr(target, "_id", None)
+                        rid = None
+                    is_quarry = (tid in quarry_ids) or (rid in quarry_ids)
+                    if is_quarry:
+                        needed = 0
+                        try:
+                            s_val = strength
+                            t_val = target_toughness
+                            if isinstance(s_val, int) and isinstance(t_val, int):
+                                if s_val >= 2 * t_val:
+                                    needed = 2
+                                elif s_val > t_val:
+                                    needed = 3
+                                elif s_val == t_val:
+                                    needed = 4
+                                elif s_val * 2 <= t_val:
+                                    needed = 6
+                                else:
+                                    needed = 5
+                        except Exception:
+                            needed = 0
+                        final_needed = needed
+                        try:
+                            final_needed = int(min(max(int(final_needed) - int(dice_modifier), 2), 6))
+                        except Exception:
+                            pass
+                        try:
+                            success = (dice_roll != 1) and (bool(final_needed) and dice_roll >= int(final_needed))
+                        except Exception:
+                            success = False
+                        do_reroll = False
+                        try:
+                            army = unit.get_parent_army()
+                            game = army.player.game
+                            player = army.player
+                            is_human = bool(getattr(player, "has_control", lambda: False)())
+                            provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                        except Exception:
+                            is_human = False
+                            provider = None
+                            player = None
+                        reason = str(getattr(unit, "_exemplar_of_the_code_source", "") or "Exemplar of the Code")
+                        if is_human and callable(provider):
+                            try:
+                                do_reroll = bool(provider(
+                                    player=player,
+                                    unit=unit,
+                                    roll_type="wound",
+                                    value=dice_roll,
+                                    dice=None,
+                                    needed=final_needed,
+                                    success=success,
+                                    reason=reason,
+                                ))
+                            except Exception:
+                                do_reroll = False
+                        else:
+                            do_reroll = (not success)
+                        if do_reroll:
+                            rr = _reroll_wound()
+                            wound_result.setdefault("special_effects", []).append(
+                                f"{reason}: re-roll Wound roll (quarry)"
+                            )
+                            wound_result["reroll"] = rr
+                            dice_roll = rr
+                            reroll_used = True
+        except Exception:
+            pass
+
         # PREY SELECTION: re-roll Wound roll vs prey (optional).
         try:
             if rerolls_allowed and "reroll" not in wound_result:
