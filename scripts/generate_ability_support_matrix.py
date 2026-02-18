@@ -4125,6 +4125,29 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
             notes.append(f"{leading_prefix}{effect}")
         else:
             notes.append(f"Bearer's unit: {effect}")
+
+    m = re.search(
+        r"each\s+time\s+(?:the\s+bearer'?s\s+unit|this\s+model'?s\s+unit|this\s+unit|that\s+unit|your\s+unit)\s+"
+        r"(?:consolidates|makes\s+a\s+consolidation\s+move)\s*,?\s*"
+        r"(?:it|models\s+in\s+(?:it|that\s+unit|this\s+unit|your\s+unit|the\s+bearer'?s\s+unit)|"
+        r"each\s+model\s+in\s+(?:it|that\s+unit|this\s+unit|your\s+unit|the\s+bearer'?s\s+unit))\s+can\s+move\s+"
+        r"an?\s+additional\s+(\d+)\s*\"?\s+"
+        r"(?:provided|as\s+long\s+as)\s+(?:your\s+unit|that\s+unit|this\s+unit)\s+(?:can\s+end|ends)\s+"
+        r"that\s+(?:consolidation\s+)?move\s+within\s+engagement\s+range\s+of\s+one\s+or\s+more\s+enemy\s+units?",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        try:
+            extra = int(m.group(1))
+        except Exception:
+            extra = 0
+        if extra > 0:
+            total = 3 + extra
+            if leading_prefix:
+                notes.append(f"{leading_prefix}Consolidate up to {total}\" when ending in Engagement Range.")
+            else:
+                notes.append(f"Consolidate up to {total}\" when ending in Engagement Range.")
     normalized_sentences = []
     for sentence in re.split(r"[.;]\s*", _strip_html(description)):
         norm_sentence = _norm_rules_text(sentence)
@@ -4132,7 +4155,7 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
             normalized_sentences.append(norm_sentence)
 
     lead_prefix = r"(?:(?:while (?:this model|this unit|(?:the )?bearer) is leading a unit )?)"
-    unit_ref = r"(?:the )?(?:bearers|that|this) unit"
+    unit_ref = r"(?:the )?(?:bearers|that|this|your) unit"
     patterns = [
         rf"{lead_prefix}add \d+ to charge rolls made for {unit_ref}",
         rf"{lead_prefix}add \d+ to advance and charge rolls made for {unit_ref}",
@@ -4169,6 +4192,9 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         rf"{lead_prefix}(?:while|if) {unit_ref} is within range of (?:an|one or more) objective marker(?:s)?(?: you control)? each time "
         rf"(?:a|an) (?:melee |ranged )?attack targets {unit_ref} models in (?:it|{unit_ref}) have the benefit of cover(?: against that attack)?",
         rf"{lead_prefix}each time (?:a|an) (?:melee |ranged )?attack targets {unit_ref} models in (?:it|{unit_ref}) have the benefit of cover(?: against that attack)?",
+        rf"{lead_prefix}each time {unit_ref} (?:consolidates|makes a consolidation move) "
+        rf"(?:it|models in (?:it|{unit_ref})|each model in (?:it|{unit_ref})) can move an additional \d+ "
+        rf"(?:provided|as long as) {unit_ref} (?:can end|ends) that (?:consolidation )?move within engagement range of one or more enemy units",
         rf"{lead_prefix}.*eligible to (?:declare a charge|charge).*",
     ]
 

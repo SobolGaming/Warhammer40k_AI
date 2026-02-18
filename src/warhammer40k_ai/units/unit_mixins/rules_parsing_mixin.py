@@ -1748,6 +1748,7 @@ class RulesParsingMixin:
                     "bearer_unit_assault_ranged",
                     "bearer_unit_pile_in_distance_override",
                     "bearer_unit_consolidate_distance_override",
+                    "bearer_unit_consolidate_requires_engagement",
                     "bearer_unit_deep_strike",
                     "bearer_unit_phase_move_types",
                     "bearer_unit_phase_move_terrain_only_types",
@@ -1797,6 +1798,7 @@ class RulesParsingMixin:
         assault_ranged = False
         pile_in_distance_override = 0
         consolidate_distance_override = 0
+        consolidate_requires_engagement = False
         phase_move_types: set[str] = set()
         phase_move_terrain_only_types: set[str] = set()
         phase_engagement_types: set[str] = set()
@@ -1972,6 +1974,16 @@ class RulesParsingMixin:
                             val = None
                         if val:
                             consolidate_distance_override = max(consolidate_distance_override, int(val))
+
+                    m = self._BEARER_UNIT_CONSOLIDATE_ADDITIONAL_DISTANCE_IF_ENGAGEMENT_RE.search(sentence)
+                    if m:
+                        try:
+                            val = int(m.group(1))
+                        except Exception:
+                            val = None
+                        if val:
+                            consolidate_distance_override = max(consolidate_distance_override, int(3 + int(val)))
+                            consolidate_requires_engagement = True
 
                     m = self._UNIT_CONTAINS_OC_BONUS_RE.search(sentence)
                     if m:
@@ -2450,6 +2462,13 @@ class RulesParsingMixin:
                 if not isinstance(sr, dict):
                     sr = {}
                 sr["bearer_unit_consolidate_distance_override"] = int(consolidate_distance_override)
+                u.special_rules = sr
+        if consolidate_requires_engagement:
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["bearer_unit_consolidate_requires_engagement"] = True
                 u.special_rules = sr
 
         if grant_deep_strike:

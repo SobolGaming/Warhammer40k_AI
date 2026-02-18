@@ -1891,6 +1891,15 @@ class Unit(
         r"up\s+to\s+(\d+)\s*(?:\"|inches)?\s+instead\s+of\s+up\s+to\s+3\s*(?:\"|inches)?\s*$",
         re.IGNORECASE,
     )
+    _BEARER_UNIT_CONSOLIDATE_ADDITIONAL_DISTANCE_IF_ENGAGEMENT_RE = re.compile(
+        r"each\s+time\s+(?:this\s+unit|the\s+bearer'?s\s+unit|this\s+model'?s\s+unit|that\s+unit|your\s+unit)\s+"
+        r"(?:consolidates|makes\s+a\s+consolidation\s+move)\s*,?\s*"
+        r"(?:it|models\s+in\s+(?:it|that\s+unit|the\s+bearer'?s\s+unit|your\s+unit)|each\s+model\s+in\s+(?:it|that\s+unit|the\s+bearer'?s\s+unit|your\s+unit))\s+can\s+move\s+"
+        r"an?\s+additional\s+(\d+)\s*(?:\"|inches)?\s+"
+        r"(?:provided|as\s+long\s+as)\s+(?:your\s+unit|that\s+unit|this\s+unit)\s+"
+        r"(?:can\s+end|ends)\s+that\s+(?:consolidation\s+)?move\s+within\s+engagement\s+range\s+of\s+one\s+or\s+more\s+enemy\s+units?\s*$",
+        re.IGNORECASE,
+    )
     _UNIT_CONTAINS_OC_BONUS_RE = re.compile(
         r"while\s+this\s+unit\s+contains\s+an?\s+(?P<model>.+?),\s*add\s+(?P<amt>\d+)\s+to\s+the\s+objective\s+control\s+"
         r"characteristic\s+of\s+models\s+in\s+this\s+unit",

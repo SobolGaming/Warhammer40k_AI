@@ -3202,6 +3202,81 @@ class PositioningMixin:
         root._ability_cache[cache_key] = source
         return str(source or "")
 
+    def _can_consolidate_end_in_engagement(self, max_distance: float) -> bool:
+        """Return True if this unit can end a consolidate within Engagement Range this move."""
+        try:
+            distance_limit = float(max_distance)
+        except (TypeError, ValueError):
+            return False
+        if distance_limit <= 0.0:
+            return False
+
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        player = getattr(army, "player", None) if army is not None else None
+        game = getattr(player, "game", None) if player is not None else None
+        game_map = getattr(game, "map", None)
+        if game_map is None:
+            # Preserve existing behavior in contexts without a live map (e.g. isolated tests).
+            return True
+
+        get_enemy_units = getattr(game_map, "get_enemy_units", None)
+        if callable(get_enemy_units):
+            enemy_units = list(get_enemy_units(root) or [])
+        else:
+            enemy_units = [
+                u
+                for u in list(getattr(game_map, "units", []) or [])
+                if u is not None and getattr(u, "faction", None) != getattr(root, "faction", None)
+            ]
+        if not enemy_units:
+            return False
+
+        alive_enemies = []
+        for enemy in enemy_units:
+            if enemy is None:
+                continue
+            alive_fn = getattr(enemy, "is_alive", None)
+            if callable(alive_fn):
+                if not alive_fn():
+                    continue
+            elif getattr(enemy, "is_alive", True) is False:
+                continue
+            if getattr(enemy, "deployed", True) is False:
+                continue
+            alive_enemies.append(enemy)
+        if not alive_enemies:
+            return False
+
+        is_within_engagement = getattr(game_map, "is_within_engagement_range", None)
+        if callable(is_within_engagement):
+            for enemy in alive_enemies:
+                if is_within_engagement(root, enemy):
+                    return True
+
+        get_distance_between_units = getattr(game_map, "get_distance_between_units", None)
+        if not callable(get_distance_between_units):
+            return False
+
+        min_distance = None
+        for enemy in alive_enemies:
+            try:
+                dist = float(get_distance_between_units(root, enemy))
+            except (TypeError, ValueError):
+                continue
+            if min_distance is None or dist < min_distance:
+                min_distance = dist
+        if min_distance is None:
+            return False
+
+        from ...utility.constants import ENGAGEMENT_RANGE_HORIZONTAL
+
+        return float(min_distance) <= float(distance_limit) + float(ENGAGEMENT_RANGE_HORIZONTAL or 1.0)
+
     def get_fight_phase_move_distance_override(self, movement_kind: str) -> Optional[float]:
         """
         Return a fight-phase move distance override (pile-in / consolidate) if a rule modifies it.
@@ -3263,7 +3338,10 @@ class PositioningMixin:
                         override = max(float(override or 0.0), float(dist))
                     dist = sr.get("bearer_unit_consolidate_distance_override")
                     if dist is not None:
-                        override = max(float(override or 0.0), float(dist))
+                        dist_value = float(dist)
+                        requires_engagement = bool(sr.get("bearer_unit_consolidate_requires_engagement", False))
+                        if (not requires_engagement) or self._can_consolidate_end_in_engagement(dist_value):
+                            override = max(float(override or 0.0), dist_value)
             except Exception:
                 pass
         if kind == "pile_in":
