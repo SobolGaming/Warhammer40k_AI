@@ -231,3 +231,68 @@ def test_mind_breaking_mutations_oc_penalty_excludes_vehicles():
     assert oc_pen_i == -1
     assert move_pen_v == 0
     assert oc_pen_v == 0
+
+
+def test_rad_saturation_aura_oc_penalty_matches_in_that_unit_wording():
+    from warhammer40k_ai.utility.aura_effects import get_enemy_aura_move_oc_penalties
+
+    aura = Ability(
+        name="Rad-saturation (Aura)",
+        faction_id="",
+        description=(
+            "While an enemy unit (excluding VEHICLE units) is within 3\" of this unit, "
+            "subtract 1 from the Objective Control characteristic of models in that unit."
+        ),
+        type="Datasheet",
+        parameter="",
+        legend=None,
+    )
+    enemy_source = _Unit("vanguard", abilities=[aura])
+    infantry_target = _Unit("infantry", keywords=["INFANTRY"])
+    vehicle_target = _Unit("vehicle", keywords=["VEHICLE"])
+    infantry_map = _Map(friendly_units=[], enemy_units=[enemy_source])
+    vehicle_map = _Map(friendly_units=[], enemy_units=[enemy_source])
+
+    with patch("warhammer40k_ai.utility.aura_effects.unit_within_range_of_unit", return_value=True):
+        move_pen_i, oc_pen_i = get_enemy_aura_move_oc_penalties(infantry_target, game_map=infantry_map)
+        move_pen_v, oc_pen_v = get_enemy_aura_move_oc_penalties(vehicle_target, game_map=vehicle_map)
+
+    assert move_pen_i == 0
+    assert oc_pen_i == -1
+    assert move_pen_v == 0
+    assert oc_pen_v == 0
+
+
+def test_terror_troops_aura_penalty_supports_one_or_more_units_wording():
+    from warhammer40k_ai.utility.aura_effects import get_enemy_aura_move_oc_penalties
+
+    aura = Ability(
+        name="Terror Troops (Aura)",
+        faction_id="",
+        description=(
+            "While an enemy unit (excluding MONSTERS and VEHICLES) is within 3\" of one or more units with this ability, "
+            "subtract 1 from the Objective Control characteristic of models in that enemy unit."
+        ),
+        type="Datasheet",
+        parameter="",
+        legend=None,
+    )
+    enemy_source = _Unit("reivers", abilities=[aura])
+    infantry_target = _Unit("infantry", keywords=["INFANTRY"])
+    monster_target = _Unit("monster", keywords=["MONSTER"])
+    vehicle_target = _Unit("vehicle", keywords=["VEHICLE"])
+    infantry_map = _Map(friendly_units=[], enemy_units=[enemy_source])
+    monster_map = _Map(friendly_units=[], enemy_units=[enemy_source])
+    vehicle_map = _Map(friendly_units=[], enemy_units=[enemy_source])
+
+    with patch("warhammer40k_ai.utility.aura_effects.unit_within_range_of_unit", return_value=True):
+        move_pen_i, oc_pen_i = get_enemy_aura_move_oc_penalties(infantry_target, game_map=infantry_map)
+        move_pen_m, oc_pen_m = get_enemy_aura_move_oc_penalties(monster_target, game_map=monster_map)
+        move_pen_v, oc_pen_v = get_enemy_aura_move_oc_penalties(vehicle_target, game_map=vehicle_map)
+
+    assert move_pen_i == 0
+    assert oc_pen_i == -1
+    assert move_pen_m == 0
+    assert oc_pen_m == 0
+    assert move_pen_v == 0
+    assert oc_pen_v == 0

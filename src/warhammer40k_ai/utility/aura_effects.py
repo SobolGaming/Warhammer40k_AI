@@ -978,8 +978,10 @@ def _parse_enemy_move_oc_penalty_aura(ability) -> Optional[dict]:
     if not desc:
         return None
     m = re.search(
-        r'While an enemy unit(?: \(excluding [^)]+\))? is within (?P<rng>\d+)" of (?:this model|this unit|the bearer), '
-        r"subtract (?P<move>\d+) from the Move characteristic and subtract (?P<oc>\d+) from the Objective Control characteristic of models in that unit",
+        r'While an enemy unit(?: \(excluding [^)]+\))? is within (?P<rng>\d+)" '
+        r"of (?:(?:this model|this unit|the bearer)|one or more units with this ability), "
+        r"subtract (?P<move>\d+) from the Move characteristic and subtract (?P<oc>\d+) "
+        r"from the Objective Control characteristic of models in that (?:enemy unit|unit)",
         desc,
         flags=re.IGNORECASE,
     )
@@ -1006,7 +1008,8 @@ def _parse_enemy_move_oc_penalty_aura(ability) -> Optional[dict]:
         }
 
     m = re.search(
-        r'While an enemy unit(?: \(excluding [^)]+\))? is within (?P<rng>\d+)" of (?:this model|this unit|the bearer), '
+        r'While an enemy unit(?: \(excluding [^)]+\))? is within (?P<rng>\d+)" '
+        r"of (?:(?:this model|this unit|the bearer)|one or more units with this ability), "
         r"subtract (?P<oc>\d+) from the Objective Control characteristic of models in that (?:enemy unit|unit)",
         desc,
         flags=re.IGNORECASE,

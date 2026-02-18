@@ -3166,6 +3166,7 @@ def _classify_ability_base(
     monster_vehicle_reroll_support = _monster_vehicle_reroll_support(description)
     unit_contains_oc_support = _unit_contains_oc_support(description)
     aura_oc_support = _aura_objective_control_support(description)
+    enemy_aura_oc_penalty_support = _enemy_aura_objective_control_penalty_support(description)
     aura_adv_charge_support = _aura_advance_charge_roll_support(description)
     aura_hit_support = _aura_hit_bonus_support(description)
     aura_strength_support = _aura_strength_support(description)
@@ -3350,6 +3351,8 @@ def _classify_ability_base(
         return unit_contains_oc_support
     if aura_oc_support:
         return aura_oc_support
+    if enemy_aura_oc_penalty_support:
+        return enemy_aura_oc_penalty_support
     if aura_adv_charge_support:
         return aura_adv_charge_support
     if aura_hit_support:
@@ -4208,6 +4211,34 @@ def _aura_objective_control_support(description: str) -> Optional[Tuple[str, str
     rng = m.group("rng")
     amt = m.group("amt")
     return ("Supported", f"Aura: friendly {faction_kw} within {rng}\" gain Objective Control +{amt}.")
+
+
+def _enemy_aura_objective_control_penalty_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"while an enemy unit(?: excluding (?P<exclude>.+?))? is within (?P<rng>\d+) of "
+        r"(?P<src>this model|this unit|the bearer|one or more units with this ability) "
+        r"subtract (?P<amt>\d+) from the objective control characteristic of models in that (?:enemy unit|unit)"
+        r"(?: to a minimum of (?P<ocmin>\d+))?",
+        norm,
+    )
+    if not m:
+        return None
+    rng = m.group("rng")
+    amt = m.group("amt")
+    src = m.group("src")
+    exclude = (m.group("exclude") or "").strip()
+    oc_min = (m.group("ocmin") or "").strip()
+    bits = [f"Enemy units within {rng}\" of {src} suffer Objective Control -{amt}."]
+    if exclude:
+        bits.append(f"Exclusions respected: {exclude}.")
+    if oc_min:
+        bits.append(f"Minimum Objective Control floor {oc_min} enforced.")
+    return ("Supported", " ".join(bits))
 
 
 def _aura_advance_charge_roll_support(description: str) -> Optional[Tuple[str, str]]:
