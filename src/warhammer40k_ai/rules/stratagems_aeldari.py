@@ -76,6 +76,11 @@ class AeldariStratagemMixin:
         checker = getattr(mgr, "is_aspect_host", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_corsair_coterie_detachment(self) -> bool:
+        mgr = self._aeldari_detachment_mgr()
+        checker = getattr(mgr, "is_corsair_coterie", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _blitzing_firepower_candidates(self) -> List[Any]:
         if not self._is_warhost_detachment():
             return []
@@ -602,6 +607,43 @@ class AeldariStratagemMixin:
                         except Exception:
                             continue
 
+            if phase_key == "SHOOTING_PHASE" and bool(sr.get("aeldari_cloak_and_shadow_active")):
+                for key in (
+                    "aeldari_cloak_and_shadow_active",
+                    "aeldari_cloak_and_shadow_targeting_range",
+                    "aeldari_cloak_and_shadow_expires_phase",
+                    "aeldari_cloak_and_shadow_turn_owner",
+                    "aeldari_cloak_and_shadow_turn",
+                    "aeldari_cloak_and_shadow_source",
+                ):
+                    if key in sr:
+                        sr.pop(key, None)
+                        changed = True
+
+            if phase_key == "SHOOTING_PHASE" and bool(sr.get("aeldari_outcast_ambush_active")):
+                for key in (
+                    "aeldari_outcast_ambush_active",
+                    "aeldari_outcast_ambush_expires_phase",
+                    "aeldari_outcast_ambush_turn_owner",
+                    "aeldari_outcast_ambush_turn",
+                    "aeldari_outcast_ambush_source",
+                ):
+                    if key in sr:
+                        sr.pop(key, None)
+                        changed = True
+
+            if phase_key == "FIGHT_PHASE" and bool(sr.get("aeldari_pirates_due_active")):
+                for key in (
+                    "aeldari_pirates_due_active",
+                    "aeldari_pirates_due_expires_phase",
+                    "aeldari_pirates_due_turn_owner",
+                    "aeldari_pirates_due_turn",
+                    "aeldari_pirates_due_source",
+                ):
+                    if key in sr:
+                        sr.pop(key, None)
+                        changed = True
+
             if phase_key == "MOVEMENT_PHASE":
                 if (
                     "cloudstrike_temp_deep_strike" in sr
@@ -641,6 +683,10 @@ class AeldariStratagemMixin:
                     "vectored_engines_turn_owner",
                     "vectored_engines_turn",
                     "vectored_engines_source",
+                    "aeldari_lethal_ruse_charge_after_fall_back_active",
+                    "aeldari_lethal_ruse_turn_owner",
+                    "aeldari_lethal_ruse_turn",
+                    "aeldari_lethal_ruse_source",
                     "swift_deployment_active",
                     "swift_deployment_turn_owner",
                     "swift_deployment_turn",
@@ -681,6 +727,19 @@ class AeldariStratagemMixin:
 
             if changed:
                 root.special_rules = sr
+
+        if phase_key == "SHOOTING_PHASE":
+            snapshot = getattr(self, "_aeldari_corsair_models_before_shooting", None)
+            if isinstance(snapshot, dict):
+                snapshot.clear()
+            into_breach = getattr(self, "_aeldari_corsair_into_the_breach_ready", None)
+            if isinstance(into_breach, dict):
+                into_breach.clear()
+
+        if phase_key == "MOVEMENT_PHASE":
+            fall_back_tracker = getattr(self, "_aeldari_corsair_fall_back_start_engagements", None)
+            if isinstance(fall_back_tracker, dict):
+                fall_back_tracker.clear()
 
         if phase_key == "CHARGE_PHASE" and game is not None:
             for p in list(getattr(game, "players", []) or []):
@@ -1060,6 +1119,1289 @@ class AeldariStratagemMixin:
             sr["vectored_engines_turn"] = turn
         target_root.special_rules = sr
         self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    @staticmethod
+    def _aeldari_models_alive(unit: Any) -> int:
+        if unit is None:
+            return 0
+        try:
+            models = list(unit.get_attached_unit_models() or [])
+        except (AttributeError, TypeError, ValueError):
+            models = list(getattr(unit, "models", []) or [])
+        return int(sum(1 for model in models if bool(getattr(model, "is_alive", False))))
+
+    def _aeldari_is_aeldari_infantry(self, unit: Any) -> bool:
+        root = self._aeldari_root(unit)
+        if root is None:
+            return False
+        has_any = getattr(root, "has_any_keyword", None)
+        if not callable(has_any):
+            return False
+        return bool(has_any("AELDARI") and has_any("INFANTRY"))
+
+    def _aeldari_on_battlefield(self, unit: Any, *, require_targetable: bool = False) -> bool:
+        root = self._aeldari_root(unit)
+        if root is None:
+            return False
+        if not self._aeldari_is_alive(root):
+            return False
+        if not bool(getattr(root, "deployed", False)):
+            return False
+        if self._aeldari_in_reserves(root):
+            return False
+        if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+            return False
+        if require_targetable and not self._aeldari_is_targetable(root):
+            return False
+        return True
+
+    def _aeldari_is_battle_shocked(self, unit: Any) -> bool:
+        root = self._aeldari_root(unit)
+        if root is None:
+            return False
+        check = getattr(root, "is_battle_shocked", None)
+        if callable(check):
+            try:
+                return bool(check())
+            except (AttributeError, TypeError, ValueError):
+                return False
+        return bool(getattr(root, "battle_shocked", False))
+
+    def _aeldari_in_engagement_range(self, unit: Any) -> bool:
+        root = self._aeldari_root(unit)
+        if root is None:
+            return False
+        game_map = getattr(self.game, "map", None)
+        if game_map is None:
+            return False
+        get_enemy_units = getattr(game_map, "get_enemy_units", None)
+        in_engagement = getattr(game_map, "is_within_engagement_range", None)
+        if not callable(get_enemy_units) or not callable(in_engagement):
+            return False
+        for enemy in list(get_enemy_units(root) or []):
+            enemy_root = self._aeldari_root(enemy)
+            if enemy_root is None:
+                continue
+            if not self._aeldari_is_alive(enemy_root):
+                continue
+            if not bool(getattr(enemy_root, "deployed", False)):
+                continue
+            if self._aeldari_in_reserves(enemy_root):
+                continue
+            try:
+                if bool(in_engagement(root, enemy_root)):
+                    return True
+            except (AttributeError, TypeError, ValueError):
+                continue
+        return False
+
+    def _aeldari_controlled_objective_locations(self) -> List[Any]:
+        game = getattr(self, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        if game_map is None:
+            return []
+        controlled: List[Any] = []
+        for objective in list(getattr(game_map, "objectives", []) or []):
+            loc = getattr(objective, "location", None)
+            if loc is None:
+                loc = objective
+            if loc is None or bool(getattr(loc, "removed", False)):
+                continue
+            update_control = getattr(loc, "update_control", None)
+            if callable(update_control):
+                try:
+                    update_control(game)
+                except (AttributeError, TypeError, ValueError):
+                    continue
+            if getattr(loc, "controlling_player", None) is self.player:
+                controlled.append(loc)
+        return controlled
+
+    def _aeldari_within_controlled_objective(self, unit: Any) -> bool:
+        root = self._aeldari_root(unit)
+        if root is None:
+            return False
+        within_objective = getattr(root, "is_within_objective_range", None)
+        if not callable(within_objective):
+            return False
+        for location in self._aeldari_controlled_objective_locations():
+            try:
+                if bool(within_objective(location)):
+                    return True
+            except (AttributeError, TypeError, ValueError):
+                continue
+        return False
+
+    def _aeldari_has_keyword(self, unit: Any, keyword: str) -> bool:
+        root = self._aeldari_root(unit)
+        if root is None:
+            return False
+        has_any = getattr(root, "has_any_keyword", None)
+        if not callable(has_any):
+            return False
+        try:
+            return bool(has_any(str(keyword or "")))
+        except (AttributeError, TypeError, ValueError):
+            return False
+
+    def _aeldari_is_anhrathe(self, unit: Any) -> bool:
+        return self._aeldari_has_keyword(unit, "ANHRATHE")
+
+    def _aeldari_is_rangers_or_shroud_runners(self, unit: Any) -> bool:
+        root = self._aeldari_root(unit)
+        if root is None:
+            return False
+        if self._aeldari_has_keyword(root, "RANGERS") or self._aeldari_has_keyword(root, "SHROUD RUNNERS"):
+            return True
+        try:
+            name = str(getattr(root, "name", "") or "").strip().lower()
+        except (AttributeError, TypeError, ValueError):
+            name = ""
+        return name in {"rangers", "shroud runners"}
+
+    def _aeldari_corsair_outcast_ambush_candidates(self, *, require_not_shot: bool = True) -> List[Any]:
+        if not self._is_corsair_coterie_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._aeldari_is_rangers_or_shroud_runners(root):
+                continue
+            if require_not_shot and bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_corsair_pirates_due_candidates(self, *, require_not_fought: bool = True) -> List[Any]:
+        if not self._is_corsair_coterie_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        game = getattr(self, "game", None)
+        fight_mgr = getattr(game, "fight_phase_manager", None) if game is not None else None
+        fought_units = set(getattr(fight_mgr, "fought_units", set()) or set()) if fight_mgr is not None else set()
+
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._aeldari_has_keyword(root, "AELDARI"):
+                continue
+            if require_not_fought:
+                round_state = getattr(root, "round_state", None)
+                if bool(getattr(round_state, "fought_this_phase", False)) or bool(getattr(round_state, "fought_this_round", False)):
+                    continue
+                if root in fought_units:
+                    continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_corsair_lethal_ruse_candidates(self, *, require_fell_back: bool = True) -> List[Any]:
+        if not self._is_corsair_coterie_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._aeldari_has_keyword(root, "AELDARI"):
+                continue
+            if require_fell_back and not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _capture_aeldari_corsair_movement_phase_start_engagements(self, *, player, phase) -> None:
+        tracker = getattr(self, "_aeldari_corsair_fall_back_start_engagements", None)
+        if not isinstance(tracker, dict):
+            tracker = {}
+            self._aeldari_corsair_fall_back_start_engagements = tracker
+        else:
+            tracker.clear()
+
+        if not self._is_corsair_coterie_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "MOVEMENT_PHASE":
+            return
+        if player is not self.player:
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return
+        game_map = getattr(game, "map", None)
+        if game_map is None:
+            return
+
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return
+
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(root, require_targetable=False):
+                continue
+            enemy_roots: List[Any] = []
+            enemy_seen: set[str] = set()
+            get_enemy_units = getattr(game_map, "get_enemy_units", None)
+            is_engaged = getattr(game_map, "is_within_engagement_range", None)
+            if not callable(get_enemy_units) or not callable(is_engaged):
+                continue
+            for enemy in list(get_enemy_units(root) or []):
+                enemy_root = self._aeldari_root(enemy)
+                if enemy_root is None:
+                    continue
+                enemy_uid = self._aeldari_sort_key(enemy_root)
+                if enemy_uid and enemy_uid in enemy_seen:
+                    continue
+                if enemy_uid:
+                    enemy_seen.add(enemy_uid)
+                if not self._aeldari_on_battlefield(enemy_root, require_targetable=False):
+                    continue
+                try:
+                    if bool(is_engaged(root, enemy_root)):
+                        enemy_roots.append(enemy_root)
+                except (AttributeError, TypeError, ValueError):
+                    continue
+            if not enemy_roots:
+                continue
+            attacker_key = getattr(self, "_attacker_unit_key", lambda _unit: None)(root)
+            if not attacker_key:
+                continue
+            tracker[str(attacker_key)] = {
+                "unit": root,
+                "enemy_units": sorted(enemy_roots, key=self._aeldari_sort_key),
+                "turn": int(getattr(game, "turn", 0) or 0),
+                "owner": str(getattr(self.player, "id", "") or ""),
+                "phase": "MOVEMENT_PHASE",
+            }
+
+    def _aeldari_corsair_start_phase_engaged_enemy_candidates(self, unit: Any) -> List[Any]:
+        root = self._aeldari_root(unit)
+        if root is None:
+            return []
+        attacker_key = getattr(self, "_attacker_unit_key", lambda _unit: None)(root)
+        if not attacker_key:
+            return []
+        tracker = getattr(self, "_aeldari_corsair_fall_back_start_engagements", None)
+        if not isinstance(tracker, dict):
+            return []
+        entry = tracker.get(str(attacker_key))
+        if not isinstance(entry, dict):
+            return []
+        game = getattr(self, "game", None)
+        if game is None:
+            return []
+        phase = str(entry.get("phase", "") or "").strip().upper()
+        if phase and phase != "MOVEMENT_PHASE":
+            return []
+        owner = str(entry.get("owner", "") or "")
+        if owner and owner != str(getattr(self.player, "id", "") or ""):
+            return []
+        try:
+            marked_turn = int(entry.get("turn", 0) or 0)
+        except (TypeError, ValueError):
+            marked_turn = 0
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        if marked_turn and current_turn and marked_turn != current_turn:
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for enemy in list(entry.get("enemy_units") or []):
+            enemy_root = self._aeldari_root(enemy)
+            if enemy_root is None:
+                continue
+            enemy_uid = self._aeldari_sort_key(enemy_root)
+            if enemy_uid and enemy_uid in seen:
+                continue
+            if enemy_uid:
+                seen.add(enemy_uid)
+            if not self._aeldari_on_battlefield(enemy_root, require_targetable=False):
+                continue
+            try:
+                if enemy_root.get_parent_army().player is self.player:
+                    continue
+            except (AttributeError, TypeError, ValueError):
+                continue
+            out.append(enemy_root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _capture_aeldari_corsair_into_the_breach_destroyed_enemy(self, *, destroyed_by_unit: Any) -> None:
+        if destroyed_by_unit is None or not self._is_corsair_coterie_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return
+        attacker_root = self._aeldari_root(destroyed_by_unit)
+        if attacker_root is None:
+            return
+        try:
+            if attacker_root.get_parent_army().player is not self.player:
+                return
+        except (AttributeError, TypeError, ValueError):
+            return
+        if not self._aeldari_is_anhrathe(attacker_root):
+            return
+        if not self._aeldari_on_battlefield(attacker_root, require_targetable=True):
+            return
+        attacker_key = getattr(self, "_attacker_unit_key", lambda _unit: None)(attacker_root)
+        if not attacker_key:
+            return
+        tracker = getattr(self, "_aeldari_corsair_into_the_breach_ready", None)
+        if not isinstance(tracker, dict):
+            tracker = {}
+            self._aeldari_corsair_into_the_breach_ready = tracker
+        tracker[str(attacker_key)] = {
+            "unit": attacker_root,
+            "turn": int(getattr(game, "turn", 0) or 0),
+            "owner": str(getattr(self.player, "id", "") or ""),
+            "phase": "SHOOTING_PHASE",
+        }
+
+    def _aeldari_corsair_into_the_breach_trigger_ready(self, unit: Any) -> bool:
+        root = self._aeldari_root(unit)
+        if root is None:
+            return False
+        attacker_key = getattr(self, "_attacker_unit_key", lambda _unit: None)(root)
+        if not attacker_key:
+            return False
+        tracker = getattr(self, "_aeldari_corsair_into_the_breach_ready", None)
+        if not isinstance(tracker, dict):
+            return False
+        entry = tracker.get(str(attacker_key))
+        if not isinstance(entry, dict):
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        phase = str(entry.get("phase", "") or "").strip().upper()
+        if phase and phase != "SHOOTING_PHASE":
+            return False
+        owner = str(entry.get("owner", "") or "")
+        if owner and owner != str(getattr(self.player, "id", "") or ""):
+            return False
+        try:
+            marked_turn = int(entry.get("turn", 0) or 0)
+        except (TypeError, ValueError):
+            marked_turn = 0
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        if marked_turn and current_turn and marked_turn != current_turn:
+            return False
+        return True
+
+    def _aeldari_corsair_targeted_infantry_candidates(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: List[Any],
+        require_controlled_objective: bool,
+    ) -> List[Any]:
+        if attacking_unit is None:
+            return []
+        attacker_root = self._aeldari_root(attacking_unit)
+        if attacker_root is None:
+            return []
+        try:
+            if attacker_root.get_parent_army().player is self.player:
+                return []
+        except (AttributeError, TypeError, ValueError):
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for target in list(target_units or []):
+            root = self._aeldari_root(target)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            try:
+                if root.get_parent_army().player is not self.player:
+                    continue
+            except (AttributeError, TypeError, ValueError):
+                continue
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._aeldari_is_aeldari_infantry(root):
+                continue
+            if require_controlled_objective and not self._aeldari_within_controlled_objective(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_corsair_reaction_already_queued(
+        self,
+        *,
+        event_name: str,
+        stratagem_name: str,
+        phase_name: str,
+        enemy_unit: Any = None,
+    ) -> bool:
+        expected_name = self._aeldari_norm_name(stratagem_name)
+        expected_phase = str(phase_name or "").strip().lower()
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != str(event_name or ""):
+                continue
+            if self._aeldari_norm_name(reaction.get("stratagem", "")) != expected_name:
+                continue
+            if str(reaction.get("phase_name", "") or "").strip().lower() != expected_phase:
+                continue
+            if enemy_unit is not None and reaction.get("enemy_unit") is not enemy_unit:
+                continue
+            return True
+        return False
+
+    def _queue_aeldari_corsair_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if unit is None or not self._is_corsair_coterie_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        phase_key = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_key != "MOVEMENT_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return
+        root = self._aeldari_root(unit)
+        if root is None:
+            return
+        try:
+            if root.get_parent_army().player is not self.player:
+                return
+        except (AttributeError, TypeError, ValueError):
+            return
+        action_key = str(action or "").strip().lower().replace("_", " ")
+        if action_key not in ("fall back", "fallback"):
+            return
+        stratagem = self.get_by_name("LETHAL RUSE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+            return
+        candidates = self._aeldari_corsair_lethal_ruse_candidates(require_fell_back=True)
+        if root not in candidates:
+            return
+        if self._aeldari_reaction_exists("unit_move_ended", stratagem.name, unit=root):
+            return
+        payload: Dict[str, Any] = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "action": action,
+            "unit": root,
+            "target_unit": root,
+            "candidates": [root],
+        }
+        if self._aeldari_is_anhrathe(root):
+            enemy_candidates = self._aeldari_corsair_start_phase_engaged_enemy_candidates(root)
+            if enemy_candidates:
+                payload["enemy_candidates"] = enemy_candidates
+                payload["start_phase_enemy_candidates"] = enemy_candidates
+                if len(enemy_candidates) == 1:
+                    payload["enemy_unit"] = enemy_candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_aeldari_corsair_shooting_reactions(self, *, attacking_unit: Any, target_units: List[Any]) -> None:
+        if attacking_unit is None or not self._is_corsair_coterie_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        game = getattr(self, "game", None)
+        active_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+        if active_player is self.player:
+            return
+        attacker_root = self._aeldari_root(attacking_unit)
+        if attacker_root is None:
+            return
+        try:
+            if attacker_root.get_parent_army().player is self.player:
+                return
+        except (AttributeError, TypeError, ValueError):
+            return
+
+        stratagem = self.get_by_name("CLOAK AND SHADOW")
+        if (
+            stratagem is not None
+            and int(getattr(self.player, "command_points", 0) or 0) >= int(getattr(stratagem, "cp_cost", 0) or 0)
+            and self._aeldari_norm_name(stratagem.name) not in getattr(self, "_used_stratagems_this_phase", set())
+        ):
+            candidates = self._aeldari_corsair_targeted_infantry_candidates(
+                attacking_unit=attacker_root,
+                target_units=list(target_units or []),
+                require_controlled_objective=True,
+            )
+            if candidates and not self._aeldari_corsair_reaction_already_queued(
+                event_name="shooting_targets_selected",
+                stratagem_name=stratagem.name,
+                phase_name="Shooting phase",
+                enemy_unit=attacker_root,
+            ):
+                payload: Dict[str, Any] = {
+                    "event": "shooting_targets_selected",
+                    "phase_name": "Shooting phase",
+                    "stratagem": stratagem.name,
+                    "cp_cost": stratagem.cp_cost,
+                    "enemy_unit": attacker_root,
+                    "attacking_unit": attacker_root,
+                    "target_units": list(target_units or []),
+                    "candidates": candidates,
+                }
+                if len(candidates) == 1:
+                    payload["target_unit"] = candidates[0]
+                self._queue_reaction(payload)
+
+        vengeful = self.get_by_name("VENGEFUL SORROW")
+        if vengeful is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(vengeful, "cp_cost", 0) or 0):
+            return
+        if self._aeldari_norm_name(vengeful.name) in getattr(self, "_used_stratagems_this_phase", set()):
+            return
+        tracked_candidates = self._aeldari_corsair_targeted_infantry_candidates(
+            attacking_unit=attacker_root,
+            target_units=list(target_units or []),
+            require_controlled_objective=False,
+        )
+        snapshot: Dict[str, Dict[str, Any]] = {}
+        for candidate in tracked_candidates:
+            uid = self._aeldari_sort_key(candidate)
+            if not uid:
+                continue
+            snapshot[uid] = {
+                "unit": candidate,
+                "models_before": self._aeldari_models_alive(candidate),
+            }
+        if not snapshot:
+            return
+        attacker_key = getattr(self, "_attacker_unit_key", lambda _unit: None)(attacker_root)
+        if not attacker_key:
+            return
+        by_attacker = getattr(self, "_aeldari_corsair_models_before_shooting", None)
+        if not isinstance(by_attacker, dict):
+            by_attacker = {}
+            self._aeldari_corsair_models_before_shooting = by_attacker
+        by_attacker[str(attacker_key)] = snapshot
+
+    def _queue_aeldari_corsair_shooting_resolved_reactions(
+        self,
+        *,
+        attacker_unit: Any,
+        hits_by_target: Any = None,
+    ) -> None:
+        if attacker_unit is None or not self._is_corsair_coterie_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        game = getattr(self, "game", None)
+        active_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+        attacker_root = self._aeldari_root(attacker_unit)
+        if attacker_root is None:
+            return
+        attacker_is_friendly = False
+        try:
+            attacker_is_friendly = attacker_root.get_parent_army().player is self.player
+        except (AttributeError, TypeError, ValueError):
+            return
+
+        if active_player is self.player:
+            if not attacker_is_friendly:
+                return
+            stratagem = self.get_by_name("INTO THE BREACH")
+            if stratagem is None:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+                return
+            if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+                return
+            if not self._aeldari_is_anhrathe(attacker_root):
+                return
+            if not self._aeldari_on_battlefield(attacker_root, require_targetable=True):
+                return
+            if not self._aeldari_corsair_into_the_breach_trigger_ready(attacker_root):
+                return
+            if self._aeldari_corsair_reaction_already_queued(
+                event_name="unit_shooting_resolved",
+                stratagem_name=stratagem.name,
+                phase_name="Shooting phase",
+                enemy_unit=attacker_root,
+            ):
+                return
+            self._queue_reaction(
+                {
+                    "event": "unit_shooting_resolved",
+                    "phase_name": "Shooting phase",
+                    "stratagem": stratagem.name,
+                    "cp_cost": stratagem.cp_cost,
+                    "attacker_unit": attacker_root,
+                    "attacking_unit": attacker_root,
+                    "enemy_unit": attacker_root,
+                    "hits_by_target": hits_by_target,
+                    "candidates": [attacker_root],
+                    "target_unit": attacker_root,
+                }
+            )
+            return
+
+        if attacker_is_friendly:
+            return
+
+        stratagem = self.get_by_name("VENGEFUL SORROW")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+            return
+
+        by_attacker = getattr(self, "_aeldari_corsair_models_before_shooting", None)
+        if not isinstance(by_attacker, dict):
+            return
+        attacker_key = getattr(self, "_attacker_unit_key", lambda _unit: None)(attacker_root)
+        if not attacker_key:
+            return
+        snapshot = by_attacker.pop(str(attacker_key), {})
+        if not isinstance(snapshot, dict) or not snapshot:
+            return
+
+        candidates: List[Any] = []
+        models_before_by_unit: Dict[str, int] = {}
+        for uid, entry in snapshot.items():
+            if not isinstance(entry, dict):
+                continue
+            root = self._aeldari_root(entry.get("unit"))
+            if root is None:
+                continue
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._aeldari_is_aeldari_infantry(root):
+                continue
+            if self._aeldari_is_battle_shocked(root):
+                continue
+            if self._aeldari_in_engagement_range(root):
+                continue
+            try:
+                before = int(entry.get("models_before", 0) or 0)
+            except (TypeError, ValueError):
+                before = 0
+            after = self._aeldari_models_alive(root)
+            if after >= before:
+                continue
+            candidates.append(root)
+            models_before_by_unit[str(uid)] = int(before)
+        candidates = sorted(candidates, key=self._aeldari_sort_key)
+        if not candidates:
+            return
+        if self._aeldari_corsair_reaction_already_queued(
+            event_name="unit_shooting_resolved",
+            stratagem_name=stratagem.name,
+            phase_name="Shooting phase",
+            enemy_unit=attacker_root,
+        ):
+            return
+        payload: Dict[str, Any] = {
+            "event": "unit_shooting_resolved",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": attacker_root,
+            "attacking_unit": attacker_root,
+            "hits_by_target": hits_by_target,
+            "candidates": candidates,
+            "models_before_by_unit": models_before_by_unit,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
+    def _roll_aeldari_vengeful_sorrow_distance(self, unit: Any) -> int:
+        from ..utility.dice import get_roll
+        from ..utility.event_bus import append_dice
+
+        base_roll = int(get_roll("D6") or 0)
+        max_distance = int(base_roll + 1)
+        player = getattr(unit.get_parent_army(), "player", None) if unit is not None else None
+        if player is not None:
+            append_dice(
+                player,
+                f"Vengeful Sorrow roll: {int(base_roll or 0)} (move {int(max_distance)}\") for {getattr(unit, 'name', 'Unit')}",
+            )
+        return int(max_distance)
+
+    def _roll_aeldari_into_the_breach_distance(self, unit: Any) -> int:
+        from ..utility.dice import get_roll
+        from ..utility.event_bus import append_dice
+
+        base_roll = int(get_roll("D6") or 0)
+        max_distance = int(base_roll + 1)
+        player = getattr(unit.get_parent_army(), "player", None) if unit is not None else None
+        if player is not None:
+            append_dice(
+                player,
+                f"Into the Breach roll: {int(base_roll or 0)} (move {int(max_distance)}\") for {getattr(unit, 'name', 'Unit')}",
+            )
+        return int(max_distance)
+
+    def _roll_aeldari_lethal_ruse_mortal_wounds(self, unit: Any, enemy_unit: Any) -> int:
+        from ..utility.dice import get_roll
+        from ..utility.event_bus import append_dice
+
+        rolls = [int(get_roll("D6") or 0) for _ in range(6)]
+        mortals = int(sum(1 for roll in rolls if int(roll or 0) >= 4))
+        player = getattr(unit.get_parent_army(), "player", None) if unit is not None else None
+        if player is not None:
+            append_dice(
+                player,
+                (
+                    f"Lethal Ruse rolls for {getattr(unit, 'name', 'Unit')} vs {getattr(enemy_unit, 'name', 'Enemy')}: "
+                    f"{rolls} => {int(mortals)} mortal wounds"
+                ),
+            )
+        return int(mortals)
+
+    def _use_aeldari_corsair_coterie_stratagem(self, stratagem, **kwargs) -> Optional[bool]:
+        if stratagem is None or not self._is_corsair_coterie_detachment():
+            return None
+        name_u = self._aeldari_norm_name(getattr(stratagem, "name", ""))
+        if name_u == "OUTCAST AMBUSH":
+            return self._use_aeldari_corsair_outcast_ambush(stratagem, **kwargs)
+        if name_u == "INTO THE BREACH":
+            return self._use_aeldari_corsair_into_the_breach(stratagem, **kwargs)
+        if name_u == "LETHAL RUSE":
+            return self._use_aeldari_corsair_lethal_ruse(stratagem, **kwargs)
+        if name_u == "PIRATES' DUE":
+            return self._use_aeldari_corsair_pirates_due(stratagem, **kwargs)
+        if name_u == "CLOAK AND SHADOW":
+            return self._use_aeldari_corsair_cloak_and_shadow(stratagem, **kwargs)
+        if name_u == "VENGEFUL SORROW":
+            return self._use_aeldari_corsair_vengeful_sorrow(stratagem, **kwargs)
+        return None
+
+    def _use_aeldari_corsair_outcast_ambush(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: OUTCAST AMBUSH: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: OUTCAST AMBUSH: not your turn")
+            return False
+
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_corsair_outcast_ambush_candidates(require_not_shot=True)
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: OUTCAST AMBUSH: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: OUTCAST AMBUSH: target must be a Rangers or Shroud Runners unit that has not shot")
+            return False
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root):
+            return False
+
+        owner = str(getattr(self.player, "id", "") or "")
+        turn = int(getattr(game, "turn", 0) or 0)
+        source = str(getattr(stratagem, "name", "OUTCAST AMBUSH") or "OUTCAST AMBUSH")
+        try:
+            members = list(target_root.get_attached_unit_members() or [])
+        except (AttributeError, TypeError, ValueError):
+            members = [target_root]
+        if not members:
+            members = [target_root]
+        for unit in members:
+            if unit is None:
+                continue
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["aeldari_outcast_ambush_active"] = True
+            sr["aeldari_outcast_ambush_expires_phase"] = "SHOOTING_PHASE"
+            sr["aeldari_outcast_ambush_turn_owner"] = owner
+            sr["aeldari_outcast_ambush_turn"] = int(turn or 0)
+            sr["aeldari_outcast_ambush_source"] = source
+            unit.special_rules = sr
+
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: OUTCAST AMBUSH: %s gains [IGNORES COVER], [RAPID FIRE 1], and AP improves by 1 this phase.",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_aeldari_corsair_into_the_breach(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: INTO THE BREACH: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: INTO THE BREACH: not your turn")
+            return False
+
+        attacking_unit = context.get("attacking_unit") or context.get("attacker_unit")
+        attacking_root = self._aeldari_root(attacking_unit) if attacking_unit is not None else None
+        candidates = list(context.get("candidates") or [])
+        if not candidates and attacking_root is not None:
+            if self._aeldari_corsair_into_the_breach_trigger_ready(attacking_root):
+                candidates = [attacking_root]
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: INTO THE BREACH: missing target unit")
+                return False
+        if candidates and target_root not in candidates:
+            logger.error("ERROR: INTO THE BREACH: target was not selected")
+            return False
+        if not self._aeldari_on_battlefield(target_root, require_targetable=True):
+            logger.error("ERROR: INTO THE BREACH: target must be on the battlefield")
+            return False
+        if not self._aeldari_is_anhrathe(target_root):
+            logger.error("ERROR: INTO THE BREACH: target must be ANHRATHE")
+            return False
+        if not self._aeldari_corsair_into_the_breach_trigger_ready(target_root):
+            logger.error("ERROR: INTO THE BREACH: target did not destroy an enemy unit this phase")
+            return False
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root):
+            return False
+        max_distance = kwargs.get("max_distance")
+        if max_distance is None:
+            max_distance = self._roll_aeldari_into_the_breach_distance(target_root)
+        try:
+            max_distance = int(max_distance or 0)
+        except (TypeError, ValueError):
+            max_distance = 0
+        if max_distance <= 0:
+            logger.error("ERROR: INTO THE BREACH: movement distance roll failed")
+            return False
+
+        queue_move = getattr(game, "_queue_reactive_move_movement_decision", None)
+        if callable(queue_move):
+            queue_move(
+                player=self.player,
+                unit=target_root,
+                attacker_unit=target_root,
+                max_distance=int(max_distance),
+                kind="into_the_breach",
+                movement_type="reactive",
+                source=str(getattr(stratagem, "name", "INTO THE BREACH") or "INTO THE BREACH"),
+            )
+
+        tracker = getattr(self, "_aeldari_corsair_into_the_breach_ready", None)
+        if isinstance(tracker, dict):
+            attacker_key = getattr(self, "_attacker_unit_key", lambda _unit: None)(target_root)
+            if attacker_key:
+                tracker.pop(str(attacker_key), None)
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: INTO THE BREACH: %s can make a Normal move up to %d\".",
+            getattr(target_root, "name", "Unit"),
+            int(max_distance),
+        )
+        return True
+
+    def _use_aeldari_corsair_lethal_ruse(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: LETHAL RUSE: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: LETHAL RUSE: not your turn")
+            return False
+        action_key = str(context.get("action", "") or "").strip().lower().replace("_", " ")
+        if action_key and action_key not in ("fall back", "fallback"):
+            logger.error("ERROR: LETHAL RUSE: wrong trigger")
+            return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_corsair_lethal_ruse_candidates(require_fell_back=True)
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: LETHAL RUSE: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: LETHAL RUSE: target must be an AELDARI unit that Fell Back this phase")
+            return False
+        if not bool(getattr(getattr(target_root, "round_state", None), "fell_back_this_round", False)):
+            logger.error("ERROR: LETHAL RUSE: target has not Fallen Back")
+            return False
+
+        enemy_candidates = list(context.get("enemy_candidates") or context.get("start_phase_enemy_candidates") or [])
+        if not enemy_candidates:
+            enemy_candidates = self._aeldari_corsair_start_phase_engaged_enemy_candidates(target_root)
+        enemy_unit = (
+            context.get("enemy_unit")
+            or context.get("target_enemy_unit")
+            or context.get("enemy_target")
+            or context.get("attacking_unit")
+        )
+        enemy_root = self._aeldari_root(enemy_unit) if enemy_unit is not None else None
+        if self._aeldari_is_anhrathe(target_root):
+            if enemy_root is None:
+                if len(enemy_candidates) == 1:
+                    enemy_root = self._aeldari_root(enemy_candidates[0])
+                elif len(enemy_candidates) > 1:
+                    logger.error("ERROR: LETHAL RUSE: missing selected enemy unit")
+                    return False
+            if enemy_root is not None:
+                enemy_roots = [self._aeldari_root(enemy) for enemy in list(enemy_candidates or [])]
+                enemy_roots = [enemy for enemy in enemy_roots if enemy is not None]
+                if enemy_roots and enemy_root not in enemy_roots:
+                    logger.error("ERROR: LETHAL RUSE: selected enemy was not in Engagement Range at start of phase")
+                    return False
+                try:
+                    if enemy_root.get_parent_army().player is self.player:
+                        logger.error("ERROR: LETHAL RUSE: selected enemy is not an enemy unit")
+                        return False
+                except (AttributeError, TypeError, ValueError):
+                    logger.error("ERROR: LETHAL RUSE: selected enemy is invalid")
+                    return False
+
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root, enemy_unit=enemy_root):
+            return False
+
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["aeldari_lethal_ruse_charge_after_fall_back_active"] = True
+        sr["aeldari_lethal_ruse_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["aeldari_lethal_ruse_turn"] = int(getattr(game, "turn", 0) or 0)
+        sr["aeldari_lethal_ruse_source"] = str(getattr(stratagem, "name", "LETHAL RUSE") or "LETHAL RUSE")
+        target_root.special_rules = sr
+
+        if self._aeldari_is_anhrathe(target_root) and enemy_root is not None:
+            mortal_wounds = self._roll_aeldari_lethal_ruse_mortal_wounds(target_root, enemy_root)
+            if mortal_wounds > 0:
+                apply_mortals = getattr(enemy_root, "_apply_mortal_wounds_to_unit", None)
+                if callable(apply_mortals):
+                    try:
+                        apply_mortals(enemy_root, int(mortal_wounds), game_map=getattr(game, "map", None))
+                    except TypeError:
+                        apply_mortals(target_unit=enemy_root, amount=int(mortal_wounds), game_map=getattr(game, "map", None))
+            logger.info(
+                "INFO: LETHAL RUSE: %s can charge after Falling Back; %s suffers %d mortal wounds.",
+                getattr(target_root, "name", "Unit"),
+                getattr(enemy_root, "name", "Enemy"),
+                int(mortal_wounds),
+            )
+        else:
+            logger.info(
+                "INFO: LETHAL RUSE: %s can charge after Falling Back this turn.",
+                getattr(target_root, "name", "Unit"),
+            )
+
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_aeldari_corsair_pirates_due(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: PIRATES' DUE: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_corsair_pirates_due_candidates(require_not_fought=True)
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: PIRATES' DUE: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: PIRATES' DUE: target must be an AELDARI unit that has not been selected to fight")
+            return False
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root):
+            return False
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["aeldari_pirates_due_active"] = True
+        sr["aeldari_pirates_due_expires_phase"] = "FIGHT_PHASE"
+        sr["aeldari_pirates_due_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["aeldari_pirates_due_turn"] = int(getattr(game, "turn", 0) or 0)
+        sr["aeldari_pirates_due_source"] = str(getattr(stratagem, "name", "PIRATES' DUE") or "PIRATES' DUE")
+        target_root.special_rules = sr
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: PIRATES' DUE: %s re-rolls Wound rolls of 1 in this Fight phase (ANHRATHE gains full re-rolls vs targets within objective range).",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_aeldari_corsair_cloak_and_shadow(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: CLOAK AND SHADOW: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            logger.error("ERROR: CLOAK AND SHADOW: not opponent's turn")
+            return False
+
+        attacking_unit = context.get("attacking_unit") or context.get("attacker_unit") or context.get("enemy_unit")
+        attacking_root = self._aeldari_root(attacking_unit)
+        if attacking_root is None:
+            logger.error("ERROR: CLOAK AND SHADOW: missing attacking unit context")
+            return False
+        try:
+            if attacking_root.get_parent_army().player is self.player:
+                logger.error("ERROR: CLOAK AND SHADOW: attacker is not enemy")
+                return False
+        except (AttributeError, TypeError, ValueError):
+            logger.error("ERROR: CLOAK AND SHADOW: attacker is invalid")
+            return False
+
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_corsair_targeted_infantry_candidates(
+                attacking_unit=attacking_root,
+                target_units=list(context.get("target_units") or []),
+                require_controlled_objective=True,
+            )
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: CLOAK AND SHADOW: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error(
+                "ERROR: CLOAK AND SHADOW: target must be AELDARI INFANTRY selected by attacker and within range of a controlled objective"
+            )
+            return False
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root, enemy_unit=attacking_root):
+            return False
+
+        owner_id = str(getattr(active_player, "id", "") or "")
+        effect_owner_id = str(getattr(self.player, "id", "") or "")
+        turn = int(getattr(game, "turn", 0) or 0)
+        try:
+            members = list(target_root.get_attached_unit_members() or [])
+        except (AttributeError, TypeError, ValueError):
+            members = [target_root]
+        if not members:
+            members = [target_root]
+        for unit in members:
+            if unit is None:
+                continue
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["opponent_shooting_phase_stealth_active"] = True
+            sr["opponent_shooting_phase_stealth_owner"] = owner_id
+            sr["opponent_shooting_phase_stealth_turn"] = int(turn or 0)
+            sr["opponent_shooting_phase_stealth_source"] = str(getattr(stratagem, "name", "CLOAK AND SHADOW") or "CLOAK AND SHADOW")
+            sr["opponent_shooting_phase_stealth_expires_phase"] = "SHOOTING_PHASE"
+            sr["aeldari_cloak_and_shadow_active"] = True
+            sr["aeldari_cloak_and_shadow_targeting_range"] = 18
+            sr["aeldari_cloak_and_shadow_expires_phase"] = "SHOOTING_PHASE"
+            sr["aeldari_cloak_and_shadow_turn_owner"] = effect_owner_id
+            sr["aeldari_cloak_and_shadow_turn"] = int(turn or 0)
+            sr["aeldari_cloak_and_shadow_source"] = str(getattr(stratagem, "name", "CLOAK AND SHADOW") or "CLOAK AND SHADOW")
+            unit.special_rules = sr
+
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: CLOAK AND SHADOW: %s gains Stealth and can only be targeted by ranged attacks from within 18\" this phase.",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_aeldari_corsair_vengeful_sorrow(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: VENGEFUL SORROW: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            logger.error("ERROR: VENGEFUL SORROW: not opponent's turn")
+            return False
+
+        attacking_unit = context.get("attacking_unit") or context.get("attacker_unit") or context.get("enemy_unit")
+        attacking_root = self._aeldari_root(attacking_unit)
+        if attacking_root is None:
+            logger.error("ERROR: VENGEFUL SORROW: missing attacking unit context")
+            return False
+        try:
+            if attacking_root.get_parent_army().player is self.player:
+                logger.error("ERROR: VENGEFUL SORROW: attacker is not enemy")
+                return False
+        except (AttributeError, TypeError, ValueError):
+            logger.error("ERROR: VENGEFUL SORROW: attacker is invalid")
+            return False
+
+        candidates = list(context.get("candidates") or [])
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: VENGEFUL SORROW: missing target unit")
+                return False
+        if candidates and target_root not in candidates:
+            logger.error("ERROR: VENGEFUL SORROW: target was not selected")
+            return False
+        if not self._aeldari_on_battlefield(target_root, require_targetable=True):
+            logger.error("ERROR: VENGEFUL SORROW: target must be on the battlefield")
+            return False
+        if not self._aeldari_is_aeldari_infantry(target_root):
+            logger.error("ERROR: VENGEFUL SORROW: target must be AELDARI INFANTRY")
+            return False
+        if self._aeldari_is_battle_shocked(target_root):
+            logger.error("ERROR: VENGEFUL SORROW: target is Battle-shocked")
+            return False
+        if self._aeldari_in_engagement_range(target_root):
+            logger.error("ERROR: VENGEFUL SORROW: target is within Engagement Range")
+            return False
+
+        models_before_by_unit = dict(context.get("models_before_by_unit") or {})
+        if models_before_by_unit:
+            uid = self._aeldari_sort_key(target_root)
+            before = int(models_before_by_unit.get(uid, 0) or 0)
+            after = self._aeldari_models_alive(target_root)
+            if before and after >= before:
+                logger.error("ERROR: VENGEFUL SORROW: target did not lose models from this attack")
+                return False
+
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root, enemy_unit=attacking_root):
+            return False
+        max_distance = kwargs.get("max_distance")
+        if max_distance is None:
+            max_distance = self._roll_aeldari_vengeful_sorrow_distance(target_root)
+        try:
+            max_distance = int(max_distance or 0)
+        except (TypeError, ValueError):
+            max_distance = 0
+        if max_distance <= 0:
+            logger.error("ERROR: VENGEFUL SORROW: movement distance roll failed")
+            return False
+
+        queue_move = getattr(game, "_queue_reactive_move_movement_decision", None)
+        if callable(queue_move):
+            queue_move(
+                player=self.player,
+                unit=target_root,
+                attacker_unit=attacking_root,
+                max_distance=int(max_distance),
+                kind="vengeful_sorrow",
+                movement_type="blood_surge",
+                source=str(getattr(stratagem, "name", "VENGEFUL SORROW") or "VENGEFUL SORROW"),
+            )
+
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: VENGEFUL SORROW: %s can make a Surge move up to %d\".",
+            getattr(target_root, "name", "Unit"),
+            int(max_distance),
+        )
         return True
 
     def _aeldari_aspect_warriors_avatar_candidates(

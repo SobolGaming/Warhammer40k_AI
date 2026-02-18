@@ -1341,6 +1341,98 @@ _ASPECT_HOST_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _ASPECT_HOST_STRATAGEM_DESCRIPTORS.values()
 }
 
+_CORSAIR_COTERIE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010705002": StratagemToolDescriptor(
+        stratagem_id="000010705002",
+        name="Pirates' Due",
+        timing="fight_phase_on_select_to_fight",
+        target="aeldari_unit_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="wound_reroll_ones_and_conditional_full_reroll",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "melee",
+            "reroll_wound_ones": True,
+            "full_reroll_if_anhrathe_and_target_within_objective_range": True,
+        },
+    ),
+    "000010705003": StratagemToolDescriptor(
+        stratagem_id="000010705003",
+        name="Lethal Ruse",
+        timing="movement_phase_after_fall_back",
+        target="aeldari_unit_that_fell_back",
+        duration="until_end_of_turn_and_immediate",
+        effect="charge_after_fall_back_and_conditional_mortal_wounds",
+        cp_cost=1,
+        effect_params={
+            "charge_after_fall_back": True,
+            "anhrathe_mortal_roll": "6D6",
+            "mortal_wound_threshold": 4,
+            "mortal_wounds_per_success": 1,
+            "enemy_must_be_engaged_at_phase_start": True,
+        },
+    ),
+    "000010705004": StratagemToolDescriptor(
+        stratagem_id="000010705004",
+        name="Outcast Ambush",
+        timing="shooting_phase_before_select_to_shoot",
+        target="rangers_or_shroud_runners_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="grant_ranged_ignores_cover_rapid_fire_and_ap_bonus",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "ranged",
+            "grant_keywords": ["IGNORES COVER", "RAPID FIRE 1"],
+            "ap_bonus": 1,
+        },
+    ),
+    "000010705005": StratagemToolDescriptor(
+        stratagem_id="000010705005",
+        name="Into the Breach",
+        timing="shooting_phase_after_shooting_unit_destroys_enemy_unit",
+        target="anhrathe_unit_that_destroyed_enemy_unit",
+        duration="immediate",
+        effect="reactive_normal_move",
+        cp_cost=1,
+        effect_params={
+            "distance_roll": "D6+1",
+            "movement_type": "normal",
+        },
+    ),
+    "000010705006": StratagemToolDescriptor(
+        stratagem_id="000010705006",
+        name="Cloak and Shadow",
+        timing="opponent_shooting_phase_after_enemy_targets_selected",
+        target="aeldari_infantry_unit_targeted_within_controlled_objective_range",
+        duration="until_end_of_phase",
+        effect="grant_stealth_and_ranged_targeting_distance_cap",
+        cp_cost=1,
+        effect_params={
+            "stealth": True,
+            "attack_type": "ranged",
+            "max_targeting_distance": 18,
+        },
+    ),
+    "000010705007": StratagemToolDescriptor(
+        stratagem_id="000010705007",
+        name="Vengeful Sorrow",
+        timing="opponent_shooting_phase_after_enemy_shoots",
+        target="aeldari_infantry_unit_that_lost_models_not_battleshocked_not_engaged",
+        duration="immediate",
+        effect="reactive_surge_move_toward_closest_enemy",
+        cp_cost=1,
+        effect_params={
+            "distance_roll": "D6+1",
+            "allow_engagement_range": True,
+            "closest_enemy_exclude_keywords": ["AIRCRAFT"],
+        },
+    ),
+}
+
+_CORSAIR_COTERIE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _CORSAIR_COTERIE_STRATAGEM_DESCRIPTORS.values()
+}
+
 _EXPERIMENTAL_PROTOTYPE_CADRE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009984002": StratagemToolDescriptor(
         stratagem_id="000009984002",
@@ -1907,6 +1999,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _ASPECT_HOST_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _CORSAIR_COTERIE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _EXPERIMENTAL_PROTOTYPE_CADRE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -1948,6 +2043,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _RAPID_EVISCERATION_STRATAGEM_BY_NAME.get(key)
         or _ARMOURED_WARHOST_STRATAGEM_BY_NAME.get(key)
         or _ASPECT_HOST_STRATAGEM_BY_NAME.get(key)
+        or _CORSAIR_COTERIE_STRATAGEM_BY_NAME.get(key)
         or _EXPERIMENTAL_PROTOTYPE_CADRE_STRATAGEM_BY_NAME.get(key)
         or _MONTKA_STRATAGEM_BY_NAME.get(key)
         or _INVASION_FLEET_STRATAGEM_BY_NAME.get(key)

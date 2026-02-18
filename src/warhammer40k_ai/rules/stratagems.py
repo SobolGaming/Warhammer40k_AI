@@ -137,6 +137,13 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "UNBRIDLED CARNAGE",
     "VETERAN SHARPSHOOTERS",
     "VOW OF RETRIBUTION",
+    "CLOAK AND SHADOW",
+    "OUTCAST AMBUSH",
+    "INTO THE BREACH",
+    "LETHAL RUSE",
+    "PIRATES' DUE",
+    "PIRATES’ DUE",
+    "VENGEFUL SORROW",
     "VENGEFUL SURGE",
     "WEBWAY TUNNEL",
     "UNYIELDING FORMS",
@@ -368,6 +375,10 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "SPIRIT OF THE MARTYR",
     "SUFFERING AND SACRIFICE",
     "SWIFT DEPLOYMENT",
+    "CLOAK AND SHADOW",
+    "INTO THE BREACH",
+    "LETHAL RUSE",
+    "VENGEFUL SORROW",
     "VECTORED ENGINES",
     "ANCESTRAL SENTENCE",
     "HONOUR OF THE HOLD",
@@ -1179,6 +1190,12 @@ class StratagemManager(
         self._recent_shooting_targets: Dict[str, List[Any]] = {}
         # World Eaters (Vessels of Wrath): per-attacker pre-shot wound snapshots for MEET FORCE WITH FORCE.
         self._vessels_meet_force_wounds_before: Dict[str, Dict[str, Dict[str, Any]]] = {}
+        # Aeldari (Corsair Coterie): per-attacker pre-shot model snapshots for VENGEFUL SORROW.
+        self._aeldari_corsair_models_before_shooting: Dict[str, Dict[str, Dict[str, Any]]] = {}
+        # Aeldari (Corsair Coterie): ANHRATHE units that destroyed an enemy in your Shooting phase for INTO THE BREACH.
+        self._aeldari_corsair_into_the_breach_ready: Dict[str, Dict[str, Any]] = {}
+        # Aeldari (Corsair Coterie): enemy units each friendly unit was engaged with at Movement phase start.
+        self._aeldari_corsair_fall_back_start_engagements: Dict[str, Dict[str, Any]] = {}
         # World Eaters (Vessels of Wrath): units that destroyed models with melee attacks this Fight phase.
         self._vessels_gory_dedication_units: Dict[str, Any] = {}
         # Drukhari (Spectacle of Spite): enemy units that moved/set up this Movement phase.
@@ -1214,6 +1231,12 @@ class StratagemManager(
             self._gilded_champion_used_models = set(getattr(self, "_gilded_champion_used_models", []) or [])
         if not isinstance(getattr(self, "_vessels_meet_force_wounds_before", None), dict):
             self._vessels_meet_force_wounds_before = {}
+        if not isinstance(getattr(self, "_aeldari_corsair_models_before_shooting", None), dict):
+            self._aeldari_corsair_models_before_shooting = {}
+        if not isinstance(getattr(self, "_aeldari_corsair_into_the_breach_ready", None), dict):
+            self._aeldari_corsair_into_the_breach_ready = {}
+        if not isinstance(getattr(self, "_aeldari_corsair_fall_back_start_engagements", None), dict):
+            self._aeldari_corsair_fall_back_start_engagements = {}
         if not isinstance(getattr(self, "_vessels_gory_dedication_units", None), dict):
             self._vessels_gory_dedication_units = {}
         if not isinstance(getattr(self, "_a_challenge_met_enemy_units", None), dict):
@@ -1309,6 +1332,7 @@ class StratagemManager(
             "SWIFT DEPLOYMENT",
             "VECTORED ENGINES",
             "ORDERED RETREAT",
+            "LETHAL RUSE",
         }:
             add("unit_move_ended", self._on_unit_move_ended)
         if names & {"ANTI-GRAV REPULSION", "ANTI‑GRAV REPULSION"}:
@@ -1322,6 +1346,7 @@ class StratagemManager(
             "BLOODY VENGEANCE",
             "DRAWN TO THE SLAUGHTER",
             "HEIGHTENED JEALOUSY",
+            "INTO THE BREACH",
             "ONTO THE NEXT",
             "PINPOINT COUNTER-OFFENSIVE",
             "UNBOUND ARROGANCE",
@@ -1370,6 +1395,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_thousand_sons_rubricae_revenge)
         if "PULSE ONSLAUGHT" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_tau_pulse_onslaught)
+        if names & {"VENGEFUL SORROW", "INTO THE BREACH"}:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_aeldari_corsair)
         if names & {"DIABOLIC MAJESTY", "HEIGHTENED JEALOUSY"}:
             add("emperors_children_favoured_champions_updated", self._on_emperors_children_favoured_champions_updated)
 
@@ -1421,6 +1448,8 @@ class StratagemManager(
             "RAPID REGENERATION",
             "UNCANNY REACTIONS",
             "VENGEFUL SURGE",
+            "CLOAK AND SHADOW",
+            "VENGEFUL SORROW",
             "VOID HARDENED",
         }
         fight_reaction_names = {
@@ -1571,6 +1600,10 @@ class StratagemManager(
             "SINUOUS BREACH",
             "SWIFT DEPLOYMENT",
             "SYCOPHANTIC SURGE",
+            "CLOAK AND SHADOW",
+            "LETHAL RUSE",
+            "OUTCAST AMBUSH",
+            "PIRATES' DUE",
             "DOOM INESCAPABLE",
             "PRETERNATURAL PRECISION",
             "TO THEIR FINAL BREATH",
@@ -2864,6 +2897,48 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires Fight phase before-consolidate trigger for one of your TYRANIDS units"
             return result
+        if name_u == "OUTCAST AMBUSH":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._aeldari_corsair_outcast_ambush_candidates(require_not_shot=True)
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Shooting phase and a Rangers or Shroud Runners unit that has not been selected to shoot"
+            return result
+        if name_u == "INTO THE BREACH":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                attacking_unit = context.get("attacking_unit") or context.get("attacker_unit")
+                if attacking_unit is not None and self._aeldari_corsair_into_the_breach_trigger_ready(attacking_unit):
+                    candidates = [attacking_unit]
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Shooting phase after an ANHRATHE unit destroys one or more enemy units"
+            return result
+        if name_u == "PIRATES' DUE":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._aeldari_corsair_pirates_due_candidates(require_not_fought=True)
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires Fight phase and an AELDARI unit that has not been selected to fight"
+            return result
+        if name_u == "LETHAL RUSE":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._aeldari_corsair_lethal_ruse_candidates(require_fell_back=True)
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Movement phase, just after an AELDARI unit from your army Falls Back"
+            return result
         if stratagem.can_use(self.player, self.game, **context):
             result["available"] = True
             result["reason"] = None
@@ -2924,10 +2999,17 @@ class StratagemManager(
             "KHAINE'S VENGEANCE": "Target: ASPECT WARRIORS/AVATAR OF KHAINE unit in Engagement Range of an enemy selected to Fall Back",
             "KHAINE’S VENGEANCE": "Target: ASPECT WARRIORS/AVATAR OF KHAINE unit in Engagement Range of an enemy selected to Fall Back",
             "LAYERED WARDS": "Target: AELDARI VEHICLE unit after a mortal wound is allocated",
+            "CLOAK AND SHADOW": "Target: AELDARI INFANTRY unit selected by an enemy shooter and within range of an objective marker you control",
+            "OUTCAST AMBUSH": "Target: your Rangers or Shroud Runners unit that has not been selected to shoot this phase",
+            "INTO THE BREACH": "Target: ANHRATHE unit that just destroyed one or more enemy units with its shooting attacks",
+            "LETHAL RUSE": "Target: your AELDARI unit that just Fell Back this Movement phase (ANHRATHE also selects one enemy unit it was in Engagement Range of at phase start)",
+            "PIRATES' DUE": "Target: your AELDARI unit that has not been selected to fight this phase",
+            "PIRATES’ DUE": "Target: your AELDARI unit that has not been selected to fight this phase",
             "PRETERNATURAL PRECISION": "Target: ASPECT WARRIORS unit not yet selected to shoot; choose 1 (or 2 if token spent) from Ignores Cover/Lethal Hits/Sustained Hits 1",
             "SOULSIGHT": "Target: AELDARI VEHICLE unit that has not been selected to shoot",
             "SWIFT DEPLOYMENT": "Target: AELDARI TRANSPORT unit after it Advanced",
             "TO THEIR FINAL BREATH": "Target: ASPECT WARRIORS/AVATAR OF KHAINE unit selected as an enemy fight target (not fought)",
+            "VENGEFUL SORROW": "Target: AELDARI INFANTRY unit that lost models to the just-resolved enemy shooting attacks and is not Battle-shocked/engaged",
             "VECTORED ENGINES": "Target: AELDARI VEHICLE FLY unit after it Fell Back",
             "WARRIOR FOCUS": "Target: ASPECT WARRIORS/AVATAR OF KHAINE unit not yet selected to shoot/fight",
             "A CHALLENGE MET": "Target: WYCH CULT unit; enemy within 9\" that moved or was set up this phase",
@@ -3551,6 +3633,10 @@ class StratagemManager(
             raise
         try:
             self._queue_aeldari_aspect_host_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._capture_aeldari_corsair_movement_phase_start_engagements(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -6062,6 +6148,7 @@ class StratagemManager(
         self._process_warpbane_fires_of_covenant_trigger(unit=unit, trigger_kind="move_end", action=action)
         self._queue_emperors_children_mercurial_move_end_reactions(unit=unit, action=action)
         self._queue_aeldari_armoured_move_end_reactions(unit=unit, action=action)
+        self._queue_aeldari_corsair_move_end_reactions(unit=unit, action=action)
         self._queue_votann_needgaard_move_end_reactions(unit=unit, action=action)
         self._queue_imperial_knights_valourstrike_move_end_reactions(unit=unit, action=action)
 
@@ -6784,6 +6871,15 @@ class StratagemManager(
         except Exception:
             raise
 
+    def _on_unit_shooting_resolved_aeldari_corsair(self, attacker_unit=None, hits_by_target=None, **_kwargs):
+        try:
+            self._queue_aeldari_corsair_shooting_resolved_reactions(
+                attacker_unit=attacker_unit,
+                hits_by_target=hits_by_target,
+            )
+        except Exception:
+            raise
+
     def _on_unit_shooting_resolved_slaanesh_vengeful_surge(self, attacker_unit=None, **_kwargs):
         try:
             self._resolve_emperors_children_slaanesh_vengeful_surge_after_shooting(
@@ -7059,6 +7155,13 @@ class StratagemManager(
             raise
         try:
             self._queue_tyranids_invasion_fleet_shooting_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_aeldari_corsair_shooting_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -9942,6 +10045,12 @@ class StratagemManager(
         Faction stratagem reactions that trigger when a unit is destroyed.
         """
         try:
+            self._capture_aeldari_corsair_into_the_breach_destroyed_enemy(
+                destroyed_by_unit=kwargs.get("destroyed_by_unit"),
+            )
+        except Exception:
+            raise
+        try:
             self._queue_world_eaters_cult_unit_destroyed_reactions(
                 unit=unit,
                 destroyed_by_unit=kwargs.get("destroyed_by_unit"),
@@ -12641,6 +12750,9 @@ class StratagemManager(
         aeldari_armoured_result = self._use_aeldari_armoured_warhost_stratagem(s, **kwargs)
         if aeldari_armoured_result is not None:
             return aeldari_armoured_result
+        aeldari_corsair_result = self._use_aeldari_corsair_coterie_stratagem(s, **kwargs)
+        if aeldari_corsair_result is not None:
+            return aeldari_corsair_result
         votann_result = self._use_votann_needgaard_stratagem(s, **kwargs)
         if votann_result is not None:
             return votann_result

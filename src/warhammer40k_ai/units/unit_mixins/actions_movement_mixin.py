@@ -3805,6 +3805,47 @@ class ActionsMovementMixin:
                     f"{source}: re-roll Wound roll vs targets within objective range you do not control"
                 )
 
+        # PIRATES' DUE: melee attacks re-roll Wound rolls of 1; ANHRATHE get full wound re-rolls
+        # when targeting enemy units within range of any objective marker.
+        try:
+            if atype in ("any", "melee"):
+                sr = getattr(root, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("aeldari_pirates_due_active"):
+                    active = True
+                    owner_id = str(sr.get("aeldari_pirates_due_turn_owner", "") or "")
+                    try:
+                        effect_turn = int(sr.get("aeldari_pirates_due_turn", 0) or 0)
+                    except Exception:
+                        effect_turn = 0
+                    expires_phase = str(sr.get("aeldari_pirates_due_expires_phase", "") or "").strip().upper()
+                    phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+                    current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                    attacker_owner = str(getattr(getattr(army, "player", None), "id", "") or "") if army is not None else ""
+                    if owner_id and attacker_owner and owner_id != attacker_owner:
+                        active = False
+                    if active and effect_turn and current_turn and effect_turn != current_turn:
+                        active = False
+                    if active and expires_phase and phase_name and expires_phase != phase_name:
+                        active = False
+                    if active:
+                        source = str(sr.get("aeldari_pirates_due_source", "") or "PIRATES' DUE").strip() or "PIRATES' DUE"
+                        reroll_wound_values.add(1)
+                        reroll_wound_reasons.append(f"{source}: re-roll Wound rolls of 1")
+                        has_anhrathe = False
+                        try:
+                            has_anhrathe = bool(root.has_any_keyword("ANHRATHE"))
+                        except Exception:
+                            has_anhrathe = False
+                        if has_anhrathe and target is not None:
+                            game_map = getattr(game, "map", None) if game is not None else None
+                            if bool(self._target_within_objective_range(target, game_map=game_map)):
+                                mods["reroll_wound_full"] = True
+                                reroll_wound_full_reasons.append(
+                                    f"{source}: re-roll Wound roll vs targets within objective range"
+                                )
+        except Exception:
+            pass
+
         # Fire Support: disembarked unit re-rolls wound rolls vs marked target.
         try:
             if target is not None:
@@ -9828,6 +9869,19 @@ class ActionsMovementMixin:
             if mgr is not None and getattr(mgr, "duty_before_all_applies", None):
                 if mgr.duty_before_all_applies(self):
                     return True
+        except Exception:
+            pass
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("aeldari_lethal_ruse_charge_after_fall_back_active"):
+                owner = str(sr.get("aeldari_lethal_ruse_turn_owner", "") or "")
+                turn = int(sr.get("aeldari_lethal_ruse_turn", 0) or 0)
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+                if game is None:
+                    return True
+                if owner and str(getattr(game.get_current_player(), "id", "") or "") == owner:
+                    if int(getattr(game, "turn", 0) or 0) == int(turn or 0):
+                        return True
         except Exception:
             pass
         try:

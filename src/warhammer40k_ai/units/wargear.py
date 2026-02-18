@@ -669,6 +669,45 @@ class WargearProfile:
         except Exception:
             return False
 
+    def _aeldari_outcast_ambush_source(self, attacker: 'Model') -> str:
+        unit = getattr(attacker, "parent_unit", None)
+        if unit is None:
+            return ""
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("aeldari_outcast_ambush_active")):
+            return ""
+        effect_phase = str(sr.get("aeldari_outcast_ambush_expires_phase", "") or "").strip().upper()
+        effect_owner = str(sr.get("aeldari_outcast_ambush_turn_owner", "") or "")
+        try:
+            effect_turn = int(sr.get("aeldari_outcast_ambush_turn", 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+
+        game = None
+        try:
+            army = root.get_parent_army()
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        except Exception:
+            game = None
+        if game is not None:
+            current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            current_owner = str(getattr(getattr(game, "get_current_player", lambda: None)(), "id", "") or "")
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            if effect_phase and current_phase and effect_phase != current_phase:
+                return ""
+            if effect_owner and current_owner and effect_owner != current_owner:
+                return ""
+            if effect_turn and current_turn and effect_turn != current_turn:
+                return ""
+        return str(sr.get("aeldari_outcast_ambush_source", "") or "OUTCAST AMBUSH").strip() or "OUTCAST AMBUSH"
+
     def _effective_range_max(self, attacker: Optional['Model'] = None) -> int:
         """Return range max after applying model/unit effects (e.g., leading Melta range bonus)."""
         try:
@@ -2146,6 +2185,13 @@ class WargearProfile:
                             ff_bonus = 1
                         if ff_bonus:
                             ap_val -= int(ff_bonus)
+        except Exception:
+            pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_ranged():
+                outcast_source = self._aeldari_outcast_ambush_source(attacker)
+                if outcast_source:
+                    ap_val -= 1
         except Exception:
             pass
         try:
@@ -3781,6 +3827,15 @@ class WargearProfile:
                 atk_mods.append(Modifier(ModifierOp.ADD, int(rf_bonus), source="weapon:rapid_fire"))
             except Exception as exc:
                 logger.warning(f"WARN: Rapid Fire bonus parsing failed for {self.name}: {exc}")
+
+        try:
+            if self.parent_wargear and self.parent_wargear.is_ranged() and closest_dist <= half_range:
+                outcast_source = self._aeldari_outcast_ambush_source(attacker)
+                if outcast_source:
+                    attack_result.attacks_special_modifiers.append(f"{outcast_source}: [RAPID FIRE 1]")
+                    atk_mods.append(Modifier(ModifierOp.ADD, 1, source="aeldari:outcast_ambush_rapid_fire"))
+        except Exception:
+            pass
 
         try:
             sr = getattr(attacker.parent_unit, "special_rules", None)
