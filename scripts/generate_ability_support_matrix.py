@@ -4182,13 +4182,20 @@ def _monster_vehicle_reroll_support(description: str) -> Optional[Tuple[str, str
         return None
     if "monster or vehicle" not in norm:
         return None
-    if "each time a model in this unit makes a ranged attack" not in norm:
+    if not (
+        "each time a model in this unit makes a ranged attack" in norm
+        or "each time this model makes a ranged attack" in norm
+        or "each time a ranged attack made by this model" in norm
+    ):
         return None
     if "closest" in norm:
         return None
     if "reroll" not in norm:
         return None
-    if not re.search(r"targets (?:an? )?(?:enemy )?monster or vehicle unit", norm):
+    if not re.search(
+        r"(?:targets?|allocated to) (?:an? )?(?:enemy )?monster or vehicle (?:unit|model)",
+        norm,
+    ):
         return None
     allow_hit = "reroll the hit roll" in norm
     allow_wound = "reroll the wound roll" in norm
