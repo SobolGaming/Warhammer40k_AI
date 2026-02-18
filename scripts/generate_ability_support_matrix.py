@@ -3909,6 +3909,7 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         if m:
             notes.append(f"{leading_prefix}Objective Control for the unit +{m.group(1)}.")
 
+    base_fnp_value: Optional[str] = None
     m = re.search(
         r"(?:models?\s+in\s+)?(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+unit)\s+"
         r"(?:have|has)\s+(?:a\s+|the\s+)?feel\s+no\s+pain\s*([1-6])\+?(?:\s+ability)?",
@@ -3916,6 +3917,7 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         flags=re.IGNORECASE,
     )
     if m:
+        base_fnp_value = m.group(1)
         match_text = m.group(0)
         if leading_prefix:
             notes.append(f"{leading_prefix}Feel No Pain {m.group(1)}+.")
@@ -3923,6 +3925,26 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
             notes.append(f"Bearer's unit gains Feel No Pain {m.group(1)}+.")
         else:
             notes.append(f"Unit gains Feel No Pain {m.group(1)}+.")
+
+    m = re.search(
+        r"if\s+(?:the\s+)?(?:bearer'?s\s+unit|that\s+unit|this\s+unit)\s+has\s+(?:the\s+)?(?P<keyword>[a-z0-9][a-z0-9 '\-]*)\s+keyword,?\s*"
+        r"models?\s+in\s+(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+unit)\s+have\s+(?:a\s+|the\s+)?feel\s+no\s+pain\s*(?P<value>[1-6])\+?(?:\s+ability)?\s+instead",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        keyword = str(m.group("keyword") or "").strip().upper()
+        value = str(m.group("value") or "").strip()
+        if leading_prefix and base_fnp_value:
+            notes.append(
+                f"{leading_prefix}Feel No Pain improves to {value}+ while the unit has the {keyword} keyword."
+            )
+        elif leading_prefix:
+            notes.append(f"{leading_prefix}Feel No Pain {value}+ while the unit has the {keyword} keyword.")
+        elif base_fnp_value:
+            notes.append(f"Bearer's unit Feel No Pain improves to {value}+ while it has the {keyword} keyword.")
+        else:
+            notes.append(f"Unit gains Feel No Pain {value}+ while it has the {keyword} keyword.")
 
     m = re.search(
         r"(?:models?\s+in\s+)?(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+unit)\s+"
@@ -4088,6 +4110,7 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         rf"{lead_prefix}models? in {unit_ref} have (?:a|the)? feel no pain [1-6](?: ability)? against psychic attacks and mortal wounds?",
         rf"{lead_prefix}models? in {unit_ref} have (?:a|the)? feel no pain [1-6](?: ability)? against mortal wounds?",
         rf"{lead_prefix}models? in {unit_ref} have (?:a|the)? feel no pain [1-6](?: ability)? against mortal wounds? and psychic attacks",
+        rf"{lead_prefix}if {unit_ref} has (?:the )?[a-z0-9][a-z0-9 '\-]* keyword models? in {unit_ref} have (?:a|the)? feel no pain [1-6](?: ability)? instead",
         rf"{lead_prefix}{unit_ref} has (?:a|the)? feel no pain [1-6](?: ability)?",
         rf"{lead_prefix}{unit_ref} has (?:a|the)? feel no pain [1-6](?: ability)? against psychic attacks",
         rf"{lead_prefix}{unit_ref} has (?:a|the)? feel no pain [1-6](?: ability)? against psychic attacks and mortal wounds?",

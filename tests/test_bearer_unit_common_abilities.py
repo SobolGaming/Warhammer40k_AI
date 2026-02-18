@@ -249,6 +249,54 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
 
         self.assertIn((5, None), bodyguard.has_feel_no_pain())
 
+    def test_leading_unit_fnp_keyword_override_applies(self):
+        ability = {
+            "name": "Lord of the Machine Cult",
+            "description": (
+                "While this model is leading a unit, models in that unit have the Feel No Pain 5+ ability. "
+                "If that unit has the Electro-Priests keyword, models in that unit have the Feel No Pain 4+ ability instead."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        leader = _make_unit("Tech-priest Dominus", abilities=[ability], attached_to=["Corpuscarii Electro-priests"])
+        bodyguard = _make_unit("Corpuscarii Electro-priests")
+        bodyguard.keywords = ["Electro-Priests"]
+        bodyguard.attached_leaders = [leader]
+        leader.attached_to = bodyguard
+        leader.can_be_attached_to = ["Corpuscarii Electro-priests"]
+
+        bodyguard._refresh_bearer_unit_common_modifiers()
+
+        model = bodyguard.models[0]
+        fnp_entries = bodyguard.has_feel_no_pain(target_model=model)
+        best_fnp = model._get_best_applicable_fnp(fnp_entries, weapon_profile=None, is_mortal=False)
+        self.assertEqual(best_fnp, (4, None))
+
+    def test_leading_unit_fnp_keyword_override_requires_keyword(self):
+        ability = {
+            "name": "Lord of the Machine Cult",
+            "description": (
+                "While this model is leading a unit, models in that unit have the Feel No Pain 5+ ability. "
+                "If that unit has the Electro-Priests keyword, models in that unit have the Feel No Pain 4+ ability instead."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        leader = _make_unit("Tech-priest Dominus", abilities=[ability], attached_to=["Skitarii Vanguard"])
+        bodyguard = _make_unit("Skitarii Vanguard")
+        bodyguard.keywords = ["Skitarii"]
+        bodyguard.attached_leaders = [leader]
+        leader.attached_to = bodyguard
+        leader.can_be_attached_to = ["Skitarii Vanguard"]
+
+        bodyguard._refresh_bearer_unit_common_modifiers()
+
+        model = bodyguard.models[0]
+        fnp_entries = bodyguard.has_feel_no_pain(target_model=model)
+        best_fnp = model._get_best_applicable_fnp(fnp_entries, weapon_profile=None, is_mortal=False)
+        self.assertEqual(best_fnp, (5, None))
+
     def test_leading_this_unit_fnp_requires_leading_and_applies_when_attached(self):
         ability = {
             "name": "Fortify (Psychic)",

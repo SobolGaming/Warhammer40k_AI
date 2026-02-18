@@ -911,6 +911,59 @@ class LateGameplayMixin:
             pass
         try:
             sr = getattr(self, "special_rules", None)
+            entries = sr.get("bearer_unit_keyword_fnp_entries") if isinstance(sr, dict) else None
+            if isinstance(entries, list):
+                seen = set((int(v), (c or "")) for v, c in result)
+                t_unit = getattr(target_model, "parent_unit", None) or self
+                for entry in entries:
+                    if not isinstance(entry, dict):
+                        continue
+                    try:
+                        val = int(entry.get("value"))
+                    except Exception:
+                        continue
+                    keyword = str(entry.get("keyword", "") or "").strip()
+                    if keyword:
+                        matched = False
+                        if target_model is not None:
+                            has_any = getattr(target_model, "has_any_keyword", None)
+                            if callable(has_any):
+                                try:
+                                    matched = bool(has_any(keyword))
+                                except Exception:
+                                    matched = False
+                        if not matched:
+                            has_any_local = getattr(t_unit, "has_any_keyword_local", None)
+                            if callable(has_any_local):
+                                try:
+                                    matched = bool(has_any_local(keyword))
+                                except Exception:
+                                    matched = False
+                        if not matched:
+                            has_keyword_local = getattr(t_unit, "has_keyword_local", None)
+                            if callable(has_keyword_local):
+                                try:
+                                    matched = bool(has_keyword_local(keyword))
+                                except Exception:
+                                    matched = False
+                        if not matched:
+                            has_any_unit = getattr(t_unit, "has_any_keyword", None)
+                            if callable(has_any_unit):
+                                try:
+                                    matched = bool(has_any_unit(keyword))
+                                except Exception:
+                                    matched = False
+                        if not matched:
+                            continue
+                    key = (int(val), "")
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    result.append((int(val), None))
+        except Exception:
+            pass
+        try:
+            sr = getattr(self, "special_rules", None)
             entries = sr.get("enhancement_bearer_fnp_entries") if isinstance(sr, dict) else None
             if isinstance(entries, list):
                 seen = set((int(v), (c or "")) for v, c in result)

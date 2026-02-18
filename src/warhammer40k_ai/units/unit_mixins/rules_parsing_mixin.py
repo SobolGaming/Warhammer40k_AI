@@ -1732,6 +1732,7 @@ class RulesParsingMixin:
                         del sr["advance_roll_modifiers"]
                 for key in (
                     "bearer_unit_fnp",
+                    "bearer_unit_keyword_fnp_entries",
                     "attached_character_fnp_entries",
                     "unit_contains_character_fnp_entries",
                     "same_unit_keyword_fnp_entries",
@@ -1781,6 +1782,7 @@ class RulesParsingMixin:
         oc_mods: list[tuple[int, str]] = []
         contains_oc_mods: list[tuple[int, str]] = []
         fnp_entries: list[dict] = []
+        bearer_unit_keyword_fnp_entries: list[dict] = []
         attached_character_fnp_entries: list[dict] = []
         unit_contains_character_fnp_entries: list[dict] = []
         same_unit_keyword_fnp_entries: list[dict] = []
@@ -2009,8 +2011,27 @@ class RulesParsingMixin:
                             )
                             attached_character_fnp_matched = True
 
+                    bearer_unit_keyword_fnp_matched = False
+                    m = self._BEARER_UNIT_KEYWORD_FNP_RE.search(sentence)
+                    if m:
+                        try:
+                            val = int(m.group("value"))
+                        except Exception:
+                            val = None
+                        keyword = str(m.group("keyword") or "").strip()
+                        if val and keyword:
+                            source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
+                            bearer_unit_keyword_fnp_entries.append(
+                                {
+                                    "value": int(val),
+                                    "source": source,
+                                    "keyword": keyword,
+                                }
+                            )
+                            bearer_unit_keyword_fnp_matched = True
+
                     m = self._BEARER_UNIT_FNP_RE.search(sentence)
-                    if m and not attached_character_fnp_matched:
+                    if m and not attached_character_fnp_matched and not bearer_unit_keyword_fnp_matched:
                         try:
                             val = int(m.group(1))
                         except Exception:
@@ -2292,6 +2313,13 @@ class RulesParsingMixin:
                 if not isinstance(sr, dict):
                     sr = {}
                 sr["bearer_unit_fnp"] = list(fnp_entries)
+                u.special_rules = sr
+        if bearer_unit_keyword_fnp_entries:
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["bearer_unit_keyword_fnp_entries"] = list(bearer_unit_keyword_fnp_entries)
                 u.special_rules = sr
         if attached_character_fnp_entries:
             for u in members:

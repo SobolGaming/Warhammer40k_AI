@@ -1900,6 +1900,11 @@ class Unit(
         r"(?:models\s+in\s+)?the\s+bearer'?s\s+unit.*?\bfeel\s+no\s+pain\b\s*([1-6])\+",
         re.IGNORECASE,
     )
+    _BEARER_UNIT_KEYWORD_FNP_RE = re.compile(
+        r"if\s+(?:the\s+)?(?:bearer'?s|that|this)\s+unit\s+has\s+(?:the\s+)?(?P<keyword>[a-z0-9][a-z0-9 '\-]*)\s+keyword,?\s*"
+        r"(?:models?\s+in\s+)?(?:the\s+bearer'?s|that|this)\s+unit\s+have\s+(?:a|the)?\s*feel\s+no\s+pain\s*(?P<value>[1-6])\+?(?:\s+ability)?(?:\s+instead)?",
+        re.IGNORECASE,
+    )
     _ATTACHED_CHARACTER_FNP_RE = re.compile(
         r"(?:other\s+character\s+models\s+attached\s+to\s+(?:that\s+unit|the\s+bearer'?s\s+unit|this\s+unit)\s*,?\s+"
         r"have\s+(?:the\s+)?feel\s+no\s+pain\s*([1-6])\+)|"
