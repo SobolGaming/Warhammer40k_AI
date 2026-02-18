@@ -992,16 +992,22 @@ def _parse_enemy_move_oc_penalty_aura(ability) -> Optional[dict]:
             return None
         if rng <= 0 or move <= 0 or oc <= 0:
             return None
+        m_min = re.search(r"to a minimum of (?P<min>\d+)", desc, flags=re.IGNORECASE)
+        try:
+            oc_minimum = int(m_min.group("min")) if m_min else 0
+        except Exception:
+            oc_minimum = 0
         return {
             "range": float(rng),
             "move": -abs(int(move)),
             "oc": -abs(int(oc)),
+            "oc_minimum": int(max(0, oc_minimum)),
             "excluded_keywords": _parse_excluded_keywords(desc),
         }
 
     m = re.search(
         r'While an enemy unit(?: \(excluding [^)]+\))? is within (?P<rng>\d+)" of (?:this model|this unit|the bearer), '
-        r"subtract (?P<oc>\d+) from the Objective Control characteristic of models in that enemy unit",
+        r"subtract (?P<oc>\d+) from the Objective Control characteristic of models in that (?:enemy unit|unit)",
         desc,
         flags=re.IGNORECASE,
     )
@@ -1014,10 +1020,16 @@ def _parse_enemy_move_oc_penalty_aura(ability) -> Optional[dict]:
         return None
     if rng <= 0 or oc <= 0:
         return None
+    m_min = re.search(r"to a minimum of (?P<min>\d+)", desc, flags=re.IGNORECASE)
+    try:
+        oc_minimum = int(m_min.group("min")) if m_min else 0
+    except Exception:
+        oc_minimum = 0
     return {
         "range": float(rng),
         "move": 0,
         "oc": -abs(int(oc)),
+        "oc_minimum": int(max(0, oc_minimum)),
         "excluded_keywords": _parse_excluded_keywords(desc),
     }
 
@@ -1604,21 +1616,16 @@ def get_aura_battleshock_test_modifiers(unit, *, game_map=None) -> list[tuple[in
     return modifiers
 
 
-def get_enemy_aura_move_oc_penalties(unit, *, game_map=None) -> tuple[int, int]:
-    _count_regex_hotspot("get_enemy_aura_move_oc_penalties")
-    """
-    Return (move_penalty, oc_penalty) from enemy auras affecting this unit.
-    Dedupe by Aura name (same aura never double-applies).
-    """
+def _collect_enemy_aura_move_oc_penalty_state(unit, *, game_map=None) -> tuple[int, int, int]:
     if unit is None:
-        return 0, 0
+        return 0, 0, 0
     if game_map is None:
         game_map = _get_map_from_attacker_unit(unit)
     if game_map is None:
-        return 0, 0
-
+        return 0, 0, 0
     move_penalty = 0
     oc_penalty = 0
+    oc_minimum_floor = 0
     applied_aura_names: set[str] = set()
     for source in list(game_map.get_enemy_units(unit)):
         for ab in _iter_possible_abilities(source):
@@ -1637,7 +1644,30 @@ def get_enemy_aura_move_oc_penalties(unit, *, game_map=None) -> tuple[int, int]:
                 continue
             move_penalty += int(spec["move"])
             oc_penalty += int(spec["oc"])
+            try:
+                oc_minimum_floor = max(oc_minimum_floor, int(spec.get("oc_minimum", 0) or 0))
+            except Exception:
+                pass
+    return int(move_penalty), int(oc_penalty), int(max(0, oc_minimum_floor))
+
+
+def get_enemy_aura_move_oc_penalties(unit, *, game_map=None) -> tuple[int, int]:
+    _count_regex_hotspot("get_enemy_aura_move_oc_penalties")
+    """
+    Return (move_penalty, oc_penalty) from enemy auras affecting this unit.
+    Dedupe by Aura name (same aura never double-applies).
+    """
+    move_penalty, oc_penalty, _oc_floor = _collect_enemy_aura_move_oc_penalty_state(unit, game_map=game_map)
     return int(move_penalty), int(oc_penalty)
+
+
+def get_enemy_aura_objective_control_minimum_floor(unit, *, game_map=None) -> int:
+    _count_regex_hotspot("get_enemy_aura_objective_control_minimum_floor")
+    """
+    Return the highest minimum Objective Control floor imposed by enemy auras.
+    """
+    _move_penalty, _oc_penalty, oc_floor = _collect_enemy_aura_move_oc_penalty_state(unit, game_map=game_map)
+    return int(max(0, oc_floor))
 
 
 def get_enemy_aura_leadership_characteristic_penalty(unit, *, game_map=None) -> int:

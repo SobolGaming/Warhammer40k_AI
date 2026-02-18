@@ -571,8 +571,31 @@ class Player:
                 return True
         return False
 
-    def _source_model_within_range_for_ability(self, source_unit, target_unit, rng: float, ability_name: str) -> bool:
+    def _source_model_within_range_for_ability(
+        self,
+        source_unit,
+        target_unit,
+        rng: float,
+        ability_name: str,
+        *,
+        source_model_id: str = "",
+    ) -> bool:
         from warhammer40k_ai.utility.aura_utils import unit_within_range_of_unit
+
+        model_id = str(source_model_id or "").strip()
+        if model_id:
+            models = list(source_unit.get_attached_unit_models() or [])
+            for m in models:
+                try:
+                    if not getattr(m, "is_alive", True):
+                        continue
+                except Exception:
+                    continue
+                mid = str(getattr(m, "id", getattr(m, "_id", "")) or "")
+                if mid != model_id:
+                    continue
+                return bool(source_unit._model_within_range_of_unit(m, target_unit, rng))
+            return False
 
         models = list(source_unit.get_attached_unit_models() or [])
         has_named_model = False
@@ -857,7 +880,14 @@ class Player:
                 if kw and not self._unit_has_keyword(target_unit, kw):
                     continue
                 name = str(spec.get("name", "") or "Stratagem CP Increase").strip()
-                if not self._source_model_within_range_for_ability(u, target_unit, rng, name):
+                source_model_id = str(spec.get("source_model_id", "") or "").strip()
+                if not self._source_model_within_range_for_ability(
+                    u,
+                    target_unit,
+                    rng,
+                    name,
+                    source_model_id=source_model_id,
+                ):
                     continue
                 limit = str(spec.get("limit", "") or "").strip().lower()
                 usage_key = str(spec.get("usage_key", "") or "").strip().upper()
@@ -916,7 +946,10 @@ class Player:
         used_spec = None
         if auto_specs:
             used_spec = auto_specs[0]
-            increase = 1
+            try:
+                increase = max(1, int(used_spec.get("cp_increase", 1) or 1))
+            except Exception:
+                increase = 1
         elif optional_specs:
             used_spec = optional_specs[0]
             ctx = {
@@ -926,7 +959,10 @@ class Player:
                 "current_cp_cost": int(current_cost or 0),
             }
             if self._should_use_optional_ability("OPPONENT_STRATAGEM_CP_INCREASE", ctx):
-                increase = 1
+                try:
+                    increase = max(1, int(used_spec.get("cp_increase", 1) or 1))
+                except Exception:
+                    increase = 1
 
         if increase and used_spec:
             label = str(used_spec.get("name", "") or "Stratagem CP Increase").strip() or "Stratagem CP Increase"

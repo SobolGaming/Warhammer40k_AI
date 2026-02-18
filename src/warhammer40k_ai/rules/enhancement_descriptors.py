@@ -366,6 +366,56 @@ _AELDARI_SEER_COUNCIL_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _AELDARI_SEER_COUNCIL_DESCRIPTORS.values()
 }
 
+_AELDARI_CORSAIR_COTERIE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010704002": EnhancementToolDescriptor(
+        enhancement_id="000010704002",
+        name="Infamy (Aura)",
+        timing="passive_aura",
+        target="enemy_units_within_range_of_bearer_unit",
+        duration="constant",
+        effect="enemy_objective_control_penalty_minimum",
+        range_in=3.0,
+        effect_params={"objective_control_penalty": 1, "objective_control_minimum": 1},
+    ),
+    "000010704003": EnhancementToolDescriptor(
+        enhancement_id="000010704003",
+        name="Webway Pathstone",
+        timing="passive_and_end_of_opponent_turn",
+        target="bearer_unit",
+        duration="constant_and_once_per_battle",
+        effect="grant_deep_strike_and_enter_strategic_reserves",
+        once_per_battle=True,
+        effect_params={
+            "grants_deep_strike": True,
+            "enter_strategic_reserves_timing": "end_of_opponent_turn",
+            "requires_not_engagement_range": True,
+        },
+    ),
+    "000010704004": EnhancementToolDescriptor(
+        enhancement_id="000010704004",
+        name="Archraider",
+        timing="opponent_stratagem_targeting",
+        target="enemy_unit_within_range_of_selected_character_model",
+        duration="constant",
+        effect="targeted_stratagem_cp_increase",
+        range_in=12.0,
+        effect_params={"cp_increase": 1, "select_character_model_start_of_battle": True},
+    ),
+    "000010704005": EnhancementToolDescriptor(
+        enhancement_id="000010704005",
+        name="Voidstone",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="bearer_unit_invulnerable_save",
+        effect_params={"invulnerable_save": 5},
+    ),
+}
+
+_AELDARI_CORSAIR_COTERIE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _AELDARI_CORSAIR_COTERIE_DESCRIPTORS.values()
+}
+
 _EXPERIMENTAL_PROTOTYPE_CADRE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009983002": EnhancementToolDescriptor(
         enhancement_id="000009983002",
@@ -1086,6 +1136,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _AELDARI_SEER_COUNCIL_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _AELDARI_CORSAIR_COTERIE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _EXPERIMENTAL_PROTOTYPE_CADRE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -1142,6 +1195,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _VESSELS_OF_WRATH_BY_NAME.get(key)
         or _AELDARI_GUARDIAN_BATTLEHOST_BY_NAME.get(key)
         or _AELDARI_SEER_COUNCIL_BY_NAME.get(key)
+        or _AELDARI_CORSAIR_COTERIE_BY_NAME.get(key)
         or _EXPERIMENTAL_PROTOTYPE_CADRE_BY_NAME.get(key)
         or _MONTKA_BY_NAME.get(key)
         or _INVASION_FLEET_BY_NAME.get(key)

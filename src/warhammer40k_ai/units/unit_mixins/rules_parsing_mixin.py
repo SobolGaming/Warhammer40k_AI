@@ -613,6 +613,23 @@ class RulesParsingMixin:
         return None
 
     def _scan_end_of_opponent_turn_strategic_reserves_ability(self):
+        sr = getattr(self, "special_rules", None)
+        if isinstance(sr, dict) and bool(sr.get("enhancement_webway_pathstone")):
+            enhancement = getattr(self, "enhancement", None)
+            ability_name = str(getattr(enhancement, "name", "") or "Webway Pathstone").strip() or "Webway Pathstone"
+            ability_desc = str(getattr(enhancement, "description", "") or "")
+            ability_key = str(sr.get("enhancement_webway_pathstone_once_key", "") or "webway_pathstone").strip().lower()
+            if not ability_key:
+                ability_key = "webway_pathstone"
+            return {
+                "name": ability_name,
+                "description": ability_desc,
+                "once_per_battle": True,
+                "ability_key": ability_key,
+                "min_enemy_distance_horiz": 0,
+                "min_battlefield_edge_distance_horiz": 0,
+            }
+
         pattern = self._OPPONENT_TURN_STRATEGIC_RESERVES_RE
         for ab in self._iter_active_abilities():
             try:
@@ -1146,7 +1163,9 @@ class RulesParsingMixin:
                 continue
             if "stratagem" not in norm:
                 continue
-            if "increase" not in norm or "cp cost" not in norm:
+            if "increase" not in norm:
+                continue
+            if "cp cost" not in norm and not re.search(r"increase\s+(?:the\s+)?cost\s+of", norm):
                 continue
             if "target" not in norm and "uses a stratagem" not in norm:
                 continue
@@ -1174,6 +1193,13 @@ class RulesParsingMixin:
                     max_cp = int(m_max.group("max"))
                 except Exception:
                     max_cp = None
+            cp_increase = 1
+            m_increase = re.search(r"by\s+(?P<cp>\d+)\s*cp", norm)
+            if m_increase:
+                try:
+                    cp_increase = max(1, int(m_increase.group("cp") or 1))
+                except Exception:
+                    cp_increase = 1
             usage_key = str(name or "Stratagem CP Increase").strip().upper()
             spec = {
                 "range": rng,
@@ -1183,8 +1209,15 @@ class RulesParsingMixin:
                 "optional": bool(optional),
                 "limit": limit or "",
                 "max_cp": max_cp,
+                "cp_increase": int(cp_increase),
                 "usage_key": f"STRATAGEM_CP_INCREASE:{usage_key}" if usage_key else "STRATAGEM_CP_INCREASE",
             }
+            if isinstance(sr, dict) and bool(sr.get("enhancement_archraider")):
+                source_model_id = str(sr.get("enhancement_bearer_model_id", "") or "")
+                if source_model_id:
+                    low_name = str(name or "").strip().lower()
+                    if "archraider" in low_name or "lord of deceit" in norm:
+                        spec["source_model_id"] = source_model_id
             specs.append(spec)
 
         if specs:
@@ -1197,6 +1230,8 @@ class RulesParsingMixin:
                     str(spec.get("limit", "") or "").strip().lower(),
                     bool(spec.get("optional", False)),
                     int(spec.get("max_cp", 0) or 0),
+                    int(spec.get("cp_increase", 1) or 1),
+                    str(spec.get("source_model_id", "") or "").strip().lower(),
                 )
                 if key in seen_specs:
                     continue

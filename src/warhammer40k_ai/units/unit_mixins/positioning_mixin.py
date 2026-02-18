@@ -4568,6 +4568,23 @@ class PositioningMixin:
             root = self
         if root is None:
             return False
+        try:
+            sr_root = getattr(root, "special_rules", None)
+            if isinstance(sr_root, dict) and bool(sr_root.get("bearer_unit_deep_strike")):
+                return True
+        except Exception:
+            pass
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = []
+        if members:
+            for member in members:
+                if member is None:
+                    continue
+                sr_member = getattr(member, "special_rules", None)
+                if isinstance(sr_member, dict) and bool(sr_member.get("bearer_unit_deep_strike")):
+                    return True
         text_grant_re = re.compile(
             r"models\s+in\s+(?:this|that|the\s+bearer'?s|this\s+model'?s)\s+unit\s+have\s+the\s+deep\s+strike\b",
             re.IGNORECASE,

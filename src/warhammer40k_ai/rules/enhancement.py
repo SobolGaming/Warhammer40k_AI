@@ -375,6 +375,10 @@ class Enhancement:
         except Exception:
             is_seer_council = False
         try:
+            is_corsair_veterans = bool(ae_mgr and ae_mgr.has_veterans_of_the_void())
+        except Exception:
+            is_corsair_veterans = False
+        try:
             is_virulent_vectorium = bool(dg_mgr and dg_mgr.is_virulent_vectorium())
         except Exception:
             is_virulent_vectorium = False
@@ -843,6 +847,99 @@ class Enhancement:
                 unit.special_rules["enhancement_breath_of_vaul_flamer_weapon_names"] = list(flamer_names)
             if fusion_names:
                 unit.special_rules["enhancement_breath_of_vaul_fusion_weapon_names"] = list(fusion_names)
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "infamy (aura)" or enh_id == "000010704002":
+            if not is_corsair_veterans:
+                return
+            unit.special_rules["enhancement_infamy_aura"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            try:
+                params = dict(getattr(desc, "effect_params", {}) or {})
+            except Exception:
+                params = {}
+            try:
+                aura_range = float(params.get("range", 3.0) or 3.0)
+            except Exception:
+                aura_range = 3.0
+            try:
+                oc_penalty = int(params.get("objective_control_penalty", 1) or 1)
+            except Exception:
+                oc_penalty = 1
+            try:
+                oc_minimum = int(params.get("objective_control_minimum", 1) or 1)
+            except Exception:
+                oc_minimum = 1
+            unit.special_rules["enhancement_infamy_aura_range"] = float(max(0.0, aura_range))
+            unit.special_rules["enhancement_infamy_aura_oc_penalty"] = int(max(0, oc_penalty))
+            unit.special_rules["enhancement_infamy_aura_oc_minimum"] = int(max(0, oc_minimum))
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "webway pathstone" or enh_id == "000010704003":
+            if not is_corsair_veterans:
+                return
+            unit.special_rules["enhancement_webway_pathstone"] = True
+            unit.special_rules["bearer_unit_deep_strike"] = True
+            unit.special_rules["enhancement_webway_pathstone_once_key"] = "webway_pathstone"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+            cache = getattr(unit, "_ability_cache", None)
+            if isinstance(cache, dict):
+                cache.pop("deep_strike", None)
+                cache.pop("opponent_turn_strategic_reserves_ability", None)
+
+        if name == "archraider" or enh_id == "000010704004":
+            if not is_corsair_veterans:
+                return
+            unit.special_rules["enhancement_archraider"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            try:
+                aura_range = float(getattr(desc, "range_in", 12.0) or 12.0)
+            except Exception:
+                aura_range = 12.0
+            unit.special_rules["enhancement_archraider_aura_range"] = float(max(0.0, aura_range))
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+            try:
+                if hasattr(unit, "_refresh_targeted_stratagem_cp_increase_flags"):
+                    unit._refresh_targeted_stratagem_cp_increase_flags()
+            except Exception:
+                pass
+
+        if name == "voidstone" or enh_id == "000010704005":
+            if not is_corsair_veterans:
+                return
+            unit.special_rules["enhancement_voidstone"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            try:
+                params = dict(getattr(desc, "effect_params", {}) or {})
+            except Exception:
+                params = {}
+            try:
+                invuln = int(params.get("invulnerable_save", 5) or 5)
+            except Exception:
+                invuln = 5
+            invuln = int(max(2, min(7, invuln)))
+            entries = list(unit.special_rules.get("bearer_unit_invulnerable_save", []) or [])
+            source_name = str(getattr(self, "name", "") or "Voidstone").strip() or "Voidstone"
+            entry = {"value": int(invuln), "source": source_name}
+            found = False
+            for existing in entries:
+                if not isinstance(existing, dict):
+                    continue
+                try:
+                    val = int(existing.get("value"))
+                except Exception:
+                    continue
+                src = str(existing.get("source", "") or "").strip()
+                if val == int(invuln) and src == source_name:
+                    found = True
+                    break
+            if not found:
+                entries.append(entry)
+            unit.special_rules["bearer_unit_invulnerable_save"] = entries
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 

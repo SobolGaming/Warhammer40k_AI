@@ -416,7 +416,7 @@ class Unit(
         from ..utility.modifiers import Modifier, ModifierOp
 
         mods = []
-        scabrous_oc_floor = False
+        objective_control_floor = 0
 
         # Engine-registered modifiers (from enhancements, damaged profiles, status effects, etc.)
         try:
@@ -731,10 +731,16 @@ class Unit(
             except Exception:
                 pass
             try:
-                from ..utility.aura_effects import get_enemy_aura_move_oc_penalties
+                from ..utility.aura_effects import (
+                    get_enemy_aura_move_oc_penalties,
+                    get_enemy_aura_objective_control_minimum_floor,
+                )
                 _move_pen, oc_pen = get_enemy_aura_move_oc_penalties(self, game_map=game_map)
                 if oc_pen:
                     mods.append(Modifier(ModifierOp.ADD, int(oc_pen), source="aura:enemy_objective_control_penalty"))
+                aura_oc_floor = get_enemy_aura_objective_control_minimum_floor(self, game_map=game_map)
+                if int(aura_oc_floor or 0) > 0:
+                    objective_control_floor = max(objective_control_floor, int(aura_oc_floor))
             except Exception:
                 pass
 
@@ -943,7 +949,7 @@ class Unit(
                 mods.append(Modifier(ModifierOp.ADD, 1, source="nurgles_gift:scabrous_soulrot"))
             elif ckey == "objective_control" and afflicted_plague.key == PLAGUE_SCABROUS.key:
                 mods.append(Modifier(ModifierOp.ADD, -1, source="nurgles_gift:scabrous_soulrot"))
-                scabrous_oc_floor = True
+                objective_control_floor = max(objective_control_floor, 1)
 
         try:
             army = self.get_parent_army()
@@ -995,13 +1001,13 @@ class Unit(
                         mods.append(Modifier(ModifierOp.ADD, int(daemonic_bonus), source="daemonic_allegiance:move_add"))
             except Exception:
                 pass
-            try:
-                from ..utility.aura_effects import get_enemy_aura_move_oc_penalties
-                move_pen, _oc_pen = get_enemy_aura_move_oc_penalties(self, game_map=game_map)
-                if move_pen:
-                    mods.append(Modifier(ModifierOp.ADD, int(move_pen), source="aura:enemy_move_penalty"))
-            except Exception:
-                pass
+                try:
+                    from ..utility.aura_effects import get_enemy_aura_move_oc_penalties
+                    move_pen, _oc_pen = get_enemy_aura_move_oc_penalties(self, game_map=game_map)
+                    if move_pen:
+                        mods.append(Modifier(ModifierOp.ADD, int(move_pen), source="aura:enemy_move_penalty"))
+                except Exception:
+                    pass
             try:
                 sr = getattr(self, "special_rules", None)
                 if isinstance(sr, dict) and sr.get("flickerjump_move_set_value"):
@@ -1043,7 +1049,7 @@ class Unit(
             if pg_value is not None:
                 mods.append(Modifier(ModifierOp.SET, int(pg_value), source="ability:psychic_guidance"))
 
-        return mods, scabrous_oc_floor, game_map
+        return mods, int(max(0, objective_control_floor)), game_map
 
     def get_effective_model_characteristic(self, model: Model, characteristic: str, *, game_map=None) -> int:
         """
@@ -1090,7 +1096,7 @@ class Unit(
             except Exception:
                 return 0
 
-        mods, scabrous_oc_floor, game_map = Unit._collect_characteristic_modifiers(
+        mods, objective_control_floor, game_map = Unit._collect_characteristic_modifiers(
             self,
             model,
             ckey,
@@ -1321,8 +1327,8 @@ class Unit(
 
         # Damage 0 exception handled at weapon level, not model level.
         final = apply_characteristic_caps(ckey, interim, base_raw=base_raw)
-        if scabrous_oc_floor and int(base_val) > 0 and final < 1:
-            final = 1
+        if ckey == "objective_control" and int(base_val) > 0 and int(objective_control_floor or 0) > 0:
+            final = max(int(final), int(objective_control_floor))
         if ckey == "save":
             try:
                 sr = getattr(self, "special_rules", None)
@@ -1912,7 +1918,7 @@ class Unit(
         re.IGNORECASE,
     )
     _BEARER_UNIT_INVULNERABLE_SAVE_RE = re.compile(
-        r"(?:models\s+in\s+)?the\s+bearer'?s\s+unit\s+(?:have|has)\s+(?:a|the)?\s*([1-6])\+?\s*invulnerable\s+save",
+        r"(?:models\s+in\s+)?(?:the\s+bearer'?s|that|this)\s+unit\s+(?:have|has)\s+(?:a|the)?\s*([1-6])\+?\s*invulnerable\s+save",
         re.IGNORECASE,
     )
     _UNIT_CONTAINS_INVULNERABLE_SAVE_RE = re.compile(
@@ -1972,7 +1978,7 @@ class Unit(
         re.IGNORECASE,
     )
     _BEARER_UNIT_DEEP_STRIKE_RE = re.compile(
-        r"models\s+in\s+(?:the\s+bearer'?s|that)\s+unit\s+have\s+the\s+deep\s+strike\s+ability",
+        r"models\s+in\s+(?:the\s+bearer'?s|that|this)\s+unit\s+have\s+the\s+deep\s+strike\s+ability",
         re.IGNORECASE,
     )
     _DEEP_STRIKE_AFFLICTED_DISTANCE_RE = re.compile(
