@@ -486,6 +486,9 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time a tyranids model with this hyper adaptation makes an attack that targets a monster or vehicle unit that attack has the lethal hits ability",
             r"each time a tyranids model with this hyper adaptation makes an attack that targets a character unit on a critical hit that attack has the precision ability",
         ),
+        "A Perfect Ambush": (
+            r"each time a genestealer cults unit from your army is set up on the battlefield as reinforcements until the end of your next fight phase weapons equipped by models in that unit have the sustained hits \d+ and ignores cover abilities",
+        ),
         "Relentless Rage": (
             r"each time a world eaters unit from your army makes a charge move until the end of the turn add \d+ to the attacks characteristic and add \d+ to the strength characteristic of melee weapons equipped by models in that unit",
         ),
@@ -1527,6 +1530,10 @@ def _ability_id_support_by_name() -> Dict[str, Tuple[str, str]]:
 
 def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
     raw = {
+        "A Perfect Ambush": (
+            "Supported",
+            "Host of Ascension: each time a GENESTEALER CULTS unit is set up as Reinforcements, its models' weapons gain [SUSTAINED HITS 1] and [IGNORES COVER] until the end of that player's next Fight phase.",
+        ),
         "Against All Odds": (
             "Supported",
             "Lions of the Emperor: non-vehicle ADEPTUS CUSTODES units gain +1 to hit and +1 to wound when no other friendly units are within 6\" (3D; attached units deduplicated).",

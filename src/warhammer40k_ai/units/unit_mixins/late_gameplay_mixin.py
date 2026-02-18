@@ -1673,7 +1673,11 @@ class LateGameplayMixin:
             army = self.get_parent_army()
             game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
             if game is not None and hasattr(game, "event_system"):
-                game.event_system.publish("unit_set_up", unit=self)
+                game.event_system.publish(
+                    "unit_set_up",
+                    unit=self,
+                    set_up_as_reinforcements=True,
+                )
         except Exception:
             pass
         return True

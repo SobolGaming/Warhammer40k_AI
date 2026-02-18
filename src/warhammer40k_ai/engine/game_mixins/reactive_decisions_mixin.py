@@ -4665,7 +4665,11 @@ class GameReactiveDecisionsMixin:
             self._mark_opponent_turn_destroyed_reposition_used(unit, turn_owner_id=turn_owner_id)
             try:
                 if hasattr(self, "event_system"):
-                    self.event_system.publish("unit_set_up", unit=unit)
+                    self.event_system.publish(
+                        "unit_set_up",
+                        unit=unit,
+                        set_up_as_reinforcements=False,
+                    )
             except Exception:
                 pass
             try:
