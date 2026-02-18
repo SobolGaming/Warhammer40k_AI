@@ -2971,6 +2971,7 @@ class AbilitySpecsMixin:
             - source: ability name
             - key: once-per-battle tracking key
             - value: int (invulnerable save)
+            - apply_to_unit: bool (if True, apply to all models in this model's unit)
         """
         if model is None:
             return []
@@ -2992,6 +2993,10 @@ class AbilitySpecsMixin:
             normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
             normalized = re.sub(r"\s+", " ", normalized).strip()
             m = self._START_ANY_PHASE_MODEL_INVULN_RE.fullmatch(normalized)
+            apply_to_unit = False
+            if not m:
+                m = self._START_ANY_PHASE_MODEL_UNIT_INVULN_RE.fullmatch(normalized)
+                apply_to_unit = bool(m)
             if not m:
                 continue
             try:
@@ -3007,7 +3012,14 @@ class AbilitySpecsMixin:
             if key_tuple in seen:
                 continue
             seen.add(key_tuple)
-            specs.append({"source": source, "key": key, "value": int(invuln)})
+            specs.append(
+                {
+                    "source": source,
+                    "key": key,
+                    "value": int(invuln),
+                    "apply_to_unit": bool(apply_to_unit),
+                }
+            )
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}

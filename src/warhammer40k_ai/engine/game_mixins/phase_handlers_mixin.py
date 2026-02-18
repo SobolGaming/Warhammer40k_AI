@@ -195,6 +195,7 @@ class GamePhaseHandlersMixin:
                             model_id = maybe_entity_id(model)
                             ability_name = str(spec.get("source", "") or "Start of phase invulnerable save").strip()
                             invuln = int(spec.get("value", 0) or 0)
+                            apply_to_unit = bool(spec.get("apply_to_unit", False))
                             if invuln <= 0:
                                 continue
                             ctx = {
@@ -206,18 +207,28 @@ class GamePhaseHandlersMixin:
                                 "model_id": model_id,
                                 "buff_key": key,
                                 "invuln": invuln,
+                                "apply_to_unit": bool(apply_to_unit),
                             }
-                            message = (
-                                f"Activate {ability_name} for {getattr(model, 'name', 'Model')} "
-                                f"({getattr(root, 'name', 'Unit')})?"
-                            )
+                            if apply_to_unit:
+                                message = f"Activate {ability_name} for {getattr(root, 'name', 'Unit')}?"
+                            else:
+                                message = (
+                                    f"Activate {ability_name} for {getattr(model, 'name', 'Model')} "
+                                    f"({getattr(root, 'name', 'Unit')})?"
+                                )
                             self._queue_optional_ability_confirmation(
                                 player=p,
                                 ability_key="start_any_phase_invulnerable_save",
                                 ability_name=ability_name,
                                 message=message,
                                 context=ctx,
-                                payload={"unit_id": unit_id, "model_id": model_id, "buff_key": key, "invuln": invuln},
+                                payload={
+                                    "unit_id": unit_id,
+                                    "model_id": model_id,
+                                    "buff_key": key,
+                                    "invuln": invuln,
+                                    "apply_to_unit": bool(apply_to_unit),
+                                },
                                 instance_key=f"{model_id}:{key}",
                             )
 

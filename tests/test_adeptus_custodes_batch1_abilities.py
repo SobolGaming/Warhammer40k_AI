@@ -205,6 +205,45 @@ class TestAdeptusCustodesBatch1Abilities(unittest.TestCase):
         buff_key = str(request.context.get("buff_key") or "")
         self.assertTrue(model.has_used_once_per_battle(buff_key))
 
+    def test_start_any_phase_invulnerable_save_applies_to_models_in_unit(self):
+        game, player, _enemy = self._make_game()
+        game.phase = BattleRoundPhases.MOVEMENT_PHASE
+        game.current_player_index = 0
+
+        ability_desc = (
+            "Once per battle, at the start of any phase, this model can use this ability. "
+            "If it does, until the end of the phase, all models in this model's unit have a 4+ invulnerable save."
+        )
+        ability = Ability("Defend the Divine Work", "AM", ability_desc, "Datasheet", "")
+        unit = self._make_unit("Tech-priest Manipulus", player.army)
+        source_model = self._make_model("Manipulus", unit)
+        source_model.abilities = {"Defend the Divine Work": ability}
+        bodyguard_model = self._make_model("Bodyguard", unit)
+        bodyguard_model.abilities = {}
+        unit.models = [source_model, bodyguard_model]
+        player.army.units = [unit]
+
+        game.rebuild_entity_registry()
+        game._on_phase_start_optional_abilities(phase=game.phase)
+
+        pending = [req for req in game.decision_queue.list() if req.decision_type == DECISION_CONFIRM_YES_NO]
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        self._resolve_yes(game, request, player)
+
+        source_invuln, _ = source_model.get_temporary_invulnerable_save()
+        bodyguard_invuln, _ = bodyguard_model.get_temporary_invulnerable_save()
+        self.assertEqual(int(source_invuln or 0), 4)
+        self.assertEqual(int(bodyguard_invuln or 0), 4)
+
+        buff_key = str(request.context.get("buff_key") or "")
+        self.assertTrue(source_model.has_used_once_per_battle(buff_key))
+        self.assertFalse(bodyguard_model.has_used_once_per_battle(buff_key))
+
+        game._on_phase_start_optional_abilities(phase=game.phase)
+        pending_again = [req for req in game.decision_queue.list() if req.decision_type == DECISION_CONFIRM_YES_NO]
+        self.assertEqual(len(pending_again), 0)
+
     def test_martial_inspiration_consumes_once_per_battle(self):
         game, player, enemy = self._make_game()
         game.current_player_index = 0

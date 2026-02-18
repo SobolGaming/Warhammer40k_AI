@@ -2834,6 +2834,11 @@ class Unit(
         r"this model has a (?P<invuln>\d+) invulnerable save",
         re.IGNORECASE,
     )
+    _START_ANY_PHASE_MODEL_UNIT_INVULN_RE = re.compile(
+        r"once per battle at the start of any phase this model can use this ability if it does until the end of the phase "
+        r"all models in this model s unit have a (?P<invuln>\d+) invulnerable save",
+        re.IGNORECASE,
+    )
     _START_ANY_PHASE_UNIT_FNP_RE = re.compile(
         r"once per battle at the start of any phase this unit can use this ability if it does until the end of the phase "
         r"models in this unit have the feel no pain (?P<val>\d+)(?: ability)?",

@@ -3984,7 +3984,30 @@ class GameReactiveDecisionsMixin:
                 phase_name = str(ctx.get("phase", "") or "").strip().upper()
             if not phase_name:
                 phase_name = "FIGHT_PHASE"
-            if hasattr(model, "set_temporary_invulnerable_save"):
+            apply_to_unit = bool(payload.get("apply_to_unit", ctx.get("apply_to_unit", False)))
+            if apply_to_unit:
+                unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+                source_unit = self._resolve_unit_by_id(unit_id) if unit_id else None
+                if source_unit is None:
+                    source_unit = getattr(model, "parent_unit", None)
+                get_root = getattr(source_unit, "get_attached_unit_root", None) if source_unit is not None else None
+                root = get_root() if callable(get_root) else source_unit
+                if root is None:
+                    return
+                get_models = getattr(root, "get_attached_unit_models", None)
+                target_models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+                effect_key = f"{key}:{model_id}" if model_id else key
+                for target_model in list(target_models or []):
+                    if target_model is None or not getattr(target_model, "is_alive", True):
+                        continue
+                    if hasattr(target_model, "set_temporary_invulnerable_save"):
+                        target_model.set_temporary_invulnerable_save(
+                            key=effect_key,
+                            value=int(invuln),
+                            source=ability_name,
+                            expires_phase=phase_name,
+                        )
+            elif hasattr(model, "set_temporary_invulnerable_save"):
                 model.set_temporary_invulnerable_save(
                     key=key,
                     value=int(invuln),
