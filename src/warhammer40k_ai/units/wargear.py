@@ -3089,6 +3089,19 @@ class WargearProfile:
             # If no leaders or no enhancement, fall through.
         return out
 
+    def _temporary_weapon_lookup_name(self) -> str:
+        """
+        Return the most specific lookup name for temporary weapon bonuses.
+
+        For multi-profile weapons this prefers "<weapon> - <profile>" so profile-specific
+        bonuses can be targeted independently, while generic "<weapon>" bonuses still match.
+        """
+        parent_name = str(getattr(getattr(self, "parent_wargear", None), "name", "") or "").strip()
+        profile_name = str(getattr(self, "name", "") or "").strip()
+        if parent_name and profile_name and profile_name.lower() != "default":
+            return f"{parent_name} - {profile_name}"
+        return parent_name or profile_name
+
     def _resolve_attack_count(
         self,
         target: 'Unit',
@@ -3106,11 +3119,7 @@ class WargearProfile:
     ) -> AttackCountInfo:
         if attacks_override is None:
             try:
-                weapon_name = ""
-                if getattr(self, "parent_wargear", None) is not None:
-                    weapon_name = str(getattr(self.parent_wargear, "name", "") or "")
-                if not weapon_name:
-                    weapon_name = str(getattr(self, "name", "") or "")
+                weapon_name = self._temporary_weapon_lookup_name()
                 if weapon_name:
                     override_val, override_source = getattr(attacker, "get_temporary_weapon_attacks_override", lambda _n: (0, ""))(
                         weapon_name
@@ -3589,9 +3598,10 @@ class WargearProfile:
             pass
 
         try:
-            if self.parent_wargear:
+            weapon_lookup_name = self._temporary_weapon_lookup_name()
+            if weapon_lookup_name:
                 bonus, reasons = getattr(attacker, "get_temporary_weapon_attacks_bonus", lambda _n: (0, []))(
-                    getattr(self.parent_wargear, "name", "")
+                    weapon_lookup_name
                 )
                 if bonus:
                     atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="ability:temporary_weapon_attacks_add"))
@@ -3599,7 +3609,7 @@ class WargearProfile:
                         attack_result.attacks_special_modifiers.extend(list(reasons))
                     else:
                         attack_result.attacks_special_modifiers.append(
-                            f"Ability +{bonus}A ({getattr(self.parent_wargear, 'name', 'weapon')}) [temporary]"
+                            f"Ability +{bonus}A ({weapon_lookup_name}) [temporary]"
                         )
         except Exception:
             pass

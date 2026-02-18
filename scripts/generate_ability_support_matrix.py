@@ -3177,6 +3177,7 @@ def _classify_ability_base(
     advance_no_roll_support = _advance_no_roll_fixed_distance_support(description)
     movement_ignore_vertical_support = _movement_ignore_vertical_distance_support(description)
     charge_move_devastating_support = _charge_move_devastating_wounds_support(description)
+    charge_move_profile_attacks_support = _charge_move_model_weapon_profile_attacks_bonus_support(description)
     defensive_charge_roll_penalty_support = _defensive_charge_roll_penalty_support(description)
     phase_move_support = _leading_unit_phase_move_support(description)
     phase_terrain_support = _leading_unit_move_and_phase_terrain_support(description)
@@ -3375,6 +3376,8 @@ def _classify_ability_base(
         return movement_ignore_vertical_support
     if charge_move_devastating_support:
         return charge_move_devastating_support
+    if charge_move_profile_attacks_support:
+        return charge_move_profile_attacks_support
     if defensive_charge_roll_penalty_support:
         return defensive_charge_roll_penalty_support
     if phase_move_support:
@@ -7649,6 +7652,40 @@ def _charge_move_devastating_wounds_support(description: str) -> Optional[Tuple[
         if re.fullmatch(pattern, norm):
             return ("Supported", "On charge: unit melee weapons gain Devastating Wounds until end of turn.")
     return None
+
+
+def _charge_move_model_weapon_profile_attacks_bonus_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time this model makes a charge move until the end of the turn add (?P<strike>\d+) "
+        r"to the attacks characteristic of (?:this model s|this models|its) (?P<weapon1>[a-z0-9 ]+?) strike profile "
+        r"and add (?P<sweep>\d+) to the attacks characteristic of (?:this model s|this models|its) "
+        r"(?P<weapon2>[a-z0-9 ]+?) sweep profile"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    try:
+        strike_bonus = int(m.group("strike") or 0)
+    except Exception:
+        strike_bonus = 0
+    try:
+        sweep_bonus = int(m.group("sweep") or 0)
+    except Exception:
+        sweep_bonus = 0
+    if strike_bonus <= 0 and sweep_bonus <= 0:
+        return None
+    weapon1 = str(m.group("weapon1") or "").strip()
+    weapon2 = str(m.group("weapon2") or "").strip()
+    weapon = weapon1 or weapon2 or "weapon"
+    return (
+        "Supported",
+        f"On charge: this model gains +{strike_bonus} Attacks on {weapon} strike profile and +{sweep_bonus} on {weapon} sweep profile until end of turn.",
+    )
 
 
 def _defensive_charge_roll_penalty_support(description: str) -> Optional[Tuple[str, str]]:

@@ -8536,6 +8536,87 @@ class ActionsMovementMixin:
                         applied = True
         return applied
 
+    def _apply_charge_move_model_weapon_profile_attacks_bonuses(self) -> bool:
+        """
+        Apply temporary model-only weapon-profile Attacks bonuses when the unit completes a charge move.
+
+        Supports rules like:
+          "Each time this model makes a Charge move, until the end of the turn, add 1 to the Attacks
+           characteristic of this model's <weapon> - strike profile, and add 2 ... - sweep profile."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        applied = False
+        for unit in members:
+            if unit is None:
+                continue
+            for model in list(getattr(unit, "models", []) or []):
+                if model is None or not getattr(model, "is_alive", True):
+                    continue
+                for name, desc in unit._iter_model_specific_ability_entries(model):
+                    text_src = desc or name or ""
+                    if not text_src:
+                        continue
+                    text_src = unit._strip_eligibility_prefix(text_src)
+                    normalized = unit._normalize_rules_text(text_src)
+                    normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                    normalized = normalized.lower()
+                    normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                    normalized = re.sub(r"\s+", " ", normalized).strip()
+                    m = self._CHARGE_MOVE_MODEL_WEAPON_PROFILE_ATTACKS_BONUS_RE.fullmatch(normalized)
+                    if not m:
+                        continue
+                    try:
+                        strike_bonus = int(m.group("strike") or 0)
+                    except Exception:
+                        strike_bonus = 0
+                    try:
+                        sweep_bonus = int(m.group("sweep") or 0)
+                    except Exception:
+                        sweep_bonus = 0
+                    weapon1_raw = str(m.group("weapon1") or "").strip()
+                    weapon2_raw = str(m.group("weapon2") or "").strip()
+                    weapon_base = weapon1_raw or weapon2_raw
+                    if weapon1_raw and weapon2_raw:
+                        w1_key = unit._normalize_keyword_phrase(weapon1_raw)
+                        w2_key = unit._normalize_keyword_phrase(weapon2_raw)
+                        if w1_key and w2_key and w1_key == w2_key:
+                            weapon_base = weapon1_raw
+                    weapon_base = str(weapon_base or "").strip()
+                    if not weapon_base:
+                        continue
+                    source = str(name or "Charge move ability").strip() or "Charge move ability"
+                    source_key = unit._normalize_keyword_phrase(source) or source.lower()
+                    model_id = str(get_entity_id(model) or "")
+                    if strike_bonus > 0:
+                        model.set_temporary_weapon_bonus(
+                            key=f"charge_move_profile_attacks:{model_id}:{source_key}:{weapon_base}:strike",
+                            weapon_name=f"{weapon_base} strike profile",
+                            attacks_bonus=int(strike_bonus),
+                            source=source,
+                            expires_phase="FIGHT_PHASE",
+                        )
+                        applied = True
+                    if sweep_bonus > 0:
+                        model.set_temporary_weapon_bonus(
+                            key=f"charge_move_profile_attacks:{model_id}:{source_key}:{weapon_base}:sweep",
+                            weapon_name=f"{weapon_base} sweep profile",
+                            attacks_bonus=int(sweep_bonus),
+                            source=source,
+                            expires_phase="FIGHT_PHASE",
+                        )
+                        applied = True
+        return applied
+
     def unit_charge_end_weapon_keyword_bonus_specs(self) -> list[dict]:
         """
         Return specs for charge-end weapon keyword bonuses (e.g., granting DEVASTATING WOUNDS).
