@@ -2999,6 +2999,30 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "After this model shoots, select a hit enemy unit; disembarked models from this transport gain +1 to Hit and +1 to Wound with Psychic attacks against that target this phase.",
         ),
+        ("QI", "Paladin's Duty (Bondsman)"): (
+            "Supported",
+            "Bondsman effect: affected models gain [LETHAL HITS], and their melee weapons gain [LANCE].",
+        ),
+        ("QI", "Warden's Duty (Bondsman)"): (
+            "Supported",
+            "Bondsman effect: affected models gain [SUSTAINED HITS 1], and their ranged weapons gain [IGNORES COVER].",
+        ),
+        ("QI", "Mentor (Bondsman)"): (
+            "Supported",
+            "Bondsman effect: affected models can re-roll Wound rolls against the Bondsman source model's quarry.",
+        ),
+        ("QI", "Gallant's Duty (Bondsman)"): (
+            "Supported",
+            "Bondsman effect: affected models can re-roll Charge rolls, and can re-roll Hit rolls for melee attacks.",
+        ),
+        ("QI", "Defender's Duty (Bondsman)"): (
+            "Supported",
+            "Bondsman effect: when an attack is allocated to an affected model, subtract 1 from the attack's Damage characteristic.",
+        ),
+        ("QI", "Crusader's Duty (Bondsman)"): (
+            "Supported",
+            "Bondsman effect: affected models add 1 to Hit rolls for ranged attacks.",
+        ),
         ("QI", "USING SIR HEKHTUR"): (
             "Supported",
             "When Canis Rex is destroyed, Sir Hekhtur is spawned and must Emergency Disembark as if from a destroyed Transport; Sir Hekhtur can only be targeted by Core Stratagems; Canis Rex unit-destroyed handling is deferred until Sir Hekhtur is destroyed.",

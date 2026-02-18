@@ -2,7 +2,7 @@ from __future__ import annotations
 
 
 from ..utility.ability_support import ABILITY_BONDSMAN, army_has_ability_id
-from ..utility.entity_ids import get_entity_id
+from ..utility.entity_ids import get_entity_id, maybe_entity_id
 
 
 _BONDSMAN_EFFECTS = {
@@ -115,10 +115,43 @@ class BondsmanManager:
                     effects[eff_key] = max(int(value), int(effects.get(eff_key, 0) or 0))
         return effects
 
+    def _quarry_ids_for_unit(self, unit) -> set[str]:
+        if unit is None:
+            return set()
+        quarry_ids: set[str] = set()
+        for attr_name in (
+            "_bondsman_quarry_ids",
+            "_exemplar_of_the_code_quarry_ids",
+            "_monarch_of_the_hunt_quarry_ids",
+        ):
+            values = getattr(unit, attr_name, None)
+            if not isinstance(values, (set, list, tuple)):
+                continue
+            for value in values:
+                token = str(value or "").strip()
+                if token:
+                    quarry_ids.add(token)
+        sr = getattr(unit, "special_rules", None)
+        if isinstance(sr, dict):
+            values = sr.get("bondsman_quarry_ids")
+            if isinstance(values, (set, list, tuple)):
+                for value in values:
+                    token = str(value or "").strip()
+                    if token:
+                        quarry_ids.add(token)
+        return quarry_ids
+
     def clear_bondsman_effects(self) -> None:
         if self.army is None:
             return
         for unit in list(getattr(self.army, "units", []) or []):
+            for attr_name in (
+                "_bondsman_quarry_ids",
+                "_bondsman_quarry_name",
+                "_bondsman_quarry_source_unit_id",
+            ):
+                if hasattr(unit, attr_name):
+                    delattr(unit, attr_name)
             sr = getattr(unit, "special_rules", None)
             if not isinstance(sr, dict) or not sr:
                 continue
@@ -186,6 +219,9 @@ class BondsmanManager:
             sr = {}
         sr["bondsman_active"] = True
         sr["bondsman_source_name"] = str(getattr(source_unit, "name", "") or "")
+        source_unit_id = maybe_entity_id(source_unit)
+        if source_unit_id:
+            sr["bondsman_source_unit_id"] = str(source_unit_id)
         sr["bondsman_ability_names"] = list(self._bondsman_ability_names(source_unit))
         if effects.get("lethal_hits"):
             sr["bondsman_lethal_hits"] = True
@@ -221,6 +257,16 @@ class BondsmanManager:
             sr["bondsman_styrix_battleshock"] = True
         if effects.get("reroll_wound_vs_quarry"):
             sr["bondsman_reroll_wound_vs_quarry"] = True
+            quarry_ids = self._quarry_ids_for_unit(source_unit)
+            if quarry_ids:
+                setattr(target_unit, "_bondsman_quarry_ids", set(quarry_ids))
+                sr["bondsman_quarry_ids"] = sorted(quarry_ids)
+                if source_unit_id:
+                    setattr(target_unit, "_bondsman_quarry_source_unit_id", str(source_unit_id))
+                quarry_name = str(getattr(source_unit, "_bondsman_quarry_name", "") or "").strip()
+                if quarry_name:
+                    setattr(target_unit, "_bondsman_quarry_name", quarry_name)
+                    sr["bondsman_quarry_name"] = quarry_name
         if effects.get("damage_reduction"):
             sr["bondsman_damage_reduction"] = int(effects.get("damage_reduction", 1) or 1)
         target_unit.special_rules = sr

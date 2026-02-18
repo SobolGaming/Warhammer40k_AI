@@ -12372,17 +12372,63 @@ class WargearProfile:
                 unit = attacker.parent_unit
                 sr = getattr(unit, "special_rules", None)
                 if isinstance(sr, dict) and sr.get("bondsman_reroll_wound_vs_quarry"):
-                    quarry_ids = getattr(unit, "_bondsman_quarry_ids", None)
+                    quarry_ids: set[str] = set()
+                    for attr_name in ("_bondsman_quarry_ids", "_monarch_of_the_hunt_quarry_ids"):
+                        values = getattr(unit, attr_name, None)
+                        if not isinstance(values, (set, list, tuple)):
+                            continue
+                        for value in values:
+                            token = str(value or "").strip()
+                            if token:
+                                quarry_ids.add(token)
+                    stored_quarry_ids = sr.get("bondsman_quarry_ids") if isinstance(sr, dict) else None
+                    if isinstance(stored_quarry_ids, (set, list, tuple)):
+                        for value in stored_quarry_ids:
+                            token = str(value or "").strip()
+                            if token:
+                                quarry_ids.add(token)
                     if not quarry_ids:
-                        quarry_ids = getattr(unit, "_monarch_of_the_hunt_quarry_ids", None)
+                        source_unit_id = str(sr.get("bondsman_source_unit_id", "") or "").strip()
+                        if source_unit_id:
+                            source_unit = None
+                            try:
+                                army = unit.get_parent_army()
+                            except Exception:
+                                army = None
+                            if army is not None:
+                                for candidate in list(getattr(army, "units", []) or []):
+                                    candidate_id = str(getattr(candidate, "_id", None) or getattr(candidate, "id", None) or "").strip()
+                                    if candidate_id == source_unit_id:
+                                        source_unit = candidate
+                                        break
+                            if source_unit is not None:
+                                for attr_name in (
+                                    "_bondsman_quarry_ids",
+                                    "_exemplar_of_the_code_quarry_ids",
+                                    "_monarch_of_the_hunt_quarry_ids",
+                                ):
+                                    values = getattr(source_unit, attr_name, None)
+                                    if not isinstance(values, (set, list, tuple)):
+                                        continue
+                                    for value in values:
+                                        token = str(value or "").strip()
+                                        if token:
+                                            quarry_ids.add(token)
+                                source_sr = getattr(source_unit, "special_rules", None)
+                                source_stored = source_sr.get("bondsman_quarry_ids") if isinstance(source_sr, dict) else None
+                                if isinstance(source_stored, (set, list, tuple)):
+                                    for value in source_stored:
+                                        token = str(value or "").strip()
+                                        if token:
+                                            quarry_ids.add(token)
                     if quarry_ids:
                         try:
-                            tid = getattr(target, "_id", None)
-                            rid = getattr(target.get_attached_unit_root(), "_id", None)
+                            tid = str(getattr(target, "_id", None) or "")
+                            rid = str(getattr(target.get_attached_unit_root(), "_id", None) or "")
                         except Exception:
-                            tid = getattr(target, "_id", None)
-                            rid = None
-                        is_quarry = (tid in quarry_ids) or (rid in quarry_ids)
+                            tid = str(getattr(target, "_id", None) or "")
+                            rid = ""
+                        is_quarry = bool((tid and tid in quarry_ids) or (rid and rid in quarry_ids))
                         if is_quarry:
                             needed = 0
                             try:
