@@ -5291,6 +5291,14 @@ def _defensive_strength_gt_toughness_wound_penalty_support(description: str) -> 
 def _model_attack_roll_bonus_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
+    norm = _norm_rules_text(description)
+    m = re.fullmatch(
+        r"each time this model makes a ranged attack that targets the closest (?:eligible )?(?:enemy )?(?:target|unit) add (?P<val>\d+) to the hit roll",
+        norm,
+    )
+    if m:
+        val = str(m.group("val") or "1")
+        return ("Supported", f"Model ranged attacks gain +{val} to hit when targeting the closest eligible target.")
     chunks, remaining = _split_attack_roll_chunks(description)
     if not chunks or remaining:
         return None

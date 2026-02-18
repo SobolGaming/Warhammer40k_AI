@@ -4048,6 +4048,51 @@ class KeywordsDetachmentsMixin:
         self._ability_cache[cache_key] = rule
         return rule
 
+    def get_closest_eligible_hit_bonus_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "Each time this model makes a ranged attack that targets the closest eligible target, add 1 to the Hit roll."
+        """
+        if model is None:
+            return None
+        cache_key = f"closest_eligible_hit_bonus_rule:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        rule = None
+        try:
+            for name, desc in self._iter_model_specific_ability_entries(model):
+                text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
+                if not text:
+                    continue
+                low = text.lower()
+                if "ranged attack" not in low:
+                    continue
+                if not re.search(r"closest\s+(?:eligible\s+)?(?:enemy\s+)?(?:target|unit)", low):
+                    continue
+                m = re.search(r"add\s+(\d+)\s+to\s+the\s+hit\s+roll", low)
+                if not m:
+                    continue
+                try:
+                    bonus = int(m.group(1) or 0)
+                except Exception:
+                    bonus = 0
+                if bonus <= 0:
+                    continue
+                source = str(name or "Closest eligible target").strip() or "Closest eligible target"
+                rule = {
+                    "hit_bonus": int(bonus),
+                    "source": source,
+                }
+                break
+        except Exception:
+            rule = None
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = rule
+        return rule
+
     def get_closest_monster_vehicle_reroll_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
         """
         Return rule info for abilities like:

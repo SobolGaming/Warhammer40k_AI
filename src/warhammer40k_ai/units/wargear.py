@@ -4125,6 +4125,25 @@ class WargearProfile:
                                 closest_enemy_hit_reroll_rule = rule
         except Exception:
             closest_enemy_hit_reroll_rule = None
+        closest_eligible_hit_bonus_rule = None
+        try:
+            is_ranged = bool(getattr(getattr(self, "parent_wargear", None), "is_ranged", lambda: False)())
+            if is_ranged:
+                unit = getattr(attacker, "parent_unit", None)
+                if unit is not None and getattr(unit, "get_closest_eligible_hit_bonus_rule", None):
+                    rule = unit.get_closest_eligible_hit_bonus_rule(attacker)
+                    if rule:
+                        gm = game_map
+                        if gm is None:
+                            try:
+                                gm = unit.get_parent_army().player.game.map
+                            except Exception:
+                                gm = None
+                        if gm is not None and getattr(unit, "is_target_closest_eligible", None):
+                            if unit.is_target_closest_eligible(attacker, self, target, gm):
+                                closest_eligible_hit_bonus_rule = rule
+        except Exception:
+            closest_eligible_hit_bonus_rule = None
         closest_enemy_wound_reroll_rule = None
         try:
             is_ranged = bool(getattr(getattr(self, "parent_wargear", None), "is_ranged", lambda: False)())
@@ -4398,6 +4417,8 @@ class WargearProfile:
                 attack_instance["furious_onslaught_applies"] = True
             if closest_enemy_hit_reroll_rule:
                 attack_instance["closest_enemy_hit_reroll_rule"] = closest_enemy_hit_reroll_rule
+            if closest_eligible_hit_bonus_rule:
+                attack_instance["closest_eligible_hit_bonus_rule"] = closest_eligible_hit_bonus_rule
             if closest_enemy_wound_reroll_rule:
                 attack_instance["closest_enemy_wound_reroll_rule"] = closest_enemy_wound_reroll_rule
             if closest_monster_vehicle_rule:
@@ -4443,6 +4464,8 @@ class WargearProfile:
                             extra_instance["furious_onslaught_applies"] = True
                         if closest_enemy_hit_reroll_rule:
                             extra_instance["closest_enemy_hit_reroll_rule"] = closest_enemy_hit_reroll_rule
+                        if closest_eligible_hit_bonus_rule:
+                            extra_instance["closest_eligible_hit_bonus_rule"] = closest_eligible_hit_bonus_rule
                         if closest_enemy_wound_reroll_rule:
                             extra_instance["closest_enemy_wound_reroll_rule"] = closest_enemy_wound_reroll_rule
                         if closest_monster_vehicle_rule:
@@ -7529,6 +7552,17 @@ class WargearProfile:
                         _add_hit_mod(bonus, "+1 to hit from Bondsman (Crusader's Duty)")
                 if is_ranged and sr.get("bondsman_ignores_cover_ranged"):
                     attack_instance["ignores_cover"] = True
+        except Exception:
+            pass
+
+        # Closest eligible target: model ranged attacks gain +N to hit.
+        try:
+            rule = attack_instance.get("closest_eligible_hit_bonus_rule")
+            if isinstance(rule, dict):
+                bonus = int(rule.get("hit_bonus", 0) or 0)
+                if bonus:
+                    source = str(rule.get("source", "") or "Closest eligible target").strip() or "Closest eligible target"
+                    _add_hit_mod(bonus, f"+{bonus} to hit from {source}")
         except Exception:
             pass
 
