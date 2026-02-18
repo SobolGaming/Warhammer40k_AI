@@ -2567,6 +2567,29 @@ class WargearProfile:
         except Exception:
             pass
         try:
+            if self.parent_wargear and self.parent_wargear.is_ranged() and target is not None:
+                unit = getattr(attacker, "parent_unit", None)
+                get_rule = getattr(unit, "get_closest_eligible_ap_bonus_rule", None) if unit is not None else None
+                if callable(get_rule):
+                    rule = get_rule(attacker)
+                else:
+                    rule = None
+                if isinstance(rule, dict):
+                    try:
+                        bonus = int(rule.get("ap_bonus", 0) or 0)
+                    except Exception:
+                        bonus = 0
+                    if bonus > 0:
+                        game_map = self._get_game_map_from_model(attacker)
+                        if (
+                            game_map is not None
+                            and callable(getattr(unit, "is_target_closest_eligible", None))
+                            and unit.is_target_closest_eligible(attacker, self, target, game_map)
+                        ):
+                            ap_val -= int(bonus)
+        except Exception:
+            pass
+        try:
             if self.parent_wargear and self.parent_wargear.is_melee():
                 unit = getattr(attacker, "parent_unit", None)
                 get_rule = getattr(unit, "get_melee_target_excluding_keywords_ap_bonus_rule", None) if unit is not None else None

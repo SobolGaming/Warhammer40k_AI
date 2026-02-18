@@ -4093,6 +4093,65 @@ class KeywordsDetachmentsMixin:
         self._ability_cache[cache_key] = rule
         return rule
 
+    def get_closest_eligible_ap_bonus_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "Each time this model makes a ranged attack that targets the closest eligible target,
+         improve the Armour Penetration characteristic of that attack by 1."
+        """
+        if model is None:
+            return None
+        cache_key = f"closest_eligible_ap_bonus_rule:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        rule = None
+        try:
+            for name, desc in self._iter_model_specific_ability_entries(model):
+                text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
+                if not text:
+                    continue
+                low = text.lower().replace("\u2019", "'")
+                if "ranged attack" not in low:
+                    continue
+                if not re.search(r"closest\s+(?:eligible\s+)?(?:enemy\s+)?(?:target|unit)", low):
+                    continue
+                if "armour penetration" not in low and "armor penetration" not in low:
+                    continue
+                if "characteristic" not in low:
+                    continue
+                m = re.search(
+                    r"improve\s+the\s+(?:armour|armor)\s+penetration\s+characteristic\s+of\s+that\s+attack\s+by\s+(\d+)",
+                    low,
+                )
+                if not m:
+                    m = re.search(
+                        r"add\s+(\d+)\s+to\s+the\s+(?:armour|armor)\s+penetration\s+characteristic\s+of\s+that\s+attack",
+                        low,
+                    )
+                if not m:
+                    continue
+                try:
+                    ap_bonus = int(m.group(1) or 0)
+                except Exception:
+                    ap_bonus = 0
+                if ap_bonus <= 0:
+                    continue
+                source = str(name or "Closest eligible target").strip() or "Closest eligible target"
+                rule = {
+                    "attack_type": "ranged",
+                    "ap_bonus": int(ap_bonus),
+                    "source": source,
+                }
+                break
+        except Exception:
+            rule = None
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = rule
+        return rule
+
     def get_closest_monster_vehicle_reroll_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
         """
         Return rule info for abilities like:

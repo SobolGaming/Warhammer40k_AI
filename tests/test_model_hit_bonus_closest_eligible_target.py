@@ -155,6 +155,96 @@ class TestModelHitBonusClosestEligibleTarget(unittest.TestCase):
         self.assertEqual(int(hit.get("final_needed", 0)), 3)
         self.assertNotIn("+1 to hit from Aggressive Assault", hit.get("modifiers", []))
 
+    def test_model_ranged_ap_bonus_applies_vs_closest_eligible_target(self):
+        from warhammer40k_ai.units.wargear import WargearProfile
+
+        ability = {
+            "name": "Seasoned Noble",
+            "description": (
+                "Each time this model makes a ranged attack that targets the closest eligible target, "
+                "improve the Armour Penetration characteristic of that attack by 1."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, army2 = _build_game()
+        attacker = _make_unit("Attacker", abilities=[ability], faction_name="Imperial Knights")
+        close_target = _make_unit("Close Target")
+        far_target = _make_unit("Far Target")
+        army1.add_unit(attacker)
+        army2.add_unit(close_target)
+        army2.add_unit(far_target)
+
+        attacker.deployed = True
+        close_target.deployed = True
+        far_target.deployed = True
+        attacker.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        close_target.models[0].set_location(10.0, 0.0, 0.0, 0.0)
+        far_target.models[0].set_location(20.0, 0.0, 0.0, 0.0)
+        game.map.units = [attacker, close_target, far_target]
+
+        parent = SimpleNamespace(name="Test Gun", is_melee=lambda: False, is_ranged=lambda: True)
+        profile = WargearProfile(
+            profile_name="Ranged",
+            wargear_data={
+                "range": "24",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "4",
+                "AP": "0",
+                "D": "1",
+                "description": "",
+            },
+            parent_wargear=parent,
+        )
+
+        self.assertEqual(profile.get_effective_ap(attacker.models[0], close_target), -1)
+
+    def test_model_ranged_ap_bonus_not_applied_vs_non_closest_target(self):
+        from warhammer40k_ai.units.wargear import WargearProfile
+
+        ability = {
+            "name": "Seasoned Noble",
+            "description": (
+                "Each time this model makes a ranged attack that targets the closest eligible target, "
+                "improve the Armour Penetration characteristic of that attack by 1."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, army2 = _build_game()
+        attacker = _make_unit("Attacker", abilities=[ability], faction_name="Imperial Knights")
+        close_target = _make_unit("Close Target")
+        far_target = _make_unit("Far Target")
+        army1.add_unit(attacker)
+        army2.add_unit(close_target)
+        army2.add_unit(far_target)
+
+        attacker.deployed = True
+        close_target.deployed = True
+        far_target.deployed = True
+        attacker.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        close_target.models[0].set_location(10.0, 0.0, 0.0, 0.0)
+        far_target.models[0].set_location(20.0, 0.0, 0.0, 0.0)
+        game.map.units = [attacker, close_target, far_target]
+
+        parent = SimpleNamespace(name="Test Gun", is_melee=lambda: False, is_ranged=lambda: True)
+        profile = WargearProfile(
+            profile_name="Ranged",
+            wargear_data={
+                "range": "24",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "4",
+                "AP": "0",
+                "D": "1",
+                "description": "",
+            },
+            parent_wargear=parent,
+        )
+
+        self.assertEqual(profile.get_effective_ap(attacker.models[0], far_target), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
