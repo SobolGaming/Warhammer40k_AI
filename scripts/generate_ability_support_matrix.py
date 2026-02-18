@@ -3007,6 +3007,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Bondsman effect: affected models gain [SUSTAINED HITS 1], and their ranged weapons gain [IGNORES COVER].",
         ),
+        ("QI", "Errant's Duty (Bondsman)"): (
+            "Supported",
+            "Bondsman effect: affected models can re-roll Advance rolls, and their ranged weapons gain [ASSAULT].",
+        ),
         ("QI", "Mentor (Bondsman)"): (
             "Supported",
             "Bondsman effect: affected models can re-roll Wound rolls against the Bondsman source model's quarry.",

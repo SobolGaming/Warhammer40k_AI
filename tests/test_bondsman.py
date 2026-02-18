@@ -126,6 +126,27 @@ class TestBondsman(unittest.TestCase):
         self.assertTrue(bool(attack_instance.get("ignores_cover")))
         self.assertGreater(int(attack_instance.get("sustained_hit", 0) or 0), 0)
 
+    def test_errants_duty_grants_advance_reroll_and_assault_ranged(self):
+        from warhammer40k_ai.rules.bondsman import BondsmanManager
+        from warhammer40k_ai.units.unit import Unit
+
+        source_unit = SimpleNamespace(
+            name="Knight Errant",
+            possible_abilities=["Errant's Duty (Bondsman)"],
+            abilities=[],
+        )
+        target_unit = self._make_unit("Armiger")
+
+        mgr = BondsmanManager()
+        self.assertTrue(mgr.apply_bondsman_effects(source_unit, target_unit))
+        self.assertTrue(target_unit.special_rules.get("bondsman_reroll_advance"))
+        self.assertTrue(target_unit.special_rules.get("bondsman_assault_ranged"))
+
+        self.assertTrue(Unit.can_reroll_advance_roll(target_unit))
+
+        ranged_profile = self._make_profile(kind="ranged")
+        self.assertTrue(Unit.can_shoot_after_advance(target_unit, ranged_profile))
+
     def test_gallants_duty_grants_charge_reroll_and_melee_hit_reroll(self):
         from warhammer40k_ai.rules.bondsman import BondsmanManager
 
