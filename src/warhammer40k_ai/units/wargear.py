@@ -759,6 +759,9 @@ class WargearProfile:
                     base_bonus = int(sr.get("enhancement_bearer_ranged_range_bonus", 0) or 0)
                     if base_bonus:
                         bonus += base_bonus
+                    psychic_bonus = int(sr.get("enhancement_bearer_psychic_ranged_range_bonus", 0) or 0)
+                    if psychic_bonus and self._is_psychic_attack(attacker):
+                        bonus += psychic_bonus
                     shadow_extra = int(sr.get("enhancement_bearer_ranged_range_bonus_shadow_extra", 0) or 0)
                     if shadow_extra and self._attacker_in_shadow_of_chaos(attacker):
                         bonus += shadow_extra

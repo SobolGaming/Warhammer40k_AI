@@ -1817,6 +1817,42 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
             if not bool(can_see_fn(model, target_root, game_map=getattr(game, "map", None))):
                 return ("Imperial Knights target must be visible to the bearer.",)
         return ()
+    if ability == "aeldari_lucid_eye_fate_die":
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Lucid Eye source unit was not found.",)
+        source_army = getattr(source_unit, "get_parent_army", lambda: None)()
+        mgr = getattr(source_army, "aeldari_detachments", None) if source_army is not None else None
+        if mgr is None or not bool(getattr(mgr, "is_seer_council", lambda: False)()):
+            return ("Lucid Eye requires an Aeldari Seer Council army.",)
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict) or not bool(source_sr.get("enhancement_lucid_eye")):
+            return ("Lucid Eye source unit does not have Lucid Eye.",)
+        if is_skip_choice(request, result):
+            return ()
+        payload = _option_payload(request, result)
+        die_index = payload.get("die_index")
+        delta = payload.get("delta")
+        try:
+            die_index = int(die_index)
+        except Exception:
+            return ("Lucid Eye selection requires die_index.",)
+        try:
+            delta = int(delta)
+        except Exception:
+            return ("Lucid Eye selection requires delta.",)
+        if delta not in (-1, 1):
+            return ("Lucid Eye delta must be -1 or +1.",)
+        preview = getattr(mgr, "preview_seer_council_lucid_eye_adjustments", None)
+        if not callable(preview):
+            return ("Lucid Eye manager support is unavailable.",)
+        options = list(preview() or [])
+        if not any(
+            int(entry.get("die_index", -1)) == int(die_index) and int(entry.get("delta", 0)) == int(delta)
+            for entry in options
+        ):
+            return ("Lucid Eye selection is not a legal Fate die adjustment.",)
+        return ()
     if is_skip_choice(request, result):
         return ()
     if ability != "strategic_conqueror":
@@ -1973,6 +2009,42 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 f"Strike Swiftly: {source_name} selected none.",
             )
         return selected_roots
+    if ability == "aeldari_lucid_eye_fate_die":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_army = getattr(source_unit, "get_parent_army", lambda: None)()
+        mgr = getattr(source_army, "aeldari_detachments", None) if source_army is not None else None
+        if mgr is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(source_army, "player", None) if source_army is not None else None
+        ability_name = str(ctx.get("ability_name", "") or "Lucid Eye").strip() or "Lucid Eye"
+        source_name = str(getattr(source_unit, "name", "Unit") or "Unit")
+        if is_skip_choice(request, result):
+            _log_action_for_players(game, player, f"{ability_name}: {source_name} selected none.")
+            return None
+        try:
+            die_index = int(payload.get("die_index"))
+            delta = int(payload.get("delta"))
+        except Exception:
+            return None
+        apply_fn = getattr(mgr, "apply_seer_council_lucid_eye_adjustment", None)
+        if not callable(apply_fn):
+            return None
+        outcome = dict(apply_fn(die_index=int(die_index), delta=int(delta)) or {})
+        if not bool(outcome.get("applied", False)):
+            return None
+        before = int(outcome.get("before", 0) or 0)
+        after = int(outcome.get("after", 0) or 0)
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {source_name} changed Fate die {int(die_index) + 1} from {before} to {after}.",
+        )
+        return outcome
     if ability == "aeldari_guileful_strategist":
         skipped = is_skip_choice(request, result)
         apply_fn = getattr(game, "_apply_redeploy_choice", None)

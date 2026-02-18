@@ -5041,6 +5041,7 @@ class GamePhaseHandlersMixin:
         army = player.get_army()
         if army is None:
             raise RuntimeError(f"Aeldari enhancement hooks require an army for {player.name}.")
+        ae_mgr = getattr(army, "aeldari_detachments", None)
         game_map = getattr(self, "map", None)
         if game_map is None:
             raise RuntimeError("Aeldari enhancement hooks require a game map.")
@@ -5230,6 +5231,29 @@ class GamePhaseHandlersMixin:
                 )
 
         if pname == "COMMAND_PHASE":
+            if ae_mgr is not None and callable(getattr(ae_mgr, "preview_seer_council_lucid_eye_adjustments", None)):
+                for unit in list(getattr(army, "units", []) or []):
+                    sr = getattr(unit, "special_rules", None)
+                    if not (isinstance(sr, dict) and sr.get("enhancement_lucid_eye")):
+                        continue
+                    if not _unit_active(unit):
+                        continue
+                    bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+                    bearer = bearer() if callable(bearer) else None
+                    if bearer is None or not getattr(bearer, "is_alive", True):
+                        continue
+                    choices = list(ae_mgr.preview_seer_council_lucid_eye_adjustments() or [])
+                    if not choices:
+                        continue
+                    ability_name = str(getattr(getattr(unit, "enhancement", None), "name", "") or "Lucid Eye").strip()
+                    self._queue_aeldari_lucid_eye_fate_die(
+                        player=player,
+                        source_unit=unit,
+                        model=bearer,
+                        choices=choices,
+                        ability_name=ability_name,
+                    )
+
             for unit in list(getattr(army, "units", []) or []):
                 sr = getattr(unit, "special_rules", None)
                 if not (isinstance(sr, dict) and sr.get("enhancement_harmonisation_matrix")):

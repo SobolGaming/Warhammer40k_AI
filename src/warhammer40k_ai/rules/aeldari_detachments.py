@@ -393,6 +393,83 @@ class AeldariDetachmentManager(DetachmentManagerBase):
             "matching_dice": remaining,
         }
 
+    def preview_seer_council_lucid_eye_adjustments(self) -> list[dict]:
+        if not self.is_seer_council():
+            return []
+        pool = [int(v) for v in list(self.seer_council_fate_dice or [])]
+        options: list[dict] = []
+        for die_index, value in enumerate(pool):
+            current = min(6, max(1, int(value or 0)))
+            if current > 1:
+                options.append(
+                    {
+                        "die_index": int(die_index),
+                        "before": int(current),
+                        "delta": -1,
+                        "after": int(current - 1),
+                    }
+                )
+            if current < 6:
+                options.append(
+                    {
+                        "die_index": int(die_index),
+                        "before": int(current),
+                        "delta": 1,
+                        "after": int(current + 1),
+                    }
+                )
+        options.sort(key=lambda entry: (int(entry.get("die_index", -1)), int(entry.get("delta", 0))))
+        return options
+
+    def apply_seer_council_lucid_eye_adjustment(self, *, die_index: int, delta: int) -> dict:
+        out = {
+            "applied": False,
+            "die_index": int(die_index),
+            "delta": int(delta),
+            "before": 0,
+            "after": 0,
+            "pool": [int(v) for v in list(self.seer_council_fate_dice or [])],
+        }
+        if not self.is_seer_council():
+            out["reason"] = "not_seer_council"
+            return out
+
+        try:
+            idx = int(die_index)
+        except Exception:
+            out["reason"] = "invalid_die_index"
+            return out
+        try:
+            shift = int(delta)
+        except Exception:
+            out["reason"] = "invalid_delta"
+            return out
+        if shift not in (-1, 1):
+            out["reason"] = "invalid_delta"
+            return out
+
+        legal = self.preview_seer_council_lucid_eye_adjustments()
+        if not any(int(entry.get("die_index", -1)) == idx and int(entry.get("delta", 0)) == shift for entry in legal):
+            out["reason"] = "illegal_adjustment"
+            return out
+
+        pool = [int(v) for v in list(self.seer_council_fate_dice or [])]
+        if idx < 0 or idx >= len(pool):
+            out["reason"] = "die_index_out_of_range"
+            return out
+        before = min(6, max(1, int(pool[idx] or 0)))
+        after = min(6, max(1, int(before + shift)))
+        if before == after:
+            out["reason"] = "no_change"
+            return out
+        pool[idx] = int(after)
+        self.seer_council_fate_dice = pool
+        out["applied"] = True
+        out["before"] = int(before)
+        out["after"] = int(after)
+        out["pool"] = [int(v) for v in list(pool)]
+        return out
+
     def is_serpents_brood(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
             return False

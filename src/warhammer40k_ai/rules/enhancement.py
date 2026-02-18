@@ -371,6 +371,10 @@ class Enhancement:
         except Exception:
             is_guardian_battlehost = False
         try:
+            is_seer_council = bool(ae_mgr and ae_mgr.is_seer_council())
+        except Exception:
+            is_seer_council = False
+        try:
             is_virulent_vectorium = bool(dg_mgr and dg_mgr.is_virulent_vectorium())
         except Exception:
             is_virulent_vectorium = False
@@ -1244,6 +1248,33 @@ class Enhancement:
             if not is_armoured_warhost:
                 return
             unit.special_rules["enhancement_guileful_strategist"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "lucid eye" or enh_id == "000009923002":
+            if not is_seer_council:
+                return
+            unit.special_rules["enhancement_lucid_eye"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "runes of warding" or enh_id == "000009923003":
+            if not is_seer_council:
+                return
+            unit.special_rules["enhancement_runes_of_warding"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "stone of eldritch fury" or enh_id == "000009923004":
+            if not is_seer_council:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            bonus = _coerce_int(params.get("range_bonus", 12) or 12, default=12)
+            unit.special_rules["enhancement_stone_of_eldritch_fury"] = True
+            unit.special_rules["enhancement_bearer_psychic_ranged_range_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_psychic_ranged_range_bonus", 0) or 0
+            ) + int(max(0, bonus))
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 

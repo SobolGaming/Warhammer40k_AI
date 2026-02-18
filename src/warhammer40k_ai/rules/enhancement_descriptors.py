@@ -310,6 +310,62 @@ _AELDARI_GUARDIAN_BATTLEHOST_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _AELDARI_GUARDIAN_BATTLEHOST_DESCRIPTORS.values()
 }
 
+_AELDARI_SEER_COUNCIL_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009923002": EnhancementToolDescriptor(
+        enhancement_id="000009923002",
+        name="Lucid Eye",
+        timing="start_of_command_phase",
+        target="seer_council_fate_pool_die",
+        duration="instant",
+        effect="adjust_fate_die_value",
+        effect_params={
+            "delta_choices": (-1, 1),
+            "min_value": 1,
+            "max_value": 6,
+            "optional": True,
+        },
+    ),
+    "000009923003": EnhancementToolDescriptor(
+        enhancement_id="000009923003",
+        name="Runes of Warding",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="bearer_unit_fnp_conditional",
+        effect_params={
+            "fnp": 4,
+            "conditions": (
+                "against mortal wounds",
+                "against psychic attacks",
+                "against attacks made as the result of a critical wound where the attacking weapon had devastating wounds",
+            ),
+        },
+    ),
+    "000009923004": EnhancementToolDescriptor(
+        enhancement_id="000009923004",
+        name="Stone of Eldritch Fury",
+        timing="passive",
+        target="bearer_ranged_psychic_weapons",
+        duration="constant",
+        effect="bearer_psychic_ranged_range_bonus",
+        effect_params={"range_bonus": 12},
+    ),
+    "000009923005": EnhancementToolDescriptor(
+        enhancement_id="000009923005",
+        name="Torc of Morai-Heg",
+        timing="opponent_stratagem_targeting",
+        target="enemy_unit_within_range_of_bearer",
+        duration="constant",
+        effect="targeted_stratagem_cp_increase",
+        range_in=12.0,
+        effect_params={"cp_increase": 1, "limit": "turn", "max_per_stratagem_use": 1},
+    ),
+}
+
+_AELDARI_SEER_COUNCIL_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _AELDARI_SEER_COUNCIL_DESCRIPTORS.values()
+}
+
 _EXPERIMENTAL_PROTOTYPE_CADRE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009983002": EnhancementToolDescriptor(
         enhancement_id="000009983002",
@@ -1027,6 +1083,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _AELDARI_GUARDIAN_BATTLEHOST_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _AELDARI_SEER_COUNCIL_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _EXPERIMENTAL_PROTOTYPE_CADRE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -1082,6 +1141,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _POSSESSED_SLAUGHTERBAND_BY_NAME.get(key)
         or _VESSELS_OF_WRATH_BY_NAME.get(key)
         or _AELDARI_GUARDIAN_BATTLEHOST_BY_NAME.get(key)
+        or _AELDARI_SEER_COUNCIL_BY_NAME.get(key)
         or _EXPERIMENTAL_PROTOTYPE_CADRE_BY_NAME.get(key)
         or _MONTKA_BY_NAME.get(key)
         or _INVASION_FLEET_BY_NAME.get(key)

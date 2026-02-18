@@ -1629,6 +1629,89 @@ class GameReactiveDecisionsMixin:
         self.request_decision(request)
         return request
 
+    def _queue_aeldari_lucid_eye_fate_die(
+        self,
+        *,
+        player,
+        source_unit,
+        model,
+        choices: list[dict],
+        ability_name: str,
+    ) -> DecisionRequest | None:
+        if player is None or source_unit is None or model is None:
+            return None
+        if not bool(getattr(self, "is_authoritative", True)):
+            return None
+        if not choices:
+            return None
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..decisions import DecisionOption, DecisionRequest
+        from ...utility.entity_ids import get_entity_id
+
+        model_id = get_entity_id(model)
+        unit_id = get_entity_id(source_unit)
+        if not model_id or not unit_id:
+            return None
+
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "")) != "aeldari_lucid_eye_fate_die":
+                    continue
+                if str(ctx.get("source_unit_id", "")) == str(unit_id):
+                    return None
+
+        options = [DecisionOption.create("None", payload={"action": "skip"})]
+        for entry in sorted(
+            list(choices or []),
+            key=lambda item: (int(item.get("die_index", -1)), int(item.get("delta", 0))),
+        ):
+            try:
+                die_index = int(entry.get("die_index", -1))
+                before = int(entry.get("before", 0))
+                delta = int(entry.get("delta", 0))
+                after = int(entry.get("after", 0))
+            except Exception:
+                continue
+            if die_index < 0 or delta not in (-1, 1):
+                continue
+            label = f"Fate die {die_index + 1}: {before} -> {after}"
+            options.append(
+                DecisionOption.create(
+                    label,
+                    payload={
+                        "source_unit_id": str(unit_id),
+                        "die_index": int(die_index),
+                        "delta": int(delta),
+                        "before": int(before),
+                        "after": int(after),
+                    },
+                )
+            )
+        if len(options) <= 1:
+            return None
+
+        ctx = {
+            "ability": "aeldari_lucid_eye_fate_die",
+            "ability_name": str(ability_name or "Lucid Eye").strip(),
+            "phase": "Command phase",
+            "source_unit_id": str(unit_id),
+            "model_id": str(model_id),
+            "optional": True,
+        }
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{ctx['ability_name']}: select one Fate die adjustment (or None).",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+        return request
+
     def _queue_aeldari_spirit_stone_heal(
         self,
         *,
