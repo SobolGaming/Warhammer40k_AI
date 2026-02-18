@@ -1197,6 +1197,8 @@ class AbilitySpecsMixin:
 
         Returns a list of specs with keys:
             - exclude_monster_vehicle: bool
+            - weapon_key: Optional[str] (normalized weapon name if required by the rule)
+            - weapon_name: Optional[str] (display text from the rule)
             - source: ability name
         """
         if model is None:
@@ -1206,7 +1208,7 @@ class AbilitySpecsMixin:
             return list(self._ability_cache[cache_key])
 
         specs: list[dict] = []
-        seen: set[tuple[str, bool]] = set()
+        seen: set[tuple[str, bool, str]] = set()
 
         for name, desc in self._iter_model_specific_ability_entries(model):
             text_src = desc or name or ""
@@ -1222,12 +1224,21 @@ class AbilitySpecsMixin:
             if not m:
                 continue
             exclude_mv = bool(m.group("exclude")) or ("excluding monsters and vehicles" in normalized)
+            weapon_raw = str(m.group("weapon") or "").strip()
+            weapon_key = self._normalize_keyword_phrase(weapon_raw) or weapon_raw.lower()
             source = str(name or "Post-shoot Suppression").strip() or "Post-shoot Suppression"
-            key = (source.lower(), exclude_mv)
+            key = (source.lower(), exclude_mv, weapon_key or "any")
             if key in seen:
                 continue
             seen.add(key)
-            specs.append({"exclude_monster_vehicle": exclude_mv, "source": source})
+            specs.append(
+                {
+                    "exclude_monster_vehicle": exclude_mv,
+                    "weapon_key": weapon_key or None,
+                    "weapon_name": weapon_raw or None,
+                    "source": source,
+                }
+            )
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
@@ -1240,6 +1251,8 @@ class AbilitySpecsMixin:
 
         Returns a list of specs with keys:
             - exclude_monster_vehicle: bool
+            - weapon_key: Optional[str] (normalized weapon name if required by the rule)
+            - weapon_name: Optional[str] (display text from the rule)
             - source: ability name
         """
         try:
@@ -1253,7 +1266,7 @@ class AbilitySpecsMixin:
 
         if base_specs is None:
             specs: list[dict] = []
-            seen: set[tuple[str, bool]] = set()
+            seen: set[tuple[str, bool, str]] = set()
             try:
                 members = list(root.get_attached_unit_members() or [])
             except Exception:
@@ -1276,12 +1289,21 @@ class AbilitySpecsMixin:
                     if not m:
                         continue
                     exclude_mv = bool(m.group("exclude")) or ("excluding monsters and vehicles" in normalized)
+                    weapon_raw = str(m.group("weapon") or "").strip()
+                    weapon_key = self._normalize_keyword_phrase(weapon_raw) or weapon_raw.lower()
                     source = str(name or "Post-shoot Suppression").strip() or "Post-shoot Suppression"
-                    key = (source.lower(), exclude_mv)
+                    key = (source.lower(), exclude_mv, weapon_key or "any")
                     if key in seen:
                         continue
                     seen.add(key)
-                    specs.append({"exclude_monster_vehicle": exclude_mv, "source": source})
+                    specs.append(
+                        {
+                            "exclude_monster_vehicle": exclude_mv,
+                            "weapon_key": weapon_key or None,
+                            "weapon_name": weapon_raw or None,
+                            "source": source,
+                        }
+                    )
 
             if not hasattr(root, "_ability_cache"):
                 root._ability_cache = {}
@@ -1289,7 +1311,14 @@ class AbilitySpecsMixin:
             base_specs = list(specs)
 
         specs = list(base_specs or [])
-        seen = {(str(spec.get("source", "") or "").strip().lower(), bool(spec.get("exclude_monster_vehicle", False))) for spec in specs}
+        seen = {
+            (
+                str(spec.get("source", "") or "").strip().lower(),
+                bool(spec.get("exclude_monster_vehicle", False)),
+                str(spec.get("weapon_key", "") or "").strip().lower() or "any",
+            )
+            for spec in specs
+        }
 
         sr = getattr(root, "special_rules", None)
         if isinstance(sr, dict) and sr.get("unleash_hell_active") and not sr.get("unleash_hell_consumed"):
@@ -1320,11 +1349,13 @@ class AbilitySpecsMixin:
                         return list(specs)
                 source = str(sr.get("unleash_hell_source", "") or "Unleash Hell").strip() or "Unleash Hell"
                 exclude_mv = bool(sr.get("unleash_hell_exclude_monster_vehicle", False))
-                key = (source.lower(), exclude_mv)
+                key = (source.lower(), exclude_mv, "any")
                 if key not in seen:
                     specs.append(
                         {
                             "exclude_monster_vehicle": exclude_mv,
+                            "weapon_key": None,
+                            "weapon_name": None,
                             "source": source,
                             "source_key": "unleash_hell",
                         }

@@ -1835,6 +1835,7 @@ class GameShootingFightHandlersMixin:
         attacker_unit=None,
         hits_by_target=None,
         hit_models_by_target=None,
+        hit_models_by_target_weapon=None,
         **_kwargs,
     ) -> None:
         if attacker_unit is None or not hits_by_target:
@@ -1872,6 +1873,38 @@ class GameShootingFightHandlersMixin:
                 return False
             return model in hit_models
 
+        def _target_weapon_hit_models(target, weapon_key: str):
+            if not weapon_key or not isinstance(hit_models_by_target_weapon, dict):
+                return None
+            target_map = hit_models_by_target_weapon.get(target)
+            if target_map is None:
+                try:
+                    target_root = target.get_attached_unit_root()
+                except Exception:
+                    target_root = target
+                target_map = hit_models_by_target_weapon.get(target_root)
+            if not isinstance(target_map, dict):
+                return None
+            models = target_map.get(weapon_key)
+            if not models and weapon_key.endswith("s"):
+                models = target_map.get(weapon_key[:-1])
+            if not models and not weapon_key.endswith("s"):
+                models = target_map.get(f"{weapon_key}s")
+            return models
+
+        def _target_hit_with_weapon(target, weapon_key: str) -> bool:
+            if not weapon_key:
+                return True
+            return bool(_target_weapon_hit_models(target, weapon_key))
+
+        def _model_hit_target_with_weapon(model, target, weapon_key: str) -> bool:
+            if not weapon_key:
+                return _model_hit_target(model, target)
+            models = _target_weapon_hit_models(target, weapon_key)
+            if not models:
+                return False
+            return model in models
+
         triggers: list[tuple[Any, dict, list[Any]]] = []
         for model in list(attacker_unit.models or []):
             if not getattr(model, "is_alive", False):
@@ -1881,6 +1914,7 @@ class GameShootingFightHandlersMixin:
                 continue
             for spec in specs:
                 exclude_mv = bool(spec.get("exclude_monster_vehicle", False))
+                weapon_key = str(spec.get("weapon_key", "") or "").strip().lower()
                 candidates: list[Any] = []
                 for target_unit, hits in (hits_by_target or {}).items():
                     if target_unit is None:
@@ -1891,7 +1925,7 @@ class GameShootingFightHandlersMixin:
                         continue
                     if exclude_mv and _is_monster_or_vehicle(target_unit):
                         continue
-                    if not _model_hit_target(model, target_unit):
+                    if not _model_hit_target_with_weapon(model, target_unit, weapon_key):
                         continue
                     candidates.append(target_unit)
                 if candidates:
@@ -1908,6 +1942,7 @@ class GameShootingFightHandlersMixin:
                 if source_key and source_key in seen_sources:
                     continue
                 exclude_mv = bool(spec.get("exclude_monster_vehicle", False))
+                weapon_key = str(spec.get("weapon_key", "") or "").strip().lower()
                 candidates: list[Any] = []
                 for target_unit, hits in (hits_by_target or {}).items():
                     if target_unit is None:
@@ -1917,6 +1952,8 @@ class GameShootingFightHandlersMixin:
                     if not _is_enemy_unit(target_unit):
                         continue
                     if exclude_mv and _is_monster_or_vehicle(target_unit):
+                        continue
+                    if not _target_hit_with_weapon(target_unit, weapon_key):
                         continue
                     candidates.append(target_unit)
                 if candidates:

@@ -2536,6 +2536,7 @@ class Unit(
     _POST_SHOOT_SUPPRESSION_RE = re.compile(
         r"in your shooting phase after this (?:model|unit) has shot select one enemy unit "
         r"(?:(?P<exclude>excluding monsters and vehicles) )?hit by one or more of those attacks "
+        r"(?:made with (?:(?:a|an|the|its)\s+)?(?P<weapon>[a-z0-9 ]+) )?"
         r"(?:excluding monsters and vehicles )?until the start of your next turn that enemy unit is suppressed "
         r"while a unit is suppressed each time a model in that unit makes an attack subtract 1 from the hit roll",
         re.IGNORECASE,

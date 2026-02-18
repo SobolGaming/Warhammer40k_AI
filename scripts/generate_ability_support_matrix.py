@@ -6671,15 +6671,26 @@ def _post_shoot_suppression_support(description: str) -> Optional[Tuple[str, str
     if not norm:
         return None
     pattern = (
-        r"in your shooting phase after this (?:model|unit) has shot select one enemy unit hit by one or more of those attacks "
+        r"in your shooting phase after this (?:model|unit) has shot select one enemy unit "
+        r"(?:(?P<exclude>excluding monsters and vehicles) )?hit by one or more of those attacks "
+        r"(?:made with (?:(?:a|an|the|its)\s+)?(?P<weapon>[a-z0-9 ]+) )?"
         r"(?:excluding monsters and vehicles )?until the start of your next turn that enemy unit is suppressed "
         r"while a unit is suppressed each time a model in that unit makes an attack subtract 1 from the hit roll"
     )
     m = re.fullmatch(pattern, norm)
     if not m:
         return None
-    if "excluding monsters and vehicles" in norm:
+    weapon = str(m.group("weapon") or "").strip()
+    excluded_mv = bool(str(m.group("exclude") or "").strip()) or ("excluding monsters and vehicles" in norm)
+    if excluded_mv:
+        if weapon:
+            return (
+                "Supported",
+                f"After shooting, suppress a hit enemy non-MONSTER/VEHICLE unit hit by {weapon} for -1 to hit until your next turn.",
+            )
         return ("Supported", "After shooting, suppress a hit enemy unit (not MONSTER/VEHICLE) for -1 to hit until your next turn.")
+    if weapon:
+        return ("Supported", f"After shooting, suppress a hit enemy unit hit by {weapon} for -1 to hit until your next turn.")
     return ("Supported", "After shooting, suppress a hit enemy unit for -1 to hit until your next turn.")
 
 
