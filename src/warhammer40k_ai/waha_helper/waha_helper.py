@@ -89,20 +89,30 @@ class WahaHelper:
 
         - Global stratagems have empty "faction_id" in source data and always apply.
         - Faction-specific stratagems require faction_id to match; if a detachment string is
-          present on the stratagem, it must match the provided detachment exactly.
+          present on the stratagem, it must match the provided detachment.
+        - Matching is case-insensitive and whitespace-normalized to handle mixed-casing IDs
+          present in source data (e.g. AoI, LoV, AdM).
         """
+        def _norm_token(value: str | None) -> str:
+            return str(value or "").strip().upper()
+
+        def _norm_text(value: str | None) -> str:
+            return re.sub(r"\s+", " ", str(value or "").strip()).upper()
+
+        wanted_faction = _norm_token(faction_id)
+        wanted_detachment = _norm_text(detachment)
         results: list[dict] = []
         for s in self.stratagems.values():
             try:
-                s_faction = s.get('faction_id', '') or ''
-                s_det = s.get('detachment', '') or ''
+                s_faction = _norm_token(s.get('faction_id', '') or '')
+                s_det = _norm_text(s.get('detachment', '') or '')
                 is_global = s_faction == ''
                 if is_global:
                     results.append(s)
                     continue
-                if faction_id and s_faction == faction_id:
+                if wanted_faction and s_faction == wanted_faction:
                     if s_det:
-                        if detachment and s_det == detachment:
+                        if wanted_detachment and s_det == wanted_detachment:
                             results.append(s)
                     else:
                         results.append(s)

@@ -11103,6 +11103,50 @@ class WargearProfile:
             if bonus:
                 dice_modifier += bonus
                 wound_result['modifiers'].append(f"+{bonus} to wound from Against All Odds")
+        # Imperial Agents: ENSNARING TRAP (Callidus Assassin) melee wound bonus.
+        is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+        if is_melee:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            root = attacker_unit.get_attached_unit_root() if hasattr(attacker_unit, "get_attached_unit_root") else attacker_unit
+            sr = getattr(root, "special_rules", None) if root is not None else None
+            if isinstance(sr, dict) and sr.get("ensnaring_trap_callidus_melee_wound_bonus_active"):
+                applies = True
+                source = str(
+                    sr.get("ensnaring_trap_callidus_melee_wound_bonus_source", "") or "ENSNARING TRAP"
+                ).strip() or "ENSNARING TRAP"
+                try:
+                    bonus = int(sr.get("ensnaring_trap_callidus_melee_wound_bonus", 1) or 1)
+                except (TypeError, ValueError):
+                    bonus = 1
+                game = None
+                if attacker_unit is not None and hasattr(attacker_unit, "get_parent_army"):
+                    attacker_army = attacker_unit.get_parent_army()
+                    game = getattr(getattr(attacker_army, "player", None), "game", None) if attacker_army is not None else None
+                exp = str(sr.get("ensnaring_trap_callidus_melee_wound_bonus_expires_phase", "") or "").strip().upper()
+                if exp:
+                    phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+                    if phase_name and phase_name != exp:
+                        applies = False
+                try:
+                    marked_turn = int(sr.get("ensnaring_trap_callidus_melee_wound_bonus_turn", 0) or 0)
+                except (TypeError, ValueError):
+                    marked_turn = 0
+                try:
+                    current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                except (TypeError, ValueError):
+                    current_turn = 0
+                if applies and marked_turn and current_turn and marked_turn != current_turn:
+                    applies = False
+                if applies:
+                    owner_id = str(sr.get("ensnaring_trap_callidus_melee_wound_bonus_turn_owner", "") or "")
+                    if owner_id and game is not None:
+                        current_player = getattr(game, "get_current_player", lambda: None)()
+                        current_owner_id = str(getattr(current_player, "id", "") or "")
+                        if current_owner_id and owner_id != current_owner_id:
+                            applies = False
+                if applies and bonus:
+                    dice_modifier += int(bonus)
+                    wound_result["modifiers"].append(f"+{int(bonus)} to wound from {source}")
         # Drukhari: Power from Pain (Sculptor of Torments).
         try:
             is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())

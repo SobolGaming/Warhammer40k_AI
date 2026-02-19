@@ -25,6 +25,7 @@ from .stratagems_votann import VotannStratagemMixin
 from .stratagems_world_eaters import WorldEatersStratagemMixin
 from .stratagems_grey_knights import GreyKnightsStratagemMixin
 from .stratagems_imperial_knights import ImperialKnightsStratagemMixin
+from .stratagems_imperial_agents import ImperialAgentsStratagemMixin
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BERZERKER'S WRATH",
     "BERZERKER\u2019S WRATH",
     "BLESSING OF BURNING BLOOD",
+    "BLIND GRENADES",
     "BLITZING FIREPOWER",
     "BLOOD OFFERING",
     "BLOODTHIRSTY HORDE",
@@ -157,6 +159,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "DIMENSIONAL TUNNEL",
     "CHRONOSHIFT",
     "ENDLESS SERVITUDE",
+    "ENSNARING TRAP",
     "REACTIVE REPOSITION",
     "RED WRATH",
     "DEADLY DEBUT",
@@ -280,6 +283,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "BLOODY VENGEANCE",
     "BRAZEN CONTEMPT",
     "BERSERK FUGUE",
+    "BLIND GRENADES",
     "BEAUTIFUL DEATH",
     "CUT DOWN THE WEAK",
     "DEFIANT TO THE LAST",
@@ -287,6 +291,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "DEATHLESS DUTY",
     "DEATH ECSTASY",
     "EMBRACE THE PAIN",
+    "ENSNARING TRAP",
     "FRENZIED RESILIENCE",
     "FEIGNED WEAKNESS",
     "FEIGNED RETREAT",
@@ -1165,6 +1170,7 @@ class StratagemManager(
     TyranidsStratagemMixin,
     OrksStratagemMixin,
     ImperialKnightsStratagemMixin,
+    ImperialAgentsStratagemMixin,
 ):
     def __init__(self, player) -> None:
         # Lazy import to avoid cycles
@@ -1343,7 +1349,7 @@ class StratagemManager(
             "LETHAL RUSE",
         }:
             add("unit_move_ended", self._on_unit_move_ended)
-        if names & {"ANTI-GRAV REPULSION", "ANTI‑GRAV REPULSION"}:
+        if names & {"ANTI-GRAV REPULSION", "ANTI‑GRAV REPULSION", "BLIND GRENADES"}:
             add("charge_declared", self._on_charge_declared)
         if names & {"FIRES OF COVENANT", "A CHALLENGE MET"}:
             add("unit_set_up", self._on_unit_set_up)
@@ -1526,6 +1532,7 @@ class StratagemManager(
             "DARK APPARITIONS",
             "DELIRIUM UNMADE",
             "ENDLESS PURSUIT OF VIOLENCE",
+            "ENSNARING TRAP",
             "FLAMES OF SANCTITY",
             "GORY DEDICATION",
             "MURDER-CALL",
@@ -1544,6 +1551,7 @@ class StratagemManager(
             "BALEFUL HALO",
             "ASPIRE TO INFAMY",
             "BLOODTHIRSTY HORDE",
+            "BLIND GRENADES",
             "BRAZEN CONTEMPT",
             "BERSERK FUGUE",
             "DEADLY DEBUT",
@@ -1636,6 +1644,7 @@ class StratagemManager(
             "HUNTR’S MARK",
             "ORDERED RETREAT",
             "RAPID REGENERATION",
+            "ENSNARING TRAP",
             "VOID HARDENED",
         }
         needs_phase_end = bool(
@@ -3153,6 +3162,7 @@ class StratagemManager(
             "RED WRATH": "Target: BLOOD ANGELS unit (advanced)",
             "ANTI-GRAV REPULSION": "Target: AELDARI VEHICLE FLY unit selected as a charge target",
             "ANTI‑GRAV REPULSION": "Target: AELDARI VEHICLE FLY unit selected as a charge target",
+            "BLIND GRENADES": "Target: AGENTS OF THE IMPERIUM GRENADES unit or VINDICARE ASSASSIN selected as a charge target and not in Engagement Range",
             "CLOUDSTRIKE": "Target: AELDARI VEHICLE FLY unit in Strategic Reserves",
             "DOOM INESCAPABLE": "Target: AVATAR OF KHAINE unit not yet selected to shoot",
             "KHAINE'S VENGEANCE": "Target: ASPECT WARRIORS/AVATAR OF KHAINE unit in Engagement Range of an enemy selected to Fall Back",
@@ -3172,6 +3182,7 @@ class StratagemManager(
             "VECTORED ENGINES": "Target: AELDARI VEHICLE FLY unit after it Fell Back",
             "WARRIOR FOCUS": "Target: ASPECT WARRIORS/AVATAR OF KHAINE unit not yet selected to shoot/fight",
             "A CHALLENGE MET": "Target: WYCH CULT unit; enemy within 9\" that moved or was set up this phase",
+            "ENSNARING TRAP": "Target: AGENTS OF THE IMPERIUM INFANTRY unit within 6\" of enemy units it can charge",
             "ACROBATIC DISPLAY": "Target: WYCH CULT unit targeted by enemy attacks",
             "BEAUTIFUL DEATH": "Target: EMPEROR'S CHILDREN CHARACTER unit targeted by enemy fight attacks",
             "BERSERK FUGUE": "Target: WYCH CULT unit targeted by enemy attacks",
@@ -4665,6 +4676,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_imperial_agents_veiled_blade_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_emperors_children_mercurial_phase_end_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -4682,6 +4697,10 @@ class StratagemManager(
             raise
         try:
             self._cleanup_votann_needgaard_phase_end_effects(phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_imperial_agents_veiled_blade_phase_end_effects(phase=phase)
         except Exception:
             raise
         # Clear command-phase battle-shock suppression flags (e.g., Terrifying Spectacle).
@@ -6361,6 +6380,10 @@ class StratagemManager(
 
     def _on_charge_declared(self, unit=None, target_units=None, **_kwargs):
         self._queue_aeldari_armoured_charge_declared_reactions(
+            charging_unit=unit,
+            target_units=list(target_units or []),
+        )
+        self._queue_imperial_agents_veiled_blade_charge_declared_reactions(
             charging_unit=unit,
             target_units=list(target_units or []),
         )
@@ -10671,6 +10694,9 @@ class StratagemManager(
         warpbane_result = self._use_grey_knights_warpbane_stratagem(s, **kwargs)
         if warpbane_result is not None:
             return warpbane_result
+        imperial_agents_result = self._use_imperial_agents_veiled_blade_stratagem(s, **kwargs)
+        if imperial_agents_result is not None:
+            return imperial_agents_result
         # Adeptus Custodes (Lions of the Emperor): GILDED CHAMPION
         if name_u == "GILDED CHAMPION":
             model = kwargs.get("model") or self._resolve_gilded_champion_model(kwargs)

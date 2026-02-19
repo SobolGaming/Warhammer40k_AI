@@ -2035,6 +2035,42 @@ _VALOURSTRIKE_LANCE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _VALOURSTRIKE_LANCE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_VEILED_BLADE_ELIMINATION_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009758006": StratagemToolDescriptor(
+        stratagem_id="000009758006",
+        name="Blind Grenades",
+        timing="opponent_charge_phase_after_charge_declared",
+        target="agents_grenades_or_vindicare_unit_selected_as_charge_target_not_in_engagement",
+        duration="until_end_of_phase",
+        effect="enemy_charge_roll_penalty",
+        cp_cost=1,
+        effect_params={
+            "charge_roll_modifier": -1,
+            "vindicare_charge_roll_modifier": -2,
+            "applies_to_declared_charge_only": True,
+        },
+    ),
+    "000009758007": StratagemToolDescriptor(
+        stratagem_id="000009758007",
+        name="Ensnaring Trap",
+        timing="end_of_opponent_charge_phase",
+        target="agents_infantry_within_6_of_enemy_unit_it_can_charge",
+        duration="immediate_and_until_end_of_turn",
+        effect="out_of_turn_charge_without_charge_bonus",
+        cp_cost=1,
+        range_in=6.0,
+        effect_params={
+            "count_as_charged": False,
+            "callidus_melee_wound_bonus": 1,
+            "callidus_bonus_duration": "until_end_of_turn",
+        },
+    ),
+}
+
+_VEILED_BLADE_ELIMINATION_FORCE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _VEILED_BLADE_ELIMINATION_FORCE_STRATAGEM_DESCRIPTORS.values()
+}
+
 
 def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> Optional[StratagemToolDescriptor]:
     if stratagem_id:
@@ -2119,6 +2155,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _VALOURSTRIKE_LANCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _VEILED_BLADE_ELIMINATION_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
     key = _normalize_name(name)
     if not key:
         return None
@@ -2150,4 +2189,5 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _RUBRICAE_PHALANX_STRATAGEM_BY_NAME.get(key)
         or _NEEDGAARD_OATHBAND_STRATAGEM_BY_NAME.get(key)
         or _VALOURSTRIKE_LANCE_STRATAGEM_BY_NAME.get(key)
+        or _VEILED_BLADE_ELIMINATION_FORCE_STRATAGEM_BY_NAME.get(key)
     )
