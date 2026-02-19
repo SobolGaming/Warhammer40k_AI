@@ -2059,8 +2059,8 @@ class Unit(
     )
     _ENEMY_MOVE_REACTIVE_D6_RE = re.compile(
         r"once\s+per\s+(?:turn|battle|battle\s+round),?\s+when\s+an\s+enemy\s+unit\s+ends\s+a\s+normal(?:,)?\s+advance\s+or\s+fall\s+back\s+move\s+"
-        r"within\s+(?P<range>\d+)\s*\"?\s+of\s+this\s+(?:model(?: s)? unit|unit|model)"
-        r"(?:\s+if\s+this\s+unit\s+is\s+not\s+within\s+engagement\s+range\s+of\s+(?:one\s+or\s+more|any)\s+enemy\s+units?)?"
+        r"within\s+(?P<range>\d+)\s*\"?\s+of\s+(?:this\s+(?:model(?: s)? unit|unit|model)|the\s+bearer'?s\s+unit|that\s+unit)"
+        r"(?:\s+if\s+(?:this\s+unit|the\s+bearer'?s\s+unit|that\s+unit)\s+is\s+not\s+within\s+engagement\s+range\s+of\s+(?:one\s+or\s+more|any)\s+enemy\s+units?)?"
         r".*?make\s+a\s+normal\s+move\s+of\s+up\s+to\s+(?P<move>d\d+(?:\+\d+)?|\d+)",
         re.IGNORECASE,
     )

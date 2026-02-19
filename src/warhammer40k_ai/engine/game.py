@@ -6996,8 +6996,44 @@ class Game(
         if not hasattr(self, "event_system") or not hasattr(self.event_system, "publish"):
             raise RuntimeError("Event system missing for charge_declared event.")
         self.event_system.publish("charge_declared", unit=charging_unit, target_units=list(targets))
-
         army = charging_unit.get_parent_army()
+
+        try:
+            charge_root = charging_unit.get_attached_unit_root()
+        except Exception:
+            charge_root = charging_unit
+        root_sr = getattr(charge_root, "special_rules", None)
+        if isinstance(root_sr, dict) and bool(root_sr.get("enhancement_our_time_is_nigh")):
+            once_key = str(root_sr.get("enhancement_our_time_is_nigh_once_key", "our_time_is_nigh") or "our_time_is_nigh").strip().lower()
+            has_used = getattr(charge_root, "has_used_unit_once_per_battle", None)
+            already_used = bool(callable(has_used) and has_used(once_key))
+            if not already_used and not bool(root_sr.get("enhancement_our_time_is_nigh_active")):
+                owner_player = getattr(army, "player", None) if army is not None else None
+                current_player = self.get_current_player()
+                phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper() or "CHARGE_PHASE"
+                phase_owner_id = str(getattr(current_player, "id", "") or "")
+                charge_root_id = str(get_entity_id(charge_root) or "")
+                self._queue_optional_ability_confirmation(
+                    player=owner_player,
+                    ability_key="our_time_is_nigh",
+                    ability_name="Our Time Is Nigh",
+                    message="Use Our Time Is Nigh for +2 to Charge rolls made for this unit until end of phase?",
+                    context={
+                        "ability_name": "Our Time Is Nigh",
+                        "unit_id": charge_root_id,
+                        "turn": int(getattr(self, "turn", 0) or 0),
+                        "turn_owner_id": phase_owner_id,
+                        "phase": phase_name,
+                    },
+                    payload={
+                        "unit_id": charge_root_id,
+                        "turn": int(getattr(self, "turn", 0) or 0),
+                        "turn_owner_id": phase_owner_id,
+                        "phase": phase_name,
+                    },
+                    instance_key=f"{charge_root_id}:{int(getattr(self, 'turn', 0) or 0)}:{phase_name}:{phase_owner_id}:our_time_is_nigh",
+                )
+
         mgr = getattr(army, "battle_focus", None) if army is not None else None
         if mgr is not None:
             mgr.maybe_trigger_charge_maneuver(charging_unit, targets[0], self)
@@ -7492,6 +7528,41 @@ class Game(
         # Check for charge modifiers from abilities/enhancements.
         sr = getattr(charging_unit, "special_rules", None)
         if isinstance(sr, dict):
+            our_time_active = False
+            try:
+                our_time_bonus = int(sr.get("enhancement_our_time_is_nigh_bonus", 0) or 0)
+            except Exception:
+                our_time_bonus = 0
+            our_time_source = str(sr.get("enhancement_our_time_is_nigh_source", "") or "Our Time Is Nigh").strip() or "Our Time Is Nigh"
+            if sr.get("enhancement_our_time_is_nigh_active"):
+                our_time_active = True
+                expected_phase = str(sr.get("enhancement_our_time_is_nigh_phase", "") or "CHARGE_PHASE").strip().upper()
+                expected_owner = str(sr.get("enhancement_our_time_is_nigh_turn_owner", "") or "")
+                try:
+                    expected_turn = int(sr.get("enhancement_our_time_is_nigh_turn", 0) or 0)
+                except Exception:
+                    expected_turn = 0
+                current_phase = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+                current_turn = int(getattr(self, "turn", 0) or 0)
+                current_player = self.get_current_player()
+                current_owner = str(getattr(current_player, "id", "") or "")
+                if expected_phase and current_phase and expected_phase != current_phase:
+                    our_time_active = False
+                if expected_owner and current_owner and expected_owner != current_owner:
+                    our_time_active = False
+                if expected_turn and expected_turn != current_turn:
+                    our_time_active = False
+                if not our_time_active:
+                    for key in (
+                        "enhancement_our_time_is_nigh_active",
+                        "enhancement_our_time_is_nigh_turn_owner",
+                        "enhancement_our_time_is_nigh_turn",
+                        "enhancement_our_time_is_nigh_phase",
+                        "enhancement_our_time_is_nigh_source",
+                    ):
+                        sr.pop(key, None)
+                    charging_unit.special_rules = sr
+
             battle_lust_bonus = int(sr.get("enhancement_battle_lust_bonus_if_unbridled", 0) or 0)
             if battle_lust_bonus:
                 army = charging_unit.get_parent_army()
@@ -7560,8 +7631,14 @@ class Game(
                         source = str(item.get("source", "") or source)
                     else:
                         val = int(item or 0)
+                    normalized_source = str(source or "").replace("\u2019", "'").strip().lower()
+                    if "our time is nigh" in normalized_source:
+                        continue
                     if val:
                         modifiers.append((val, source))
+
+            if our_time_active and our_time_bonus:
+                modifiers.append((int(our_time_bonus), our_time_source))
 
             if sr.get("ere_we_go_active") is True:
                 ere_active = True

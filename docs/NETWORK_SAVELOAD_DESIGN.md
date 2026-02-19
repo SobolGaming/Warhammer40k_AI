@@ -362,6 +362,7 @@ Optional ability confirmations (yes/no):
 - battle_focus_sudden_strike_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="battle_focus_sudden_strike"`, `unit_id`)
 - battle_focus_fade_back_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="battle_focus_fade_back"`, `unit_id`)
 - battle_focus_lethal_surge_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="aeldari_strength_from_death_lethal_surge"`, `unit_id`, `attacker_unit_id`, `turn`, `turn_owner_id`)
+- our_time_is_nigh_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="our_time_is_nigh"`, `unit_id`, `turn`, `turn_owner_id`, `phase`)
 - start_any_phase_damage_set_one_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="start_any_phase_damage_set_one"`, `unit_id`, `model_id`, `buff_key`)
 - start_any_phase_fnp_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="start_any_phase_fnp"`, `unit_id`, `ability_key`)
 - dark_ritual_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="dark_ritual"`, `unit_id`, `ability_key`)

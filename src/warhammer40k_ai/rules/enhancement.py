@@ -484,6 +484,7 @@ class Enhancement:
         except Exception:
             is_spectacle_of_spite = False
         ts_mgr = getattr(army, "thousand_sons_detachments", None) if army is not None else None
+        gsc_mgr = getattr(army, "genestealer_cults_detachments", None) if army is not None else None
         try:
             is_grand_coven = bool(ts_mgr and ts_mgr.is_grand_coven())
         except Exception:
@@ -492,6 +493,10 @@ class Enhancement:
             is_rubricae_phalanx = bool(ts_mgr and ts_mgr.is_rubricae_phalanx())
         except Exception:
             is_rubricae_phalanx = False
+        try:
+            is_host_of_ascension = bool(gsc_mgr and gsc_mgr.is_host_of_ascension())
+        except Exception:
+            is_host_of_ascension = False
 
         bearer = None
         bearer_id = ""
@@ -500,6 +505,43 @@ class Enhancement:
             bearer = get_bearer()
             if bearer is not None:
                 bearer_id = str(getattr(bearer, "id", getattr(bearer, "_id", "")) or "")
+
+        if name == "prowling agitant" or enh_id == "000009067002":
+            if not is_host_of_ascension:
+                return
+            unit.special_rules["enhancement_prowling_agitant"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "a chink in their armour" or enh_id == "000009067003":
+            if not is_host_of_ascension:
+                return
+            unit.special_rules["enhancement_a_chink_in_their_armour"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "our time is nigh" or enh_id == "000009067004":
+            if not is_host_of_ascension:
+                return
+            unit.special_rules["enhancement_our_time_is_nigh"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                charge_bonus = int(params.get("charge_roll_bonus", 2) or 2)
+            except Exception:
+                charge_bonus = 2
+            once_key = str(params.get("once_per_battle_key", "our_time_is_nigh") or "our_time_is_nigh").strip().lower()
+            unit.special_rules["enhancement_our_time_is_nigh_bonus"] = int(max(0, charge_bonus))
+            unit.special_rules["enhancement_our_time_is_nigh_once_key"] = once_key
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "assassination edict" or enh_id == "000009067005":
+            if not is_host_of_ascension:
+                return
+            unit.special_rules["enhancement_assassination_edict"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 
         if name == "supernova launcher" or enh_id == "000009983002":
             if not is_experimental_prototype_cadre:

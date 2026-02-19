@@ -1215,6 +1215,51 @@ _VEILED_BLADE_ELIMINATION_FORCE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _VEILED_BLADE_ELIMINATION_FORCE_DESCRIPTORS.values()
 }
 
+_GENESTEALER_CULTS_HOST_OF_ASCENSION_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009067002": EnhancementToolDescriptor(
+        enhancement_id="000009067002",
+        name="Prowling Agitant",
+        timing="on_enemy_move_ended_within_range",
+        target="bearer_unit",
+        duration="instant_once_per_turn",
+        effect="reactive_normal_move_up_to_d6",
+        range_in=9.0,
+        effect_params={"max_distance_roll": "D6", "requires_not_engaged": True, "per": "turn"},
+    ),
+    "000009067003": EnhancementToolDescriptor(
+        enhancement_id="000009067003",
+        name="A Chink in Their Armour",
+        timing="on_bearer_set_up_as_reinforcements",
+        target="bearer_unit_ranged_weapons",
+        duration="until_end_of_next_owner_fight_phase",
+        effect="grant_weapon_keywords",
+        effect_params={"keywords": ("LETHAL HITS",), "attack_type": "ranged"},
+    ),
+    "000009067004": EnhancementToolDescriptor(
+        enhancement_id="000009067004",
+        name="Our Time Is Nigh",
+        timing="on_declare_charge",
+        target="bearer_unit",
+        duration="until_end_of_phase",
+        effect="optional_charge_roll_bonus_once_per_battle",
+        once_per_battle=True,
+        effect_params={"charge_roll_bonus": 2, "once_per_battle_key": "our_time_is_nigh"},
+    ),
+    "000009067005": EnhancementToolDescriptor(
+        enhancement_id="000009067005",
+        name="Assassination Edict",
+        timing="on_attack_roll",
+        target="bearer_unit_attacks_vs_character",
+        duration="constant",
+        effect="add_hit_roll_modifier",
+        effect_params={"hit_roll_bonus": 1, "target_keywords_any": ("CHARACTER",)},
+    ),
+}
+
+_GENESTEALER_CULTS_HOST_OF_ASCENSION_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _GENESTEALER_CULTS_HOST_OF_ASCENSION_DESCRIPTORS.values()
+}
+
 
 def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "") -> Optional[EnhancementToolDescriptor]:
     if enhancement_id:
@@ -1293,6 +1338,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _VEILED_BLADE_ELIMINATION_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _GENESTEALER_CULTS_HOST_OF_ASCENSION_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
     key = _normalize_name(name)
     if not key:
         return None
@@ -1322,4 +1370,5 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _RUBRICAE_PHALANX_BY_NAME.get(key)
         or _WARPBANE_TASK_FORCE_BY_NAME.get(key)
         or _VEILED_BLADE_ELIMINATION_FORCE_BY_NAME.get(key)
+        or _GENESTEALER_CULTS_HOST_OF_ASCENSION_BY_NAME.get(key)
     )

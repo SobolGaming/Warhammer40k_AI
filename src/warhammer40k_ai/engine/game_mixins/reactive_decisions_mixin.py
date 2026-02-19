@@ -3237,6 +3237,7 @@ class GameReactiveDecisionsMixin:
             "dead_reckoning",
             "possessed_blade_fight",
             "aeldari_strength_from_death_lethal_surge",
+            "our_time_is_nigh",
         ):
             return
         selected = None
@@ -3301,6 +3302,54 @@ class GameReactiveDecisionsMixin:
             )
             return
         if not choice:
+            return
+
+        if ability_key == "our_time_is_nigh":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None:
+                return
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                return
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_our_time_is_nigh")):
+                return
+            once_key = str(sr.get("enhancement_our_time_is_nigh_once_key", "our_time_is_nigh") or "our_time_is_nigh").strip().lower()
+            has_used = getattr(root, "has_used_unit_once_per_battle", None)
+            if callable(has_used) and bool(has_used(once_key)):
+                return
+            mark_used = getattr(root, "mark_unit_once_per_battle_used", None)
+            if callable(mark_used):
+                mark_used(
+                    once_key,
+                    ability_name=str(ctx.get("ability_name", "") or "Our Time Is Nigh").strip() or "Our Time Is Nigh",
+                )
+            current_player = self.get_current_player()
+            current_owner = str(getattr(current_player, "id", "") or "")
+            try:
+                turn = int(payload.get("turn", ctx.get("turn", getattr(self, "turn", 0))) or 0)
+            except Exception:
+                turn = int(getattr(self, "turn", 0) or 0)
+            phase_name = str(payload.get("phase", ctx.get("phase", "")) or "").strip().upper()
+            if not phase_name:
+                phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper() or "CHARGE_PHASE"
+            turn_owner_id = str(payload.get("turn_owner_id", ctx.get("turn_owner_id", "")) or "").strip()
+            if not turn_owner_id:
+                turn_owner_id = current_owner
+            sr["enhancement_our_time_is_nigh_active"] = True
+            sr["enhancement_our_time_is_nigh_turn"] = int(turn or 0)
+            sr["enhancement_our_time_is_nigh_turn_owner"] = turn_owner_id
+            sr["enhancement_our_time_is_nigh_phase"] = phase_name
+            sr["enhancement_our_time_is_nigh_source"] = (
+                str(ctx.get("ability_name", "") or "Our Time Is Nigh").strip() or "Our Time Is Nigh"
+            )
+            root.special_rules = sr
             return
 
         if ability_key == "shadow_in_the_warp":
