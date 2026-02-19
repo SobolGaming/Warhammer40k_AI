@@ -554,6 +554,10 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"if you control an objective marker at the end of your command phase and a death guard unit from your army excluding battle shocked units is within range of that objective marker that objective marker remains under your control until your opponents level of control over that objective marker is greater than yours at the end of a phase",
             r"in addition until you lose control of that objective marker it has the nurgles gift ability as if it were a death guard model from your army",
         ),
+        "Deadly Vectors": (
+            r"in your opponents command phase roll 2d6 for each afflicted enemy unit subtracting 1 from the result if that unit is below half strength",
+            r"if the result is 6 or less that enemy unit suffers d3 mortal wounds",
+        ),
         "Rush to the Fray": (
             r"each time a world eaters unit from your army disembarks from a transport until the end of the turn add \d+ to charge rolls made for that unit and that units melee weapons have the lance ability",
         ),
@@ -1577,6 +1581,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Worldblight": (
             "Supported",
             "Virulent Vectorium: qualifying objectives become sticky until opponent OC is greater at end of a phase, and remain Nurgle's Gift contagion sources while controlled.",
+        ),
+        "Deadly Vectors": (
+            "Supported",
+            "Death Lord's Chosen: in your opponent's Command phase, each Afflicted enemy unit rolls 2D6 (-1 if Below Half-strength), and on 6 or less that unit suffers D3 mortal wounds.",
         ),
         "Quicksilver Grace": ("Supported", "Mercurial Host: reroll Advance rolls for eligible units."),
         "Exquisite Swordsmanship": ("Supported", "Peerless Bladesmen: on charge choose Lethal or Sustained for melee."),

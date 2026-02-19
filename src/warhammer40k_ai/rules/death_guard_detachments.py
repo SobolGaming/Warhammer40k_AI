@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 from ..utility.entity_ids import get_entity_id
+from ..utility.dice import get_roll
 from .detachment_manager import DetachmentManagerBase
+from .nurgles_gift import NurglesGiftManager
 
 
 class DeathGuardDetachmentManager(DetachmentManagerBase):
     faction_id = "DG"
     _WORLD_BLIGHT_SOURCE = "worldblight"
+
+    def is_death_lords_chosen(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Death Lord's Chosen")
 
     def is_virulent_vectorium(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -34,6 +41,80 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
                 continue
             seen.add(uid)
             yield root
+
+    @staticmethod
+    def _enemy_root_sort_key(unit) -> str:
+        return str(get_entity_id(unit) or "")
+
+    def _iter_unique_enemy_roots(self, enemy_army):
+        if enemy_army is None:
+            return []
+        roots = []
+        seen: set[str] = set()
+        for unit in list(getattr(enemy_army, "units", []) or []):
+            if unit is None:
+                continue
+            root = unit.get_attached_unit_root()
+            uid = str(get_entity_id(root) or "")
+            if uid in seen:
+                continue
+            seen.add(uid)
+            roots.append(root)
+        roots.sort(key=self._enemy_root_sort_key)
+        return roots
+
+    def _unit_eligible_for_deadly_vectors(self, unit) -> bool:
+        if unit is None:
+            return False
+        if not bool(getattr(unit, "deployed", False)):
+            return False
+        if not bool(unit.is_alive()):
+            return False
+        if bool(getattr(unit, "is_embarked", False)):
+            return False
+        if bool(unit.is_in_reserves()):
+            return False
+        return True
+
+    def resolve_deadly_vectors(self, *, game=None, opponent_player=None) -> list[dict]:
+        if not self.is_death_lords_chosen():
+            return []
+        if game is None or opponent_player is None:
+            return []
+        if not bool(getattr(game, "is_authoritative", True)):
+            return []
+        opponent_army = getattr(opponent_player, "army", None)
+        if opponent_army is None or opponent_army is self.army:
+            return []
+        game_map = getattr(game, "map", None)
+        if game_map is None:
+            return []
+
+        outcomes: list[dict] = []
+        for unit in self._iter_unique_enemy_roots(opponent_army):
+            if not self._unit_eligible_for_deadly_vectors(unit):
+                continue
+            afflicted = NurglesGiftManager.get_afflicted_plague_for_unit(unit, game=game, game_map=game_map)
+            if afflicted is None:
+                continue
+            roll_2d6 = int(get_roll("2D6") or 0)
+            modifier = -1 if bool(unit.is_below_half_strength()) else 0
+            total = int(roll_2d6 + modifier)
+            mortal_wounds = 0
+            if total <= 6:
+                mortal_wounds = int(get_roll("D3") or 0)
+                if mortal_wounds > 0:
+                    unit._apply_mortal_wounds_to_unit(unit, int(mortal_wounds), game_map=game_map)
+            outcomes.append(
+                {
+                    "unit_id": str(get_entity_id(unit) or ""),
+                    "roll_2d6": int(roll_2d6),
+                    "modifier": int(modifier),
+                    "total": int(total),
+                    "mortal_wounds": int(max(0, mortal_wounds)),
+                }
+            )
+        return outcomes
 
     def _unit_eligible_for_worldblight(self, unit) -> bool:
         if unit is None:

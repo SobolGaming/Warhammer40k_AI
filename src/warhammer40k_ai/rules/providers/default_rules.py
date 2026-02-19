@@ -142,6 +142,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("fight_targets_selected", "_on_fight_targets_selected_boon_of_death"),
                 ("phase_start", "_on_phase_start_target_tracking"),
                 ("phase_start", "_on_phase_start_command_phase_cp_rolls"),
+                ("phase_start", "_on_phase_start_death_guard_detachments"),
                 ("phase_start", "_on_phase_start_fight_phase_target_attack_bonus"),
                 ("phase_start", "_on_phase_start_inflamed_infections"),
                 ("phase_start", "_on_phase_start_data_spike"),
