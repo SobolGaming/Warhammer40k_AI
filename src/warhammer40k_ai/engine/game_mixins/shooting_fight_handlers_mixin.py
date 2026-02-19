@@ -1830,6 +1830,83 @@ class GameShootingFightHandlersMixin:
             sr.pop(key, None)
         root.special_rules = sr
 
+    def _on_unit_shooting_resolved_thundershock(
+        self,
+        attacker_unit=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None:
+            return
+        try:
+            root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            root = attacker_unit
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        pending = list(sr.get("thundershock_pending_entries", []) or [])
+        if not pending:
+            return
+        try:
+            marked_turn = int(sr.get("thundershock_turn", 0) or 0)
+        except Exception:
+            marked_turn = 0
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        if marked_turn and current_turn and marked_turn != current_turn:
+            pending = []
+        owner = self._resolve_player_by_id(str(sr.get("thundershock_owner", "") or ""))
+
+        def _roll_mortal(raw_value) -> int:
+            raw = str(raw_value or "").strip().lower()
+            if raw == "d3":
+                try:
+                    return int(get_roll("D3") or 0)
+                except Exception:
+                    return 0
+            if raw == "d6":
+                try:
+                    return int(get_roll("D6") or 0)
+                except Exception:
+                    return 0
+            try:
+                return int(raw_value or 0)
+            except Exception:
+                return 0
+
+        from ...utility.event_bus import append_action
+
+        for entry in list(pending or []):
+            if not isinstance(entry, dict):
+                continue
+            source = str(entry.get("source", "") or "Thundershock").strip() or "Thundershock"
+            mortal_raw = entry.get("mortal_wounds", "d3")
+            for uid in list(entry.get("struck_ids", []) or []):
+                target_unit = self._resolve_unit_by_id(str(uid or ""))
+                if target_unit is None or not target_unit.is_alive():
+                    continue
+                mortal = _roll_mortal(mortal_raw)
+                if mortal <= 0:
+                    continue
+                root._apply_mortal_wounds_to_unit(target_unit, int(mortal), game_map=getattr(self, "map", None))
+                if owner is not None:
+                    try:
+                        append_action(
+                            owner,
+                            f"{source}: {getattr(target_unit, 'name', 'Unit')} suffers {int(mortal)} mortal wounds.",
+                        )
+                    except Exception:
+                        pass
+        for key in (
+            "thundershock_pending_entries",
+            "thundershock_owner",
+            "thundershock_turn",
+        ):
+            sr.pop(key, None)
+        root.special_rules = sr
+
     def _on_unit_shooting_resolved_post_shoot_suppression(
         self,
         attacker_unit=None,
@@ -3890,6 +3967,192 @@ class GameShootingFightHandlersMixin:
             sr["spore_laced_shock_waves_turn"] = int(getattr(self, "turn", 0) or 0)
         except Exception:
             sr["spore_laced_shock_waves_turn"] = 0
+        root.special_rules = sr
+
+    def _on_shooting_targets_selected_thundershock(
+        self,
+        attacking_unit=None,
+        target_units=None,
+        weapon_declarations=None,
+        **_kwargs,
+    ) -> None:
+        if attacking_unit is None:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            root = attacking_unit
+        if root is None or not root.is_alive():
+            return
+        try:
+            player = root.get_parent_army().player
+        except Exception:
+            player = None
+        if player is None or player is not self.get_current_player():
+            return
+        specs = root.unit_thundershock_specs() or []
+        if not specs:
+            return
+        if not isinstance(weapon_declarations, list) or not weapon_declarations:
+            return
+
+        try:
+            from ...utility.aura_utils import unit_within_range_of_unit
+            from ...utility.event_bus import append_dice
+        except Exception:
+            return
+
+        def _normalize_weapon_key(profile) -> str:
+            weapon_name = ""
+            try:
+                parent = getattr(profile, "parent_wargear", None)
+                if parent is not None:
+                    weapon_name = str(getattr(parent, "name", "") or "")
+            except Exception:
+                weapon_name = ""
+            if not weapon_name:
+                weapon_name = str(getattr(profile, "name", "") or "")
+            if hasattr(root, "_normalize_keyword_phrase"):
+                try:
+                    return str(root._normalize_keyword_phrase(weapon_name) or "")
+                except Exception:
+                    return ""
+            return str(weapon_name or "").strip().lower()
+
+        def _resolve_enemy_roots() -> list[Any]:
+            out: list[Any] = []
+            seen: set[str] = set()
+            for enemy in list(self.get_enemy_units(player) or []):
+                if enemy is None:
+                    continue
+                try:
+                    enemy_root = enemy.get_attached_unit_root()
+                except Exception:
+                    enemy_root = enemy
+                if enemy_root is None or not enemy_root.is_alive():
+                    continue
+                try:
+                    if not getattr(enemy_root, "deployed", True):
+                        continue
+                    if enemy_root.is_in_reserves() or enemy_root.is_embarked:
+                        continue
+                except Exception:
+                    pass
+                eid = str(get_entity_id(enemy_root) or "")
+                if not eid or eid in seen:
+                    continue
+                seen.add(eid)
+                out.append(enemy_root)
+            try:
+                out.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+            except Exception:
+                pass
+            return out
+
+        enemy_roots = _resolve_enemy_roots()
+        if not enemy_roots:
+            return
+        specs_by_weapon: dict[str, list[dict]] = {}
+        for spec in list(specs or []):
+            weapon_key = str(spec.get("weapon_key", "") or "")
+            if not weapon_key:
+                continue
+            specs_by_weapon.setdefault(weapon_key, []).append(spec)
+
+        pending_entries: list[dict] = []
+        for declaration in list(weapon_declarations or []):
+            if not isinstance(declaration, dict):
+                continue
+            profile = declaration.get("weapon_profile")
+            if profile is None:
+                continue
+            target_unit = declaration.get("target_unit")
+            if target_unit is None:
+                continue
+            try:
+                target_root = target_unit.get_attached_unit_root()
+            except Exception:
+                target_root = target_unit
+            if target_root is None or not target_root.is_alive():
+                continue
+            weapon_key = _normalize_weapon_key(profile)
+            if not weapon_key:
+                continue
+            matched_specs = list(specs_by_weapon.get(weapon_key, []) or [])
+            if not matched_specs:
+                continue
+            models = [m for m in list(declaration.get("models") or []) if m is not None and getattr(m, "is_alive", False)]
+            trigger_count = len(models) if models else 1
+            for spec in matched_specs:
+                try:
+                    radius = float(spec.get("range", 0) or 0)
+                except Exception:
+                    radius = 0.0
+                if radius <= 0:
+                    continue
+                try:
+                    threshold = int(spec.get("threshold", 0) or 0)
+                except Exception:
+                    threshold = 0
+                if threshold <= 0:
+                    continue
+                source = str(spec.get("source", "") or "Thundershock").strip() or "Thundershock"
+                mortal_wounds = spec.get("mortal_wounds", "d3")
+                candidates = [target_root]
+                for enemy_root in list(enemy_roots):
+                    if enemy_root is target_root:
+                        continue
+                    try:
+                        if unit_within_range_of_unit(target_root, enemy_root, float(radius), use_attached_aggregate=True):
+                            candidates.append(enemy_root)
+                    except Exception:
+                        continue
+                try:
+                    candidates = sorted(list(candidates), key=lambda unit: str(get_entity_id(unit) or ""))
+                except Exception:
+                    candidates = list(candidates)
+                for _idx in range(int(trigger_count)):
+                    struck_ids: list[str] = []
+                    for cand in list(candidates):
+                        try:
+                            roll = int(get_roll("D6") or 0)
+                        except Exception:
+                            roll = 0
+                        try:
+                            append_dice(
+                                player,
+                                f"{source}: {getattr(cand, 'name', 'Unit')} roll {int(roll)} => {int(roll)} ({int(threshold)}+)",
+                            )
+                        except Exception:
+                            pass
+                        if roll >= int(threshold):
+                            cid = str(get_entity_id(cand) or "")
+                            if cid and cid not in struck_ids:
+                                struck_ids.append(cid)
+                    if struck_ids:
+                        pending_entries.append(
+                            {
+                                "target_unit_id": str(get_entity_id(target_root) or ""),
+                                "struck_ids": list(struck_ids),
+                                "mortal_wounds": mortal_wounds,
+                                "source": source,
+                            }
+                        )
+        if not pending_entries:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        existing = list(sr.get("thundershock_pending_entries", []) or [])
+        existing.extend(list(pending_entries))
+        sr["thundershock_pending_entries"] = existing
+        sr["thundershock_owner"] = str(getattr(player, "id", "") or "")
+        try:
+            sr["thundershock_turn"] = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            sr["thundershock_turn"] = 0
         root.special_rules = sr
 
     def _on_shooting_targets_selected_harvester_of_souls(self, attacking_unit=None, target_units=None, **_kwargs) -> None:

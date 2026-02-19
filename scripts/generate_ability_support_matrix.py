@@ -3043,6 +3043,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Start of Fight phase: optional engaged enemy VEHICLE selection; on 4+ it suffers D6 mortal wounds and its melee weapon Weapon Skill is worsened by 1 until end of phase.",
         ),
+        ("QI", "Thundershock"): (
+            "Supported",
+            "When selecting targets for thundercoil harpoon, roll for the target and nearby enemy units; each unit that rolls 4+ suffers D3 mortal wounds after attacks against the target are resolved.",
+        ),
         ("QI", "USING SIR HEKHTUR"): (
             "Supported",
             "When Canis Rex is destroyed, Sir Hekhtur is spawned and must Emergency Disembark as if from a destroyed Transport; Sir Hekhtur can only be targeted by Core Stratagems; Canis Rex unit-destroyed handling is deferred until Sir Hekhtur is destroyed.",

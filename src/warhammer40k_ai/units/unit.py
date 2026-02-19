@@ -2784,6 +2784,12 @@ class Unit(
         r"struck by spores suffers (?P<mw>d3|d6|\d+) mortal wounds?",
         re.IGNORECASE,
     )
+    _THUNDERSHOCK_RE = re.compile(
+        r"in your shooting phase each time you select a target for this model s (?P<weapon>[a-z0-9 ]+) roll one d6 for the target unit and one d6 for each other "
+        r"enemy unit within (?P<range>\d+) of the target unit on a (?P<threshold>\d)\+? the unit being rolled for is struck by arcing energies after resolving all "
+        r"of this model s attacks against the target unit each unit struck by arcing energies suffers (?P<mw>d3|d6|\d+) mortal wounds?",
+        re.IGNORECASE,
+    )
     _FIGHT_PHASE_TARGET_MELEE_WOUND_BONUS_RE = re.compile(
         r"at the start of the fight phase select one enemy unit within (?P<range>\d+)\s*\"?\s*of this model "
         r"until the end of the phase each time a friendly (?P<keyword>[a-z0-9 ]+?) model makes a melee attack that targets that enemy unit "

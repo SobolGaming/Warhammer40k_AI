@@ -5598,6 +5598,104 @@ class AbilitySpecsMixin:
         root._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def unit_thundershock_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: when selecting a target for a specific ranged weapon, roll for target
+        and nearby enemy units; struck units suffer mortal wounds after attacks are resolved.
+
+        Returns specs with keys:
+            - source: ability name
+            - weapon_key: str
+            - range: int
+            - threshold: int
+            - mortal_wounds: str | int
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_thundershock_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str, int, int, str]] = set()
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                m = unit._THUNDERSHOCK_RE.fullmatch(normalized)
+                if not m:
+                    continue
+                weapon_raw = str(m.group("weapon") or "").strip()
+                weapon_key = unit._normalize_keyword_phrase(weapon_raw) or weapon_raw.lower()
+                if not weapon_key:
+                    continue
+                try:
+                    range_value = int(m.group("range") or 0)
+                except Exception:
+                    range_value = 0
+                if range_value <= 0:
+                    continue
+                try:
+                    threshold = int(m.group("threshold") or 0)
+                except Exception:
+                    threshold = 0
+                if threshold <= 0:
+                    continue
+                mw_raw = str(m.group("mw") or "").strip().lower()
+                if not mw_raw:
+                    continue
+                if mw_raw in ("d3", "d6"):
+                    mw_value: str | int = mw_raw
+                else:
+                    try:
+                        mw_value = int(mw_raw)
+                    except Exception:
+                        continue
+                    if int(mw_value) <= 0:
+                        continue
+                source = str(name or "Thundershock").strip() or "Thundershock"
+                key = (
+                    source.lower(),
+                    weapon_key,
+                    int(range_value),
+                    int(threshold),
+                    str(mw_value),
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "weapon_key": weapon_key,
+                        "range": int(range_value),
+                        "threshold": int(threshold),
+                        "mortal_wounds": mw_value,
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_no_advance_start_or_end_within_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model-specific rule: enemy models cannot start or end an Advance move within range of this model.
