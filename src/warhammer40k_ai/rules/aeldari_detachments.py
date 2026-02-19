@@ -866,6 +866,17 @@ class AeldariDetachmentManager(DetachmentManagerBase):
             and self._unit_has_keyword(unit, "FLY")
         )
 
+    def _unit_is_anhrathe_rangers_or_shroud_runners(self, unit) -> bool:
+        if unit is None:
+            return False
+        return (
+            self._unit_has_keyword(unit, "ANHRATHE")
+            or self._unit_has_keyword(unit, "RANGERS")
+            or self._unit_has_keyword(unit, "RANGER")
+            or self._unit_has_keyword(unit, "SHROUD RUNNERS")
+            or self._unit_has_keyword(unit, "SHROUD RUNNER")
+        )
+
     def _unit_is_aspect_warriors(self, unit) -> bool:
         if unit is None:
             return False
@@ -889,6 +900,24 @@ class AeldariDetachmentManager(DetachmentManagerBase):
         if not self._unit_in_army(unit):
             return False
         return self._unit_is_aeldari_vehicle_fly(unit)
+
+    def yriels_own_charge_after_advance_applies(self, unit) -> bool:
+        if not self.is_eldritch_raiders():
+            return False
+        if not self._unit_in_army(unit):
+            return False
+        return self._unit_has_keyword(unit, "AELDARI")
+
+    def yriels_own_reroll_advance_applies(self, unit) -> bool:
+        if not self.is_eldritch_raiders():
+            return False
+        if not self._unit_in_army(unit):
+            return False
+        return self._unit_is_anhrathe_rangers_or_shroud_runners(unit)
+
+    def can_charge_after_advance(self, unit, *, game=None) -> bool:
+        _ = game
+        return self.yriels_own_charge_after_advance_applies(unit)
 
     def path_of_the_warrior_applies(self, unit) -> bool:
         if not self.is_aspect_host():

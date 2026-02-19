@@ -4522,8 +4522,12 @@ class ActionsMovementMixin:
         try:
             army = self.get_parent_army()
             mgr = getattr(army, "aeldari_detachments", None) if army is not None else None
-            if mgr is not None and getattr(mgr, "skilled_crews_reroll_advance_applies", None):
-                if mgr.skilled_crews_reroll_advance_applies(self):
+            if mgr is not None:
+                skilled_crews = getattr(mgr, "skilled_crews_reroll_advance_applies", None)
+                if callable(skilled_crews) and skilled_crews(self):
+                    return True
+                yriels_own = getattr(mgr, "yriels_own_reroll_advance_applies", None)
+                if callable(yriels_own) and yriels_own(self):
                     return True
         except Exception:
             pass
@@ -9874,6 +9878,15 @@ class ActionsMovementMixin:
         try:
             army = self.get_parent_army()
             mgr = getattr(army, "combat_doctrines", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "can_charge_after_advance", None):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if mgr.can_charge_after_advance(self, game=game):
+                    return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "aeldari_detachments", None) if army is not None else None
             if mgr is not None and getattr(mgr, "can_charge_after_advance", None):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if mgr.can_charge_after_advance(self, game=game):

@@ -290,6 +290,10 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"ranged weapons equipped by aeldari vehicle models from your army have the assault ability",
             r"you can reroll advance rolls made for aeldari vehicle fly units from your army",
         ),
+        "Yriel's Own": (
+            r"aeldari units in your army are eligible to declare a charge in a turn in which they advanced",
+            r"in addition each time an anhrathe rangers or shroud runners unit from your army advances you can reroll the advance roll",
+        ),
         "Superior Craftsmanship": (
             r"add \d+ to the range characteristic of ranged weapons equipped by t au empire models from your army",
         ),
@@ -1608,6 +1612,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Acrobatic Onslaught": (
             "Supported",
             "Ghosts of the Webway: Harlequins units can move through enemy models when making Charge moves; Travelling Players grants BATTLELINE and OC 2 to Troupe units/models, and Death Jester/Shadowseer/Troupe Master caps are set to 3 each.",
+        ),
+        "Yriel's Own": (
+            "Supported",
+            "Eldritch Raiders: AELDARI units can charge in turns in which they Advanced; ANHRATHE, RANGERS, and SHROUD RUNNERS units can re-roll Advance rolls.",
         ),
         "Relentless Raiders": (
             "Supported",
