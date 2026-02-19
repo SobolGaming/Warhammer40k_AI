@@ -1634,6 +1634,18 @@ class LateGameplayMixin:
         except Exception:
             pass
 
+        # Tunnel Crawlers: if the 6" Deep Strike option was active, cannot charge until end of turn.
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get("tunnel_crawlers_no_charge_on_arrival")):
+                owner = str(sr.get("tunnel_crawlers_turn_owner", "") or "")
+                sr["tunnel_crawlers_no_charge_turn"] = int(turn or 0)
+                if owner:
+                    sr["tunnel_crawlers_no_charge_turn_owner"] = owner
+                self.special_rules = sr
+        except Exception:
+            pass
+
         # Clear temporary Deep Strike flags from Realm of Chaos/Denizens of the Warp.
         try:
             sr = getattr(self, "special_rules", None)
@@ -1673,6 +1685,16 @@ class LateGameplayMixin:
                         "cloudstrike_expires_phase",
                         "cloudstrike_source",
                         "cloudstrike_no_charge_on_arrival",
+                    ):
+                        sr.pop(key, None)
+                if "tunnel_crawlers_deep_strike_min_distance" in sr or "tunnel_crawlers_expires_phase" in sr:
+                    for key in (
+                        "tunnel_crawlers_deep_strike_min_distance",
+                        "tunnel_crawlers_turn_owner",
+                        "tunnel_crawlers_turn",
+                        "tunnel_crawlers_expires_phase",
+                        "tunnel_crawlers_source",
+                        "tunnel_crawlers_no_charge_on_arrival",
                     ):
                         sr.pop(key, None)
                 if "hallowed_beacon_deep_strike_min_distance" in sr or "hallowed_beacon_expires_phase" in sr:

@@ -7,6 +7,7 @@ from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.rules.enhancement import Enhancement
 from warhammer40k_ai.rules.enhancement_descriptors import get_enhancement_tool_descriptor
+from warhammer40k_ai.rules.stratagem_descriptors import get_stratagem_tool_descriptor
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.utility.decision_utils import resolve_decision_command
 
@@ -131,6 +132,14 @@ def _resolve_yes(game: Game, request, *, player_id: str) -> None:
             break
     assert option_id is not None
     resolve_decision_command(game, request, option_id, player_id=player_id)
+
+
+def _pending_reaction_by_name(stratagems, name: str):
+    wanted = str(name or "").strip().upper()
+    for reaction in list(stratagems.get_pending_reactions() or []):
+        if str(reaction.get("stratagem", "") or "").strip().upper() == wanted:
+            return reaction
+    return None
 
 
 def test_a_perfect_ambush_applies_on_reinforcements_setup() -> None:
@@ -362,3 +371,121 @@ def test_assassination_edict_adds_hit_against_character_targets() -> None:
         "assassination edict" in str(reason or "").strip().lower()
         for reason in mods_vs_non_character.get("hit_reasons", ())
     )
+
+
+def test_host_of_ascension_stratagem_descriptors_registered() -> None:
+    tunnel = get_stratagem_tool_descriptor(stratagem_id="000009068004")
+    assert tunnel is not None
+    assert tunnel.name == "Tunnel Crawlers"
+    assert tunnel.effect == "deep_strike_min_distance_override_with_no_charge"
+    assert int(tunnel.effect_params.get("min_distance", 0) or 0) == 6
+    assert bool(tunnel.effect_params.get("cannot_charge_this_turn")) is True
+
+    lying = get_stratagem_tool_descriptor(stratagem_id="000009068005")
+    assert lying is not None
+    assert lying.name == "Lying in Wait"
+    assert lying.effect == "cult_ambush_marker_setup_override"
+    assert int(lying.effect_params.get("setup_max_distance", 0) or 0) == 6
+    assert str(lying.effect_params.get("enemy_distance_mode", "") or "") == "engagement_range"
+
+
+def test_tunnel_crawlers_queues_and_applies_deep_strike_override_with_no_charge() -> None:
+    game, gsc_player, enemy_player, gsc_unit = _make_game("Host of Ascension")
+    game.turn = 2
+    gsc_player.command_points = 5
+    gsc_player.stratagems.refresh_available()
+    gsc_player.stratagems.enable_event_subscriptions(event_system=game.event_system)
+    enemy_unit = _make_unit(
+        "Enemy Infantry",
+        faction="Enemy",
+        faction_keywords=["ENEMY"],
+        keywords=["INFANTRY"],
+    )
+    enemy_player.army.add_unit(enemy_unit)
+    enemy_unit.models[0].set_location(14.0, 10.0, 0.0, 0.0)
+    enemy_unit.deployed = True
+    enemy_unit.reserve_status = "deployed"
+    game.map.units = [enemy_unit]
+    game.rebuild_entity_registry()
+
+    gsc_unit.deployed = False
+    gsc_unit.reserve_status = "reserves"
+    gsc_unit.has_deep_strike = lambda: True
+    gsc_unit.can_arrive_from_reserves = lambda _turn: True
+
+    phase = SimpleNamespace(name="MOVEMENT_PHASE")
+    game.phase = phase
+    game.current_player_index = 0
+    game.event_system.publish("phase_start", player=gsc_player, phase=phase)
+
+    pending = _pending_reaction_by_name(gsc_player.stratagems, "TUNNEL CRAWLERS")
+    assert pending is not None
+    ok = gsc_player.stratagems.use(
+        str(pending.get("stratagem", "")),
+        unit=gsc_unit,
+        dequeue=True,
+    )
+    assert ok
+    assert float(gsc_unit.get_deep_strike_min_distance_override() or 0.0) == 6.0
+
+    gsc_unit.models[0].set_location(10.0, 10.0, 0.0, 0.0)
+    gsc_unit.deployed = True
+    gsc_unit.reserve_status = "deployed"
+    gsc_unit.arrived_from_reserves_this_turn = True
+    if gsc_unit not in game.map.units:
+        game.map.units.append(gsc_unit)
+    gsc_unit._finalize_reserves_arrival(turn=game.turn, game_map=game.map)
+
+    assert not gsc_unit.can_declare_charge_against(enemy_unit, game)
+
+
+def test_lying_in_wait_allows_cult_ambush_setup_within_six_and_not_engagement() -> None:
+    game, gsc_player, enemy_player, gsc_unit = _make_game("Host of Ascension")
+    game.turn = 2
+    gsc_player.command_points = 5
+    gsc_player.stratagems.refresh_available()
+    gsc_player.stratagems.enable_event_subscriptions(event_system=game.event_system)
+    gsc_unit.keywords.append("BATTLELINE")
+    gsc_unit.deployed = False
+    gsc_unit.reserve_status = "reserves"
+    game.map.units = []
+    game.rebuild_entity_registry()
+
+    cult_ambush = gsc_player.army.cult_ambush
+    assert cult_ambush is not None
+    cult_ambush._prepare_unit_in_cult_ambush(gsc_unit, game=game)
+    gsc_unit.can_arrive_from_reserves = lambda _turn: True
+    marker = cult_ambush.place_marker_at(game, 10.0, 10.0)
+    assert marker is not None
+
+    enemy_unit = _make_unit(
+        "Enemy Blocker",
+        faction="Enemy",
+        faction_keywords=["ENEMY"],
+        keywords=["INFANTRY"],
+    )
+    enemy_player.army.add_unit(enemy_unit)
+    enemy_unit.models[0].set_location(13.8, 10.0, 0.0, 0.0)
+    enemy_unit.deployed = True
+    enemy_unit.reserve_status = "deployed"
+    game.map.units = [enemy_unit]
+    game.rebuild_entity_registry()
+
+    placements_before = cult_ambush._find_cult_ambush_placements(gsc_unit, marker, game=game)
+    assert placements_before is None
+
+    phase = SimpleNamespace(name="MOVEMENT_PHASE")
+    game.phase = phase
+    game.current_player_index = 1
+    game.event_system.publish("phase_start", player=enemy_player, phase=phase)
+
+    pending = _pending_reaction_by_name(gsc_player.stratagems, "LYING IN WAIT")
+    assert pending is not None
+    ok = gsc_player.stratagems.use(
+        str(pending.get("stratagem", "")),
+        unit=gsc_unit,
+        dequeue=True,
+    )
+    assert ok
+    placements_after = cult_ambush._find_cult_ambush_placements(gsc_unit, marker, game=game)
+    assert placements_after is not None

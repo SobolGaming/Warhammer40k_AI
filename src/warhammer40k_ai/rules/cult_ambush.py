@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from ..utility.ability_support import ABILITY_CULT_AMBUSH, army_has_ability_id
+from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL
 from ..utility.entity_ids import get_entity_id
 from ..utility.aura_utils import horizontal_distance_point_to_model_base_2d
 from ..utility.model_base import Base, BaseType
@@ -513,20 +514,24 @@ class CultAmbushManager:
                 if getattr(em, "is_alive", True):
                     enemy_models.append(em)
 
-        # Compute min enemy distance (Warp Rifts support).
         min_enemy_distance = 9.0
-        snapshot = [m.get_location() for m in getattr(unit, "models", []) or []]
-        try:
-            for model, pos in zip(getattr(unit, "models", []) or [], placements):
-                model.set_location(pos[0], pos[1], pos[2], pos[3])
+        enemy_mode = self._cult_ambush_enemy_distance_mode(unit, game=game)
+        if enemy_mode == "engagement_range":
+            min_enemy_distance = float(ENGAGEMENT_RANGE_HORIZONTAL or 1.0) + 1e-6
+        else:
+            # Compute min enemy distance (Warp Rifts support).
+            snapshot = [m.get_location() for m in getattr(unit, "models", []) or []]
             try:
-                min_enemy_distance = float(getattr(game, "_warp_rifts_min_distance", lambda _u: 9.0)(unit) or 9.0)
-            except Exception:
-                min_enemy_distance = 9.0
-        finally:
-            for model, loc in zip(getattr(unit, "models", []) or [], snapshot):
-                if loc:
-                    model.set_location(*loc)
+                for model, pos in zip(getattr(unit, "models", []) or [], placements):
+                    model.set_location(pos[0], pos[1], pos[2], pos[3])
+                try:
+                    min_enemy_distance = float(getattr(game, "_warp_rifts_min_distance", lambda _u: 9.0)(unit) or 9.0)
+                except Exception:
+                    min_enemy_distance = 9.0
+            finally:
+                for model, loc in zip(getattr(unit, "models", []) or [], snapshot):
+                    if loc:
+                        model.set_location(*loc)
 
         from ..utility.aura_utils import horizontal_distance_between_bases_2d
         for idx, (x, y, z, facing) in enumerate(placements):
@@ -546,6 +551,70 @@ class CultAmbushManager:
             pass
         return True
 
+    @staticmethod
+    def _unit_root(unit):
+        if unit is None:
+            return None
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        if callable(get_root):
+            try:
+                root = get_root()
+            except Exception:
+                return unit
+            if root is not None:
+                return root
+        return unit
+
+    def _lying_in_wait_active(self, unit, *, game=None) -> bool:
+        root = self._unit_root(unit)
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        if "lying_in_wait_cult_ambush_setup_max_distance" not in sr and "lying_in_wait_cult_ambush_enemy_distance_mode" not in sr:
+            return False
+        if game is None:
+            return True
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        expected_phase = str(sr.get("lying_in_wait_expires_phase", "") or "").strip().upper()
+        if expected_phase and phase_name and expected_phase != phase_name:
+            return False
+        turn = int(sr.get("lying_in_wait_turn", 0) or 0)
+        current_turn = int(getattr(game, "turn", 0) or 0)
+        if turn and current_turn and turn != current_turn:
+            return False
+        owner = str(sr.get("lying_in_wait_turn_owner", "") or "")
+        if owner:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+            current_owner = str(getattr(current_player, "id", "") or "")
+            if current_owner and owner == current_owner:
+                return False
+        return True
+
+    def _cult_ambush_setup_max_distance(self, unit, *, game=None) -> float:
+        default_distance = 3.0
+        if not self._lying_in_wait_active(unit, game=game):
+            return default_distance
+        root = self._unit_root(unit)
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return default_distance
+        try:
+            value = float(sr.get("lying_in_wait_cult_ambush_setup_max_distance", default_distance) or default_distance)
+        except Exception:
+            value = default_distance
+        if value <= 0:
+            return default_distance
+        return value
+
+    def _cult_ambush_enemy_distance_mode(self, unit, *, game=None) -> str:
+        if not self._lying_in_wait_active(unit, game=game):
+            return ""
+        root = self._unit_root(unit)
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return ""
+        return str(sr.get("lying_in_wait_cult_ambush_enemy_distance_mode", "") or "").strip().lower()
+
     def _find_cult_ambush_placements(self, unit, marker: CultAmbushMarker, *, game=None):
         if unit is None or marker is None or game is None:
             return None
@@ -554,6 +623,7 @@ class CultAmbushManager:
         models = [m for m in list(getattr(unit, "models", []) or []) if getattr(m, "is_alive", True)]
         if not models:
             return []
+        setup_max_distance = self._cult_ambush_setup_max_distance(unit, game=game)
 
         marker_base = Base(BaseType.CIRCULAR, MARKER_RADIUS_INCHES)
         try:
@@ -600,7 +670,7 @@ class CultAmbushManager:
                     model=model,
                     transport_base=marker_base,
                     game_map=game.map,
-                    max_distance=3.0,
+                    max_distance=float(setup_max_distance),
                     placed=placed,
                     require_not_in_engagement=False,
                 )
@@ -652,6 +722,22 @@ class CultAmbushManager:
         try:
             if unit not in game.map.units:
                 game.map.units.append(unit)
+        except Exception:
+            pass
+        try:
+            root = self._unit_root(unit)
+            sr = getattr(root, "special_rules", None)
+            if isinstance(sr, dict):
+                for key in (
+                    "lying_in_wait_cult_ambush_setup_max_distance",
+                    "lying_in_wait_cult_ambush_enemy_distance_mode",
+                    "lying_in_wait_turn_owner",
+                    "lying_in_wait_turn",
+                    "lying_in_wait_expires_phase",
+                    "lying_in_wait_source",
+                ):
+                    sr.pop(key, None)
+                root.special_rules = sr
         except Exception:
             pass
 

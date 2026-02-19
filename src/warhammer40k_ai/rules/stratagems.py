@@ -18,6 +18,7 @@ from .stratagem_descriptors import get_stratagem_tool_descriptor
 from .stratagems_chaos_knights import ChaosKnightsStratagemMixin
 from .stratagems_necrons import NecronsStratagemMixin
 from .stratagems_orks import OrksStratagemMixin
+from .stratagems_genestealer_cults import GenestealerCultsStratagemMixin
 from .stratagems_tau_empire import TauEmpireStratagemMixin
 from .stratagems_thousand_sons import ThousandSonsStratagemMixin
 from .stratagems_tyranids import TyranidsStratagemMixin
@@ -137,6 +138,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "THUNDERSTOMP",
     "TERRIFYING SPECTACLE",
     "TANK SHOCK",
+    "TUNNEL CRAWLERS",
     "THE FOE FORESEEN",
     "CUT DOWN THE WEAK",
     "SNAP TO IT",
@@ -258,6 +260,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "PROTECTION OF THE DARK PRINCE",
     "UNSHAKEABLE OPPONENTS",
     "VECTORED ENGINES",
+    "LYING IN WAIT",
     "WARRIOR FOCUS",
     "PRETERNATURAL AGILITY",
     "VIOLENT CRESCENDO",
@@ -319,6 +322,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "FIRE AND FADE",
     "MURDER-CALL",
     "LIGHTNING-FAST REACTIONS",
+    "LYING IN WAIT",
     "MARTIAL PERFECTION",
     "NEUROWEB SYSTEM JAMMER",
     "PINPOINT COUNTER-OFFENSIVE",
@@ -381,6 +385,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "DIVINE INTERVENTION",
     "SHROUD OF CHAOS",
     "SOULSIGHT",
+    "TUNNEL CRAWLERS",
     "DARK VIGOUR",
     "CRUEL RAIDERS",
     "ADVANCE AND CLAIM",
@@ -1175,6 +1180,7 @@ class StratagemManager(
     TauEmpireStratagemMixin,
     ThousandSonsStratagemMixin,
     TyranidsStratagemMixin,
+    GenestealerCultsStratagemMixin,
     OrksStratagemMixin,
     ImperialKnightsStratagemMixin,
     ImperialAgentsStratagemMixin,
@@ -1603,6 +1609,7 @@ class StratagemManager(
             "DENIZENS OF THE WARP",
             "WARP SURGE",
             "RAPID MANIFESTATION",
+            "TUNNEL CRAWLERS",
             "OVERSHADOWED BY NONE",
             "PUNISH THE CRAVEN",
             "WARP STALKERS",
@@ -1623,6 +1630,7 @@ class StratagemManager(
             "HEIGHTENED JEALOUSY",
             "MARTIAL PERFECTION",
             "LAYERED WARDS",
+            "LYING IN WAIT",
             "LETHAL DOSAGE",
             "PROTECTION OF THE DARK PRINCE",
             "PRE-CALIBRATED PURGE SOLUTION",
@@ -3869,6 +3877,10 @@ class StratagemManager(
             self._queue_tau_montka_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
+        try:
+            self._queue_genestealer_cults_host_of_ascension_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
 
     def _gilded_champion_detachment_manager(self):
         army = getattr(self.player, "army", None)
@@ -4721,6 +4733,10 @@ class StratagemManager(
             raise
         try:
             self._cleanup_imperial_agents_veiled_blade_phase_end_effects(phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_genestealer_cults_host_of_ascension_phase_end_effects(phase=phase)
         except Exception:
             raise
         # Clear command-phase battle-shock suppression flags (e.g., Terrifying Spectacle).
@@ -13052,6 +13068,9 @@ class StratagemManager(
         tyranids_result = self._use_tyranids_invasion_fleet_stratagem(s, **kwargs)
         if tyranids_result is not None:
             return tyranids_result
+        genestealer_cults_result = self._use_genestealer_cults_host_of_ascension_stratagem(s, **kwargs)
+        if genestealer_cults_result is not None:
+            return genestealer_cults_result
         imperial_knights_result = self._use_imperial_knights_valourstrike_stratagem(s, **kwargs)
         if imperial_knights_result is not None:
             return imperial_knights_result

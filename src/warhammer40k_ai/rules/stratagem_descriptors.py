@@ -346,6 +346,37 @@ _POSSESSED_SLAUGHTERBAND_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _POSSESSED_SLAUGHTERBAND_STRATAGEM_DESCRIPTORS.values()
 }
 
+_HOST_OF_ASCENSION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009068004": StratagemToolDescriptor(
+        stratagem_id="000009068004",
+        name="Tunnel Crawlers",
+        timing="movement_phase_reinforcements_step",
+        target="genestealer_cults_unit_arriving_with_deep_strike",
+        duration="this_turn_and_phase",
+        effect="deep_strike_min_distance_override_with_no_charge",
+        cp_cost=1,
+        effect_params={"min_distance": 6, "distance_type": "horizontal", "cannot_charge_this_turn": True},
+    ),
+    "000009068005": StratagemToolDescriptor(
+        stratagem_id="000009068005",
+        name="Lying in Wait",
+        timing="opponent_movement_phase_reinforcements_step",
+        target="genestealer_cults_battleline_unit_in_cult_ambush",
+        duration="until_end_of_phase_or_until_set_up",
+        effect="cult_ambush_marker_setup_override",
+        cp_cost=1,
+        effect_params={
+            "setup_max_distance": 6,
+            "setup_distance_type": "wholly_within",
+            "enemy_distance_mode": "engagement_range",
+        },
+    ),
+}
+
+_HOST_OF_ASCENSION_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _HOST_OF_ASCENSION_STRATAGEM_DESCRIPTORS.values()
+}
+
 _VESSELS_OF_WRATH_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009848002": StratagemToolDescriptor(
         stratagem_id="000009848002",
@@ -2132,6 +2163,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _POSSESSED_SLAUGHTERBAND_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _HOST_OF_ASCENSION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _VESSELS_OF_WRATH_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -2210,6 +2244,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _SCINTILLATING_LEGION_STRATAGEM_BY_NAME.get(key)
         or _GORETRACK_ONSLAUGHT_STRATAGEM_BY_NAME.get(key)
         or _POSSESSED_SLAUGHTERBAND_STRATAGEM_BY_NAME.get(key)
+        or _HOST_OF_ASCENSION_STRATAGEM_BY_NAME.get(key)
         or _VESSELS_OF_WRATH_STRATAGEM_BY_NAME.get(key)
         or _CULT_OF_BLOOD_STRATAGEM_BY_NAME.get(key)
         or _GRIZZLED_COMPANY_STRATAGEM_BY_NAME.get(key)
