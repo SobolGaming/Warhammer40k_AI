@@ -9,6 +9,12 @@ from .nurgles_gift import NurglesGiftManager
 class DeathGuardDetachmentManager(DetachmentManagerBase):
     faction_id = "DG"
     _WORLD_BLIGHT_SOURCE = "worldblight"
+    _VERMINOUS_HAZE_SCOUT_DISTANCE = 5.0
+
+    def is_flyblown_host(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Flyblown Host")
 
     def is_death_lords_chosen(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -75,6 +81,31 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
         if bool(unit.is_in_reserves()):
             return False
         return True
+
+    def _unit_is_verminous_haze_eligible(self, unit) -> bool:
+        if unit is None:
+            return False
+        if not self._unit_in_army(unit):
+            return False
+        if not self._unit_is_death_guard(unit):
+            return False
+        if not self._unit_has_keyword(unit, "INFANTRY"):
+            return False
+        if self._unit_has_keyword(unit, "POXWALKERS"):
+            return False
+        if bool(getattr(unit, "is_embarked", False)) or bool(getattr(unit, "embarked_in", None)):
+            return False
+        return True
+
+    def verminous_haze_applies_to_unit(self, unit) -> bool:
+        if not self.is_flyblown_host():
+            return False
+        return self._unit_is_verminous_haze_eligible(unit)
+
+    def verminous_haze_scout_distance_for_unit(self, unit) -> float:
+        if not self.verminous_haze_applies_to_unit(unit):
+            return 0.0
+        return float(self._VERMINOUS_HAZE_SCOUT_DISTANCE)
 
     def resolve_deadly_vectors(self, *, game=None, opponent_player=None) -> list[dict]:
         if not self.is_death_lords_chosen():

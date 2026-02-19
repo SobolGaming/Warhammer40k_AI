@@ -558,6 +558,9 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"in your opponents command phase roll 2d6 for each afflicted enemy unit subtracting 1 from the result if that unit is below half strength",
             r"if the result is 6 or less that enemy unit suffers d3 mortal wounds",
         ),
+        "Verminous Haze": (
+            r"death guard infantry units excluding poxwalkers units from your army that are not embarked within a transport have the scouts 5 and stealth abilities",
+        ),
         "Rush to the Fray": (
             r"each time a world eaters unit from your army disembarks from a transport until the end of the turn add \d+ to charge rolls made for that unit and that units melee weapons have the lance ability",
         ),
@@ -1585,6 +1588,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Deadly Vectors": (
             "Supported",
             "Death Lord's Chosen: in your opponent's Command phase, each Afflicted enemy unit rolls 2D6 (-1 if Below Half-strength), and on 6 or less that unit suffers D3 mortal wounds.",
+        ),
+        "Verminous Haze": (
+            "Supported",
+            "Flyblown Host: DEATH GUARD INFANTRY units (excluding POXWALKERS) that are not embarked gain Scouts 5\" and Stealth.",
         ),
         "Quicksilver Grace": ("Supported", "Mercurial Host: reroll Advance rolls for eligible units."),
         "Exquisite Swordsmanship": ("Supported", "Peerless Bladesmen: on charge choose Lethal or Sustained for melee."),

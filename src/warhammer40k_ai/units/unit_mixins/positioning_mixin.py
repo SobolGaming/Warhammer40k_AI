@@ -5353,6 +5353,12 @@ class PositioningMixin:
         # Imperial Knights Valourstrike Lance: Bearer of the Evanescent Ion.
         if isinstance(sr, dict) and sr.get("imperial_knights_evanescent_ion_stealth_active") is True:
             return True
+        # Death Guard Flyblown Host: Verminous Haze.
+        army = self.get_parent_army()
+        dg_mgr = getattr(army, "death_guard_detachments", None) if army is not None else None
+        applies_fn = getattr(dg_mgr, "verminous_haze_applies_to_unit", None) if dg_mgr is not None else None
+        if callable(applies_fn) and applies_fn(self):
+            return True
         # Use cached result if available
         if 'stealth' in getattr(self, '_ability_cache', {}):
             found = self._ability_cache['stealth']
@@ -5490,8 +5496,19 @@ class PositioningMixin:
                 - A boolean indicating if the unit has Scout ability
                 - The scout distance in inches (0.0 if no Scout ability)
         """
+        verminous_haze_active = False
+        verminous_haze_distance = 0.0
+        army = self.get_parent_army()
+        dg_mgr = getattr(army, "death_guard_detachments", None) if army is not None else None
+        active_fn = getattr(dg_mgr, "is_flyblown_host", None) if dg_mgr is not None else None
+        if callable(active_fn):
+            verminous_haze_active = bool(active_fn())
+        scout_fn = getattr(dg_mgr, "verminous_haze_scout_distance_for_unit", None) if dg_mgr is not None else None
+        if callable(scout_fn):
+            verminous_haze_distance = float(scout_fn(self) or 0.0)
+
         # Use cached result if available
-        if 'scout' in getattr(self, '_ability_cache', {}):
+        if (not verminous_haze_active) and 'scout' in getattr(self, '_ability_cache', {}):
             return self._ability_cache['scout']
         
         try:
@@ -5535,6 +5552,9 @@ class PositioningMixin:
         if leader_bonus_dist > 0:
             found = True
             dist = max(float(dist or 0.0), float(leader_bonus_dist))
+        if verminous_haze_distance > 0:
+            found = True
+            dist = max(float(dist or 0.0), float(verminous_haze_distance))
         result = (True, float(dist)) if found else (False, 0.0)
 
         # Attached units can only Scout if every model has Scouts (use smallest distance if mixed).
@@ -5560,10 +5580,11 @@ class PositioningMixin:
         except Exception:
             pass
         
-        # Cache the result
-        if not hasattr(self, '_ability_cache'):
-            self._ability_cache = {}
-        self._ability_cache['scout'] = result
+        # Cache the result when there are no dynamic Verminous Haze state checks.
+        if not verminous_haze_active:
+            if not hasattr(self, '_ability_cache'):
+                self._ability_cache = {}
+            self._ability_cache['scout'] = result
         
         return result
     
