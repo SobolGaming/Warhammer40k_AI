@@ -153,6 +153,20 @@ def _melee_profile(strength: str = "4"):
 
 class TestImperialAgentsVeiledBladeStratagems(unittest.TestCase):
     def test_veiled_blade_stratagem_descriptors_registered(self):
+        prime = get_stratagem_tool_descriptor(stratagem_id="000009758002")
+        self.assertIsNotNone(prime)
+        self.assertEqual(prime.name, "Prime Target")
+        self.assertEqual(prime.effect, "wound_reroll_ones_vs_character_with_officio_warlord_full_reroll")
+        self.assertEqual(str(prime.effect_params.get("reroll_wound_ones_vs_keyword", "") or ""), "CHARACTER")
+        self.assertTrue(bool(prime.effect_params.get("officio_assassinorum_full_reroll_vs_enemy_warlord")))
+
+        hyper = get_stratagem_tool_descriptor(stratagem_id="000009758003")
+        self.assertIsNotNone(hyper)
+        self.assertEqual(hyper.name, "Hyperstimms")
+        self.assertEqual(hyper.effect, "toughness_bonus_and_conditional_feel_no_pain")
+        self.assertEqual(int(hyper.effect_params.get("toughness_bonus", 0) or 0), 1)
+        self.assertEqual(int(hyper.effect_params.get("eversor_assassin_feel_no_pain", 0) or 0), 4)
+
         blind = get_stratagem_tool_descriptor(stratagem_id="000009758006")
         self.assertIsNotNone(blind)
         self.assertEqual(blind.name, "Blind Grenades")
@@ -170,6 +184,72 @@ class TestImperialAgentsVeiledBladeStratagems(unittest.TestCase):
         by_name = get_stratagem_tool_descriptor(name="ENSNARING TRAP")
         self.assertIsNotNone(by_name)
         self.assertEqual(str(getattr(by_name, "stratagem_id", "") or ""), "000009758007")
+
+    def test_prime_target_applies_wound_reroll_ones_vs_character_until_phase_end(self):
+        game, ia_player, _enemy_player, ia_army, enemy_army = _build_game()
+        agents = _make_unit(
+            "Agents Operatives",
+            keywords=["INFANTRY"],
+            faction_keywords=["AGENTS OF THE IMPERIUM", "IMPERIUM"],
+        )
+        enemy_character = _make_unit(
+            "Enemy Character",
+            faction_name="Enemy",
+            keywords=["INFANTRY", "CHARACTER"],
+            faction_keywords=["ENEMY"],
+        )
+        ia_army.add_unit(agents)
+        enemy_army.add_unit(enemy_character)
+        _place_unit(game, agents, 10.0, 10.0)
+        _place_unit(game, enemy_character, 14.0, 10.0)
+
+        _set_phase(game, ia_player, "SHOOTING_PHASE", 0)
+        ok = ia_player.stratagems.use("PRIME TARGET", unit=agents, phase_name="Shooting phase")
+        self.assertTrue(ok)
+        self.assertEqual(int(ia_player.command_points or 0), 9)
+
+        wound_mods = agents.get_unit_wound_reroll_modifiers("ranged", target=enemy_character)
+        self.assertIn(1, set(wound_mods.get("reroll_wound_values", ()) or ()))
+        self.assertTrue(any("PRIME TARGET" in str(r) for r in list(wound_mods.get("reroll_wound_reasons", ()) or ())))
+
+        game.event_system.publish("phase_end", player=ia_player, phase=SimpleNamespace(name="SHOOTING_PHASE"))
+        sr_after = getattr(agents, "special_rules", {}) or {}
+        self.assertFalse(bool(sr_after.get("imperial_agents_prime_target_active")))
+        wound_mods_after = agents.get_unit_wound_reroll_modifiers("ranged", target=enemy_character)
+        self.assertFalse(any("PRIME TARGET" in str(r) for r in list(wound_mods_after.get("reroll_wound_reasons", ()) or ())))
+
+    def test_prime_target_grants_officio_full_wound_reroll_vs_enemy_warlord(self):
+        game, ia_player, _enemy_player, ia_army, enemy_army = _build_game()
+        assassin = _make_unit(
+            "Vindicare Assassin",
+            keywords=["OFFICIO ASSASSINORUM", "INFANTRY", "CHARACTER"],
+            faction_keywords=["AGENTS OF THE IMPERIUM", "IMPERIUM"],
+        )
+        enemy_warlord = _make_unit(
+            "Enemy Warlord",
+            faction_name="Enemy",
+            keywords=["INFANTRY", "CHARACTER"],
+            faction_keywords=["ENEMY"],
+        )
+        enemy_warlord.is_warlord = True
+        enemy_army.warlord = enemy_warlord
+
+        ia_army.add_unit(assassin)
+        enemy_army.add_unit(enemy_warlord)
+        _place_unit(game, assassin, 10.0, 10.0)
+        _place_unit(game, enemy_warlord, 14.0, 10.0)
+
+        _set_phase(game, ia_player, "SHOOTING_PHASE", 0)
+        ok = ia_player.stratagems.use("PRIME TARGET", unit=assassin, phase_name="Shooting phase")
+        self.assertTrue(ok)
+
+        wound_mods = assassin.get_model_wound_reroll_modifiers(
+            assassin.models[0],
+            attack_type="ranged",
+            target=enemy_warlord,
+        )
+        self.assertTrue(bool(wound_mods.get("reroll_wound_full")))
+        self.assertTrue(any("PRIME TARGET" in str(r) for r in list(wound_mods.get("reroll_wound_full_reasons", ()) or ())))
 
     def test_blind_grenades_queues_applies_penalty_and_cleans_up(self):
         game, ia_player, enemy_player, ia_army, enemy_army = _build_game()
@@ -347,6 +427,90 @@ class TestImperialAgentsVeiledBladeStratagems(unittest.TestCase):
             log_roll=False,
         )
         self.assertFalse(bool(wound_after_cleanup.get("wound")))
+
+    def test_hyperstimms_queues_on_shooting_targets_selected_and_applies_toughness_until_phase_end(self):
+        game, ia_player, enemy_player, ia_army, enemy_army = _build_game()
+        target = _make_unit(
+            "Agents Character",
+            keywords=["INFANTRY", "CHARACTER"],
+            faction_keywords=["AGENTS OF THE IMPERIUM", "IMPERIUM"],
+            toughness="4",
+        )
+        attacker = _make_unit(
+            "Enemy Attackers",
+            faction_name="Enemy",
+            keywords=["INFANTRY"],
+            faction_keywords=["ENEMY"],
+        )
+        ia_army.add_unit(target)
+        enemy_army.add_unit(attacker)
+        _place_unit(game, target, 10.0, 10.0)
+        _place_unit(game, attacker, 16.0, 10.0)
+        base_toughness = int(target.models[0].toughness or 0)
+
+        _set_phase(game, enemy_player, "SHOOTING_PHASE", 1)
+        game.event_system.publish("shooting_targets_selected", attacking_unit=attacker, target_units=[target])
+        pending = _pending_by_name(ia_player.stratagems, "HYPERSTIMMS")
+        self.assertIsNotNone(pending)
+
+        ok = ia_player.stratagems.use(
+            str(pending.get("stratagem", "")),
+            unit=target,
+            attacking_unit=attacker,
+            target_units=[target],
+            phase_name="Shooting phase",
+            dequeue=True,
+        )
+        self.assertTrue(ok)
+        self.assertEqual(int(target.models[0].toughness or 0), base_toughness + 1)
+
+        game.event_system.publish("phase_end", player=enemy_player, phase=SimpleNamespace(name="SHOOTING_PHASE"))
+        self.assertEqual(int(target.models[0].toughness or 0), base_toughness)
+        sr_after = getattr(target, "special_rules", {}) or {}
+        self.assertFalse(bool(sr_after.get("imperial_agents_hyperstimms_active")))
+
+    def test_hyperstimms_fight_reaction_grants_eversor_fnp_and_cleans_up(self):
+        game, ia_player, _enemy_player, ia_army, enemy_army = _build_game()
+        eversor = _make_unit(
+            "Eversor Assassin",
+            keywords=["OFFICIO ASSASSINORUM", "INFANTRY", "CHARACTER"],
+            faction_keywords=["AGENTS OF THE IMPERIUM", "IMPERIUM"],
+            toughness="4",
+        )
+        attacker = _make_unit(
+            "Enemy Duelists",
+            faction_name="Enemy",
+            keywords=["INFANTRY"],
+            faction_keywords=["ENEMY"],
+        )
+        ia_army.add_unit(eversor)
+        enemy_army.add_unit(attacker)
+        _place_unit(game, eversor, 10.0, 10.0)
+        _place_unit(game, attacker, 14.0, 10.0)
+        base_toughness = int(eversor.models[0].toughness or 0)
+
+        _set_phase(game, ia_player, "FIGHT_PHASE", 0)
+        game.event_system.publish("fight_targets_selected", attacking_unit=attacker, target_units=[eversor])
+        pending = _pending_by_name(ia_player.stratagems, "HYPERSTIMMS")
+        self.assertIsNotNone(pending)
+
+        ok = ia_player.stratagems.use(
+            str(pending.get("stratagem", "")),
+            unit=eversor,
+            attacking_unit=attacker,
+            target_units=[eversor],
+            phase_name="Fight phase",
+            dequeue=True,
+        )
+        self.assertTrue(ok)
+        self.assertEqual(int(eversor.models[0].toughness or 0), base_toughness + 1)
+        fnp_entries = list(eversor.models[0].get_temporary_fnp_entries() or [])
+        self.assertTrue(any(int(val or 0) == 4 for val, _cond in fnp_entries))
+
+        game.event_system.publish("phase_end", player=ia_player, phase=SimpleNamespace(name="FIGHT_PHASE"))
+        self.assertEqual(int(eversor.models[0].toughness or 0), base_toughness)
+        fnp_after = list(eversor.models[0].get_temporary_fnp_entries() or [])
+        self.assertFalse(any(int(val or 0) == 4 for val, _cond in fnp_after))
 
 
 if __name__ == "__main__":

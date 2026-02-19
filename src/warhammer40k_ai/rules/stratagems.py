@@ -160,6 +160,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "CHRONOSHIFT",
     "ENDLESS SERVITUDE",
     "ENSNARING TRAP",
+    "HYPERSTIMMS",
+    "PRIME TARGET",
     "REACTIVE REPOSITION",
     "RED WRATH",
     "DEADLY DEBUT",
@@ -292,6 +294,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "DEATH ECSTASY",
     "EMBRACE THE PAIN",
     "ENSNARING TRAP",
+    "HYPERSTIMMS",
     "FRENZIED RESILIENCE",
     "FEIGNED WEAKNESS",
     "FEIGNED RETREAT",
@@ -1465,6 +1468,7 @@ class StratagemManager(
             "CLOAK AND SHADOW",
             "VENGEFUL SORROW",
             "VOID HARDENED",
+            "HYPERSTIMMS",
         }
         fight_reaction_names = {
             "BALEFUL HALO",
@@ -1493,6 +1497,7 @@ class StratagemManager(
             "\u2019ARD AS NAILS",
             "TO THEIR FINAL BREATH",
             "VOID HARDENED",
+            "HYPERSTIMMS",
         }
 
         has_generic_defensive_shooting = "shooting" in defensive_phases
@@ -1552,6 +1557,7 @@ class StratagemManager(
             "ASPIRE TO INFAMY",
             "BLOODTHIRSTY HORDE",
             "BLIND GRENADES",
+            "HYPERSTIMMS",
             "BRAZEN CONTEMPT",
             "BERSERK FUGUE",
             "DEADLY DEBUT",
@@ -1645,6 +1651,7 @@ class StratagemManager(
             "ORDERED RETREAT",
             "RAPID REGENERATION",
             "ENSNARING TRAP",
+            "PRIME TARGET",
             "VOID HARDENED",
         }
         needs_phase_end = bool(
@@ -3183,6 +3190,8 @@ class StratagemManager(
             "WARRIOR FOCUS": "Target: ASPECT WARRIORS/AVATAR OF KHAINE unit not yet selected to shoot/fight",
             "A CHALLENGE MET": "Target: WYCH CULT unit; enemy within 9\" that moved or was set up this phase",
             "ENSNARING TRAP": "Target: AGENTS OF THE IMPERIUM INFANTRY unit within 6\" of enemy units it can charge",
+            "HYPERSTIMMS": "Target: AGENTS OF THE IMPERIUM CHARACTER unit selected as a target of the attacking enemy unit's attacks",
+            "PRIME TARGET": "Target: your AGENTS OF THE IMPERIUM unit that has not been selected to shoot/fight this phase",
             "ACROBATIC DISPLAY": "Target: WYCH CULT unit targeted by enemy attacks",
             "BEAUTIFUL DEATH": "Target: EMPEROR'S CHILDREN CHARACTER unit targeted by enemy fight attacks",
             "BERSERK FUGUE": "Target: WYCH CULT unit targeted by enemy attacks",
@@ -7404,6 +7413,13 @@ class StratagemManager(
             )
         except Exception:
             raise
+        try:
+            self._queue_imperial_agents_veiled_blade_shooting_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
         # GO TO GROUND
         try:
             s = self.get_by_name("GO TO GROUND")
@@ -8197,6 +8213,13 @@ class StratagemManager(
             raise
         try:
             self._queue_rad_zone_baleful_fight_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_imperial_agents_veiled_blade_fight_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )

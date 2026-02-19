@@ -4,6 +4,7 @@ import logging
 from typing import Any, Optional
 
 from ..utility.entity_ids import get_entity_id
+from ..utility.modifiers import Modifier, ModifierOp
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,11 @@ class ImperialAgentsStratagemMixin:
     def _ia_is_callidus_assassin_unit(cls, unit: Any) -> bool:
         root = cls._ia_root(unit)
         return cls._ia_unit_name_key(root) == "callidus assassin"
+
+    @classmethod
+    def _ia_is_eversor_assassin_unit(cls, unit: Any) -> bool:
+        root = cls._ia_root(unit)
+        return cls._ia_unit_name_key(root) == "eversor assassin"
 
     @staticmethod
     def _ia_is_alive(unit: Any) -> bool:
@@ -117,6 +123,24 @@ class ImperialAgentsStratagemMixin:
         if not self._ia_is_agents_unit(root):
             return False
         return self._ia_has_keyword(root, "INFANTRY")
+
+    def _ia_is_agents_character_unit(self, unit: Any) -> bool:
+        root = self._ia_root(unit)
+        if root is None:
+            return False
+        if not self._ia_is_agents_unit(root):
+            return False
+        return self._ia_has_keyword(root, "CHARACTER")
+
+    @staticmethod
+    def _ia_selected_to_shoot_this_phase(unit: Any) -> bool:
+        round_state = getattr(unit, "round_state", None)
+        return bool(getattr(round_state, "shot_this_round", False))
+
+    @staticmethod
+    def _ia_selected_to_fight_this_phase(unit: Any) -> bool:
+        round_state = getattr(unit, "round_state", None)
+        return bool(getattr(round_state, "fought_this_phase", False))
 
     def _ia_effective_cp_cost(self, stratagem: Any, *, target_unit: Any = None, enemy_unit: Any = None) -> int:
         cp_cost = int(getattr(stratagem, "cp_cost", 0) or 0)
@@ -267,6 +291,68 @@ class ImperialAgentsStratagemMixin:
                 enemy_by_unit[uid] = enemies
         return sorted(out, key=self._ia_sort_key), enemy_by_unit
 
+    def _ia_prime_target_candidates(self, *, phase_name: str) -> list[Any]:
+        if not self._is_veiled_blade_elimination_force():
+            return []
+        phase_key = str(phase_name or "").strip().lower()
+        if phase_key not in {"shooting phase", "fight phase"}:
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._ia_root(unit)
+            if root is None:
+                continue
+            uid = self._ia_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ia_owned_by_player(root, self.player):
+                continue
+            if not self._ia_is_on_battlefield(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._ia_is_agents_unit(root):
+                continue
+            if phase_key == "shooting phase" and self._ia_selected_to_shoot_this_phase(root):
+                continue
+            if phase_key == "fight phase" and self._ia_selected_to_fight_this_phase(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ia_sort_key)
+
+    def _ia_hyperstimms_candidates(self, target_units: list[Any]) -> list[Any]:
+        if not self._is_veiled_blade_elimination_force():
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._ia_root(unit)
+            if root is None:
+                continue
+            uid = self._ia_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ia_owned_by_player(root, self.player):
+                continue
+            if not self._ia_is_on_battlefield(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._ia_is_agents_character_unit(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ia_sort_key)
+
     def _queue_imperial_agents_veiled_blade_charge_declared_reactions(
         self,
         *,
@@ -310,6 +396,82 @@ class ImperialAgentsStratagemMixin:
             "cp_cost": stratagem.cp_cost,
             "charging_unit": charging_root,
             "enemy_unit": charging_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_imperial_agents_veiled_blade_shooting_target_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        self._queue_imperial_agents_veiled_blade_targets_selected_reactions(
+            attacking_unit=attacking_unit,
+            target_units=target_units,
+            event_name="shooting_targets_selected",
+            phase_name="Shooting phase",
+        )
+
+    def _queue_imperial_agents_veiled_blade_fight_target_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+    ) -> None:
+        self._queue_imperial_agents_veiled_blade_targets_selected_reactions(
+            attacking_unit=attacking_unit,
+            target_units=target_units,
+            event_name="fight_targets_selected",
+            phase_name="Fight phase",
+        )
+
+    def _queue_imperial_agents_veiled_blade_targets_selected_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: list[Any],
+        event_name: str,
+        phase_name: str,
+    ) -> None:
+        if not self._is_veiled_blade_elimination_force():
+            return
+        current_phase = str(getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if current_phase != str(phase_name or "").strip().lower():
+            return
+        attacking_root = self._ia_root(attacking_unit)
+        if attacking_root is None or not self._ia_is_alive(attacking_root):
+            return
+        if self._ia_owned_by_player(attacking_root, self.player):
+            return
+        stratagem = self.get_by_name("HYPERSTIMMS")
+        if stratagem is None:
+            return
+        if self.player.command_points < self._ia_effective_cp_cost(stratagem):
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._ia_hyperstimms_candidates(list(target_units or []))
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if (
+                str(reaction.get("event", "") or "") == str(event_name or "")
+                and str(reaction.get("stratagem", "") or "").strip().upper() == "HYPERSTIMMS"
+                and self._ia_root(reaction.get("attacking_unit")) is attacking_root
+            ):
+                return
+        payload = {
+            "event": str(event_name or ""),
+            "phase_name": str(phase_name or ""),
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacking_root,
+            "enemy_unit": attacking_root,
             "target_units": list(target_units or []),
             "candidates": candidates,
         }
@@ -365,7 +527,7 @@ class ImperialAgentsStratagemMixin:
 
     def _cleanup_imperial_agents_veiled_blade_phase_end_effects(self, *, phase: Any) -> None:
         phase_key = str(getattr(phase, "name", "") or "").strip().upper()
-        if phase_key not in {"CHARGE_PHASE", "FIGHT_PHASE"}:
+        if phase_key not in {"CHARGE_PHASE", "SHOOTING_PHASE", "FIGHT_PHASE"}:
             return
         game = getattr(self, "game", None)
         if game is None:
@@ -421,6 +583,41 @@ class ImperialAgentsStratagemMixin:
                         ):
                             sr.pop(key, None)
                         changed = True
+                if phase_key in {"SHOOTING_PHASE", "FIGHT_PHASE"} and bool(sr.get("imperial_agents_hyperstimms_active")):
+                    exp = str(sr.get("imperial_agents_hyperstimms_expires_phase", "") or "").strip().upper()
+                    if not exp or exp == phase_key:
+                        remove_modifiers = getattr(root, "remove_characteristic_modifiers_by_source", None)
+                        if callable(remove_modifiers):
+                            remove_modifiers("stratagem:imperial_agents_hyperstimms")
+                        for model in list(getattr(root, "models", []) or []):
+                            clear_fnp = getattr(model, "set_temporary_fnp", None)
+                            if callable(clear_fnp):
+                                clear_fnp(key="imperial_agents_hyperstimms", value=0)
+                            else:
+                                effects = getattr(model, "_temporary_effects", None)
+                                if isinstance(effects, dict):
+                                    effects.pop("imperial_agents_hyperstimms", None)
+                        for key in (
+                            "imperial_agents_hyperstimms_active",
+                            "imperial_agents_hyperstimms_source",
+                            "imperial_agents_hyperstimms_expires_phase",
+                            "imperial_agents_hyperstimms_turn",
+                            "imperial_agents_hyperstimms_owner",
+                        ):
+                            sr.pop(key, None)
+                        changed = True
+                if phase_key in {"SHOOTING_PHASE", "FIGHT_PHASE"} and bool(sr.get("imperial_agents_prime_target_active")):
+                    exp = str(sr.get("imperial_agents_prime_target_expires_phase", "") or "").strip().upper()
+                    if not exp or exp == phase_key:
+                        for key in (
+                            "imperial_agents_prime_target_active",
+                            "imperial_agents_prime_target_source",
+                            "imperial_agents_prime_target_expires_phase",
+                            "imperial_agents_prime_target_turn",
+                            "imperial_agents_prime_target_owner",
+                        ):
+                            sr.pop(key, None)
+                        changed = True
                 if changed:
                     root.special_rules = sr
 
@@ -434,6 +631,10 @@ class ImperialAgentsStratagemMixin:
             return self._use_imperial_agents_blind_grenades(stratagem, **kwargs)
         if name_u == "ENSNARING TRAP":
             return self._use_imperial_agents_ensnaring_trap(stratagem, **kwargs)
+        if name_u == "HYPERSTIMMS":
+            return self._use_imperial_agents_hyperstimms(stratagem, **kwargs)
+        if name_u == "PRIME TARGET":
+            return self._use_imperial_agents_prime_target(stratagem, **kwargs)
         return None
 
     def _use_imperial_agents_blind_grenades(self, stratagem: Any, **kwargs) -> bool:
@@ -554,4 +755,125 @@ class ImperialAgentsStratagemMixin:
         self._ia_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
         if not ok:
             logger.error("ERROR: ENSNARING TRAP: charge failed")
+        return True
+
+    def _use_imperial_agents_hyperstimms(self, stratagem: Any, **kwargs) -> bool:
+        context = self._ia_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: HYPERSTIMMS: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if phase_name == "shooting phase" and active_player is self.player:
+            logger.error("ERROR: HYPERSTIMMS: not opponent's Shooting phase")
+            return False
+        attacking_unit = context.get("attacking_unit") or context.get("enemy_unit")
+        attacking_root = self._ia_root(attacking_unit)
+        if attacking_root is None:
+            logger.error("ERROR: HYPERSTIMMS: missing attacking unit")
+            return False
+        if self._ia_owned_by_player(attacking_root, self.player):
+            logger.error("ERROR: HYPERSTIMMS: attacking unit is not an enemy unit")
+            return False
+        target_units = context.get("target_units")
+        if not isinstance(target_units, list):
+            target_units = []
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._ia_root(target_unit) if target_unit is not None else None
+        if target_root is not None and not target_units:
+            target_units = [target_root]
+        candidates = self._ia_hyperstimms_candidates(target_units)
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: HYPERSTIMMS: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: HYPERSTIMMS: target was not selected as an attack target")
+            return False
+        if not self._ia_spend_cp(stratagem, target_unit=target_root, enemy_unit=attacking_root):
+            return False
+
+        phase_key = "SHOOTING_PHASE" if phase_name == "shooting phase" else "FIGHT_PHASE"
+        source = str(getattr(stratagem, "name", "HYPERSTIMMS") or "HYPERSTIMMS")
+        add_modifier = getattr(target_root, "add_characteristic_modifier", None)
+        if callable(add_modifier):
+            add_modifier("toughness", Modifier(ModifierOp.ADD, 1, source="stratagem:imperial_agents_hyperstimms"))
+        if self._ia_is_eversor_assassin_unit(target_root):
+            for model in list(getattr(target_root, "models", []) or []):
+                set_temporary_fnp = getattr(model, "set_temporary_fnp", None)
+                if callable(set_temporary_fnp):
+                    set_temporary_fnp(
+                        key="imperial_agents_hyperstimms",
+                        value=4,
+                        source=source,
+                        expires_phase=phase_key,
+                    )
+                else:
+                    effects = getattr(model, "_temporary_effects", None)
+                    if not isinstance(effects, dict):
+                        effects = {}
+                        model._temporary_effects = effects
+                    effects["imperial_agents_hyperstimms"] = {
+                        "expires_phase": phase_key,
+                        "temporary_fnp_value": 4,
+                        "temporary_fnp_source": source,
+                    }
+
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["imperial_agents_hyperstimms_active"] = True
+        sr["imperial_agents_hyperstimms_source"] = source
+        sr["imperial_agents_hyperstimms_expires_phase"] = phase_key
+        sr["imperial_agents_hyperstimms_turn"] = int(getattr(game, "turn", 0) or 0)
+        sr["imperial_agents_hyperstimms_owner"] = str(getattr(self.player, "id", "") or "")
+        target_root.special_rules = sr
+        self._ia_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_imperial_agents_prime_target(self, stratagem: Any, **kwargs) -> bool:
+        context = self._ia_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: PRIME TARGET: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if phase_name == "shooting phase" and active_player is not self.player:
+            logger.error("ERROR: PRIME TARGET: can only be used in your Shooting phase")
+            return False
+
+        candidates = self._ia_prime_target_candidates(phase_name=phase_name)
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._ia_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: PRIME TARGET: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: PRIME TARGET: target must be an eligible AGENTS unit that has not acted")
+            return False
+        if not self._ia_spend_cp(stratagem, target_unit=target_root):
+            return False
+
+        phase_key = "SHOOTING_PHASE" if phase_name == "shooting phase" else "FIGHT_PHASE"
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["imperial_agents_prime_target_active"] = True
+        sr["imperial_agents_prime_target_source"] = str(getattr(stratagem, "name", "PRIME TARGET") or "PRIME TARGET")
+        sr["imperial_agents_prime_target_expires_phase"] = phase_key
+        sr["imperial_agents_prime_target_turn"] = int(getattr(game, "turn", 0) or 0)
+        sr["imperial_agents_prime_target_owner"] = str(getattr(self.player, "id", "") or "")
+        target_root.special_rules = sr
+        self._ia_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
         return True

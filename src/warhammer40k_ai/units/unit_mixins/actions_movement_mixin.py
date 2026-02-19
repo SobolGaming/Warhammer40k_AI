@@ -4152,6 +4152,18 @@ class ActionsMovementMixin:
                 reroll_wound_full_reasons.append(f"{source}: re-roll Wound roll vs CHARACTER target")
         except Exception:
             pass
+        try:
+            applies, source = self._imperial_agents_prime_target_active(game=game)
+            if applies and target is not None:
+                try:
+                    target_root = target.get_attached_unit_root()
+                except Exception:
+                    target_root = target
+                if target_root is not None and self._entity_has_keyword_for_empyric(target_root, "CHARACTER"):
+                    reroll_wound_values.add(1)
+                    reroll_wound_reasons.append(f"{source}: re-roll Wound rolls of 1 vs CHARACTER target")
+        except Exception:
+            pass
 
         mods["reroll_wound_values"] = tuple(sorted(reroll_wound_values))
         mods["reroll_wound_ones"] = bool(1 in reroll_wound_values)
@@ -5515,6 +5527,52 @@ class ActionsMovementMixin:
             if current_turn and current_turn != marked_turn:
                 return (False, "")
         source = str(sr.get("court_prideful_superiority_source", "") or "PRIDEFUL SUPERIORITY").strip() or "PRIDEFUL SUPERIORITY"
+        return (True, source)
+
+    def _imperial_agents_prime_target_active(self, *, game=None) -> tuple[bool, str]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return (False, "")
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("imperial_agents_prime_target_active")):
+            return (False, "")
+        if game is None:
+            try:
+                army = root.get_parent_army()
+            except Exception:
+                army = None
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        phase_name = self._current_phase_name_for_rules(game=game)
+        if phase_name and phase_name not in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
+            return (False, "")
+        exp_phase = str(sr.get("imperial_agents_prime_target_expires_phase", "") or "").strip().upper()
+        if exp_phase and phase_name and exp_phase != phase_name:
+            return (False, "")
+        owner_id = str(sr.get("imperial_agents_prime_target_owner", "") or "")
+        if owner_id:
+            try:
+                army = root.get_parent_army()
+                player = getattr(army, "player", None) if army is not None else None
+            except Exception:
+                player = None
+            player_id = str(getattr(player, "id", "") or "") if player is not None else ""
+            if player_id and owner_id != player_id:
+                return (False, "")
+        try:
+            marked_turn = int(sr.get("imperial_agents_prime_target_turn", 0) or 0)
+        except Exception:
+            marked_turn = 0
+        if marked_turn:
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+            except Exception:
+                current_turn = 0
+            if current_turn and current_turn != marked_turn:
+                return (False, "")
+        source = str(sr.get("imperial_agents_prime_target_source", "") or "PRIME TARGET").strip() or "PRIME TARGET"
         return (True, source)
 
     def _coterie_martial_perfection_active(self, *, game=None) -> tuple[bool, str]:

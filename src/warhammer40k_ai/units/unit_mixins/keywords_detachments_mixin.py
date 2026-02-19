@@ -6143,6 +6143,27 @@ class KeywordsDetachmentsMixin:
                         except Exception:
                             continue
                     reroll_reasons.append(f"{source}: re-roll Wound rolls of 1 vs CHARACTER targets")
+        try:
+            prime_target_active = getattr(self, "_imperial_agents_prime_target_active", None)
+            applies, source = prime_target_active() if callable(prime_target_active) else (False, "")
+            if applies and model is not None and target is not None:
+                target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+                target_army = target_root.get_parent_army() if target_root is not None and hasattr(target_root, "get_parent_army") else None
+                target_warlord = getattr(target_army, "warlord", None) if target_army is not None else None
+                is_enemy_warlord = bool(
+                    target_root is not None
+                    and (bool(getattr(target_root, "is_warlord", False)) or target_root is target_warlord)
+                )
+                model_has_officio = bool(
+                    (hasattr(model, "has_any_keyword") and model.has_any_keyword("OFFICIO ASSASSINORUM"))
+                    or (hasattr(model, "has_keyword") and model.has_keyword("OFFICIO ASSASSINORUM"))
+                    or self.has_any_keyword("OFFICIO ASSASSINORUM")
+                )
+                if model_has_officio and is_enemy_warlord:
+                    reroll_full = True
+                    reroll_full_reasons.append(f"{source}: re-roll Wound roll vs enemy WARLORD target")
+        except Exception:
+            pass
         seen = set()
         deduped_reasons: list[str] = []
         for reason in reroll_reasons:

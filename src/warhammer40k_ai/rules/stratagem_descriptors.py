@@ -2036,6 +2036,29 @@ _VALOURSTRIKE_LANCE_STRATAGEM_BY_NAME = {
 }
 
 _VEILED_BLADE_ELIMINATION_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009758002": StratagemToolDescriptor(
+        stratagem_id="000009758002",
+        name="Prime Target",
+        timing="shooting_or_fight_phase_on_select",
+        target="agents_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="wound_reroll_ones_vs_character_with_officio_warlord_full_reroll",
+        cp_cost=1,
+        effect_params={
+            "reroll_wound_ones_vs_keyword": "CHARACTER",
+            "officio_assassinorum_full_reroll_vs_enemy_warlord": True,
+        },
+    ),
+    "000009758003": StratagemToolDescriptor(
+        stratagem_id="000009758003",
+        name="Hyperstimms",
+        timing="opponent_shooting_or_fight_phase_after_targets_selected",
+        target="agents_character_unit_selected_as_attack_target",
+        duration="until_end_of_phase",
+        effect="toughness_bonus_and_conditional_feel_no_pain",
+        cp_cost=2,
+        effect_params={"toughness_bonus": 1, "eversor_assassin_feel_no_pain": 4},
+    ),
     "000009758006": StratagemToolDescriptor(
         stratagem_id="000009758006",
         name="Blind Grenades",
