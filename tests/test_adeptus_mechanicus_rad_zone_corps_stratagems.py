@@ -1,5 +1,7 @@
 from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
+from warhammer40k_ai.battlefield.map import Objective, ObjectiveCategory, ObjectivePoint
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
@@ -97,6 +99,15 @@ def _phase_start(game: Game, acting_player: Player, phase_name: str) -> None:
     game.event_system.publish("phase_start", player=acting_player, phase=phase)
 
 
+def _add_objective(game: Game, x: float, y: float, *, name: str = "Objective") -> Objective:
+    loc = ObjectivePoint(float(x), float(y))
+    objective = Objective(name, ObjectiveCategory.PRIMARY, 0, "", lambda _g: False, location=loc)
+    objectives = list(getattr(game.map, "objectives", []) or [])
+    objectives.append(objective)
+    game.map.objectives = objectives
+    return objective
+
+
 def _basic_ranged_weapon() -> Wargear:
     return Wargear(
         {
@@ -114,6 +125,19 @@ def _basic_ranged_weapon() -> Wargear:
 
 
 def test_rad_zone_stratagem_descriptors_registered():
+    extinction = get_stratagem_tool_descriptor(stratagem_id="000008386003")
+    assert extinction is not None
+    assert extinction.name == "Extinction Order"
+    assert extinction.effect == "objective_range_enemy_mortal_wounds_and_battleshock_test"
+    assert int(extinction.cp_cost or 0) == 1
+
+    aggressor = get_stratagem_tool_descriptor(stratagem_id="000008386004")
+    assert aggressor is not None
+    assert aggressor.name == "Aggressor Imperative"
+    assert aggressor.effect == "advance_no_roll_plus_6"
+    assert int(aggressor.effect_params.get("advance_distance", 0) or 0) == 6
+    assert int(aggressor.cp_cost or 0) == 1
+
     purge = get_stratagem_tool_descriptor(stratagem_id="000008386005")
     assert purge is not None
     assert purge.name == "Pre-Calibrated Purge Solution"
@@ -129,6 +153,10 @@ def test_rad_zone_stratagem_descriptors_registered():
     by_name = get_stratagem_tool_descriptor(name="LETHAL DOSAGE")
     assert by_name is not None
     assert by_name.stratagem_id == "000008386006"
+
+    by_name = get_stratagem_tool_descriptor(name="AGGRESSOR IMPERATIVE")
+    assert by_name is not None
+    assert by_name.stratagem_id == "000008386004"
 
 
 def test_lethal_dosage_primary_candidates_exclude_units_that_have_shot():
@@ -330,3 +358,204 @@ def test_rad_zone_stratagem_rejects_invalid_optional_support_selection():
     assert ok is False
     assert int(p1.command_points or 0) == start_cp
     assert bool(primary.special_rules.get("rad_zone_lethal_dosage_active")) is False
+
+
+def test_aggressor_imperative_primary_candidates_require_skitarii_and_not_moved():
+    _game, admech_army, _enemy_army, p1, _p2 = _build_game()
+    ready_skitarii = _make_unit(
+        "Skitarii Vanguard",
+        keywords=["INFANTRY", "SKITARII"],
+        faction_keywords=["ADEPTUS MECHANICUS"],
+    )
+    moved_skitarii = _make_unit(
+        "Sicarian Infiltrators",
+        keywords=["INFANTRY", "SKITARII"],
+        faction_keywords=["ADEPTUS MECHANICUS"],
+    )
+    moved_skitarii.round_state.moved_this_round = True
+    non_skitarii = _make_unit(
+        "Tech-Priest Enginseer",
+        keywords=["INFANTRY", "CHARACTER", "TECH-PRIEST"],
+        faction_keywords=["ADEPTUS MECHANICUS"],
+    )
+    admech_army.add_unit(ready_skitarii)
+    admech_army.add_unit(moved_skitarii)
+    admech_army.add_unit(non_skitarii)
+
+    candidates = p1.stratagems._rad_zone_aggressor_imperative_primary_candidates()
+    assert ready_skitarii in candidates
+    assert moved_skitarii not in candidates
+    assert non_skitarii not in candidates
+
+
+def test_aggressor_imperative_sets_fixed_advance_and_cleans_up_at_phase_end():
+    game, admech_army, _enemy_army, p1, _p2 = _build_game()
+    primary = _make_unit(
+        "Skitarii Rangers",
+        keywords=["INFANTRY", "SKITARII", "BATTLELINE"],
+        faction_keywords=["ADEPTUS MECHANICUS"],
+    )
+    support = _make_unit(
+        "Sicarian Ruststalkers",
+        keywords=["INFANTRY", "SKITARII"],
+        faction_keywords=["ADEPTUS MECHANICUS"],
+    )
+    admech_army.add_unit(primary)
+    admech_army.add_unit(support)
+    _place_unit(game, primary, 10.0, 10.0)
+    _place_unit(game, support, 15.0, 10.0)
+    _phase_start(game, p1, "MOVEMENT_PHASE")
+
+    start_cp = int(p1.command_points or 0)
+    ok = p1.stratagems.use(
+        "AGGRESSOR IMPERATIVE",
+        unit=primary,
+        secondary_unit=support,
+        phase_name="Movement phase",
+    )
+    assert ok is True
+    assert int(p1.command_points or 0) == start_cp - 1
+
+    for unit in (primary, support):
+        effect = unit._get_advance_no_roll_effect()
+        assert effect is not None
+        assert int(effect.get("distance", 0) or 0) == 6
+        assert str(effect.get("tag", "") or "") == "stratagem:rad_zone_aggressor_imperative"
+        assert int(unit.prepare_advance() or 0) == 6
+
+    game.event_system.publish("phase_end", player=p1, phase=SimpleNamespace(name="MOVEMENT_PHASE"))
+    for unit in (primary, support):
+        assert unit._get_advance_no_roll_effect() is None
+        assert bool(unit.special_rules.get("rad_zone_aggressor_imperative_active")) is False
+
+
+def test_aggressor_imperative_rejects_optional_support_already_selected_to_move():
+    game, admech_army, _enemy_army, p1, _p2 = _build_game()
+    primary = _make_unit(
+        "Skitarii Rangers",
+        keywords=["INFANTRY", "SKITARII", "BATTLELINE"],
+        faction_keywords=["ADEPTUS MECHANICUS"],
+    )
+    moved_support = _make_unit(
+        "Sicarian Infiltrators",
+        keywords=["INFANTRY", "SKITARII"],
+        faction_keywords=["ADEPTUS MECHANICUS"],
+    )
+    moved_support.round_state.moved_this_round = True
+    admech_army.add_unit(primary)
+    admech_army.add_unit(moved_support)
+    _place_unit(game, primary, 10.0, 10.0)
+    _place_unit(game, moved_support, 14.0, 10.0)
+    _phase_start(game, p1, "MOVEMENT_PHASE")
+
+    start_cp = int(p1.command_points or 0)
+    ok = p1.stratagems.use(
+        "AGGRESSOR IMPERATIVE",
+        unit=primary,
+        secondary_unit=moved_support,
+        phase_name="Movement phase",
+    )
+    assert ok is False
+    assert int(p1.command_points or 0) == start_cp
+    assert bool(primary.special_rules.get("rad_zone_aggressor_imperative_active")) is False
+    assert bool(moved_support.special_rules.get("rad_zone_aggressor_imperative_active")) is False
+
+
+def test_extinction_order_candidates_require_tech_priest_and_objective_within_24():
+    game, admech_army, _enemy_army, p1, _p2 = _build_game()
+    tech_priest = _make_unit(
+        "Tech-Priest Dominus",
+        keywords=["INFANTRY", "CHARACTER", "TECH-PRIEST"],
+        faction_keywords=["ADEPTUS MECHANICUS"],
+    )
+    non_tech = _make_unit(
+        "Skitarii Vanguard",
+        keywords=["INFANTRY", "SKITARII"],
+        faction_keywords=["ADEPTUS MECHANICUS"],
+    )
+    admech_army.add_unit(tech_priest)
+    admech_army.add_unit(non_tech)
+    _place_unit(game, tech_priest, 10.0, 10.0)
+    _place_unit(game, non_tech, 12.0, 10.0)
+
+    in_range_objective = _add_objective(game, 30.0, 10.0, name="In Range")
+    out_of_range_objective = _add_objective(game, 60.0, 10.0, name="Out of Range")
+
+    source_candidates = p1.stratagems._rad_zone_extinction_order_tech_priest_candidates()
+    assert tech_priest in source_candidates
+    assert non_tech not in source_candidates
+
+    objective_candidates = p1.stratagems._rad_zone_extinction_order_objective_candidates(tech_priest)
+    assert in_range_objective in objective_candidates
+    assert out_of_range_objective not in objective_candidates
+
+
+def test_extinction_order_applies_mortal_wounds_and_battleshock_on_successful_rolls():
+    game, admech_army, enemy_army, p1, _p2 = _build_game()
+    tech_priest = _make_unit(
+        "Tech-Priest Dominus",
+        keywords=["INFANTRY", "CHARACTER", "TECH-PRIEST"],
+        faction_keywords=["ADEPTUS MECHANICUS"],
+    )
+    enemy_a = _make_unit("Enemy A", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    enemy_b = _make_unit("Enemy B", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    enemy_far = _make_unit("Enemy Far", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    admech_army.add_unit(tech_priest)
+    enemy_army.add_unit(enemy_a)
+    enemy_army.add_unit(enemy_b)
+    enemy_army.add_unit(enemy_far)
+    _place_unit(game, tech_priest, 10.0, 10.0)
+    _place_unit(game, enemy_a, 20.0, 10.0)
+    _place_unit(game, enemy_b, 22.0, 10.0)
+    _place_unit(game, enemy_far, 40.0, 10.0)
+    objective = _add_objective(game, 20.0, 10.0, name="Target Objective")
+    _phase_start(game, p1, "COMMAND_PHASE")
+
+    tech_priest._apply_mortal_wounds_to_unit = Mock()
+    enemy_a.take_battle_shock_test = Mock()
+    enemy_b.take_battle_shock_test = Mock()
+    enemy_far.take_battle_shock_test = Mock()
+
+    start_cp = int(p1.command_points or 0)
+    with patch("warhammer40k_ai.rules.stratagems_adeptus_mechanicus.dice_module.get_roll", return_value=4):
+        ok = p1.stratagems.use(
+            "EXTINCTION ORDER",
+            unit=tech_priest,
+            objective=objective,
+            phase_name="Command phase",
+        )
+    assert ok is True
+    assert int(p1.command_points or 0) == start_cp - 1
+
+    assert tech_priest._apply_mortal_wounds_to_unit.call_count == 2
+    applied_targets = {call.args[0] for call in tech_priest._apply_mortal_wounds_to_unit.call_args_list}
+    assert applied_targets == {enemy_a, enemy_b}
+    assert all(int(call.args[1] or 0) == 1 for call in tech_priest._apply_mortal_wounds_to_unit.call_args_list)
+
+    current_turn = int(getattr(game, "turn", 0) or 0)
+    enemy_a.take_battle_shock_test.assert_called_once_with(current_turn)
+    enemy_b.take_battle_shock_test.assert_called_once_with(current_turn)
+    enemy_far.take_battle_shock_test.assert_not_called()
+
+
+def test_extinction_order_rejects_objective_outside_range_when_passed_explicitly():
+    game, admech_army, _enemy_army, p1, _p2 = _build_game()
+    tech_priest = _make_unit(
+        "Tech-Priest Dominus",
+        keywords=["INFANTRY", "CHARACTER", "TECH-PRIEST"],
+        faction_keywords=["ADEPTUS MECHANICUS"],
+    )
+    admech_army.add_unit(tech_priest)
+    _place_unit(game, tech_priest, 10.0, 10.0)
+    far_objective = _add_objective(game, 80.0, 10.0, name="Far Objective")
+    _phase_start(game, p1, "COMMAND_PHASE")
+
+    start_cp = int(p1.command_points or 0)
+    ok = p1.stratagems.use(
+        "EXTINCTION ORDER",
+        unit=tech_priest,
+        objective=far_objective,
+        phase_name="Command phase",
+    )
+    assert ok is False
+    assert int(p1.command_points or 0) == start_cp

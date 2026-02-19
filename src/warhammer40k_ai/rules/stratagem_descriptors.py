@@ -553,6 +553,37 @@ _GRIZZLED_COMPANY_STRATAGEM_BY_NAME = {
 }
 
 _RAD_ZONE_CORPS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008386003": StratagemToolDescriptor(
+        stratagem_id="000008386003",
+        name="Extinction Order",
+        timing="command_phase",
+        target="tech_priest_model_and_objective_within_24",
+        duration="immediate",
+        effect="objective_range_enemy_mortal_wounds_and_battleshock_test",
+        cp_cost=1,
+        range_in=24.0,
+        effect_params={
+            "roll": "D6",
+            "threshold": 4,
+            "mortal_wounds": 1,
+            "battle_shock_test": True,
+        },
+    ),
+    "000008386004": StratagemToolDescriptor(
+        stratagem_id="000008386004",
+        name="Aggressor Imperative",
+        timing="movement_phase_on_select_to_move",
+        target="skitarii_unit_not_yet_moved",
+        duration="until_end_of_phase",
+        effect="advance_no_roll_plus_6",
+        cp_cost=1,
+        effect_params={
+            "advance_distance": 6,
+            "optional_support_if_primary_battleline": True,
+            "support_target": "friendly_skitarii_unit_non_battleline_within_6_not_yet_moved",
+            "support_selection_optional": True,
+        },
+    ),
     "000008386005": StratagemToolDescriptor(
         stratagem_id="000008386005",
         name="Pre-Calibrated Purge Solution",

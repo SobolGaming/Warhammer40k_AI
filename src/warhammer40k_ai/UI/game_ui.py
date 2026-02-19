@@ -1373,6 +1373,39 @@ class GameView:
             )
         self._request_no_retreat_objective = _request_no_retreat_objective
 
+        def _request_extinction_order_objective(player, game, candidates, on_chosen):
+            from ..engine.decision_kinds import DECISION_PICK_OBJECTIVE
+            from ..engine.decisions import DecisionOption
+            from ..utility.entity_ids import get_entity_id
+
+            objs = list(candidates or [])
+            if not objs:
+                on_chosen(None)
+                return
+            options = []
+            for idx, obj in enumerate(objs):
+                label = getattr(obj, "name", None) or f"Objective {idx + 1}"
+                try:
+                    loc = getattr(obj, "location", None)
+                    if loc is not None:
+                        label = f"{label} ({float(getattr(loc, 'x', 0.0)):.1f}, {float(getattr(loc, 'y', 0.0)):.1f})"
+                except Exception:
+                    pass
+                options.append(DecisionOption.create(label, payload={"objective_id": get_entity_id(obj)}))
+            _resolve_option_selection_dialog(
+                player=player,
+                options=options,
+                on_chosen=on_chosen,
+                decision_type=DECISION_PICK_OBJECTIVE,
+                prompt="Select an objective marker within 24\" of the selected TECH-PRIEST.",
+                title="Extinction Order",
+                header="Select an objective marker to purge.",
+                subtitle="Enemy units within range of that marker suffer effects on 4+.",
+                context={"ability": "extinction_order"},
+                allow_skip=True,
+            )
+        self._request_extinction_order_objective = _request_extinction_order_objective
+
         def _request_corrupt_realspace_objective(player, game, candidates, on_chosen):
             from ..engine.decision_kinds import DECISION_PICK_OBJECTIVE
             from ..engine.decisions import DecisionOption
@@ -17175,13 +17208,14 @@ class GameView:
                 )
             return
 
-        if name_u in ("LETHAL DOSAGE", "PRE-CALIBRATED PURGE SOLUTION") and "unit" not in context and "target_unit" not in context:
+        if name_u in ("AGGRESSOR IMPERATIVE", "LETHAL DOSAGE", "PRE-CALIBRATED PURGE SOLUTION") and "unit" not in context and "target_unit" not in context:
             if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
                 from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
 
                 candidates = context.get("candidates") or []
                 if not candidates:
                     getter_name = {
+                        "AGGRESSOR IMPERATIVE": "_rad_zone_aggressor_imperative_primary_candidates",
                         "LETHAL DOSAGE": "_rad_zone_lethal_dosage_primary_candidates",
                         "PRE-CALIBRATED PURGE SOLUTION": "_rad_zone_pre_calibrated_purge_solution_primary_candidates",
                     }.get(name_u, "")
@@ -17196,11 +17230,21 @@ class GameView:
                     if primary_unit is None:
                         logger.info(f"{name}: no unit selected")
                         return
-                    support_getter = getattr(manager, "_rad_zone_optional_skitarii_support_candidates", None)
+                    support_getter_name = (
+                        "_rad_zone_aggressor_optional_skitarii_support_candidates"
+                        if name_u == "AGGRESSOR IMPERATIVE"
+                        else "_rad_zone_optional_skitarii_support_candidates"
+                    )
+                    support_getter = getattr(manager, support_getter_name, None)
                     support_candidates = list(support_getter(primary_unit) or []) if callable(support_getter) else []
                     if not support_candidates:
                         self._finalize_admech_rad_zone_stratagem(player, name, context, primary_unit, None)
                         return
+                    support_subtitle = {
+                        "AGGRESSOR IMPERATIVE": "Optional: pick one SKITARII (excluding BATTLELINE) within 6\" that has not moved, or Skip.",
+                        "LETHAL DOSAGE": "Optional: pick one SKITARII (excluding BATTLELINE) within 6\", or Skip.",
+                        "PRE-CALIBRATED PURGE SOLUTION": "Optional: pick one SKITARII (excluding BATTLELINE) within 6\", or Skip.",
+                    }.get(name_u, "Optional: pick one SKITARII unit, or Skip.")
                     self._resolve_unit_selection_dialog(
                         player=player,
                         candidates=support_candidates,
@@ -17214,12 +17258,17 @@ class GameView:
                         decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
                         prompt=f"Select optional supporting SKITARII unit for {name}.",
                         title=name,
-                        subtitle="Optional: pick one SKITARII (excluding BATTLELINE) within 6\", or Skip.",
+                        subtitle=support_subtitle,
                         enemy_unit=None,
                         dialog=self.overwatch_shooter_dialog,
                         allow_skip=True,
                     )
 
+                primary_subtitle = {
+                    "AGGRESSOR IMPERATIVE": "SKITARII unit that has not been selected to move this phase.",
+                    "LETHAL DOSAGE": "ADEPTUS MECHANICUS unit that has not been selected to shoot this phase.",
+                    "PRE-CALIBRATED PURGE SOLUTION": "ADEPTUS MECHANICUS unit that has not been selected to shoot this phase.",
+                }.get(name_u, "Select an eligible ADEPTUS MECHANICUS unit.")
                 self._resolve_unit_selection_dialog(
                     player=player,
                     candidates=candidates,
@@ -17227,7 +17276,49 @@ class GameView:
                     decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
                     prompt=f"Select primary unit for {name}.",
                     title=name,
-                    subtitle="ADEPTUS MECHANICUS unit that has not been selected to shoot this phase.",
+                    subtitle=primary_subtitle,
+                    enemy_unit=None,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+            return
+
+        if name_u == "EXTINCTION ORDER" and ("objective" not in context and "objective_marker" not in context):
+            if not callable(getattr(self, "_request_extinction_order_objective", None)):
+                return
+
+            unit = context.get("unit") or context.get("target_unit")
+
+            def _pick_objective(chosen_unit):
+                if chosen_unit is None:
+                    logger.info("Extinction Order: no TECH-PRIEST selected")
+                    return
+                objective_candidates = list(manager._rad_zone_extinction_order_objective_candidates(chosen_unit) or [])
+                self._request_extinction_order_objective(
+                    player,
+                    self.game,
+                    objective_candidates,
+                    lambda objective: self._finalize_extinction_order(player, name, context, chosen_unit, objective),
+                )
+
+            if unit is not None:
+                _pick_objective(unit)
+                return
+
+            if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+                candidates = context.get("candidates") or []
+                if not candidates and hasattr(manager, "_rad_zone_extinction_order_tech_priest_candidates"):
+                    candidates = list(manager._rad_zone_extinction_order_tech_priest_candidates() or [])
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=candidates,
+                    on_chosen=_pick_objective,
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt="Select Extinction Order TECH-PRIEST.",
+                    title="Extinction Order",
+                    subtitle="TECH-PRIEST model on the battlefield.",
                     enemy_unit=None,
                     dialog=self.overwatch_shooter_dialog,
                     allow_skip=True,
@@ -18588,6 +18679,26 @@ class GameView:
             return
         if objective is None:
             logger.info("No Retreat!: no objective selected")
+            return
+        ctx = dict(context)
+        ctx["unit"] = unit
+        ctx["target_unit"] = unit
+        ctx["objective"] = objective
+        ok = manager.use(name, **ctx)
+        if ok:
+            logger.info(f"Used stratagem: {name}")
+        else:
+            logger.info(f"Could not use stratagem: {name}")
+
+    def _finalize_extinction_order(self, player, name: str, context: Dict[str, Any], unit, objective) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if unit is None:
+            logger.info("Extinction Order: no TECH-PRIEST selected")
+            return
+        if objective is None:
+            logger.info("Extinction Order: no objective selected")
             return
         ctx = dict(context)
         ctx["unit"] = unit

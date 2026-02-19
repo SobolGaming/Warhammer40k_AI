@@ -4,6 +4,8 @@ from typing import Any, Optional
 
 import logging
 
+from ..utility import dice as dice_module
+from ..utility.aura_utils import unit_within_range_of_point_3d
 from ..utility.entity_ids import get_entity_id
 
 logger = logging.getLogger(__name__)
@@ -91,10 +93,20 @@ class AdeptusMechanicusStratagemMixin:
             return False
         return self._admech_has_any_keyword(root, "BATTLELINE")
 
+    @staticmethod
+    def _admech_selected_to_move_this_phase(unit: Any) -> bool:
+        round_state = getattr(unit, "round_state", None)
+        return bool(
+            getattr(round_state, "moved_this_round", False)
+            or getattr(round_state, "advanced_this_round", False)
+            or getattr(round_state, "fell_back_this_round", False)
+        )
+
     def _admech_battlefield_units(
         self,
         *,
         require_not_shot: bool = False,
+        require_not_moved: bool = False,
         require_skitarii: bool = False,
         exclude_battleline: bool = False,
     ) -> list[Any]:
@@ -125,6 +137,8 @@ class AdeptusMechanicusStratagemMixin:
                 continue
             if require_not_shot and bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
                 continue
+            if require_not_moved and self._admech_selected_to_move_this_phase(root):
+                continue
             if require_skitarii and not self._is_skitarii_unit(root):
                 continue
             if exclude_battleline and self._is_battleline_unit(root):
@@ -137,6 +151,9 @@ class AdeptusMechanicusStratagemMixin:
 
     def _rad_zone_pre_calibrated_purge_solution_primary_candidates(self) -> list[Any]:
         return self._admech_battlefield_units(require_not_shot=True)
+
+    def _rad_zone_aggressor_imperative_primary_candidates(self) -> list[Any]:
+        return self._admech_battlefield_units(require_not_moved=True, require_skitarii=True)
 
     def _rad_zone_optional_skitarii_support_candidates(self, primary_unit: Any) -> list[Any]:
         primary_root = self._admech_root(primary_unit)
@@ -161,6 +178,85 @@ class AdeptusMechanicusStratagemMixin:
                 continue
             if distance <= 6.0 + 1e-6:
                 out.append(candidate)
+        return sorted(out, key=self._admech_sort_key)
+
+    def _rad_zone_aggressor_optional_skitarii_support_candidates(self, primary_unit: Any) -> list[Any]:
+        candidates = self._rad_zone_optional_skitarii_support_candidates(primary_unit)
+        out = [unit for unit in list(candidates or []) if not self._admech_selected_to_move_this_phase(unit)]
+        return sorted(out, key=self._admech_sort_key)
+
+    def _rad_zone_extinction_order_tech_priest_candidates(self) -> list[Any]:
+        candidates = self._admech_battlefield_units()
+        out = [unit for unit in list(candidates or []) if self._admech_has_any_keyword(unit, "TECH-PRIEST")]
+        return sorted(out, key=self._admech_sort_key)
+
+    def _rad_zone_extinction_order_objective_candidates(self, source_unit: Any) -> list[Any]:
+        source_root = self._admech_root(source_unit)
+        if source_root is None:
+            return []
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        if game_map is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for objective in list(getattr(game_map, "objectives", []) or []):
+            if objective is None:
+                continue
+            oid = self._admech_sort_key(objective)
+            if oid and oid in seen:
+                continue
+            if oid:
+                seen.add(oid)
+            loc = getattr(objective, "location", None)
+            if loc is None or bool(getattr(loc, "removed", False)):
+                continue
+            point = (float(getattr(loc, "x", 0.0) or 0.0), float(getattr(loc, "y", 0.0) or 0.0))
+            if not unit_within_range_of_point_3d(source_root, point, 24.0, use_attached_aggregate=True):
+                continue
+            out.append(objective)
+        return sorted(out, key=self._admech_sort_key)
+
+    def _admech_enemy_battlefield_units(self) -> list[Any]:
+        game = getattr(self, "game", None)
+        if game is None:
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for other_player in list(getattr(game, "players", []) or []):
+            if other_player is None or other_player is self.player:
+                continue
+            get_army = getattr(other_player, "get_army", None)
+            enemy_army = get_army() if callable(get_army) else getattr(other_player, "army", None)
+            if enemy_army is None:
+                continue
+            for enemy_unit in list(getattr(enemy_army, "units", []) or []):
+                root = self._admech_root(enemy_unit)
+                if root is None:
+                    continue
+                uid = self._admech_sort_key(root)
+                if uid and uid in seen:
+                    continue
+                if uid:
+                    seen.add(uid)
+                if self._admech_owned_by_player(root):
+                    continue
+                if not self._admech_on_battlefield(root):
+                    continue
+                out.append(root)
+        return sorted(out, key=self._admech_sort_key)
+
+    def _rad_zone_extinction_order_enemy_units_for_objective(self, objective: Any) -> list[Any]:
+        loc = getattr(objective, "location", None) if objective is not None else None
+        if loc is None:
+            return []
+        out: list[Any] = []
+        for enemy in self._admech_enemy_battlefield_units():
+            in_range = getattr(enemy, "is_within_objective_range", None)
+            if not callable(in_range):
+                continue
+            if not bool(in_range(loc)):
+                continue
+            out.append(enemy)
         return sorted(out, key=self._admech_sort_key)
 
     def _admech_resolve_unit_from_kwargs(self, kwargs: dict[str, Any], *, key: str, fallback_key: str = "") -> Any:
@@ -235,8 +331,38 @@ class AdeptusMechanicusStratagemMixin:
         sr["rad_zone_pre_calibrated_purge_solution_enemy_player_id"] = str(enemy_player_id or "")
         unit.special_rules = sr
 
+    def _mark_rad_zone_aggressor_imperative(self, unit: Any, *, source_name: str) -> None:
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        effect_tag = "stratagem:rad_zone_aggressor_imperative"
+        effects = [
+            entry
+            for entry in list(sr.get("advance_no_roll_effects", []) or [])
+            if not (isinstance(entry, dict) and str(entry.get("tag", "") or "") == effect_tag)
+        ]
+        effects.append(
+            {
+                "distance": 6,
+                "source": source_name,
+                "tag": effect_tag,
+                "expires_phase": "MOVEMENT_PHASE",
+            }
+        )
+        sr["advance_no_roll_effects"] = effects
+        sr["rad_zone_aggressor_imperative_active"] = True
+        sr["rad_zone_aggressor_imperative_expires_phase"] = "MOVEMENT_PHASE"
+        sr["rad_zone_aggressor_imperative_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["rad_zone_aggressor_imperative_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        sr["rad_zone_aggressor_imperative_source"] = source_name
+        unit.special_rules = sr
+
     def _use_adeptus_mechanicus_rad_zone_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "AGGRESSOR IMPERATIVE":
+            return self._use_rad_zone_aggressor_imperative(stratagem, **kwargs)
+        if name_u == "EXTINCTION ORDER":
+            return self._use_rad_zone_extinction_order(stratagem, **kwargs)
         if name_u == "LETHAL DOSAGE":
             return self._use_rad_zone_lethal_dosage(stratagem, **kwargs)
         if name_u == "PRE-CALIBRATED PURGE SOLUTION":
@@ -295,6 +421,133 @@ class AdeptusMechanicusStratagemMixin:
                 getattr(primary, "name", "Unit"),
                 getattr(secondary, "name", "Unit"),
             )
+        return True
+
+    def _use_rad_zone_aggressor_imperative(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_rad_zone_corps():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: AGGRESSOR IMPERATIVE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: AGGRESSOR IMPERATIVE: not your Movement phase")
+            return False
+
+        primary = self._admech_resolve_unit_from_kwargs(kwargs, key="unit", fallback_key="target_unit")
+        if primary is None:
+            candidates = list(kwargs.get("candidates") or [])
+            if len(candidates) == 1:
+                primary = self._admech_root(candidates[0])
+        if primary is None:
+            logger.error("ERROR: AGGRESSOR IMPERATIVE: no primary unit selected")
+            return False
+
+        eligible_primary = self._rad_zone_aggressor_imperative_primary_candidates()
+        if primary not in eligible_primary:
+            logger.error("ERROR: AGGRESSOR IMPERATIVE: primary target must be an eligible SKITARII unit that has not moved")
+            return False
+
+        secondary = self._admech_resolve_unit_from_kwargs(kwargs, key="secondary_unit", fallback_key="support_unit")
+        eligible_secondary = self._rad_zone_aggressor_optional_skitarii_support_candidates(primary)
+        if secondary is not None and secondary not in eligible_secondary:
+            logger.error(
+                "ERROR: AGGRESSOR IMPERATIVE: optional support unit must be eligible SKITARII (excluding BATTLELINE) within 6\" that has not moved"
+            )
+            return False
+
+        if not stratagem.can_use(self.player, self.game, unit=primary, target_unit=primary, phase_name="Movement phase"):
+            logger.error("ERROR: AGGRESSOR IMPERATIVE: cannot be used in current state")
+            return False
+        if not self._admech_spend_cp(stratagem, target_unit=primary):
+            return False
+
+        source_name = str(getattr(stratagem, "name", "") or "AGGRESSOR IMPERATIVE")
+        self._mark_rad_zone_aggressor_imperative(primary, source_name=source_name)
+        if secondary is not None:
+            self._mark_rad_zone_aggressor_imperative(secondary, source_name=source_name)
+
+        self._admech_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        if secondary is None:
+            logger.info(
+                "INFO: AGGRESSOR IMPERATIVE: %s adds 6\" to Move when it Advances this phase.",
+                getattr(primary, "name", "Unit"),
+            )
+        else:
+            logger.info(
+                "INFO: AGGRESSOR IMPERATIVE: %s and %s add 6\" to Move when they Advance this phase.",
+                getattr(primary, "name", "Unit"),
+                getattr(secondary, "name", "Unit"),
+            )
+        return True
+
+    def _use_rad_zone_extinction_order(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_rad_zone_corps():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "command phase":
+            logger.error("ERROR: EXTINCTION ORDER: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            logger.error("ERROR: EXTINCTION ORDER: not your Command phase")
+            return False
+
+        source_unit = self._admech_resolve_unit_from_kwargs(kwargs, key="unit", fallback_key="target_unit")
+        if source_unit is None:
+            candidates = list(kwargs.get("candidates") or [])
+            if len(candidates) == 1:
+                source_unit = self._admech_root(candidates[0])
+        if source_unit is None:
+            logger.error("ERROR: EXTINCTION ORDER: no TECH-PRIEST selected")
+            return False
+        if source_unit not in self._rad_zone_extinction_order_tech_priest_candidates():
+            logger.error("ERROR: EXTINCTION ORDER: selected unit must be an eligible TECH-PRIEST model")
+            return False
+
+        objective = kwargs.get("objective") or kwargs.get("objective_marker")
+        objective_candidates = list(kwargs.get("objective_candidates") or [])
+        if not objective_candidates:
+            objective_candidates = self._rad_zone_extinction_order_objective_candidates(source_unit)
+        if objective is None and len(objective_candidates) == 1:
+            objective = objective_candidates[0]
+        if objective is None:
+            logger.error("ERROR: EXTINCTION ORDER: no objective marker selected")
+            return False
+        if objective not in objective_candidates:
+            logger.error("ERROR: EXTINCTION ORDER: selected objective marker is not eligible")
+            return False
+        if getattr(objective, "location", None) is None:
+            logger.error("ERROR: EXTINCTION ORDER: objective marker has no location")
+            return False
+
+        if not stratagem.can_use(self.player, self.game, unit=source_unit, target_unit=source_unit, phase_name="Command phase"):
+            logger.error("ERROR: EXTINCTION ORDER: cannot be used in current state")
+            return False
+        if not self._admech_spend_cp(stratagem, target_unit=source_unit):
+            return False
+
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        current_turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        affected_units = 0
+        for enemy in self._rad_zone_extinction_order_enemy_units_for_objective(objective):
+            roll = int(dice_module.get_roll("D6") or 0)
+            if roll < 4:
+                continue
+            apply_mortals = getattr(source_unit, "_apply_mortal_wounds_to_unit", None)
+            if callable(apply_mortals):
+                apply_mortals(enemy, 1, game_map=game_map)
+            take_test = getattr(enemy, "take_battle_shock_test", None)
+            if callable(take_test):
+                take_test(current_turn)
+            affected_units += 1
+
+        self._admech_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        logger.info(
+            "INFO: EXTINCTION ORDER: resolved effects against %d enemy unit(s) within the selected objective marker.",
+            affected_units,
+        )
         return True
 
     def _use_rad_zone_pre_calibrated_purge_solution(self, stratagem: Any, **kwargs) -> bool:

@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 IMPLEMENTED_STRATAGEM_NAMES = {
     "ADRENAL SURGE",
     "AGGRESSIVE MOBILITY",
+    "AGGRESSOR IMPERATIVE",
     "ARDENT AUTOMATA",
     "A CHALLENGE MET",
     "A GRIM WARNING",
@@ -82,6 +83,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "DIABOLIC MAJESTY",
     "DRAWN TO THE SLAUGHTER",
     "EMBRACE THE PAIN",
+    "EXTINCTION ORDER",
     "ASPIRE TO INFAMY",
     "FAIL NOT THE BLOOD GOD",
     "FRENZIED RESILIENCE",
@@ -1535,6 +1537,7 @@ class StratagemManager(
         }
         phase_end_cleanup_names = {
             "AGGRESSIVE MOBILITY",
+            "AGGRESSOR IMPERATIVE",
             "ASPIRE TO INFAMY",
             "BLOODTHIRSTY HORDE",
             "BRAZEN CONTEMPT",
@@ -2508,6 +2511,30 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires ordered ASTRA MILITARUM unit within objective range that has not shot"
             return result
+        if name_u == "AGGRESSOR IMPERATIVE":
+            if self._rad_zone_aggressor_imperative_primary_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires SKITARII unit on the battlefield that has not been selected to move this phase"
+            return result
+        if name_u == "EXTINCTION ORDER":
+            source_unit = context.get("target_unit") or context.get("unit")
+            candidate_units = (
+                [source_unit]
+                if source_unit is not None
+                else list(self._rad_zone_extinction_order_tech_priest_candidates() or [])
+            )
+            for candidate in candidate_units:
+                objective_candidates = list(context.get("objective_candidates") or [])
+                if not objective_candidates:
+                    objective_candidates = list(self._rad_zone_extinction_order_objective_candidates(candidate) or [])
+                if objective_candidates:
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            result["reason"] = "Requires TECH-PRIEST model on the battlefield and an objective marker within 24\""
+            return result
         if name_u == "LETHAL DOSAGE":
             if self._rad_zone_lethal_dosage_primary_candidates():
                 result["available"] = True
@@ -3007,6 +3034,8 @@ class StratagemManager(
             "REVENGE OF THE RUBRICAE": "Target: your RUBRICAE unit within 6\" of a destroyed THOUSAND SONS PSYKER model; after the enemy unit shoots, it can shoot reactively into that attacker",
             "UNWAVERING PHALANX": "Target: your RUBRIC MARINES unit within Engagement Range of an enemy unit that just ended a Charge move; attacks targeting it suffer -1 to wound until end of turn",
             "THREAT ASSESSMENT ANALYSER": "Target: T'AU EMPIRE unit not yet selected to shoot; choose Sustained Hits 1 or Lethal Hits, or gain both plus [HAZARDOUS] (cannot also target with EXPERIMENTAL AMMUNITION this phase)",
+            "AGGRESSOR IMPERATIVE": "Target: SKITARII unit not yet selected to move; if it is BATTLELINE, you can also choose one friendly SKITARII unit (excluding BATTLELINE) within 6\" that has not been selected to move",
+            "EXTINCTION ORDER": "Target: one TECH-PRIEST model and one objective marker within 24\" of it",
             "LETHAL DOSAGE": "Target: ADEPTUS MECHANICUS unit not yet selected to shoot; if it is BATTLELINE, you can also choose one friendly SKITARII unit (excluding BATTLELINE) within 6\"",
             "PRE-CALIBRATED PURGE SOLUTION": "Target: ADEPTUS MECHANICUS unit not yet selected to shoot; if it is BATTLELINE, you can also choose one friendly SKITARII unit (excluding BATTLELINE) within 6\"",
             "ARMOUR OF CONTEMPT": "Target: ADEPTUS ASTARTES unit",
@@ -4897,6 +4926,29 @@ class StratagemManager(
                     if not isinstance(sr, dict):
                         continue
                     if phase_name == "MOVEMENT_PHASE":
+                        exp = str(sr.get("rad_zone_aggressor_imperative_expires_phase", "") or "").strip().upper()
+                        if sr.get("rad_zone_aggressor_imperative_active") and (not exp or exp == "MOVEMENT_PHASE"):
+                            effects = list(sr.get("advance_no_roll_effects", []) or [])
+                            kept = [
+                                entry
+                                for entry in effects
+                                if not (
+                                    isinstance(entry, dict)
+                                    and str(entry.get("tag", "") or "") == "stratagem:rad_zone_aggressor_imperative"
+                                )
+                            ]
+                            if kept:
+                                sr["advance_no_roll_effects"] = kept
+                            else:
+                                sr.pop("advance_no_roll_effects", None)
+                            for key in (
+                                "rad_zone_aggressor_imperative_active",
+                                "rad_zone_aggressor_imperative_expires_phase",
+                                "rad_zone_aggressor_imperative_turn_owner",
+                                "rad_zone_aggressor_imperative_turn",
+                                "rad_zone_aggressor_imperative_source",
+                            ):
+                                sr.pop(key, None)
                         exp = str(sr.get("tau_aggressive_mobility_expires_phase", "") or "").strip().upper()
                         if sr.get("tau_aggressive_mobility_active") and (not exp or exp == "MOVEMENT_PHASE"):
                             effects = list(sr.get("advance_no_roll_effects", []) or [])
