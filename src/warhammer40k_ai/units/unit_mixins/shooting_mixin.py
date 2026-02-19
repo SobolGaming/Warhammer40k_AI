@@ -887,6 +887,22 @@ class ShootingMixin:
         except Exception:
             pass
 
+        # Genestealer Cults (Host of Ascension): Coordinated Trap target lock.
+        try:
+            root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+        except Exception:
+            root = self
+        try:
+            game = getattr(self.get_parent_army().player, "game", None)
+        except Exception:
+            game = None
+        try:
+            lock_check = getattr(root, "_gsc_coordinated_trap_target_locked_to", None)
+            if callable(lock_check) and not bool(lock_check(target_unit, game=game)):
+                return False
+        except Exception:
+            pass
+
         # TARGET LEGALITY: Locked in Combat targeting restrictions (10e).
         # - Units that are Locked in Combat normally cannot be selected as targets of ranged attacks.
         # - Exception: in the controlling player's Shooting phase, VEHICLE/MONSTER units can be targeted even while Locked.

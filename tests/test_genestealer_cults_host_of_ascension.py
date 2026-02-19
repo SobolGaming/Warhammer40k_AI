@@ -9,6 +9,8 @@ from warhammer40k_ai.rules.enhancement import Enhancement
 from warhammer40k_ai.rules.enhancement_descriptors import get_enhancement_tool_descriptor
 from warhammer40k_ai.rules.stratagem_descriptors import get_stratagem_tool_descriptor
 from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.units.wargear import Wargear
+from warhammer40k_ai.utility.entity_ids import get_entity_id
 from warhammer40k_ai.utility.decision_utils import resolve_decision_command
 
 
@@ -140,6 +142,23 @@ def _pending_reaction_by_name(stratagems, name: str):
         if str(reaction.get("stratagem", "") or "").strip().upper() == wanted:
             return reaction
     return None
+
+
+def _ranged_profile():
+    weapon = Wargear(
+        {
+            "name": "Test Carbine",
+            "type": "Ranged",
+            "range": "24",
+            "A": "1",
+            "BS_WS": "4+",
+            "S": "4",
+            "AP": "0",
+            "D": "1",
+            "description": "",
+        }
+    )
+    return weapon.profiles["default"]
 
 
 def test_a_perfect_ambush_applies_on_reinforcements_setup() -> None:
@@ -374,6 +393,18 @@ def test_assassination_edict_adds_hit_against_character_targets() -> None:
 
 
 def test_host_of_ascension_stratagem_descriptors_registered() -> None:
+    coordinated = get_stratagem_tool_descriptor(stratagem_id="000009068002")
+    assert coordinated is not None
+    assert coordinated.name == "Coordinated Trap"
+    assert coordinated.effect == "target_lock_and_wound_bonus"
+    assert int(coordinated.effect_params.get("wound_roll_bonus", 0) or 0) == 1
+
+    primed = get_stratagem_tool_descriptor(stratagem_id="000009068003")
+    assert primed is not None
+    assert primed.name == "Primed and Readied"
+    assert primed.effect == "critical_hits_on_5plus"
+    assert int(primed.effect_params.get("critical_hit_threshold", 0) or 0) == 5
+
     tunnel = get_stratagem_tool_descriptor(stratagem_id="000009068004")
     assert tunnel is not None
     assert tunnel.name == "Tunnel Crawlers"
@@ -489,3 +520,156 @@ def test_lying_in_wait_allows_cult_ambush_setup_within_six_and_not_engagement() 
     assert ok
     placements_after = cult_ambush._find_cult_ambush_placements(gsc_unit, marker, game=game)
     assert placements_after is not None
+
+
+def test_primed_and_readied_queues_and_applies_critical_hits_on_five_plus() -> None:
+    game, gsc_player, enemy_player, gsc_unit = _make_game("Host of Ascension")
+    game.turn = 2
+    gsc_player.command_points = 5
+    gsc_player.stratagems.refresh_available()
+    gsc_player.stratagems.enable_event_subscriptions(event_system=game.event_system)
+
+    enemy_target = _make_unit(
+        "Enemy Target",
+        faction="Enemy",
+        faction_keywords=["ENEMY"],
+        keywords=["INFANTRY"],
+    )
+    enemy_player.army.add_unit(enemy_target)
+    enemy_target.models[0].set_location(16.0, 10.0, 0.0, 0.0)
+    game.map.units = [gsc_unit, enemy_target]
+    game.rebuild_entity_registry()
+
+    phase = SimpleNamespace(name="SHOOTING_PHASE")
+    game.phase = phase
+    game.current_player_index = 0
+    game.event_system.publish("phase_start", player=gsc_player, phase=phase)
+
+    pending = _pending_reaction_by_name(gsc_player.stratagems, "PRIMED AND READIED")
+    assert pending is not None
+    ok = gsc_player.stratagems.use(
+        str(pending.get("stratagem", "")),
+        unit=gsc_unit,
+        dequeue=True,
+    )
+    assert ok
+
+    profile = _ranged_profile()
+    hit = profile._hit_target_with_tracking(
+        enemy_target,
+        gsc_unit.models[0],
+        {},
+        roll_value=5,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert hit.get("hit") is True
+    assert int(hit.get("crit_threshold", 0) or 0) == 5
+    assert any("primed and readied" in str(effect or "").strip().lower() for effect in list(hit.get("special_effects", []) or []))
+
+
+def test_coordinated_trap_applies_target_lock_and_wound_bonus() -> None:
+    game, gsc_player, enemy_player, first_unit = _make_game("Host of Ascension")
+    game.turn = 2
+    gsc_player.command_points = 5
+    gsc_player.stratagems.refresh_available()
+    gsc_player.stratagems.enable_event_subscriptions(event_system=game.event_system)
+
+    second_unit = _make_unit(
+        "Acolyte Hybrids",
+        faction="Genestealer Cults",
+        faction_keywords=["GENESTEALER CULTS"],
+        keywords=["INFANTRY"],
+    )
+    marked_enemy = _make_unit(
+        "Marked Enemy",
+        faction="Enemy",
+        faction_keywords=["ENEMY"],
+        keywords=["INFANTRY"],
+    )
+    other_enemy = _make_unit(
+        "Other Enemy",
+        faction="Enemy",
+        faction_keywords=["ENEMY"],
+        keywords=["INFANTRY"],
+    )
+    gsc_player.army.add_unit(second_unit)
+    enemy_player.army.add_unit(marked_enemy)
+    enemy_player.army.add_unit(other_enemy)
+    first_unit.models[0].set_location(10.0, 10.0, 0.0, 0.0)
+    second_unit.models[0].set_location(12.0, 10.0, 0.0, 0.0)
+    marked_enemy.models[0].set_location(16.0, 10.0, 0.0, 0.0)
+    other_enemy.models[0].set_location(18.0, 12.0, 0.0, 0.0)
+    game.map.units = [first_unit, second_unit, marked_enemy, other_enemy]
+    game.rebuild_entity_registry()
+
+    phase = SimpleNamespace(name="SHOOTING_PHASE")
+    game.phase = phase
+    game.current_player_index = 0
+    game.event_system.publish("phase_start", player=gsc_player, phase=phase)
+
+    pending = _pending_reaction_by_name(gsc_player.stratagems, "COORDINATED TRAP")
+    assert pending is not None
+    ok = gsc_player.stratagems.use(
+        str(pending.get("stratagem", "")),
+        units=[first_unit, second_unit],
+        enemy_unit=marked_enemy,
+        dequeue=True,
+    )
+    assert ok
+
+    expected_target_id = str(get_entity_id(marked_enemy) or "")
+    for unit in (first_unit, second_unit):
+        sr = dict(getattr(unit, "special_rules", {}) or {})
+        assert bool(sr.get("gsc_coordinated_trap_active")) is True
+        assert str(sr.get("gsc_coordinated_trap_target_id", "") or "") == expected_target_id
+        assert int(sr.get("gsc_coordinated_trap_wound_bonus", 0) or 0) == 1
+
+    profile = _ranged_profile()
+    can_target_marked = first_unit._can_model_shoot_weapon_at_target(first_unit.models[0], profile, marked_enemy, game.map)
+    can_target_other = first_unit._can_model_shoot_weapon_at_target(first_unit.models[0], profile, other_enemy, game.map)
+    assert can_target_marked
+    assert not can_target_other
+
+    mods_marked = first_unit.get_unit_wound_reroll_modifiers("ranged", target=marked_enemy)
+    assert int(mods_marked.get("wound", 0) or 0) >= 1
+    assert any("coordinated trap" in str(reason or "").strip().lower() for reason in mods_marked.get("wound_reasons", ()))
+
+    mods_other = first_unit.get_unit_wound_reroll_modifiers("ranged", target=other_enemy)
+    assert not any("coordinated trap" in str(reason or "").strip().lower() for reason in mods_other.get("wound_reasons", ()))
+
+
+def test_coordinated_trap_fight_phase_requires_enemy_engaged_with_both_units() -> None:
+    game, gsc_player, enemy_player, first_unit = _make_game("Host of Ascension")
+    gsc_player.command_points = 5
+    second_unit = _make_unit(
+        "Acolyte Hybrids",
+        faction="Genestealer Cults",
+        faction_keywords=["GENESTEALER CULTS"],
+        keywords=["INFANTRY"],
+    )
+    enemy_unit = _make_unit(
+        "Enemy Fighters",
+        faction="Enemy",
+        faction_keywords=["ENEMY"],
+        keywords=["INFANTRY"],
+    )
+    gsc_player.army.add_unit(second_unit)
+    enemy_player.army.add_unit(enemy_unit)
+    first_unit.models[0].set_location(10.0, 10.0, 0.0, 0.0)
+    second_unit.models[0].set_location(20.0, 10.0, 0.0, 0.0)
+    enemy_unit.models[0].set_location(11.0, 10.0, 0.0, 0.0)
+    game.map.units = [first_unit, second_unit, enemy_unit]
+    game.rebuild_entity_registry()
+
+    phase = SimpleNamespace(name="FIGHT_PHASE")
+    game.phase = phase
+    game.current_player_index = 0
+    blocked = gsc_player.stratagems.use(
+        "COORDINATED TRAP",
+        units=[first_unit, second_unit],
+        enemy_unit=enemy_unit,
+        phase_name="Fight phase",
+    )
+    assert not blocked
+    assert int(gsc_player.command_points or 0) == 5

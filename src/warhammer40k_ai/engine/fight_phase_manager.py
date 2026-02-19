@@ -498,6 +498,12 @@ class FightPhaseManager:
                         reason = None
                     if isinstance(reason, str) and reason:
                         continue
+                    try:
+                        lock_check = getattr(fighting_unit, "_gsc_coordinated_trap_target_locked_to", None)
+                        if callable(lock_check) and not bool(lock_check(enemy_root, game=self.game)):
+                            continue
+                    except Exception:
+                        pass
                     eligible_targets.append(enemy_root)
             except Exception:
                 continue

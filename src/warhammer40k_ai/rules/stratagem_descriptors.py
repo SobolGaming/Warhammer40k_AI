@@ -347,6 +347,30 @@ _POSSESSED_SLAUGHTERBAND_STRATAGEM_BY_NAME = {
 }
 
 _HOST_OF_ASCENSION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009068002": StratagemToolDescriptor(
+        stratagem_id="000009068002",
+        name="Coordinated Trap",
+        timing="start_of_shooting_or_fight_phase",
+        target="two_genestealer_cults_units_not_yet_selected_to_shoot_or_fight_and_one_enemy_unit",
+        duration="until_end_of_phase",
+        effect="target_lock_and_wound_bonus",
+        cp_cost=2,
+        effect_params={
+            "target_lock": True,
+            "wound_roll_bonus": 1,
+            "fight_phase_enemy_must_be_within_engagement_range_of_both_units": True,
+        },
+    ),
+    "000009068003": StratagemToolDescriptor(
+        stratagem_id="000009068003",
+        name="Primed and Readied",
+        timing="shooting_or_fight_phase",
+        target="genestealer_cults_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="critical_hits_on_5plus",
+        cp_cost=2,
+        effect_params={"critical_hit_threshold": 5},
+    ),
     "000009068004": StratagemToolDescriptor(
         stratagem_id="000009068004",
         name="Tunnel Crawlers",
