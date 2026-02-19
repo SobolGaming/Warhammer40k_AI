@@ -367,3 +367,101 @@ class TestBenefitOfCover:
         ranged_wp._save_with_tracking(target.models[0], attack_instance, ap=0)
         assert attack_instance.get("benefit_of_cover") is True
         assert "Miasma of Pestilence" in str(attack_instance.get("benefit_of_cover_source", ""))
+
+    def test_selfless_protector_rule_parses(self):
+        ability_text = (
+            "Each time a ranged attack is allocated to an Imperial Knights model from your army, if that model "
+            "is not fully visible to every model in the attacking unit because of this Knight Defender model, "
+            "that model has the Benefit of Cover and a 4+ invulnerable save against that attack."
+        )
+        abilities = [{
+            "name": "Selfless Protector",
+            "description": ability_text,
+            "type": "Ability",
+            "parameter": "",
+        }]
+        defender = create_unit("Knight Defender", 20.0, 10.0, faction="A", model_count=1, abilities=abilities)
+
+        rule = defender.get_selfless_protector_rule()
+        assert isinstance(rule, dict)
+        assert str(rule.get("source", "")) == "Selfless Protector"
+        assert int(rule.get("invulnerable_save", 0) or 0) == 4
+
+    def test_selfless_protector_applies_cover_and_invuln_for_imperial_knights_target(self, monkeypatch):
+        import warhammer40k_ai.units.wargear as wargear_mod
+
+        monkeypatch.setattr(wargear_mod, "get_roll", lambda _expr: 4)
+
+        ability_text = (
+            "Each time a ranged attack is allocated to an Imperial Knights model from your army, if that model "
+            "is not fully visible to every model in the attacking unit because of this Knight Defender model, "
+            "that model has the Benefit of Cover and a 4+ invulnerable save against that attack."
+        )
+        abilities = [{
+            "name": "Selfless Protector",
+            "description": ability_text,
+            "type": "Ability",
+            "parameter": "",
+        }]
+
+        game_map = Map(width=48, height=72)
+        attacker = create_unit("Attacker", 10.0, 10.0, faction="B", model_count=1, save="4")
+        protector = create_unit("Knight Defender", 20.0, 10.0, faction="A", model_count=1, save="4", abilities=abilities)
+        target = create_unit("Armiger", 30.0, 10.0, faction="A", model_count=1, save="4")
+
+        army_a, army_b = attach_to_armies(game_map, [protector, target], [attacker])
+        game = SimpleNamespace(map=game_map)
+        army_a.player = SimpleNamespace(game=game, name="P1", id="P1")
+        army_b.player = SimpleNamespace(game=game, name="P2", id="P2")
+
+        target.has_any_keyword = lambda kw: str(kw).strip().upper() == "IMPERIAL KNIGHTS"
+        target.has_keyword = lambda kw: str(kw).strip().upper() == "IMPERIAL KNIGHTS"
+
+        wp = WargearProfile("ranged", {"range": "24", "A": "1", "BS_WS": "3", "S": "6", "AP": "3", "D": "2", "description": ""})
+        attack_instance = {"mortal_wound": False, "attacker_unit": attacker}
+        res = wp._save_with_tracking(target.models[0], attack_instance, ap=-3, roll_value=4, allow_rerolls=False)
+
+        assert attack_instance.get("benefit_of_cover") is True
+        assert "Selfless Protector" in str(attack_instance.get("benefit_of_cover_source", ""))
+        assert int(attack_instance.get("inv_save_override", 0) or 0) == 4
+        assert res.get("save_type") == "invulnerable"
+        assert res.get("saved") is True
+
+    def test_selfless_protector_does_not_apply_to_non_imperial_knights_target(self, monkeypatch):
+        import warhammer40k_ai.units.wargear as wargear_mod
+
+        monkeypatch.setattr(wargear_mod, "get_roll", lambda _expr: 4)
+
+        ability_text = (
+            "Each time a ranged attack is allocated to an Imperial Knights model from your army, if that model "
+            "is not fully visible to every model in the attacking unit because of this Knight Defender model, "
+            "that model has the Benefit of Cover and a 4+ invulnerable save against that attack."
+        )
+        abilities = [{
+            "name": "Selfless Protector",
+            "description": ability_text,
+            "type": "Ability",
+            "parameter": "",
+        }]
+
+        game_map = Map(width=48, height=72)
+        attacker = create_unit("Attacker", 10.0, 10.0, faction="B", model_count=1, save="4")
+        protector = create_unit("Knight Defender", 20.0, 10.0, faction="A", model_count=1, save="4", abilities=abilities)
+        target = create_unit("NonIK Target", 30.0, 10.0, faction="A", model_count=1, save="4")
+
+        army_a, army_b = attach_to_armies(game_map, [protector, target], [attacker])
+        game = SimpleNamespace(map=game_map)
+        army_a.player = SimpleNamespace(game=game, name="P1", id="P1")
+        army_b.player = SimpleNamespace(game=game, name="P2", id="P2")
+
+        target.has_any_keyword = lambda _kw: False
+        target.has_keyword = lambda _kw: False
+
+        wp = WargearProfile("ranged", {"range": "24", "A": "1", "BS_WS": "3", "S": "6", "AP": "3", "D": "2", "description": ""})
+        attack_instance = {"mortal_wound": False, "attacker_unit": attacker}
+        res = wp._save_with_tracking(target.models[0], attack_instance, ap=-3, roll_value=4, allow_rerolls=False)
+
+        assert attack_instance.get("benefit_of_cover") is None
+        assert attack_instance.get("inv_save_override") is None
+        assert res.get("save_type") == "armor"
+        assert res.get("saved") is False

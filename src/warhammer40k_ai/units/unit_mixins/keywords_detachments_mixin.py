@@ -3394,6 +3394,88 @@ class KeywordsDetachmentsMixin:
         root._ability_cache[cache_key] = rule
         return rule
 
+    def get_selfless_protector_rule(self) -> Optional[dict]:
+        """
+        Return rule info for Selfless Protector-like abilities:
+        "Each time a ranged attack is allocated to an Imperial Knights model from your army,
+        if that model is not fully visible to every model in the attacking unit because of this Knight Defender model,
+        that model has the Benefit of Cover and a 4+ invulnerable save against that attack."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "selfless_protector_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+
+        get_models = getattr(root, "get_attached_unit_models", None)
+        if callable(get_models):
+            models = list(get_models() or [])
+        else:
+            models = list(getattr(root, "models", []) or [])
+
+        def _normalize_selfless_text(text_src: str) -> str:
+            text_src = root._strip_eligibility_prefix(text_src)
+            normalized = root._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            return normalized
+
+        iter_model_entries = getattr(root, "_iter_model_specific_ability_entries", None)
+        if callable(iter_model_entries):
+            for model in models:
+                if model is None:
+                    continue
+                for name, desc in iter_model_entries(model):
+                    text_src = desc or name or ""
+                    if not text_src:
+                        continue
+                    normalized = _normalize_selfless_text(text_src)
+                    if not root._SELFLESS_PROTECTOR_RE.fullmatch(normalized):
+                        continue
+                    source = str(name or "Selfless Protector").strip() or "Selfless Protector"
+                    rule = {
+                        "source": source,
+                        "model_id": str(get_entity_id(model) or ""),
+                        "invulnerable_save": 4,
+                    }
+                    break
+                if rule is not None:
+                    break
+
+        if rule is None:
+            for name, desc in root._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                normalized = _normalize_selfless_text(text_src)
+                if not root._SELFLESS_PROTECTOR_RE.fullmatch(normalized):
+                    continue
+                source = str(name or "Selfless Protector").strip() or "Selfless Protector"
+                source_model_id = ""
+                for model in models:
+                    if model is None or not bool(getattr(model, "is_alive", True)):
+                        continue
+                    source_model_id = str(get_entity_id(model) or "")
+                    if source_model_id:
+                        break
+                rule = {
+                    "source": source,
+                    "model_id": source_model_id,
+                    "invulnerable_save": 4,
+                }
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
     def can_use_beast_handler_heroic_intervention(self, game=None) -> bool:
         """Return True if Beast Handler can grant Heroic Intervention for 0CP (once per battle)."""
         try:

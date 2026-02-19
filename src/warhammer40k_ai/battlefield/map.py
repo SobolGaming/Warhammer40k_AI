@@ -17,6 +17,7 @@ from shapely.ops import unary_union
 from shapely.affinity import scale, translate
 
 from typing import TYPE_CHECKING, List, Tuple, Union
+from ..utility.entity_ids import get_entity_id
 import logging
 logger = logging.getLogger(__name__)
 
@@ -506,6 +507,53 @@ class Map:
 
         return result
 
+    @staticmethod
+    def _unit_root(unit: Optional[Unit]) -> Optional[Unit]:
+        if unit is None:
+            return None
+        getter = getattr(unit, "get_attached_unit_root", None)
+        if callable(getter):
+            return getter()
+        return unit
+
+    @staticmethod
+    def _footprint_and_bounding_box_for_models(models: list[Model]) -> tuple[Any, Optional[dict]]:
+        shapes = []
+        max_z = 0.0
+        for model in list(models or []):
+            if model is None or not bool(getattr(model, "is_alive", True)):
+                continue
+            base = getattr(model, "model_base", None)
+            if base is None:
+                continue
+            shape = base.get_base_shape()
+            if shape is None:
+                continue
+            shapes.append(shape)
+            try:
+                z_here = float(getattr(base, "z", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                z_here = 0.0
+            try:
+                height = float(getattr(base, "model_height", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                height = 0.0
+            max_z = max(max_z, z_here + height)
+        if not shapes:
+            return None, None
+        try:
+            footprint = unary_union(shapes)
+        except GEOSException:
+            footprint = shapes[0]
+        try:
+            bounds = footprint.bounds
+        except (TypeError, ValueError):
+            return None, None
+        return footprint, {
+            "min": (bounds[0], bounds[1], 0.0),
+            "max": (bounds[2], bounds[3], max_z),
+        }
+
     def get_benefit_of_cover_from_fortifications(
         self,
         attacking_unit: Unit,
@@ -533,62 +581,12 @@ class Map:
         if not fortification_units:
             return result
 
-        def _unit_root(unit):
-            getter = getattr(unit, "get_attached_unit_root", None)
-            if callable(getter):
-                return getter()
-            return unit
-
-        def _footprint_for_unit(unit):
-            get_models = getattr(unit, "get_attached_unit_models", None)
-            if callable(get_models):
-                models = list(get_models() or [])
-            else:
-                models = list(getattr(unit, "models", []) or [])
-            shapes = []
-            max_z = 0.0
-            for m in models:
-                if not getattr(m, "is_alive", True):
-                    continue
-                base = getattr(m, "model_base", None)
-                if base is None:
-                    continue
-                shape = base.get_base_shape()
-                if shape is None:
-                    continue
-                shapes.append(shape)
-                try:
-                    z_here = float(getattr(base, "z", 0.0) or 0.0)
-                except (TypeError, ValueError):
-                    z_here = 0.0
-                try:
-                    height = float(getattr(base, "model_height", 0.0) or 0.0)
-                except (TypeError, ValueError):
-                    height = 0.0
-                max_z = max(max_z, z_here + height)
-            if not shapes:
-                return None, None
-            try:
-                from shapely.ops import unary_union
-                footprint = unary_union(shapes)
-            except GEOSException:
-                footprint = shapes[0]
-            try:
-                bounds = footprint.bounds
-            except (TypeError, ValueError):
-                return None, None
-            bounding_box = {
-                "min": (bounds[0], bounds[1], 0.0),
-                "max": (bounds[2], bounds[3], max_z),
-            }
-            return footprint, bounding_box
-
-        target_root = _unit_root(getattr(target_model, "parent_unit", None))
+        target_root = self._unit_root(getattr(target_model, "parent_unit", None))
 
         for fort in list(fortification_units or []):
             if fort is None:
                 continue
-            root = _unit_root(fort)
+            root = self._unit_root(fort)
             if root is None:
                 continue
             if target_root is not None and root is target_root:
@@ -607,7 +605,12 @@ class Map:
             rule = get_rule() if callable(get_rule) else None
             if not rule:
                 continue
-            footprint, bbox = _footprint_for_unit(root)
+            get_models = getattr(root, "get_attached_unit_models", None)
+            if callable(get_models):
+                root_models = list(get_models() or [])
+            else:
+                root_models = list(getattr(root, "models", []) or [])
+            footprint, bbox = self._footprint_and_bounding_box_for_models(root_models)
             if footprint is None or bbox is None:
                 continue
             proxy = type("FortificationCoverProxy", (), {})()
@@ -623,6 +626,122 @@ class Map:
                     src_name = str(rule.get("source", "") or getattr(root, "name", "Fortification") or "Fortification")
                     result["reason"] = f"Not fully visible due to {src_name}"
                     return result
+
+        return result
+
+    def get_selfless_protector_bonus_for_ranged_attack(
+        self,
+        attacking_unit: Unit,
+        target_model: Model,
+        protector_units: list,
+        weapon_profile: Optional[Any] = None,
+    ) -> Dict[str, Any]:
+        """Evaluate Selfless Protector defensive bonuses for a ranged attack allocation."""
+        result: Dict[str, Any] = {
+            "applies": False,
+            "source_unit": None,
+            "source_model": None,
+            "grants_benefit_of_cover": False,
+            "invulnerable_save": None,
+            "reason": None,
+        }
+        if target_model is None or attacking_unit is None:
+            return result
+        if not protector_units:
+            return result
+
+        target_root = self._unit_root(getattr(target_model, "parent_unit", None))
+        if target_root is None:
+            return result
+        target_has_ik_keyword = False
+        has_any = getattr(target_root, "has_any_keyword", None)
+        if callable(has_any):
+            target_has_ik_keyword = bool(has_any("IMPERIAL KNIGHTS"))
+        if not target_has_ik_keyword:
+            has_kw = getattr(target_root, "has_keyword", None)
+            if callable(has_kw):
+                target_has_ik_keyword = bool(has_kw("IMPERIAL KNIGHTS"))
+        if not target_has_ik_keyword:
+            return result
+
+        ignores_cover = False
+        if weapon_profile is not None:
+            parent_wg = getattr(weapon_profile, "parent_wargear", None)
+            ignores_cover_fn = getattr(parent_wg, "is_ignores_cover", None)
+            if callable(ignores_cover_fn):
+                ignores_cover = bool(ignores_cover_fn())
+
+        for protector in list(protector_units or []):
+            protector_root = self._unit_root(protector)
+            if protector_root is None:
+                continue
+            if protector_root is target_root:
+                continue
+            is_alive = getattr(protector_root, "is_alive", None)
+            if callable(is_alive) and not is_alive():
+                continue
+            if not bool(getattr(protector_root, "deployed", True)):
+                continue
+            in_reserves = getattr(protector_root, "is_in_reserves", None)
+            if callable(in_reserves) and in_reserves():
+                continue
+            if bool(getattr(protector_root, "is_embarked", False)):
+                continue
+
+            get_rule = getattr(protector_root, "get_selfless_protector_rule", None)
+            rule = get_rule() if callable(get_rule) else None
+            if not isinstance(rule, dict):
+                continue
+
+            get_models = getattr(protector_root, "get_attached_unit_models", None)
+            if callable(get_models):
+                protector_models = list(get_models() or [])
+            else:
+                protector_models = list(getattr(protector_root, "models", []) or [])
+            if not protector_models:
+                continue
+
+            source_model = None
+            source_model_id = str(rule.get("model_id", "") or "")
+            if source_model_id:
+                for model in protector_models:
+                    if model is None:
+                        continue
+                    if str(get_entity_id(model) or "") != source_model_id:
+                        continue
+                    source_model = model
+                    break
+            if source_model is None:
+                for model in protector_models:
+                    if model is None or not bool(getattr(model, "is_alive", True)):
+                        continue
+                    source_model = model
+                    break
+            if source_model is None:
+                continue
+
+            footprint, bbox = self._footprint_and_bounding_box_for_models([source_model])
+            if footprint is None or bbox is None:
+                continue
+            proxy = type("SelflessProtectorProxy", (), {})()
+            proxy.footprint = footprint
+            proxy.bounding_box = bbox
+
+            for attacker_model in list(getattr(attacking_unit, "models", []) or []):
+                if attacker_model is None or not bool(getattr(attacker_model, "is_alive", False)):
+                    continue
+                fully_visible = self._is_fully_visible_due_to_terrain(attacker_model, target_model, proxy)
+                if fully_visible:
+                    continue
+                result["applies"] = True
+                result["source_unit"] = protector_root
+                result["source_model"] = source_model
+                result["invulnerable_save"] = int(rule.get("invulnerable_save", 4) or 4)
+                if not ignores_cover:
+                    result["grants_benefit_of_cover"] = True
+                source_name = str(rule.get("source", "") or getattr(protector_root, "name", "Selfless Protector") or "Selfless Protector")
+                result["reason"] = f"Not fully visible due to {source_name}"
+                return result
 
         return result
 

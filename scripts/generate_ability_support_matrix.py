@@ -3035,6 +3035,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Start-of-battle quarry selection; attacks vs quarry can re-roll Wound rolls; when quarry is destroyed you can optionally select a new quarry.",
         ),
+        ("QI", "Selfless Protector"): (
+            "Supported",
+            "Ranged attacks allocated to friendly IMPERIAL KNIGHTS models that are not fully visible because of this Knight Defender model gain Benefit of Cover and a 4+ invulnerable save.",
+        ),
         ("QI", "Data-spike"): (
             "Supported",
             "Start of Fight phase: optional engaged enemy VEHICLE selection; on 4+ it suffers D6 mortal wounds and its melee weapon Weapon Skill is worsened by 1 until end of phase.",
