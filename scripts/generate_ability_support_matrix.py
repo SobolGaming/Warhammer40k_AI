@@ -3399,6 +3399,7 @@ def _classify_ability_base(
     charge_end_mortal_support = _charge_end_mortal_wounds_support(description)
     fight_within_3_support = _fight_within_3_support(description)
     allocated_damage_reduction_support = _allocated_damage_reduction_support(description)
+    allocated_damage_zero_support = _allocated_damage_set_zero_support(description)
     ranged_ignore_bs_hit_support = _ranged_ignore_bs_hit_modifiers_support(description)
     ranged_ignore_hit_support = _ranged_ignore_hit_modifiers_support(description)
     ignore_skill_and_hit_modifiers_support = _ignore_skill_and_hit_modifiers_support(description)
@@ -3709,6 +3710,8 @@ def _classify_ability_base(
         return charge_end_mortal_support
     if fight_within_3_support:
         return fight_within_3_support
+    if allocated_damage_zero_support:
+        return allocated_damage_zero_support
     if allocated_damage_reduction_support:
         return allocated_damage_reduction_support
     return ("Not implemented", "")
@@ -5722,6 +5725,30 @@ def _allocated_damage_reduction_support(description: str) -> Optional[Tuple[str,
     if atype:
         return ("Supported", f"Allocated {atype} attacks have -{m.group('val')} Damage.")
     return ("Supported", f"Allocated attacks have -{m.group('val')} Damage.")
+
+
+def _allocated_damage_set_zero_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    patterns = (
+        ("battle", r"once per battle when an attack is allocated to (?:the bearer|this model) you (?P<optional>can )?change (?:the )?damage characteristic(?: of that attack)? to 0"),
+        ("battle round", r"once per battle round when an attack is allocated to (?:the bearer|this model) you (?P<optional>can )?change (?:the )?damage characteristic(?: of that attack)? to 0"),
+    )
+    for usage, pattern in patterns:
+        m = re.fullmatch(pattern, norm)
+        if not m:
+            continue
+        is_optional = bool(str(m.group("optional") or "").strip())
+        if is_optional:
+            return (
+                "Supported",
+                f"Once per {usage}, when an attack is allocated to the bearer/model, optional activation sets that attack's Damage to 0.",
+            )
+        return ("Supported", f"Once per {usage}, when an attack is allocated to the bearer/model, that attack's Damage is set to 0.")
+    return None
 
 
 def _targeted_stratagem_cp_discount_support(description: str) -> Optional[Tuple[str, str]]:

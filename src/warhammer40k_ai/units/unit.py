@@ -2956,6 +2956,11 @@ class Unit(
         r"(?:the )?damage characteristic(?: of that attack)? to 0",
         re.IGNORECASE,
     )
+    _MODEL_ONCE_PER_BATTLE_ROUND_ALLOCATED_DAMAGE_ZERO_RE = re.compile(
+        r"once per battle round when an attack is allocated to (?:the bearer|this model) you (?:can )?change "
+        r"(?:the )?damage characteristic(?: of that attack)? to 0",
+        re.IGNORECASE,
+    )
     _MASTER_OF_STANCES_RE = re.compile(
         r"once per battle when this model s unit is selected to fight it can use this ability if it does until that fight is resolved "
         r"both ka tah stances are active for that unit instead of only one",

@@ -136,6 +136,7 @@ class TestModelAllocatedDamageZero(unittest.TestCase):
         attacker_army.add_unit(attacker_unit)
         defender_army.add_unit(target_unit)
         game.map.units = [attacker_unit, target_unit]
+        game.turn = 1
 
         profile = _make_profile()
 
@@ -150,6 +151,96 @@ class TestModelAllocatedDamageZero(unittest.TestCase):
         self.assertEqual(target_unit.models[0].wounds, 3)
 
         # Next turn: ability can be used again.
+        game.turn = int(getattr(game, "turn", 0) or 0) + 1
+        defender.set_next_optional_decision("MODEL_ALLOCATED_DAMAGE_ZERO", True)
+        with patch("warhammer40k_ai.units.wargear.get_roll", side_effect=[6, 6, 1]):
+            profile.attack(target_unit, attacker_unit.models[0], game_map=game.map)
+        self.assertEqual(target_unit.models[0].wounds, 3)
+
+    def test_ablative_plating_is_mandatory_and_auto_applies(self):
+        ability = {
+            "name": "Ablative Plating",
+            "description": "Once per battle, when an attack is allocated to this model, you change the Damage characteristic of that attack to 0.",
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        target_unit = _make_unit("Rogal Dorn", abilities=[ability], wounds=3)
+        attacker_unit = _make_unit("Attacker", wounds=3)
+
+        attacker_army = Army("Attacker", detachment_type="Other")
+        attacker_army.faction_id = "ATK"
+        defender_army = Army("Defender", detachment_type="Other")
+        defender_army.faction_id = "AM"
+        attacker = Player("Attacker", PlayerControl.REMOTE, army=attacker_army)
+        defender = Player("Defender", PlayerControl.REMOTE, army=defender_army)
+
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[attacker, defender])
+        attacker_army.add_unit(attacker_unit)
+        defender_army.add_unit(target_unit)
+        game.map.units = [attacker_unit, target_unit]
+
+        profile = _make_profile()
+
+        with patch("warhammer40k_ai.units.wargear.get_roll", side_effect=[6, 6, 1]):
+            profile.attack(target_unit, attacker_unit.models[0], game_map=game.map)
+        self.assertEqual(target_unit.models[0].wounds, 3)
+
+        specs = list(target_unit.model_allocated_damage_zero_specs(target_unit.models[0]) or [])
+        self.assertTrue(specs)
+        self.assertEqual(specs[0].get("usage"), "battle")
+        self.assertFalse(bool(specs[0].get("optional", True)))
+        self.assertTrue(target_unit.models[0].has_used_once_per_battle(specs[0]["key"]))
+
+        # Second attack applies damage because mandatory once-per-battle usage is spent.
+        with patch("warhammer40k_ai.units.wargear.get_roll", side_effect=[6, 6, 1]):
+            profile.attack(target_unit, attacker_unit.models[0], game_map=game.map)
+        self.assertEqual(target_unit.models[0].wounds, 1)
+
+    def test_inviolable_transport_sets_damage_zero_once_per_battle_round(self):
+        ability = {
+            "name": "Inviolable Transport",
+            "description": (
+                "Once per battle round, when an attack is allocated to this model, you can change the Damage characteristic "
+                "of that attack to 0."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        target_unit = _make_unit("Transport", abilities=[ability], wounds=5)
+        attacker_unit = _make_unit("Attacker", wounds=3)
+
+        attacker_army = Army("Attacker", detachment_type="Other")
+        attacker_army.faction_id = "ATK"
+        defender_army = Army("Defender", detachment_type="Other")
+        defender_army.faction_id = "TAU"
+        attacker = Player("Attacker", PlayerControl.REMOTE, army=attacker_army)
+        defender = Player("Defender", PlayerControl.REMOTE, army=defender_army)
+
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[attacker, defender])
+        attacker_army.add_unit(attacker_unit)
+        defender_army.add_unit(target_unit)
+        game.map.units = [attacker_unit, target_unit]
+
+        profile = _make_profile()
+
+        defender.set_next_optional_decision("MODEL_ALLOCATED_DAMAGE_ZERO", True)
+        with patch("warhammer40k_ai.units.wargear.get_roll", side_effect=[6, 6, 1]):
+            profile.attack(target_unit, attacker_unit.models[0], game_map=game.map)
+        self.assertEqual(target_unit.models[0].wounds, 5)
+
+        specs = list(target_unit.model_allocated_damage_zero_specs(target_unit.models[0]) or [])
+        self.assertTrue(specs)
+        self.assertEqual(specs[0].get("usage"), "battle_round")
+        self.assertTrue(bool(specs[0].get("optional", False)))
+        self.assertTrue(target_unit.models[0].has_used_once_per_battle_round(specs[0]["key"]))
+
+        # Same battle round: effect cannot be used again.
+        defender.set_next_optional_decision("MODEL_ALLOCATED_DAMAGE_ZERO", True)
+        with patch("warhammer40k_ai.units.wargear.get_roll", side_effect=[6, 6, 1]):
+            profile.attack(target_unit, attacker_unit.models[0], game_map=game.map)
+        self.assertEqual(target_unit.models[0].wounds, 3)
+
+        # Next battle round: effect is available again.
         game.turn = int(getattr(game, "turn", 0) or 0) + 1
         defender.set_next_optional_decision("MODEL_ALLOCATED_DAMAGE_ZERO", True)
         with patch("warhammer40k_ai.units.wargear.get_roll", side_effect=[6, 6, 1]):

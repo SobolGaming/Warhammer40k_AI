@@ -5710,7 +5710,7 @@ class WargearProfile:
         target: Optional['Unit'] = None,
     ) -> bool:
         """
-        Model ability: once per battle, when an attack is allocated to this model, set Damage to 0.
+        Model ability: when an attack is allocated to this model, set Damage to 0.
         Returns True if the effect was applied.
         """
         if target_model is None or not isinstance(attack_instance, dict):
@@ -5801,14 +5801,22 @@ class WargearProfile:
             key = str(spec.get("key", "") or "").strip().lower()
             if not key:
                 continue
-            if str(spec.get("usage", "") or "").strip().lower() == "turn":
+            usage = str(spec.get("usage", "") or "").strip().lower()
+            if usage == "turn":
                 available.append(spec)
                 continue
-            try:
-                if getattr(target_model, "has_used_once_per_battle", lambda _k: False)(key):
+            if usage == "battle_round":
+                try:
+                    if getattr(target_model, "has_used_once_per_battle_round", lambda _k: False)(key):
+                        continue
+                except Exception:
                     continue
-            except Exception:
-                continue
+            else:
+                try:
+                    if getattr(target_model, "has_used_once_per_battle", lambda _k: False)(key):
+                        continue
+                except Exception:
+                    continue
             available.append(spec)
         if not available:
             return False
@@ -5817,6 +5825,10 @@ class WargearProfile:
         spec = available[0]
         ability_name = str(spec.get("source", "") or "Damage set to 0").strip() or "Damage set to 0"
         ability_key = str(spec.get("key", "") or "model_allocated_damage_zero").strip().lower() or "model_allocated_damage_zero"
+        usage = str(spec.get("usage", "") or "battle").strip().lower()
+        if usage not in ("turn", "battle_round", "battle"):
+            usage = "battle"
+        is_optional = bool(spec.get("optional", True))
 
         player = None
         game_map = None
@@ -5837,91 +5849,93 @@ class WargearProfile:
             is_human = False
             provider = None
 
-        decision = None
-        if is_human and callable(provider):
-            try:
-                decision = provider(
-                    player=player,
-                    model=target_model,
-                    ability_name=ability_name,
-                    ability_key=ability_key,
-                    attacker=attacker,
-                    target=target,
-                    weapon_name=getattr(getattr(self, "parent_wargear", None), "name", None)
-                    or getattr(self, "name", "Weapon"),
-                )
-            except Exception:
-                decision = None
-        else:
+        decision = {"choice": True}
+        if is_optional:
             decision = None
-            if game is not None and player is not None:
+            if is_human and callable(provider):
                 try:
-                    from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
-                    from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
-                    from warhammer40k_ai.utility.decision_utils import resolve_decision_value
-                    from warhammer40k_ai.utility.entity_ids import get_entity_id
+                    decision = provider(
+                        player=player,
+                        model=target_model,
+                        ability_name=ability_name,
+                        ability_key=ability_key,
+                        attacker=attacker,
+                        target=target,
+                        weapon_name=getattr(getattr(self, "parent_wargear", None), "name", None)
+                        or getattr(self, "name", "Weapon"),
+                    )
                 except Exception:
                     decision = None
-                else:
-                    unit_id = ""
-                    model_id = ""
+            else:
+                decision = None
+                if game is not None and player is not None:
                     try:
-                        unit_id = get_entity_id(unit)
+                        from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
+                        from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
+                        from warhammer40k_ai.utility.decision_utils import resolve_decision_value
+                        from warhammer40k_ai.utility.entity_ids import get_entity_id
                     except Exception:
+                        decision = None
+                    else:
                         unit_id = ""
-                    try:
-                        model_id = get_entity_id(target_model)
-                    except Exception:
                         model_id = ""
-                    req = DecisionRequest.create(
-                        DECISION_CONFIRM_YES_NO,
-                        ability_name or "Damage set to 0",
-                        player_id=getattr(player, "id", None),
-                        options=[
-                            DecisionOption.create("Use", payload={"choice": True}),
-                            DecisionOption.create("Skip", payload={"choice": False}),
-                        ],
-                        context={
-                            "ability": "model_allocated_damage_zero",
-                            "ability_name": ability_name,
-                            "unit_id": unit_id,
-                            "model_id": model_id,
-                            "ability_key": ability_key,
-                        },
-                    )
-                    if hasattr(game, "request_decision"):
-                        game.request_decision(req)
-
-                    use_now = False
-                    try:
-                        use_now = bool(getattr(player, "_should_use_optional_ability", lambda _k, _c: False)(
-                            "MODEL_ALLOCATED_DAMAGE_ZERO",
-                            {"ability_name": ability_name, "unit_id": unit_id, "model_id": model_id},
-                        ))
-                    except Exception:
-                        use_now = False
-
-                    option_id = None
-                    try:
-                        for opt in list(getattr(req, "options", []) or []):
-                            payload = dict(getattr(opt, "payload", {}) or {})
-                            if bool(payload.get("choice", False)) == bool(use_now):
-                                option_id = opt.option_id
-                                break
-                    except Exception:
-                        option_id = None
-                    if option_id:
-                        value, apply_result = resolve_decision_value(
-                            game,
-                            req,
-                            option_id,
+                        try:
+                            unit_id = get_entity_id(unit)
+                        except Exception:
+                            unit_id = ""
+                        try:
+                            model_id = get_entity_id(target_model)
+                        except Exception:
+                            model_id = ""
+                        req = DecisionRequest.create(
+                            DECISION_CONFIRM_YES_NO,
+                            ability_name or "Damage set to 0",
                             player_id=getattr(player, "id", None),
+                            options=[
+                                DecisionOption.create("Use", payload={"choice": True}),
+                                DecisionOption.create("Skip", payload={"choice": False}),
+                            ],
+                            context={
+                                "ability": "model_allocated_damage_zero",
+                                "ability_name": ability_name,
+                                "unit_id": unit_id,
+                                "model_id": model_id,
+                                "ability_key": ability_key,
+                            },
                         )
-                        if apply_result is not None and getattr(apply_result, "ok", False):
-                            # CONFIRM_YES_NO doesn't return a payload value; use our chosen boolean.
-                            decision = {"choice": bool(use_now)}
-            if decision is None:
-                decision = {"choice": False}
+                        if hasattr(game, "request_decision"):
+                            game.request_decision(req)
+
+                        use_now = False
+                        try:
+                            use_now = bool(getattr(player, "_should_use_optional_ability", lambda _k, _c: False)(
+                                "MODEL_ALLOCATED_DAMAGE_ZERO",
+                                {"ability_name": ability_name, "unit_id": unit_id, "model_id": model_id},
+                            ))
+                        except Exception:
+                            use_now = False
+
+                        option_id = None
+                        try:
+                            for opt in list(getattr(req, "options", []) or []):
+                                payload = dict(getattr(opt, "payload", {}) or {})
+                                if bool(payload.get("choice", False)) == bool(use_now):
+                                    option_id = opt.option_id
+                                    break
+                        except Exception:
+                            option_id = None
+                        if option_id:
+                            value, apply_result = resolve_decision_value(
+                                game,
+                                req,
+                                option_id,
+                                player_id=getattr(player, "id", None),
+                            )
+                            if apply_result is not None and getattr(apply_result, "ok", False):
+                                # CONFIRM_YES_NO doesn't return a payload value; use our chosen boolean.
+                                decision = {"choice": bool(use_now)}
+                if decision is None:
+                    decision = {"choice": False}
 
         use_it = False
         if isinstance(decision, dict):
@@ -5934,7 +5948,6 @@ class WargearProfile:
 
         attack_instance["force_damage_zero"] = True
         attack_instance["force_damage_zero_source"] = ability_name
-        usage = str(spec.get("usage", "") or "").strip().lower()
         if usage == "turn":
             sr = getattr(root, "special_rules", None)
             if not isinstance(sr, dict):
@@ -5948,6 +5961,11 @@ class WargearProfile:
                 sr["surgeon_acolyte_used_turn_owner"] = str(getattr(player, "id", "") or "")
             sr["surgeon_acolyte_source"] = ability_name
             root.special_rules = sr
+        elif usage == "battle_round":
+            try:
+                target_model.mark_used_once_per_battle_round(ability_key, ability_name=ability_name, source="datasheet")
+            except Exception:
+                pass
         else:
             try:
                 target_model.mark_used_once_per_battle(ability_key, ability_name=ability_name, source="datasheet")

@@ -1686,11 +1686,13 @@ class ActionsMovementMixin:
 
     def model_allocated_damage_zero_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
-        Model-specific rule: once per battle, when an attack is allocated to this model, change Damage to 0.
+        Model-specific rule: when an attack is allocated to this model, change Damage to 0.
 
         Returns list of specs with keys:
             - source: ability name
-            - key: once-per-battle tracking key
+            - key: deterministic usage tracking key
+            - usage: "battle" | "battle_round"
+            - optional: whether the rules text uses optional wording ("you can ...")
         """
         if model is None:
             return []
@@ -1711,11 +1713,17 @@ class ActionsMovementMixin:
             normalized = normalized.lower()
             normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
             normalized = re.sub(r"\s+", " ", normalized).strip()
-            if not self._MODEL_ONCE_PER_BATTLE_ALLOCATED_DAMAGE_ZERO_RE.fullmatch(normalized):
+            usage = ""
+            if self._MODEL_ONCE_PER_BATTLE_ROUND_ALLOCATED_DAMAGE_ZERO_RE.fullmatch(normalized):
+                usage = "battle_round"
+            elif self._MODEL_ONCE_PER_BATTLE_ALLOCATED_DAMAGE_ZERO_RE.fullmatch(normalized):
+                usage = "battle"
+            if not usage:
                 continue
+            is_optional = bool(re.search(r"\byou can change\b", normalized))
             source = str(name or "Damage set to 0").strip() or "Damage set to 0"
             key_seed = self._normalize_keyword_phrase(source) or "allocated_damage_zero"
-            key = f"model_allocated_damage_zero:{key_seed}"
+            key = f"model_allocated_damage_zero:{key_seed}:{usage}"
             if key in seen:
                 continue
             seen.add(key)
@@ -1723,6 +1731,8 @@ class ActionsMovementMixin:
                 {
                     "source": source,
                     "key": key,
+                    "usage": usage,
+                    "optional": bool(is_optional),
                 }
             )
 
