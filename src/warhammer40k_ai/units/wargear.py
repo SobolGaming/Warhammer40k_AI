@@ -11033,6 +11033,23 @@ class WargearProfile:
                     wound_result['modifiers'].extend(list(wound_reasons or ()))
         except Exception:
             pass
+        # Model temporary weapon wound bonuses (e.g., Shieldbreaker).
+        try:
+            weapon_lookup_name = self._temporary_weapon_lookup_name()
+            if weapon_lookup_name:
+                bonus, reasons = getattr(attacker, "get_temporary_weapon_wound_bonus", lambda _n: (0, []))(
+                    weapon_lookup_name
+                )
+                if bonus:
+                    dice_modifier += int(bonus)
+                    if reasons:
+                        wound_result['modifiers'].extend(list(reasons))
+                    else:
+                        wound_result['modifiers'].append(
+                            f"+{int(bonus)} to wound ({weapon_lookup_name}) [temporary]"
+                        )
+        except Exception:
+            pass
         # Thousand Sons: Sorcerous Support (+1 to wound for disembarked Psychic attacks against marked target).
         try:
             _hit_bonus, wound_bonus, source = self._sorcerous_support_psychic_hit_wound_bonus(attacker, target)
@@ -11267,6 +11284,21 @@ class WargearProfile:
                 val = int(unit_wound_mods.get("crit_wound_threshold"))
                 crit_wound_threshold = val if crit_wound_threshold is None else min(int(crit_wound_threshold), val)
                 crit_wound_reasons.extend(list(unit_wound_mods.get("crit_wound_reasons", ()) or ()))
+        except Exception:
+            pass
+        try:
+            weapon_lookup_name = self._temporary_weapon_lookup_name()
+            if weapon_lookup_name:
+                threshold, reasons = getattr(attacker, "get_temporary_weapon_crit_wound_threshold", lambda _n: (0, []))(
+                    weapon_lookup_name
+                )
+                val = int(threshold or 0)
+                if val > 0:
+                    crit_wound_threshold = val if crit_wound_threshold is None else min(int(crit_wound_threshold), val)
+                    if reasons:
+                        crit_wound_reasons.extend(list(reasons))
+                    else:
+                        crit_wound_reasons.append(f"Critical wound on {val}+")
         except Exception:
             pass
         try:

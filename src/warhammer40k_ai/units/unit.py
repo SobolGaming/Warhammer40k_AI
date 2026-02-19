@@ -2298,6 +2298,12 @@ class Unit(
         r"its (?P<weapon>[a-z0-9 ]+?) weapon has a damage characteristic of (?P<damage>\d+)",
         re.IGNORECASE,
     )
+    _SHIELDBREAKER_RE = re.compile(
+        r"once per battle when selecting targets for this model s (?P<weapon>[a-z0-9 ]+?) "
+        r"it can fire a shieldbreaker round if it does until the end of the phase each time this model makes an attack "
+        r"with that weapon add (?P<wound>\d+) to the wound roll and any successful wound roll scores a critical wound",
+        re.IGNORECASE,
+    )
     _HARVESTER_OF_SOULS_RE = re.compile(
         r"while this model is leading a unit in your shooting phase after selecting targets for that unit s attacks "
         r"if every attack targets the same unit roll one d6 for the target unit and one d6 for every other enemy unit within "
@@ -2692,6 +2698,12 @@ class Unit(
         r"if it is a psyker unit",
         re.IGNORECASE,
     )
+    _START_ANY_COMMAND_PHASE_ENEMY_RANGE_BATTLESHOCK_RE = re.compile(
+        r"once per battle at the start of any command phase this model can use this ability if it does "
+        r"each enemy unit within (?P<range>\d+)\s*\"?\s*of this model must take a battle shock test "
+        r"subtracting (?P<pen>\d+) from that test(?: or subtracting (?P<psyker_pen>\d+) if that unit is a psyker)?",
+        re.IGNORECASE,
+    )
     _CHARGE_END_ENGAGEMENT_BATTLESHOCK_RE = re.compile(
         r"each time this (?:model s )?unit ends a charge move each enemy unit within engagement range of (?:(?:that|this) unit|it) must take a battle shock test",
         re.IGNORECASE,
@@ -2877,8 +2889,10 @@ class Unit(
         re.IGNORECASE,
     )
     _MOVEMENT_PHASE_ONCE_NORMAL_MOVE_WEAPON_ATTACKS_RE = re.compile(
-        r"once per battle (?:in|during) your movement phase before this model makes (?:a )?normal move it can use this ability "
-        r"if it does until the end of the turn add (?P<move>\d+d\d+) to this model s move characteristic "
+        r"once per battle (?:in|during) your movement phase "
+        r"(?:(?:before this model makes (?:a )?normal move it can use this ability)|"
+        r"(?:this model can use this ability before it makes (?:a )?normal move)) "
+        r"if it does until the end of the turn add (?P<move>\d+d\d+|\d+) to this model s move characteristic "
         r"and add (?P<attacks>\d+) to the attacks characteristic of this model s (?P<weapon>[a-z0-9 ]+? weapon(?:s)?)",
         re.IGNORECASE,
     )

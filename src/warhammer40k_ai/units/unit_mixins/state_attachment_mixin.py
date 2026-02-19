@@ -3865,6 +3865,12 @@ class StateAttachmentMixin:
         except Exception:
             pass
 
+        army = self.get_parent_army() if hasattr(self, "get_parent_army") else getattr(self, "parent_army", None)
+        ia_mgr = getattr(army, "imperial_agents_detachments", None) if army is not None else None
+        surcharge_fn = getattr(ia_mgr, "extremis_sanction_points_surcharge_for_unit", None) if ia_mgr is not None else None
+        if callable(surcharge_fn):
+            total += int(surcharge_fn(self) or 0)
+
         return int(total)
 
     def configure_models(self, count, wargear):

@@ -3467,6 +3467,111 @@ class GameShootingFightHandlersMixin:
             )
             return
 
+    def _on_shooting_targets_selected_shieldbreaker(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None:
+            return
+        if not target_units:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            root = attacking_unit
+        if root is None or not root.is_alive():
+            return
+        try:
+            player = root.get_parent_army().player
+        except Exception:
+            player = None
+        if player is None or player is not self.get_current_player():
+            return
+
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        ia_mgr = getattr(army, "imperial_agents_detachments", None) if army is not None else None
+        grant_fn = getattr(ia_mgr, "apply_extremis_sanction_extra_uses", None) if ia_mgr is not None else None
+        if callable(grant_fn):
+            grant_fn(root)
+
+        pending_models = set()
+        try:
+            queue = getattr(self, "decision_queue", None)
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "")) != DECISION_CONFIRM_YES_NO:
+                        continue
+                    ctx = dict(getattr(req, "context", {}) or {})
+                    if str(ctx.get("ability", "") or "") != "shieldbreaker":
+                        continue
+                    mid = str(ctx.get("model_id", "") or "")
+                    if mid:
+                        pending_models.add(mid)
+        except Exception:
+            pending_models = set()
+
+        def _sort_key(m):
+            try:
+                return str(get_entity_id(m))
+            except Exception:
+                return ""
+
+        for model in sorted(list(getattr(root, "models", []) or []), key=_sort_key):
+            if model is None or not getattr(model, "is_alive", False):
+                continue
+            model_id = str(get_entity_id(model) or "")
+            if model_id and model_id in pending_models:
+                continue
+            specs = root.model_shieldbreaker_specs(model) or []
+            if not specs:
+                continue
+            spec = dict(specs[0] or {})
+            ability_key = str(spec.get("ability_key", "") or "shieldbreaker").strip().lower()
+            if not ability_key:
+                ability_key = "shieldbreaker"
+            if getattr(model, "has_used_once_per_battle", lambda _k: False)(ability_key):
+                continue
+            weapon_name = str(spec.get("weapon_name", "") or "exitus rifle").strip() or "exitus rifle"
+            ability_name = str(spec.get("source", "") or "Shieldbreaker").strip() or "Shieldbreaker"
+            try:
+                wound_bonus = int(spec.get("wound_bonus", 1) or 1)
+            except Exception:
+                wound_bonus = 1
+            unit_id = get_entity_id(root)
+            if not unit_id or not model_id:
+                continue
+            ctx = {
+                "ability": "shieldbreaker",
+                "ability_key": ability_key,
+                "ability_name": ability_name,
+                "phase": "Shooting phase",
+                "unit": getattr(root, "name", "") or "",
+                "unit_id": unit_id,
+                "model": getattr(model, "name", "") or "",
+                "model_id": model_id,
+                "weapon_name": weapon_name,
+                "wound_bonus": int(wound_bonus),
+            }
+            message = f"Use {ability_name} for {getattr(model, 'name', 'Model')}?"
+            self._queue_optional_ability_confirmation(
+                player=player,
+                ability_key="shieldbreaker",
+                ability_name=ability_name,
+                message=message,
+                context=ctx,
+                payload={
+                    "unit_id": unit_id,
+                    "model_id": model_id,
+                    "ability_key": ability_key,
+                    "weapon_name": weapon_name,
+                    "wound_bonus": int(wound_bonus),
+                },
+                instance_key=f"{model_id}:{ability_key}",
+            )
+            return
+
     def _on_shooting_targets_selected_ammo_runt(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None or not target_units:
             return

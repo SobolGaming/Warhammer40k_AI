@@ -497,6 +497,14 @@ class GameReactiveDecisionsMixin:
                 key = str(spec.get("key") or "movement_phase_normal_move_bonus").strip().lower()
                 if not key:
                     key = "movement_phase_normal_move_bonus"
+                try:
+                    army = unit.get_parent_army()
+                except Exception:
+                    army = None
+                ia_mgr = getattr(army, "imperial_agents_detachments", None) if army is not None else None
+                grant_fn = getattr(ia_mgr, "apply_extremis_sanction_extra_uses", None) if ia_mgr is not None else None
+                if callable(grant_fn):
+                    grant_fn(unit)
                 if getattr(m, "has_used_once_per_battle", lambda _k: False)(key):
                     continue
                 unit_id = maybe_entity_id(unit)
@@ -512,6 +520,7 @@ class GameReactiveDecisionsMixin:
                     "unit_id": unit_id,
                     "model_id": model_id,
                     "move_bonus_dice": str(spec.get("move_bonus_dice", "") or ""),
+                    "move_bonus_flat": int(spec.get("move_bonus_flat", 0) or 0),
                     "attacks_bonus": int(spec.get("attacks_bonus", 0) or 0),
                     "weapon_name": str(spec.get("weapon_name", "") or ""),
                     "buff_key": key,
@@ -530,6 +539,7 @@ class GameReactiveDecisionsMixin:
                         "unit_id": unit_id,
                         "model_id": model_id,
                         "move_bonus_dice": ctx["move_bonus_dice"],
+                        "move_bonus_flat": ctx["move_bonus_flat"],
                         "attacks_bonus": ctx["attacks_bonus"],
                         "weapon_name": ctx["weapon_name"],
                         "buff_key": key,
@@ -3197,6 +3207,8 @@ class GameReactiveDecisionsMixin:
             "dark_ritual",
             "movement_phase_move_weapon_bonus",
             "hand_of_asuryan",
+            "shieldbreaker",
+            "soulless_horror",
             "ammo_runt",
             "flickerjump",
             "daemonic_patrons",
@@ -4225,6 +4237,10 @@ class GameReactiveDecisionsMixin:
                 return
             ability_name = str(payload.get("ability_name") or ctx.get("ability_name") or "Movement phase normal move boost").strip()
             move_bonus_dice = str(payload.get("move_bonus_dice") or ctx.get("move_bonus_dice") or "")
+            try:
+                move_bonus_flat = int(payload.get("move_bonus_flat") or ctx.get("move_bonus_flat") or 0)
+            except Exception:
+                move_bonus_flat = 0
             weapon_name = str(payload.get("weapon_name") or ctx.get("weapon_name") or "")
             try:
                 attacks_bonus = int(payload.get("attacks_bonus") or ctx.get("attacks_bonus") or 0)
@@ -4234,6 +4250,7 @@ class GameReactiveDecisionsMixin:
                 key=key,
                 ability_name=ability_name,
                 move_bonus_dice=move_bonus_dice,
+                move_bonus_flat=int(move_bonus_flat),
                 weapon_name=weapon_name,
                 attacks_bonus=attacks_bonus,
             )
@@ -4257,6 +4274,173 @@ class GameReactiveDecisionsMixin:
                 ability_name=ability_name,
                 weapon_name=weapon_name,
             )
+            return
+
+        if ability_key == "shieldbreaker":
+            model_id = str(payload.get("model_id") or ctx.get("model_id") or "")
+            if not model_id:
+                return
+            model = self._resolve_model_by_id(model_id)
+            if model is None:
+                return
+            unit = getattr(model, "parent_unit", None)
+            try:
+                root = unit.get_attached_unit_root() if unit is not None else None
+            except Exception:
+                root = unit
+            if root is None:
+                return
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            ia_mgr = getattr(army, "imperial_agents_detachments", None) if army is not None else None
+            grant_fn = getattr(ia_mgr, "apply_extremis_sanction_extra_uses", None) if ia_mgr is not None else None
+            if callable(grant_fn):
+                grant_fn(root)
+            key = str(payload.get("ability_key") or ctx.get("ability_key") or "shieldbreaker").strip().lower()
+            if not key:
+                key = "shieldbreaker"
+            if getattr(model, "has_used_once_per_battle", lambda _k: False)(key):
+                return
+            if not getattr(model, "is_alive", True):
+                return
+            ability_name = str(payload.get("ability_name") or ctx.get("ability_name") or "Shieldbreaker").strip()
+            weapon_name = str(payload.get("weapon_name") or ctx.get("weapon_name") or "exitus rifle").strip()
+            try:
+                wound_bonus = int(payload.get("wound_bonus") or ctx.get("wound_bonus") or 1)
+            except Exception:
+                wound_bonus = 1
+            model.activate_shieldbreaker(
+                key=key,
+                ability_name=ability_name,
+                weapon_name=weapon_name,
+                wound_bonus=int(wound_bonus),
+            )
+            return
+
+        if ability_key == "soulless_horror":
+            model_id = str(payload.get("model_id") or ctx.get("model_id") or "")
+            if not model_id:
+                return
+            model = self._resolve_model_by_id(model_id)
+            if model is None:
+                return
+            if not getattr(model, "is_alive", True):
+                return
+            source_unit = getattr(model, "parent_unit", None)
+            if source_unit is None:
+                return
+            try:
+                source_root = source_unit.get_attached_unit_root()
+            except Exception:
+                source_root = source_unit
+            if source_root is None:
+                return
+            source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+            if source_army is None:
+                return
+            ia_mgr = getattr(source_army, "imperial_agents_detachments", None)
+            grant_fn = getattr(ia_mgr, "apply_extremis_sanction_extra_uses", None) if ia_mgr is not None else None
+            if callable(grant_fn):
+                grant_fn(source_root)
+            key = str(payload.get("ability_key") or ctx.get("ability_key") or "soulless_horror").strip().lower()
+            if not key:
+                key = "soulless_horror"
+            if getattr(model, "has_used_once_per_battle", lambda _k: False)(key):
+                return
+            try:
+                range_value = float(payload.get("range") or ctx.get("range") or 0)
+            except Exception:
+                range_value = 0.0
+            try:
+                test_penalty = int(payload.get("test_penalty") or ctx.get("test_penalty") or 0)
+            except Exception:
+                test_penalty = 0
+            try:
+                psyker_penalty = int(payload.get("psyker_test_penalty") or ctx.get("psyker_test_penalty") or 0)
+            except Exception:
+                psyker_penalty = 0
+            if range_value <= 0 or test_penalty <= 0:
+                return
+            if psyker_penalty <= 0:
+                psyker_penalty = int(test_penalty)
+            ability_name = str(payload.get("ability_name") or ctx.get("ability_name") or "Soulless Horror").strip() or "Soulless Horror"
+            if not model.mark_used_once_per_battle(key, ability_name=ability_name, source="datasheet"):
+                return
+            try:
+                turn = int(getattr(self, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+
+            from ...utility.event_bus import append_action
+
+            def _unit_sort_key(u):
+                try:
+                    return str(get_entity_id(u))
+                except Exception:
+                    return str(getattr(u, "name", "") or "")
+
+            tested_targets: set[str] = set()
+            for p in list(getattr(self, "players", []) or []):
+                if p is None:
+                    continue
+                enemy_army = self._get_player_army(p)
+                if enemy_army is None or enemy_army is source_army:
+                    continue
+                seen_roots: set[str] = set()
+                for candidate in sorted(list(getattr(enemy_army, "units", []) or []), key=_unit_sort_key):
+                    if candidate is None:
+                        continue
+                    try:
+                        target_root = candidate.get_attached_unit_root()
+                    except Exception:
+                        target_root = candidate
+                    if target_root is None:
+                        continue
+                    target_id = str(get_entity_id(target_root) or "")
+                    if not target_id or target_id in seen_roots or target_id in tested_targets:
+                        continue
+                    seen_roots.add(target_id)
+                    if not bool(getattr(target_root, "is_alive", lambda: False)()):
+                        continue
+                    if not bool(getattr(target_root, "deployed", False)):
+                        continue
+                    try:
+                        if target_root.is_in_reserves() or target_root.is_embarked:
+                            continue
+                    except Exception:
+                        pass
+                    try:
+                        in_range = bool(source_root._model_within_range_of_unit(model, target_root, float(range_value)))
+                    except Exception:
+                        in_range = False
+                    if not in_range:
+                        continue
+
+                    modifier = int(test_penalty)
+                    try:
+                        if bool(target_root.has_any_keyword("PSYKER")):
+                            modifier = max(int(modifier), int(psyker_penalty))
+                    except Exception:
+                        pass
+                    if modifier > 0:
+                        sr = getattr(target_root, "special_rules", None)
+                        if not isinstance(sr, dict):
+                            sr = {}
+                        try:
+                            existing = int(sr.get("battle_shock_test_modifier", 0) or 0)
+                        except Exception:
+                            existing = 0
+                        sr["battle_shock_test_modifier"] = int(existing - int(modifier))
+                        reasons = list(sr.get("battle_shock_test_modifier_reasons", []) or [])
+                        reasons.append(f"{ability_name}: -{int(modifier)}")
+                        sr["battle_shock_test_modifier_reasons"] = reasons
+                        target_root.special_rules = sr
+
+                    target_root.take_battle_shock_test(int(turn or 1))
+                    tested_targets.add(target_id)
+                    owner_id = str(getattr(request, "player_id", "") or getattr(result, "player_id", "") or "")
+                    owner = self._resolve_player_by_id(owner_id) if owner_id else None
+                    if owner is not None:
+                        append_action(owner, f"{ability_name}: {getattr(target_root, 'name', 'Unit')} takes a Battle-shock test.")
             return
 
         if ability_key == "ammo_runt":

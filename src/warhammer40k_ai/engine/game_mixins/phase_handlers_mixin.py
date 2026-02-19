@@ -2306,6 +2306,125 @@ class GamePhaseHandlersMixin:
                             )
                             tested_targets.add(target_id)
 
+    def _on_phase_start_soulless_horror(self, player=None, phase=None, **_kwargs) -> None:
+        """Any Command phase: queue optional Soulless Horror activations."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        def _model_sort_key(m):
+            try:
+                return str(get_entity_id(m))
+            except Exception:
+                return str(getattr(m, "name", "") or "")
+
+        for owner in sorted(list(getattr(self, "players", []) or []), key=lambda p: str(getattr(p, "id", "") or "")):
+            if owner is None:
+                continue
+            army = self._get_player_army(owner)
+            if army is None:
+                continue
+            ia_mgr = getattr(army, "imperial_agents_detachments", None)
+            grant_fn = getattr(ia_mgr, "apply_extremis_sanction_extra_uses", None) if ia_mgr is not None else None
+
+            seen_roots: set[str] = set()
+            for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+                if unit is None:
+                    continue
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None:
+                    continue
+                root_id = str(get_entity_id(root) or "")
+                if not root_id or root_id in seen_roots:
+                    continue
+                seen_roots.add(root_id)
+                if not bool(getattr(root, "is_alive", lambda: False)()):
+                    continue
+                if not bool(getattr(root, "deployed", False)):
+                    continue
+                try:
+                    if root.is_in_reserves() or root.is_embarked:
+                        continue
+                except Exception:
+                    pass
+                if callable(grant_fn):
+                    grant_fn(root)
+
+                try:
+                    models = list(root.get_attached_unit_models() or [])
+                except Exception:
+                    models = list(getattr(root, "models", []) or [])
+                for model in sorted([m for m in list(models or []) if getattr(m, "is_alive", False)], key=_model_sort_key):
+                    specs = root.model_start_any_command_phase_battleshock_specs(model) or []
+                    if not specs:
+                        continue
+                    for spec in list(specs or []):
+                        ability_key = str(spec.get("ability_key", "") or "soulless_horror").strip().lower()
+                        if not ability_key:
+                            ability_key = "soulless_horror"
+                        if getattr(model, "has_used_once_per_battle", lambda _k: False)(ability_key):
+                            continue
+                        try:
+                            range_value = int(spec.get("range", 0) or 0)
+                        except Exception:
+                            range_value = 0
+                        try:
+                            penalty = int(spec.get("test_penalty", 0) or 0)
+                        except Exception:
+                            penalty = 0
+                        try:
+                            psyker_penalty = int(spec.get("psyker_test_penalty", 0) or 0)
+                        except Exception:
+                            psyker_penalty = 0
+                        if range_value <= 0 or penalty <= 0:
+                            continue
+                        if psyker_penalty <= 0:
+                            psyker_penalty = int(penalty)
+                        ability_name = str(spec.get("source", "") or "Soulless Horror").strip() or "Soulless Horror"
+                        ctx = {
+                            "ability": "soulless_horror",
+                            "ability_key": ability_key,
+                            "ability_name": ability_name,
+                            "phase": "Command phase",
+                            "unit": getattr(root, "name", "") or "",
+                            "unit_id": root_id,
+                            "model": getattr(model, "name", "") or "",
+                            "model_id": str(get_entity_id(model) or ""),
+                            "range": int(range_value),
+                            "test_penalty": int(penalty),
+                            "psyker_test_penalty": int(psyker_penalty),
+                        }
+                        message = f"Activate {ability_name} for {getattr(model, 'name', 'Model')}?"
+                        self._queue_optional_ability_confirmation(
+                            player=owner,
+                            ability_key="soulless_horror",
+                            ability_name=ability_name,
+                            message=message,
+                            context=ctx,
+                            payload={
+                                "unit_id": root_id,
+                                "model_id": str(get_entity_id(model) or ""),
+                                "ability_key": ability_key,
+                                "range": int(range_value),
+                                "test_penalty": int(penalty),
+                                "psyker_test_penalty": int(psyker_penalty),
+                            },
+                            instance_key=f"{str(get_entity_id(model) or '')}:{ability_key}",
+                        )
+
     def _on_phase_start_empowered_by_death(self, player=None, phase=None, **_kwargs) -> None:
         """Fight phase: below Starting Strength units with Empowered by Death gain Fight First until end of phase."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

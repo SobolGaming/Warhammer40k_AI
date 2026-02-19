@@ -443,6 +443,10 @@ class Army:
         apply_fn = getattr(ae_mgr, "apply_acrobatic_onslaught_travelling_players", None) if ae_mgr is not None else None
         if callable(apply_fn):
             apply_fn(unit)
+        ia_mgr = getattr(self, "imperial_agents_detachments", None)
+        apply_fn = getattr(ia_mgr, "apply_extremis_sanction_extra_uses", None) if ia_mgr is not None else None
+        if callable(apply_fn):
+            apply_fn(unit)
         game = getattr(getattr(self, "player", None), "game", None)
         refresh_fn = getattr(game, "refresh_rule_subscribers", None) if game is not None else None
         if callable(refresh_fn):
@@ -1492,6 +1496,11 @@ class Army:
         ae_mgr = getattr(self, "aeldari_detachments", None)
         if ae_mgr is not None:
             for msg in list(ae_mgr.validate_detachment_rules() or []):
+                if msg:
+                    raise ArmyValidationError(str(msg))
+        ia_mgr = getattr(self, "imperial_agents_detachments", None)
+        if ia_mgr is not None:
+            for msg in list(ia_mgr.validate_detachment_rules() or []):
                 if msg:
                     raise ArmyValidationError(str(msg))
 

@@ -260,7 +260,18 @@ class Model:
         if phase_key and used_count > 0:
             last_phase = str((getattr(self, "_once_per_battle_last_phase", {}) or {}).get(k, "") or "")
             if last_phase and last_phase == phase_key:
-                return 0
+                used_by_round = getattr(self, "_once_per_battle_round_used", None)
+                if not isinstance(used_by_round, dict):
+                    return 0
+                current_round = self._current_battle_round()
+                if current_round <= 0:
+                    return 0
+                try:
+                    last_round = int(used_by_round.get(k, 0) or 0)
+                except Exception:
+                    return 0
+                if int(last_round) == int(current_round):
+                    return 0
         return remaining
 
     def has_used_once_per_battle(self, key: str, *, phase_name: object = None) -> bool:
@@ -311,6 +322,13 @@ class Model:
             self._once_per_battle_last_phase = last_phase
         if phase_key:
             last_phase[k] = phase_key
+        br = self._current_battle_round()
+        if br > 0:
+            used_round = getattr(self, "_once_per_battle_round_used", None)
+            if not isinstance(used_round, dict):
+                used_round = {}
+                self._once_per_battle_round_used = used_round
+            used_round[k] = int(br)
         if not publish_event or game is None:
             return True
         event_system = getattr(game, "event_system", None)
@@ -562,13 +580,14 @@ class Model:
         *,
         key: str,
         ability_name: str,
-        move_bonus_dice: str,
+        move_bonus_dice: str = "",
+        move_bonus_flat: int = 0,
         weapon_name: str,
         attacks_bonus: int,
     ) -> bool:
         """
         Once per battle, before a Normal move in the Movement phase:
-        add Move (dice) and weapon Attacks bonus until end of turn.
+        add Move (dice/flat) and weapon Attacks bonus until end of turn.
         """
         key = str(key or "").strip().lower()
         if not key:
@@ -579,9 +598,15 @@ class Model:
         move_bonus_dice = str(move_bonus_dice or "").strip().upper()
         if move_bonus_dice:
             try:
-                bonus = int(get_roll(move_bonus_dice) or 0)
+                bonus += int(get_roll(move_bonus_dice) or 0)
             except Exception:
-                bonus = 0
+                pass
+        try:
+            move_bonus_flat = int(move_bonus_flat or 0)
+        except Exception:
+            move_bonus_flat = 0
+        if move_bonus_flat > 0:
+            bonus += int(move_bonus_flat)
         try:
             attacks_bonus = int(attacks_bonus or 0)
         except Exception:
@@ -596,10 +621,18 @@ class Model:
             entry["movement_bonus_source"] = str(ability_name or "").strip() or "Movement bonus"
             if move_bonus_dice:
                 entry["movement_bonus_dice"] = move_bonus_dice
+            if move_bonus_flat > 0:
+                entry["movement_bonus_flat"] = int(move_bonus_flat)
         weapon_name = str(weapon_name or "").strip()
-        if weapon_name and attacks_bonus:
-            entry["weapon_attacks_bonus"] = {weapon_name: int(attacks_bonus)}
-            entry["weapon_attacks_bonus_source"] = str(ability_name or "").strip() or "Weapon attacks bonus"
+        if attacks_bonus:
+            source_label = str(ability_name or "").strip() or "Weapon attacks bonus"
+            weapon_name_norm = self._normalize_weapon_name(weapon_name)
+            if weapon_name_norm and (weapon_name_norm == "melee weapons" or weapon_name_norm == "melee weapon"):
+                entry["melee_attacks_bonus"] = int(attacks_bonus)
+                entry["melee_attacks_bonus_source"] = source_label
+            elif weapon_name:
+                entry["weapon_attacks_bonus"] = {weapon_name: int(attacks_bonus)}
+                entry["weapon_attacks_bonus_source"] = source_label
         self._temporary_effects[key] = entry
         self.mark_used_once_per_battle(key, ability_name=ability_name, source="datasheet")
         return True
@@ -637,6 +670,46 @@ class Model:
             key=f"{key}:damage",
             weapon_name=weapon_name,
             damage_value=3,
+            source=label,
+            expires_phase="SHOOTING_PHASE",
+        )
+        self.mark_used_once_per_battle(key, ability_name=label, source="datasheet")
+        return True
+
+    def activate_shieldbreaker(
+        self,
+        *,
+        key: str = "shieldbreaker",
+        ability_name: str = "Shieldbreaker",
+        weapon_name: str = "exitus rifle",
+        wound_bonus: int = 1,
+    ) -> bool:
+        """
+        Once per battle, when selected to shoot:
+        - selected weapon gains +wound
+        - any successful wound roll with that weapon counts as a critical wound
+        until end of Shooting phase.
+        """
+        key = str(key or "").strip().lower()
+        if not key:
+            return False
+        if self.has_used_once_per_battle(key):
+            return False
+        weapon_name = str(weapon_name or "").strip()
+        if not weapon_name:
+            return False
+        try:
+            wound_bonus = int(wound_bonus or 0)
+        except Exception:
+            wound_bonus = 0
+        if wound_bonus <= 0:
+            return False
+        label = str(ability_name or "").strip() or "Shieldbreaker"
+        self.set_temporary_weapon_wound_crit_bonus(
+            key=f"{key}:wound_crit",
+            weapon_name=weapon_name,
+            wound_bonus=int(wound_bonus),
+            crit_wound_threshold=2,
             source=label,
             expires_phase="SHOOTING_PHASE",
         )
@@ -845,6 +918,111 @@ class Model:
                     label = source or str(key or weapon_name)
                     reasons.append(f"{label} +{bonus_val}S ({key_norm}) [temporary]")
         return int(total), reasons
+
+    def set_temporary_weapon_wound_crit_bonus(
+        self,
+        *,
+        key: str,
+        weapon_name: str,
+        wound_bonus: int = 0,
+        crit_wound_threshold: int = 0,
+        source: str = "",
+        expires_phase: str = "",
+    ) -> None:
+        key_norm = str(key or "").strip().lower()
+        if not key_norm:
+            return
+        if not isinstance(getattr(self, "_temporary_effects", None), dict):
+            self._temporary_effects = {}
+        effects = self._temporary_effects
+        try:
+            wound_bonus = int(wound_bonus or 0)
+        except Exception:
+            wound_bonus = 0
+        try:
+            crit_wound_threshold = int(crit_wound_threshold or 0)
+        except Exception:
+            crit_wound_threshold = 0
+        weapon_name = str(weapon_name or "").strip()
+        if not weapon_name or (wound_bonus <= 0 and crit_wound_threshold <= 0):
+            effects.pop(key_norm, None)
+            return
+        entry = {"expires_phase": str(expires_phase or "").strip().upper()}
+        label = str(source or "").strip() or "Weapon wound bonus"
+        if wound_bonus > 0:
+            entry["weapon_wound_bonus"] = {weapon_name: int(wound_bonus)}
+            entry["weapon_wound_bonus_source"] = label
+        if crit_wound_threshold > 0:
+            entry["weapon_crit_wound_threshold"] = {weapon_name: int(crit_wound_threshold)}
+            entry["weapon_crit_wound_threshold_source"] = label
+        effects[key_norm] = entry
+
+    def get_temporary_weapon_wound_bonus(self, weapon_name: str) -> tuple[int, list[str]]:
+        eff = getattr(self, "_temporary_effects", {}) or {}
+        if not isinstance(eff, dict) or not eff:
+            return 0, []
+        target = self._normalize_weapon_name(weapon_name)
+        if not target:
+            return 0, []
+        total = 0
+        reasons: list[str] = []
+        for v in eff.values():
+            if not isinstance(v, dict):
+                continue
+            bonus_map = v.get("weapon_wound_bonus")
+            if not isinstance(bonus_map, dict):
+                continue
+            source = str(v.get("weapon_wound_bonus_source") or "").strip()
+            for key, bonus in bonus_map.items():
+                try:
+                    bonus_val = int(bonus or 0)
+                except Exception:
+                    bonus_val = 0
+                if bonus_val == 0:
+                    continue
+                key_norm = self._normalize_weapon_name(str(key or ""))
+                if not key_norm:
+                    continue
+                if key_norm == target or key_norm in target or target in key_norm:
+                    total += int(bonus_val)
+                    label = source or str(key or weapon_name)
+                    reasons.append(f"{label}: +{int(bonus_val)} to wound")
+        return int(total), reasons
+
+    def get_temporary_weapon_crit_wound_threshold(self, weapon_name: str) -> tuple[int, list[str]]:
+        eff = getattr(self, "_temporary_effects", {}) or {}
+        if not isinstance(eff, dict) or not eff:
+            return 0, []
+        target = self._normalize_weapon_name(weapon_name)
+        if not target:
+            return 0, []
+        best_threshold = 0
+        reasons: list[str] = []
+        for v in eff.values():
+            if not isinstance(v, dict):
+                continue
+            threshold_map = v.get("weapon_crit_wound_threshold")
+            if not isinstance(threshold_map, dict):
+                continue
+            source = str(v.get("weapon_crit_wound_threshold_source") or "").strip()
+            for key, threshold in threshold_map.items():
+                try:
+                    threshold_val = int(threshold or 0)
+                except Exception:
+                    threshold_val = 0
+                if threshold_val <= 0:
+                    continue
+                key_norm = self._normalize_weapon_name(str(key or ""))
+                if not key_norm:
+                    continue
+                if key_norm != target and key_norm not in target and target not in key_norm:
+                    continue
+                if best_threshold <= 0 or threshold_val < best_threshold:
+                    best_threshold = int(threshold_val)
+                    reasons = []
+                label = source or str(key or weapon_name)
+                reasons.append(f"{label}: critical wound on {int(threshold_val)}+")
+        return int(best_threshold), reasons
 
     def set_temporary_weapon_damage_override(
         self,

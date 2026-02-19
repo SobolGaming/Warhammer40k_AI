@@ -406,6 +406,11 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"once per battle in your command phase you can use this ability",
             r"if you do until the start of your next command phase each time a model from your army with the oath of moment ability makes an attack that targets your oath of moment target you can reroll the wound roll as well",
         ),
+        "Extremis Sanction": (
+            r"officio assassinorum units from your army can use the overkill soulless horror and shieldbreaker abilities twice per battle instead of once per battle but cannot use such an ability more than once in the same battle round",
+            r"when mustering your army each officio assassinorum unit from your army has the relevant extremis ability shown on the right and you must increase the points cost of each of those units by the amount shown",
+            r"if this causes your army to exceed the points limit for the battle you are playing you cannot include that unit in your army",
+        ),
         "Mechanised Murder": (
             r"each time an emperors children model from your army makes an attack if it is a transport model or disembarked from a transport this turn reroll a hit roll of \d+ and reroll a wound roll of \d+",
         ),
@@ -1684,6 +1689,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Extremis-level Threat": (
             "Supported",
             "1st Company Task Force: once per battle optional Command phase activation grants full Wound re-rolls against the current Oath of Moment target until your next Command phase.",
+        ),
+        "Extremis Sanction": (
+            "Supported",
+            "Veiled Blade Elimination Force: OFFICIO ASSASSINORUM units gain one additional use each for Overkill/Soulless Horror/Shieldbreaker (max once per battle round per ability), and Callidus/Culexus/Eversor/Vindicare unit costs include the detachment surcharges (+40/+40/+35/+45).",
         ),
         "Mastered Doctrines": (
             "Supported",

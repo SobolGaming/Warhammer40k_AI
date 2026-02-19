@@ -1052,6 +1052,74 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_shieldbreaker_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: once per battle, when selecting targets, a named weapon gains +wound
+        and successful wound rolls become critical wounds until end of phase.
+
+        Returns specs with keys:
+            - source: ability name
+            - ability_key: str
+            - weapon_name: str
+            - wound_bonus: int
+            - crit_wound_threshold: int
+        """
+        if model is None:
+            return []
+        cache_key = f"model_shieldbreaker:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str, int, int]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._SHIELDBREAKER_RE.fullmatch(normalized)
+            if not m:
+                continue
+            weapon_name = str(m.group("weapon") or "").strip()
+            if not weapon_name:
+                continue
+            try:
+                wound_bonus = int(m.group("wound") or 0)
+            except Exception:
+                wound_bonus = 0
+            if wound_bonus <= 0:
+                continue
+            source = str(name or "Shieldbreaker").strip() or "Shieldbreaker"
+            key = (
+                source.lower(),
+                self._normalize_keyword_phrase(weapon_name) or weapon_name.lower(),
+                int(wound_bonus),
+                2,
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "ability_key": "shieldbreaker",
+                    "weapon_name": weapon_name,
+                    "wound_bonus": int(wound_bonus),
+                    "crit_wound_threshold": 2,
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_post_shoot_monster_vehicle_mortal_threshold_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model-specific rule: after this model has shot, select a hit MONSTER/VEHICLE target and
@@ -1468,6 +1536,79 @@ class AbilitySpecsMixin:
                     "test_modifier_range": int(rng),
                     "test_modifier_friendly_keyword_phrase": phrase,
                     "source": source,
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_start_any_command_phase_battleshock_specs(
+        self,
+        model: Optional['Model'] = None,
+    ) -> List[dict]:
+        """
+        Model-specific rule: once per battle, start of any Command phase, nearby enemies
+        take Battle-shock tests with a fixed modifier (and optional stronger PSYKER modifier).
+
+        Returns specs with keys:
+            - source: ability name
+            - range: int
+            - test_penalty: int
+            - psyker_test_penalty: int
+            - ability_key: str
+        """
+        if model is None:
+            return []
+        cache_key = f"model_start_any_command_phase_battleshock:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, int, int]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._START_ANY_COMMAND_PHASE_ENEMY_RANGE_BATTLESHOCK_RE.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                range_value = int(m.group("range") or 0)
+            except Exception:
+                range_value = 0
+            try:
+                penalty = int(m.group("pen") or 0)
+            except Exception:
+                penalty = 0
+            try:
+                psyker_penalty = int(m.group("psyker_pen") or 0)
+            except Exception:
+                psyker_penalty = 0
+            if range_value <= 0 or penalty <= 0:
+                continue
+            psyker_penalty = int(psyker_penalty) if int(psyker_penalty or 0) > 0 else int(penalty)
+            source = str(name or "Start any Command phase Battle-shock").strip() or "Start any Command phase Battle-shock"
+            ability_key = "soulless_horror"
+            dedupe_key = (source.lower(), int(range_value), int(penalty), int(psyker_penalty))
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            specs.append(
+                {
+                    "source": source,
+                    "range": int(range_value),
+                    "test_penalty": int(penalty),
+                    "psyker_test_penalty": int(psyker_penalty),
+                    "ability_key": ability_key,
                 }
             )
 
@@ -3290,9 +3431,20 @@ class AbilitySpecsMixin:
             m = self._MOVEMENT_PHASE_ONCE_NORMAL_MOVE_WEAPON_ATTACKS_RE.fullmatch(normalized)
             if not m:
                 continue
-            move_dice = str(m.group("move") or "").strip().upper()
-            if not move_dice:
+            move_token = str(m.group("move") or "").strip().upper()
+            if not move_token:
                 continue
+            move_bonus_dice = ""
+            move_bonus_flat = 0
+            if "D" in move_token:
+                move_bonus_dice = move_token
+            else:
+                try:
+                    move_bonus_flat = int(move_token or 0)
+                except Exception:
+                    move_bonus_flat = 0
+                if move_bonus_flat <= 0:
+                    continue
             try:
                 attacks_bonus = int(m.group("attacks") or 0)
             except Exception:
@@ -3314,7 +3466,8 @@ class AbilitySpecsMixin:
                 {
                     "source": source,
                     "key": key,
-                    "move_bonus_dice": move_dice,
+                    "move_bonus_dice": move_bonus_dice,
+                    "move_bonus_flat": int(move_bonus_flat),
                     "attacks_bonus": int(attacks_bonus),
                     "weapon_name": weapon_name,
                 }
