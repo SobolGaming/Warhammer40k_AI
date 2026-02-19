@@ -2164,6 +2164,30 @@ class ShootingMixin:
 
     def clear_battle_shock(self) -> bool:
         """Remove Battle-shock from this unit (used at the start of its owner's next Command phase)."""
+        lock_round = 0
+        current_round = 0
+        special_rules = getattr(self, "special_rules", None)
+        if isinstance(special_rules, dict):
+            lock_round = int(special_rules.get("rad_bombardment_taking_cover_round", 0) or 0)
+
+        parent_army = None
+        get_parent_army = getattr(self, "get_parent_army", None)
+        if callable(get_parent_army):
+            parent_army = get_parent_army()
+        if parent_army is None:
+            parent_army = getattr(self, "parent_army", None)
+        game = getattr(getattr(parent_army, "player", None), "game", None) if parent_army is not None else None
+        if game is not None:
+            current_round = int(getattr(game, "turn", 0) or 0)
+
+        if lock_round > 0 and (current_round <= 0 or current_round <= lock_round):
+            return False
+        if lock_round > 0 and current_round > lock_round and isinstance(special_rules, dict):
+            updated_rules = dict(special_rules)
+            updated_rules.pop("rad_bombardment_taking_cover_round", None)
+            updated_rules.pop("rad_bombardment_taking_cover_added_battleshock", None)
+            self.special_rules = updated_rules
+
         removed = False
         for eff in list(getattr(self, "status_effects", []) or []):
             if isinstance(eff, BattleShockEffect):

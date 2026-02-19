@@ -305,6 +305,14 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"add \d+ to the number of orders each astra militarum officer model from your army can issue as stated on their datasheet",
             r"while an astra militarum unit from your army is affected by an order each time a model in that unit makes an attack reroll a hit roll of \d+",
         ),
+        "Rad-bombardment": (
+            r"at the start of the first battle round for each enemy unit within your opponents deployment zone your opponent must decide whether that unit will take cover or stand firm",
+            r"you then roll one d6 for each of those enemy units and apply the relevant result below",
+            r"on a 3 that unit suffers d3 mortal wounds",
+            r"until the end of the battle round that unit is battle shocked and on a 5 that unit suffers d3 mortal wounds",
+            r"at the start of your command phase during the second third fourth and fifth battle rounds roll one d6 for each enemy unit within your opponents deployment zone",
+            r"on a 3 that unit suffers 1 mortal wound and must take a battle shock test",
+        ),
         "Warp Rifts": (
             r"each time a legiones daemonica unit from your army is set up on the battlefield using the deep strike ability .* it can be set up anywhere that is more than 6 horizontally away from all enemy models instead of more than 9",
         ),
@@ -1747,6 +1755,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Ruthless Discipline": (
             "Supported",
             "Grizzled Company: OFFICERs issue +1 order; ordered units re-roll Hit rolls of 1.",
+        ),
+        "Rad-bombardment": (
+            "Supported",
+            "Rad-Zone Corps: BR1 Bombardment prompts the opponent to choose Stand Firm or Take Cover per enemy unit in their deployment zone, resolves mortal wounds by threshold, applies Take Cover Battle-shock until end of battle round, and BR2-5 Fallout applies 1 mortal wound plus a Battle-shock test on 3+.",
         ),
         "The Blood of Martyrs": (
             "Supported",

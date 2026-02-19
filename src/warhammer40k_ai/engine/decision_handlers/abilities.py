@@ -1893,6 +1893,48 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not in_engagement:
             return ("Data-spike target must be within Engagement Range of the source unit.",)
         return ()
+    if ability == "rad_bombardment":
+        if is_skip_choice(request, result):
+            return ("Rad-bombardment cannot be skipped.",)
+        payload = _option_payload(request, result)
+        source_army = _resolve_army(game, request, payload)
+        if source_army is None:
+            return ("Rad-bombardment army not found.",)
+        mgr = getattr(source_army, "adeptus_mechanicus_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_rad_zone_corps", lambda: False)()):
+            return ("Rad-bombardment requires a Rad-Zone Corps army.",)
+
+        try:
+            battle_round = int(ctx.get("battle_round", 0) or getattr(game, "turn", 0) or 0)
+        except Exception:
+            battle_round = int(getattr(game, "turn", 0) or 0)
+        if battle_round != 1:
+            return ("Rad-bombardment Bombardment is only resolved in battle round 1.",)
+
+        choice = str(payload.get("rad_bombardment_choice", "") or "").strip().lower()
+        if choice not in ("stand_firm", "take_cover"):
+            return ("Rad-bombardment choice must be Stand Firm or Take Cover.",)
+
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or ctx.get("target_unit_id"))
+        if target_unit is None:
+            return ("Rad-bombardment target unit was not found.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            return ("Rad-bombardment opponent player was not found.",)
+        player_id = str(getattr(player, "id", "") or "")
+        if not player_id:
+            return ("Rad-bombardment opponent player id was not found.",)
+
+        target_army = target_unit.get_parent_army() if hasattr(target_unit, "get_parent_army") else None
+        get_army = getattr(player, "get_army", None)
+        player_army = get_army() if callable(get_army) else getattr(player, "army", None)
+        if target_army is not None and player_army is not None and target_army is not player_army:
+            return ("Rad-bombardment target must belong to the opposing player.",)
+
+        in_zone = getattr(mgr, "unit_within_player_deployment_zone", None)
+        if not callable(in_zone) or not bool(in_zone(target_unit, player_id, game=game)):
+            return ("Rad-bombardment target must be within the opponent deployment zone.",)
+        return ()
     if is_skip_choice(request, result):
         return ()
     if ability != "strategic_conqueror":
@@ -1909,6 +1951,100 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
 def _apply_choose_quarry(game: object, request: DecisionRequest, result: DecisionResult):
     ctx = dict(getattr(request, "context", {}) or {})
     ability = str(ctx.get("ability", "") or "")
+    if ability == "rad_bombardment":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        source_army = _resolve_army(game, request, payload)
+        if source_army is None:
+            return None
+        mgr = getattr(source_army, "adeptus_mechanicus_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_rad_zone_corps", lambda: False)()):
+            return None
+
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or ctx.get("target_unit_id"))
+        if target_unit is None:
+            return None
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        if target_root is None:
+            return None
+
+        choice = str(payload.get("rad_bombardment_choice", "") or "").strip().lower()
+        if choice not in ("stand_firm", "take_cover"):
+            return None
+
+        try:
+            battle_round = int(ctx.get("battle_round", 0) or getattr(game, "turn", 0) or 0)
+        except Exception:
+            battle_round = int(getattr(game, "turn", 0) or 0)
+
+        from ...utility.dice import get_roll
+
+        roll = int(get_roll("D6") or 0)
+        threshold = 3 if choice == "stand_firm" else 5
+        mortal_wounds = 0
+        if roll >= int(threshold):
+            mortal_wounds = int(get_roll("D3") or 0)
+
+        added_battleshock = False
+        if choice == "take_cover":
+            is_battle_shocked = getattr(target_root, "is_battle_shocked", None)
+            currently_battle_shocked = bool(is_battle_shocked()) if callable(is_battle_shocked) else False
+            if not currently_battle_shocked:
+                from ...units.status_effects import BattleShockEffect
+
+                apply_effect = getattr(target_root, "apply_status_effect", None)
+                if callable(apply_effect):
+                    apply_effect(BattleShockEffect(int(battle_round)))
+                    added_battleshock = True
+            special_rules = getattr(target_root, "special_rules", None)
+            if not isinstance(special_rules, dict):
+                special_rules = {}
+            special_rules = dict(special_rules)
+            special_rules["rad_bombardment_taking_cover_round"] = int(battle_round)
+            special_rules["rad_bombardment_taking_cover_added_battleshock"] = bool(
+                special_rules.get("rad_bombardment_taking_cover_added_battleshock", False) or added_battleshock
+            )
+            target_root.special_rules = special_rules
+
+        if mortal_wounds > 0:
+            apply_mortal_wounds = getattr(target_root, "_apply_mortal_wounds_to_unit", None)
+            if callable(apply_mortal_wounds):
+                apply_mortal_wounds(
+                    target_root,
+                    int(mortal_wounds),
+                    game_map=getattr(game, "map", None),
+                )
+
+        player = getattr(source_army, "player", None)
+        target_name = str(getattr(target_root, "name", "Unit") or "Unit")
+        if choice == "take_cover":
+            if mortal_wounds > 0:
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"Rad-bombardment: {target_name} took cover, is Battle-shocked until end of battle round, and suffered {int(mortal_wounds)} mortal wounds (roll {int(roll)}).",
+                )
+            else:
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"Rad-bombardment: {target_name} took cover, is Battle-shocked until end of battle round, and suffered no mortal wounds (roll {int(roll)}).",
+                )
+        else:
+            if mortal_wounds > 0:
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"Rad-bombardment: {target_name} stood firm and suffered {int(mortal_wounds)} mortal wounds (roll {int(roll)}).",
+                )
+            else:
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"Rad-bombardment: {target_name} stood firm and suffered no mortal wounds (roll {int(roll)}).",
+                )
+        return target_root
     if ability == "strategic_conqueror":
         if is_skip_choice(request, result):
             return None

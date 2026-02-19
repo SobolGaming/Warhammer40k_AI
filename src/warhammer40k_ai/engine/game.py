@@ -6719,6 +6719,11 @@ class Game(
         if mgr is not None and hasattr(mgr, "on_command_phase_start"):
             mgr.on_command_phase_start(game=self, player=current_player)
 
+        # Adeptus Mechanicus: Rad-bombardment Fallout (Rad-Zone Corps).
+        mgr = getattr(army, "adeptus_mechanicus_detachments", None)
+        if mgr is not None and hasattr(mgr, "on_command_phase_start"):
+            mgr.on_command_phase_start(game=self, player=current_player)
+
         # Core (per official app wording): at the start of your Command phase, before doing anything else,
         # BOTH players gain the normal Command phase CP. This normal CP does not count toward the
         # per-battle-round "bonus CP" guardrail.

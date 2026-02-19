@@ -2406,6 +2406,9 @@ class Army:
         mgr = getattr(self, "doctrina_imperatives", None)
         if mgr is not None:
             mgr.on_battle_round_start(int(battle_round), game=game)
+        mgr = getattr(self, "adeptus_mechanicus_detachments", None)
+        if mgr is not None:
+            mgr.on_battle_round_start(int(battle_round), game=game)
         mgr = getattr(self, "code_chivalric", None)
         if mgr is not None:
             mgr.on_battle_round_start(int(battle_round))
