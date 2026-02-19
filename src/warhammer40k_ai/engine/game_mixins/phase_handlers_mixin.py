@@ -984,8 +984,21 @@ class GamePhaseHandlersMixin:
             if not list(root.models_lost or []):
                 continue
 
-            amount_roll = str(ability.get("amount_roll", "") or "").strip().upper()
             amount = int(ability.get("amount", 0) or 0)
+            amount_roll = str(ability.get("amount_roll", "") or "").strip().upper()
+            controlled_amount = int(ability.get("controlled_objective_amount", 0) or 0)
+            controlled_amount_roll = str(ability.get("controlled_objective_amount_roll", "") or "").strip().upper()
+            if controlled_amount > 0 or controlled_amount_roll:
+                within_controlled = False
+                try:
+                    within_controlled = bool(root._within_controlled_objective_range(getattr(self, "map", None)))
+                except Exception:
+                    within_controlled = False
+                if within_controlled:
+                    amount = int(controlled_amount or amount)
+                    amount_roll = str(controlled_amount_roll or "").strip().upper()
+                    ability = dict(ability or {})
+                    ability["controlled_objective_amount_applied"] = True
             if amount_roll:
                 try:
                     from ...utility.dice import get_roll

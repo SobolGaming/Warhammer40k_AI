@@ -2762,6 +2762,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("DRU", "Fog of Dreams (Psychic)"): ("Supported", "Leading: attached unit can only be targeted by ranged attacks within 18\"."),
         ("DRU", "Polychromatic Camouflage"): ("Supported", "Ranged attacks can only target this unit within 18\"."),
         ("DRU", "Shade Weavers"): ("Supported", "Ranged attacks can only target this unit within 18\"."),
+        ("GC", "Cult Icon"): (
+            "Supported",
+            "Command phase: return destroyed non-CHARACTER models to the bearer's unit; supports both variants (D3 or 3, with controlled-objective swap to 3 or D3+3).",
+        ),
         ("GC", "Sudden Assault"): ("Supported", "Leading: unit gains Fights First."),
         ("GC", "Swift and Deadly"): ("Supported", "Charge-after-Advance eligibility."),
         ("LOV", "Brōkhyr Guild Support"): ("Supported", "Conditional Lone Operative within 3\" of friendly LEAGUES OF VOTANN VEHICLE or IRONKIN STEELJACKS units; disabled while attached."),

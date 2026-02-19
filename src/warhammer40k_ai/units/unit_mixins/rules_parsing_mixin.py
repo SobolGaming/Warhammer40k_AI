@@ -463,18 +463,8 @@ class RulesParsingMixin:
             )
             if not m:
                 continue
-            token = m.group(1)
-            amount_roll = ""
-            try:
-                amount = int(token)
-            except Exception:
-                if token in ("one", "a"):
-                    amount = 1
-                elif token == "d3":
-                    amount = 3
-                    amount_roll = "D3"
-                else:
-                    amount = 0
+            token = str(m.group(1) or "").strip()
+            amount, amount_roll = self._parse_command_phase_return_amount_token(token)
             if amount <= 0:
                 continue
             return {
@@ -484,6 +474,39 @@ class RulesParsingMixin:
                 "description": desc or "",
             }
         return None
+
+    def _parse_command_phase_return_amount_token(self, token: str) -> tuple[int, str]:
+        token_text = str(token or "").strip().lower()
+        if not token_text:
+            return 0, ""
+        if token_text in ("one", "a"):
+            return 1, ""
+        if token_text.isdigit():
+            try:
+                value = int(token_text)
+            except Exception:
+                value = 0
+            return (max(0, value), "")
+
+        compact = re.sub(r"\s+", "", token_text)
+        m = re.fullmatch(r"(?:(?P<count>\d+))?d(?P<faces>\d+)(?:\+(?P<modifier>\d+))?", compact)
+        if not m:
+            return 0, ""
+        try:
+            count = int(m.group("count") or 1)
+            faces = int(m.group("faces") or 0)
+            modifier = int(m.group("modifier") or 0)
+        except Exception:
+            return 0, ""
+        if count <= 0 or faces <= 0 or modifier < 0:
+            return 0, ""
+        max_amount = int(count * faces + modifier)
+        if max_amount <= 0:
+            return 0, ""
+        roll = f"{count}D{faces}" if count != 1 else f"D{faces}"
+        if modifier:
+            roll = f"{roll}+{modifier}"
+        return max_amount, roll
 
     def _scan_command_phase_unit_return_ability(self):
         for ab in self._iter_active_abilities():
@@ -509,39 +532,48 @@ class RulesParsingMixin:
                 continue
             if "select one friendly" in low:
                 continue
-            if (
-                "to the bearer s unit" not in low
-                and "to the bearer's unit" not in low
-                and "to this unit" not in low
-            ):
+            plain = re.sub(r"[^a-z0-9+]+", " ", low).strip()
+            if ("to the bearer s unit" not in plain and "to this unit" not in plain):
                 continue
-            m = re.search(
-                r"return\s+(?:up to\s+)?(one|a|\d+|d3)\s+destroyed\s+models?",
-                low,
+            amount_token_re = r"(one|a|\d+|(?:\d+)?d\d+(?:\+\d+)?)"
+            base_match = re.search(
+                r"return(?:\s+up\s+to)?\s+" + amount_token_re + r"\s+destroyed\s+models?",
+                plain,
             )
-            if not m:
+            if not base_match:
                 continue
-            token = str(m.group(1) or "").strip()
-            amount_roll = ""
-            try:
-                amount = int(token)
-            except Exception:
-                if token in ("one", "a"):
-                    amount = 1
-                elif token == "d3":
-                    amount = 3
-                    amount_roll = "D3"
-                else:
-                    amount = 0
+            token = str(base_match.group(1) or "").strip()
+            amount, amount_roll = self._parse_command_phase_return_amount_token(token)
             if amount <= 0:
                 continue
+            objective_amount = 0
+            objective_amount_roll = ""
+            objective_match = re.search(
+                r"if\s+the\s+bearer\s+s\s+unit\s+is\s+within\s+range\s+of\s+"
+                r"(?:an|one\s+or\s+more)\s+objective\s+markers?\s+you\s+control\s+"
+                r"you\s+can\s+return(?:\s+up\s+to)?\s+"
+                + amount_token_re
+                + r"\s+destroyed\s+models?\s+to\s+(?:that\s+unit|the\s+bearer\s+s\s+unit|this\s+unit)\s+instead",
+                plain,
+            )
+            if objective_match:
+                objective_token = str(objective_match.group(1) or "").strip()
+                objective_amount, objective_amount_roll = self._parse_command_phase_return_amount_token(
+                    objective_token
+                )
             parsed = {
                 "amount": int(amount),
                 "amount_roll": amount_roll,
                 "name": name or "Command phase model return",
                 "description": desc or "",
-                "exclude_character": ("excluding character" in low),
+                "exclude_character": (
+                    ("excluding character" in low)
+                    or bool(re.search(r"cannot be used to return destroyed character models? in attached units?", plain))
+                ),
             }
+            if objective_amount > 0:
+                parsed["controlled_objective_amount"] = int(objective_amount)
+                parsed["controlled_objective_amount_roll"] = str(objective_amount_roll or "")
             if "select one of the following" in low and ("you gain 1cp" in low or "you gain 1 cp" in low):
                 cp_gain = 1
                 m_cp = re.search(r"you gain\s+(\d+)\s*cp", low)
