@@ -17208,6 +17208,81 @@ class GameView:
                 )
             return
 
+        if name_u in ("BALEFUL HALO", "BULWARK IMPERATIVE"):
+            if not callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                return
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            preset_primary = context.get("unit") or context.get("target_unit")
+            target_units = list(context.get("target_units") or [])
+
+            candidates = context.get("candidates") or []
+            if not candidates:
+                getter_name = (
+                    "_rad_zone_baleful_halo_primary_candidates"
+                    if name_u == "BALEFUL HALO"
+                    else "_rad_zone_bulwark_imperative_primary_candidates"
+                )
+                getter = getattr(manager, getter_name, None)
+                if callable(getter):
+                    try:
+                        if preset_primary is not None and not target_units:
+                            target_units = [preset_primary]
+                        candidates = list(getter(target_units=target_units) or [])
+                    except Exception:
+                        candidates = []
+
+            def _after_primary(primary_unit):
+                if primary_unit is None:
+                    logger.info("Bulwark Imperative: no primary SKITARII selected")
+                    return
+                support_getter = getattr(manager, "_rad_zone_optional_skitarii_support_candidates", None)
+                support_candidates = list(support_getter(primary_unit) or []) if callable(support_getter) else []
+                if not support_candidates:
+                    self._finalize_admech_rad_zone_stratagem(player, name, context, primary_unit, None)
+                    return
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=support_candidates,
+                    on_chosen=lambda support: self._finalize_admech_rad_zone_stratagem(
+                        player,
+                        name,
+                        context,
+                        primary_unit,
+                        support,
+                    ),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt=f"Select optional supporting SKITARII unit for {name}.",
+                    title=name,
+                    subtitle="Optional: pick one SKITARII (excluding BATTLELINE) within 6\", or Skip.",
+                    enemy_unit=None,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+
+            if preset_primary is not None:
+                _after_primary(preset_primary)
+                return
+
+            primary_subtitle = (
+                "ADEPTUS MECHANICUS (excluding VEHICLE) unit selected as a target of the attacking unit."
+                if name_u == "BALEFUL HALO"
+                else "SKITARII unit selected as a target of the attacking unit."
+            )
+            self._resolve_unit_selection_dialog(
+                player=player,
+                candidates=candidates,
+                on_chosen=_after_primary,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt=f"Select primary unit for {name}.",
+                title=name,
+                subtitle=primary_subtitle,
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
+            return
+
         if name_u in ("AGGRESSOR IMPERATIVE", "LETHAL DOSAGE", "PRE-CALIBRATED PURGE SOLUTION") and "unit" not in context and "target_unit" not in context:
             if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
                 from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER

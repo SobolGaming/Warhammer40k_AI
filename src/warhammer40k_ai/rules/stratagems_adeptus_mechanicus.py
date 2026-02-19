@@ -155,6 +155,58 @@ class AdeptusMechanicusStratagemMixin:
     def _rad_zone_aggressor_imperative_primary_candidates(self) -> list[Any]:
         return self._admech_battlefield_units(require_not_moved=True, require_skitarii=True)
 
+    def _rad_zone_baleful_halo_primary_candidates(self, *, target_units: list[Any] | None = None) -> list[Any]:
+        if not self._is_rad_zone_corps():
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._admech_root(unit)
+            if root is None:
+                continue
+            uid = self._admech_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._admech_on_battlefield(root):
+                continue
+            if not self._admech_owned_by_player(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._is_adeptus_mechanicus_unit(root):
+                continue
+            if bool(getattr(root, "is_vehicle", False)) or self._admech_has_any_keyword(root, "VEHICLE"):
+                continue
+            out.append(root)
+        return sorted(out, key=self._admech_sort_key)
+
+    def _rad_zone_bulwark_imperative_primary_candidates(self, *, target_units: list[Any] | None = None) -> list[Any]:
+        if not self._is_rad_zone_corps():
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._admech_root(unit)
+            if root is None:
+                continue
+            uid = self._admech_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._admech_on_battlefield(root):
+                continue
+            if not self._admech_owned_by_player(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._is_skitarii_unit(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._admech_sort_key)
+
     def _rad_zone_optional_skitarii_support_candidates(self, primary_unit: Any) -> list[Any]:
         primary_root = self._admech_root(primary_unit)
         if primary_root is None or not self._is_battleline_unit(primary_root):
@@ -259,6 +311,86 @@ class AdeptusMechanicusStratagemMixin:
             out.append(enemy)
         return sorted(out, key=self._admech_sort_key)
 
+    def _queue_rad_zone_bulwark_shooting_reactions(self, *, attacking_unit: Any, target_units: list[Any] | None = None) -> None:
+        if not self._is_rad_zone_corps():
+            return
+        if attacking_unit is None:
+            return
+        stratagem = self.get_by_name("BULWARK IMPERATIVE")
+        if stratagem is None:
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._rad_zone_bulwark_imperative_primary_candidates(target_units=target_units)
+        if not candidates:
+            return
+        affordable = False
+        for candidate in list(candidates):
+            if self._admech_effective_cp_cost(stratagem, target_unit=candidate) <= int(getattr(self.player, "command_points", 0) or 0):
+                affordable = True
+                break
+        if not affordable:
+            return
+        for reaction in list(self._pending_reactions):
+            if (
+                reaction.get("event") == "shooting_targets_selected"
+                and reaction.get("stratagem") == stratagem.name
+                and reaction.get("attacking_unit") is attacking_unit
+            ):
+                return
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacking_unit,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_rad_zone_baleful_fight_reactions(self, *, attacking_unit: Any, target_units: list[Any] | None = None) -> None:
+        if not self._is_rad_zone_corps():
+            return
+        if attacking_unit is None:
+            return
+        stratagem = self.get_by_name("BALEFUL HALO")
+        if stratagem is None:
+            return
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        candidates = self._rad_zone_baleful_halo_primary_candidates(target_units=target_units)
+        if not candidates:
+            return
+        affordable = False
+        for candidate in list(candidates):
+            if self._admech_effective_cp_cost(stratagem, target_unit=candidate) <= int(getattr(self.player, "command_points", 0) or 0):
+                affordable = True
+                break
+        if not affordable:
+            return
+        for reaction in list(self._pending_reactions):
+            if (
+                reaction.get("event") == "fight_targets_selected"
+                and reaction.get("stratagem") == stratagem.name
+                and reaction.get("attacking_unit") is attacking_unit
+            ):
+                return
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacking_unit,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
     def _admech_resolve_unit_from_kwargs(self, kwargs: dict[str, Any], *, key: str, fallback_key: str = "") -> Any:
         value = kwargs.get(key)
         if value is None and fallback_key:
@@ -357,8 +489,38 @@ class AdeptusMechanicusStratagemMixin:
         sr["rad_zone_aggressor_imperative_source"] = source_name
         unit.special_rules = sr
 
+    def _mark_rad_zone_baleful_halo(self, unit: Any, *, source_name: str) -> None:
+        self._append_defensive_effect(
+            unit,
+            "defensive_wound_mods",
+            {
+                "value": 1,
+                "attack_type": "any",
+                "attacker_key": "",
+                "expires_phase": "FIGHT_PHASE",
+                "source": source_name,
+            },
+        )
+
+    def _mark_rad_zone_bulwark_imperative(self, unit: Any, *, source_name: str) -> None:
+        self._append_defensive_effect(
+            unit,
+            "defensive_invuln_overrides",
+            {
+                "value": 4,
+                "attack_type": "any",
+                "attacker_key": "",
+                "expires_phase": "SHOOTING_PHASE",
+                "source": source_name,
+            },
+        )
+
     def _use_adeptus_mechanicus_rad_zone_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u == "BALEFUL HALO":
+            return self._use_rad_zone_baleful_halo(stratagem, **kwargs)
+        if name_u == "BULWARK IMPERATIVE":
+            return self._use_rad_zone_bulwark_imperative(stratagem, **kwargs)
         if name_u == "AGGRESSOR IMPERATIVE":
             return self._use_rad_zone_aggressor_imperative(stratagem, **kwargs)
         if name_u == "EXTINCTION ORDER":
@@ -368,6 +530,92 @@ class AdeptusMechanicusStratagemMixin:
         if name_u == "PRE-CALIBRATED PURGE SOLUTION":
             return self._use_rad_zone_pre_calibrated_purge_solution(stratagem, **kwargs)
         return None
+
+    def _use_rad_zone_baleful_halo(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_rad_zone_corps():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: BALEFUL HALO: wrong phase")
+            return False
+
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        target_units = list(kwargs.get("target_units") or [])
+        if not target_units:
+            target_units = list(candidates)
+        if (attacking_unit is None or not target_units) and getattr(self, "_pending_reactions", None):
+            for reaction in reversed(list(self._pending_reactions or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "BALEFUL HALO":
+                    continue
+                if attacking_unit is None:
+                    attacking_unit = reaction.get("attacking_unit")
+                if not target_units:
+                    target_units = list(reaction.get("target_units") or reaction.get("candidates") or [])
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                break
+        if attacking_unit is not None:
+            get_parent_army = getattr(attacking_unit, "get_parent_army", None)
+            parent_army = get_parent_army() if callable(get_parent_army) else getattr(attacking_unit, "parent_army", None)
+            if getattr(parent_army, "player", None) is self.player:
+                logger.error("ERROR: BALEFUL HALO: attacker is not enemy")
+                return False
+
+        primary = self._admech_resolve_unit_from_kwargs(kwargs, key="unit", fallback_key="target_unit")
+        eligible_primary = self._rad_zone_baleful_halo_primary_candidates(target_units=target_units)
+        if not eligible_primary and candidates:
+            eligible_primary = self._rad_zone_baleful_halo_primary_candidates(target_units=candidates)
+        if primary is None and len(eligible_primary) == 1:
+            primary = eligible_primary[0]
+        if primary is None and len(candidates) == 1:
+            primary = self._admech_root(candidates[0])
+        if primary is None:
+            logger.error("ERROR: BALEFUL HALO: no primary unit selected")
+            return False
+        if primary not in eligible_primary:
+            logger.error(
+                "ERROR: BALEFUL HALO: primary target must be an eligible non-VEHICLE ADEPTUS MECHANICUS unit selected as a target of the attacking unit"
+            )
+            return False
+
+        secondary = self._admech_resolve_unit_from_kwargs(kwargs, key="secondary_unit", fallback_key="support_unit")
+        eligible_secondary = self._rad_zone_optional_skitarii_support_candidates(primary)
+        if secondary is not None and secondary not in eligible_secondary:
+            logger.error("ERROR: BALEFUL HALO: optional support unit must be eligible SKITARII (excluding BATTLELINE) within 6\"")
+            return False
+
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=primary,
+            target_unit=primary,
+            attacking_unit=attacking_unit,
+            phase_name="Fight phase",
+        ):
+            logger.error("ERROR: BALEFUL HALO: cannot be used in current state")
+            return False
+        if not self._admech_spend_cp(stratagem, target_unit=primary):
+            return False
+
+        source_name = str(getattr(stratagem, "name", "") or "BALEFUL HALO")
+        self._mark_rad_zone_baleful_halo(primary, source_name=source_name)
+        if secondary is not None:
+            self._mark_rad_zone_baleful_halo(secondary, source_name=source_name)
+
+        self._admech_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        if secondary is None:
+            logger.info(
+                "INFO: BALEFUL HALO: %s imposes -1 to wound against attacks that target it this Fight phase.",
+                getattr(primary, "name", "Unit"),
+            )
+        else:
+            logger.info(
+                "INFO: BALEFUL HALO: %s and %s impose -1 to wound against attacks that target them this Fight phase.",
+                getattr(primary, "name", "Unit"),
+                getattr(secondary, "name", "Unit"),
+            )
+        return True
 
     def _use_rad_zone_lethal_dosage(self, stratagem: Any, **kwargs) -> bool:
         if not self._is_rad_zone_corps():
@@ -418,6 +666,94 @@ class AdeptusMechanicusStratagemMixin:
         else:
             logger.info(
                 "INFO: LETHAL DOSAGE: %s and %s gain Lethal Hits on ranged weapons this phase.",
+                getattr(primary, "name", "Unit"),
+                getattr(secondary, "name", "Unit"),
+            )
+        return True
+
+    def _use_rad_zone_bulwark_imperative(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_rad_zone_corps():
+            return False
+        phase_name = str(kwargs.get("phase_name") or self._current_phase_name or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: BULWARK IMPERATIVE: wrong phase")
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            logger.error("ERROR: BULWARK IMPERATIVE: not opponent's Shooting phase")
+            return False
+
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        target_units = list(kwargs.get("target_units") or [])
+        if not target_units:
+            target_units = list(candidates)
+        if (attacking_unit is None or not target_units) and getattr(self, "_pending_reactions", None):
+            for reaction in reversed(list(self._pending_reactions or [])):
+                if str(reaction.get("stratagem", "") or "").strip().upper() != "BULWARK IMPERATIVE":
+                    continue
+                if attacking_unit is None:
+                    attacking_unit = reaction.get("attacking_unit")
+                if not target_units:
+                    target_units = list(reaction.get("target_units") or reaction.get("candidates") or [])
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                break
+        if attacking_unit is not None:
+            get_parent_army = getattr(attacking_unit, "get_parent_army", None)
+            parent_army = get_parent_army() if callable(get_parent_army) else getattr(attacking_unit, "parent_army", None)
+            if getattr(parent_army, "player", None) is self.player:
+                logger.error("ERROR: BULWARK IMPERATIVE: attacker is not enemy")
+                return False
+
+        primary = self._admech_resolve_unit_from_kwargs(kwargs, key="unit", fallback_key="target_unit")
+        eligible_primary = self._rad_zone_bulwark_imperative_primary_candidates(target_units=target_units)
+        if not eligible_primary and candidates:
+            eligible_primary = self._rad_zone_bulwark_imperative_primary_candidates(target_units=candidates)
+        if primary is None and len(eligible_primary) == 1:
+            primary = eligible_primary[0]
+        if primary is None and len(candidates) == 1:
+            primary = self._admech_root(candidates[0])
+        if primary is None:
+            logger.error("ERROR: BULWARK IMPERATIVE: no primary unit selected")
+            return False
+        if primary not in eligible_primary:
+            logger.error("ERROR: BULWARK IMPERATIVE: primary target must be an eligible SKITARII unit selected as a target of the attacking unit")
+            return False
+
+        secondary = self._admech_resolve_unit_from_kwargs(kwargs, key="secondary_unit", fallback_key="support_unit")
+        eligible_secondary = self._rad_zone_optional_skitarii_support_candidates(primary)
+        if secondary is not None and secondary not in eligible_secondary:
+            logger.error("ERROR: BULWARK IMPERATIVE: optional support unit must be eligible SKITARII (excluding BATTLELINE) within 6\"")
+            return False
+
+        if not stratagem.can_use(
+            self.player,
+            self.game,
+            unit=primary,
+            target_unit=primary,
+            attacking_unit=attacking_unit,
+            phase_name="Shooting phase",
+        ):
+            logger.error("ERROR: BULWARK IMPERATIVE: cannot be used in current state")
+            return False
+        if not self._admech_spend_cp(stratagem, target_unit=primary):
+            return False
+
+        source_name = str(getattr(stratagem, "name", "") or "BULWARK IMPERATIVE")
+        self._mark_rad_zone_bulwark_imperative(primary, source_name=source_name)
+        if secondary is not None:
+            self._mark_rad_zone_bulwark_imperative(secondary, source_name=source_name)
+
+        self._admech_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
+        if secondary is None:
+            logger.info(
+                "INFO: BULWARK IMPERATIVE: %s gains a 4+ invulnerable save this phase.",
+                getattr(primary, "name", "Unit"),
+            )
+        else:
+            logger.info(
+                "INFO: BULWARK IMPERATIVE: %s and %s gain a 4+ invulnerable save this phase.",
                 getattr(primary, "name", "Unit"),
                 getattr(secondary, "name", "Unit"),
             )

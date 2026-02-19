@@ -553,6 +553,21 @@ _GRIZZLED_COMPANY_STRATAGEM_BY_NAME = {
 }
 
 _RAD_ZONE_CORPS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008386002": StratagemToolDescriptor(
+        stratagem_id="000008386002",
+        name="Baleful Halo",
+        timing="fight_phase_after_enemy_targets_selected",
+        target="adeptus_mechanicus_non_vehicle_unit_targeted_by_attacker",
+        duration="until_end_of_turn",
+        effect="defensive_wound_penalty",
+        cp_cost=2,
+        effect_params={
+            "wound_roll_modifier": -1,
+            "optional_support_if_primary_battleline": True,
+            "support_target": "friendly_skitarii_unit_non_battleline_within_6",
+            "support_selection_optional": True,
+        },
+    ),
     "000008386003": StratagemToolDescriptor(
         stratagem_id="000008386003",
         name="Extinction Order",
@@ -607,6 +622,21 @@ _RAD_ZONE_CORPS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
         effect="ranged_lethal_hits",
         cp_cost=1,
         effect_params={
+            "optional_support_if_primary_battleline": True,
+            "support_target": "friendly_skitarii_unit_non_battleline_within_6",
+            "support_selection_optional": True,
+        },
+    ),
+    "000008386007": StratagemToolDescriptor(
+        stratagem_id="000008386007",
+        name="Bulwark Imperative",
+        timing="opponent_shooting_phase_after_targets_selected",
+        target="skitarii_unit_targeted_by_attacker",
+        duration="until_end_of_phase",
+        effect="invulnerable_save",
+        cp_cost=2,
+        effect_params={
+            "invulnerable_save": 4,
             "optional_support_if_primary_battleline": True,
             "support_target": "friendly_skitarii_unit_non_battleline_within_6",
             "support_selection_optional": True,

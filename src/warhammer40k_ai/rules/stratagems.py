@@ -33,6 +33,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ADRENAL SURGE",
     "AGGRESSIVE MOBILITY",
     "AGGRESSOR IMPERATIVE",
+    "BALEFUL HALO",
+    "BULWARK IMPERATIVE",
     "ARDENT AUTOMATA",
     "A CHALLENGE MET",
     "A GRIM WARNING",
@@ -1459,6 +1461,7 @@ class StratagemManager(
             "VOID HARDENED",
         }
         fight_reaction_names = {
+            "BALEFUL HALO",
             "BERSERK FUGUE",
             "BEAUTIFUL DEATH",
             "COMBAT STIMMS",
@@ -1538,6 +1541,7 @@ class StratagemManager(
         phase_end_cleanup_names = {
             "AGGRESSIVE MOBILITY",
             "AGGRESSOR IMPERATIVE",
+            "BALEFUL HALO",
             "ASPIRE TO INFAMY",
             "BLOODTHIRSTY HORDE",
             "BRAZEN CONTEMPT",
@@ -2518,6 +2522,28 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires SKITARII unit on the battlefield that has not been selected to move this phase"
             return result
+        if name_u == "BALEFUL HALO":
+            target_units = list(context.get("target_units") or context.get("candidates") or [])
+            selected_unit = context.get("target_unit") or context.get("unit")
+            if selected_unit is not None and not target_units:
+                target_units = [selected_unit]
+            if self._rad_zone_baleful_halo_primary_candidates(target_units=target_units):
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires non-VEHICLE ADEPTUS MECHANICUS unit selected as a target of an enemy Fight attack"
+            return result
+        if name_u == "BULWARK IMPERATIVE":
+            target_units = list(context.get("target_units") or context.get("candidates") or [])
+            selected_unit = context.get("target_unit") or context.get("unit")
+            if selected_unit is not None and not target_units:
+                target_units = [selected_unit]
+            if self._rad_zone_bulwark_imperative_primary_candidates(target_units=target_units):
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires SKITARII unit selected as a target of an enemy Shooting attack"
+            return result
         if name_u == "EXTINCTION ORDER":
             source_unit = context.get("target_unit") or context.get("unit")
             candidate_units = (
@@ -3035,6 +3061,8 @@ class StratagemManager(
             "UNWAVERING PHALANX": "Target: your RUBRIC MARINES unit within Engagement Range of an enemy unit that just ended a Charge move; attacks targeting it suffer -1 to wound until end of turn",
             "THREAT ASSESSMENT ANALYSER": "Target: T'AU EMPIRE unit not yet selected to shoot; choose Sustained Hits 1 or Lethal Hits, or gain both plus [HAZARDOUS] (cannot also target with EXPERIMENTAL AMMUNITION this phase)",
             "AGGRESSOR IMPERATIVE": "Target: SKITARII unit not yet selected to move; if it is BATTLELINE, you can also choose one friendly SKITARII unit (excluding BATTLELINE) within 6\" that has not been selected to move",
+            "BALEFUL HALO": "Target: non-VEHICLE ADEPTUS MECHANICUS unit selected as a target of the attacking enemy unit; if it is BATTLELINE, you can also choose one friendly SKITARII unit (excluding BATTLELINE) within 6\"",
+            "BULWARK IMPERATIVE": "Target: SKITARII unit selected as a target of the attacking enemy unit; if it is BATTLELINE, you can also choose one friendly SKITARII unit (excluding BATTLELINE) within 6\"",
             "EXTINCTION ORDER": "Target: one TECH-PRIEST model and one objective marker within 24\" of it",
             "LETHAL DOSAGE": "Target: ADEPTUS MECHANICUS unit not yet selected to shoot; if it is BATTLELINE, you can also choose one friendly SKITARII unit (excluding BATTLELINE) within 6\"",
             "PRE-CALIBRATED PURGE SOLUTION": "Target: ADEPTUS MECHANICUS unit not yet selected to shoot; if it is BATTLELINE, you can also choose one friendly SKITARII unit (excluding BATTLELINE) within 6\"",
@@ -7253,6 +7281,13 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_rad_zone_bulwark_shooting_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
             self._queue_tyranids_invasion_fleet_shooting_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
@@ -8052,6 +8087,13 @@ class StratagemManager(
             raise
         try:
             self._queue_tyranids_invasion_fleet_fight_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_rad_zone_baleful_fight_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )

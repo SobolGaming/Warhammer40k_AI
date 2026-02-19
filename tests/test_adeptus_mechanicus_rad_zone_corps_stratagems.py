@@ -125,6 +125,13 @@ def _basic_ranged_weapon() -> Wargear:
 
 
 def test_rad_zone_stratagem_descriptors_registered():
+    baleful = get_stratagem_tool_descriptor(stratagem_id="000008386002")
+    assert baleful is not None
+    assert baleful.name == "Baleful Halo"
+    assert baleful.effect == "defensive_wound_penalty"
+    assert int(baleful.effect_params.get("wound_roll_modifier", 0) or 0) == -1
+    assert int(baleful.cp_cost or 0) == 2
+
     extinction = get_stratagem_tool_descriptor(stratagem_id="000008386003")
     assert extinction is not None
     assert extinction.name == "Extinction Order"
@@ -137,6 +144,13 @@ def test_rad_zone_stratagem_descriptors_registered():
     assert aggressor.effect == "advance_no_roll_plus_6"
     assert int(aggressor.effect_params.get("advance_distance", 0) or 0) == 6
     assert int(aggressor.cp_cost or 0) == 1
+
+    bulwark = get_stratagem_tool_descriptor(stratagem_id="000008386007")
+    assert bulwark is not None
+    assert bulwark.name == "Bulwark Imperative"
+    assert bulwark.effect == "invulnerable_save"
+    assert int(bulwark.effect_params.get("invulnerable_save", 0) or 0) == 4
+    assert int(bulwark.cp_cost or 0) == 2
 
     purge = get_stratagem_tool_descriptor(stratagem_id="000008386005")
     assert purge is not None
@@ -157,6 +171,10 @@ def test_rad_zone_stratagem_descriptors_registered():
     by_name = get_stratagem_tool_descriptor(name="AGGRESSOR IMPERATIVE")
     assert by_name is not None
     assert by_name.stratagem_id == "000008386004"
+
+    by_name = get_stratagem_tool_descriptor(name="BALEFUL HALO")
+    assert by_name is not None
+    assert by_name.stratagem_id == "000008386002"
 
 
 def test_lethal_dosage_primary_candidates_exclude_units_that_have_shot():
@@ -358,6 +376,314 @@ def test_rad_zone_stratagem_rejects_invalid_optional_support_selection():
     assert ok is False
     assert int(p1.command_points or 0) == start_cp
     assert bool(primary.special_rules.get("rad_zone_lethal_dosage_active")) is False
+
+
+def test_baleful_halo_primary_candidates_require_targeted_friendly_non_vehicle_admech():
+    game, admech_army, enemy_army, p1, _p2 = _build_game()
+    targeted_admech = _make_unit(
+        "Skitarii Vanguard",
+        keywords=["INFANTRY", "SKITARII"],
+        faction_keywords=["ADEPTUS MECHANICUS"],
+    )
+    targeted_vehicle = _make_unit(
+        "Onager Dunecrawler",
+        keywords=["VEHICLE"],
+        faction_keywords=["ADEPTUS MECHANICUS"],
+    )
+    enemy_target = _make_unit("Enemy Target", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    enemy_attacker = _make_unit("Enemy Attacker", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    admech_army.add_unit(targeted_admech)
+    admech_army.add_unit(targeted_vehicle)
+    enemy_army.add_unit(enemy_target)
+    enemy_army.add_unit(enemy_attacker)
+    _place_unit(game, targeted_admech, 10.0, 10.0)
+    _place_unit(game, targeted_vehicle, 12.0, 10.0)
+    _place_unit(game, enemy_target, 13.0, 10.0)
+    _place_unit(game, enemy_attacker, 20.0, 10.0)
+
+    candidates = p1.stratagems._rad_zone_baleful_halo_primary_candidates(
+        target_units=[targeted_admech, targeted_vehicle, enemy_target]
+    )
+    assert targeted_admech in candidates
+    assert targeted_vehicle not in candidates
+    assert enemy_target not in candidates
+
+
+def test_baleful_halo_queues_on_enemy_fight_targets_selected():
+    game, admech_army, enemy_army, p1, p2 = _build_game()
+    target = _make_unit(
+        "Skitarii Rangers",
+        keywords=["INFANTRY", "SKITARII", "BATTLELINE"],
+        faction_keywords=["ADEPTUS MECHANICUS"],
+    )
+    attacker = _make_unit("Enemy Fighters", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    admech_army.add_unit(target)
+    enemy_army.add_unit(attacker)
+    _place_unit(game, target, 10.0, 10.0)
+    _place_unit(game, attacker, 20.0, 10.0)
+    _phase_start(game, p2, "FIGHT_PHASE")
+
+    game.event_system.publish("fight_targets_selected", attacking_unit=attacker, target_units=[target])
+
+    pending = [
+        reaction
+        for reaction in list(p1.stratagems.get_pending_reactions() or [])
+        if str(reaction.get("stratagem", "")).strip().upper() == "BALEFUL HALO"
+    ]
+    assert len(pending) == 1
+    assert target in list(pending[0].get("candidates") or [])
+    assert pending[0].get("attacking_unit") is attacker
+
+
+def test_baleful_halo_applies_wound_penalty_to_primary_and_optional_support():
+    game, admech_army, enemy_army, p1, p2 = _build_game()
+    primary = _make_unit(
+        "Skitarii Rangers",
+        keywords=["INFANTRY", "SKITARII", "BATTLELINE"],
+        faction_keywords=["ADEPTUS MECHANICUS"],
+    )
+    support = _make_unit(
+        "Sicarian Infiltrators",
+        keywords=["INFANTRY", "SKITARII"],
+        faction_keywords=["ADEPTUS MECHANICUS"],
+    )
+    attacker = _make_unit("Enemy Fighters", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    admech_army.add_unit(primary)
+    admech_army.add_unit(support)
+    enemy_army.add_unit(attacker)
+    _place_unit(game, primary, 10.0, 10.0)
+    _place_unit(game, support, 15.0, 10.0)
+    _place_unit(game, attacker, 20.0, 10.0)
+    _phase_start(game, p2, "FIGHT_PHASE")
+    game.event_system.publish("fight_targets_selected", attacking_unit=attacker, target_units=[primary])
+
+    start_cp = int(p1.command_points or 0)
+    ok = p1.stratagems.use(
+        "BALEFUL HALO",
+        unit=primary,
+        secondary_unit=support,
+        attacking_unit=attacker,
+        target_units=[primary],
+        phase_name="Fight phase",
+        dequeue=True,
+    )
+    assert ok is True
+    assert int(p1.command_points or 0) == start_cp - 2
+
+    for unit in (primary, support):
+        entries = list(unit.special_rules.get("defensive_wound_mods", []) or [])
+        assert any(
+            int(entry.get("value", 0) or 0) == 1
+            and str(entry.get("expires_phase", "") or "").strip().upper() == "FIGHT_PHASE"
+            for entry in entries
+            if isinstance(entry, dict)
+        )
+
+    profile = Wargear(
+        {
+            "name": "Enemy Blade",
+            "type": "Melee",
+            "range": "Melee",
+            "A": "1",
+            "BS_WS": "3+",
+            "S": "4",
+            "AP": "0",
+            "D": "1",
+            "description": "",
+        }
+    ).profiles["default"]
+    wound_result = profile._wound_target_with_tracking(
+        primary,
+        attacker.models[0],
+        {},
+        roll_value=4,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert bool(wound_result.get("wound")) is False
+    assert any("BALEFUL HALO" in str(mod) for mod in list(wound_result.get("modifiers", []) or []))
+
+    game.event_system.publish("phase_end", player=p2, phase=SimpleNamespace(name="FIGHT_PHASE"))
+    for unit in (primary, support):
+        entries = list(unit.special_rules.get("defensive_wound_mods", []) or [])
+        assert all(str(entry.get("source", "") or "").strip().upper() != "BALEFUL HALO" for entry in entries if isinstance(entry, dict))
+
+
+def test_baleful_halo_rejects_invalid_optional_support_selection():
+    game, admech_army, enemy_army, p1, p2 = _build_game()
+    primary = _make_unit(
+        "Skitarii Rangers",
+        keywords=["INFANTRY", "SKITARII", "BATTLELINE"],
+        faction_keywords=["ADEPTUS MECHANICUS"],
+    )
+    far_support = _make_unit(
+        "Sicarian Ruststalkers",
+        keywords=["INFANTRY", "SKITARII"],
+        faction_keywords=["ADEPTUS MECHANICUS"],
+    )
+    attacker = _make_unit("Enemy Fighters", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    admech_army.add_unit(primary)
+    admech_army.add_unit(far_support)
+    enemy_army.add_unit(attacker)
+    _place_unit(game, primary, 10.0, 10.0)
+    _place_unit(game, far_support, 30.0, 10.0)
+    _place_unit(game, attacker, 20.0, 10.0)
+    _phase_start(game, p2, "FIGHT_PHASE")
+
+    start_cp = int(p1.command_points or 0)
+    ok = p1.stratagems.use(
+        "BALEFUL HALO",
+        unit=primary,
+        secondary_unit=far_support,
+        attacking_unit=attacker,
+        target_units=[primary],
+        phase_name="Fight phase",
+    )
+    assert ok is False
+    assert int(p1.command_points or 0) == start_cp
+    assert bool(primary.special_rules.get("defensive_wound_mods")) is False
+
+
+def test_bulwark_imperative_primary_candidates_require_targeted_friendly_skitarii():
+    game, admech_army, enemy_army, p1, _p2 = _build_game()
+    targeted_skitarii = _make_unit(
+        "Skitarii Vanguard",
+        keywords=["INFANTRY", "SKITARII"],
+        faction_keywords=["ADEPTUS MECHANICUS"],
+    )
+    targeted_non_skitarii = _make_unit(
+        "Tech-Priest Dominus",
+        keywords=["INFANTRY", "CHARACTER", "TECH-PRIEST"],
+        faction_keywords=["ADEPTUS MECHANICUS"],
+    )
+    enemy_target = _make_unit("Enemy Target", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    enemy_attacker = _make_unit("Enemy Attacker", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    admech_army.add_unit(targeted_skitarii)
+    admech_army.add_unit(targeted_non_skitarii)
+    enemy_army.add_unit(enemy_target)
+    enemy_army.add_unit(enemy_attacker)
+    _place_unit(game, targeted_skitarii, 10.0, 10.0)
+    _place_unit(game, targeted_non_skitarii, 12.0, 10.0)
+    _place_unit(game, enemy_target, 13.0, 10.0)
+    _place_unit(game, enemy_attacker, 20.0, 10.0)
+
+    candidates = p1.stratagems._rad_zone_bulwark_imperative_primary_candidates(
+        target_units=[targeted_skitarii, targeted_non_skitarii, enemy_target]
+    )
+    assert targeted_skitarii in candidates
+    assert targeted_non_skitarii not in candidates
+    assert enemy_target not in candidates
+
+
+def test_bulwark_imperative_queues_on_enemy_shooting_targets_selected():
+    game, admech_army, enemy_army, p1, p2 = _build_game()
+    target = _make_unit(
+        "Skitarii Rangers",
+        keywords=["INFANTRY", "SKITARII", "BATTLELINE"],
+        faction_keywords=["ADEPTUS MECHANICUS"],
+    )
+    attacker = _make_unit("Enemy Shooters", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    admech_army.add_unit(target)
+    enemy_army.add_unit(attacker)
+    _place_unit(game, target, 10.0, 10.0)
+    _place_unit(game, attacker, 20.0, 10.0)
+    _phase_start(game, p2, "SHOOTING_PHASE")
+
+    game.event_system.publish("shooting_targets_selected", attacking_unit=attacker, target_units=[target])
+
+    pending = [
+        reaction
+        for reaction in list(p1.stratagems.get_pending_reactions() or [])
+        if str(reaction.get("stratagem", "")).strip().upper() == "BULWARK IMPERATIVE"
+    ]
+    assert len(pending) == 1
+    assert target in list(pending[0].get("candidates") or [])
+    assert pending[0].get("attacking_unit") is attacker
+
+
+def test_bulwark_imperative_applies_invulnerable_save_to_primary_and_optional_support():
+    game, admech_army, enemy_army, p1, p2 = _build_game()
+    primary = _make_unit(
+        "Skitarii Rangers",
+        keywords=["INFANTRY", "SKITARII", "BATTLELINE"],
+        faction_keywords=["ADEPTUS MECHANICUS"],
+    )
+    support = _make_unit(
+        "Sicarian Infiltrators",
+        keywords=["INFANTRY", "SKITARII"],
+        faction_keywords=["ADEPTUS MECHANICUS"],
+    )
+    attacker = _make_unit("Enemy Shooters", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    admech_army.add_unit(primary)
+    admech_army.add_unit(support)
+    enemy_army.add_unit(attacker)
+    _place_unit(game, primary, 10.0, 10.0)
+    _place_unit(game, support, 15.0, 10.0)
+    _place_unit(game, attacker, 20.0, 10.0)
+    _phase_start(game, p2, "SHOOTING_PHASE")
+    game.event_system.publish("shooting_targets_selected", attacking_unit=attacker, target_units=[primary])
+
+    start_cp = int(p1.command_points or 0)
+    ok = p1.stratagems.use(
+        "BULWARK IMPERATIVE",
+        unit=primary,
+        secondary_unit=support,
+        attacking_unit=attacker,
+        target_units=[primary],
+        phase_name="Shooting phase",
+        dequeue=True,
+    )
+    assert ok is True
+    assert int(p1.command_points or 0) == start_cp - 2
+
+    for unit in (primary, support):
+        entries = list(unit.special_rules.get("defensive_invuln_overrides", []) or [])
+        assert any(
+            int(entry.get("value", 0) or 0) == 4
+            and str(entry.get("expires_phase", "") or "").strip().upper() == "SHOOTING_PHASE"
+            for entry in entries
+            if isinstance(entry, dict)
+        )
+
+    game.event_system.publish("phase_end", player=p2, phase=SimpleNamespace(name="SHOOTING_PHASE"))
+    for unit in (primary, support):
+        entries = list(unit.special_rules.get("defensive_invuln_overrides", []) or [])
+        assert all(str(entry.get("source", "") or "").strip().upper() != "BULWARK IMPERATIVE" for entry in entries if isinstance(entry, dict))
+
+
+def test_bulwark_imperative_rejects_invalid_optional_support_selection():
+    game, admech_army, enemy_army, p1, p2 = _build_game()
+    primary = _make_unit(
+        "Skitarii Rangers",
+        keywords=["INFANTRY", "SKITARII", "BATTLELINE"],
+        faction_keywords=["ADEPTUS MECHANICUS"],
+    )
+    far_support = _make_unit(
+        "Sicarian Ruststalkers",
+        keywords=["INFANTRY", "SKITARII"],
+        faction_keywords=["ADEPTUS MECHANICUS"],
+    )
+    attacker = _make_unit("Enemy Shooters", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+    admech_army.add_unit(primary)
+    admech_army.add_unit(far_support)
+    enemy_army.add_unit(attacker)
+    _place_unit(game, primary, 10.0, 10.0)
+    _place_unit(game, far_support, 30.0, 10.0)
+    _place_unit(game, attacker, 20.0, 10.0)
+    _phase_start(game, p2, "SHOOTING_PHASE")
+
+    start_cp = int(p1.command_points or 0)
+    ok = p1.stratagems.use(
+        "BULWARK IMPERATIVE",
+        unit=primary,
+        secondary_unit=far_support,
+        attacking_unit=attacker,
+        target_units=[primary],
+        phase_name="Shooting phase",
+    )
+    assert ok is False
+    assert int(p1.command_points or 0) == start_cp
+    assert bool(primary.special_rules.get("defensive_invuln_overrides")) is False
 
 
 def test_aggressor_imperative_primary_candidates_require_skitarii_and_not_moved():
