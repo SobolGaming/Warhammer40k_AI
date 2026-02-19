@@ -2434,6 +2434,61 @@ class LateGameplayMixin:
             pass
 
         try:
+            sr = getattr(root, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("imperial_agents_orbital_oversight_active"):
+                applies = True
+                game = None
+                try:
+                    game = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
+                except Exception:
+                    game = None
+                owner_id = str(sr.get("imperial_agents_orbital_oversight_turn_owner", "") or "").strip()
+                if owner_id:
+                    unit_owner = ""
+                    try:
+                        unit_owner = str(
+                            getattr(getattr(root.get_parent_army(), "player", None), "id", "") or ""
+                        ).strip()
+                    except Exception:
+                        unit_owner = ""
+                    if unit_owner and unit_owner != owner_id:
+                        applies = False
+                if applies and game is not None:
+                    exp_phase = str(sr.get("imperial_agents_orbital_oversight_expires_phase", "") or "").strip().upper()
+                    current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    if exp_phase and current_phase and current_phase != exp_phase:
+                        applies = False
+                    try:
+                        effect_turn = int(sr.get("imperial_agents_orbital_oversight_turn", 0) or 0)
+                    except Exception:
+                        effect_turn = 0
+                    try:
+                        current_turn = int(getattr(game, "turn", 0) or 0)
+                    except Exception:
+                        current_turn = 0
+                    if effect_turn and current_turn and effect_turn != current_turn:
+                        applies = False
+                if applies:
+                    try:
+                        dist = float(sr.get("imperial_agents_orbital_oversight_targeting_range", 18) or 18)
+                    except Exception:
+                        dist = 18.0
+                    try:
+                        if root.has_lone_operative():
+                            dist = float(
+                                sr.get("imperial_agents_orbital_oversight_lone_operative_targeting_range", 6) or 6
+                            )
+                    except Exception:
+                        pass
+                    source = (
+                        str(sr.get("imperial_agents_orbital_oversight_source", "") or "").strip()
+                        or "ORBITAL OVERSIGHT"
+                    )
+                    _consider(dist, source)
+        except Exception:
+            pass
+
+        try:
             from ...rules.shadow_form import target_unit_has_wreathed_in_shadows
             if target_unit_has_wreathed_in_shadows(root, game_map=game_map):
                 _consider(18.0, "Wreathed in Shadows")

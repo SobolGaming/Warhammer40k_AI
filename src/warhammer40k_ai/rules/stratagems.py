@@ -161,7 +161,10 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ENDLESS SERVITUDE",
     "ENSNARING TRAP",
     "HYPERSTIMMS",
+    "ORBITAL OVERSIGHT",
     "PRIME TARGET",
+    "WILL-SAPPING SALVO",
+    "WILL‑SAPPING SALVO",
     "REACTIVE REPOSITION",
     "RED WRATH",
     "DEADLY DEBUT",
@@ -295,6 +298,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "EMBRACE THE PAIN",
     "ENSNARING TRAP",
     "HYPERSTIMMS",
+    "ORBITAL OVERSIGHT",
     "FRENZIED RESILIENCE",
     "FEIGNED WEAKNESS",
     "FEIGNED RETREAT",
@@ -1469,6 +1473,7 @@ class StratagemManager(
             "VENGEFUL SORROW",
             "VOID HARDENED",
             "HYPERSTIMMS",
+            "ORBITAL OVERSIGHT",
         }
         fight_reaction_names = {
             "BALEFUL HALO",
@@ -1652,6 +1657,9 @@ class StratagemManager(
             "RAPID REGENERATION",
             "ENSNARING TRAP",
             "PRIME TARGET",
+            "ORBITAL OVERSIGHT",
+            "WILL-SAPPING SALVO",
+            "WILL‑SAPPING SALVO",
             "VOID HARDENED",
         }
         needs_phase_end = bool(
@@ -3191,7 +3199,10 @@ class StratagemManager(
             "A CHALLENGE MET": "Target: WYCH CULT unit; enemy within 9\" that moved or was set up this phase",
             "ENSNARING TRAP": "Target: AGENTS OF THE IMPERIUM INFANTRY unit within 6\" of enemy units it can charge",
             "HYPERSTIMMS": "Target: AGENTS OF THE IMPERIUM CHARACTER unit selected as a target of the attacking enemy unit's attacks",
+            "ORBITAL OVERSIGHT": "Target: AGENTS OF THE IMPERIUM INFANTRY unit selected as a target of an enemy shooter's attacks",
             "PRIME TARGET": "Target: your AGENTS OF THE IMPERIUM unit that has not been selected to shoot/fight this phase",
+            "WILL-SAPPING SALVO": "Target: your AGENTS OF THE IMPERIUM INFANTRY unit that has not been selected to shoot this phase",
+            "WILL‑SAPPING SALVO": "Target: your AGENTS OF THE IMPERIUM INFANTRY unit that has not been selected to shoot this phase",
             "ACROBATIC DISPLAY": "Target: WYCH CULT unit targeted by enemy attacks",
             "BEAUTIFUL DEATH": "Target: EMPEROR'S CHILDREN CHARACTER unit targeted by enemy fight attacks",
             "BERSERK FUGUE": "Target: WYCH CULT unit targeted by enemy attacks",

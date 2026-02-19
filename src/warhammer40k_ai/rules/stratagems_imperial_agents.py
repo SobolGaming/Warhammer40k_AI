@@ -11,6 +11,16 @@ logger = logging.getLogger(__name__)
 
 class ImperialAgentsStratagemMixin:
     @staticmethod
+    def _ia_norm_stratagem_name(name: str) -> str:
+        text = str(name or "")
+        text = text.replace("\u2019", "'").replace("\u2018", "'")
+        text = text.replace("\u2010", "-").replace("\u2011", "-").replace("\u2012", "-")
+        text = text.replace("\u2013", "-").replace("\u2014", "-")
+        text = text.replace("\u00e2\u20ac\u2122", "'")
+        text = text.replace("\u0192?T", "'")
+        return text.strip().upper()
+
+    @staticmethod
     def _ia_root(unit: Any) -> Any:
         if unit is None:
             return None
@@ -52,6 +62,11 @@ class ImperialAgentsStratagemMixin:
     def _ia_is_eversor_assassin_unit(cls, unit: Any) -> bool:
         root = cls._ia_root(unit)
         return cls._ia_unit_name_key(root) == "eversor assassin"
+
+    @classmethod
+    def _ia_is_culexus_assassin_unit(cls, unit: Any) -> bool:
+        root = cls._ia_root(unit)
+        return cls._ia_unit_name_key(root) == "culexus assassin"
 
     @staticmethod
     def _ia_is_alive(unit: Any) -> bool:
@@ -142,6 +157,15 @@ class ImperialAgentsStratagemMixin:
         round_state = getattr(unit, "round_state", None)
         return bool(getattr(round_state, "fought_this_phase", False))
 
+    @staticmethod
+    def _ia_unit_models(unit: Any) -> list[Any]:
+        if unit is None:
+            return []
+        get_attached_models = getattr(unit, "get_attached_unit_models", None)
+        if callable(get_attached_models):
+            return list(get_attached_models() or [])
+        return list(getattr(unit, "models", []) or [])
+
     def _ia_effective_cp_cost(self, stratagem: Any, *, target_unit: Any = None, enemy_unit: Any = None) -> int:
         cp_cost = int(getattr(stratagem, "cp_cost", 0) or 0)
         apply_fn = getattr(self.player, "apply_stratagem_cp_cost", None)
@@ -167,9 +191,9 @@ class ImperialAgentsStratagemMixin:
 
     def _ia_pending_context(self, stratagem_name: str, kwargs: dict[str, Any]) -> dict[str, Any]:
         context = dict(kwargs or {})
-        wanted = str(stratagem_name or "").strip().upper()
+        wanted = self._ia_norm_stratagem_name(stratagem_name)
         for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
-            current = str(reaction.get("stratagem", "") or "").strip().upper()
+            current = self._ia_norm_stratagem_name(reaction.get("stratagem", ""))
             if current != wanted:
                 continue
             merged = dict(reaction)
@@ -353,6 +377,98 @@ class ImperialAgentsStratagemMixin:
             out.append(root)
         return sorted(out, key=self._ia_sort_key)
 
+    def _ia_orbital_oversight_candidates(self, target_units: list[Any]) -> list[Any]:
+        if not self._is_veiled_blade_elimination_force():
+            return []
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._ia_root(unit)
+            if root is None:
+                continue
+            uid = self._ia_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ia_owned_by_player(root, self.player):
+                continue
+            if not self._ia_is_on_battlefield(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._ia_is_agents_infantry_unit(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ia_sort_key)
+
+    def _ia_will_sapping_salvo_candidates(self) -> list[Any]:
+        if not self._is_veiled_blade_elimination_force():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+
+        out: list[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._ia_root(unit)
+            if root is None:
+                continue
+            uid = self._ia_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._ia_owned_by_player(root, self.player):
+                continue
+            if not self._ia_is_on_battlefield(root):
+                continue
+            if bool(self._unit_cannot_be_target_of_stratagem(root)):
+                continue
+            if not self._ia_is_agents_infantry_unit(root):
+                continue
+            if self._ia_selected_to_shoot_this_phase(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._ia_sort_key)
+
+    def _queue_imperial_agents_veiled_blade_targets_selected_reaction(
+        self,
+        *,
+        event_name: str,
+        phase_name: str,
+        stratagem: Any,
+        attacking_unit: Any,
+        target_units: list[Any],
+        candidates: list[Any],
+    ) -> None:
+        if stratagem is None or attacking_unit is None or not candidates:
+            return
+        expected_name = self._ia_norm_stratagem_name(getattr(stratagem, "name", ""))
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != str(event_name or ""):
+                continue
+            if self._ia_norm_stratagem_name(reaction.get("stratagem", "")) != expected_name:
+                continue
+            if self._ia_root(reaction.get("attacking_unit")) is attacking_unit:
+                return
+        payload = {
+            "event": str(event_name or ""),
+            "phase_name": str(phase_name or ""),
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacking_unit,
+            "enemy_unit": attacking_unit,
+            "target_units": list(target_units or []),
+            "candidates": list(candidates or []),
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
     def _queue_imperial_agents_veiled_blade_charge_declared_reactions(
         self,
         *,
@@ -448,37 +564,41 @@ class ImperialAgentsStratagemMixin:
             return
         if self._ia_owned_by_player(attacking_root, self.player):
             return
+
         stratagem = self.get_by_name("HYPERSTIMMS")
-        if stratagem is None:
+        if (
+            stratagem is not None
+            and self.player.command_points >= self._ia_effective_cp_cost(stratagem, enemy_unit=attacking_root)
+            and (stratagem.name or "").strip().upper() not in self._used_stratagems_this_phase
+        ):
+            candidates = self._ia_hyperstimms_candidates(list(target_units or []))
+            self._queue_imperial_agents_veiled_blade_targets_selected_reaction(
+                event_name=event_name,
+                phase_name=phase_name,
+                stratagem=stratagem,
+                attacking_unit=attacking_root,
+                target_units=list(target_units or []),
+                candidates=candidates,
+            )
+
+        if str(phase_name or "").strip().lower() != "shooting phase":
             return
-        if self.player.command_points < self._ia_effective_cp_cost(stratagem):
+        orbital = self.get_by_name("ORBITAL OVERSIGHT")
+        if (
+            orbital is None
+            or self.player.command_points < self._ia_effective_cp_cost(orbital, enemy_unit=attacking_root)
+            or (orbital.name or "").strip().upper() in self._used_stratagems_this_phase
+        ):
             return
-        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
-            return
-        candidates = self._ia_hyperstimms_candidates(list(target_units or []))
-        if not candidates:
-            return
-        for reaction in list(getattr(self, "_pending_reactions", []) or []):
-            if (
-                str(reaction.get("event", "") or "") == str(event_name or "")
-                and str(reaction.get("stratagem", "") or "").strip().upper() == "HYPERSTIMMS"
-                and self._ia_root(reaction.get("attacking_unit")) is attacking_root
-            ):
-                return
-        payload = {
-            "event": str(event_name or ""),
-            "phase_name": str(phase_name or ""),
-            "stratagem": stratagem.name,
-            "cp_cost": stratagem.cp_cost,
-            "attacking_unit": attacking_root,
-            "enemy_unit": attacking_root,
-            "target_units": list(target_units or []),
-            "candidates": candidates,
-        }
-        if len(candidates) == 1:
-            payload["unit"] = candidates[0]
-            payload["target_unit"] = candidates[0]
-        self._queue_reaction(payload)
+        orbital_candidates = self._ia_orbital_oversight_candidates(list(target_units or []))
+        self._queue_imperial_agents_veiled_blade_targets_selected_reaction(
+            event_name=event_name,
+            phase_name=phase_name,
+            stratagem=orbital,
+            attacking_unit=attacking_root,
+            target_units=list(target_units or []),
+            candidates=orbital_candidates,
+        )
 
     def _queue_imperial_agents_veiled_blade_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
         if not self._is_veiled_blade_elimination_force():
@@ -618,6 +738,44 @@ class ImperialAgentsStratagemMixin:
                         ):
                             sr.pop(key, None)
                         changed = True
+                if phase_key == "SHOOTING_PHASE" and bool(sr.get("imperial_agents_orbital_oversight_active")):
+                    exp = str(sr.get("imperial_agents_orbital_oversight_expires_phase", "") or "").strip().upper()
+                    if not exp or exp == phase_key:
+                        for key in (
+                            "imperial_agents_orbital_oversight_active",
+                            "imperial_agents_orbital_oversight_source",
+                            "imperial_agents_orbital_oversight_targeting_range",
+                            "imperial_agents_orbital_oversight_lone_operative_targeting_range",
+                            "imperial_agents_orbital_oversight_expires_phase",
+                            "imperial_agents_orbital_oversight_turn",
+                            "imperial_agents_orbital_oversight_turn_owner",
+                        ):
+                            sr.pop(key, None)
+                        changed = True
+                if phase_key == "SHOOTING_PHASE" and bool(sr.get("imperial_agents_will_sapping_salvo_active")):
+                    exp = str(sr.get("imperial_agents_will_sapping_salvo_expires_phase", "") or "").strip().upper()
+                    if not exp or exp == phase_key:
+                        for model in self._ia_unit_models(root):
+                            effects = getattr(model, "_temporary_effects", None)
+                            if not isinstance(effects, dict):
+                                continue
+                            remove_keys = [
+                                key
+                                for key in list(effects.keys())
+                                if str(key or "").strip().lower().startswith("imperial_agents_will_sapping_salvo")
+                            ]
+                            for key in remove_keys:
+                                effects.pop(key, None)
+                        for key in (
+                            "imperial_agents_will_sapping_salvo_active",
+                            "imperial_agents_will_sapping_salvo_source",
+                            "imperial_agents_will_sapping_salvo_expires_phase",
+                            "imperial_agents_will_sapping_salvo_turn",
+                            "imperial_agents_will_sapping_salvo_owner",
+                            "imperial_agents_will_sapping_salvo_culexus_damage_override",
+                        ):
+                            sr.pop(key, None)
+                        changed = True
                 if changed:
                     root.special_rules = sr
 
@@ -627,6 +785,7 @@ class ImperialAgentsStratagemMixin:
         if not self._is_veiled_blade_elimination_force():
             return None
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        name_n = self._ia_norm_stratagem_name(name_u)
         if name_u == "BLIND GRENADES":
             return self._use_imperial_agents_blind_grenades(stratagem, **kwargs)
         if name_u == "ENSNARING TRAP":
@@ -635,6 +794,10 @@ class ImperialAgentsStratagemMixin:
             return self._use_imperial_agents_hyperstimms(stratagem, **kwargs)
         if name_u == "PRIME TARGET":
             return self._use_imperial_agents_prime_target(stratagem, **kwargs)
+        if name_n == "ORBITAL OVERSIGHT":
+            return self._use_imperial_agents_orbital_oversight(stratagem, **kwargs)
+        if name_n == "WILL-SAPPING SALVO":
+            return self._use_imperial_agents_will_sapping_salvo(stratagem, **kwargs)
         return None
 
     def _use_imperial_agents_blind_grenades(self, stratagem: Any, **kwargs) -> bool:
@@ -832,6 +995,168 @@ class ImperialAgentsStratagemMixin:
         sr["imperial_agents_hyperstimms_expires_phase"] = phase_key
         sr["imperial_agents_hyperstimms_turn"] = int(getattr(game, "turn", 0) or 0)
         sr["imperial_agents_hyperstimms_owner"] = str(getattr(self.player, "id", "") or "")
+        target_root.special_rules = sr
+        self._ia_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_imperial_agents_orbital_oversight(self, stratagem: Any, **kwargs) -> bool:
+        context = self._ia_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: ORBITAL OVERSIGHT: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            logger.error("ERROR: ORBITAL OVERSIGHT: not opponent's Shooting phase")
+            return False
+
+        attacking_unit = context.get("attacking_unit") or context.get("attacker_unit") or context.get("enemy_unit")
+        attacking_root = self._ia_root(attacking_unit)
+        if attacking_root is None:
+            logger.error("ERROR: ORBITAL OVERSIGHT: missing attacking unit")
+            return False
+        if self._ia_owned_by_player(attacking_root, self.player):
+            logger.error("ERROR: ORBITAL OVERSIGHT: attacking unit is not an enemy unit")
+            return False
+
+        target_units = context.get("target_units")
+        if not isinstance(target_units, list):
+            target_units = []
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._ia_root(target_unit) if target_unit is not None else None
+        if target_root is not None and not target_units:
+            target_units = [target_root]
+        candidates = self._ia_orbital_oversight_candidates(target_units)
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: ORBITAL OVERSIGHT: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: ORBITAL OVERSIGHT: target must be an eligible AGENTS INFANTRY attack target")
+            return False
+        if not self._ia_spend_cp(stratagem, target_unit=target_root, enemy_unit=attacking_root):
+            return False
+
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["imperial_agents_orbital_oversight_active"] = True
+        sr["imperial_agents_orbital_oversight_source"] = str(
+            getattr(stratagem, "name", "ORBITAL OVERSIGHT") or "ORBITAL OVERSIGHT"
+        )
+        sr["imperial_agents_orbital_oversight_targeting_range"] = 18
+        sr["imperial_agents_orbital_oversight_lone_operative_targeting_range"] = 6
+        sr["imperial_agents_orbital_oversight_expires_phase"] = "SHOOTING_PHASE"
+        sr["imperial_agents_orbital_oversight_turn"] = int(getattr(game, "turn", 0) or 0)
+        sr["imperial_agents_orbital_oversight_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        target_root.special_rules = sr
+        self._ia_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_imperial_agents_will_sapping_salvo(self, stratagem: Any, **kwargs) -> bool:
+        context = self._ia_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: WILL-SAPPING SALVO: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: WILL-SAPPING SALVO: not your Shooting phase")
+            return False
+
+        candidates = self._ia_will_sapping_salvo_candidates()
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._ia_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: WILL-SAPPING SALVO: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: WILL-SAPPING SALVO: target must be eligible AGENTS INFANTRY not yet selected to shoot")
+            return False
+        if not self._ia_spend_cp(stratagem, target_unit=target_root):
+            return False
+
+        source = str(getattr(stratagem, "name", "WILL-SAPPING SALVO") or "WILL-SAPPING SALVO")
+        phase_key = "SHOOTING_PHASE"
+        is_culexus = self._ia_is_culexus_assassin_unit(target_root)
+        for model_index, model in enumerate(self._ia_unit_models(target_root)):
+            if model is None or not bool(getattr(model, "is_alive", True)):
+                continue
+            model_id = str(get_entity_id(model) or model_index)
+            for wargear_index, wargear in enumerate(list(getattr(model, "wargear", []) or [])):
+                if wargear is None:
+                    continue
+                is_ranged_fn = getattr(wargear, "is_ranged", None)
+                if not callable(is_ranged_fn) or not bool(is_ranged_fn()):
+                    continue
+                weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                if not weapon_name:
+                    continue
+                key_base = f"imperial_agents_will_sapping_salvo:{model_id}:{wargear_index}:{weapon_name}".lower()
+                set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+                if callable(set_keywords):
+                    set_keywords(
+                        key=key_base,
+                        weapon_name=weapon_name,
+                        keywords=["SUSTAINED HITS 1"],
+                        source=source,
+                        expires_phase=phase_key,
+                        attack_type="ranged",
+                    )
+                else:
+                    effects = getattr(model, "_temporary_effects", None)
+                    if not isinstance(effects, dict):
+                        effects = {}
+                        model._temporary_effects = effects
+                    effects[key_base] = {
+                        "expires_phase": phase_key,
+                        "weapon_keyword_bonuses": {weapon_name: ["SUSTAINED HITS 1"]},
+                        "weapon_keyword_bonuses_source": source,
+                        "weapon_keyword_bonuses_attack_type": "ranged",
+                    }
+                if not is_culexus:
+                    continue
+                damage_key = f"{key_base}:damage"
+                set_damage_override = getattr(model, "set_temporary_weapon_damage_override", None)
+                if callable(set_damage_override):
+                    set_damage_override(
+                        key=damage_key,
+                        weapon_name=weapon_name,
+                        damage_value=3,
+                        source=source,
+                        expires_phase=phase_key,
+                    )
+                else:
+                    effects = getattr(model, "_temporary_effects", None)
+                    if not isinstance(effects, dict):
+                        effects = {}
+                        model._temporary_effects = effects
+                    effects[damage_key] = {
+                        "expires_phase": phase_key,
+                        "weapon_damage_override": {weapon_name: 3},
+                        "weapon_damage_override_source": source,
+                    }
+
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["imperial_agents_will_sapping_salvo_active"] = True
+        sr["imperial_agents_will_sapping_salvo_source"] = source
+        sr["imperial_agents_will_sapping_salvo_expires_phase"] = phase_key
+        sr["imperial_agents_will_sapping_salvo_turn"] = int(getattr(game, "turn", 0) or 0)
+        sr["imperial_agents_will_sapping_salvo_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["imperial_agents_will_sapping_salvo_culexus_damage_override"] = bool(is_culexus)
         target_root.special_rules = sr
         self._ia_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
         return True
