@@ -8595,6 +8595,8 @@ def _stratagem_support(
         "LYING IN WAIT": "Start of your opponent's Movement phase: selected GENESTEALER CULTS BATTLELINE unit in Cult Ambush can be set up wholly within 6\" of its marker and outside Engagement Range this phase.",
         "PRIMED AND READIED": "Start of your Shooting/Fight phase: selected GENESTEALER CULTS unit that has not been selected this phase scores critical hits on unmodified Hit rolls of 5+ until end of phase.",
         "COORDINATED TRAP": "Start of your Shooting/Fight phase: select two eligible GENESTEALER CULTS units and one enemy unit; selected units gain +1 to Wound rolls and can only target that enemy until end of phase (Fight phase requires the enemy to be in Engagement Range of both selected units).",
+        "RETURN TO THE SHADOWS": "End of your opponent's Fight phase: selected GENESTEALER CULTS INFANTRY unit not within Engagement Range is removed from the battlefield and placed into Strategic Reserves.",
+        "A DEADLY SNARE": "Opponent Charge phase, just after an enemy unit declares a charge: selected GENESTEALER CULTS INFANTRY charge target rolls one D6 to deal mortal wounds to the charging unit (2-4: D3, 5+: 3).",
         "APOPLECTIC FRENZY": "Advance and Charge for a BERZERKERS unit; Berzerker Warband only.",
         "A GRIM WARNING": "Destroyed BLOOD ANGELS unit on a previously controlled objective lets you select a marker to remain under your control until broken.",
         "ARMOUR OF CONTEMPT": "Shooting/Fight phase: targeted ADEPTUS ASTARTES unit worsens AP by 1 vs the attacking unit until it finishes its attacks.",

@@ -40,6 +40,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ARDENT AUTOMATA",
     "A CHALLENGE MET",
     "A GRIM WARNING",
+    "A DEADLY SNARE",
     "AUTOMATED REPAIR DRONES",
     "COORDINATED TRAP",
     "COMBAT DEBARKATION",
@@ -221,6 +222,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "PLAGUESURGE",
     "LEECHSPORE ERUPTION",
     "PRIMED AND READIED",
+    "RETURN TO THE SHADOWS",
     "OVERWHELMING GENEROSITY",
     "CAPRICIOUS REACTIONS",
     "COMBAT STIMMS",
@@ -324,6 +326,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "FIRE AND FADE",
     "MURDER-CALL",
     "LIGHTNING-FAST REACTIONS",
+    "A DEADLY SNARE",
     "LYING IN WAIT",
     "MARTIAL PERFECTION",
     "NEUROWEB SYSTEM JAMMER",
@@ -353,6 +356,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "PUNISH THE CRAVEN",
     "UNRELENTING ADVANCE",
     "SWIFT AS THE EAGLE",
+    "RETURN TO THE SHADOWS",
     "WEBWAY TUNNEL",
     "UNYIELDING FORMS",
     "ENDLESS SERVITUDE",
@@ -1364,7 +1368,7 @@ class StratagemManager(
             "LETHAL RUSE",
         }:
             add("unit_move_ended", self._on_unit_move_ended)
-        if names & {"ANTI-GRAV REPULSION", "ANTI‑GRAV REPULSION", "BLIND GRENADES"}:
+        if names & {"ANTI-GRAV REPULSION", "ANTI‑GRAV REPULSION", "BLIND GRENADES", "A DEADLY SNARE"}:
             add("charge_declared", self._on_charge_declared)
         if names & {"FIRES OF COVENANT", "A CHALLENGE MET"}:
             add("unit_set_up", self._on_unit_set_up)
@@ -1562,6 +1566,7 @@ class StratagemManager(
             "PROFANE SYMBIOSIS",
             "ONTO THE NEXT",
             "OUTFLANKING STRIKE",
+            "RETURN TO THE SHADOWS",
         }
         phase_end_cleanup_names = {
             "AGGRESSIVE MOBILITY",
@@ -3211,6 +3216,7 @@ class StratagemManager(
             "VECTORED ENGINES": "Target: AELDARI VEHICLE FLY unit after it Fell Back",
             "WARRIOR FOCUS": "Target: ASPECT WARRIORS/AVATAR OF KHAINE unit not yet selected to shoot/fight",
             "A CHALLENGE MET": "Target: WYCH CULT unit; enemy within 9\" that moved or was set up this phase",
+            "A DEADLY SNARE": "Target: your GENESTEALER CULTS INFANTRY unit selected as a target of a just-declared enemy charge; roll D6 to deal mortal wounds to the charging unit (2-4: D3, 5+: 3)",
             "ENSNARING TRAP": "Target: AGENTS OF THE IMPERIUM INFANTRY unit within 6\" of enemy units it can charge",
             "HYPERSTIMMS": "Target: AGENTS OF THE IMPERIUM CHARACTER unit selected as a target of the attacking enemy unit's attacks",
             "ORBITAL OVERSIGHT": "Target: AGENTS OF THE IMPERIUM INFANTRY unit selected as a target of an enemy shooter's attacks",
@@ -3273,6 +3279,7 @@ class StratagemManager(
             "SOULSEEKERS": "Target: HERETIC ASTARTES unit that has not been selected to shoot",
             "TUNNEL CRAWLERS": "Target: your GENESTEALER CULTS unit arriving with Deep Strike this phase; setup >6\" from enemies and cannot charge this turn",
             "LYING IN WAIT": "Target: your GENESTEALER CULTS BATTLELINE unit in Cult Ambush; this phase it can set up wholly within 6\" of its marker and outside Engagement Range of enemy units",
+            "RETURN TO THE SHADOWS": "Target: your GENESTEALER CULTS INFANTRY unit not within Engagement Range at end of opponent Fight phase; remove it and place it into Strategic Reserves",
             "SUSTAINED BY AGONY": "Target: EMPEROR'S CHILDREN source that destroyed an enemy; select LEGIONS OF EXCESS unit within 6\"",
             "SYCOPHANTIC SURGE": "Target: LEGIONS OF EXCESS unit; can charge after Advancing/Falling Back this phase",
             "UNCANNY REACTIONS": "Target: SLAANESH unit targeted by the attacking enemy unit's shooting",
@@ -4741,6 +4748,10 @@ class StratagemManager(
             raise
         try:
             self._cleanup_imperial_agents_veiled_blade_phase_end_effects(phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_genestealer_cults_host_of_ascension_phase_end_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -6428,6 +6439,10 @@ class StratagemManager(
             target_units=list(target_units or []),
         )
         self._queue_imperial_agents_veiled_blade_charge_declared_reactions(
+            charging_unit=unit,
+            target_units=list(target_units or []),
+        )
+        self._queue_genestealer_cults_host_of_ascension_charge_declared_reactions(
             charging_unit=unit,
             target_units=list(target_units or []),
         )

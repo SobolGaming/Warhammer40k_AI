@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
+from ..utility import dice as dice_module
 from ..utility.entity_ids import get_entity_id
 
 logger = logging.getLogger(__name__)
@@ -148,6 +149,19 @@ class GenestealerCultsStratagemMixin:
         keywords = [str(k or "").strip().upper() for k in list(getattr(root, "keywords", []) or [])]
         return "BATTLELINE" in keywords
 
+    def _gsc_is_infantry(self, unit: Any) -> bool:
+        root = self._gsc_root(unit)
+        if root is None:
+            return False
+        has_any = getattr(root, "has_any_keyword", None)
+        if callable(has_any):
+            try:
+                return bool(has_any("INFANTRY"))
+            except (AttributeError, TypeError, ValueError):
+                return False
+        keywords = [str(k or "").strip().upper() for k in list(getattr(root, "keywords", []) or [])]
+        return "INFANTRY" in keywords
+
     @staticmethod
     def _gsc_is_in_reserves(unit: Any) -> bool:
         if unit is None:
@@ -216,6 +230,61 @@ class GenestealerCultsStratagemMixin:
             return False
         if require_targetable and not self._gsc_targetable(root):
             return False
+        return True
+
+    def _gsc_is_within_engagement_range_of_enemy(self, unit: Any) -> bool:
+        root = self._gsc_root(unit)
+        if root is None:
+            return False
+        game = getattr(self, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        if game_map is None:
+            return False
+        get_enemy_units = getattr(game_map, "get_enemy_units", None)
+        if not callable(get_enemy_units):
+            return False
+        for enemy in list(get_enemy_units(root) or []):
+            enemy_root = self._gsc_root(enemy)
+            if enemy_root is None:
+                continue
+            if not self._gsc_on_battlefield(enemy_root, require_targetable=False):
+                continue
+            if bool(game_map.is_within_engagement_range(root, enemy_root)):
+                return True
+        return False
+
+    def _gsc_place_unit_into_strategic_reserves(self, unit: Any, *, reason: str = "") -> bool:
+        root = self._gsc_root(unit)
+        if root is None:
+            return False
+        game = getattr(self, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        place_fn = getattr(root, "enter_strategic_reserves_midgame", None)
+        if callable(place_fn):
+            return bool(place_fn(game=game, game_map=game_map, reason=reason))
+
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if not members:
+            members = [root]
+        for member in members:
+            if member is None:
+                continue
+            set_reserve_status = getattr(member, "set_reserve_status", None)
+            if callable(set_reserve_status):
+                set_reserve_status("strategic_reserves")
+            else:
+                setattr(member, "reserve_status", "strategic_reserves")
+            mark_midgame = getattr(member, "mark_entered_reserves_midgame", None)
+            if callable(mark_midgame):
+                mark_midgame(game=game)
+            if bool(getattr(member, "is_aircraft", False)) and not bool(getattr(member, "hover_mode", False)):
+                setattr(member, "_aircraft_return_turn", int(getattr(game, "turn", 0) or 0) + 1 if game is not None else 0)
+            member.deployed = True
+            member.reserve_turn_deployed = None
+            member.arrived_from_reserves_this_turn = False
+            if game_map is not None and isinstance(getattr(game_map, "units", None), list) and member in game_map.units:
+                game_map.units.remove(member)
         return True
 
     @staticmethod
@@ -455,6 +524,61 @@ class GenestealerCultsStratagemMixin:
             out.append(root)
         return sorted(out, key=self._gsc_sort_key)
 
+    def _gsc_host_of_ascension_return_to_the_shadows_candidates(self) -> List[Any]:
+        if not self._is_host_of_ascension_detachment():
+            return []
+        army = self._gsc_army()
+        if army is None:
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._gsc_root(unit)
+            if root is None:
+                continue
+            uid = self._gsc_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._gsc_owned_by_player(root, self.player):
+                continue
+            if not self._gsc_is_genestealer_cults_unit(root):
+                continue
+            if not self._gsc_is_infantry(root):
+                continue
+            if not self._gsc_on_battlefield(root, require_targetable=True):
+                continue
+            if self._gsc_is_within_engagement_range_of_enemy(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._gsc_sort_key)
+
+    def _gsc_host_of_ascension_deadly_snare_candidates(self, *, target_units: List[Any]) -> List[Any]:
+        if not self._is_host_of_ascension_detachment():
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._gsc_root(unit)
+            if root is None:
+                continue
+            uid = self._gsc_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._gsc_owned_by_player(root, self.player):
+                continue
+            if not self._gsc_is_genestealer_cults_unit(root):
+                continue
+            if not self._gsc_is_infantry(root):
+                continue
+            if not self._gsc_on_battlefield(root, require_targetable=True):
+                continue
+            out.append(root)
+        return sorted(out, key=self._gsc_sort_key)
+
     def _queue_genestealer_cults_host_of_ascension_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
         if not self._is_host_of_ascension_detachment():
             return
@@ -564,6 +688,96 @@ class GenestealerCultsStratagemMixin:
                 payload["enemy_unit"] = enemy_candidates[0]
         self._queue_reaction(payload, use_timer=False)
 
+    def _queue_genestealer_cults_host_of_ascension_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
+        if not self._is_host_of_ascension_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "FIGHT_PHASE":
+            return
+        if player is self.player:
+            return
+        stratagem = self.get_by_name("RETURN TO THE SHADOWS")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        used = set(getattr(self, "_used_stratagems_this_phase", set()) or set())
+        if self._gsc_norm_name(getattr(stratagem, "name", "")) in used:
+            return
+        candidates = self._gsc_host_of_ascension_return_to_the_shadows_candidates()
+        if not candidates:
+            return
+        if self._gsc_reaction_exists("phase_end", stratagem.name):
+            return
+        payload = {
+            "event": "phase_end",
+            "phase": "Fight phase",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_genestealer_cults_host_of_ascension_charge_declared_reactions(
+        self,
+        *,
+        charging_unit: Any,
+        target_units: List[Any],
+    ) -> None:
+        if not self._is_host_of_ascension_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "charge phase":
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        charging_root = self._gsc_root(charging_unit)
+        if charging_root is None:
+            return
+        if self._gsc_owned_by_player(charging_root, self.player):
+            return
+        if not self._gsc_on_battlefield(charging_root, require_targetable=False):
+            return
+        stratagem = self.get_by_name("A DEADLY SNARE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        used = set(getattr(self, "_used_stratagems_this_phase", set()) or set())
+        if self._gsc_norm_name(getattr(stratagem, "name", "")) in used:
+            return
+        candidates = self._gsc_host_of_ascension_deadly_snare_candidates(target_units=list(target_units or []))
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "charge_declared":
+                continue
+            if self._gsc_norm_name(reaction.get("stratagem", "")) != self._gsc_norm_name(stratagem.name):
+                continue
+            if self._gsc_root(reaction.get("charging_unit")) is charging_root:
+                return
+        payload = {
+            "event": "charge_declared",
+            "phase_name": "Charge phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "charging_unit": charging_root,
+            "enemy_unit": charging_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
     def _use_genestealer_cults_host_of_ascension_stratagem(self, stratagem: Any, **kwargs) -> Optional[bool]:
         if stratagem is None or not self._is_host_of_ascension_detachment():
             return None
@@ -576,6 +790,10 @@ class GenestealerCultsStratagemMixin:
             return self._use_genestealer_cults_primed_and_readied(stratagem, **kwargs)
         if name_u == "COORDINATED TRAP":
             return self._use_genestealer_cults_coordinated_trap(stratagem, **kwargs)
+        if name_u == "RETURN TO THE SHADOWS":
+            return self._use_genestealer_cults_return_to_the_shadows(stratagem, **kwargs)
+        if name_u == "A DEADLY SNARE":
+            return self._use_genestealer_cults_a_deadly_snare(stratagem, **kwargs)
         return None
 
     def _use_genestealer_cults_tunnel_crawlers(self, stratagem: Any, **kwargs) -> bool:
@@ -878,6 +1096,137 @@ class GenestealerCultsStratagemMixin:
             getattr(friendly_roots[1], "name", "Unit 2"),
             getattr(enemy_root, "name", "Enemy"),
             self._gsc_phase_label(phase_key),
+        )
+        return True
+
+    def _use_genestealer_cults_return_to_the_shadows(self, stratagem: Any, **kwargs) -> bool:
+        context = self._gsc_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: RETURN TO THE SHADOWS: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            logger.error("ERROR: RETURN TO THE SHADOWS: not opponent's turn")
+            return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._gsc_root(target_unit) if target_unit is not None else None
+        candidates = self._gsc_host_of_ascension_return_to_the_shadows_candidates()
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: RETURN TO THE SHADOWS: missing target unit")
+                return False
+        if not self._gsc_unit_in_candidates(target_root, candidates):
+            logger.error(
+                "ERROR: RETURN TO THE SHADOWS: target must be your GENESTEALER CULTS INFANTRY unit not within Engagement Range"
+            )
+            return False
+        context_candidates = [
+            self._gsc_root(candidate)
+            for candidate in list(context.get("candidates") or [])
+            if candidate is not None
+        ]
+        if context_candidates and not self._gsc_unit_in_candidates(target_root, context_candidates):
+            logger.error("ERROR: RETURN TO THE SHADOWS: target was not selected")
+            return False
+
+        if not self._gsc_spend_cp(stratagem, target_unit=target_root):
+            return False
+        if not self._gsc_place_unit_into_strategic_reserves(
+            target_root,
+            reason=str(getattr(stratagem, "name", "RETURN TO THE SHADOWS") or "RETURN TO THE SHADOWS"),
+        ):
+            logger.error("ERROR: RETURN TO THE SHADOWS: failed to place target into Strategic Reserves")
+            return False
+
+        self._gsc_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: RETURN TO THE SHADOWS: %s placed into Strategic Reserves.",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_genestealer_cults_a_deadly_snare(self, stratagem: Any, **kwargs) -> bool:
+        context = self._gsc_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "charge phase":
+            logger.error("ERROR: A DEADLY SNARE: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            logger.error("ERROR: A DEADLY SNARE: not opponent's turn")
+            return False
+
+        charging_unit = (
+            context.get("charging_unit")
+            or context.get("enemy_unit")
+            or context.get("attacking_unit")
+            or context.get("attacker_unit")
+        )
+        charging_root = self._gsc_root(charging_unit) if charging_unit is not None else None
+        if charging_root is None:
+            logger.error("ERROR: A DEADLY SNARE: missing charging enemy unit")
+            return False
+        if self._gsc_owned_by_player(charging_root, self.player):
+            logger.error("ERROR: A DEADLY SNARE: charging unit is not an enemy unit")
+            return False
+        if not self._gsc_on_battlefield(charging_root, require_targetable=False):
+            logger.error("ERROR: A DEADLY SNARE: charging enemy unit is not eligible")
+            return False
+
+        target_units = context.get("target_units")
+        if not isinstance(target_units, list):
+            target_units = []
+        candidates = self._gsc_host_of_ascension_deadly_snare_candidates(target_units=target_units)
+        if not candidates:
+            candidates = [
+                root
+                for root in self._gsc_resolve_unit_list(context.get("candidates"))
+                if self._gsc_owned_by_player(root, self.player)
+                and self._gsc_is_genestealer_cults_unit(root)
+                and self._gsc_is_infantry(root)
+                and self._gsc_on_battlefield(root, require_targetable=True)
+            ]
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._gsc_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: A DEADLY SNARE: missing target unit")
+                return False
+        if not self._gsc_unit_in_candidates(target_root, candidates):
+            logger.error("ERROR: A DEADLY SNARE: target unit was not selected as a target of that charge")
+            return False
+
+        if not self._gsc_spend_cp(stratagem, target_unit=target_root):
+            return False
+
+        roll = max(0, int(dice_module.get_roll("D6") or 0))
+        mortal_wounds = 0
+        if 2 <= roll <= 4:
+            mortal_wounds = max(0, int(dice_module.get_roll("D3") or 0))
+        elif roll >= 5:
+            mortal_wounds = 3
+        if mortal_wounds > 0 and hasattr(target_root, "_apply_mortal_wounds_to_unit"):
+            target_root._apply_mortal_wounds_to_unit(charging_root, int(mortal_wounds), game_map=getattr(game, "map", None))
+
+        self._gsc_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: A DEADLY SNARE: roll=%d, %s suffers %d mortal wound(s).",
+            int(roll),
+            getattr(charging_root, "name", "Enemy unit"),
+            int(mortal_wounds),
         )
         return True
 

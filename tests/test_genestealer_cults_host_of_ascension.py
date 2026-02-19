@@ -419,6 +419,19 @@ def test_host_of_ascension_stratagem_descriptors_registered() -> None:
     assert int(lying.effect_params.get("setup_max_distance", 0) or 0) == 6
     assert str(lying.effect_params.get("enemy_distance_mode", "") or "") == "engagement_range"
 
+    shadows = get_stratagem_tool_descriptor(stratagem_id="000009068006")
+    assert shadows is not None
+    assert shadows.name == "Return to the Shadows"
+    assert shadows.effect == "place_unit_into_strategic_reserves"
+    assert str(shadows.effect_params.get("reserve_status", "") or "") == "strategic_reserves"
+
+    snare = get_stratagem_tool_descriptor(stratagem_id="000009068007")
+    assert snare is not None
+    assert snare.name == "A Deadly Snare"
+    assert snare.effect == "roll_d6_tiered_mortal_wounds_on_charging_enemy"
+    assert str((snare.effect_params.get("mortal_wounds_table", {}) or {}).get("2-4", "") or "") == "D3"
+    assert int((snare.effect_params.get("mortal_wounds_table", {}) or {}).get("5+", 0) or 0) == 3
+
 
 def test_tunnel_crawlers_queues_and_applies_deep_strike_override_with_no_charge() -> None:
     game, gsc_player, enemy_player, gsc_unit = _make_game("Host of Ascension")
@@ -670,6 +683,142 @@ def test_coordinated_trap_fight_phase_requires_enemy_engaged_with_both_units() -
         units=[first_unit, second_unit],
         enemy_unit=enemy_unit,
         phase_name="Fight phase",
+    )
+    assert not blocked
+    assert int(gsc_player.command_points or 0) == 5
+
+
+def test_return_to_the_shadows_queues_and_places_unit_into_strategic_reserves() -> None:
+    game, gsc_player, enemy_player, gsc_unit = _make_game("Host of Ascension")
+    game.turn = 2
+    gsc_player.command_points = 5
+    gsc_player.stratagems.refresh_available()
+    gsc_player.stratagems.enable_event_subscriptions(event_system=game.event_system)
+    game.map.units = [gsc_unit]
+    game.rebuild_entity_registry()
+
+    phase = SimpleNamespace(name="FIGHT_PHASE")
+    game.phase = phase
+    game.current_player_index = 1
+    game.event_system.publish("phase_start", player=enemy_player, phase=phase)
+    game.event_system.publish("phase_end", player=enemy_player, phase=phase)
+
+    pending = _pending_reaction_by_name(gsc_player.stratagems, "RETURN TO THE SHADOWS")
+    assert pending is not None
+    ok = gsc_player.stratagems.use(
+        str(pending.get("stratagem", "")),
+        unit=gsc_unit,
+        dequeue=True,
+    )
+    assert ok
+    assert str(getattr(gsc_unit, "reserve_status", "") or "") == "strategic_reserves"
+    assert gsc_unit not in list(getattr(game.map, "units", []) or [])
+
+
+def test_return_to_the_shadows_rejects_unit_within_engagement_range() -> None:
+    game, gsc_player, enemy_player, gsc_unit = _make_game("Host of Ascension")
+    gsc_player.command_points = 5
+    enemy_unit = _make_unit(
+        "Enemy Fighters",
+        faction="Enemy",
+        faction_keywords=["ENEMY"],
+        keywords=["INFANTRY"],
+    )
+    enemy_player.army.add_unit(enemy_unit)
+    gsc_unit.models[0].set_location(10.0, 10.0, 0.0, 0.0)
+    enemy_unit.models[0].set_location(11.0, 10.0, 0.0, 0.0)
+    game.map.units = [gsc_unit, enemy_unit]
+    game.rebuild_entity_registry()
+
+    phase = SimpleNamespace(name="FIGHT_PHASE")
+    game.phase = phase
+    game.current_player_index = 1
+    blocked = gsc_player.stratagems.use(
+        "RETURN TO THE SHADOWS",
+        unit=gsc_unit,
+        phase_name="Fight phase",
+    )
+    assert not blocked
+    assert int(gsc_player.command_points or 0) == 5
+
+
+def test_a_deadly_snare_queues_and_deals_mortal_wounds(monkeypatch) -> None:
+    game, gsc_player, enemy_player, gsc_unit = _make_game("Host of Ascension")
+    game.turn = 2
+    gsc_player.command_points = 5
+    gsc_player.stratagems.refresh_available()
+    gsc_player.stratagems.enable_event_subscriptions(event_system=game.event_system)
+    enemy_charger = _make_unit(
+        "Enemy Charger",
+        faction="Enemy",
+        faction_keywords=["ENEMY"],
+        keywords=["INFANTRY"],
+    )
+    enemy_player.army.add_unit(enemy_charger)
+    game.map.units = [gsc_unit, enemy_charger]
+    game.rebuild_entity_registry()
+
+    monkeypatch.setattr(
+        "warhammer40k_ai.utility.dice.get_roll",
+        lambda die: 5 if str(die or "").strip().upper() == "D6" else 2,
+    )
+
+    phase = SimpleNamespace(name="CHARGE_PHASE")
+    game.phase = phase
+    game.current_player_index = 1
+    game.event_system.publish("phase_start", player=enemy_player, phase=phase)
+    game.event_system.publish("charge_declared", unit=enemy_charger, target_units=[gsc_unit])
+
+    pending = _pending_reaction_by_name(gsc_player.stratagems, "A DEADLY SNARE")
+    assert pending is not None
+    ok = gsc_player.stratagems.use(
+        str(pending.get("stratagem", "")),
+        unit=gsc_unit,
+        enemy_unit=enemy_charger,
+        dequeue=True,
+    )
+    assert ok
+    assert enemy_charger.is_alive() is False
+    assert int(gsc_player.command_points or 0) == 4
+
+
+def test_a_deadly_snare_rejects_unit_not_selected_as_charge_target() -> None:
+    game, gsc_player, enemy_player, first_unit = _make_game("Host of Ascension")
+    game.turn = 2
+    gsc_player.command_points = 5
+    gsc_player.stratagems.refresh_available()
+    gsc_player.stratagems.enable_event_subscriptions(event_system=game.event_system)
+
+    second_unit = _make_unit(
+        "Acolyte Hybrids",
+        faction="Genestealer Cults",
+        faction_keywords=["GENESTEALER CULTS"],
+        keywords=["INFANTRY"],
+    )
+    enemy_charger = _make_unit(
+        "Enemy Charger",
+        faction="Enemy",
+        faction_keywords=["ENEMY"],
+        keywords=["INFANTRY"],
+    )
+    gsc_player.army.add_unit(second_unit)
+    enemy_player.army.add_unit(enemy_charger)
+    game.map.units = [first_unit, second_unit, enemy_charger]
+    game.rebuild_entity_registry()
+
+    phase = SimpleNamespace(name="CHARGE_PHASE")
+    game.phase = phase
+    game.current_player_index = 1
+    game.event_system.publish("phase_start", player=enemy_player, phase=phase)
+    game.event_system.publish("charge_declared", unit=enemy_charger, target_units=[first_unit])
+
+    pending = _pending_reaction_by_name(gsc_player.stratagems, "A DEADLY SNARE")
+    assert pending is not None
+    blocked = gsc_player.stratagems.use(
+        str(pending.get("stratagem", "")),
+        unit=second_unit,
+        enemy_unit=enemy_charger,
+        dequeue=True,
     )
     assert not blocked
     assert int(gsc_player.command_points or 0) == 5

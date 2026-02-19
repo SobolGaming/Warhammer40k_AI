@@ -395,6 +395,31 @@ _HOST_OF_ASCENSION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "enemy_distance_mode": "engagement_range",
         },
     ),
+    "000009068006": StratagemToolDescriptor(
+        stratagem_id="000009068006",
+        name="Return to the Shadows",
+        timing="end_of_opponent_fight_phase",
+        target="genestealer_cults_infantry_unit_not_within_engagement_range",
+        duration="immediate",
+        effect="place_unit_into_strategic_reserves",
+        cp_cost=1,
+        effect_params={"reserve_status": "strategic_reserves"},
+    ),
+    "000009068007": StratagemToolDescriptor(
+        stratagem_id="000009068007",
+        name="A Deadly Snare",
+        timing="opponent_charge_phase_after_enemy_charge_declared",
+        target="genestealer_cults_infantry_unit_selected_as_charge_target",
+        duration="immediate",
+        effect="roll_d6_tiered_mortal_wounds_on_charging_enemy",
+        cp_cost=1,
+        effect_params={
+            "mortal_wounds_table": {
+                "2-4": "D3",
+                "5+": 3,
+            }
+        },
+    ),
 }
 
 _HOST_OF_ASCENSION_STRATAGEM_BY_NAME = {
