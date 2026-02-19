@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 import re
 
 from ..utility.dice import get_roll
@@ -32,6 +33,11 @@ class AeldariDetachmentManager(DetachmentManagerBase):
         "FATE INESCAPABLE": 4,
         "ISHA'S FURY": 5,
         "PSYCHIC SHIELD": 6,
+    }
+    _ACROBATIC_ONSLAUGHT_CAPS_BY_UNIT_NAME = {
+        "death jester": 3,
+        "shadowseer": 3,
+        "troupe master": 3,
     }
 
     def __init__(self, army=None):
@@ -243,11 +249,53 @@ class AeldariDetachmentManager(DetachmentManagerBase):
 
     def validate_detachment_rules(self) -> list[str]:
         errors: list[str] = []
+        if self.is_ghosts_of_the_webway():
+            self.apply_acrobatic_onslaught_travelling_players()
+            errors.extend(self._validate_acrobatic_onslaught_rules())
         if self.is_devoted_of_ynnead():
             errors.extend(self._validate_devoted_of_ynnead_rules())
         if self.has_veterans_of_the_void():
             errors.extend(self._validate_veterans_of_the_void_rules())
         return errors
+
+    def _validate_acrobatic_onslaught_rules(self) -> list[str]:
+        errors: list[str] = []
+        if not self.is_ghosts_of_the_webway() or self.army is None:
+            return errors
+        counts: Counter[str] = Counter()
+        labels: dict[str, str] = {}
+        for unit in list(getattr(self.army, "units", []) or []):
+            if unit is None:
+                continue
+            key = self._normalize_unit_name(getattr(unit, "name", ""))
+            if key not in self._ACROBATIC_ONSLAUGHT_CAPS_BY_UNIT_NAME:
+                continue
+            counts[key] += 1
+            if key not in labels:
+                labels[key] = str(getattr(unit, "name", "") or key).strip() or key
+        for key in sorted(self._ACROBATIC_ONSLAUGHT_CAPS_BY_UNIT_NAME):
+            cap = int(self._ACROBATIC_ONSLAUGHT_CAPS_BY_UNIT_NAME[key])
+            count = int(counts.get(key, 0))
+            if count <= cap:
+                continue
+            label = labels.get(key, key.title())
+            errors.append(
+                "Acrobatic Onslaught (Travelling Players): "
+                f"'{label}' units {count}/{cap}."
+            )
+        return errors
+
+    def get_unique_model_cap_overrides(self) -> list[dict]:
+        """
+        Return army inclusion cap overrides that replace generic one-of restrictions.
+        """
+        if not self.is_ghosts_of_the_webway():
+            return []
+        out: list[dict] = []
+        for unit_name, cap in sorted(self._ACROBATIC_ONSLAUGHT_CAPS_BY_UNIT_NAME.items()):
+            pretty_name = " ".join(part.capitalize() for part in unit_name.split())
+            out.append({"unit_name": pretty_name, "limit": int(cap)})
+        return out
 
     def _validate_devoted_of_ynnead_rules(self) -> list[str]:
         errors: list[str] = []
@@ -335,6 +383,93 @@ class AeldariDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Guardian Battlehost")
+
+    @staticmethod
+    def _model_has_keyword(model, keyword: str) -> bool:
+        if model is None:
+            return False
+        key = str(keyword or "").strip()
+        if not key:
+            return False
+        has_any = getattr(model, "has_any_keyword", None)
+        if callable(has_any) and bool(has_any(key)):
+            return True
+        has_kw = getattr(model, "has_keyword", None)
+        if callable(has_kw) and bool(has_kw(key)):
+            return True
+        return False
+
+    def _unit_is_harlequins(self, unit) -> bool:
+        if unit is None:
+            return False
+        return self._unit_has_keyword(unit, "HARLEQUINS")
+
+    def _unit_is_troupe(self, unit) -> bool:
+        if unit is None:
+            return False
+        if self._unit_has_keyword(unit, "TROUPE"):
+            return True
+        name = self._normalize_unit_name(getattr(unit, "name", ""))
+        return name in {"troupe", "troupes"}
+
+    def acrobatic_onslaught_charge_move_through_enemy_applies(self, unit) -> bool:
+        if not self.is_ghosts_of_the_webway():
+            return False
+        if unit is None:
+            return False
+        root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+        if not self._unit_in_army(root):
+            return False
+        return self._unit_is_harlequins(root)
+
+    @staticmethod
+    def _apply_model_objective_control(model, value: int) -> None:
+        if model is None:
+            return
+        oc = int(max(0, value))
+        if hasattr(model, "_base_objective_control"):
+            model._base_objective_control = int(oc)
+        if hasattr(model, "_objective_control"):
+            model._objective_control = int(oc)
+        if hasattr(model, "_objective_control_raw"):
+            model._objective_control_raw = str(int(oc))
+
+    def apply_acrobatic_onslaught_travelling_players(self, unit=None) -> None:
+        if not self.is_ghosts_of_the_webway() or self.army is None:
+            return
+        if unit is None:
+            units = list(getattr(self.army, "units", []) or [])
+        else:
+            units = [unit]
+        for entry in units:
+            if entry is None:
+                continue
+            root = entry.get_attached_unit_root() if hasattr(entry, "get_attached_unit_root") else entry
+            if root is None:
+                continue
+            if not self._unit_in_army(root):
+                continue
+            if not self._unit_is_troupe(root):
+                continue
+
+            keywords = list(getattr(root, "keywords", []) or [])
+            if not any(str(k or "").strip().lower() == "battleline" for k in keywords):
+                keywords.append("Battleline")
+                root.keywords = keywords
+
+            models = list(getattr(root, "models", []) or [])
+            if not models:
+                continue
+            troupe_models = [
+                model for model in models
+                if self._model_has_keyword(model, "TROUPE")
+                or "troupe" in self._normalize_unit_name(getattr(model, "name", ""))
+                or "player" in self._normalize_unit_name(getattr(model, "name", ""))
+            ]
+            if not troupe_models:
+                troupe_models = list(models)
+            for model in troupe_models:
+                self._apply_model_objective_control(model, 2)
 
     def is_seer_council(self) -> bool:
         if not self._army_faction_matches(self.faction_id):

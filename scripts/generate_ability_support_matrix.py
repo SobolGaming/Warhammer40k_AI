@@ -352,6 +352,10 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time a model in this unit makes an attack reroll a hit roll of \d+",
             r"each time a model in this unit makes an attack reroll a wound roll of \d+",
         ),
+        "Acrobatic Onslaught": (
+            r"each time a harlequins model from your army makes a charge move it can move through enemy models",
+            r"troupe units from your army gain the battleline keyword and troupe models in those units have an objective control characteristic of 2",
+        ),
         "Relentless Raiders": (
             r"while an objective marker is under your control each time an enemy unit ends a normal advance fall back or charge move within range of that objective marker roll one d6",
             r"on a \d+ that enemy unit suffers d3 mortal wounds",
@@ -1600,6 +1604,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Path of the Warrior": (
             "Supported",
             "Aspect Host: select re-roll Hit 1s or re-roll Wound 1s each time an Aspect Warriors or Avatar of Khaine unit is selected to shoot or fight (until end of phase).",
+        ),
+        "Acrobatic Onslaught": (
+            "Supported",
+            "Ghosts of the Webway: Harlequins units can move through enemy models when making Charge moves; Travelling Players grants BATTLELINE and OC 2 to Troupe units/models, and Death Jester/Shadowseer/Troupe Master caps are set to 3 each.",
         ),
         "Relentless Raiders": (
             "Supported",

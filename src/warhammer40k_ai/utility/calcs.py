@@ -1470,6 +1470,22 @@ def get_validation_rules(
             base_rules['cannot_move_within_engagement_range'] = False
             base_rules['cannot_end_in_engagement_range'] = True
 
+    # Acrobatic Onslaught (Aeldari - Ghosts of the Webway):
+    # Harlequins models can move through enemy models during Charge moves.
+    aeldari_mgr = None
+    if moving_unit is not None and hasattr(moving_unit, "get_parent_army"):
+        army = moving_unit.get_parent_army()
+        if army is not None:
+            aeldari_mgr = getattr(army, "aeldari_detachments", None)
+    acrobatic_applies_fn = (
+        getattr(aeldari_mgr, "acrobatic_onslaught_charge_move_through_enemy_applies", None)
+        if aeldari_mgr is not None
+        else None
+    )
+    if movement_type == MovementType.CHARGE and callable(acrobatic_applies_fn) and bool(acrobatic_applies_fn(moving_unit)):
+        base_rules['can_move_through_enemy_models'] = True
+        base_rules['ignore_enemy_models_blocking'] = True
+
     def _coerce_move_types(value) -> set[str]:
         types: set[str] = set()
         if isinstance(value, str) and value:

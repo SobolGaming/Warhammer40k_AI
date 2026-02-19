@@ -439,6 +439,10 @@ class Army:
         apply_fn = getattr(we_mgr, "apply_cult_of_blood_battleline_keywords", None) if we_mgr is not None else None
         if callable(apply_fn):
             apply_fn(unit)
+        ae_mgr = getattr(self, "aeldari_detachments", None)
+        apply_fn = getattr(ae_mgr, "apply_acrobatic_onslaught_travelling_players", None) if ae_mgr is not None else None
+        if callable(apply_fn):
+            apply_fn(unit)
         game = getattr(getattr(self, "player", None), "game", None)
         refresh_fn = getattr(game, "refresh_rule_subscribers", None) if game is not None else None
         if callable(refresh_fn):
@@ -1142,6 +1146,32 @@ class Army:
                         "unit_name": str(cap.get("unit_name") or cap_key).strip(),
                         "limit": cap_limit,
                     }
+
+        override_sources = list(getattr(self, "detachment_managers", {}).values() or [])
+        fallback_mgr = getattr(self, "aeldari_detachments", None)
+        if fallback_mgr is not None and all(fallback_mgr is not mgr for mgr in override_sources):
+            override_sources.append(fallback_mgr)
+        for mgr in override_sources:
+            if mgr is None:
+                continue
+            get_overrides = getattr(mgr, "get_unique_model_cap_overrides", None)
+            if not callable(get_overrides):
+                continue
+            for cap in list(get_overrides() or []):
+                cap_key = _norm_name(str(cap.get("unit_key") or cap.get("unit_name") or ""))
+                if not cap_key:
+                    continue
+                try:
+                    cap_limit = int(cap.get("limit"))
+                except (TypeError, ValueError):
+                    continue
+                if cap_limit <= 0:
+                    continue
+                unit_name = str(cap.get("unit_name") or display_names.get(cap_key) or cap_key).strip() or cap_key
+                restricted_caps[cap_key] = {
+                    "unit_name": unit_name,
+                    "limit": cap_limit,
+                }
 
         violations = []
         for cap_key in sorted(restricted_caps):
