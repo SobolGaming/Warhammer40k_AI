@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 from ..utility.dice import get_roll
 from ..utility.entity_ids import get_entity_id
 from .detachment_manager import DetachmentManagerBase
@@ -14,6 +16,10 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
     _RAD_BOMBARDMENT_TAKING_COVER_ADDED_KEY = "rad_bombardment_taking_cover_added_battleshock"
     _RAD_BOMBARDMENT_CHOICE_STAND_FIRM = "stand_firm"
     _RAD_BOMBARDMENT_CHOICE_TAKE_COVER = "take_cover"
+    _RADIAL_SUFFUSION_FLAG_KEY = "enhancement_radial_suffusion"
+    _RADIAL_SUFFUSION_ENHANCEMENT_ID = "000008385002"
+    _RADIAL_SUFFUSION_ENHANCEMENT_NAME = "radial suffusion"
+    _RADIAL_SUFFUSION_EXTRA_RANGE_IN = 6.0
 
     def is_rad_zone_corps(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -132,6 +138,152 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
             eligible.append(root)
         eligible.sort(key=lambda item: self._entity_id(item) or str(getattr(item, "name", "") or ""))
         return eligible
+
+    def _unit_has_radial_suffusion(self, unit) -> bool:
+        if unit is None:
+            return False
+        special_rules = getattr(unit, "special_rules", None)
+        if isinstance(special_rules, dict) and bool(special_rules.get(self._RADIAL_SUFFUSION_FLAG_KEY, False)):
+            return True
+        enhancement = getattr(unit, "enhancement", None)
+        if enhancement is None:
+            return False
+        enh_id = str(getattr(enhancement, "id", "") or "").strip()
+        if enh_id == self._RADIAL_SUFFUSION_ENHANCEMENT_ID:
+            return True
+        enh_name = str(getattr(enhancement, "name", "") or "").strip().lower()
+        return enh_name == self._RADIAL_SUFFUSION_ENHANCEMENT_NAME
+
+    def _unit_has_active_radial_suffusion_bearer(self, unit) -> bool:
+        if unit is None or not self._unit_has_radial_suffusion(unit):
+            return False
+        if not self._unit_is_on_battlefield(unit):
+            return False
+        special_rules = getattr(unit, "special_rules", None)
+        bearer_id = str(special_rules.get("enhancement_bearer_model_id", "") or "") if isinstance(special_rules, dict) else ""
+        if bearer_id:
+            for model in list(getattr(unit, "models", []) or []):
+                if str(getattr(model, "id", getattr(model, "_id", "")) or "") != bearer_id:
+                    continue
+                return self._is_model_alive(model)
+            return False
+        get_bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+        if callable(get_bearer):
+            bearer = get_bearer()
+            if bearer is None:
+                return False
+            return self._is_model_alive(bearer)
+        for model in list(getattr(unit, "models", []) or []):
+            if self._is_model_alive(model):
+                return True
+        return False
+
+    def _radial_suffusion_active(self) -> bool:
+        for unit in list(getattr(self.army, "units", []) or []):
+            if self._unit_has_active_radial_suffusion_bearer(unit):
+                return True
+        return False
+
+    def _distance_to_player_deployment_zone(self, game, *, player_id: str, x: float, y: float) -> float:
+        if game is None or not player_id:
+            return float("inf")
+        zones = getattr(game, "deployment_zones", None)
+        if not isinstance(zones, dict):
+            return float("inf")
+        zone_info = zones.get(str(player_id))
+        if not isinstance(zone_info, dict):
+            return float("inf")
+        mission_zones = list(zone_info.get("mission_zones", []) or [])
+        if not mission_zones:
+            return float("inf")
+
+        px = float(x)
+        py = float(y)
+        min_distance = float("inf")
+        for mission_zone in mission_zones:
+            contains_point = getattr(mission_zone, "contains_point", None)
+            if callable(contains_point) and bool(contains_point(px, py)):
+                return 0.0
+
+            vertices = list(getattr(mission_zone, "vertices", []) or [])
+            if len(vertices) >= 3:
+                try:
+                    from shapely.geometry import Point as _ShPoint
+                    from shapely.geometry import Polygon as _ShPoly
+
+                    dist = float(_ShPoint(px, py).distance(_ShPoly(vertices)))
+                    if dist < min_distance:
+                        min_distance = dist
+                    continue
+                except (ImportError, TypeError, ValueError):
+                    pass
+
+            has_rect_bounds = all(hasattr(mission_zone, attr) for attr in ("x_min", "x_max", "y_min", "y_max"))
+            if has_rect_bounds:
+                x_min = float(getattr(mission_zone, "x_min"))
+                x_max = float(getattr(mission_zone, "x_max"))
+                y_min = float(getattr(mission_zone, "y_min"))
+                y_max = float(getattr(mission_zone, "y_max"))
+                dx = max(x_min - px, 0.0, px - x_max)
+                dy = max(y_min - py, 0.0, py - y_max)
+                dist = float(math.hypot(dx, dy))
+                if dist < min_distance:
+                    min_distance = dist
+        return min_distance
+
+    def _unit_within_distance_of_player_deployment_zone(
+        self,
+        unit,
+        player_id: str,
+        *,
+        game=None,
+        distance_in: float = 0.0,
+    ) -> bool:
+        if unit is None or not player_id or game is None:
+            return False
+        threshold = float(distance_in or 0.0)
+        if threshold < 0.0:
+            return False
+        for model in self._iter_unit_models(unit):
+            location = model.get_location()
+            if not location or len(location) < 2:
+                continue
+            dist = self._distance_to_player_deployment_zone(
+                game,
+                player_id=str(player_id),
+                x=float(location[0]),
+                y=float(location[1]),
+            )
+            if dist <= (threshold + 1e-6):
+                return True
+        return False
+
+    def _enemy_units_for_fallout(self, game, *, enemy_player) -> list:
+        targets = list(self._enemy_units_in_player_deployment_zone(game, enemy_player=enemy_player) or [])
+        if not self._radial_suffusion_active():
+            return targets
+
+        enemy_id = str(getattr(enemy_player, "id", "") or "")
+        if not enemy_id:
+            return targets
+        known_ids: set[str] = {self._entity_id(unit) or str(id(unit)) for unit in targets}
+        for root in self._iter_player_unit_roots(enemy_player):
+            if not self._unit_is_on_battlefield(root):
+                continue
+            root_id = self._entity_id(root) or str(id(root))
+            if root_id in known_ids:
+                continue
+            if not self._unit_within_distance_of_player_deployment_zone(
+                root,
+                enemy_id,
+                game=game,
+                distance_in=self._RADIAL_SUFFUSION_EXTRA_RANGE_IN,
+            ):
+                continue
+            known_ids.add(root_id)
+            targets.append(root)
+        targets.sort(key=lambda item: self._entity_id(item) or str(getattr(item, "name", "") or ""))
+        return targets
 
     def _pending_rad_bombardment_request(self, game, *, target_unit, battle_round: int):
         if game is None or target_unit is None:
@@ -266,7 +418,7 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
         opponent = self._opponent_player(game)
         if opponent is None:
             return
-        targets = self._enemy_units_in_player_deployment_zone(game, enemy_player=opponent)
+        targets = self._enemy_units_for_fallout(game, enemy_player=opponent)
         for target in targets:
             roll = int(get_roll("D6") or 0)
             if roll < 3:

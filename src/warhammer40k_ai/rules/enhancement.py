@@ -448,6 +448,11 @@ class Enhancement:
         except Exception:
             is_slaaneshs_chosen = False
         is_court_or_mercurial_host = bool(is_court_of_the_phoenician or is_mercurial_host)
+        adm_mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+        try:
+            is_rad_zone_corps = bool(adm_mgr and adm_mgr.is_rad_zone_corps())
+        except Exception:
+            is_rad_zone_corps = False
         am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
         try:
             is_grizzled_company = bool(am_mgr and am_mgr.is_grizzled_company())
@@ -622,6 +627,34 @@ class Enhancement:
                 selection_range = 6.0
             unit.special_rules["enhancement_strike_swiftly_scouts_distance"] = int(max(0, scout_distance))
             unit.special_rules["enhancement_strike_swiftly_selection_range"] = float(max(0.0, selection_range))
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "radial suffusion" or enh_id == "000008385002":
+            if not is_rad_zone_corps:
+                return
+            unit.special_rules["enhancement_radial_suffusion"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "malphonic susurrus" or enh_id == "000008385003":
+            if not is_rad_zone_corps:
+                return
+            unit.special_rules["enhancement_malphonic_susurrus"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "peerless eradicator" or enh_id == "000008385004":
+            if not is_rad_zone_corps:
+                return
+            unit.special_rules["enhancement_peerless_eradicator"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "autoclavic denunciation" or enh_id == "000008385005":
+            if not is_rad_zone_corps:
+                return
+            unit.special_rules["enhancement_autoclavic_denunciation"] = True
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 

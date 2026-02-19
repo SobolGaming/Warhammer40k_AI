@@ -550,6 +550,204 @@ class PositioningMixin:
 
         return False
 
+    def _attached_unit_has_active_leading_enhancement(
+        self,
+        flag_key: str,
+        *,
+        enhancement_id: str = "",
+        enhancement_name: str = "",
+        require_bearer_alive: bool = True,
+    ) -> bool:
+        """
+        Return True when an attached Leader has the enhancement and (by default)
+        its bearer model is alive.
+        """
+        if not flag_key and not enhancement_id and not enhancement_name:
+            return False
+
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        leaders = list(getattr(root, "attached_leaders", []) or [])
+        if not leaders:
+            return False
+
+        norm_name = ""
+        if enhancement_name:
+            try:
+                norm_name = str(enhancement_name or "").strip().lower()
+            except Exception:
+                norm_name = ""
+
+        for leader in leaders:
+            if leader is None:
+                continue
+
+            matched = False
+            sr = getattr(leader, "special_rules", None)
+            if isinstance(sr, dict) and flag_key and sr.get(flag_key):
+                matched = True
+            if not matched:
+                try:
+                    enh = getattr(leader, "enhancement", None)
+                    if enh is not None:
+                        enh_unit_id = str(getattr(enh, "id", "") or "").strip()
+                        if enhancement_id and enh_unit_id == enhancement_id:
+                            matched = True
+                        elif norm_name:
+                            enh_name = str(getattr(enh, "name", "") or "").strip().lower()
+                            if enh_name == norm_name:
+                                matched = True
+                except Exception:
+                    matched = False
+            if not matched:
+                continue
+
+            if not require_bearer_alive:
+                return True
+
+            bearer_id = ""
+            if isinstance(sr, dict):
+                bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "")
+            if bearer_id:
+                for model in list(getattr(leader, "models", []) or []):
+                    try:
+                        model_id = str(getattr(model, "id", getattr(model, "_id", "")) or "")
+                    except Exception:
+                        model_id = ""
+                    if model_id != bearer_id:
+                        continue
+                    try:
+                        alive_attr = getattr(model, "is_alive", True)
+                        alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                    except Exception:
+                        alive = False
+                    if alive:
+                        return True
+                continue
+
+            get_bearer = getattr(leader, "_get_enhancement_bearer_model", None)
+            if callable(get_bearer):
+                try:
+                    bearer = get_bearer()
+                except Exception:
+                    bearer = None
+                if bearer is None:
+                    continue
+                try:
+                    alive_attr = getattr(bearer, "is_alive", True)
+                    alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                except Exception:
+                    alive = False
+                if alive:
+                    return True
+                continue
+
+            for model in list(getattr(leader, "models", []) or []):
+                try:
+                    alive_attr = getattr(model, "is_alive", True)
+                    alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                except Exception:
+                    alive = False
+                if alive:
+                    return True
+
+        return False
+
+    def _attached_unit_model_is_enhancement_bearer(
+        self,
+        model,
+        *,
+        flag_key: str,
+        enhancement_id: str = "",
+        enhancement_name: str = "",
+        require_leading: bool = False,
+        require_bearer_alive: bool = True,
+    ) -> bool:
+        """
+        Return True when `model` is the enhancement bearer for a matching attached-unit enhancement.
+        """
+        if model is None or (not flag_key and not enhancement_id and not enhancement_name):
+            return False
+        model_id = str(get_entity_id(model) or getattr(model, "id", getattr(model, "_id", "")) or "")
+        if not model_id:
+            return False
+
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if require_leading:
+            candidates = list(getattr(root, "attached_leaders", []) or [])
+        else:
+            try:
+                candidates = list(root.get_attached_unit_members() or [])
+            except Exception:
+                candidates = [root]
+        if not candidates:
+            candidates = [root]
+
+        norm_name = ""
+        if enhancement_name:
+            try:
+                norm_name = str(enhancement_name or "").strip().lower()
+            except Exception:
+                norm_name = ""
+
+        for unit in candidates:
+            if unit is None:
+                continue
+            sr = getattr(unit, "special_rules", None)
+            matched = bool(isinstance(sr, dict) and flag_key and sr.get(flag_key))
+            if not matched:
+                try:
+                    enh = getattr(unit, "enhancement", None)
+                    if enh is not None:
+                        enh_unit_id = str(getattr(enh, "id", "") or "").strip()
+                        if enhancement_id and enh_unit_id == enhancement_id:
+                            matched = True
+                        elif norm_name:
+                            enh_name = str(getattr(enh, "name", "") or "").strip().lower()
+                            if enh_name == norm_name:
+                                matched = True
+                except Exception:
+                    matched = False
+            if not matched:
+                continue
+
+            bearer = None
+            bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "") if isinstance(sr, dict) else ""
+            if bearer_id:
+                for candidate_model in list(getattr(unit, "models", []) or []):
+                    candidate_id = str(get_entity_id(candidate_model) or getattr(candidate_model, "id", getattr(candidate_model, "_id", "")) or "")
+                    if candidate_id == bearer_id:
+                        bearer = candidate_model
+                        break
+            if bearer is None:
+                get_bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+                if callable(get_bearer):
+                    try:
+                        bearer = get_bearer()
+                    except Exception:
+                        bearer = None
+            if bearer is None:
+                continue
+
+            bearer_entity_id = str(get_entity_id(bearer) or getattr(bearer, "id", getattr(bearer, "_id", "")) or "")
+            if bearer_entity_id != model_id:
+                continue
+            if not require_bearer_alive:
+                return True
+            try:
+                alive_attr = getattr(bearer, "is_alive", True)
+                alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            except Exception:
+                alive = False
+            if alive:
+                return True
+        return False
+
     def _is_lord_on_juggernaut(self) -> bool:
         try:
             dsid = str(getattr(getattr(self, "_datasheet", None), "id", "") or "").strip()
@@ -2598,6 +2796,27 @@ class PositioningMixin:
                 ]
         except Exception:
             pass
+        atype = str(attack_type or "").strip().lower()
+        is_ranged_attack = atype in ("", "any", "ranged")
+        if is_ranged_attack and self._attached_unit_has_active_leading_enhancement(
+            "enhancement_peerless_eradicator",
+            enhancement_id="000008385004",
+            enhancement_name="peerless eradicator",
+        ):
+            rules = list(rules or []) + [
+                {"attack_type": "ranged", "keyword": "SUSTAINED HITS 1", "source": "Peerless Eradicator"}
+            ]
+        if is_ranged_attack and self._attached_unit_model_is_enhancement_bearer(
+            model,
+            flag_key="enhancement_autoclavic_denunciation",
+            enhancement_id="000008385005",
+            enhancement_name="autoclavic denunciation",
+            require_leading=False,
+        ):
+            rules = list(rules or []) + [
+                {"attack_type": "ranged", "keyword": "ANTI-INFANTRY 2+", "source": "Autoclavic Denunciation"},
+                {"attack_type": "ranged", "keyword": "ANTI-MONSTER 4+", "source": "Autoclavic Denunciation"},
+            ]
         try:
             root = self.get_attached_unit_root()
             sr = getattr(root, "special_rules", None)
@@ -5346,6 +5565,13 @@ class PositioningMixin:
             return True
         # Enhancement: Phial of the Abyss grants Stealth to models in the bearer's unit.
         if isinstance(sr, dict) and sr.get("enhancement_phial_of_the_abyss"):
+            return True
+        # Rad-Zone Corps: Malphonic Susurrus grants Stealth while the bearer is leading.
+        if self._attached_unit_has_active_leading_enhancement(
+            "enhancement_malphonic_susurrus",
+            enhancement_id="000008385003",
+            enhancement_name="malphonic susurrus",
+        ):
             return True
         # Start of opponent Shooting phase effects (e.g., Hallucinogen Grenades) can grant Stealth until end of phase.
         if isinstance(sr, dict) and sr.get("opponent_shooting_phase_stealth_active") is True:

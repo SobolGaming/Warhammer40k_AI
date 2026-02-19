@@ -528,6 +528,51 @@ _MONTKA_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _MONTKA_DESCRIPTORS.values()
 }
 
+_RAD_ZONE_CORPS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008385002": EnhancementToolDescriptor(
+        enhancement_id="000008385002",
+        name="Radial Suffusion",
+        timing="command_phase_start_battle_round_2_to_5",
+        target="enemy_units_within_enemy_deployment_zone_or_within_extra_range",
+        duration="instant",
+        effect="extend_rad_bombardment_fallout_targeting",
+        effect_params={
+            "extra_range_from_enemy_deployment_zone": 6,
+            "requires_bearer_on_battlefield": True,
+        },
+    ),
+    "000008385003": EnhancementToolDescriptor(
+        enhancement_id="000008385003",
+        name="Malphonic Susurrus",
+        timing="passive_while_leading",
+        target="bearer_unit",
+        duration="constant",
+        effect="grant_stealth_while_leading",
+    ),
+    "000008385004": EnhancementToolDescriptor(
+        enhancement_id="000008385004",
+        name="Peerless Eradicator",
+        timing="passive_while_leading",
+        target="bearer_unit_ranged_weapons",
+        duration="constant",
+        effect="grant_ranged_sustained_hits_while_leading",
+        effect_params={"sustained_hits_value": 1},
+    ),
+    "000008385005": EnhancementToolDescriptor(
+        enhancement_id="000008385005",
+        name="Autoclavic Denunciation",
+        timing="passive",
+        target="bearer_ranged_weapons",
+        duration="constant",
+        effect="grant_bearer_ranged_anti_keywords",
+        effect_params={"anti_infantry": 2, "anti_monster": 4},
+    ),
+}
+
+_RAD_ZONE_CORPS_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _RAD_ZONE_CORPS_DESCRIPTORS.values()
+}
+
 _INVASION_FLEET_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008348002": EnhancementToolDescriptor(
         enhancement_id="000008348002",
@@ -1145,6 +1190,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _MONTKA_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _RAD_ZONE_CORPS_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _INVASION_FLEET_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -1198,6 +1246,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _AELDARI_CORSAIR_COTERIE_BY_NAME.get(key)
         or _EXPERIMENTAL_PROTOTYPE_CADRE_BY_NAME.get(key)
         or _MONTKA_BY_NAME.get(key)
+        or _RAD_ZONE_CORPS_BY_NAME.get(key)
         or _INVASION_FLEET_BY_NAME.get(key)
         or _CABAL_OF_CHAOS_BY_NAME.get(key)
         or _SPECTACLE_OF_SPITE_BY_NAME.get(key)
