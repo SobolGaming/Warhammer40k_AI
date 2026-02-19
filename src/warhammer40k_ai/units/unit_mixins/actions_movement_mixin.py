@@ -3132,6 +3132,61 @@ class ActionsMovementMixin:
         except Exception:
             pass
 
+        # Rad-Zone Corps: PRE-CALIBRATED PURGE SOLUTION grants ranged full hit re-rolls
+        # against targets in the opponent deployment zone this phase.
+        if atype in ("any", "ranged") and target is not None:
+            sr = getattr(root, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("rad_zone_pre_calibrated_purge_solution_active"):
+                source = (
+                    str(
+                        sr.get("rad_zone_pre_calibrated_purge_solution_source", "")
+                        or "PRE-CALIBRATED PURGE SOLUTION"
+                    ).strip()
+                    or "PRE-CALIBRATED PURGE SOLUTION"
+                )
+                get_parent_army = getattr(root, "get_parent_army", None)
+                army = get_parent_army() if callable(get_parent_army) else None
+                player = getattr(army, "player", None) if army is not None else None
+                game_local = getattr(player, "game", None) if player is not None else None
+                attacker_owner = str(getattr(player, "id", "") or "")
+                effect_owner = str(sr.get("rad_zone_pre_calibrated_purge_solution_turn_owner", "") or "")
+                effect_phase = str(sr.get("rad_zone_pre_calibrated_purge_solution_expires_phase", "") or "").strip().upper()
+                current_phase = str(getattr(getattr(game_local, "phase", None), "name", "") or "").strip().upper()
+                effect_turn = int(sr.get("rad_zone_pre_calibrated_purge_solution_turn", 0) or 0)
+                current_turn = int(getattr(game_local, "turn", 0) or 0) if game_local is not None else 0
+                effect_active = True
+                if effect_owner and attacker_owner and effect_owner != attacker_owner:
+                    effect_active = False
+                if effect_active and effect_phase and current_phase and effect_phase != current_phase:
+                    effect_active = False
+                if effect_active and effect_turn and current_turn and effect_turn != current_turn:
+                    effect_active = False
+                if effect_active and game_local is not None:
+                    enemy_player_id = str(sr.get("rad_zone_pre_calibrated_purge_solution_enemy_player_id", "") or "")
+                    if not enemy_player_id and player is not None:
+                        for other_player in list(getattr(game_local, "players", []) or []):
+                            if other_player is not None and other_player is not player:
+                                enemy_player_id = str(getattr(other_player, "id", "") or "")
+                                break
+                    if enemy_player_id:
+                        target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+                        in_enemy_zone = False
+                        adm_mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+                        zone_check = getattr(adm_mgr, "unit_within_player_deployment_zone", None) if adm_mgr is not None else None
+                        if callable(zone_check):
+                            in_enemy_zone = bool(
+                                zone_check(
+                                    target_root,
+                                    enemy_player_id,
+                                    game=game_local,
+                                )
+                            )
+                        if in_enemy_zone:
+                            mods["reroll_hit_full"] = True
+                            reroll_hit_full_reasons.append(
+                                f"{source}: re-roll Hit roll vs targets in opponent deployment zone"
+                            )
+
         army = None
         get_parent_army = getattr(root, "get_parent_army", None)
         if callable(get_parent_army):

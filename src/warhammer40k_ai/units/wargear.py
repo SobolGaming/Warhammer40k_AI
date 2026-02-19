@@ -1204,6 +1204,16 @@ class WargearProfile:
             turn_key="vow_of_retribution_turn",
         ) is not None
 
+    def _rad_zone_lethal_dosage_active(self, attacker: 'Model') -> bool:
+        """Return True when LETHAL DOSAGE grants lethal hits for this attack."""
+        return self._phase_effect_special_rules(
+            attacker,
+            active_key="rad_zone_lethal_dosage_active",
+            expires_key="rad_zone_lethal_dosage_expires_phase",
+            owner_key="rad_zone_lethal_dosage_turn_owner",
+            turn_key="rad_zone_lethal_dosage_turn",
+        ) is not None
+
     def _veteran_sharpshooters_ignores_cover_active(self, attacker: 'Model') -> bool:
         """Return True when VETERAN SHARPSHOOTERS grants ignores cover for this attack."""
         return self._phase_effect_special_rules(
@@ -6693,6 +6703,8 @@ class WargearProfile:
                 bonus_lethal = True
             if attack_is_ranged and self._vow_of_retribution_lethal_hits_active(attacker):
                 bonus_lethal = True
+            if attack_is_ranged and self._rad_zone_lethal_dosage_active(attacker):
+                bonus_lethal = True
         except Exception:
             pass
         def _set_bonus_sustained(value: int, label: str) -> None:
@@ -6873,6 +6885,8 @@ class WargearProfile:
             if attack_is_ranged and self._purging_fire_lethal_hits_active(attacker):
                 bonus_lethal = True
             if attack_is_ranged and self._vow_of_retribution_lethal_hits_active(attacker):
+                bonus_lethal = True
+            if attack_is_ranged and self._rad_zone_lethal_dosage_active(attacker):
                 bonus_lethal = True
         except Exception:
             pass

@@ -9,6 +9,7 @@ from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL
 from ..utility.entity_ids import get_entity_id
 from .stratagems_aeldari import AeldariStratagemMixin
 from .stratagems_adepta_sororitas import AdeptaSororitasStratagemMixin
+from .stratagems_adeptus_mechanicus import AdeptusMechanicusStratagemMixin
 from .stratagems_astra_militarum import AstraMilitarumStratagemMixin
 from .stratagems_chaos_daemons import ChaosDaemonsStratagemMixin
 from .stratagems_chaos_space_marines import ChaosSpaceMarinesStratagemMixin
@@ -93,6 +94,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "LAYERED WARDS",
     "LIGHTNING-FAST REACTIONS",
     "LIMB FROM LIMB",
+    "LETHAL DOSAGE",
     "MURDER-CALL",
     "COMMAND RE-ROLL",
     "COUNTER-OFFENSIVE",
@@ -237,6 +239,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "KHAINE'S VENGEANCE",
     "KHAINE’S VENGEANCE",
     "PRETERNATURAL PRECISION",
+    "PRE-CALIBRATED PURGE SOLUTION",
     "UNCANNY REACTIONS",
     "HONOUR THE PRINCE",
     "UNHOLY HASTE",
@@ -1142,6 +1145,7 @@ class Stratagem:
 
 class StratagemManager(
     AdeptaSororitasStratagemMixin,
+    AdeptusMechanicusStratagemMixin,
     ChaosSpaceMarinesStratagemMixin,
     EmperorsChildrenStratagemMixin,
     AstraMilitarumStratagemMixin,
@@ -1593,7 +1597,9 @@ class StratagemManager(
             "HEIGHTENED JEALOUSY",
             "MARTIAL PERFECTION",
             "LAYERED WARDS",
+            "LETHAL DOSAGE",
             "PROTECTION OF THE DARK PRINCE",
+            "PRE-CALIBRATED PURGE SOLUTION",
             "PRIDEFUL SUPERIORITY",
             "REFUSAL TO BE OUTDONE",
             "SOULSIGHT",
@@ -2502,6 +2508,20 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires ordered ASTRA MILITARUM unit within objective range that has not shot"
             return result
+        if name_u == "LETHAL DOSAGE":
+            if self._rad_zone_lethal_dosage_primary_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires ADEPTUS MECHANICUS unit on the battlefield that has not been selected to shoot this phase"
+            return result
+        if name_u == "PRE-CALIBRATED PURGE SOLUTION":
+            if self._rad_zone_pre_calibrated_purge_solution_primary_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires ADEPTUS MECHANICUS unit on the battlefield that has not been selected to shoot this phase"
+            return result
         if name_u == "VOW OF RETRIBUTION":
             if self._imperial_knights_vow_of_retribution_candidates():
                 result["available"] = True
@@ -2987,6 +3007,8 @@ class StratagemManager(
             "REVENGE OF THE RUBRICAE": "Target: your RUBRICAE unit within 6\" of a destroyed THOUSAND SONS PSYKER model; after the enemy unit shoots, it can shoot reactively into that attacker",
             "UNWAVERING PHALANX": "Target: your RUBRIC MARINES unit within Engagement Range of an enemy unit that just ended a Charge move; attacks targeting it suffer -1 to wound until end of turn",
             "THREAT ASSESSMENT ANALYSER": "Target: T'AU EMPIRE unit not yet selected to shoot; choose Sustained Hits 1 or Lethal Hits, or gain both plus [HAZARDOUS] (cannot also target with EXPERIMENTAL AMMUNITION this phase)",
+            "LETHAL DOSAGE": "Target: ADEPTUS MECHANICUS unit not yet selected to shoot; if it is BATTLELINE, you can also choose one friendly SKITARII unit (excluding BATTLELINE) within 6\"",
+            "PRE-CALIBRATED PURGE SOLUTION": "Target: ADEPTUS MECHANICUS unit not yet selected to shoot; if it is BATTLELINE, you can also choose one friendly SKITARII unit (excluding BATTLELINE) within 6\"",
             "ARMOUR OF CONTEMPT": "Target: ADEPTUS ASTARTES unit",
             "DEATHLESS DUTY": "Target: DEATH COMPANY unit",
             "INSENSATE RAMPAGE": "Target: DEATH COMPANY unit",
@@ -4648,6 +4670,31 @@ class StratagemManager(
                                     "purging_fire_owner",
                                     "purging_fire_turn",
                                     "purging_fire_source",
+                                ):
+                                    sr.pop(key, None)
+                                u.special_rules = sr
+                        if isinstance(sr, dict) and sr.get("rad_zone_lethal_dosage_active") is True:
+                            exp = str(sr.get("rad_zone_lethal_dosage_expires_phase", "") or "").strip().upper()
+                            if not exp or exp == "SHOOTING_PHASE":
+                                for key in (
+                                    "rad_zone_lethal_dosage_active",
+                                    "rad_zone_lethal_dosage_expires_phase",
+                                    "rad_zone_lethal_dosage_turn_owner",
+                                    "rad_zone_lethal_dosage_turn",
+                                    "rad_zone_lethal_dosage_source",
+                                ):
+                                    sr.pop(key, None)
+                                u.special_rules = sr
+                        if isinstance(sr, dict) and sr.get("rad_zone_pre_calibrated_purge_solution_active") is True:
+                            exp = str(sr.get("rad_zone_pre_calibrated_purge_solution_expires_phase", "") or "").strip().upper()
+                            if not exp or exp == "SHOOTING_PHASE":
+                                for key in (
+                                    "rad_zone_pre_calibrated_purge_solution_active",
+                                    "rad_zone_pre_calibrated_purge_solution_expires_phase",
+                                    "rad_zone_pre_calibrated_purge_solution_turn_owner",
+                                    "rad_zone_pre_calibrated_purge_solution_turn",
+                                    "rad_zone_pre_calibrated_purge_solution_source",
+                                    "rad_zone_pre_calibrated_purge_solution_enemy_player_id",
                                 ):
                                     sr.pop(key, None)
                                 u.special_rules = sr
@@ -12738,6 +12785,9 @@ class StratagemManager(
         ec_mercurial_result = self._use_emperors_children_mercurial_stratagem(s, **kwargs)
         if ec_mercurial_result is not None:
             return ec_mercurial_result
+        admech_result = self._use_adeptus_mechanicus_rad_zone_stratagem(s, **kwargs)
+        if admech_result is not None:
+            return admech_result
         am_result = self._use_astra_militarum_grizzled_stratagem(s, **kwargs)
         if am_result is not None:
             return am_result

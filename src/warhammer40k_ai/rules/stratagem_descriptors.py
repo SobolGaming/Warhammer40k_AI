@@ -552,6 +552,41 @@ _GRIZZLED_COMPANY_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _GRIZZLED_COMPANY_STRATAGEM_DESCRIPTORS.values()
 }
 
+_RAD_ZONE_CORPS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008386005": StratagemToolDescriptor(
+        stratagem_id="000008386005",
+        name="Pre-Calibrated Purge Solution",
+        timing="shooting_phase_on_select_to_shoot",
+        target="adeptus_mechanicus_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="ranged_hit_reroll_vs_opponent_deployment_zone",
+        cp_cost=1,
+        effect_params={
+            "optional_support_if_primary_battleline": True,
+            "support_target": "friendly_skitarii_unit_non_battleline_within_6",
+            "support_selection_optional": True,
+        },
+    ),
+    "000008386006": StratagemToolDescriptor(
+        stratagem_id="000008386006",
+        name="Lethal Dosage",
+        timing="shooting_phase_on_select_to_shoot",
+        target="adeptus_mechanicus_unit_not_yet_shot",
+        duration="until_end_of_phase",
+        effect="ranged_lethal_hits",
+        cp_cost=1,
+        effect_params={
+            "optional_support_if_primary_battleline": True,
+            "support_target": "friendly_skitarii_unit_non_battleline_within_6",
+            "support_selection_optional": True,
+        },
+    ),
+}
+
+_RAD_ZONE_CORPS_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _RAD_ZONE_CORPS_STRATAGEM_DESCRIPTORS.values()
+}
+
 _HALLOWED_MARTYRS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000008469004": StratagemToolDescriptor(
         stratagem_id="000008469004",
@@ -1966,6 +2001,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _GRIZZLED_COMPANY_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _RAD_ZONE_CORPS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _HALLOWED_MARTYRS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -2032,6 +2070,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _VESSELS_OF_WRATH_STRATAGEM_BY_NAME.get(key)
         or _CULT_OF_BLOOD_STRATAGEM_BY_NAME.get(key)
         or _GRIZZLED_COMPANY_STRATAGEM_BY_NAME.get(key)
+        or _RAD_ZONE_CORPS_STRATAGEM_BY_NAME.get(key)
         or _HALLOWED_MARTYRS_STRATAGEM_BY_NAME.get(key)
         or _WARPBANE_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
         or _CABAL_OF_CHAOS_STRATAGEM_BY_NAME.get(key)

@@ -17175,6 +17175,65 @@ class GameView:
                 )
             return
 
+        if name_u in ("LETHAL DOSAGE", "PRE-CALIBRATED PURGE SOLUTION") and "unit" not in context and "target_unit" not in context:
+            if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+                candidates = context.get("candidates") or []
+                if not candidates:
+                    getter_name = {
+                        "LETHAL DOSAGE": "_rad_zone_lethal_dosage_primary_candidates",
+                        "PRE-CALIBRATED PURGE SOLUTION": "_rad_zone_pre_calibrated_purge_solution_primary_candidates",
+                    }.get(name_u, "")
+                    getter = getattr(manager, getter_name, None)
+                    if callable(getter):
+                        try:
+                            candidates = list(getter() or [])
+                        except Exception:
+                            candidates = []
+
+                def _after_primary(primary_unit):
+                    if primary_unit is None:
+                        logger.info(f"{name}: no unit selected")
+                        return
+                    support_getter = getattr(manager, "_rad_zone_optional_skitarii_support_candidates", None)
+                    support_candidates = list(support_getter(primary_unit) or []) if callable(support_getter) else []
+                    if not support_candidates:
+                        self._finalize_admech_rad_zone_stratagem(player, name, context, primary_unit, None)
+                        return
+                    self._resolve_unit_selection_dialog(
+                        player=player,
+                        candidates=support_candidates,
+                        on_chosen=lambda support: self._finalize_admech_rad_zone_stratagem(
+                            player,
+                            name,
+                            context,
+                            primary_unit,
+                            support,
+                        ),
+                        decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                        prompt=f"Select optional supporting SKITARII unit for {name}.",
+                        title=name,
+                        subtitle="Optional: pick one SKITARII (excluding BATTLELINE) within 6\", or Skip.",
+                        enemy_unit=None,
+                        dialog=self.overwatch_shooter_dialog,
+                        allow_skip=True,
+                    )
+
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=candidates,
+                    on_chosen=_after_primary,
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt=f"Select primary unit for {name}.",
+                    title=name,
+                    subtitle="ADEPTUS MECHANICUS unit that has not been selected to shoot this phase.",
+                    enemy_unit=None,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+            return
+
         if name_u in ("RIGHTEOUS VENGEANCE", "SUFFERING AND SACRIFICE", "SPIRIT OF THE MARTYR", "PRAISE THE FALLEN") and "unit" not in context and "target_unit" not in context:
             if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
                 from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
@@ -18419,6 +18478,32 @@ class GameView:
         ctx = dict(context)
         ctx["unit"] = unit
         ctx["target_unit"] = unit
+        ok = manager.use(name, **ctx)
+        if ok:
+            logger.info(f"Used stratagem: {name}")
+        else:
+            logger.info(f"Could not use stratagem: {name}")
+
+    def _finalize_admech_rad_zone_stratagem(
+        self,
+        player,
+        name: str,
+        context: Dict[str, Any],
+        primary_unit,
+        secondary_unit,
+    ) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if primary_unit is None:
+            logger.info(f"{name}: no primary unit selected")
+            return
+        ctx = dict(context)
+        ctx["unit"] = primary_unit
+        ctx["target_unit"] = primary_unit
+        if secondary_unit is not None:
+            ctx["secondary_unit"] = secondary_unit
+            ctx["support_unit"] = secondary_unit
         ok = manager.use(name, **ctx)
         if ok:
             logger.info(f"Used stratagem: {name}")
