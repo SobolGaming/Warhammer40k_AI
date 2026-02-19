@@ -1744,6 +1744,195 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         return errors
     ctx = dict(getattr(request, "context", {}) or {})
     ability = str(ctx.get("ability", "") or "")
+    if ability == "decoy_targets":
+        payload = _option_payload(request, result)
+        if is_skip_choice(request, result):
+            return ()
+
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id") or ctx.get("source_unit_id") or payload.get("unit_id") or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Decoy Targets source unit was not found.",)
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return ("Decoy Targets source unit was not found.",)
+
+        checker = getattr(game, "_unit_on_battlefield_for_reposition", None)
+
+        def _unit_on_battlefield(unit) -> bool:
+            if unit is None:
+                return False
+            if callable(checker):
+                return bool(checker(unit))
+            try:
+                if not unit.is_alive() or not bool(getattr(unit, "deployed", False)):
+                    return False
+            except Exception:
+                return False
+            try:
+                if unit.is_in_reserves() or unit.is_embarked:
+                    return False
+            except Exception:
+                pass
+            return True
+
+        def _model_alive(model) -> bool:
+            if model is None:
+                return False
+            try:
+                alive_attr = getattr(model, "is_alive", True)
+                return bool(alive_attr() if callable(alive_attr) else alive_attr)
+            except Exception:
+                return False
+
+        if not _unit_on_battlefield(source_root):
+            return ("Decoy Targets source unit must be on the battlefield.",)
+
+        try:
+            source_members = list(source_root.get_attached_unit_members() or [])
+        except Exception:
+            source_members = [source_root]
+        if not source_members:
+            source_members = [source_root]
+        enhancement_source = None
+        enhancement_sr = None
+        for member in list(source_members or []):
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if not bool(sr.get("enhancement_decoy_targets", False)):
+                continue
+            enhancement_source = member
+            enhancement_sr = sr
+            break
+        if enhancement_source is None or not isinstance(enhancement_sr, dict):
+            return ("Decoy Targets enhancement is not active on the source unit.",)
+
+        try:
+            max_uses = int(enhancement_sr.get("enhancement_decoy_targets_max_uses", 2) or 2)
+        except Exception:
+            max_uses = 2
+        try:
+            used_count = int(enhancement_sr.get("enhancement_decoy_targets_used_count", 0) or 0)
+        except Exception:
+            used_count = 0
+        if used_count >= max(1, max_uses):
+            return ("Decoy Targets has no uses remaining this battle.",)
+
+        try:
+            per_round_limit = int(enhancement_sr.get("enhancement_decoy_targets_per_battle_round_limit", 1) or 1)
+        except Exception:
+            per_round_limit = 1
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        try:
+            used_round = int(enhancement_sr.get("enhancement_decoy_targets_used_battle_round", 0) or 0)
+        except Exception:
+            used_round = 0
+        if used_round == current_turn:
+            try:
+                used_round_count = int(
+                    enhancement_sr.get("enhancement_decoy_targets_used_this_battle_round_count", 0) or 0
+                )
+            except Exception:
+                used_round_count = 0
+        else:
+            used_round_count = 0
+        if used_round_count >= max(1, per_round_limit):
+            return ("Decoy Targets has already been used this battle round.",)
+
+        source_model_id = str(
+            payload.get("source_model_id") or ctx.get("source_model_id") or enhancement_sr.get("enhancement_bearer_model_id", "") or ""
+        )
+        source_model = resolve_model(game, source_model_id) if source_model_id else None
+        if source_model is None:
+            get_bearer = getattr(enhancement_source, "_get_enhancement_bearer_model", None)
+            source_model = get_bearer() if callable(get_bearer) else None
+        if source_model is None:
+            return ("Decoy Targets bearer model was not found.",)
+        if not _model_alive(source_model):
+            return ("Decoy Targets bearer model is not alive.",)
+        source_model_parent = getattr(source_model, "parent_unit", None)
+        source_model_root = (
+            source_model_parent.get_attached_unit_root()
+            if source_model_parent is not None and hasattr(source_model_parent, "get_attached_unit_root")
+            else source_model_parent
+        )
+        if source_model_root is not source_root:
+            return ("Decoy Targets bearer model is not part of the source unit.",)
+
+        try:
+            source_models = [m for m in list(getattr(source_root, "models", []) or []) if _model_alive(m)]
+        except Exception:
+            source_models = []
+        if len(source_models) != 1:
+            return ("Decoy Targets requires a single-model source unit.",)
+
+        target_model = resolve_model(game, payload.get("target_model_id") or payload.get("model_id"))
+        if target_model is None:
+            return ("Decoy Targets target model was not found.",)
+        target_model_id = str(get_entity_id(target_model) or getattr(target_model, "id", getattr(target_model, "_id", "")) or "")
+        source_model_id_resolved = str(
+            get_entity_id(source_model) or getattr(source_model, "id", getattr(source_model, "_id", "")) or ""
+        )
+        if target_model_id and source_model_id_resolved and target_model_id == source_model_id_resolved:
+            return ("Decoy Targets requires selecting a different friendly model.",)
+        target_parent = getattr(target_model, "parent_unit", None)
+        if target_parent is None:
+            return ("Decoy Targets target model has no parent unit.",)
+        target_root = target_parent.get_attached_unit_root() if hasattr(target_parent, "get_attached_unit_root") else target_parent
+        if target_root is None:
+            return ("Decoy Targets target unit was not found.",)
+        if not _unit_on_battlefield(target_root):
+            return ("Decoy Targets target model must be on the battlefield.",)
+
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if source_army is not None and target_army is not None and source_army is not target_army:
+            return ("Decoy Targets requires selecting a friendly model.",)
+
+        has_infantry = False
+        if hasattr(target_root, "has_any_keyword"):
+            has_infantry = bool(target_root.has_any_keyword("INFANTRY"))
+        elif hasattr(target_root, "has_keyword"):
+            has_infantry = bool(target_root.has_keyword("INFANTRY"))
+        if not has_infantry:
+            return ("Decoy Targets target model must be from a friendly INFANTRY unit.",)
+
+        from ...utility.aura_utils import model_within_engagement_range_of_unit
+
+        game_map = getattr(game, "map", None)
+        enemy_units = []
+        if game_map is not None and hasattr(game_map, "get_enemy_units"):
+            try:
+                enemy_units = list(game_map.get_enemy_units(target_root) or [])
+            except Exception:
+                enemy_units = []
+        for enemy in list(enemy_units or []):
+            if enemy is None:
+                continue
+            enemy_root = enemy.get_attached_unit_root() if hasattr(enemy, "get_attached_unit_root") else enemy
+            if enemy_root is None:
+                continue
+            if not _unit_on_battlefield(enemy_root):
+                continue
+            if model_within_engagement_range_of_unit(target_model, enemy_root):
+                return ("Decoy Targets target model must not be within Engagement Range of enemy units.",)
+
+        try:
+            target_pos = target_model.get_location()
+        except Exception:
+            return ("Decoy Targets target model position is unavailable.",)
+        find_pos = getattr(game, "_find_closest_valid_reposition_position", None)
+        if callable(find_pos):
+            placement = find_pos(source_root, target_pos, game_map=getattr(game, "map", None))
+            if not placement:
+                return ("Decoy Targets cannot set up the bearer near the selected model.",)
+        return ()
     if ability == "strike_swiftly":
         payload = _option_payload(request, result)
         source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
@@ -1951,6 +2140,248 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
 def _apply_choose_quarry(game: object, request: DecisionRequest, result: DecisionResult):
     ctx = dict(getattr(request, "context", {}) or {})
     ability = str(ctx.get("ability", "") or "")
+    if ability == "decoy_targets":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id") or ctx.get("source_unit_id") or payload.get("unit_id") or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return None
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return None
+
+        checker = getattr(game, "_unit_on_battlefield_for_reposition", None)
+
+        def _unit_on_battlefield(unit) -> bool:
+            if unit is None:
+                return False
+            if callable(checker):
+                return bool(checker(unit))
+            try:
+                if not unit.is_alive() or not bool(getattr(unit, "deployed", False)):
+                    return False
+            except Exception:
+                return False
+            try:
+                if unit.is_in_reserves() or unit.is_embarked:
+                    return False
+            except Exception:
+                pass
+            return True
+
+        def _model_alive(model) -> bool:
+            if model is None:
+                return False
+            try:
+                alive_attr = getattr(model, "is_alive", True)
+                return bool(alive_attr() if callable(alive_attr) else alive_attr)
+            except Exception:
+                return False
+
+        if not _unit_on_battlefield(source_root):
+            return None
+
+        try:
+            source_members = list(source_root.get_attached_unit_members() or [])
+        except Exception:
+            source_members = [source_root]
+        if not source_members:
+            source_members = [source_root]
+        enhancement_source = None
+        enhancement_sr = None
+        for member in list(source_members or []):
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if not bool(sr.get("enhancement_decoy_targets", False)):
+                continue
+            enhancement_source = member
+            enhancement_sr = sr
+            break
+        if enhancement_source is None or not isinstance(enhancement_sr, dict):
+            return None
+
+        try:
+            max_uses = int(enhancement_sr.get("enhancement_decoy_targets_max_uses", 2) or 2)
+        except Exception:
+            max_uses = 2
+        try:
+            used_count = int(enhancement_sr.get("enhancement_decoy_targets_used_count", 0) or 0)
+        except Exception:
+            used_count = 0
+        if used_count >= max(1, max_uses):
+            return None
+        try:
+            per_round_limit = int(enhancement_sr.get("enhancement_decoy_targets_per_battle_round_limit", 1) or 1)
+        except Exception:
+            per_round_limit = 1
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        try:
+            used_round = int(enhancement_sr.get("enhancement_decoy_targets_used_battle_round", 0) or 0)
+        except Exception:
+            used_round = 0
+        if used_round == current_turn:
+            try:
+                used_round_count = int(
+                    enhancement_sr.get("enhancement_decoy_targets_used_this_battle_round_count", 0) or 0
+                )
+            except Exception:
+                used_round_count = 0
+        else:
+            used_round_count = 0
+        if used_round_count >= max(1, per_round_limit):
+            return None
+
+        source_model_id = str(
+            payload.get("source_model_id") or ctx.get("source_model_id") or enhancement_sr.get("enhancement_bearer_model_id", "") or ""
+        )
+        source_model = resolve_model(game, source_model_id) if source_model_id else None
+        if source_model is None:
+            get_bearer = getattr(enhancement_source, "_get_enhancement_bearer_model", None)
+            source_model = get_bearer() if callable(get_bearer) else None
+        if not _model_alive(source_model):
+            return None
+        source_model_parent = getattr(source_model, "parent_unit", None)
+        source_model_root = (
+            source_model_parent.get_attached_unit_root()
+            if source_model_parent is not None and hasattr(source_model_parent, "get_attached_unit_root")
+            else source_model_parent
+        )
+        if source_model_root is not source_root:
+            return None
+
+        if is_skip_choice(request, result):
+            try:
+                player = getattr(source_root.get_parent_army(), "player", None)
+            except Exception:
+                player = None
+            ability_name = str(payload.get("ability_name") or ctx.get("ability_name") or "Decoy Targets").strip() or "Decoy Targets"
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {getattr(source_model, 'name', 'Model')} selected none.",
+            )
+            return None
+
+        target_model = resolve_model(game, payload.get("target_model_id") or payload.get("model_id"))
+        if not _model_alive(target_model):
+            return None
+        target_model_id = str(get_entity_id(target_model) or getattr(target_model, "id", getattr(target_model, "_id", "")) or "")
+        source_model_id_resolved = str(
+            get_entity_id(source_model) or getattr(source_model, "id", getattr(source_model, "_id", "")) or ""
+        )
+        if target_model_id and source_model_id_resolved and target_model_id == source_model_id_resolved:
+            return None
+        target_parent = getattr(target_model, "parent_unit", None)
+        if target_parent is None:
+            return None
+        target_root = target_parent.get_attached_unit_root() if hasattr(target_parent, "get_attached_unit_root") else target_parent
+        if target_root is None or not _unit_on_battlefield(target_root):
+            return None
+
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if source_army is not None and target_army is not None and source_army is not target_army:
+            return None
+
+        has_infantry = False
+        if hasattr(target_root, "has_any_keyword"):
+            has_infantry = bool(target_root.has_any_keyword("INFANTRY"))
+        elif hasattr(target_root, "has_keyword"):
+            has_infantry = bool(target_root.has_keyword("INFANTRY"))
+        if not has_infantry:
+            return None
+
+        from ...utility.aura_utils import model_within_engagement_range_of_unit
+
+        game_map = getattr(game, "map", None)
+        enemy_units = []
+        if game_map is not None and hasattr(game_map, "get_enemy_units"):
+            try:
+                enemy_units = list(game_map.get_enemy_units(target_root) or [])
+            except Exception:
+                enemy_units = []
+        for enemy in list(enemy_units or []):
+            if enemy is None:
+                continue
+            enemy_root = enemy.get_attached_unit_root() if hasattr(enemy, "get_attached_unit_root") else enemy
+            if enemy_root is None or not _unit_on_battlefield(enemy_root):
+                continue
+            if model_within_engagement_range_of_unit(target_model, enemy_root):
+                return None
+
+        try:
+            target_pos = target_model.get_location()
+        except Exception:
+            return None
+        find_pos = getattr(game, "_find_closest_valid_reposition_position", None)
+        if callable(find_pos):
+            placement = find_pos(source_root, target_pos, game_map=getattr(game, "map", None))
+        else:
+            placement = target_pos
+        if not placement:
+            return None
+
+        remove_model = getattr(target_parent, "remove_model", None)
+        if not callable(remove_model):
+            return None
+        remove_model(target_model, fleed=True, game_map=getattr(game, "map", None))
+
+        try:
+            facing = float(placement[3]) if len(placement) >= 4 else float(
+                getattr(getattr(source_model, "model_base", None), "facing", 0.0) or 0.0
+            )
+        except Exception:
+            facing = 0.0
+        source_model.set_location(
+            float(placement[0]),
+            float(placement[1]),
+            float(placement[2]),
+            float(facing),
+        )
+        source_root.position = (float(placement[0]), float(placement[1]), float(placement[2]))
+        if getattr(game, "map", None) is not None and hasattr(game.map, "units"):
+            if source_root not in game.map.units:
+                game.map.units.append(source_root)
+
+        updated_sr = dict(enhancement_sr or {})
+        updated_sr["enhancement_decoy_targets_used_count"] = int(used_count + 1)
+        updated_sr["enhancement_decoy_targets_used_battle_round"] = int(current_turn)
+        updated_sr["enhancement_decoy_targets_used_this_battle_round_count"] = int(used_round_count + 1)
+        enhancement_source.special_rules = updated_sr
+
+        try:
+            event_system = getattr(game, "event_system", None)
+            if event_system is not None:
+                event_system.publish(
+                    "unit_set_up",
+                    unit=source_root,
+                    set_up_as_reinforcements=False,
+                )
+        except Exception:
+            pass
+
+        try:
+            player = getattr(source_root.get_parent_army(), "player", None)
+        except Exception:
+            player = None
+        ability_name = str(payload.get("ability_name") or ctx.get("ability_name") or "Decoy Targets").strip() or "Decoy Targets"
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {getattr(target_model, 'name', 'Model')} was removed; "
+            f"{getattr(source_model, 'name', 'Model')} repositioned.",
+        )
+        return {
+            "source_unit_id": str(get_entity_id(source_root) or ""),
+            "source_model_id": source_model_id_resolved,
+            "target_model_id": target_model_id,
+        }
     if ability == "rad_bombardment":
         if is_skip_choice(request, result):
             return None

@@ -1157,6 +1157,64 @@ _WARPBANE_TASK_FORCE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _WARPBANE_TASK_FORCE_DESCRIPTORS.values()
 }
 
+_VEILED_BLADE_ELIMINATION_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009757002": EnhancementToolDescriptor(
+        enhancement_id="000009757002",
+        name="Decoy Targets",
+        timing="movement_phase",
+        target="other_friendly_infantry_model_and_bearer",
+        duration="instant",
+        effect="destroy_selected_model_and_redeploy_bearer",
+        effect_params={
+            "max_uses": 2,
+            "per_battle_round_limit": 1,
+            "selection_excludes_bearer": True,
+            "disallow_engagement_range_targets": True,
+        },
+    ),
+    "000009757003": EnhancementToolDescriptor(
+        enhancement_id="000009757003",
+        name="Esoteric Explosives",
+        timing="when_targeted_by_grenades_stratagem",
+        target="bearer",
+        duration="instant",
+        effect="grenade_mortal_wound_threshold_modifier",
+        effect_params={
+            "grenade_mortal_threshold": 3,
+            "default_threshold": 4,
+        },
+    ),
+    "000009757004": EnhancementToolDescriptor(
+        enhancement_id="000009757004",
+        name="Intraneural Biotech",
+        timing="when_targeted_with_heroic_intervention_or_counter_offensive",
+        target="bearer",
+        duration="instant",
+        effect="stratagem_cp_cost_set_zero_with_repeat_exception",
+        effect_params={
+            "stratagems": ("HEROIC INTERVENTION", "COUNTER-OFFENSIVE"),
+            "limit": "battle_round",
+        },
+    ),
+    "000009757005": EnhancementToolDescriptor(
+        enhancement_id="000009757005",
+        name="Micromelta Rounds",
+        timing="passive",
+        target="bearer_weapon_exitus_rifle",
+        duration="constant",
+        effect="grant_weapon_keywords",
+        effect_params={
+            "weapon_name": "exitus rifle",
+            "anti_monster": 4,
+            "anti_vehicle": 4,
+        },
+    ),
+}
+
+_VEILED_BLADE_ELIMINATION_FORCE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _VEILED_BLADE_ELIMINATION_FORCE_DESCRIPTORS.values()
+}
+
 
 def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "") -> Optional[EnhancementToolDescriptor]:
     if enhancement_id:
@@ -1232,6 +1290,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _WARPBANE_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _VEILED_BLADE_ELIMINATION_FORCE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
     key = _normalize_name(name)
     if not key:
         return None
@@ -1260,4 +1321,5 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _GRAND_COVEN_BY_NAME.get(key)
         or _RUBRICAE_PHALANX_BY_NAME.get(key)
         or _WARPBANE_TASK_FORCE_BY_NAME.get(key)
+        or _VEILED_BLADE_ELIMINATION_FORCE_BY_NAME.get(key)
     )

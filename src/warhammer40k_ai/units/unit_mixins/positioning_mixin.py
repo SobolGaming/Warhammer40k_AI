@@ -2817,6 +2817,46 @@ class PositioningMixin:
                 {"attack_type": "ranged", "keyword": "ANTI-INFANTRY 2+", "source": "Autoclavic Denunciation"},
                 {"attack_type": "ranged", "keyword": "ANTI-MONSTER 4+", "source": "Autoclavic Denunciation"},
             ]
+        if is_ranged_attack and self._attached_unit_model_is_enhancement_bearer(
+            model,
+            flag_key="enhancement_micromelta_rounds",
+            enhancement_id="000009757005",
+            enhancement_name="micromelta rounds",
+            require_leading=False,
+        ):
+            try:
+                root = self.get_attached_unit_root()
+            except Exception:
+                root = self
+            source = "Micromelta Rounds"
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            weapon_names = [str(sr.get("enhancement_micromelta_rounds_weapon_name", "exitus rifle") or "exitus rifle")]
+            try:
+                anti_monster = int(sr.get("enhancement_micromelta_rounds_anti_monster", 4) or 4)
+            except Exception:
+                anti_monster = 4
+            try:
+                anti_vehicle = int(sr.get("enhancement_micromelta_rounds_anti_vehicle", 4) or 4)
+            except Exception:
+                anti_vehicle = 4
+            micromelta_weapon_name = str(weapon_name or "").strip()
+            if not micromelta_weapon_name and weapon_profile is not None:
+                try:
+                    micromelta_weapon_name = str(getattr(getattr(weapon_profile, "parent_wargear", None), "name", "") or "")
+                except Exception:
+                    micromelta_weapon_name = ""
+                if not micromelta_weapon_name:
+                    try:
+                        micromelta_weapon_name = str(getattr(weapon_profile, "name", "") or "")
+                    except Exception:
+                        micromelta_weapon_name = ""
+            if self._weapon_name_matches(weapon_names, micromelta_weapon_name):
+                rules = list(rules or []) + [
+                    {"attack_type": "ranged", "keyword": f"ANTI-MONSTER {int(max(2, anti_monster))}+", "source": source},
+                    {"attack_type": "ranged", "keyword": f"ANTI-VEHICLE {int(max(2, anti_vehicle))}+", "source": source},
+                ]
         try:
             root = self.get_attached_unit_root()
             sr = getattr(root, "special_rules", None)

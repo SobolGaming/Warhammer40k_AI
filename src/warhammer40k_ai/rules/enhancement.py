@@ -473,6 +473,11 @@ class Enhancement:
             is_warpbane_task_force = bool(gk_mgr and gk_mgr.is_warpbane_task_force())
         except Exception:
             is_warpbane_task_force = False
+        ia_mgr = getattr(army, "imperial_agents_detachments", None) if army is not None else None
+        try:
+            is_veiled_blade_elimination_force = bool(ia_mgr and ia_mgr.is_veiled_blade_elimination_force())
+        except Exception:
+            is_veiled_blade_elimination_force = False
         dru_mgr = getattr(army, "drukhari_detachments", None) if army is not None else None
         try:
             is_spectacle_of_spite = bool(dru_mgr and dru_mgr.is_spectacle_of_spite())
@@ -655,6 +660,81 @@ class Enhancement:
             if not is_rad_zone_corps:
                 return
             unit.special_rules["enhancement_autoclavic_denunciation"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "decoy targets" or enh_id == "000009757002":
+            if not is_veiled_blade_elimination_force:
+                return
+            unit.special_rules["enhancement_decoy_targets"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                max_uses = int(params.get("max_uses", 2) or 2)
+            except Exception:
+                max_uses = 2
+            try:
+                per_round_limit = int(params.get("per_battle_round_limit", 1) or 1)
+            except Exception:
+                per_round_limit = 1
+            unit.special_rules["enhancement_decoy_targets_max_uses"] = int(max(1, max_uses))
+            unit.special_rules["enhancement_decoy_targets_per_battle_round_limit"] = int(max(1, per_round_limit))
+            if "enhancement_decoy_targets_used_count" not in unit.special_rules:
+                unit.special_rules["enhancement_decoy_targets_used_count"] = 0
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "esoteric explosives" or enh_id == "000009757003":
+            if not is_veiled_blade_elimination_force:
+                return
+            unit.special_rules["enhancement_esoteric_explosives"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                threshold = int(params.get("grenade_mortal_threshold", 3) or 3)
+            except Exception:
+                threshold = 3
+            unit.special_rules["enhancement_esoteric_explosives_grenade_mortal_threshold"] = int(max(2, threshold))
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "intraneural biotech" or enh_id == "000009757004":
+            if not is_veiled_blade_elimination_force:
+                return
+            unit.special_rules["enhancement_intraneural_biotech"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            stratagems = [
+                str(v or "").strip().upper()
+                for v in list(params.get("stratagems", ("HEROIC INTERVENTION", "COUNTER-OFFENSIVE")) or ())
+                if str(v or "").strip()
+            ]
+            if stratagems:
+                unit.special_rules["enhancement_intraneural_biotech_stratagems"] = stratagems
+            unit.special_rules["enhancement_intraneural_biotech_limit"] = str(
+                params.get("limit", "battle_round") or "battle_round"
+            ).strip().lower()
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "micromelta rounds" or enh_id == "000009757005":
+            if not is_veiled_blade_elimination_force:
+                return
+            unit.special_rules["enhancement_micromelta_rounds"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            weapon_name = str(params.get("weapon_name", "exitus rifle") or "exitus rifle").strip() or "exitus rifle"
+            try:
+                anti_monster = int(params.get("anti_monster", 4) or 4)
+            except Exception:
+                anti_monster = 4
+            try:
+                anti_vehicle = int(params.get("anti_vehicle", 4) or 4)
+            except Exception:
+                anti_vehicle = 4
+            unit.special_rules["enhancement_micromelta_rounds_weapon_name"] = weapon_name
+            unit.special_rules["enhancement_micromelta_rounds_anti_monster"] = int(max(2, anti_monster))
+            unit.special_rules["enhancement_micromelta_rounds_anti_vehicle"] = int(max(2, anti_vehicle))
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 

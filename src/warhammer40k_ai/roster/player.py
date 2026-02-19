@@ -1208,6 +1208,14 @@ class Player:
             return bool(fn(self.game))
         return False
 
+    def _target_unit_can_use_intraneural_biotech_stratagem_discount(self, target_unit, *, stratagem_name: str = "") -> bool:
+        if target_unit is None:
+            return False
+        fn = getattr(target_unit, "can_use_intraneural_biotech_stratagem_discount", None)
+        if callable(fn):
+            return bool(fn(self.game, stratagem_name=stratagem_name))
+        return False
+
     def _target_unit_can_use_empyric_suffusion_heroic_intervention(self, target_unit) -> bool:
         if target_unit is None:
             return False
@@ -1324,6 +1332,17 @@ class Player:
         if name != "heroic intervention":
             return 0
         if not self._target_unit_can_use_snarling_protector_heroic_intervention(target_unit):
+            return 0
+        base = int(getattr(stratagem, "cp_cost", 0) or 0)
+        return max(0, base)
+
+    def _preview_intraneural_biotech_discount(self, *, stratagem=None, target_unit=None) -> int:
+        if stratagem is None or target_unit is None:
+            return 0
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u not in ("HEROIC INTERVENTION", "COUNTER-OFFENSIVE", "COUNTER OFFENSIVE"):
+            return 0
+        if not self._target_unit_can_use_intraneural_biotech_stratagem_discount(target_unit, stratagem_name=name_u):
             return 0
         base = int(getattr(stratagem, "cp_cost", 0) or 0)
         return max(0, base)
@@ -1649,6 +1668,38 @@ class Player:
             ):
                 discount = base
                 reasons.append(f"{ability_name}: Heroic Intervention for 0CP.")
+                return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
+
+        intraneural = self._preview_intraneural_biotech_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if intraneural:
+            ability_name = "Intraneural Biotech"
+            try:
+                get_rule = getattr(target_unit, "get_intraneural_biotech_stratagem_rule", None)
+                rule = get_rule() if callable(get_rule) else None
+                if isinstance(rule, dict):
+                    ability_name = str(rule.get("source", "") or ability_name).strip() or ability_name
+            except Exception:
+                pass
+            ability_key = "INTRANEURAL_BIOTECH_STRATAGEM_DISCOUNT"
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_preview_optional_ability(
+                ability_key,
+                ctx,
+                assume=assume_optional_discounts,
+            ):
+                discount = base
+                if name_u == "HEROIC INTERVENTION":
+                    reasons.append(f"{ability_name}: Heroic Intervention for 0CP.")
+                else:
+                    reasons.append(f"{ability_name}: Counter-offensive for 0CP.")
                 return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
 
         if name_u in ("OVERWATCH", "FIRE OVERWATCH") and target_unit is not None:
@@ -2057,6 +2108,68 @@ class Player:
                     "snarling_protector_heroic_intervention_use": True,
                     "snarling_protector_heroic_intervention_source": ability_name,
                 }
+        intraneural = self._preview_intraneural_biotech_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if intraneural and target_unit is not None:
+            ability_name = "Intraneural Biotech"
+            try:
+                get_rule = getattr(target_unit, "get_intraneural_biotech_stratagem_rule", None)
+                rule = get_rule() if callable(get_rule) else None
+                if isinstance(rule, dict):
+                    ability_name = str(rule.get("source", "") or ability_name).strip() or ability_name
+            except Exception:
+                pass
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_use_optional_ability("INTRANEURAL_BIOTECH_STRATAGEM_DISCOUNT", ctx):
+                cost = 0
+                increase = 0
+                increase_reasons: list[str] = []
+                opponent = self._get_opponent_player()
+                if opponent is not None:
+                    inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                        target_unit=target_unit,
+                        stratagem=stratagem,
+                        current_cost=cost,
+                    )
+                    increase = int(inc_info.get("increase", 0) or 0)
+                    increase_reasons = list(inc_info.get("reasons", []) or [])
+                    if increase:
+                        cost = max(0, cost + increase)
+                self._pending_stratagem_cp_increase = {
+                    "increase": int(increase or 0),
+                    "reasons": increase_reasons,
+                    "stratagem_name": getattr(stratagem, "name", None) or "",
+                }
+                try:
+                    mark_used = getattr(target_unit, "mark_intraneural_biotech_used", None)
+                    if callable(mark_used):
+                        mark_used(
+                            self.game,
+                            source=ability_name,
+                            stratagem_name=str(getattr(stratagem, "name", "") or ""),
+                        )
+                except Exception:
+                    pass
+                reason = f"{ability_name}: Heroic Intervention for 0CP."
+                if name_u in ("COUNTER-OFFENSIVE", "COUNTER OFFENSIVE"):
+                    reason = f"{ability_name}: Counter-offensive for 0CP."
+                return {
+                    "base": base,
+                    "discount": base,
+                    "cost": cost,
+                    "reasons": [reason],
+                    "increase": increase,
+                    "increase_reasons": increase_reasons,
+                    "intraneural_biotech_use": True,
+                    "intraneural_biotech_source": ability_name,
+                }
         if name_u in ("OVERWATCH", "FIRE OVERWATCH") and target_unit is not None:
             get_rule = getattr(target_unit, "get_traitor_enforcer_overwatch_rule", None)
             rule = get_rule() if callable(get_rule) else None
@@ -2235,20 +2348,14 @@ class Player:
             mgr = getattr(self, "stratagems", None)
             used_this_phase = getattr(mgr, "_used_stratagems_this_phase", set()) if mgr is not None else set()
             counter_used = "COUNTER-OFFENSIVE" in used_this_phase if isinstance(used_this_phase, set) else False
-            can_daemonforge = False
-            daemonforge_available = getattr(mgr, "_counter_offensive_daemonforge_available", None)
-            if callable(daemonforge_available):
-                can_daemonforge = bool(
-                    daemonforge_available(
-                        target_unit=target_unit,
-                        candidates=None,
-                    )
-                )
-            elif rule:
-                can_daemonforge = bool(
-                    getattr(target_unit, "can_use_daemonforge_counter_offensive", lambda _g=None: False)(self.game)
-                )
-            if counter_used and not can_daemonforge:
+            can_daemonforge = bool(
+                getattr(target_unit, "can_use_daemonforge_counter_offensive", lambda _g=None: False)(self.game)
+            )
+            can_intraneural = self._target_unit_can_use_intraneural_biotech_stratagem_discount(
+                target_unit,
+                stratagem_name="COUNTER-OFFENSIVE",
+            )
+            if counter_used and not can_daemonforge and not can_intraneural:
                 return {"denied": True, "reason": "Counter-offensive already used this phase"}
             if can_daemonforge and rule:
                 ability_name = str(rule.get("source", "") or "Daemonforge").strip() or "Daemonforge"
@@ -2293,6 +2400,8 @@ class Player:
                         "daemonforge_counter_offensive_use": True,
                         "daemonforge_counter_offensive_source": ability_name,
                     }
+            if counter_used:
+                return {"denied": True, "reason": "Counter-offensive already used this phase"}
         # For application, we still compute "available" discounts (even if declined), but affordability uses applied discount.
         preview = self.preview_stratagem_cp_cost(
             stratagem,

@@ -3896,6 +3896,164 @@ class KeywordsDetachmentsMixin:
             pass
         return bool(root.get_daemonforge_counter_offensive_rule())
 
+    def _intraneural_biotech_source_unit(self):
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return None, None
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_intraneural_biotech", False)):
+                continue
+            bearer = None
+            bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "")
+            if bearer_id:
+                for model in list(getattr(member, "models", []) or []):
+                    model_id = str(get_entity_id(model) or getattr(model, "id", getattr(model, "_id", "")) or "")
+                    if model_id == bearer_id:
+                        bearer = model
+                        break
+            if bearer is None:
+                get_bearer = getattr(member, "_get_enhancement_bearer_model", None)
+                if callable(get_bearer):
+                    try:
+                        bearer = get_bearer()
+                    except Exception:
+                        bearer = None
+            if bearer is None:
+                continue
+            try:
+                alive_attr = getattr(bearer, "is_alive", True)
+                bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            except Exception:
+                bearer_alive = False
+            if not bearer_alive:
+                continue
+            return member, sr
+        return None, None
+
+    def get_intraneural_biotech_stratagem_rule(self) -> Optional[dict]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "intraneural_biotech_stratagem_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        source_unit, source_sr = root._intraneural_biotech_source_unit()
+        if source_unit is not None and isinstance(source_sr, dict):
+            enhancement = getattr(source_unit, "enhancement", None)
+            source = str(getattr(enhancement, "name", "") or "Intraneural Biotech").strip() or "Intraneural Biotech"
+            stratagems = [
+                str(v or "").strip().upper()
+                for v in list(source_sr.get("enhancement_intraneural_biotech_stratagems", ("HEROIC INTERVENTION", "COUNTER-OFFENSIVE")) or ())
+                if str(v or "").strip()
+            ]
+            if not stratagems:
+                stratagems = ["HEROIC INTERVENTION", "COUNTER-OFFENSIVE"]
+            rule = {
+                "source": source,
+                "ability_key": "intraneural_biotech_stratagem_discount",
+                "stratagems": tuple(stratagems),
+                "limit": str(source_sr.get("enhancement_intraneural_biotech_limit", "battle_round") or "battle_round").strip().lower(),
+            }
+            try:
+                source_id = get_entity_id(source_unit)
+            except Exception:
+                source_id = None
+            if source_id:
+                rule["source_unit_id"] = str(source_id)
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def _intraneural_biotech_battle_round_key(self, game=None) -> str:
+        if game is None:
+            try:
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+            except Exception:
+                game = None
+        try:
+            br = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            br = 0
+        return str(br)
+
+    def intraneural_biotech_used_this_battle_round(self, game=None) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        key = self._intraneural_biotech_battle_round_key(game)
+        if not key:
+            return False
+        return str(sr.get("intraneural_biotech_used_battle_round", "") or "") == key
+
+    def mark_intraneural_biotech_used(self, game=None, *, source: str = "", stratagem_name: str = "") -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["intraneural_biotech_used_battle_round"] = self._intraneural_biotech_battle_round_key(game)
+        if source:
+            sr["intraneural_biotech_used_source"] = str(source or "").strip()
+        if stratagem_name:
+            sr["intraneural_biotech_used_stratagem"] = str(stratagem_name or "").strip()
+        root.special_rules = sr
+
+    def can_use_intraneural_biotech_stratagem_discount(self, game=None, *, stratagem_name: str = "") -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        try:
+            if not root.is_alive() or not getattr(root, "deployed", False):
+                return False
+        except Exception:
+            return False
+        try:
+            if root.is_in_reserves():
+                return False
+        except Exception:
+            pass
+        try:
+            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
+        rule = root.get_intraneural_biotech_stratagem_rule()
+        if not rule:
+            return False
+        if root.intraneural_biotech_used_this_battle_round(game):
+            return False
+        name_u = str(stratagem_name or "").strip().upper()
+        allowed = {str(v or "").strip().upper() for v in list(rule.get("stratagems", ()) or ()) if str(v or "").strip()}
+        if name_u and allowed and name_u not in allowed:
+            return False
+        return True
+
     def _setup_reactive_shoot_or_charge_turn_key(self, game=None) -> str:
         if game is None:
             try:

@@ -2221,6 +2221,14 @@ class StratagemManager(
             return bool(fn(self.game, stratagem_name=stratagem_name))
         return False
 
+    def _unit_can_use_intraneural_biotech_stratagem_discount(self, unit, *, stratagem_name: str = "") -> bool:
+        if unit is None:
+            return False
+        fn = getattr(unit, "can_use_intraneural_biotech_stratagem_discount", None)
+        if callable(fn):
+            return bool(fn(self.game, stratagem_name=stratagem_name))
+        return False
+
     def _unit_has_snarling_protector_heroic_intervention(self, unit) -> bool:
         if unit is None:
             return False
@@ -2293,9 +2301,20 @@ class StratagemManager(
 
     def _counter_offensive_daemonforge_available(self, *, target_unit=None, candidates=None) -> bool:
         if target_unit is not None:
-            return self._unit_can_use_daemonforge_counter_offensive(target_unit)
+            return (
+                self._unit_can_use_daemonforge_counter_offensive(target_unit)
+                or self._unit_can_use_intraneural_biotech_stratagem_discount(
+                    target_unit,
+                    stratagem_name="COUNTER-OFFENSIVE",
+                )
+            )
         for cand in list(candidates or []):
             if self._unit_can_use_daemonforge_counter_offensive(cand):
+                return True
+            if self._unit_can_use_intraneural_biotech_stratagem_discount(
+                cand,
+                stratagem_name="COUNTER-OFFENSIVE",
+            ):
                 return True
         return False
 
@@ -2309,6 +2328,10 @@ class StratagemManager(
                     enemy_unit=enemy_unit,
                 )
                 or self._unit_has_snarling_protector_heroic_intervention(target_unit)
+                or self._unit_can_use_intraneural_biotech_stratagem_discount(
+                    target_unit,
+                    stratagem_name="HEROIC INTERVENTION",
+                )
             ):
                 return False
             uid = self._heroic_intervention_target_id(target_unit)
@@ -2322,6 +2345,10 @@ class StratagemManager(
                     enemy_unit=enemy_unit,
                 )
                 or self._unit_has_snarling_protector_heroic_intervention(cand)
+                or self._unit_can_use_intraneural_biotech_stratagem_discount(
+                    cand,
+                    stratagem_name="HEROIC INTERVENTION",
+                )
             ):
                 continue
             uid = self._heroic_intervention_target_id(cand)
@@ -2333,6 +2360,59 @@ class StratagemManager(
         uid = self._heroic_intervention_target_id(unit)
         if uid:
             self._heroic_intervention_units_this_phase.add(uid)
+
+    def _grenade_mortal_wound_threshold(self, target_unit) -> int:
+        threshold = 4
+        if target_unit is None:
+            return threshold
+        try:
+            root = target_unit.get_attached_unit_root()
+        except Exception:
+            root = target_unit
+        if root is None:
+            return threshold
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_esoteric_explosives", False)):
+                continue
+            bearer = None
+            bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "")
+            if bearer_id:
+                for model in list(getattr(member, "models", []) or []):
+                    model_id = str(get_entity_id(model) or getattr(model, "id", getattr(model, "_id", "")) or "")
+                    if model_id == bearer_id:
+                        bearer = model
+                        break
+            if bearer is None:
+                get_bearer = getattr(member, "_get_enhancement_bearer_model", None)
+                if callable(get_bearer):
+                    try:
+                        bearer = get_bearer()
+                    except Exception:
+                        bearer = None
+            if bearer is None:
+                continue
+            try:
+                alive_attr = getattr(bearer, "is_alive", True)
+                bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            except Exception:
+                bearer_alive = False
+            if not bearer_alive:
+                continue
+            try:
+                member_threshold = int(sr.get("enhancement_esoteric_explosives_grenade_mortal_threshold", 3) or 3)
+            except Exception:
+                member_threshold = 3
+            threshold = min(int(threshold), int(max(2, member_threshold)))
+        return int(max(2, threshold))
 
     def _evaluate_availability(
         self,
@@ -12469,11 +12549,14 @@ class StratagemManager(
                 raise
             if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
-            # Roll 6D6; each 4+ = 1 mortal wound
+            # Roll 6D6; each successful threshold inflicts 1 mortal wound.
+            threshold = self._grenade_mortal_wound_threshold(enemy)
             rolls = [dice_module.get_roll("D6") for _ in range(6)]
-            mw = sum(1 for r in rolls if int(r) >= 4)
+            mw = sum(1 for r in rolls if int(r) >= int(threshold))
             try:
-                logger.info(f"INFO: GRENADE: rolls={rolls} -> {mw} mortal wounds to {enemy.name}")
+                logger.info(
+                    f"INFO: GRENADE: rolls={rolls} threshold={int(threshold)}+ -> {mw} mortal wounds to {enemy.name}"
+                )
             except Exception:
                 raise
             if mw > 0:
