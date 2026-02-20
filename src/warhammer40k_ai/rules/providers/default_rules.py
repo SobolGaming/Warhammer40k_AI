@@ -48,6 +48,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("model_destroyed", "_on_model_destroyed_tally_of_pestilence"),
                 ("model_destroyed", "_on_model_destroyed_phase_kill_tracking"),
                 ("model_destroyed", "_on_model_destroyed_spirit_snare"),
+                ("model_destroyed", "_on_model_destroyed_spirit_conclave_shepherds"),
                 ("model_destroyed", "_on_model_destroyed_curse_of_the_walking_pox"),
                 ("unit_destroyed", "_on_unit_destroyed_rules"),
                 ("unit_destroyed", "_on_unit_destroyed_battleshock_on_kill"),

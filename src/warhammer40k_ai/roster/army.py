@@ -446,6 +446,9 @@ class Army:
         apply_fn = getattr(ae_mgr, "apply_ride_the_wind_battleline_keywords", None) if ae_mgr is not None else None
         if callable(apply_fn):
             apply_fn(unit)
+        apply_fn = getattr(ae_mgr, "apply_spirit_conclave_battleline_keywords", None) if ae_mgr is not None else None
+        if callable(apply_fn):
+            apply_fn(unit)
         ia_mgr = getattr(self, "imperial_agents_detachments", None)
         apply_fn = getattr(ia_mgr, "apply_extremis_sanction_extra_uses", None) if ia_mgr is not None else None
         if callable(apply_fn):

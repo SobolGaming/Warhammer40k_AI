@@ -62,6 +62,11 @@ class BattleFocusManager:
                         return True
             except Exception:
                 continue
+        army = self.army
+        mgr = getattr(army, "aeldari_detachments", None) if army is not None else None
+        grant_fn = getattr(mgr, "spirit_guides_battle_focus_applies", None) if mgr is not None else None
+        if callable(grant_fn) and bool(grant_fn(unit)):
+            return True
         return False
 
     def _unit_id(self, unit) -> str:

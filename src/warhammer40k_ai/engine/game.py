@@ -4474,6 +4474,40 @@ class Game(
             ability_name="Spirit Snare",
         )
 
+    def _on_model_destroyed_spirit_conclave_shepherds(
+        self,
+        attacker_unit=None,
+        target_model=None,
+        target_unit=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None or target_model is None or target_unit is None:
+            return
+        try:
+            owner_army = target_unit.get_parent_army()
+        except Exception:
+            owner_army = None
+        if owner_army is None:
+            return
+        mgr = getattr(owner_army, "aeldari_detachments", None)
+        if mgr is None:
+            return
+        should_award = getattr(mgr, "spirit_conclave_destroyed_psyker_awards_vengeful_dead", None)
+        if not callable(should_award):
+            return
+        if not bool(
+            should_award(
+                destroyed_model=target_model,
+                destroyed_unit=target_unit,
+                destroyed_by_unit=attacker_unit,
+            )
+        ):
+            return
+        apply_tokens = getattr(mgr, "spirit_conclave_add_vengeful_dead_tokens", None)
+        if not callable(apply_tokens):
+            return
+        apply_tokens(attacker_unit, count=1)
+
     def _on_unit_destroyed_phase_kill_tracking(self, unit=None, destroyed_by_unit=None, **_kwargs) -> None:
         """Track units that destroyed enemy units during Shooting/Fight phases."""
         if unit is None or destroyed_by_unit is None:

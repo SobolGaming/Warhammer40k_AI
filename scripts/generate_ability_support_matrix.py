@@ -290,6 +290,13 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"the maximum number of units you can select depends on the battle size as shown below",
             r"windriders units from your army gain the battleline keyword",
         ),
+        "Shepherds of the Dead": (
+            r"each time an asuryani psyker model from your army is destroyed by an enemy unit that enemy unit gains a vengeful dead token",
+            r"each time a wraith construct model from your army makes an attack that targets a unit with one or more vengeful dead tokens add 1 to the hit roll and add 1 to the wound roll",
+            r"asuryani psyker models from your army have the following ability",
+            r"while a wraithblades wraithguard or wraithlord unit from your army is within 12 of this model that unit has the battle focus ability",
+            r"wraithblades and wraithguard units from your army gain the battleline keyword",
+        ),
         "Skilled Crews": (
             r"ranged weapons equipped by aeldari vehicle models from your army have the assault ability and you can reroll advance rolls made for aeldari vehicle fly units from your army",
             r"ranged weapons equipped by aeldari vehicle models from your army have the assault ability",
@@ -1765,6 +1772,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Ride the Wind": (
             "Supported",
             "Windrider Host: ASURYANI MOUNTED/VYPER units can be allocated to Reserves and are treated as Strategic Reserves for setup timing/rules, gain +1 effective battle round when setting up from Strategic Reserves, and can be selected at end of the opponent turn (Incursion 1, Strike Force 2, Onslaught 3) to enter Strategic Reserves; Windriders gain BATTLELINE.",
+        ),
+        "Shepherds of the Dead": (
+            "Supported",
+            "Spirit Conclave: each destroyed ASURYANI PSYKER model grants a Vengeful Dead token to the enemy unit that destroyed it; WRAITH CONSTRUCT models gain +1 hit/+1 wound against tokened units; Spirit Guides aura grants Battle Focus to nearby Wraithblades/Wraithguard/Wraithlord units; Wraithblades and Wraithguard gain BATTLELINE.",
         ),
         "Bold Gallantry": (
             "Supported",

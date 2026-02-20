@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter
 import re
 
+from ..utility.aura_utils import unit_within_range_of_unit
 from ..utility.dice import get_roll
 from ..utility.entity_ids import get_entity_id
 from .detachment_manager import DetachmentManagerBase
@@ -12,6 +13,10 @@ class AeldariDetachmentManager(DetachmentManagerBase):
     faction_id = "AE"
     _RELENTLESS_RAIDERS_MOVE_ACTIONS = {"move", "advance", "fall_back", "charge"}
     _RIDE_THE_WIND_BATTLELINE_NAME_SNIPPETS = ("windrider", "windriders")
+    _SPIRIT_CONCLAVE_BATTLELINE_NAME_SNIPPETS = ("wraithguard", "wraithblades")
+    _SPIRIT_CONCLAVE_SPIRIT_GUIDES_TARGET_NAME_SNIPPETS = ("wraithblades", "wraithguard", "wraithlord")
+    _SPIRIT_CONCLAVE_VENGEFUL_DEAD_TOKENS_KEY = "aeldari_spirit_conclave_vengeful_dead_tokens"
+    _SPIRIT_CONCLAVE_SPIRIT_GUIDES_RANGE = 12.0
     _DEFEND_AT_ALL_COSTS_MODEL_KEYWORDS = (
         "DIRE AVENGERS",
         "DIRE AVENGER",
@@ -264,6 +269,8 @@ class AeldariDetachmentManager(DetachmentManagerBase):
             errors.extend(self._validate_acrobatic_onslaught_rules())
         if self.is_windrider_host():
             self.apply_ride_the_wind_battleline_keywords()
+        if self.is_spirit_conclave():
+            self.apply_spirit_conclave_battleline_keywords()
         if self.is_devoted_of_ynnead():
             errors.extend(self._validate_devoted_of_ynnead_rules())
         if self.has_veterans_of_the_void():
@@ -477,6 +484,199 @@ class AeldariDetachmentManager(DetachmentManagerBase):
         if not name:
             return False
         return any(snippet in name for snippet in self._RIDE_THE_WIND_BATTLELINE_NAME_SNIPPETS)
+
+    @staticmethod
+    def _resolve_root_unit(unit):
+        if unit is None:
+            return None
+        return unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+
+    def _unit_is_spirit_conclave_battleline_target(self, unit) -> bool:
+        if unit is None:
+            return False
+        if self._unit_has_keyword(unit, "WRAITHGUARD") or self._unit_has_keyword(unit, "WRAITHBLADES"):
+            return True
+        name = self._normalize_unit_name(getattr(unit, "name", ""))
+        return any(snippet in name for snippet in self._SPIRIT_CONCLAVE_BATTLELINE_NAME_SNIPPETS)
+
+    def _unit_is_spirit_guides_target(self, unit) -> bool:
+        if unit is None:
+            return False
+        if (
+            self._unit_has_keyword(unit, "WRAITHBLADES")
+            or self._unit_has_keyword(unit, "WRAITHGUARD")
+            or self._unit_has_keyword(unit, "WRAITHLORD")
+        ):
+            return True
+        name = self._normalize_unit_name(getattr(unit, "name", ""))
+        return any(snippet in name for snippet in self._SPIRIT_CONCLAVE_SPIRIT_GUIDES_TARGET_NAME_SNIPPETS)
+
+    def _unit_is_asuryani_psyker(self, unit) -> bool:
+        if unit is None:
+            return False
+        return self._unit_has_keyword(unit, "ASURYANI") and self._unit_has_keyword(unit, "PSYKER")
+
+    @staticmethod
+    def _coerce_int(value, default: int = 0) -> int:
+        try:
+            return int(value or 0)
+        except (TypeError, ValueError):
+            return int(default)
+
+    @staticmethod
+    def _is_alive(entity) -> bool:
+        if entity is None:
+            return False
+        alive_attr = getattr(entity, "is_alive", None)
+        if callable(alive_attr):
+            return bool(alive_attr())
+        return bool(alive_attr) if alive_attr is not None else True
+
+    def _unit_is_active_for_rules(self, unit) -> bool:
+        if unit is None:
+            return False
+        if not self._is_alive(unit):
+            return False
+        if not bool(getattr(unit, "deployed", False)):
+            return False
+        if str(getattr(unit, "reserve_status", "deployed") or "deployed").strip().lower() != "deployed":
+            return False
+        if bool(getattr(unit, "is_embarked", False)):
+            return False
+        if getattr(unit, "embarked_in", None) is not None:
+            return False
+        return True
+
+    def _model_is_asuryani_psyker(self, model, unit) -> bool:
+        if model is None:
+            return False
+        model_keywords = list(getattr(model, "keywords", []) or []) + list(getattr(model, "faction_keywords", []) or [])
+        if model_keywords:
+            return self._model_has_keyword(model, "ASURYANI") and self._model_has_keyword(model, "PSYKER")
+        return self._unit_is_asuryani_psyker(unit)
+
+    def _model_is_wraith_construct(self, model, unit) -> bool:
+        model_keywords = list(getattr(model, "keywords", []) or []) + list(getattr(model, "faction_keywords", []) or [])
+        if model_keywords:
+            return self._model_has_keyword(model, "WRAITH CONSTRUCT")
+        return self._unit_has_keyword(unit, "WRAITH CONSTRUCT")
+
+    def apply_spirit_conclave_battleline_keywords(self, unit=None) -> None:
+        if not self.is_spirit_conclave() or self.army is None:
+            return
+        units = [unit] if unit is not None else list(getattr(self.army, "units", []) or [])
+        for entry in units:
+            root = self._resolve_root_unit(entry)
+            if root is None or not self._unit_in_army(root):
+                continue
+            if not self._unit_is_spirit_conclave_battleline_target(root):
+                continue
+            keywords = list(getattr(root, "keywords", []) or [])
+            if any(str(k or "").strip().lower() == "battleline" for k in keywords):
+                continue
+            keywords.append("Battleline")
+            root.keywords = keywords
+
+    def spirit_conclave_destroyed_psyker_awards_vengeful_dead(
+        self,
+        *,
+        destroyed_model,
+        destroyed_unit,
+        destroyed_by_unit,
+    ) -> bool:
+        if not self.is_spirit_conclave():
+            return False
+        destroyed_root = self._resolve_root_unit(destroyed_unit)
+        destroyed_by_root = self._resolve_root_unit(destroyed_by_unit)
+        if destroyed_root is None or destroyed_by_root is None:
+            return False
+        if not self._unit_in_army(destroyed_root):
+            return False
+        if self._unit_in_army(destroyed_by_root):
+            return False
+        return self._model_is_asuryani_psyker(destroyed_model, destroyed_root)
+
+    def spirit_conclave_add_vengeful_dead_tokens(self, target_unit, *, count: int = 1) -> int:
+        added = max(0, self._coerce_int(count, default=0))
+        if not self.is_spirit_conclave() or added <= 0:
+            return 0
+        root = self._resolve_root_unit(target_unit)
+        if root is None or self._unit_in_army(root):
+            return 0
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        current = self._coerce_int(sr.get(self._SPIRIT_CONCLAVE_VENGEFUL_DEAD_TOKENS_KEY, 0), default=0)
+        total = max(0, current + added)
+        sr[self._SPIRIT_CONCLAVE_VENGEFUL_DEAD_TOKENS_KEY] = int(total)
+        root.special_rules = sr
+        return int(total)
+
+    def spirit_conclave_vengeful_dead_tokens(self, unit) -> int:
+        if unit is None:
+            return 0
+        root = self._resolve_root_unit(unit)
+        if root is None:
+            return 0
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return 0
+        return max(0, self._coerce_int(sr.get(self._SPIRIT_CONCLAVE_VENGEFUL_DEAD_TOKENS_KEY, 0), default=0))
+
+    def spirit_conclave_has_vengeful_dead_tokens(self, unit) -> bool:
+        return self.spirit_conclave_vengeful_dead_tokens(unit) > 0
+
+    def shepherds_of_the_dead_hit_bonus(self, model, attacker_unit, target_unit) -> tuple[int, str]:
+        if not self.is_spirit_conclave():
+            return 0, ""
+        attacker_root = self._resolve_root_unit(attacker_unit)
+        if attacker_root is None or not self._unit_in_army(attacker_root):
+            return 0, ""
+        if not self._model_is_wraith_construct(model, attacker_root):
+            return 0, ""
+        if not self.spirit_conclave_has_vengeful_dead_tokens(target_unit):
+            return 0, ""
+        return 1, "Shepherds of the Dead (+1 to hit vs Vengeful Dead)"
+
+    def shepherds_of_the_dead_wound_bonus(self, model, attacker_unit, target_unit) -> tuple[int, str]:
+        if not self.is_spirit_conclave():
+            return 0, ""
+        attacker_root = self._resolve_root_unit(attacker_unit)
+        if attacker_root is None or not self._unit_in_army(attacker_root):
+            return 0, ""
+        if not self._model_is_wraith_construct(model, attacker_root):
+            return 0, ""
+        if not self.spirit_conclave_has_vengeful_dead_tokens(target_unit):
+            return 0, ""
+        return 1, "Shepherds of the Dead (+1 to wound vs Vengeful Dead)"
+
+    def spirit_guides_battle_focus_applies(self, unit, *, game=None, game_map=None) -> bool:
+        _ = game_map
+        if not self.is_spirit_conclave() or self.army is None:
+            return False
+        root = self._resolve_root_unit(unit)
+        if root is None or not self._unit_in_army(root):
+            return False
+        if not self._unit_is_spirit_guides_target(root):
+            return False
+        if not self._unit_is_active_for_rules(root):
+            return False
+        psyker_sources: list = []
+        for candidate in list(self._iter_unique_army_roots() or []):
+            if candidate is None:
+                continue
+            if not self._unit_is_asuryani_psyker(candidate):
+                continue
+            if not self._unit_is_active_for_rules(candidate):
+                continue
+            psyker_sources.append(candidate)
+        if not psyker_sources:
+            return False
+        range_inches = float(self._SPIRIT_CONCLAVE_SPIRIT_GUIDES_RANGE)
+        for source in psyker_sources:
+            if unit_within_range_of_unit(source, root, range_inches, use_attached_aggregate=True):
+                return True
+        return False
 
     def ride_the_wind_allows_standard_reserves(self, unit) -> bool:
         if not self.is_windrider_host():
