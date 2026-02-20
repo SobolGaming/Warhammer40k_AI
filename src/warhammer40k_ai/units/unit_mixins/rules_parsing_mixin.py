@@ -3094,6 +3094,14 @@ class RulesParsingMixin:
                     added.append("Smoke")
                 if re.search(r"\b" + re.escape(self._BEARER_LOSES_SMOKE_KEYWORD_TOKENS) + r"\b", norm):
                     removed.append("Smoke")
+                if re.fullmatch(r"(?:the )?bearers unit has the smoke keyword", norm):
+                    unit_added.append("Smoke")
+                if re.fullmatch(r"this unit has the smoke keyword", norm):
+                    unit_added.append("Smoke")
+                if re.fullmatch(r"(?:the )?bearers unit has the smoke and grenades keywords", norm):
+                    unit_added.extend(["Smoke", "Grenades"])
+                if re.fullmatch(r"this unit has the smoke and grenades keywords", norm):
+                    unit_added.extend(["Smoke", "Grenades"])
                 if re.fullmatch(r"(?:the )?bearers unit has the grenades keyword", norm):
                     unit_added.append("Grenades")
                 if re.fullmatch(r"this unit has the grenades keyword", norm):

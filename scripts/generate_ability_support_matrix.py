@@ -2355,6 +2355,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Leading: at the start of the Fight phase choose Hero's Prowess (re-roll hit 1s), Villain's Doom (+1 to wound), or Trickster's Grace (-1 to hit vs the unit).",
         ),
+        ("DRU", "Airborne Evasion"): (
+            "Supported",
+            "After shooting: if not within Engagement Range, unit can make a Normal move up to 6\" and cannot charge this turn.",
+        ),
         ("AE", "Cruel Amusement"): (
             "Supported",
             "Selected to shoot: choose Ignores Cover, Precision, or Sustained Hits 3 for the shrieker cannon until end of phase.",
@@ -2362,6 +2366,26 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("DRU", "Cruel Amusement"): (
             "Supported",
             "Selected to shoot: choose Ignores Cover, Precision, or Sustained Hits 3 for the shrieker cannon until end of phase.",
+        ),
+        ("DRU", "Murderous Crossfire"): (
+            "Supported",
+            "After shooting: select a hit enemy unit; friendly DRUKHARI ranged attacks against that target improve AP by 1 until end of phase (once per turn per target).",
+        ),
+        ("DRU", "Mind Like a Steel Trap (Aura)"): (
+            "Supported",
+            "Opponent Stratagem targeting: if target is within 12\", increase CP cost by 1.",
+        ),
+        ("DRU", "Kabalite Icon"): (
+            "Supported",
+            "Bearer's unit gains +1 Objective Control (Battle-shocked units already have OC 0 by core rules).",
+        ),
+        ("DRU", "Phantasm Grenade Launcher"): (
+            "Supported",
+            "Bearer's unit gains Smoke and Grenades keywords when specified by the datasheet rule text.",
+        ),
+        ("DRU", "Stimm-needler"): (
+            "Supported",
+            "Once per turn: first failed saving throw for the bearer's unit sets that attack's Damage to 0.",
         ),
         ("AE", "Cloudstrider"): ("Supported", "Leading: optional 6\" Deep Strike placement; no charge that turn."),
         ("AE", "Cry of the Wind"): (

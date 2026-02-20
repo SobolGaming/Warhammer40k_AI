@@ -873,6 +873,27 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
         self.assertTrue(bodyguard.has_keyword("Grenades"))
         self.assertTrue(leader.has_keyword("Grenades"))
 
+    def test_bearer_unit_smoke_and_grenades_keywords_apply(self):
+        ability = {
+            "name": "Phantasm Grenade Launcher",
+            "description": "The bearer's unit has the Smoke and Grenades keywords.",
+            "type": "Wargear",
+            "parameter": "",
+        }
+        leader = _make_unit("Leader", abilities=[ability], attached_to=["Bodyguard"])
+        bodyguard = _make_unit("Bodyguard")
+        bodyguard.attached_leaders = [leader]
+        leader.attached_to = bodyguard
+
+        leader.models[0].optional_wargear.append("Phantasm Grenade Launcher")
+
+        bodyguard._refresh_bearer_keyword_flags()
+
+        self.assertTrue(bodyguard.has_keyword("Smoke"))
+        self.assertTrue(bodyguard.has_keyword("Grenades"))
+        self.assertTrue(leader.has_keyword("Smoke"))
+        self.assertTrue(leader.has_keyword("Grenades"))
+
     def test_leading_unit_target_hit_penalty_applies(self):
         from warhammer40k_ai.roster.army import Army
 
