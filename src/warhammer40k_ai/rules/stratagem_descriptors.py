@@ -1676,6 +1676,33 @@ _DEVOTED_OF_YNNEAD_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _DEVOTED_OF_YNNEAD_STRATAGEM_DESCRIPTORS.values()
 }
 
+_ELDRITCH_RAIDERS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010700004": StratagemToolDescriptor(
+        stratagem_id="000010700004",
+        name="Yriel's Example",
+        timing="fight_phase_after_enemy_targets_selected",
+        target="aeldari_infantry_non_wraith_construct_selected_as_attack_target",
+        duration="until_end_of_phase",
+        effect="feel_no_pain",
+        cp_cost=1,
+        effect_params={"feel_no_pain_value": 5, "attack_type": "any"},
+    ),
+    "000010700007": StratagemToolDescriptor(
+        stratagem_id="000010700007",
+        name="Withdraw and Reinforce",
+        timing="end_of_opponent_fight_phase",
+        target="anhrathe_unit_not_within_engagement_range",
+        duration="immediate",
+        effect="enter_strategic_reserves_and_return_destroyed_models",
+        cp_cost=1,
+        effect_params={"return_destroyed_models_if_below_starting_strength": True, "skip_character": True},
+    ),
+}
+
+_ELDRITCH_RAIDERS_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _ELDRITCH_RAIDERS_STRATAGEM_DESCRIPTORS.values()
+}
+
 _EXPERIMENTAL_PROTOTYPE_CADRE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009984002": StratagemToolDescriptor(
         stratagem_id="000009984002",
@@ -2333,6 +2360,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _DEVOTED_OF_YNNEAD_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _ELDRITCH_RAIDERS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _EXPERIMENTAL_PROTOTYPE_CADRE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -2381,6 +2411,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _ASPECT_HOST_STRATAGEM_BY_NAME.get(key)
         or _CORSAIR_COTERIE_STRATAGEM_BY_NAME.get(key)
         or _DEVOTED_OF_YNNEAD_STRATAGEM_BY_NAME.get(key)
+        or _ELDRITCH_RAIDERS_STRATAGEM_BY_NAME.get(key)
         or _EXPERIMENTAL_PROTOTYPE_CADRE_STRATAGEM_BY_NAME.get(key)
         or _MONTKA_STRATAGEM_BY_NAME.get(key)
         or _INVASION_FLEET_STRATAGEM_BY_NAME.get(key)

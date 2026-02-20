@@ -158,6 +158,9 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "LETHAL RUSE",
     "PALL OF DREAD",
     "PARTING THE VEIL",
+    "WITHDRAW AND REINFORCE",
+    "YRIEL'S EXAMPLE",
+    "YRIEL\u2019S EXAMPLE",
     "PIRATES' DUE",
     "PIRATES’ DUE",
     "VENGEFUL SORROW",
@@ -1531,6 +1534,8 @@ class StratagemManager(
             "'ARD AS NAILS",
             "\u2019ARD AS NAILS",
             "PARTING THE VEIL",
+            "YRIEL'S EXAMPLE",
+            "YRIEL\u2019S EXAMPLE",
             "TO THEIR FINAL BREATH",
             "VOID HARDENED",
             "HYPERSTIMMS",
@@ -1581,6 +1586,7 @@ class StratagemManager(
             "NEW ORDERS",
             "RAPID INGRESS",
             "SKYBORNE SANCTUARY",
+            "WITHDRAW AND REINFORCE",
             "WEBWAY TUNNEL",
             "ENDLESS SERVITUDE",
             "PROFANE SYMBIOSIS",
@@ -3235,6 +3241,29 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires your Movement phase, just after an AELDARI unit from your army Falls Back"
             return result
+        if name_u.startswith("YRIEL") and "EXAMPLE" in name_u:
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                target_units = context.get("target_units") or context.get("targets")
+                candidates = self._aeldari_eldritch_yriels_example_candidates(
+                    target_units=list(target_units or []),
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires Fight phase target-selection trigger with an enemy unit that selected one of your AELDARI INFANTRY units (excluding WRAITH CONSTRUCT) as a target"
+            return result
+        if name_u == "WITHDRAW AND REINFORCE":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._aeldari_eldritch_withdraw_and_reinforce_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires end of opponent Fight phase and an ANHRATHE unit from your army not in Engagement Range"
+            return result
         if stratagem.can_use(self.player, self.game, **context):
             result["available"] = True
             result["reason"] = None
@@ -3259,6 +3288,8 @@ class StratagemManager(
     @staticmethod
     def _stratagem_target_hint(name: str) -> str:
         name_u = (name or "").strip().upper()
+        if name_u.startswith("YRIEL") and "EXAMPLE" in name_u:
+            return "Target: your AELDARI INFANTRY unit (excluding WRAITH CONSTRUCT) selected as a target of enemy fight attacks"
         hints = {
             "A GRIM WARNING": "Objective: destroyed BLOOD ANGELS unit on your objective",
             "AGGRESSIVE MOBILITY": "Target: your T'AU EMPIRE unit that has not been selected to move; if it Advances this phase, add 6\" instead of rolling",
@@ -3309,6 +3340,9 @@ class StratagemManager(
             "LETHAL RUSE": "Target: your AELDARI unit that just Fell Back this Movement phase (ANHRATHE also selects one enemy unit it was in Engagement Range of at phase start)",
             "PIRATES' DUE": "Target: your AELDARI unit that has not been selected to fight this phase",
             "PIRATES’ DUE": "Target: your AELDARI unit that has not been selected to fight this phase",
+            "WITHDRAW AND REINFORCE": "Target: your ANHRATHE unit that is not in Engagement Range at the end of the opponent's Fight phase",
+            "YRIEL'S EXAMPLE": "Target: your AELDARI INFANTRY unit (excluding WRAITH CONSTRUCT) selected as a target of enemy fight attacks",
+            "YRIEL\u2019S EXAMPLE": "Target: your AELDARI INFANTRY unit (excluding WRAITH CONSTRUCT) selected as a target of enemy fight attacks",
             "PRIMED AND READIED": "Target: your GENESTEALER CULTS unit that has not been selected to shoot/fight; selected unit scores critical hits on unmodified Hit rolls of 5+ this phase",
             "PRETERNATURAL PRECISION": "Target: ASPECT WARRIORS unit not yet selected to shoot; choose 1 (or 2 if token spent) from Ignores Cover/Lethal Hits/Sustained Hits 1",
             "SOULSIGHT": "Target: Armoured Warhost AELDARI VEHICLE or Devoted of Ynnead YNNARI unit that has not been selected to shoot",
@@ -4819,6 +4853,10 @@ class StratagemManager(
             raise
         try:
             self._queue_aeldari_devoted_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_aeldari_eldritch_phase_end_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -8314,6 +8352,13 @@ class StratagemManager(
             raise
         try:
             self._queue_aeldari_devoted_fight_targets_selected_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_aeldari_eldritch_fight_targets_selected_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -13222,6 +13267,9 @@ class StratagemManager(
         aeldari_devoted_result = self._use_aeldari_devoted_of_ynnead_stratagem(s, **kwargs)
         if aeldari_devoted_result is not None:
             return aeldari_devoted_result
+        aeldari_eldritch_result = self._use_aeldari_eldritch_raiders_stratagem(s, **kwargs)
+        if aeldari_eldritch_result is not None:
+            return aeldari_eldritch_result
         aeldari_corsair_result = self._use_aeldari_corsair_coterie_stratagem(s, **kwargs)
         if aeldari_corsair_result is not None:
             return aeldari_corsair_result

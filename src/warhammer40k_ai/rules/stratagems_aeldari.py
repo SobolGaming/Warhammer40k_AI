@@ -13,6 +13,7 @@ class AeldariStratagemMixin:
     def _aeldari_norm_name(name: str) -> str:
         text = str(name or "").strip().upper()
         text = text.replace("\u2019", "'").replace("\u2018", "'")
+        text = text.replace("â€™", "'").replace("\u00e2\u20ac\u2122", "'")
         for dash in ("\u2010", "\u2011", "\u2012", "\u2013", "\u2014", "−"):
             text = text.replace(dash, "-")
         return text
@@ -84,6 +85,11 @@ class AeldariStratagemMixin:
     def _is_devoted_of_ynnead_detachment(self) -> bool:
         mgr = self._aeldari_detachment_mgr()
         checker = getattr(mgr, "is_devoted_of_ynnead", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
+    def _is_eldritch_raiders_detachment(self) -> bool:
+        mgr = self._aeldari_detachment_mgr()
+        checker = getattr(mgr, "is_eldritch_raiders", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
     def _blitzing_firepower_candidates(self) -> List[Any]:
@@ -465,6 +471,50 @@ class AeldariStratagemMixin:
             if value is not None:
                 merged[key] = value
         return merged
+
+    def _aeldari_get_stratagem_by_norm_name(self, name: str):
+        wanted = self._aeldari_norm_name(name)
+        if not wanted:
+            return None
+        for stratagem in list(getattr(self, "available", []) or []):
+            if self._aeldari_norm_name(getattr(stratagem, "name", "")) == wanted:
+                return stratagem
+        return None
+
+    def _aeldari_place_unit_into_strategic_reserves(self, unit: Any, *, reason: str = "") -> bool:
+        root = self._aeldari_root(unit)
+        if root is None:
+            return False
+        game = getattr(self, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+
+        place_fn = getattr(root, "enter_strategic_reserves_midgame", None)
+        if callable(place_fn):
+            return bool(place_fn(game=game, game_map=game_map, reason=reason))
+
+        members = list(getattr(root, "get_attached_unit_members", lambda: [root])() or [])
+        if not members:
+            members = [root]
+        for member in members:
+            if member is None:
+                continue
+            set_status = getattr(member, "set_reserve_status", None)
+            if callable(set_status):
+                set_status("strategic_reserves")
+            else:
+                member.reserve_status = "strategic_reserves"
+            mark_midgame = getattr(member, "mark_entered_reserves_midgame", None)
+            if callable(mark_midgame):
+                mark_midgame(game=game)
+            if bool(getattr(member, "is_aircraft", False)) and not bool(getattr(member, "hover_mode", False)):
+                if game is not None:
+                    member._aircraft_return_turn = int(getattr(game, "turn", 0) or 0) + 1
+            member.deployed = True
+            member.reserve_turn_deployed = None
+            member.arrived_from_reserves_this_turn = False
+            if game_map is not None and isinstance(getattr(game_map, "units", None), list) and member in game_map.units:
+                game_map.units.remove(member)
+        return True
 
     def _aeldari_reaction_exists(self, event_name: str, stratagem_name: str, *, unit: Any = None) -> bool:
         wanted = self._aeldari_norm_name(stratagem_name)
@@ -869,6 +919,88 @@ class AeldariStratagemMixin:
                             payload["unit"] = candidates[0]
                             payload["target_unit"] = candidates[0]
                         self._queue_reaction(payload, use_timer=False)
+
+    def _queue_aeldari_eldritch_fight_targets_selected_reactions(
+        self,
+        *,
+        attacking_unit,
+        target_units: List[Any],
+    ) -> None:
+        game = getattr(self, "game", None)
+        if game is None or attacking_unit is None or not self._is_eldritch_raiders_detachment():
+            return
+        phase_key = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_key != "FIGHT_PHASE":
+            return
+        attacker_root = self._aeldari_root(attacking_unit)
+        if attacker_root is None:
+            return
+        try:
+            owner_player = attacker_root.get_parent_army().player
+        except (AttributeError, TypeError, ValueError):
+            return
+        if owner_player is self.player:
+            return
+
+        stratagem = self._aeldari_get_stratagem_by_norm_name("YRIEL'S EXAMPLE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+            return
+
+        target_list = list(target_units or [])
+        candidates = self._aeldari_eldritch_yriels_example_candidates(target_units=target_list)
+        if not candidates or self._aeldari_reaction_exists("fight_targets_selected", stratagem.name):
+            return
+        payload: Dict[str, Any] = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "target_units": target_list,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_aeldari_eldritch_phase_end_reactions(self, *, player, phase) -> None:
+        game = getattr(self, "game", None)
+        if game is None or not self._is_eldritch_raiders_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "FIGHT_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+
+        stratagem = self._aeldari_get_stratagem_by_norm_name("WITHDRAW AND REINFORCE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+            return
+        candidates = self._aeldari_eldritch_withdraw_and_reinforce_candidates()
+        if not candidates or self._aeldari_reaction_exists("phase_end", stratagem.name):
+            return
+        payload: Dict[str, Any] = {
+            "event": "phase_end",
+            "phase": "Fight phase",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
 
     def _queue_aeldari_armoured_move_end_reactions(self, *, unit, action: str) -> None:
         game = getattr(self, "game", None)
@@ -1651,6 +1783,161 @@ class AeldariStratagemMixin:
         self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
         return True
 
+    def _use_aeldari_eldritch_raiders_stratagem(self, stratagem, **kwargs) -> Optional[bool]:
+        if stratagem is None or not self._is_eldritch_raiders_detachment():
+            return None
+        name_u = self._aeldari_norm_name(getattr(stratagem, "name", ""))
+        if name_u == "YRIEL'S EXAMPLE":
+            return self._use_aeldari_eldritch_yriels_example(stratagem, **kwargs)
+        if name_u == "WITHDRAW AND REINFORCE":
+            return self._use_aeldari_eldritch_withdraw_and_reinforce(stratagem, **kwargs)
+        return None
+
+    def _use_aeldari_eldritch_yriels_example(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: YRIEL'S EXAMPLE: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        attacking_unit = context.get("attacking_unit") or context.get("attacker_unit")
+        attacking_root = self._aeldari_root(attacking_unit) if attacking_unit is not None else None
+        if attacking_root is not None:
+            try:
+                if attacking_root.get_parent_army().player is self.player:
+                    logger.error("ERROR: YRIEL'S EXAMPLE: attacking unit must be enemy")
+                    return False
+            except (AttributeError, TypeError, ValueError):
+                return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        target_window = list(context.get("target_units") or [])
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_eldritch_yriels_example_candidates(target_units=target_window)
+        candidate_roots = [self._aeldari_root(unit) for unit in list(candidates or [])]
+        candidate_roots = [unit for unit in candidate_roots if unit is not None]
+        if target_root is None:
+            if len(candidate_roots) == 1:
+                target_root = candidate_roots[0]
+            else:
+                logger.error("ERROR: YRIEL'S EXAMPLE: missing target unit")
+                return False
+        if candidate_roots and target_root not in candidate_roots:
+            logger.error("ERROR: YRIEL'S EXAMPLE: target must be selected as an enemy fight target")
+            return False
+        if not self._aeldari_on_battlefield(target_root, require_targetable=True):
+            logger.error("ERROR: YRIEL'S EXAMPLE: target must be on the battlefield and targetable")
+            return False
+        if not self._aeldari_has_keyword(target_root, "AELDARI") or not self._aeldari_has_keyword(target_root, "INFANTRY"):
+            logger.error("ERROR: YRIEL'S EXAMPLE: target must be AELDARI INFANTRY")
+            return False
+        if self._aeldari_has_keyword(target_root, "WRAITH CONSTRUCT"):
+            logger.error("ERROR: YRIEL'S EXAMPLE: WRAITH CONSTRUCT units are ineligible")
+            return False
+        if target_window:
+            selected_roots = [self._aeldari_root(unit) for unit in list(target_window or [])]
+            selected_roots = [unit for unit in selected_roots if unit is not None]
+            if selected_roots and target_root not in selected_roots:
+                logger.error("ERROR: YRIEL'S EXAMPLE: target was not selected by that attacker")
+                return False
+        if not self._aeldari_armoured_spend_cp(
+            stratagem,
+            target_unit=target_root,
+            enemy_unit=attacking_root,
+        ):
+            return False
+        self._append_defensive_effect(
+            target_root,
+            "defensive_fnp_overrides",
+            {
+                "value": 5,
+                "attack_type": "any",
+                "expires_phase": "FIGHT_PHASE",
+                "source": str(getattr(stratagem, "name", "YRIEL'S EXAMPLE") or "YRIEL'S EXAMPLE"),
+            },
+        )
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_aeldari_eldritch_withdraw_and_reinforce(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: WITHDRAW AND REINFORCE: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            logger.error("ERROR: WITHDRAW AND REINFORCE: not opponent's turn")
+            return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_eldritch_withdraw_and_reinforce_candidates()
+        candidate_roots = [self._aeldari_root(unit) for unit in list(candidates or [])]
+        candidate_roots = [unit for unit in candidate_roots if unit is not None]
+        if target_root is None:
+            if len(candidate_roots) == 1:
+                target_root = candidate_roots[0]
+            else:
+                logger.error("ERROR: WITHDRAW AND REINFORCE: missing target unit")
+                return False
+        if candidate_roots and target_root not in candidate_roots:
+            logger.error("ERROR: WITHDRAW AND REINFORCE: target is not currently eligible")
+            return False
+        if not self._aeldari_on_battlefield(target_root, require_targetable=True):
+            logger.error("ERROR: WITHDRAW AND REINFORCE: target must be on the battlefield and targetable")
+            return False
+        if not self._aeldari_is_anhrathe(target_root):
+            logger.error("ERROR: WITHDRAW AND REINFORCE: target must be ANHRATHE")
+            return False
+        if self._aeldari_in_engagement_range(target_root):
+            logger.error("ERROR: WITHDRAW AND REINFORCE: target must not be within Engagement Range")
+            return False
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root):
+            return False
+        if not self._aeldari_place_unit_into_strategic_reserves(
+            target_root,
+            reason=str(getattr(stratagem, "name", "WITHDRAW AND REINFORCE") or "WITHDRAW AND REINFORCE"),
+        ):
+            logger.error("ERROR: WITHDRAW AND REINFORCE: failed to place target into Strategic Reserves")
+            return False
+
+        returned = 0
+        below_starting_fn = getattr(target_root, "is_below_starting_strength", None)
+        below_starting = bool(below_starting_fn()) if callable(below_starting_fn) else False
+        if below_starting:
+            destroyed_pool = list(getattr(target_root, "models_lost", []) or [])
+            returnable = [model for model in destroyed_pool if not bool(getattr(model, "is_character", False))]
+            if returnable:
+                return_full = getattr(self, "_return_destroyed_models_full", None)
+                if callable(return_full):
+                    returned = int(
+                        return_full(
+                            target_root,
+                            amount=len(returnable),
+                            game_map=getattr(game, "map", None),
+                            skip_character=True,
+                        )
+                        or 0
+                    )
+
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: WITHDRAW AND REINFORCE: %s entered Strategic Reserves and returned %d model(s).",
+            getattr(target_root, "name", "Unit"),
+            int(returned),
+        )
+        return True
+
     def _use_aeldari_devoted_of_ynnead_stratagem(self, stratagem, **kwargs) -> Optional[bool]:
         if stratagem is None or not self._is_devoted_of_ynnead_detachment():
             return None
@@ -2157,6 +2444,63 @@ class AeldariStratagemMixin:
         except (AttributeError, TypeError, ValueError):
             name = ""
         return name in {"rangers", "shroud runners"}
+
+    def _aeldari_eldritch_yriels_example_candidates(self, *, target_units: List[Any]) -> List[Any]:
+        if not self._is_eldritch_raiders_detachment():
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for target in list(target_units or []):
+            root = self._aeldari_root(target)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            try:
+                if root.get_parent_army().player is not self.player:
+                    continue
+            except (AttributeError, TypeError, ValueError):
+                continue
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._aeldari_has_keyword(root, "AELDARI"):
+                continue
+            if not self._aeldari_has_keyword(root, "INFANTRY"):
+                continue
+            if self._aeldari_has_keyword(root, "WRAITH CONSTRUCT"):
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_eldritch_withdraw_and_reinforce_candidates(self) -> List[Any]:
+        if not self._is_eldritch_raiders_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._aeldari_is_anhrathe(root):
+                continue
+            if self._aeldari_in_engagement_range(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
 
     def _aeldari_corsair_outcast_ambush_candidates(self, *, require_not_shot: bool = True) -> List[Any]:
         if not self._is_corsair_coterie_detachment():
