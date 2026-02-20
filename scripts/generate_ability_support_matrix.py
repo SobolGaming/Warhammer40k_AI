@@ -2327,7 +2327,15 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Leading: pile-in/consolidate up to 6\" and must end as close as possible to the closest enemy unit.",
         ),
+        ("DRU", "Choreographer of War"): (
+            "Supported",
+            "Leading: pile-in/consolidate up to 6\" and must end as close as possible to the closest enemy unit.",
+        ),
         ("AE", "Cegorach's Favour"): (
+            "Supported",
+            "Once per turn: first failed saving throw for the bearer's unit sets that attack's Damage to 0.",
+        ),
+        ("DRU", "Cegorach's Favour"): (
             "Supported",
             "Once per turn: first failed saving throw for the bearer's unit sets that attack's Damage to 0.",
         ),
@@ -2335,11 +2343,23 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Once per turn: first failed saving throw for the bearer's unit sets that attack's Damage to 0.",
         ),
+        ("DRU", "Channeller Stones"): (
+            "Supported",
+            "Once per turn: first failed saving throw for the bearer's unit sets that attack's Damage to 0.",
+        ),
         ("AE", "Dance of Death"): (
             "Supported",
             "Leading: at the start of the Fight phase choose Hero's Prowess (re-roll hit 1s), Villain's Doom (+1 to wound), or Trickster's Grace (-1 to hit vs the unit).",
         ),
+        ("DRU", "Dance of Death"): (
+            "Supported",
+            "Leading: at the start of the Fight phase choose Hero's Prowess (re-roll hit 1s), Villain's Doom (+1 to wound), or Trickster's Grace (-1 to hit vs the unit).",
+        ),
         ("AE", "Cruel Amusement"): (
+            "Supported",
+            "Selected to shoot: choose Ignores Cover, Precision, or Sustained Hits 3 for the shrieker cannon until end of phase.",
+        ),
+        ("DRU", "Cruel Amusement"): (
             "Supported",
             "Selected to shoot: choose Ignores Cover, Precision, or Sustained Hits 3 for the shrieker cannon until end of phase.",
         ),
@@ -2382,6 +2402,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Enemy melee weapons targeting this unit gain Hazardous.",
         ),
+        ("DRU", "Treacherous Illusion (Psychic)"): (
+            "Supported",
+            "Enemy melee weapons targeting this unit gain Hazardous.",
+        ),
         ("AE", "Ethereal Form"): (
             "Supported",
             "Each time this model destroys an enemy unit, it regains D3 lost wounds (no choice; capped by missing wounds).",
@@ -2403,6 +2427,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "After shooting: select a hit enemy unit; friendly keyword attacks score critical hits on X+ vs that unit until end of turn.",
         ),
         ("AE", "Death is Not Enough"): (
+            "Supported",
+            "After shooting: select a hit enemy unit (excluding MONSTER/VEHICLE) to take a Battle-shock test; apply the on-kill modifier if triggered.",
+        ),
+        ("DRU", "Death is Not Enough"): (
             "Supported",
             "After shooting: select a hit enemy unit (excluding MONSTER/VEHICLE) to take a Battle-shock test; apply the on-kill modifier if triggered.",
         ),
@@ -2471,6 +2499,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "After shooting with doomweaver hits, target is pinned (-2 Move/-2 Charge) until your next turn.",
         ),
         ("AE", "Piratical Raiders"): (
+            "Supported",
+            "Start of battle: select an enemy unit; this unit's weapons gain Lethal Hits and Precision vs that unit.",
+        ),
+        ("DRU", "Piratical Raiders"): (
             "Supported",
             "Start of battle: select an enemy unit; this unit's weapons gain Lethal Hits and Precision vs that unit.",
         ),
