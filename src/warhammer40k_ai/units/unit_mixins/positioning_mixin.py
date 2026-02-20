@@ -2848,6 +2848,23 @@ class PositioningMixin:
             pass
         atype = str(attack_type or "").strip().lower()
         is_ranged_attack = atype in ("", "any", "ranged")
+        try:
+            source_unit = getattr(model, "parent_unit", None) or self
+            army = source_unit.get_parent_army() if hasattr(source_unit, "get_parent_army") else None
+            mgr = getattr(army, "aeldari_detachments", None) if army is not None else None
+            sustained_fn = getattr(mgr, "boons_of_the_brood_sustained_hits_value_for_model", None) if mgr is not None else None
+            if callable(sustained_fn):
+                sustained_value = int(sustained_fn(model, unit=source_unit) or 0)
+                if sustained_value > 0:
+                    rules = list(rules or []) + [
+                        {
+                            "attack_type": "any",
+                            "keyword": f"SUSTAINED HITS {int(sustained_value)}",
+                            "source": "Boons of the Brood",
+                        }
+                    ]
+        except Exception:
+            pass
         if is_ranged_attack and self._attached_unit_has_active_enhancement(
             "enhancement_exotic_munitions",
             enhancement_id="000010699004",

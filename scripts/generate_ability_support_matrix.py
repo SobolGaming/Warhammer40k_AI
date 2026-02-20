@@ -373,6 +373,11 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time a harlequins model from your army makes a charge move it can move through enemy models",
             r"troupe units from your army gain the battleline keyword and troupe models in those units have an objective control characteristic of 2",
         ),
+        "Boons of the Brood": (
+            r"weapons equipped by harlequins mounted and harlequins vehicle models from your army have the sustained hits \d+ ability",
+            r"each time a harlequins unit from your army disembarks from a transport until the end of the turn that units weapons have the sustained hits \d+ ability",
+            r"troupe units from your army gain the battleline keyword and troupe models in those units have an objective control characteristic of \d+",
+        ),
         "Relentless Raiders": (
             r"while an objective marker is under your control each time an enemy unit ends a normal advance fall back or charge move within range of that objective marker roll one d6",
             r"on a \d+ that enemy unit suffers d3 mortal wounds",
@@ -1646,6 +1651,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Acrobatic Onslaught": (
             "Supported",
             "Ghosts of the Webway: Harlequins units can move through enemy models when making Charge moves; Travelling Players grants BATTLELINE and OC 2 to Troupe units/models, and Death Jester/Shadowseer/Troupe Master caps are set to 3 each.",
+        ),
+        "Boons of the Brood": (
+            "Supported",
+            "Serpent's Brood: HARLEQUINS MOUNTED and HARLEQUINS VEHICLE models gain [SUSTAINED HITS 1], HARLEQUINS units that disembark from a TRANSPORT gain [SUSTAINED HITS 1] until end of turn, and Travelling Players grants BATTLELINE/OC 2 to Troupe units/models with Death Jester/Shadowseer/Troupe Master caps set to 3 each.",
         ),
         "Yriel's Own": (
             "Supported",

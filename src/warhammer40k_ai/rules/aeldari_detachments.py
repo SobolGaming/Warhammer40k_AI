@@ -196,6 +196,14 @@ class AeldariDetachmentManager(DetachmentManagerBase):
             self.devoted_of_ynnead_lethal_intent_candidate_unit_ids = set()
         self.devoted_of_ynnead_lethal_intent_candidate_unit_ids.update(clean_ids)
 
+    def _has_travelling_players_rules(self) -> bool:
+        return self.is_ghosts_of_the_webway() or self.is_serpents_brood()
+
+    def _travelling_players_source_name(self) -> str:
+        if self.is_serpents_brood():
+            return "Boons of the Brood"
+        return "Acrobatic Onslaught"
+
     def consume_devoted_of_ynnead_lethal_intent_candidates(
         self,
         *,
@@ -251,7 +259,7 @@ class AeldariDetachmentManager(DetachmentManagerBase):
 
     def validate_detachment_rules(self) -> list[str]:
         errors: list[str] = []
-        if self.is_ghosts_of_the_webway():
+        if self._has_travelling_players_rules():
             self.apply_acrobatic_onslaught_travelling_players()
             errors.extend(self._validate_acrobatic_onslaught_rules())
         if self.is_windrider_host():
@@ -264,8 +272,9 @@ class AeldariDetachmentManager(DetachmentManagerBase):
 
     def _validate_acrobatic_onslaught_rules(self) -> list[str]:
         errors: list[str] = []
-        if not self.is_ghosts_of_the_webway() or self.army is None:
+        if not self._has_travelling_players_rules() or self.army is None:
             return errors
+        source_name = self._travelling_players_source_name()
         counts: Counter[str] = Counter()
         labels: dict[str, str] = {}
         for unit in list(getattr(self.army, "units", []) or []):
@@ -284,7 +293,7 @@ class AeldariDetachmentManager(DetachmentManagerBase):
                 continue
             label = labels.get(key, key.title())
             errors.append(
-                "Acrobatic Onslaught (Travelling Players): "
+                f"{source_name} (Travelling Players): "
                 f"'{label}' units {count}/{cap}."
             )
         return errors
@@ -293,7 +302,7 @@ class AeldariDetachmentManager(DetachmentManagerBase):
         """
         Return army inclusion cap overrides that replace generic one-of restrictions.
         """
-        if not self.is_ghosts_of_the_webway():
+        if not self._has_travelling_players_rules():
             return []
         out: list[dict] = []
         for unit_name, cap in sorted(self._ACROBATIC_ONSLAUGHT_CAPS_BY_UNIT_NAME.items()):
@@ -408,10 +417,41 @@ class AeldariDetachmentManager(DetachmentManagerBase):
             return True
         return False
 
+    def _model_or_unit_has_keyword(self, model, unit, keyword: str) -> bool:
+        return self._model_has_keyword(model, keyword) or self._unit_has_keyword(unit, keyword)
+
     def _unit_is_harlequins(self, unit) -> bool:
         if unit is None:
             return False
         return self._unit_has_keyword(unit, "HARLEQUINS")
+
+    def boons_of_the_brood_sustained_hits_value_for_model(self, model, *, unit=None) -> int:
+        if not self.is_serpents_brood() or model is None:
+            return 0
+        source_unit = unit
+        if source_unit is None:
+            source_unit = getattr(model, "parent_unit", None)
+        if source_unit is None:
+            return 0
+        try:
+            root = source_unit.get_attached_unit_root()
+        except Exception:
+            root = source_unit
+        if root is None or not self._unit_in_army(root):
+            return 0
+
+        is_harlequins_model = self._model_or_unit_has_keyword(model, source_unit, "HARLEQUINS")
+        if is_harlequins_model:
+            is_mounted_model = self._model_or_unit_has_keyword(model, source_unit, "MOUNTED")
+            is_vehicle_model = self._model_or_unit_has_keyword(model, source_unit, "VEHICLE")
+            if is_mounted_model or is_vehicle_model:
+                return 1
+
+        if self._unit_is_harlequins(root):
+            disembarked = bool(getattr(getattr(root, "round_state", None), "disembarked_this_round", False))
+            if disembarked:
+                return 1
+        return 0
 
     def _unit_is_troupe(self, unit) -> bool:
         if unit is None:
@@ -627,7 +667,7 @@ class AeldariDetachmentManager(DetachmentManagerBase):
             model._objective_control_raw = str(int(oc))
 
     def apply_acrobatic_onslaught_travelling_players(self, unit=None) -> None:
-        if not self.is_ghosts_of_the_webway() or self.army is None:
+        if not self._has_travelling_players_rules() or self.army is None:
             return
         if unit is None:
             units = list(getattr(self.army, "units", []) or [])
