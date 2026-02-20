@@ -391,6 +391,10 @@ class Enhancement:
         except Exception:
             is_spirit_conclave = False
         try:
+            is_serpents_brood = bool(ae_mgr and ae_mgr.is_serpents_brood())
+        except Exception:
+            is_serpents_brood = False
+        try:
             is_corsair_veterans = bool(ae_mgr and ae_mgr.has_veterans_of_the_void())
         except Exception:
             is_corsair_veterans = False
@@ -1737,6 +1741,55 @@ class Enhancement:
             unit.special_rules["enhancement_higher_duty_trigger_range"] = int(max(1, trigger_range))
             unit.special_rules["enhancement_higher_duty_normal_move_distance"] = int(max(1, normal_move))
             unit.special_rules["enhancement_higher_duty_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "key of ghosts" or enh_id == "000010649002":
+            if not is_serpents_brood:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            scout_distance = _coerce_int(params.get("scouts_distance", 6) or 6, default=6)
+            unit.special_rules["enhancement_key_of_ghosts"] = True
+            unit.special_rules["enhancement_scout_distance"] = max(
+                int(unit.special_rules.get("enhancement_scout_distance", 0) or 0),
+                int(max(0, scout_distance)),
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name in ("weavers' wail", "weavers’ wail") or enh_id == "000010649003":
+            if not is_serpents_brood:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            strength_bonus = _coerce_int(params.get("strength_bonus", 3) or 3, default=3)
+            attacks_bonus = _coerce_int(params.get("attacks_bonus", 1) or 1, default=1)
+            unit.special_rules["enhancement_weavers_wail"] = True
+            unit.special_rules["enhancement_bearer_melee_strength_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_strength_bonus", 0) or 0
+            ) + int(max(0, strength_bonus))
+            unit.special_rules["enhancement_bearer_melee_attacks_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_attacks_bonus", 0) or 0
+            ) + int(max(0, attacks_bonus))
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "fanged leer" or enh_id == "000010649004":
+            if not is_serpents_brood:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            max_selected = _coerce_int(params.get("max_selected_abilities", 2) or 2, default=2)
+            unit.special_rules["enhancement_fanged_leer"] = True
+            unit.special_rules["enhancement_fanged_leer_select_count"] = int(max(1, max_selected))
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "shedskin raiment" or enh_id == "000010649005":
+            if not is_serpents_brood:
+                return
+            unit.special_rules["enhancement_shedskin_raiment"] = True
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 

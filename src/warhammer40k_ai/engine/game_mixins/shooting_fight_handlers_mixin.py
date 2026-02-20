@@ -3251,6 +3251,41 @@ class GameShootingFightHandlersMixin:
             except Exception:
                 return ""
 
+        def _max_cruel_amusement_choices_for_model(model) -> int:
+            if model is None:
+                return 1
+            try:
+                model_id = str(get_entity_id(model) or "")
+            except Exception:
+                model_id = ""
+            parent = getattr(model, "parent_unit", None)
+            try:
+                source_root = parent.get_attached_unit_root() if parent is not None else None
+            except Exception:
+                source_root = parent
+            if source_root is None:
+                return 1
+            try:
+                members = list(source_root.get_attached_unit_members() or [])
+            except Exception:
+                members = [source_root]
+            if not members:
+                members = [source_root]
+            max_choices = 1
+            for member in list(members or []):
+                sr = getattr(member, "special_rules", None)
+                if not isinstance(sr, dict) or not bool(sr.get("enhancement_fanged_leer")):
+                    continue
+                bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "")
+                if bearer_id and model_id and bearer_id != model_id:
+                    continue
+                try:
+                    val = int(sr.get("enhancement_fanged_leer_select_count", 2) or 2)
+                except Exception:
+                    val = 2
+                max_choices = max(max_choices, max(1, val))
+            return max(1, min(2, int(max_choices)))
+
         for entry in sorted(list(entries or []), key=_sort_key):
             model = entry.get("model")
             if model is None or not getattr(model, "is_alive", False):
@@ -3260,20 +3295,41 @@ class GameShootingFightHandlersMixin:
                 continue
             weapon_name = str(entry.get("weapon_name", "") or "shrieker cannon")
             ability_name = str(entry.get("source", "") or "Cruel Amusement").strip() or "Cruel Amusement"
+            base_choices = (
+                ("IGNORES_COVER", "Ignores Cover", "Weapon gains [IGNORES COVER] until end of phase."),
+                ("PRECISION", "Precision", "Weapon gains [PRECISION] until end of phase."),
+                ("SUSTAINED_HITS_3", "Sustained Hits 3", "Weapon gains [SUSTAINED HITS 3] until end of phase."),
+            )
             options = [
                 DecisionOption.create(
-                    "Ignores Cover",
-                    payload={"choice": "IGNORES_COVER", "summary": "Weapon gains [IGNORES COVER] until end of phase."},
-                ),
-                DecisionOption.create(
-                    "Precision",
-                    payload={"choice": "PRECISION", "summary": "Weapon gains [PRECISION] until end of phase."},
-                ),
-                DecisionOption.create(
-                    "Sustained Hits 3",
-                    payload={"choice": "SUSTAINED_HITS_3", "summary": "Weapon gains [SUSTAINED HITS 3] until end of phase."},
-                ),
+                    label,
+                    payload={
+                        "choice": choice_key,
+                        "choices": [choice_key],
+                        "summary": summary,
+                    },
+                )
+                for choice_key, label, summary in base_choices
             ]
+            if _max_cruel_amusement_choices_for_model(model) >= 2:
+                for idx in range(len(base_choices)):
+                    for jdx in range(idx + 1, len(base_choices)):
+                        first = base_choices[idx]
+                        second = base_choices[jdx]
+                        combo_keys = [first[0], second[0]]
+                        options.append(
+                            DecisionOption.create(
+                                f"{first[1]} + {second[1]}",
+                                payload={
+                                    "choice": "+".join(combo_keys),
+                                    "choices": combo_keys,
+                                    "summary": (
+                                        f"Weapon gains [{first[1].upper()}] and "
+                                        f"[{second[1].upper()}] until end of phase."
+                                    ),
+                                },
+                            )
+                        )
             ctx = {
                 "unit_id": get_entity_id(root),
                 "model_id": model_id,

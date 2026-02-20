@@ -737,6 +737,61 @@ def _apply_choose_path_of_warrior(game: object, request: DecisionRequest, result
     return bool(apply_fn(game, choice=str(choice), phase_name=phase_name))
 
 
+def _parse_cruel_amusement_choices(payload: dict, request: DecisionRequest) -> list[str]:
+    raw = payload.get("choices")
+    if isinstance(raw, (list, tuple, set)):
+        vals = list(raw)
+    else:
+        single = payload.get("choice") or payload.get("choice_key") or payload.get("key")
+        if isinstance(single, (list, tuple, set)):
+            vals = list(single)
+        elif single is None:
+            vals = []
+        else:
+            vals = [single]
+    out: list[str] = []
+    for value in list(vals or []):
+        key = str(value or "").strip().upper()
+        if not key:
+            continue
+        out.append(key)
+    if not out:
+        fallback = request.context.get("choice")
+        if fallback:
+            out = [str(fallback or "").strip().upper()]
+    return out
+
+
+def _cruel_amusement_model_has_fanged_leer(model) -> bool:
+    if model is None:
+        return False
+    model_id = str(get_entity_id(model) or getattr(model, "id", getattr(model, "_id", "")) or "")
+    parent = getattr(model, "parent_unit", None)
+    if parent is None:
+        return False
+    try:
+        root = parent.get_attached_unit_root()
+    except Exception:
+        root = parent
+    if root is None:
+        return False
+    try:
+        members = list(root.get_attached_unit_members() or [])
+    except Exception:
+        members = [root]
+    if not members:
+        members = [root]
+    for member in list(members or []):
+        sr = getattr(member, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("enhancement_fanged_leer")):
+            continue
+        bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "")
+        if bearer_id and model_id and bearer_id != model_id:
+            continue
+        return True
+    return False
+
+
 def _validate_choose_cruel_amusement(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
     errors = list(validate_option_choice(request, result))
     if errors:
@@ -745,15 +800,25 @@ def _validate_choose_cruel_amusement(game: object, request: DecisionRequest, res
         return ()
     payload = _option_payload(request, result)
     model_val = payload.get("model_id") or payload.get("model") or request.context.get("model_id")
-    choice = payload.get("choice") or payload.get("choice_key") or payload.get("key")
-    if model_val is None or not choice:
+    if model_val is None:
         return ("Cruel Amusement requires model_id and choice.",)
     model = resolve_model(game, model_val)
     if model is None:
         return ("Cruel Amusement model not found.",)
-    choice_key = str(choice or "").strip().upper()
-    if choice_key not in ("IGNORES_COVER", "PRECISION", "SUSTAINED_HITS_3"):
+
+    choices = _parse_cruel_amusement_choices(payload, request)
+    if not choices:
+        return ("Cruel Amusement requires model_id and choice.",)
+    if len(set(choices)) != len(choices):
+        return ("Cruel Amusement choices must be unique.",)
+    if len(choices) > 2:
+        return ("Cruel Amusement can select at most two abilities.",)
+
+    valid_choices = {"IGNORES_COVER", "PRECISION", "SUSTAINED_HITS_3"}
+    if any(choice_key not in valid_choices for choice_key in choices):
         return ("Cruel Amusement choice must be Ignores Cover, Precision, or Sustained Hits 3.",)
+    if len(choices) > 1 and not _cruel_amusement_model_has_fanged_leer(model):
+        return ("Selecting two Cruel Amusement abilities requires Fanged Leer on the bearer.",)
     return ()
 
 
@@ -764,16 +829,24 @@ def _apply_choose_cruel_amusement(game: object, request: DecisionRequest, result
     model = resolve_model(game, payload.get("model_id") or payload.get("model") or request.context.get("model_id"))
     if model is None:
         raise RuntimeError("Cruel Amusement model not found.")
-    choice = payload.get("choice") or payload.get("choice_key") or payload.get("key")
-    choice_key = str(choice or "").strip().upper()
+    choices = _parse_cruel_amusement_choices(payload, request)
+    if not choices:
+        raise RuntimeError("Cruel Amusement choice invalid.")
+
     keyword_map = {
         "IGNORES_COVER": ["IGNORES COVER"],
         "PRECISION": ["PRECISION"],
         "SUSTAINED_HITS_3": ["SUSTAINED HITS 3"],
     }
-    keywords = keyword_map.get(choice_key)
-    if not keywords:
-        raise RuntimeError("Cruel Amusement choice invalid.")
+    all_keywords: list[str] = []
+    for choice_key in choices:
+        keywords = keyword_map.get(str(choice_key or "").strip().upper())
+        if not keywords:
+            raise RuntimeError("Cruel Amusement choice invalid.")
+        for kw in list(keywords or []):
+            if kw not in all_keywords:
+                all_keywords.append(kw)
+
     weapon_name = str(payload.get("weapon_name") or request.context.get("weapon_name") or "shrieker cannon").strip()
     ability_name = str(payload.get("ability_name") or request.context.get("ability_name") or "Cruel Amusement").strip()
     model_id = getattr(model, "id", None) or getattr(model, "_id", None)
@@ -782,7 +855,7 @@ def _apply_choose_cruel_amusement(game: object, request: DecisionRequest, result
         model.set_temporary_weapon_keyword_bonuses(
             key=key,
             weapon_name=weapon_name,
-            keywords=list(keywords),
+            keywords=list(all_keywords),
             source=ability_name,
             expires_phase="SHOOTING_PHASE",
             attack_type="ranged",
@@ -800,19 +873,21 @@ def _apply_choose_cruel_amusement(game: object, request: DecisionRequest, result
         if root is not None:
             army = root.get_parent_army()
             player = getattr(army, "player", None) if army is not None else None
-        label = {
+        label_map = {
             "IGNORES_COVER": "Ignores Cover",
             "PRECISION": "Precision",
             "SUSTAINED_HITS_3": "Sustained Hits 3",
-        }.get(choice_key, choice_key.title())
+        }
+        labels = [label_map.get(key, str(key or "").title()) for key in list(choices or [])]
+        label_text = " + ".join(labels) if labels else "a selection"
         _log_action_for_players(
             game,
             player,
-            f"{ability_name}: {getattr(model, 'name', 'Model')} grants {label} to {weapon_name}.",
+            f"{ability_name}: {getattr(model, 'name', 'Model')} grants {label_text} to {weapon_name}.",
         )
     except Exception:
         pass
-    return str(choice_key)
+    return "+".join(str(choice or "") for choice in choices)
 
 
 def _validate_choose_master_of_magicks(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:

@@ -620,6 +620,53 @@ _AELDARI_SPIRIT_CONCLAVE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _AELDARI_SPIRIT_CONCLAVE_DESCRIPTORS.values()
 }
 
+_AELDARI_SERPENTS_BROOD_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010649002": EnhancementToolDescriptor(
+        enhancement_id="000010649002",
+        name="Key of Ghosts",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="grant_scouts_to_bearer_unit",
+        effect_params={"scouts_distance": 6},
+    ),
+    "000010649003": EnhancementToolDescriptor(
+        enhancement_id="000010649003",
+        name="Weavers' Wail",
+        timing="passive",
+        target="bearer_melee_weapons",
+        duration="constant",
+        effect="bearer_melee_strength_attacks_bonus",
+        effect_params={"strength_bonus": 3, "attacks_bonus": 1},
+    ),
+    "000010649004": EnhancementToolDescriptor(
+        enhancement_id="000010649004",
+        name="Fanged Leer",
+        timing="on_cruel_amusement_selection",
+        target="bearer_shrieker_cannon",
+        duration="constant",
+        effect="cruel_amusement_select_two_abilities",
+        effect_params={"max_selected_abilities": 2},
+    ),
+    "000010649005": EnhancementToolDescriptor(
+        enhancement_id="000010649005",
+        name="Shedskin Raiment",
+        timing="after_deployment",
+        target="friendly_harlequins_units",
+        duration="redeploy_step",
+        effect="redeploy_units",
+        effect_params={
+            "max_units": 3,
+            "allow_strategic_reserves": True,
+            "filters": ("HARLEQUINS",),
+        },
+    ),
+}
+
+_AELDARI_SERPENTS_BROOD_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _AELDARI_SERPENTS_BROOD_DESCRIPTORS.values()
+}
+
 _EXPERIMENTAL_PROTOTYPE_CADRE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009983002": EnhancementToolDescriptor(
         enhancement_id="000009983002",
@@ -1503,6 +1550,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _AELDARI_SPIRIT_CONCLAVE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _AELDARI_SERPENTS_BROOD_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _EXPERIMENTAL_PROTOTYPE_CADRE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -1573,6 +1623,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _AELDARI_WINDRIDER_HOST_BY_NAME.get(key)
         or _AELDARI_GHOSTS_OF_THE_WEBWAY_BY_NAME.get(key)
         or _AELDARI_SPIRIT_CONCLAVE_BY_NAME.get(key)
+        or _AELDARI_SERPENTS_BROOD_BY_NAME.get(key)
         or _EXPERIMENTAL_PROTOTYPE_CADRE_BY_NAME.get(key)
         or _MONTKA_BY_NAME.get(key)
         or _RAD_ZONE_CORPS_BY_NAME.get(key)

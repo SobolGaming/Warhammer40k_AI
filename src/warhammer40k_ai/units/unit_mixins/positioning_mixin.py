@@ -6205,6 +6205,8 @@ class PositioningMixin:
                     or "emperors children unit" in text
                 ):
                     redeploy_filters = ["EMPEROR'S CHILDREN"]
+                if "harlequins units" in text or "harlequins unit" in text:
+                    redeploy_filters = ["HARLEQUINS"]
                 if "aeldari vehicle units" in text or "aeldari vehicle unit" in text:
                     redeploy_filters = ["AELDARI", "VEHICLE"]
                 elif "aeldari units" in text or "aeldari unit" in text:
