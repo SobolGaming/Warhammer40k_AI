@@ -175,6 +175,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "TIME TO STRIKE",
     "PRESENTIMENT OF DREAD",
     "FOREWARNED",
+    "VENOMOUS WRATH",
     "FANGS OF THE BROOD",
     "STRIKING STRIDE",
     "WEAVING STRIDE",
@@ -385,6 +386,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "TO THEIR FINAL BREATH",
     "UNSHROUDED TRUTH",
     "FOREWARNED",
+    "VENOMOUS WRATH",
     "FANGS OF THE BROOD",
     "STRIKING STRIDE",
     "WEAVING STRIDE",
@@ -1503,6 +1505,8 @@ class StratagemManager(
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_tau_pulse_onslaught)
         if names & {"VENGEFUL SORROW", "INTO THE BREACH"}:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_aeldari_corsair)
+        if "VENOMOUS WRATH" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_aeldari_serpents)
         if names & {"DIABOLIC MAJESTY", "HEIGHTENED JEALOUSY"}:
             add("emperors_children_favoured_champions_updated", self._on_emperors_children_favoured_champions_updated)
 
@@ -1768,6 +1772,7 @@ class StratagemManager(
             "WARDING SALVOES",
             "BLADES OF ASURYAN",
             "TIME TO STRIKE",
+            "VENOMOUS WRATH",
             "STRIKING STRIDE",
             "UNSHROUDED TRUTH",
             "FATE INESCAPABLE",
@@ -2744,6 +2749,25 @@ class StratagemManager(
                 result["reason"] = None
                 return result
             result["reason"] = "Requires an eligible TROUPE unit on the battlefield"
+            return result
+        if name_u == "VENOMOUS WRATH":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l and phase_name_l != "shooting phase":
+                result["reason"] = "Requires your Shooting phase"
+                return result
+            game = getattr(self, "game", None)
+            active_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+            if active_player is not self.player:
+                result["reason"] = "Only usable in your turn"
+                return result
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = list(self._aeldari_serpents_venomous_wrath_candidates() or [])
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires a HARLEQUINS VEHICLE unit that has not been selected to shoot this phase"
             return result
         if name_u == "STRIKING STRIDE":
             phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
@@ -3922,6 +3946,7 @@ class StratagemManager(
             "PRESENTIMENT OF DREAD": "Target: one of your ASURYANI PSYKER models; select one visible enemy unit within 18\" of it to take a Battle-shock test at -1",
             "FOREWARNED": "Target: your ASURYANI INFANTRY unit (excluding WRAITH CONSTRUCT) selected as a target of enemy fight attacks and within 9\" of a friendly ASURYANI PSYKER; attacks targeting it are -1 to Hit and -1 to Wound this phase",
             "FANGS OF THE BROOD": "Target: your TROUPE unit; this phase it can gain all three Dance of Death abilities instead of one",
+            "VENOMOUS WRATH": "Target: your HARLEQUINS VEHICLE unit that has not been selected to shoot this phase; after it shoots it can make a Normal move up to 6\" if not in Engagement Range, and cannot declare a charge this turn",
             "STRIKING STRIDE": "Target: your HARLEQUINS unit; until end of the phase it can declare a charge in a turn in which it Advanced",
             "WEAVING STRIDE": "Target: your HARLEQUINS INFANTRY unit within 9\" of an enemy unit that just ended a Normal/Advance/Fall Back move; it can make a Normal move up to 6\"",
             "SKYWARD LUNGE": "Target: your HARLEQUINS VEHICLE or HARLEQUINS MOUNTED unit that is not in Engagement Range at end of opponent's Fight phase; it enters Strategic Reserves",
@@ -7952,6 +7977,15 @@ class StratagemManager(
     def _on_unit_shooting_resolved_aeldari_corsair(self, attacker_unit=None, hits_by_target=None, **_kwargs):
         try:
             self._queue_aeldari_corsair_shooting_resolved_reactions(
+                attacker_unit=attacker_unit,
+                hits_by_target=hits_by_target,
+            )
+        except Exception:
+            raise
+
+    def _on_unit_shooting_resolved_aeldari_serpents(self, attacker_unit=None, hits_by_target=None, **_kwargs):
+        try:
+            self._queue_aeldari_serpents_shooting_resolved_reactions(
                 attacker_unit=attacker_unit,
                 hits_by_target=hits_by_target,
             )

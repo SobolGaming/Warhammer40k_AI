@@ -4664,6 +4664,18 @@ class PositioningMixin:
         except Exception:
             pass
 
+        # Venomous Wrath: cannot charge until end of turn.
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("serpents_brood_venomous_wrath_no_charge_turn_owner"):
+                owner = str(sr.get("serpents_brood_venomous_wrath_no_charge_turn_owner") or "")
+                turn = int(sr.get("serpents_brood_venomous_wrath_no_charge_turn", 0) or 0)
+                if owner and game is not None:
+                    if game.get_current_player().id == owner and int(getattr(game, "turn", 0) or 0) == turn:
+                        return False
+        except Exception:
+            pass
+
         # Tactical Acumen: cannot charge until end of turn after the reactive move.
         try:
             sr = getattr(self, "special_rules", None)

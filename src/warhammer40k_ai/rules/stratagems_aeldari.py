@@ -2087,6 +2087,34 @@ class AeldariStratagemMixin:
             self._queue_reaction(payload, use_timer=False)
             return
 
+        if phase_key == "SHOOTING_PHASE":
+            active_player = getattr(game, "get_current_player", lambda: None)()
+            if active_player is not self.player:
+                return
+            stratagem = self._aeldari_get_stratagem_by_norm_name("VENOMOUS WRATH")
+            if stratagem is None:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+                return
+            if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+                return
+            candidates = self._aeldari_serpents_venomous_wrath_candidates()
+            if not candidates or self._aeldari_reaction_exists("phase_start", stratagem.name):
+                return
+            payload: Dict[str, Any] = {
+                "event": "phase_start",
+                "phase": "Shooting phase",
+                "phase_name": "Shooting phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+            return
+
         if phase_key != "CHARGE_PHASE":
             return
         active_player = getattr(game, "get_current_player", lambda: None)()
@@ -2174,6 +2202,74 @@ class AeldariStratagemMixin:
             payload["unit"] = candidates[0]
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload, use_timer=False)
+
+    def _queue_aeldari_serpents_shooting_resolved_reactions(
+        self,
+        *,
+        attacker_unit: Any,
+        hits_by_target: Optional[Dict[Any, int]] = None,
+    ) -> None:
+        if attacker_unit is None or not self._is_serpents_brood_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        phase_key = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_key != "SHOOTING_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return
+
+        root = self._aeldari_root(attacker_unit)
+        if root is None:
+            return
+        try:
+            if root.get_parent_army().player is not self.player:
+                return
+        except (AttributeError, TypeError, ValueError):
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        if not bool(sr.get("serpents_brood_venomous_wrath_active")):
+            return
+        owner = str(sr.get("serpents_brood_venomous_wrath_turn_owner", "") or "")
+        if owner and str(getattr(self.player, "id", "") or "") and owner != str(getattr(self.player, "id", "") or ""):
+            return
+        try:
+            effect_turn = int(sr.get("serpents_brood_venomous_wrath_turn", 0) or 0)
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+            current_turn = 0
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return
+        source = str(sr.get("serpents_brood_venomous_wrath_source", "") or "VENOMOUS WRATH").strip() or "VENOMOUS WRATH"
+
+        for key in (
+            "serpents_brood_venomous_wrath_active",
+            "serpents_brood_venomous_wrath_turn_owner",
+            "serpents_brood_venomous_wrath_turn",
+            "serpents_brood_venomous_wrath_source",
+        ):
+            sr.pop(key, None)
+        root.special_rules = sr
+
+        if self._aeldari_in_engagement_range(root):
+            return
+        queue_move = getattr(game, "_queue_reactive_move_movement_decision", None)
+        if not callable(queue_move):
+            return
+        queue_move(
+            player=self.player,
+            unit=root,
+            max_distance=6,
+            kind="venomous_wrath",
+            movement_type="move",
+            source=source,
+            allow_skip=True,
+        )
 
     def _queue_aeldari_serpents_move_end_reactions(self, *, unit: Any, action: str) -> None:
         if unit is None or not self._is_serpents_brood_detachment():
@@ -3249,7 +3345,7 @@ class AeldariStratagemMixin:
 
     def _cleanup_aeldari_serpents_phase_end_effects(self, *, phase) -> None:
         phase_key = str(getattr(phase, "name", "") or "").strip().upper()
-        if phase_key not in {"FIGHT_PHASE", "CHARGE_PHASE"}:
+        if phase_key not in {"SHOOTING_PHASE", "FIGHT_PHASE", "CHARGE_PHASE"}:
             return
         if not self._is_serpents_brood_detachment():
             return
@@ -3278,6 +3374,16 @@ class AeldariStratagemMixin:
                     "serpents_brood_fangs_of_the_brood_turn",
                     "serpents_brood_fangs_of_the_brood_expires_phase",
                     "serpents_brood_fangs_of_the_brood_source",
+                ):
+                    if key in sr:
+                        sr.pop(key, None)
+                        changed = True
+            if phase_key == "SHOOTING_PHASE":
+                for key in (
+                    "serpents_brood_venomous_wrath_active",
+                    "serpents_brood_venomous_wrath_turn_owner",
+                    "serpents_brood_venomous_wrath_turn",
+                    "serpents_brood_venomous_wrath_source",
                 ):
                     if key in sr:
                         sr.pop(key, None)
@@ -4585,6 +4691,8 @@ class AeldariStratagemMixin:
         if stratagem is None or not self._is_serpents_brood_detachment():
             return None
         name_u = self._aeldari_norm_name(getattr(stratagem, "name", ""))
+        if name_u == "VENOMOUS WRATH":
+            return self._use_aeldari_serpents_venomous_wrath(stratagem, **kwargs)
         if name_u == "FANGS OF THE BROOD":
             return self._use_aeldari_serpents_fangs_of_the_brood(stratagem, **kwargs)
         if name_u == "STRIKING STRIDE":
@@ -4643,6 +4751,69 @@ class AeldariStratagemMixin:
         self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
         logger.info(
             "INFO: FANGS OF THE BROOD: %s can gain all three Dance of Death abilities this phase.",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_aeldari_serpents_venomous_wrath(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: VENOMOUS WRATH: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: VENOMOUS WRATH: not your turn")
+            return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_serpents_venomous_wrath_candidates()
+        candidate_roots = [self._aeldari_root(unit) for unit in list(candidates or [])]
+        candidate_roots = [unit for unit in candidate_roots if unit is not None]
+        if target_root is None:
+            if len(candidate_roots) == 1:
+                target_root = candidate_roots[0]
+            else:
+                logger.error("ERROR: VENOMOUS WRATH: missing target unit")
+                return False
+        if candidate_roots and target_root not in candidate_roots:
+            logger.error("ERROR: VENOMOUS WRATH: target is not currently eligible")
+            return False
+        if not self._aeldari_on_battlefield(target_root, require_targetable=True):
+            logger.error("ERROR: VENOMOUS WRATH: target must be on the battlefield and targetable")
+            return False
+        if not self._aeldari_is_harlequins(target_root) or not self._aeldari_has_keyword(target_root, "VEHICLE"):
+            logger.error("ERROR: VENOMOUS WRATH: target must be HARLEQUINS VEHICLE")
+            return False
+        if bool(getattr(getattr(target_root, "round_state", None), "shot_this_round", False)):
+            logger.error("ERROR: VENOMOUS WRATH: target has already been selected to shoot this phase")
+            return False
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root):
+            return False
+
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        owner = str(getattr(self.player, "id", "") or "")
+        turn = int(getattr(game, "turn", 0) or 0)
+        source = str(getattr(stratagem, "name", "VENOMOUS WRATH") or "VENOMOUS WRATH")
+        sr["serpents_brood_venomous_wrath_active"] = True
+        sr["serpents_brood_venomous_wrath_turn_owner"] = owner
+        sr["serpents_brood_venomous_wrath_turn"] = int(turn)
+        sr["serpents_brood_venomous_wrath_source"] = source
+        sr["serpents_brood_venomous_wrath_no_charge_turn_owner"] = owner
+        sr["serpents_brood_venomous_wrath_no_charge_turn"] = int(turn)
+        target_root.special_rules = sr
+
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: VENOMOUS WRATH: %s can make a Normal move up to 6\" after it shoots if not in Engagement Range, and cannot declare a charge this turn.",
             getattr(target_root, "name", "Unit"),
         )
         return True
@@ -6294,6 +6465,35 @@ class AeldariStratagemMixin:
         except (AttributeError, TypeError, ValueError):
             name = ""
         return name in {"troupe", "troupes"}
+
+    def _aeldari_serpents_venomous_wrath_candidates(self) -> List[Any]:
+        if not self._is_serpents_brood_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._aeldari_is_harlequins(root):
+                continue
+            if not self._aeldari_has_keyword(root, "VEHICLE"):
+                continue
+            if bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
 
     def _aeldari_serpents_fangs_candidates(self) -> List[Any]:
         if not self._is_serpents_brood_detachment():

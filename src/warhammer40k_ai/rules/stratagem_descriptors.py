@@ -1718,6 +1718,20 @@ _SERPENTS_BROOD_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "selection_count": 3,
         },
     ),
+    "000010650003": StratagemToolDescriptor(
+        stratagem_id="000010650003",
+        name="Venomous Wrath",
+        timing="shooting_phase_on_select_to_shoot",
+        target="harlequins_vehicle_unit_not_yet_shot",
+        duration="until_end_of_turn",
+        effect="post_shoot_reactive_normal_move_no_charge",
+        cp_cost=1,
+        effect_params={
+            "reactive_move_distance_inches": 6.0,
+            "requires_not_within_engagement_range_after_shooting": True,
+            "cannot_charge_until_end_of_turn": True,
+        },
+    ),
     "000010650004": StratagemToolDescriptor(
         stratagem_id="000010650004",
         name="Striking Stride",

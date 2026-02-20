@@ -236,6 +236,56 @@ class TestAeldariSerpentsBroodStratagems(unittest.TestCase):
         self.assertFalse(bool(troupe.special_rules.get("serpents_brood_striking_stride_active")))
         self.assertFalse(bool(troupe.can_charge_after_advance()))
 
+    def test_venomous_wrath_queues_post_shoot_move_and_blocks_charge_for_turn(self):
+        game, p1, _p2, aeldari_army, enemy_army = _build_game()
+        starweaver = _make_unit(
+            "Starweaver",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["HARLEQUINS", "VEHICLE"],
+            quantity=1,
+            wounds="6",
+            move="14",
+        )
+        enemy = _make_unit(
+            "Enemy Unit",
+            faction_name="Enemy",
+            faction_keywords=["ENEMY"],
+            keywords=["INFANTRY"],
+            quantity=1,
+        )
+        aeldari_army.add_unit(starweaver)
+        enemy_army.add_unit(enemy)
+        _place_unit(game, starweaver, 10.0, 10.0)
+        _place_unit(game, enemy, 18.0, 10.0)
+
+        _set_phase(game, p1, "SHOOTING_PHASE", 0)
+        pending = _pending_by_name(p1.stratagems, "VENOMOUS WRATH")
+        self.assertIsNotNone(pending)
+
+        ok = p1.stratagems.use(str(pending.get("stratagem", "")), unit=starweaver, dequeue=True)
+        self.assertTrue(ok)
+        self.assertEqual(int(p1.command_points or 0), 9)
+        self.assertTrue(bool(starweaver.special_rules.get("serpents_brood_venomous_wrath_active")))
+        self.assertEqual(int(starweaver.special_rules.get("serpents_brood_venomous_wrath_no_charge_turn", 0) or 0), int(game.turn or 0))
+
+        game.event_system.publish("unit_shooting_resolved", attacker_unit=starweaver, hits_by_target={})
+        requests = [
+            req
+            for req in list(game.decision_queue.list() or [])
+            if str(getattr(req, "decision_type", "") or "") == DECISION_MOVE_UNIT
+            and str((dict(getattr(req, "context", {}) or {})).get("reactive_move_kind", "") or "") == "venomous_wrath"
+        ]
+        self.assertTrue(requests)
+        ctx = dict(getattr(requests[-1], "context", {}) or {})
+        self.assertEqual(str(ctx.get("movement_type", "") or ""), "move")
+        self.assertEqual(int(ctx.get("max_distance", 0) or 0), 6)
+        self.assertEqual(str(ctx.get("unit_id", "") or ""), str(get_entity_id(starweaver) or ""))
+        self.assertFalse(bool(starweaver.special_rules.get("serpents_brood_venomous_wrath_active")))
+
+        _set_phase(game, p1, "CHARGE_PHASE", 0)
+        self.assertFalse(bool(starweaver.can_declare_charge_against(enemy, game)))
+
     def test_weaving_stride_queues_reactive_normal_move_when_enemy_ends_move_within_nine(self):
         game, p1, p2, aeldari_army, enemy_army = _build_game()
         troupe = _make_unit(
@@ -405,6 +455,12 @@ class TestAeldariSerpentsBroodStratagems(unittest.TestCase):
         self.assertEqual(int(fangs.cp_cost), 1)
         self.assertEqual(str(fangs.effect), "dance_of_death_select_three_abilities")
 
+        venomous = get_stratagem_tool_descriptor(stratagem_id="000010650003")
+        self.assertIsNotNone(venomous)
+        self.assertEqual(str(venomous.name), "Venomous Wrath")
+        self.assertEqual(int(venomous.cp_cost), 1)
+        self.assertEqual(str(venomous.effect), "post_shoot_reactive_normal_move_no_charge")
+
         striking = get_stratagem_tool_descriptor(stratagem_id="000010650004")
         self.assertIsNotNone(striking)
         self.assertEqual(str(striking.name), "Striking Stride")
@@ -432,6 +488,10 @@ class TestAeldariSerpentsBroodStratagems(unittest.TestCase):
         by_name_fangs = get_stratagem_tool_descriptor(name="FANGS OF THE BROOD")
         self.assertIsNotNone(by_name_fangs)
         self.assertEqual(str(by_name_fangs.stratagem_id), "000010650002")
+
+        by_name_venomous = get_stratagem_tool_descriptor(name="VENOMOUS WRATH")
+        self.assertIsNotNone(by_name_venomous)
+        self.assertEqual(str(by_name_venomous.stratagem_id), "000010650003")
 
         by_name_striking = get_stratagem_tool_descriptor(name="STRIKING STRIDE")
         self.assertIsNotNone(by_name_striking)
