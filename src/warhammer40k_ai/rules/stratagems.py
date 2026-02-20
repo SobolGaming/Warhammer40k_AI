@@ -177,6 +177,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "FOREWARNED",
     "SOUL BRIDGE",
     "SPIRIT TOKEN",
+    "BLADES FROM BEYOND",
+    "CRUSHING STRIDES",
     "WRAITHBONE ARMOUR",
     "SEER'S EYE",
     "SEER’S EYE",
@@ -392,6 +394,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "UNSHROUDED TRUTH",
     "FOREWARNED",
     "WRAITHBONE ARMOUR",
+    "CRUSHING STRIDES",
     "VENOMOUS WRATH",
     "FANGS OF THE BROOD",
     "STRIKING STRIDE",
@@ -3955,6 +3958,8 @@ class StratagemManager(
             "SEER’S EYE": "Target: one of your AELDARI PSYKER models, one friendly WRAITH CONSTRUCT unit within 12\" of it that has not been selected to shoot/fight this phase, and one enemy unit visible to that PSYKER; attacks by your WRAITH unit against that enemy can ignore AP/Damage modifiers this phase",
             "SOUL BRIDGE": "Target: your WRAITHBLADES/WRAITHGUARD/WRAITHLORD unit and one ASURYANI PSYKER model; until your next Command phase the selected WRAITH unit counts as within 12\" of that PSYKER for Psychic Guidance and Spirit Guides",
             "SPIRIT TOKEN": "Target: your WRAITHBLADES or WRAITHGUARD unit; select one objective marker you control within that unit's range to remain sticky until opponent control becomes greater at phase end",
+            "BLADES FROM BEYOND": "Target: your WRAITHBLADES, WRAITHLORD, or WRAITHKNIGHT unit that has not been selected to fight this phase; its melee weapons gain [DEVASTATING WOUNDS] until end of phase",
+            "CRUSHING STRIDES": "Target: your WRAITHBLADES, WRAITHLORD, or WRAITHKNIGHT unit just after it ends a Charge move, and one enemy unit in Engagement Range; roll D6s by unit type and each 3+ deals 1 mortal wound",
             "WRAITHBONE ARMOUR": "Target: your non-TITANIC WRAITH CONSTRUCT unit selected as a target of enemy Shooting/Fight attacks; subtract 1 from incoming Damage allocated to that unit this phase",
             "FANGS OF THE BROOD": "Target: your TROUPE unit; this phase it can gain all three Dance of Death abilities instead of one",
             "VENOMOUS WRATH": "Target: your HARLEQUINS VEHICLE unit that has not been selected to shoot this phase; after it shoots it can make a Normal move up to 6\" if not in Engagement Range, and cannot declare a charge this turn",
@@ -7260,6 +7265,7 @@ class StratagemManager(
         self._queue_emperors_children_mercurial_move_end_reactions(unit=unit, action=action)
         self._queue_aeldari_armoured_move_end_reactions(unit=unit, action=action)
         self._queue_aeldari_seer_move_end_reactions(unit=unit, action=action)
+        self._queue_aeldari_spirit_move_end_reactions(unit=unit, action=action)
         self._queue_aeldari_corsair_move_end_reactions(unit=unit, action=action)
         self._queue_aeldari_serpents_move_end_reactions(unit=unit, action=action)
         self._queue_aeldari_ghosts_move_end_reactions(unit=unit, action=action)

@@ -502,6 +502,108 @@ class AeldariStratagemMixin:
             out.append(root)
         return sorted(out, key=self._aeldari_sort_key)
 
+    def _aeldari_spirit_is_crushing_or_blades_target(self, unit: Any) -> bool:
+        root = self._aeldari_root(unit)
+        if root is None:
+            return False
+        if (
+            self._aeldari_has_keyword(root, "WRAITHBLADES")
+            or self._aeldari_has_keyword(root, "WRAITHLORD")
+            or self._aeldari_has_keyword(root, "WRAITHKNIGHT")
+        ):
+            return True
+        try:
+            name = str(getattr(root, "name", "") or "").strip().lower()
+        except (AttributeError, TypeError, ValueError):
+            name = ""
+        return "wraithblades" in name or "wraithlord" in name or "wraithknight" in name
+
+    def _aeldari_spirit_blades_from_beyond_candidates(self) -> List[Any]:
+        if not self._is_spirit_conclave_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._aeldari_spirit_is_crushing_or_blades_target(root):
+                continue
+            if bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_spirit_crushing_strides_enemy_candidates(self, source_unit: Any) -> List[Any]:
+        if not self._is_spirit_conclave_detachment():
+            return []
+        source_root = self._aeldari_root(source_unit)
+        if source_root is None:
+            return []
+        if not self._aeldari_on_battlefield(source_root, require_targetable=True):
+            return []
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        if game_map is None:
+            return []
+        get_enemy_units = getattr(game_map, "get_enemy_units", None)
+        in_engagement = getattr(game_map, "is_within_engagement_range", None)
+        if not callable(get_enemy_units) or not callable(in_engagement):
+            return []
+
+        out: List[Any] = []
+        seen: set[str] = set()
+        for enemy in list(get_enemy_units(source_root) or []):
+            enemy_root = self._aeldari_root(enemy)
+            if enemy_root is None:
+                continue
+            eid = self._aeldari_sort_key(enemy_root)
+            if eid and eid in seen:
+                continue
+            if eid:
+                seen.add(eid)
+            if not self._aeldari_on_battlefield(enemy_root, require_targetable=False):
+                continue
+            try:
+                if not bool(in_engagement(source_root, enemy_root)):
+                    continue
+            except (AttributeError, TypeError, ValueError):
+                continue
+            out.append(enemy_root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_spirit_crushing_strides_roll_count(self, source_unit: Any) -> int:
+        root = self._aeldari_root(source_unit)
+        if root is None:
+            return 0
+        if self._aeldari_has_keyword(root, "WRAITHKNIGHT"):
+            return 6
+        if self._aeldari_has_keyword(root, "WRAITHLORD"):
+            return 4
+        if self._aeldari_has_keyword(root, "WRAITHBLADES"):
+            return max(1, int(self._aeldari_models_alive(root)))
+        try:
+            name = str(getattr(root, "name", "") or "").strip().lower()
+        except (AttributeError, TypeError, ValueError):
+            name = ""
+        if "wraithknight" in name:
+            return 6
+        if "wraithlord" in name:
+            return 4
+        if "wraithblades" in name:
+            return max(1, int(self._aeldari_models_alive(root)))
+        return 0
+
     def _aeldari_spirit_wraithblades_or_guard_candidates(self) -> List[Any]:
         if not self._is_spirit_conclave_detachment():
             return []
@@ -1707,66 +1809,88 @@ class AeldariStratagemMixin:
         if phase_key == "SHOOTING_PHASE" and active_player is not self.player:
             return
 
-        seers_eye = self._aeldari_get_stratagem_by_norm_name("SEER'S EYE")
-        if seers_eye is None:
-            return
-        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(seers_eye, "cp_cost", 0) or 0):
-            return
-        if self._aeldari_norm_name(seers_eye.name) in getattr(self, "_used_stratagems_this_phase", set()):
-            return
-        if self._aeldari_reaction_exists("phase_start", seers_eye.name):
-            return
-
         phase_label = "Shooting phase" if phase_key == "SHOOTING_PHASE" else "Fight phase"
-        psykers = self._aeldari_spirit_psyker_candidates()
-        valid_psykers: List[Any] = []
-        psyker_enemy_map: Dict[str, List[Any]] = {}
-        psyker_wraith_map: Dict[str, List[Any]] = {}
-        for psyker in list(psykers or []):
-            root = self._aeldari_root(psyker)
-            if root is None:
-                continue
-            pid = self._aeldari_sort_key(root)
-            if not pid:
-                continue
-            enemies = self._aeldari_spirit_visible_enemy_candidates(root)
-            if not enemies:
-                continue
-            wraiths = self._aeldari_spirit_seers_eye_wraith_candidates(root)
-            if not wraiths:
-                continue
-            valid_psykers.append(root)
-            psyker_enemy_map[pid] = list(enemies)
-            psyker_wraith_map[pid] = list(wraiths)
+        seers_eye = self._aeldari_get_stratagem_by_norm_name("SEER'S EYE")
+        if (
+            seers_eye is not None
+            and int(getattr(self.player, "command_points", 0) or 0) >= int(getattr(seers_eye, "cp_cost", 0) or 0)
+            and self._aeldari_norm_name(seers_eye.name) not in getattr(self, "_used_stratagems_this_phase", set())
+            and not self._aeldari_reaction_exists("phase_start", seers_eye.name)
+        ):
+            psykers = self._aeldari_spirit_psyker_candidates()
+            valid_psykers: List[Any] = []
+            psyker_enemy_map: Dict[str, List[Any]] = {}
+            psyker_wraith_map: Dict[str, List[Any]] = {}
+            for psyker in list(psykers or []):
+                root = self._aeldari_root(psyker)
+                if root is None:
+                    continue
+                pid = self._aeldari_sort_key(root)
+                if not pid:
+                    continue
+                enemies = self._aeldari_spirit_visible_enemy_candidates(root)
+                if not enemies:
+                    continue
+                wraiths = self._aeldari_spirit_seers_eye_wraith_candidates(root)
+                if not wraiths:
+                    continue
+                valid_psykers.append(root)
+                psyker_enemy_map[pid] = list(enemies)
+                psyker_wraith_map[pid] = list(wraiths)
+            if valid_psykers:
+                payload = {
+                    "event": "phase_start",
+                    "phase": phase_label,
+                    "phase_name": phase_label,
+                    "stratagem": seers_eye.name,
+                    "cp_cost": seers_eye.cp_cost,
+                    "psyker_candidates": sorted(valid_psykers, key=self._aeldari_sort_key),
+                    "enemy_candidates_by_psyker": psyker_enemy_map,
+                    "wraith_candidates_by_psyker": psyker_wraith_map,
+                }
+                if len(valid_psykers) == 1:
+                    source_root = valid_psykers[0]
+                    payload["source_unit"] = source_root
+                    payload["source_psyker_unit"] = source_root
+                    pid = self._aeldari_sort_key(source_root)
+                    wraith_candidates = list(psyker_wraith_map.get(pid) or [])
+                    enemy_candidates = list(psyker_enemy_map.get(pid) or [])
+                    if wraith_candidates:
+                        payload["candidates"] = wraith_candidates
+                        if len(wraith_candidates) == 1:
+                            payload["unit"] = wraith_candidates[0]
+                            payload["target_unit"] = wraith_candidates[0]
+                    if enemy_candidates:
+                        payload["enemy_candidates"] = enemy_candidates
+                        if len(enemy_candidates) == 1:
+                            payload["enemy_unit"] = enemy_candidates[0]
+                self._queue_reaction(payload, use_timer=False)
 
-        if not valid_psykers:
+        if phase_key != "FIGHT_PHASE":
+            return
+        blades = self._aeldari_get_stratagem_by_norm_name("BLADES FROM BEYOND")
+        if blades is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(blades, "cp_cost", 0) or 0):
+            return
+        if self._aeldari_norm_name(blades.name) in getattr(self, "_used_stratagems_this_phase", set()):
+            return
+        if self._aeldari_reaction_exists("phase_start", blades.name):
+            return
+        candidates = self._aeldari_spirit_blades_from_beyond_candidates()
+        if not candidates:
             return
         payload = {
             "event": "phase_start",
-            "phase": phase_label,
-            "phase_name": phase_label,
-            "stratagem": seers_eye.name,
-            "cp_cost": seers_eye.cp_cost,
-            "psyker_candidates": sorted(valid_psykers, key=self._aeldari_sort_key),
-            "enemy_candidates_by_psyker": psyker_enemy_map,
-            "wraith_candidates_by_psyker": psyker_wraith_map,
+            "phase": "Fight phase",
+            "phase_name": "Fight phase",
+            "stratagem": blades.name,
+            "cp_cost": blades.cp_cost,
+            "candidates": candidates,
         }
-        if len(valid_psykers) == 1:
-            source_root = valid_psykers[0]
-            payload["source_unit"] = source_root
-            payload["source_psyker_unit"] = source_root
-            pid = self._aeldari_sort_key(source_root)
-            wraith_candidates = list(psyker_wraith_map.get(pid) or [])
-            enemy_candidates = list(psyker_enemy_map.get(pid) or [])
-            if wraith_candidates:
-                payload["candidates"] = wraith_candidates
-                if len(wraith_candidates) == 1:
-                    payload["unit"] = wraith_candidates[0]
-                    payload["target_unit"] = wraith_candidates[0]
-            if enemy_candidates:
-                payload["enemy_candidates"] = enemy_candidates
-                if len(enemy_candidates) == 1:
-                    payload["enemy_unit"] = enemy_candidates[0]
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
         self._queue_reaction(payload, use_timer=False)
 
     def _cleanup_aeldari_spirit_phase_end_effects(self, *, phase) -> None:
@@ -1792,22 +1916,38 @@ class AeldariStratagemMixin:
             sr = getattr(root, "special_rules", None)
             if not isinstance(sr, dict):
                 continue
-            exp = str(sr.get("aeldari_spirit_seers_eye_expires_phase", "") or "").strip().upper()
-            if exp and exp != phase_key:
-                continue
-            if not bool(sr.get("aeldari_spirit_seers_eye_active")) and not exp:
-                continue
-            for key in (
-                "aeldari_spirit_seers_eye_active",
-                "aeldari_spirit_seers_eye_expires_phase",
-                "aeldari_spirit_seers_eye_source",
-                "aeldari_spirit_seers_eye_turn_owner",
-                "aeldari_spirit_seers_eye_turn",
-                "aeldari_spirit_seers_eye_enemy_unit_id",
-                "aeldari_spirit_seers_eye_psyker_unit_id",
+            changed = False
+            seers_exp = str(sr.get("aeldari_spirit_seers_eye_expires_phase", "") or "").strip().upper()
+            if (not seers_exp or seers_exp == phase_key) and (
+                bool(sr.get("aeldari_spirit_seers_eye_active")) or bool(seers_exp)
             ):
-                sr.pop(key, None)
-            root.special_rules = sr
+                for key in (
+                    "aeldari_spirit_seers_eye_active",
+                    "aeldari_spirit_seers_eye_expires_phase",
+                    "aeldari_spirit_seers_eye_source",
+                    "aeldari_spirit_seers_eye_turn_owner",
+                    "aeldari_spirit_seers_eye_turn",
+                    "aeldari_spirit_seers_eye_enemy_unit_id",
+                    "aeldari_spirit_seers_eye_psyker_unit_id",
+                ):
+                    sr.pop(key, None)
+                changed = True
+            if phase_key == "FIGHT_PHASE":
+                blades_exp = str(sr.get("aeldari_spirit_blades_from_beyond_expires_phase", "") or "").strip().upper()
+                if (not blades_exp or blades_exp == phase_key) and (
+                    bool(sr.get("aeldari_spirit_blades_from_beyond_active")) or bool(blades_exp)
+                ):
+                    for key in (
+                        "aeldari_spirit_blades_from_beyond_active",
+                        "aeldari_spirit_blades_from_beyond_expires_phase",
+                        "aeldari_spirit_blades_from_beyond_turn_owner",
+                        "aeldari_spirit_blades_from_beyond_turn",
+                        "aeldari_spirit_blades_from_beyond_source",
+                    ):
+                        sr.pop(key, None)
+                    changed = True
+            if changed:
+                root.special_rules = sr
 
     def _queue_aeldari_spirit_shooting_targets_selected_reactions(
         self,
@@ -1902,6 +2042,62 @@ class AeldariStratagemMixin:
         if len(candidates) == 1:
             payload["unit"] = candidates[0]
             payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_aeldari_spirit_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        game = getattr(self, "game", None)
+        if game is None or not self._is_spirit_conclave_detachment():
+            return
+        phase_key = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_key != "CHARGE_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return
+        action_key = str(action or "").strip().lower().replace("_", " ")
+        if action_key not in {"charge", "charge move"}:
+            return
+
+        source_root = self._aeldari_root(unit)
+        if source_root is None:
+            return
+        try:
+            if source_root.get_parent_army().player is not self.player:
+                return
+        except (AttributeError, TypeError, ValueError):
+            return
+        if not self._aeldari_on_battlefield(source_root, require_targetable=True):
+            return
+        if not self._aeldari_spirit_is_crushing_or_blades_target(source_root):
+            return
+
+        stratagem = self._aeldari_get_stratagem_by_norm_name("CRUSHING STRIDES")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+            return
+        if self._aeldari_reaction_exists("unit_move_ended", stratagem.name, unit=source_root):
+            return
+
+        enemy_candidates = self._aeldari_spirit_crushing_strides_enemy_candidates(source_root)
+        if not enemy_candidates:
+            return
+        payload: Dict[str, Any] = {
+            "event": "unit_move_ended",
+            "phase": "Charge phase",
+            "phase_name": "Charge phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": source_root,
+            "target_unit": source_root,
+            "source_unit": source_root,
+            "action": str(action or ""),
+            "enemy_candidates": enemy_candidates,
+        }
+        if len(enemy_candidates) == 1:
+            payload["enemy_unit"] = enemy_candidates[0]
         self._queue_reaction(payload, use_timer=False)
 
     def _queue_aeldari_seer_move_end_reactions(self, *, unit: Any, action: str) -> None:
@@ -5390,6 +5586,10 @@ class AeldariStratagemMixin:
             return self._use_aeldari_spirit_wraithbone_armour(stratagem, **kwargs)
         if name_u in {"SEER'S EYE", "SEER\u2019S EYE"}:
             return self._use_aeldari_spirit_seers_eye(stratagem, **kwargs)
+        if name_u == "BLADES FROM BEYOND":
+            return self._use_aeldari_spirit_blades_from_beyond(stratagem, **kwargs)
+        if name_u == "CRUSHING STRIDES":
+            return self._use_aeldari_spirit_crushing_strides(stratagem, **kwargs)
         return None
 
     def _use_aeldari_spirit_token(self, stratagem, **kwargs) -> bool:
@@ -5746,6 +5946,196 @@ class AeldariStratagemMixin:
         sr["aeldari_spirit_seers_eye_psyker_unit_id"] = str(get_entity_id(source_root) or "")
         target_root.special_rules = sr
         self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_aeldari_spirit_blades_from_beyond(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: BLADES FROM BEYOND: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_spirit_blades_from_beyond_candidates()
+        candidate_roots = [self._aeldari_root(unit) for unit in list(candidates or [])]
+        candidate_roots = [unit for unit in candidate_roots if unit is not None]
+        if target_root is None:
+            if len(candidate_roots) == 1:
+                target_root = candidate_roots[0]
+            else:
+                logger.error("ERROR: BLADES FROM BEYOND: missing target unit")
+                return False
+        if candidate_roots and target_root not in candidate_roots:
+            logger.error("ERROR: BLADES FROM BEYOND: target must be WRAITHBLADES, WRAITHLORD, or WRAITHKNIGHT")
+            return False
+        if not self._aeldari_on_battlefield(target_root, require_targetable=True):
+            logger.error("ERROR: BLADES FROM BEYOND: target must be on the battlefield and targetable")
+            return False
+        if not self._aeldari_spirit_is_crushing_or_blades_target(target_root):
+            logger.error("ERROR: BLADES FROM BEYOND: target must be WRAITHBLADES, WRAITHLORD, or WRAITHKNIGHT")
+            return False
+        if bool(getattr(getattr(target_root, "round_state", None), "fought_this_phase", False)):
+            logger.error("ERROR: BLADES FROM BEYOND: target has already been selected to fight this phase")
+            return False
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root):
+            return False
+
+        source = str(getattr(stratagem, "name", "BLADES FROM BEYOND") or "BLADES FROM BEYOND")
+        phase_key = "FIGHT_PHASE"
+        for model_index, model in enumerate(list(getattr(target_root, "get_attached_unit_models", lambda: [])() or [])):
+            if model is None or not bool(getattr(model, "is_alive", True)):
+                continue
+            model_id = str(get_entity_id(model) or model_index)
+            for wargear_index, wargear in enumerate(list(getattr(model, "wargear", []) or [])):
+                if wargear is None:
+                    continue
+                is_melee = getattr(wargear, "is_melee", None)
+                if not callable(is_melee) or not bool(is_melee()):
+                    continue
+                weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                if not weapon_name:
+                    continue
+                key_base = f"aeldari_blades_from_beyond:{model_id}:{wargear_index}:{weapon_name}".lower()
+                set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+                if callable(set_keywords):
+                    set_keywords(
+                        key=key_base,
+                        weapon_name=weapon_name,
+                        keywords=["DEVASTATING WOUNDS"],
+                        source=source,
+                        expires_phase=phase_key,
+                        attack_type="melee",
+                    )
+                else:
+                    effects = getattr(model, "_temporary_effects", None)
+                    if not isinstance(effects, dict):
+                        effects = {}
+                        model._temporary_effects = effects
+                    effects[key_base] = {
+                        "expires_phase": phase_key,
+                        "weapon_keyword_bonuses": {weapon_name: ["DEVASTATING WOUNDS"]},
+                        "weapon_keyword_bonuses_source": source,
+                        "weapon_keyword_bonuses_attack_type": "melee",
+                    }
+
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["aeldari_spirit_blades_from_beyond_active"] = True
+        sr["aeldari_spirit_blades_from_beyond_expires_phase"] = phase_key
+        sr["aeldari_spirit_blades_from_beyond_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["aeldari_spirit_blades_from_beyond_turn"] = int(getattr(game, "turn", 0) or 0)
+        sr["aeldari_spirit_blades_from_beyond_source"] = source
+        target_root.special_rules = sr
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_aeldari_spirit_crushing_strides(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "charge phase":
+            logger.error("ERROR: CRUSHING STRIDES: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: CRUSHING STRIDES: not your turn")
+            return False
+
+        source_unit = context.get("unit") or context.get("target_unit") or context.get("source_unit")
+        source_root = self._aeldari_root(source_unit) if source_unit is not None else None
+        if source_root is None:
+            logger.error("ERROR: CRUSHING STRIDES: missing source unit")
+            return False
+        if not self._aeldari_on_battlefield(source_root, require_targetable=True):
+            logger.error("ERROR: CRUSHING STRIDES: source must be on the battlefield and targetable")
+            return False
+        if not self._aeldari_spirit_is_crushing_or_blades_target(source_root):
+            logger.error("ERROR: CRUSHING STRIDES: source must be WRAITHBLADES, WRAITHLORD, or WRAITHKNIGHT")
+            return False
+        action_key = str(context.get("action") or "").strip().lower().replace("_", " ")
+        if action_key not in {"charge", "charge move"} and not bool(
+            getattr(getattr(source_root, "round_state", None), "charged_this_round", False)
+        ):
+            logger.error("ERROR: CRUSHING STRIDES: source must have ended a Charge move")
+            return False
+
+        enemy_unit = context.get("enemy_unit") or context.get("target_enemy_unit")
+        enemy_root = self._aeldari_root(enemy_unit) if enemy_unit is not None else None
+        enemy_candidates = list(context.get("enemy_candidates") or [])
+        if not enemy_candidates:
+            enemy_candidates = self._aeldari_spirit_crushing_strides_enemy_candidates(source_root)
+        enemy_roots = [self._aeldari_root(unit) for unit in list(enemy_candidates or [])]
+        enemy_roots = [unit for unit in enemy_roots if unit is not None]
+        if enemy_root is None:
+            if len(enemy_roots) == 1:
+                enemy_root = enemy_roots[0]
+            else:
+                logger.error("ERROR: CRUSHING STRIDES: missing engaged enemy target")
+                return False
+        if enemy_roots and enemy_root not in enemy_roots:
+            logger.error("ERROR: CRUSHING STRIDES: selected enemy is not within Engagement Range")
+            return False
+        if not self._aeldari_on_battlefield(enemy_root, require_targetable=False):
+            logger.error("ERROR: CRUSHING STRIDES: selected enemy must be on the battlefield")
+            return False
+        game_map = getattr(game, "map", None)
+        if game_map is not None:
+            in_engagement = getattr(game_map, "is_within_engagement_range", None)
+            if callable(in_engagement):
+                try:
+                    if not bool(in_engagement(source_root, enemy_root)):
+                        logger.error("ERROR: CRUSHING STRIDES: selected enemy is not within Engagement Range")
+                        return False
+                except (AttributeError, TypeError, ValueError):
+                    pass
+
+        roll_count = context.get("roll_count")
+        if roll_count is None:
+            roll_count = self._aeldari_spirit_crushing_strides_roll_count(source_root)
+        try:
+            roll_count = int(roll_count or 0)
+        except (TypeError, ValueError):
+            roll_count = 0
+        if roll_count <= 0:
+            logger.error("ERROR: CRUSHING STRIDES: unable to determine roll count")
+            return False
+        if not self._aeldari_armoured_spend_cp(
+            stratagem,
+            target_unit=source_root,
+            enemy_unit=enemy_root,
+        ):
+            return False
+        mortal_wounds = context.get("mortal_wounds")
+        if mortal_wounds is None:
+            mortal_wounds = self._roll_aeldari_crushing_strides_mortal_wounds(source_root, enemy_root, int(roll_count))
+        try:
+            mortal_wounds = int(mortal_wounds or 0)
+        except (TypeError, ValueError):
+            mortal_wounds = 0
+        if mortal_wounds > 0:
+            apply_mortals = getattr(enemy_root, "_apply_mortal_wounds_to_unit", None)
+            if callable(apply_mortals):
+                try:
+                    apply_mortals(enemy_root, int(mortal_wounds), game_map=getattr(game, "map", None))
+                except TypeError:
+                    apply_mortals(target_unit=enemy_root, amount=int(mortal_wounds), game_map=getattr(game, "map", None))
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: CRUSHING STRIDES: %s rolled %d D6 and dealt %d mortal wound(s) to %s.",
+            getattr(source_root, "name", "Unit"),
+            int(roll_count),
+            int(mortal_wounds),
+            getattr(enemy_root, "name", "Enemy"),
+        )
         return True
 
     def _use_aeldari_eldritch_raiders_stratagem(self, stratagem, **kwargs) -> Optional[bool]:
@@ -8858,6 +9248,24 @@ class AeldariStratagemMixin:
         if len(candidates) == 1:
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload)
+
+    def _roll_aeldari_crushing_strides_mortal_wounds(self, source_unit: Any, enemy_unit: Any, roll_count: int) -> int:
+        from ..utility.dice import get_roll
+        from ..utility.event_bus import append_dice
+
+        count = max(0, int(roll_count or 0))
+        rolls = [int(get_roll("D6") or 0) for _ in range(count)]
+        mortals = int(sum(1 for roll in rolls if int(roll or 0) >= 3))
+        player = getattr(source_unit.get_parent_army(), "player", None) if source_unit is not None else None
+        if player is not None:
+            append_dice(
+                player,
+                (
+                    f"Crushing Strides rolls for {getattr(source_unit, 'name', 'Unit')} vs "
+                    f"{getattr(enemy_unit, 'name', 'Enemy')} ({int(count)}D6): {rolls} => {int(mortals)} mortal wounds"
+                ),
+            )
+        return int(mortals)
 
     def _roll_aeldari_vengeful_sorrow_distance(self, unit: Any) -> int:
         from ..utility.dice import get_roll

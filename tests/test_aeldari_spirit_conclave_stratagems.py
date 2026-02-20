@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
@@ -448,6 +449,97 @@ class TestAeldariSpiritConclaveStratagems(unittest.TestCase):
         game.event_system.publish("phase_end", player=p1, phase=SimpleNamespace(name="SHOOTING_PHASE"))
         self.assertFalse(bool(getattr(wraithguard, "special_rules", {}).get("aeldari_spirit_seers_eye_active")))
 
+    def test_blades_from_beyond_queues_and_grants_devastating_wounds_to_melee_weapons(self):
+        game, p1, _p2, aeldari_army, _enemy_army = _build_game()
+        wraithblades = _make_unit(
+            "Wraithblades",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["ASURYANI", "INFANTRY", "WRAITHBLADES", "WRAITH CONSTRUCT"],
+            quantity=2,
+        )
+        aeldari_army.add_unit(wraithblades)
+        _place_unit(game, wraithblades, 10.0, 10.0)
+
+        for model in list(wraithblades.models or []):
+            model.wargear = [
+                Wargear(
+                    {
+                        "name": "Ghostsword",
+                        "type": "Melee",
+                        "range": "Melee",
+                        "A": "3",
+                        "BS_WS": "3+",
+                        "S": "6",
+                        "AP": "-2",
+                        "D": "2",
+                        "description": "",
+                    }
+                )
+            ]
+
+        _set_phase(game, p1, "FIGHT_PHASE", 0)
+        pending = _pending_by_name(p1.stratagems, "BLADES FROM BEYOND")
+        self.assertIsNotNone(pending)
+
+        ok = p1.stratagems.use(
+            str(pending.get("stratagem", "")),
+            unit=wraithblades,
+            dequeue=True,
+        )
+        self.assertTrue(ok)
+        self.assertEqual(int(p1.command_points or 0), 9)
+
+        first_model = wraithblades.models[0]
+        bonuses = list(first_model.get_temporary_weapon_keyword_bonuses("Ghostsword") or [])
+        self.assertTrue(any(str(entry.get("keyword", "")).upper() == "DEVASTATING WOUNDS" for entry in bonuses))
+
+        game.event_system.publish("phase_end", player=p1, phase=SimpleNamespace(name="FIGHT_PHASE"))
+        self.assertFalse(bool(getattr(wraithblades, "special_rules", {}).get("aeldari_spirit_blades_from_beyond_active")))
+
+    def test_crushing_strides_queues_on_charge_move_end_and_deals_mortal_wounds(self):
+        game, p1, _p2, aeldari_army, enemy_army = _build_game()
+        wraithlord = _make_unit(
+            "Wraithlord",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["ASURYANI", "MONSTER", "WRAITHLORD", "WRAITH CONSTRUCT"],
+            quantity=1,
+        )
+        enemy = _make_unit(
+            "Enemy Unit",
+            faction_name="Enemy",
+            faction_keywords=["ENEMY"],
+            keywords=["INFANTRY"],
+            wounds="8",
+            quantity=1,
+        )
+        aeldari_army.add_unit(wraithlord)
+        enemy_army.add_unit(enemy)
+        _place_unit(game, wraithlord, 10.0, 10.0)
+        _place_unit(game, enemy, 11.5, 10.0)
+
+        _set_phase(game, p1, "CHARGE_PHASE", 0)
+        game.event_system.publish("unit_move_ended", unit=wraithlord, action="charge")
+        pending = _pending_by_name(p1.stratagems, "CRUSHING STRIDES")
+        self.assertIsNotNone(pending)
+        self.assertIn(enemy, list(pending.get("enemy_candidates") or []))
+
+        enemy_model = enemy.models[0]
+        before_wounds = int(getattr(enemy_model, "wounds", 0) or 0)
+        with patch("warhammer40k_ai.utility.dice.get_roll", side_effect=[3, 2, 6, 1]):
+            ok = p1.stratagems.use(
+                str(pending.get("stratagem", "")),
+                unit=wraithlord,
+                enemy_unit=enemy,
+                action="charge",
+                dequeue=True,
+            )
+        self.assertTrue(ok)
+        self.assertEqual(int(p1.command_points or 0), 9)
+        after_wounds = int(getattr(enemy_model, "wounds", 0) or 0)
+        self.assertEqual(before_wounds - after_wounds, 2)
+
     def test_spirit_conclave_step1_stratagem_descriptors_registered(self):
         seers_eye = get_stratagem_tool_descriptor(stratagem_id="000009908002")
         self.assertIsNotNone(seers_eye)
@@ -491,6 +583,29 @@ class TestAeldariSpiritConclaveStratagems(unittest.TestCase):
         by_name_wraithbone = get_stratagem_tool_descriptor(name="WRAITHBONE ARMOUR")
         self.assertIsNotNone(by_name_wraithbone)
         self.assertEqual(str(by_name_wraithbone.stratagem_id), "000009908003")
+
+        blades = get_stratagem_tool_descriptor(stratagem_id="000009908004")
+        self.assertIsNotNone(blades)
+        self.assertEqual(str(blades.name), "Blades from Beyond")
+        self.assertEqual(int(blades.cp_cost), 1)
+        self.assertEqual(str(blades.effect), "grant_devastating_wounds_to_melee_weapons")
+
+        crushing = get_stratagem_tool_descriptor(stratagem_id="000009908007")
+        self.assertIsNotNone(crushing)
+        self.assertEqual(str(crushing.name), "Crushing Strides")
+        self.assertEqual(int(crushing.cp_cost), 1)
+        self.assertEqual(
+            str(crushing.effect),
+            "roll_dice_by_unit_type_each_3plus_deals_1_mortal_wound_to_selected_enemy",
+        )
+
+        by_name_blades = get_stratagem_tool_descriptor(name="BLADES FROM BEYOND")
+        self.assertIsNotNone(by_name_blades)
+        self.assertEqual(str(by_name_blades.stratagem_id), "000009908004")
+
+        by_name_crushing = get_stratagem_tool_descriptor(name="CRUSHING STRIDES")
+        self.assertIsNotNone(by_name_crushing)
+        self.assertEqual(str(by_name_crushing.stratagem_id), "000009908007")
 
 
 if __name__ == "__main__":

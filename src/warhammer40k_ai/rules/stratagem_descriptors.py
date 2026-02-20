@@ -1728,6 +1728,19 @@ _SPIRIT_CONCLAVE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
         cp_cost=1,
         effect_params={"damage_reduction": 1},
     ),
+    "000009908004": StratagemToolDescriptor(
+        stratagem_id="000009908004",
+        name="Blades from Beyond",
+        timing="your_fight_phase",
+        target="wraithblades_wraithlord_or_wraithknight_unit_not_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="grant_devastating_wounds_to_melee_weapons",
+        cp_cost=1,
+        effect_params={
+            "attack_type": "melee",
+            "grant_keywords": ["DEVASTATING WOUNDS"],
+        },
+    ),
     "000009908005": StratagemToolDescriptor(
         stratagem_id="000009908005",
         name="Soul Bridge",
@@ -1750,6 +1763,22 @@ _SPIRIT_CONCLAVE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
         effect="sticky_objective",
         cp_cost=1,
         effect_params={"objective_selection_required": True},
+    ),
+    "000009908007": StratagemToolDescriptor(
+        stratagem_id="000009908007",
+        name="Crushing Strides",
+        timing="your_charge_phase_after_friendly_charge_move_end",
+        target="wraithblades_wraithlord_or_wraithknight_unit_that_ended_charge_move_and_enemy_unit_in_engagement_range",
+        duration="immediate",
+        effect="roll_dice_by_unit_type_each_3plus_deals_1_mortal_wound_to_selected_enemy",
+        cp_cost=1,
+        effect_params={
+            "wraithblades_roll": "models_in_unit_d6",
+            "wraithlord_roll": "4D6",
+            "wraithknight_roll": "6D6",
+            "threshold": 3,
+            "mortal_wounds_per_success": 1,
+        },
     ),
 }
 
