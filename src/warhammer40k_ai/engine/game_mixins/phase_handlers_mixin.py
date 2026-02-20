@@ -5801,6 +5801,43 @@ class GamePhaseHandlersMixin:
                         continue
             return False
 
+        def _first_alive_model_xy(source_unit):
+            if source_unit is None:
+                return None
+            get_models = getattr(source_unit, "get_attached_unit_models", None)
+            models = list(get_models() or []) if callable(get_models) else list(getattr(source_unit, "models", []) or [])
+            for model in models:
+                alive_attr = getattr(model, "is_alive", True)
+                alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                if not alive:
+                    continue
+                loc = model.get_location() if hasattr(model, "get_location") else None
+                if not loc or len(loc) < 2:
+                    continue
+                try:
+                    return (float(loc[0]), float(loc[1]))
+                except (TypeError, ValueError):
+                    continue
+            return None
+
+        def _enhancement_bearer_xy(unit, bearer_model):
+            transport = getattr(unit, "embarked_in", None)
+            embarked = bool(getattr(unit, "is_embarked", False)) or transport is not None
+            if embarked and transport is not None:
+                pos = _first_alive_model_xy(transport)
+                if pos is not None:
+                    return pos
+            if bearer_model is not None:
+                loc = bearer_model.get_location() if hasattr(bearer_model, "get_location") else None
+                if loc and len(loc) >= 2:
+                    try:
+                        return (float(loc[0]), float(loc[1]))
+                    except (TypeError, ValueError):
+                        pass
+            if transport is not None:
+                return _first_alive_model_xy(transport)
+            return None
+
         if pname == "SHOOTING_PHASE":
             for unit in list(getattr(army, "units", []) or []):
                 sr = getattr(unit, "special_rules", None)
@@ -5881,6 +5918,77 @@ class GamePhaseHandlersMixin:
                         choices=choices,
                         ability_name=ability_name,
                     )
+
+            opponent = next((p for p in list(getattr(self, "players", []) or []) if p is not None and p is not player), None)
+            own_player_id = str(getattr(player, "id", "") or "")
+            opponent_player_id = str(getattr(opponent, "id", "") or "")
+
+            for unit in list(getattr(army, "units", []) or []):
+                sr = getattr(unit, "special_rules", None)
+                if not (isinstance(sr, dict) and sr.get("enhancement_echoes_of_ulthanesh")):
+                    continue
+                if not _unit_active(unit, allow_embarked=True):
+                    continue
+                bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+                bearer = bearer() if callable(bearer) else None
+                if bearer is None or not getattr(bearer, "is_alive", True):
+                    continue
+                pos = _enhancement_bearer_xy(unit, bearer)
+                if pos is None:
+                    continue
+                x, y = pos
+
+                in_own_zone = bool(own_player_id) and bool(self.is_position_in_deployment_zone(x, y, own_player_id))
+                in_enemy_zone = bool(opponent_player_id) and bool(
+                    self.is_position_in_deployment_zone(x, y, opponent_player_id)
+                )
+                try:
+                    outside_bonus = int(sr.get("enhancement_echoes_of_ulthanesh_outside_own_zone_bonus", 1) or 1)
+                except (TypeError, ValueError):
+                    outside_bonus = 1
+                try:
+                    enemy_bonus = int(sr.get("enhancement_echoes_of_ulthanesh_enemy_zone_bonus", 1) or 1)
+                except (TypeError, ValueError):
+                    enemy_bonus = 1
+                try:
+                    success_on = int(sr.get("enhancement_echoes_of_ulthanesh_success_on", 5) or 5)
+                except (TypeError, ValueError):
+                    success_on = 5
+                try:
+                    cp_gain = int(sr.get("enhancement_echoes_of_ulthanesh_cp_gain", 1) or 1)
+                except (TypeError, ValueError):
+                    cp_gain = 1
+                success_on = max(2, success_on)
+                cp_gain = max(0, cp_gain)
+
+                mod = 0
+                if not in_own_zone:
+                    mod += max(0, outside_bonus)
+                if in_enemy_zone:
+                    mod += max(0, enemy_bonus)
+
+                ability_name = str(getattr(getattr(unit, "enhancement", None), "name", "") or "Echoes of Ulthanesh").strip()
+                roll = int(get_roll("D6") or 0)
+                total = int(roll) + int(mod)
+                if int(mod) > 0:
+                    roll_text = f"D6={int(roll)}+{int(mod)}={int(total)}"
+                else:
+                    roll_text = f"D6={int(roll)}"
+                append_dice(
+                    player,
+                    f"{ability_name} roll: {roll_text} (need {int(success_on)}+).",
+                )
+                if total < int(success_on) or cp_gain <= 0:
+                    append_action(
+                        player,
+                        f"{ability_name}: failed to gain CP ({int(total)} < {int(success_on)}).",
+                    )
+                    continue
+                gained = int(player.gain_command_points(int(cp_gain), reason=ability_name) or 0)
+                append_action(
+                    player,
+                    f"{ability_name}: gained {int(gained)}CP.",
+                )
 
             for unit in list(getattr(army, "units", []) or []):
                 sr = getattr(unit, "special_rules", None)

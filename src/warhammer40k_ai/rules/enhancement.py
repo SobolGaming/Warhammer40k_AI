@@ -375,6 +375,10 @@ class Enhancement:
         except Exception:
             is_seer_council = False
         try:
+            is_windrider_host = bool(ae_mgr and ae_mgr.is_windrider_host())
+        except Exception:
+            is_windrider_host = False
+        try:
             is_corsair_veterans = bool(ae_mgr and ae_mgr.has_veterans_of_the_void())
         except Exception:
             is_corsair_veterans = False
@@ -1474,6 +1478,57 @@ class Enhancement:
             unit.special_rules["enhancement_timeless_strategist_battle_focus_bonus"] = int(
                 unit.special_rules.get("enhancement_timeless_strategist_battle_focus_bonus", 0) or 0
             ) + 1
+
+        if name == "firstdrawn blade" or enh_id == "000009903002":
+            if not is_windrider_host:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            scout_distance = _coerce_int(params.get("scouts_distance", 9) or 9, default=9)
+            unit.special_rules["enhancement_firstdrawn_blade"] = True
+            unit.special_rules["enhancement_scout_distance"] = max(
+                int(unit.special_rules.get("enhancement_scout_distance", 0) or 0),
+                int(max(0, scout_distance)),
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "mirage field" or enh_id == "000009903003":
+            if not is_windrider_host:
+                return
+            unit.special_rules["enhancement_mirage_field"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "seersight strike" or enh_id == "000009903004":
+            if not is_windrider_host:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            anti_monster = _coerce_int(params.get("anti_monster", 2) or 2, default=2)
+            anti_vehicle = _coerce_int(params.get("anti_vehicle", 2) or 2, default=2)
+            unit.special_rules["enhancement_seersight_strike"] = True
+            unit.special_rules["enhancement_seersight_strike_anti_monster"] = int(max(2, anti_monster))
+            unit.special_rules["enhancement_seersight_strike_anti_vehicle"] = int(max(2, anti_vehicle))
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "echoes of ulthanesh" or enh_id == "000009903005":
+            if not is_windrider_host:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            success_on = _coerce_int(params.get("success_on", 5) or 5, default=5)
+            cp_gain = _coerce_int(params.get("cp_gain", 1) or 1, default=1)
+            outside_bonus = _coerce_int(params.get("outside_own_zone_bonus", 1) or 1, default=1)
+            enemy_bonus = _coerce_int(params.get("enemy_zone_additional_bonus", 1) or 1, default=1)
+            unit.special_rules["enhancement_echoes_of_ulthanesh"] = True
+            unit.special_rules["enhancement_echoes_of_ulthanesh_success_on"] = int(max(2, success_on))
+            unit.special_rules["enhancement_echoes_of_ulthanesh_cp_gain"] = int(max(0, cp_gain))
+            unit.special_rules["enhancement_echoes_of_ulthanesh_outside_own_zone_bonus"] = int(max(0, outside_bonus))
+            unit.special_rules["enhancement_echoes_of_ulthanesh_enemy_zone_bonus"] = int(max(0, enemy_bonus))
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 
         if name == "guiding presence" or enh_id == "000009769002":
             if not is_armoured_warhost:

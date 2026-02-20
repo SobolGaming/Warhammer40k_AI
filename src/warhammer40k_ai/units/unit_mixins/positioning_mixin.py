@@ -2877,6 +2877,45 @@ class PositioningMixin:
                     {"attack_type": "ranged", "keyword": f"ANTI-MONSTER {int(max(2, anti_monster))}+", "source": source},
                     {"attack_type": "ranged", "keyword": f"ANTI-VEHICLE {int(max(2, anti_vehicle))}+", "source": source},
                 ]
+        if self._attached_unit_model_is_enhancement_bearer(
+            model,
+            flag_key="enhancement_seersight_strike",
+            enhancement_id="000009903004",
+            enhancement_name="seersight strike",
+            require_leading=False,
+        ):
+            is_psychic_weapon = False
+            if weapon_profile is not None:
+                is_psychic = getattr(weapon_profile, "is_psychic", None)
+                if callable(is_psychic):
+                    is_psychic_weapon = bool(is_psychic())
+            if is_psychic_weapon:
+                get_root = getattr(self, "get_attached_unit_root", None)
+                if callable(get_root):
+                    try:
+                        root = get_root()
+                    except AttributeError:
+                        root = self
+                else:
+                    root = self
+                if root is None:
+                    root = self
+                source = "Seersight Strike"
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                try:
+                    anti_monster = int(sr.get("enhancement_seersight_strike_anti_monster", 2) or 2)
+                except (TypeError, ValueError):
+                    anti_monster = 2
+                try:
+                    anti_vehicle = int(sr.get("enhancement_seersight_strike_anti_vehicle", 2) or 2)
+                except (TypeError, ValueError):
+                    anti_vehicle = 2
+                rules = list(rules or []) + [
+                    {"attack_type": "any", "keyword": f"ANTI-MONSTER {int(max(2, anti_monster))}+", "source": source},
+                    {"attack_type": "any", "keyword": f"ANTI-VEHICLE {int(max(2, anti_vehicle))}+", "source": source},
+                ]
         try:
             root = self.get_attached_unit_root()
             sr = getattr(root, "special_rules", None)

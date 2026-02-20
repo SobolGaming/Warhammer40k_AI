@@ -416,6 +416,54 @@ _AELDARI_CORSAIR_COTERIE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _AELDARI_CORSAIR_COTERIE_DESCRIPTORS.values()
 }
 
+_AELDARI_WINDRIDER_HOST_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009903002": EnhancementToolDescriptor(
+        enhancement_id="000009903002",
+        name="Firstdrawn Blade",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="grant_scouts_to_bearer_unit",
+        effect_params={"scouts_distance": 9},
+    ),
+    "000009903003": EnhancementToolDescriptor(
+        enhancement_id="000009903003",
+        name="Mirage Field",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="bearer_unit_target_hit_penalty",
+        effect_params={"attack_type": "any", "hit_penalty": 1},
+    ),
+    "000009903004": EnhancementToolDescriptor(
+        enhancement_id="000009903004",
+        name="Seersight Strike",
+        timing="passive",
+        target="bearer_psychic_weapons",
+        duration="constant",
+        effect="bearer_psychic_weapon_gain_anti",
+        effect_params={"anti_monster": 2, "anti_vehicle": 2},
+    ),
+    "000009903005": EnhancementToolDescriptor(
+        enhancement_id="000009903005",
+        name="Echoes of Ulthanesh",
+        timing="start_of_command_phase",
+        target="bearer",
+        duration="instant",
+        effect="cp_gain_roll_with_deployment_zone_modifiers",
+        effect_params={
+            "cp_gain": 1,
+            "success_on": 5,
+            "outside_own_zone_bonus": 1,
+            "enemy_zone_additional_bonus": 1,
+        },
+    ),
+}
+
+_AELDARI_WINDRIDER_HOST_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _AELDARI_WINDRIDER_HOST_DESCRIPTORS.values()
+}
+
 _EXPERIMENTAL_PROTOTYPE_CADRE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009983002": EnhancementToolDescriptor(
         enhancement_id="000009983002",
@@ -1287,6 +1335,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _AELDARI_CORSAIR_COTERIE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _AELDARI_WINDRIDER_HOST_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _EXPERIMENTAL_PROTOTYPE_CADRE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -1353,6 +1404,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _AELDARI_GUARDIAN_BATTLEHOST_BY_NAME.get(key)
         or _AELDARI_SEER_COUNCIL_BY_NAME.get(key)
         or _AELDARI_CORSAIR_COTERIE_BY_NAME.get(key)
+        or _AELDARI_WINDRIDER_HOST_BY_NAME.get(key)
         or _EXPERIMENTAL_PROTOTYPE_CADRE_BY_NAME.get(key)
         or _MONTKA_BY_NAME.get(key)
         or _RAD_ZONE_CORPS_BY_NAME.get(key)
