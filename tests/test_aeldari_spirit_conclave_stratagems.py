@@ -9,6 +9,7 @@ from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.rules.psychic_guidance import unit_within_psyker_range
 from warhammer40k_ai.rules.stratagem_descriptors import get_stratagem_tool_descriptor
 from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.units.wargear import Wargear
 from warhammer40k_ai.utility.entity_ids import get_entity_id
 
 
@@ -252,7 +253,214 @@ class TestAeldariSpiritConclaveStratagems(unittest.TestCase):
         self.assertEqual(int(p1.command_points or 0), 10)
         self.assertFalse(bool(wraithlord.special_rules.get("aeldari_soul_bridge_active")))
 
+    def test_wraithbone_armour_queues_and_reduces_incoming_damage_by_one(self):
+        game, p1, p2, aeldari_army, enemy_army = _build_game()
+        wraithguard = _make_unit(
+            "Wraithguard",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["ASURYANI", "INFANTRY", "WRAITHGUARD", "WRAITH CONSTRUCT"],
+            wounds="8",
+            quantity=1,
+        )
+        enemy = _make_unit(
+            "Enemy Shooters",
+            faction_name="Enemy",
+            faction_keywords=["ENEMY"],
+            keywords=["INFANTRY"],
+            quantity=1,
+        )
+        aeldari_army.add_unit(wraithguard)
+        enemy_army.add_unit(enemy)
+        _place_unit(game, wraithguard, 10.0, 10.0)
+        _place_unit(game, enemy, 16.0, 10.0)
+
+        _set_phase(game, p2, "SHOOTING_PHASE", 1)
+        game.event_system.publish("shooting_targets_selected", attacking_unit=enemy, target_units=[wraithguard])
+        pending = _pending_by_name(p1.stratagems, "WRAITHBONE ARMOUR")
+        self.assertIsNotNone(pending)
+
+        ok = p1.stratagems.use(
+            str(pending.get("stratagem", "")),
+            unit=wraithguard,
+            attacking_unit=enemy,
+            dequeue=True,
+        )
+        self.assertTrue(ok)
+        self.assertEqual(int(p1.command_points or 0), 9)
+
+        profile = Wargear(
+            {
+                "name": "Test Rifle",
+                "type": "Ranged",
+                "range": "24",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "6",
+                "AP": "-1",
+                "D": "3",
+                "description": "",
+            }
+        ).profiles["default"]
+        attack_instance = {
+            "crit_hit": False,
+            "crit_wound": False,
+            "mortal_wound": False,
+            "below_half_distance": False,
+            "damage": 0,
+            "target_toughness_override": None,
+        }
+        result = profile._damage_target_with_tracking(
+            wraithguard.models[0],
+            enemy.models[0],
+            dict(attack_instance),
+            game_map=game.map,
+            roll_value=3,
+            allow_rerolls=False,
+        )
+        self.assertEqual(int(result.get("damage_applied", 0) or 0), 2)
+        self.assertTrue(any("-1D" in str(effect or "") for effect in list(result.get("special_effects", []) or [])))
+
+    def test_seers_eye_queues_and_ignores_ap_and_damage_modifiers_against_selected_enemy(self):
+        game, p1, _p2, aeldari_army, enemy_army = _build_game()
+        psyker = _make_unit(
+            "Spiritseer",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["ASURYANI", "INFANTRY", "PSYKER"],
+            quantity=1,
+        )
+        wraithguard = _make_unit(
+            "Wraithguard",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["ASURYANI", "INFANTRY", "WRAITHGUARD", "WRAITH CONSTRUCT"],
+            quantity=1,
+        )
+        enemy_marked = _make_unit(
+            "Enemy Marked",
+            faction_name="Enemy",
+            faction_keywords=["ENEMY"],
+            keywords=["INFANTRY"],
+            wounds="8",
+            quantity=1,
+        )
+        enemy_other = _make_unit(
+            "Enemy Other",
+            faction_name="Enemy",
+            faction_keywords=["ENEMY"],
+            keywords=["INFANTRY"],
+            wounds="8",
+            quantity=1,
+        )
+        aeldari_army.add_unit(psyker)
+        aeldari_army.add_unit(wraithguard)
+        enemy_army.add_unit(enemy_marked)
+        enemy_army.add_unit(enemy_other)
+        _place_unit(game, psyker, 10.0, 10.0)
+        _place_unit(game, wraithguard, 12.0, 10.0)
+        _place_unit(game, enemy_marked, 20.0, 10.0)
+        _place_unit(game, enemy_other, 22.0, 10.0)
+
+        _set_phase(game, p1, "SHOOTING_PHASE", 0)
+        pending = _pending_by_name(p1.stratagems, "SEER")
+        self.assertIsNotNone(pending)
+
+        ok = p1.stratagems.use(
+            str(pending.get("stratagem", "")),
+            source_unit=psyker,
+            unit=wraithguard,
+            enemy_unit=enemy_marked,
+            dequeue=True,
+        )
+        self.assertTrue(ok)
+        self.assertEqual(int(p1.command_points or 0), 9)
+
+        for enemy_unit in (enemy_marked, enemy_other):
+            sr = getattr(enemy_unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["defensive_ap_worsen_phase"] = [
+                {
+                    "value": 1,
+                    "attack_type": "any",
+                    "expires_phase": "SHOOTING_PHASE",
+                    "source": "test_ap_worsen",
+                }
+            ]
+            sr["defensive_damage_reductions"] = [
+                {
+                    "value": 1,
+                    "attack_type": "any",
+                    "expires_phase": "SHOOTING_PHASE",
+                    "source": "test_damage_reduction",
+                }
+            ]
+            enemy_unit.special_rules = sr
+
+        weapon = Wargear(
+            {
+                "name": "Wraithcannon",
+                "type": "Ranged",
+                "range": "18",
+                "A": "1",
+                "BS_WS": "4+",
+                "S": "8",
+                "AP": "-2",
+                "D": "3",
+                "description": "",
+            }
+        )
+        profile = weapon.profiles["default"]
+
+        ap_marked = profile.get_effective_ap(wraithguard.models[0], enemy_marked)
+        ap_other = profile.get_effective_ap(wraithguard.models[0], enemy_other)
+        self.assertEqual(int(ap_marked), -2)
+        self.assertEqual(int(ap_other), -1)
+
+        attack_instance = {
+            "crit_hit": False,
+            "crit_wound": False,
+            "mortal_wound": False,
+            "below_half_distance": False,
+            "damage": 0,
+            "target_toughness_override": None,
+        }
+        dmg_marked = profile._damage_target_with_tracking(
+            enemy_marked.models[0],
+            wraithguard.models[0],
+            dict(attack_instance),
+            game_map=game.map,
+            roll_value=3,
+            allow_rerolls=False,
+        )
+        dmg_other = profile._damage_target_with_tracking(
+            enemy_other.models[0],
+            wraithguard.models[0],
+            dict(attack_instance),
+            game_map=game.map,
+            roll_value=3,
+            allow_rerolls=False,
+        )
+        self.assertEqual(int(dmg_marked.get("damage_applied", 0) or 0), 3)
+        self.assertEqual(int(dmg_other.get("damage_applied", 0) or 0), 2)
+
+        game.event_system.publish("phase_end", player=p1, phase=SimpleNamespace(name="SHOOTING_PHASE"))
+        self.assertFalse(bool(getattr(wraithguard, "special_rules", {}).get("aeldari_spirit_seers_eye_active")))
+
     def test_spirit_conclave_step1_stratagem_descriptors_registered(self):
+        seers_eye = get_stratagem_tool_descriptor(stratagem_id="000009908002")
+        self.assertIsNotNone(seers_eye)
+        self.assertEqual(str(seers_eye.name), "Seer's Eye")
+        self.assertEqual(int(seers_eye.cp_cost), 1)
+        self.assertEqual(str(seers_eye.effect), "ignore_ap_and_damage_modifiers_against_selected_enemy")
+
+        wraithbone = get_stratagem_tool_descriptor(stratagem_id="000009908003")
+        self.assertIsNotNone(wraithbone)
+        self.assertEqual(str(wraithbone.name), "Wraithbone Armour")
+        self.assertEqual(int(wraithbone.cp_cost), 1)
+        self.assertEqual(str(wraithbone.effect), "defensive_damage_reduction")
+
         soul_bridge = get_stratagem_tool_descriptor(stratagem_id="000009908005")
         self.assertIsNotNone(soul_bridge)
         self.assertEqual(str(soul_bridge.name), "Soul Bridge")
@@ -275,6 +483,14 @@ class TestAeldariSpiritConclaveStratagems(unittest.TestCase):
         by_name_spirit_token = get_stratagem_tool_descriptor(name="SPIRIT TOKEN")
         self.assertIsNotNone(by_name_spirit_token)
         self.assertEqual(str(by_name_spirit_token.stratagem_id), "000009908006")
+
+        by_name_seers_eye = get_stratagem_tool_descriptor(name="SEER'S EYE")
+        self.assertIsNotNone(by_name_seers_eye)
+        self.assertEqual(str(by_name_seers_eye.stratagem_id), "000009908002")
+
+        by_name_wraithbone = get_stratagem_tool_descriptor(name="WRAITHBONE ARMOUR")
+        self.assertIsNotNone(by_name_wraithbone)
+        self.assertEqual(str(by_name_wraithbone.stratagem_id), "000009908003")
 
 
 if __name__ == "__main__":

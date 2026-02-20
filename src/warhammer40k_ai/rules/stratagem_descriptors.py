@@ -1705,6 +1705,29 @@ _SEER_COUNCIL_STRATAGEM_BY_NAME = {
 }
 
 _SPIRIT_CONCLAVE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009908002": StratagemToolDescriptor(
+        stratagem_id="000009908002",
+        name="Seer's Eye",
+        timing="your_shooting_or_fight_phase",
+        target="aeldari_psyker_model_and_wraith_construct_unit_within_12_and_visible_enemy_unit",
+        duration="until_end_of_phase",
+        effect="ignore_ap_and_damage_modifiers_against_selected_enemy",
+        cp_cost=1,
+        effect_params={
+            "distance_inches": 12.0,
+            "affected_characteristics": ["armour_penetration", "damage"],
+        },
+    ),
+    "000009908003": StratagemToolDescriptor(
+        stratagem_id="000009908003",
+        name="Wraithbone Armour",
+        timing="opponent_shooting_or_fight_phase_after_enemy_targets_selected",
+        target="non_titanic_wraith_construct_unit_selected_as_attack_target",
+        duration="until_end_of_phase",
+        effect="defensive_damage_reduction",
+        cp_cost=1,
+        effect_params={"damage_reduction": 1},
+    ),
     "000009908005": StratagemToolDescriptor(
         stratagem_id="000009908005",
         name="Soul Bridge",

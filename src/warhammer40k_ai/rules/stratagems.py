@@ -177,6 +177,9 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "FOREWARNED",
     "SOUL BRIDGE",
     "SPIRIT TOKEN",
+    "WRAITHBONE ARMOUR",
+    "SEER'S EYE",
+    "SEER’S EYE",
     "VENOMOUS WRATH",
     "FANGS OF THE BROOD",
     "STRIKING STRIDE",
@@ -388,6 +391,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "TO THEIR FINAL BREATH",
     "UNSHROUDED TRUTH",
     "FOREWARNED",
+    "WRAITHBONE ARMOUR",
     "VENOMOUS WRATH",
     "FANGS OF THE BROOD",
     "STRIKING STRIDE",
@@ -3947,8 +3951,11 @@ class StratagemManager(
             "TIME TO STRIKE": "Target: your Storm Guardians unit that has not been selected to move this phase; it gains fixed Advance distance 6 and can shoot/charge after advancing this turn",
             "PRESENTIMENT OF DREAD": "Target: one of your ASURYANI PSYKER models; select one visible enemy unit within 18\" of it to take a Battle-shock test at -1",
             "FOREWARNED": "Target: your ASURYANI INFANTRY unit (excluding WRAITH CONSTRUCT) selected as a target of enemy fight attacks and within 9\" of a friendly ASURYANI PSYKER; attacks targeting it are -1 to Hit and -1 to Wound this phase",
+            "SEER'S EYE": "Target: one of your AELDARI PSYKER models, one friendly WRAITH CONSTRUCT unit within 12\" of it that has not been selected to shoot/fight this phase, and one enemy unit visible to that PSYKER; attacks by your WRAITH unit against that enemy can ignore AP/Damage modifiers this phase",
+            "SEER’S EYE": "Target: one of your AELDARI PSYKER models, one friendly WRAITH CONSTRUCT unit within 12\" of it that has not been selected to shoot/fight this phase, and one enemy unit visible to that PSYKER; attacks by your WRAITH unit against that enemy can ignore AP/Damage modifiers this phase",
             "SOUL BRIDGE": "Target: your WRAITHBLADES/WRAITHGUARD/WRAITHLORD unit and one ASURYANI PSYKER model; until your next Command phase the selected WRAITH unit counts as within 12\" of that PSYKER for Psychic Guidance and Spirit Guides",
             "SPIRIT TOKEN": "Target: your WRAITHBLADES or WRAITHGUARD unit; select one objective marker you control within that unit's range to remain sticky until opponent control becomes greater at phase end",
+            "WRAITHBONE ARMOUR": "Target: your non-TITANIC WRAITH CONSTRUCT unit selected as a target of enemy Shooting/Fight attacks; subtract 1 from incoming Damage allocated to that unit this phase",
             "FANGS OF THE BROOD": "Target: your TROUPE unit; this phase it can gain all three Dance of Death abilities instead of one",
             "VENOMOUS WRATH": "Target: your HARLEQUINS VEHICLE unit that has not been selected to shoot this phase; after it shoots it can make a Normal move up to 6\" if not in Engagement Range, and cannot declare a charge this turn",
             "STRIKING STRIDE": "Target: your HARLEQUINS unit; until end of the phase it can declare a charge in a turn in which it Advanced",
@@ -5531,6 +5538,10 @@ class StratagemManager(
             raise
         try:
             self._cleanup_aeldari_aspect_host_phase_end_effects(phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_aeldari_spirit_phase_end_effects(phase=phase)
         except Exception:
             raise
         try:
@@ -8201,6 +8212,13 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_aeldari_spirit_shooting_targets_selected_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
             atk_key = self._attacker_unit_key(attacking_unit)
             if atk_key:
                 self._recent_shooting_targets[atk_key] = list(target_units or [])
@@ -9051,6 +9069,13 @@ class StratagemManager(
             raise
         try:
             self._queue_aeldari_seer_fight_targets_selected_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_aeldari_spirit_fight_targets_selected_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )

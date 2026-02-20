@@ -302,6 +302,206 @@ class AeldariStratagemMixin:
             name = ""
         return bool("wraithblades" in name or "wraithguard" in name or "wraithlord" in name)
 
+    def _aeldari_spirit_is_wraith_construct(self, unit: Any, *, exclude_titanic: bool = False) -> bool:
+        root = self._aeldari_root(unit)
+        if root is None:
+            return False
+        if exclude_titanic and self._aeldari_has_keyword(root, "TITANIC"):
+            return False
+        if self._aeldari_has_keyword(root, "WRAITH CONSTRUCT"):
+            return True
+        if (
+            self._aeldari_has_keyword(root, "WRAITHBLADES")
+            or self._aeldari_has_keyword(root, "WRAITHGUARD")
+            or self._aeldari_has_keyword(root, "WRAITHLORD")
+            or self._aeldari_has_keyword(root, "WRAITHKNIGHT")
+        ):
+            return True
+        try:
+            name = str(getattr(root, "name", "") or "").strip().lower()
+        except (AttributeError, TypeError, ValueError):
+            name = ""
+        if not name or "wraith" not in name:
+            return False
+        if exclude_titanic and "wraithknight" in name:
+            return False
+        return True
+
+    def _aeldari_spirit_wraith_construct_candidates(
+        self,
+        *,
+        exclude_titanic: bool = False,
+        require_not_shot: bool = False,
+        require_not_fought: bool = False,
+    ) -> List[Any]:
+        if not self._is_spirit_conclave_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._aeldari_spirit_is_wraith_construct(root, exclude_titanic=exclude_titanic):
+                continue
+            if require_not_shot and bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
+                continue
+            if require_not_fought and bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_spirit_psyker_candidates(self) -> List[Any]:
+        if not self._is_spirit_conclave_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._aeldari_has_keyword(root, "AELDARI"):
+                continue
+            if not self._aeldari_has_keyword(root, "PSYKER"):
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_spirit_visible_enemy_candidates(self, source_unit: Any) -> List[Any]:
+        if not self._is_spirit_conclave_detachment():
+            return []
+        source_root = self._aeldari_root(source_unit)
+        if source_root is None:
+            return []
+        try:
+            if source_root.get_parent_army().player is not self.player:
+                return []
+        except (AttributeError, TypeError, ValueError):
+            return []
+        if not self._aeldari_on_battlefield(source_root, require_targetable=True):
+            return []
+        if not self._aeldari_has_keyword(source_root, "AELDARI") or not self._aeldari_has_keyword(source_root, "PSYKER"):
+            return []
+        game = getattr(self, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        if game_map is None:
+            return []
+        get_enemy = getattr(game_map, "get_enemy_units", None)
+        if not callable(get_enemy):
+            return []
+        can_see_fn = getattr(game, "_model_can_see_unit", None)
+        source_models = list(getattr(source_root, "get_attached_unit_models", lambda: [])() or [])
+        out: List[Any] = []
+        seen: set[str] = set()
+        for enemy in list(get_enemy(source_root) or []):
+            enemy_root = self._aeldari_root(enemy)
+            if enemy_root is None:
+                continue
+            uid = self._aeldari_sort_key(enemy_root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(enemy_root, require_targetable=False):
+                continue
+            if self._aeldari_in_reserves(enemy_root):
+                continue
+            if callable(can_see_fn):
+                visible = False
+                for model in source_models:
+                    try:
+                        alive = getattr(model, "is_alive", True)
+                        if callable(alive):
+                            alive = alive()
+                        if not bool(alive):
+                            continue
+                        if bool(can_see_fn(model, enemy_root, game_map=game_map)):
+                            visible = True
+                            break
+                    except Exception:
+                        continue
+                if not visible:
+                    continue
+            out.append(enemy_root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_spirit_seers_eye_wraith_candidates(self, source_unit: Any) -> List[Any]:
+        if not self._is_spirit_conclave_detachment():
+            return []
+        source_root = self._aeldari_root(source_unit)
+        if source_root is None:
+            return []
+        try:
+            if source_root.get_parent_army().player is not self.player:
+                return []
+        except (AttributeError, TypeError, ValueError):
+            return []
+        if not self._aeldari_on_battlefield(source_root, require_targetable=True):
+            return []
+        if not self._aeldari_has_keyword(source_root, "AELDARI") or not self._aeldari_has_keyword(source_root, "PSYKER"):
+            return []
+        from ..utility.aura_utils import unit_within_range_of_unit
+
+        out: List[Any] = []
+        for unit in self._aeldari_spirit_wraith_construct_candidates(
+            exclude_titanic=False,
+            require_not_shot=True,
+            require_not_fought=True,
+        ):
+            if not unit_within_range_of_unit(source_root, unit, 12.0, use_attached_aggregate=True):
+                continue
+            out.append(unit)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_spirit_wraithbone_armour_candidates(self, *, target_units: List[Any]) -> List[Any]:
+        if not self._is_spirit_conclave_detachment():
+            return []
+        eligible_units = self._aeldari_spirit_wraith_construct_candidates(
+            exclude_titanic=True,
+            require_not_shot=False,
+            require_not_fought=False,
+        )
+        eligible_ids = {self._aeldari_sort_key(unit) for unit in list(eligible_units or [])}
+        out: List[Any] = []
+        seen: set[str] = set()
+        for target in list(target_units or []):
+            root = self._aeldari_root(target)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid not in eligible_ids:
+                continue
+            if (not uid) and root not in eligible_units:
+                continue
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
     def _aeldari_spirit_wraithblades_or_guard_candidates(self) -> List[Any]:
         if not self._is_spirit_conclave_detachment():
             return []
@@ -1426,10 +1626,10 @@ class AeldariStratagemMixin:
 
         phase_key = str(getattr(phase, "name", "") or "").strip().upper()
         active_player = getattr(game, "get_current_player", lambda: None)()
-        if active_player is not self.player:
-            return
 
         if phase_key == "COMMAND_PHASE":
+            if active_player is not self.player:
+                return
             soul_bridge = self._aeldari_get_stratagem_by_norm_name("SOUL BRIDGE")
             if soul_bridge is not None:
                 if int(getattr(self.player, "command_points", 0) or 0) >= int(getattr(soul_bridge, "cp_cost", 0) or 0):
@@ -1456,8 +1656,11 @@ class AeldariStratagemMixin:
                                         payload["source_unit"] = unit_psykers[0]
                                         payload["source_psyker_unit"] = unit_psykers[0]
                             self._queue_reaction(payload, use_timer=False)
+            return
 
         if phase_key == "MOVEMENT_PHASE":
+            if active_player is not self.player:
+                return
             spirit_token = self._aeldari_get_stratagem_by_norm_name("SPIRIT TOKEN")
             if spirit_token is None:
                 return
@@ -1497,6 +1700,209 @@ class AeldariStratagemMixin:
                         payload["objective"] = objective_candidates[0]
                         payload["objective_marker"] = objective_candidates[0]
             self._queue_reaction(payload, use_timer=False)
+            return
+
+        if phase_key not in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
+            return
+        if phase_key == "SHOOTING_PHASE" and active_player is not self.player:
+            return
+
+        seers_eye = self._aeldari_get_stratagem_by_norm_name("SEER'S EYE")
+        if seers_eye is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(seers_eye, "cp_cost", 0) or 0):
+            return
+        if self._aeldari_norm_name(seers_eye.name) in getattr(self, "_used_stratagems_this_phase", set()):
+            return
+        if self._aeldari_reaction_exists("phase_start", seers_eye.name):
+            return
+
+        phase_label = "Shooting phase" if phase_key == "SHOOTING_PHASE" else "Fight phase"
+        psykers = self._aeldari_spirit_psyker_candidates()
+        valid_psykers: List[Any] = []
+        psyker_enemy_map: Dict[str, List[Any]] = {}
+        psyker_wraith_map: Dict[str, List[Any]] = {}
+        for psyker in list(psykers or []):
+            root = self._aeldari_root(psyker)
+            if root is None:
+                continue
+            pid = self._aeldari_sort_key(root)
+            if not pid:
+                continue
+            enemies = self._aeldari_spirit_visible_enemy_candidates(root)
+            if not enemies:
+                continue
+            wraiths = self._aeldari_spirit_seers_eye_wraith_candidates(root)
+            if not wraiths:
+                continue
+            valid_psykers.append(root)
+            psyker_enemy_map[pid] = list(enemies)
+            psyker_wraith_map[pid] = list(wraiths)
+
+        if not valid_psykers:
+            return
+        payload = {
+            "event": "phase_start",
+            "phase": phase_label,
+            "phase_name": phase_label,
+            "stratagem": seers_eye.name,
+            "cp_cost": seers_eye.cp_cost,
+            "psyker_candidates": sorted(valid_psykers, key=self._aeldari_sort_key),
+            "enemy_candidates_by_psyker": psyker_enemy_map,
+            "wraith_candidates_by_psyker": psyker_wraith_map,
+        }
+        if len(valid_psykers) == 1:
+            source_root = valid_psykers[0]
+            payload["source_unit"] = source_root
+            payload["source_psyker_unit"] = source_root
+            pid = self._aeldari_sort_key(source_root)
+            wraith_candidates = list(psyker_wraith_map.get(pid) or [])
+            enemy_candidates = list(psyker_enemy_map.get(pid) or [])
+            if wraith_candidates:
+                payload["candidates"] = wraith_candidates
+                if len(wraith_candidates) == 1:
+                    payload["unit"] = wraith_candidates[0]
+                    payload["target_unit"] = wraith_candidates[0]
+            if enemy_candidates:
+                payload["enemy_candidates"] = enemy_candidates
+                if len(enemy_candidates) == 1:
+                    payload["enemy_unit"] = enemy_candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _cleanup_aeldari_spirit_phase_end_effects(self, *, phase) -> None:
+        if not self._is_spirit_conclave_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key not in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
+            return
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            exp = str(sr.get("aeldari_spirit_seers_eye_expires_phase", "") or "").strip().upper()
+            if exp and exp != phase_key:
+                continue
+            if not bool(sr.get("aeldari_spirit_seers_eye_active")) and not exp:
+                continue
+            for key in (
+                "aeldari_spirit_seers_eye_active",
+                "aeldari_spirit_seers_eye_expires_phase",
+                "aeldari_spirit_seers_eye_source",
+                "aeldari_spirit_seers_eye_turn_owner",
+                "aeldari_spirit_seers_eye_turn",
+                "aeldari_spirit_seers_eye_enemy_unit_id",
+                "aeldari_spirit_seers_eye_psyker_unit_id",
+            ):
+                sr.pop(key, None)
+            root.special_rules = sr
+
+    def _queue_aeldari_spirit_shooting_targets_selected_reactions(
+        self,
+        *,
+        attacking_unit,
+        target_units: List[Any],
+    ) -> None:
+        game = getattr(self, "game", None)
+        if game is None or attacking_unit is None or not self._is_spirit_conclave_detachment():
+            return
+        phase_key = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_key != "SHOOTING_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        attacker_root = self._aeldari_root(attacking_unit)
+        if attacker_root is None:
+            return
+        try:
+            if attacker_root.get_parent_army().player is self.player:
+                return
+        except (AttributeError, TypeError, ValueError):
+            return
+
+        stratagem = self._aeldari_get_stratagem_by_norm_name("WRAITHBONE ARMOUR")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+            return
+        candidates = self._aeldari_spirit_wraithbone_armour_candidates(target_units=list(target_units or []))
+        if not candidates or self._aeldari_reaction_exists("shooting_targets_selected", stratagem.name):
+            return
+        payload: Dict[str, Any] = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "enemy_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_aeldari_spirit_fight_targets_selected_reactions(
+        self,
+        *,
+        attacking_unit,
+        target_units: List[Any],
+    ) -> None:
+        game = getattr(self, "game", None)
+        if game is None or attacking_unit is None or not self._is_spirit_conclave_detachment():
+            return
+        phase_key = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_key != "FIGHT_PHASE":
+            return
+        attacker_root = self._aeldari_root(attacking_unit)
+        if attacker_root is None:
+            return
+        try:
+            if attacker_root.get_parent_army().player is self.player:
+                return
+        except (AttributeError, TypeError, ValueError):
+            return
+
+        stratagem = self._aeldari_get_stratagem_by_norm_name("WRAITHBONE ARMOUR")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+            return
+        candidates = self._aeldari_spirit_wraithbone_armour_candidates(target_units=list(target_units or []))
+        if not candidates or self._aeldari_reaction_exists("fight_targets_selected", stratagem.name):
+            return
+        payload: Dict[str, Any] = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "enemy_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
 
     def _queue_aeldari_seer_move_end_reactions(self, *, unit: Any, action: str) -> None:
         game = getattr(self, "game", None)
@@ -4980,6 +5386,10 @@ class AeldariStratagemMixin:
             return self._use_aeldari_spirit_token(stratagem, **kwargs)
         if name_u == "SOUL BRIDGE":
             return self._use_aeldari_soul_bridge(stratagem, **kwargs)
+        if name_u == "WRAITHBONE ARMOUR":
+            return self._use_aeldari_spirit_wraithbone_armour(stratagem, **kwargs)
+        if name_u in {"SEER'S EYE", "SEER\u2019S EYE"}:
+            return self._use_aeldari_spirit_seers_eye(stratagem, **kwargs)
         return None
 
     def _use_aeldari_spirit_token(self, stratagem, **kwargs) -> bool:
@@ -5143,6 +5553,199 @@ class AeldariStratagemMixin:
             getattr(target_root, "name", "Unit"),
             getattr(source_root, "name", "Psyker"),
         )
+        return True
+
+    def _use_aeldari_spirit_wraithbone_armour(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: WRAITHBONE ARMOUR: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if phase_name == "shooting phase" and active_player is self.player:
+            logger.error("ERROR: WRAITHBONE ARMOUR: only usable in opponent Shooting phase")
+            return False
+
+        attacking_unit = context.get("attacking_unit") or context.get("attacker_unit") or context.get("enemy_unit")
+        attacking_root = self._aeldari_root(attacking_unit) if attacking_unit is not None else None
+        if attacking_root is not None:
+            try:
+                if attacking_root.get_parent_army().player is self.player:
+                    logger.error("ERROR: WRAITHBONE ARMOUR: attacking unit must be enemy")
+                    return False
+            except (AttributeError, TypeError, ValueError):
+                return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        target_window = list(context.get("target_units") or [])
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_spirit_wraithbone_armour_candidates(target_units=target_window)
+        candidate_roots = [self._aeldari_root(unit) for unit in list(candidates or [])]
+        candidate_roots = [unit for unit in candidate_roots if unit is not None]
+        if target_root is None:
+            if len(candidate_roots) == 1:
+                target_root = candidate_roots[0]
+            else:
+                logger.error("ERROR: WRAITHBONE ARMOUR: missing target unit")
+                return False
+        if candidate_roots and target_root not in candidate_roots:
+            logger.error("ERROR: WRAITHBONE ARMOUR: target must have been selected by the attacking unit")
+            return False
+        if not self._aeldari_on_battlefield(target_root, require_targetable=True):
+            logger.error("ERROR: WRAITHBONE ARMOUR: target must be on the battlefield and targetable")
+            return False
+        if not self._aeldari_spirit_is_wraith_construct(target_root, exclude_titanic=True):
+            logger.error("ERROR: WRAITHBONE ARMOUR: target must be a non-TITANIC WRAITH CONSTRUCT unit")
+            return False
+        if not self._aeldari_armoured_spend_cp(
+            stratagem,
+            target_unit=target_root,
+            enemy_unit=attacking_root,
+        ):
+            return False
+
+        phase_key = "SHOOTING_PHASE" if phase_name == "shooting phase" else "FIGHT_PHASE"
+        self._append_defensive_effect(
+            target_root,
+            "defensive_damage_reductions",
+            {
+                "value": 1,
+                "attack_type": "any",
+                "expires_phase": phase_key,
+                "source": str(getattr(stratagem, "name", "WRAITHBONE ARMOUR") or "WRAITHBONE ARMOUR"),
+            },
+        )
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_aeldari_spirit_seers_eye(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: SEER'S EYE: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if phase_name == "shooting phase" and active_player is not self.player:
+            logger.error("ERROR: SEER'S EYE: only usable in your Shooting phase")
+            return False
+
+        source_unit = (
+            context.get("source_unit")
+            or context.get("source_psyker_unit")
+            or context.get("psyker_unit")
+        )
+        source_root = self._aeldari_root(source_unit) if source_unit is not None else None
+        psyker_candidates = list(context.get("psyker_candidates") or [])
+        if not psyker_candidates:
+            for psyker in self._aeldari_spirit_psyker_candidates():
+                if self._aeldari_spirit_seers_eye_wraith_candidates(psyker) and self._aeldari_spirit_visible_enemy_candidates(psyker):
+                    psyker_candidates.append(psyker)
+        psyker_roots = [self._aeldari_root(unit) for unit in list(psyker_candidates or [])]
+        psyker_roots = [unit for unit in psyker_roots if unit is not None]
+        if source_root is None:
+            if len(psyker_roots) == 1:
+                source_root = psyker_roots[0]
+            else:
+                logger.error("ERROR: SEER'S EYE: missing AELDARI PSYKER source unit")
+                return False
+        if psyker_roots and source_root not in psyker_roots:
+            logger.error("ERROR: SEER'S EYE: source must be an eligible AELDARI PSYKER")
+            return False
+        if not self._aeldari_on_battlefield(source_root, require_targetable=True):
+            logger.error("ERROR: SEER'S EYE: source must be on the battlefield and targetable")
+            return False
+        if not self._aeldari_has_keyword(source_root, "AELDARI") or not self._aeldari_has_keyword(source_root, "PSYKER"):
+            logger.error("ERROR: SEER'S EYE: source must be an AELDARI PSYKER")
+            return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        wraith_candidates = list(context.get("candidates") or context.get("wraith_candidates") or [])
+        if not wraith_candidates:
+            by_psyker = context.get("wraith_candidates_by_psyker")
+            if isinstance(by_psyker, dict):
+                wraith_candidates = list(by_psyker.get(self._aeldari_sort_key(source_root)) or [])
+        if not wraith_candidates:
+            wraith_candidates = self._aeldari_spirit_seers_eye_wraith_candidates(source_root)
+        wraith_roots = [self._aeldari_root(unit) for unit in list(wraith_candidates or [])]
+        wraith_roots = [unit for unit in wraith_roots if unit is not None]
+        if target_root is None:
+            if len(wraith_roots) == 1:
+                target_root = wraith_roots[0]
+            else:
+                logger.error("ERROR: SEER'S EYE: missing WRAITH CONSTRUCT target unit")
+                return False
+        if wraith_roots and target_root not in wraith_roots:
+            logger.error("ERROR: SEER'S EYE: target must be within 12\" of the selected PSYKER and not selected to shoot/fight")
+            return False
+        if not self._aeldari_on_battlefield(target_root, require_targetable=True):
+            logger.error("ERROR: SEER'S EYE: target must be on the battlefield and targetable")
+            return False
+        if not self._aeldari_spirit_is_wraith_construct(target_root, exclude_titanic=False):
+            logger.error("ERROR: SEER'S EYE: target must be a WRAITH CONSTRUCT unit")
+            return False
+        if bool(getattr(getattr(target_root, "round_state", None), "shot_this_round", False)) or bool(
+            getattr(getattr(target_root, "round_state", None), "fought_this_phase", False)
+        ):
+            logger.error("ERROR: SEER'S EYE: target has already been selected to shoot or fight this phase")
+            return False
+
+        from ..utility.aura_utils import unit_within_range_of_unit
+
+        if not unit_within_range_of_unit(source_root, target_root, 12.0, use_attached_aggregate=True):
+            logger.error("ERROR: SEER'S EYE: target must be within 12\" of the selected PSYKER")
+            return False
+
+        enemy_unit = context.get("enemy_unit") or context.get("target_enemy_unit")
+        enemy_root = self._aeldari_root(enemy_unit) if enemy_unit is not None else None
+        enemy_candidates = list(context.get("enemy_candidates") or [])
+        if not enemy_candidates:
+            by_psyker = context.get("enemy_candidates_by_psyker")
+            if isinstance(by_psyker, dict):
+                enemy_candidates = list(by_psyker.get(self._aeldari_sort_key(source_root)) or [])
+        if not enemy_candidates:
+            enemy_candidates = self._aeldari_spirit_visible_enemy_candidates(source_root)
+        enemy_roots = [self._aeldari_root(unit) for unit in list(enemy_candidates or [])]
+        enemy_roots = [unit for unit in enemy_roots if unit is not None]
+        if enemy_root is None:
+            if len(enemy_roots) == 1:
+                enemy_root = enemy_roots[0]
+            else:
+                logger.error("ERROR: SEER'S EYE: missing visible enemy target for selected PSYKER")
+                return False
+        if enemy_roots and enemy_root not in enemy_roots:
+            logger.error("ERROR: SEER'S EYE: selected enemy must be visible to the selected PSYKER")
+            return False
+        if not self._aeldari_on_battlefield(enemy_root, require_targetable=False):
+            logger.error("ERROR: SEER'S EYE: selected enemy must be on the battlefield")
+            return False
+
+        if not self._aeldari_armoured_spend_cp(
+            stratagem,
+            target_unit=target_root,
+            enemy_unit=enemy_root,
+        ):
+            return False
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["aeldari_spirit_seers_eye_active"] = True
+        sr["aeldari_spirit_seers_eye_expires_phase"] = "SHOOTING_PHASE" if phase_name == "shooting phase" else "FIGHT_PHASE"
+        sr["aeldari_spirit_seers_eye_source"] = str(getattr(stratagem, "name", "SEER'S EYE") or "SEER'S EYE")
+        sr["aeldari_spirit_seers_eye_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["aeldari_spirit_seers_eye_turn"] = int(getattr(game, "turn", 0) or 0)
+        sr["aeldari_spirit_seers_eye_enemy_unit_id"] = str(get_entity_id(enemy_root) or "")
+        sr["aeldari_spirit_seers_eye_psyker_unit_id"] = str(get_entity_id(source_root) or "")
+        target_root.special_rules = sr
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
         return True
 
     def _use_aeldari_eldritch_raiders_stratagem(self, stratagem, **kwargs) -> Optional[bool]:

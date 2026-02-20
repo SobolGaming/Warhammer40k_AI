@@ -2944,6 +2944,11 @@ class WargearProfile:
                 ap_val = int(base_ap_val)
         except Exception:
             pass
+        try:
+            if self._aeldari_spirit_seers_eye_ignore_ap_modifiers(attacker, target_root) and int(ap_val) > int(base_ap_val):
+                ap_val = int(base_ap_val)
+        except Exception:
+            pass
         return int(apply_characteristic_caps("ap", int(ap_val), base_raw=getattr(self, "_raw_ap", None)))
 
     def _resolve_phase_key(self, attacker_unit: Optional['Unit'] = None, target_unit: Optional['Unit'] = None) -> str:
@@ -6313,6 +6318,70 @@ class WargearProfile:
 
     def _aeldari_warrior_focus_ignore_damage_modifiers(self, attacker: 'Model') -> bool:
         rule = self._aeldari_warrior_focus_rule(attacker)
+        return bool(rule and rule.get("allow_damage"))
+
+    def _aeldari_spirit_seers_eye_rule(self, attacker: 'Model', target_unit: Optional['Unit'] = None) -> Optional[dict]:
+        unit = getattr(attacker, "parent_unit", None)
+        if unit is None:
+            return None
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("aeldari_spirit_seers_eye_active")):
+            return None
+
+        try:
+            army = root.get_parent_army() if root is not None else None
+        except Exception:
+            army = None
+        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+        exp = str(sr.get("aeldari_spirit_seers_eye_expires_phase", "") or "").strip().upper()
+        if exp and phase_name and phase_name != exp:
+            return None
+
+        owner = str(sr.get("aeldari_spirit_seers_eye_turn_owner", "") or "")
+        if owner and army is not None:
+            player_id = str(getattr(getattr(army, "player", None), "id", "") or "")
+            if player_id and player_id != owner:
+                return None
+        try:
+            marked_turn = int(sr.get("aeldari_spirit_seers_eye_turn", 0) or 0)
+        except Exception:
+            marked_turn = 0
+        current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        if marked_turn and current_turn and marked_turn != current_turn:
+            return None
+
+        if target_unit is None:
+            return None
+        enemy_id = str(sr.get("aeldari_spirit_seers_eye_enemy_unit_id", "") or "")
+        if not enemy_id:
+            return None
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        if target_root is None:
+            return None
+        if str(get_entity_id(target_root) or "") != enemy_id:
+            return None
+
+        source = str(sr.get("aeldari_spirit_seers_eye_source", "") or "SEER'S EYE").strip() or "SEER'S EYE"
+        return {
+            "name": source,
+            "allow_ap": True,
+            "allow_damage": True,
+        }
+
+    def _aeldari_spirit_seers_eye_ignore_ap_modifiers(self, attacker: 'Model', target_unit: Optional['Unit']) -> bool:
+        rule = self._aeldari_spirit_seers_eye_rule(attacker, target_unit=target_unit)
+        return bool(rule and rule.get("allow_ap"))
+
+    def _aeldari_spirit_seers_eye_ignore_damage_modifiers(self, attacker: 'Model', target_unit: Optional['Unit']) -> bool:
+        rule = self._aeldari_spirit_seers_eye_rule(attacker, target_unit=target_unit)
         return bool(rule and rule.get("allow_damage"))
 
     def _ignore_hit_modifier_rule_name(self, attacker: 'Model') -> Optional[str]:
@@ -15508,6 +15577,16 @@ class WargearProfile:
                     final_damage = int(base_damage_before_mods)
                     damage_result.setdefault("special_effects", []).append(
                         "WARRIOR FOCUS: ignored negative Damage modifiers"
+                    )
+        except Exception:
+            pass
+        try:
+            target_unit = getattr(target_model, "parent_unit", None)
+            if self._aeldari_spirit_seers_eye_ignore_damage_modifiers(attacker, target_unit):
+                if int(final_damage) < int(base_damage_before_mods):
+                    final_damage = int(base_damage_before_mods)
+                    damage_result.setdefault("special_effects", []).append(
+                        "SEER'S EYE: ignored negative Damage modifiers"
                     )
         except Exception:
             pass
