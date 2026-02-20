@@ -168,9 +168,11 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "RAIDERS' SPOILS",
     "RAIDERS\u2019 SPOILS",
     "RUTHLESS KILLERS",
+    "BLADES OF ASURYAN",
     "COST OF VICTORY",
     "SHIELD NODES",
     "STAGED DEATH",
+    "TIME TO STRIKE",
     "TRICKSTERS' RETORT",
     "TRICKSTERS\u2019 RETORT",
     "VAUL'S VENGEANCE",
@@ -1732,6 +1734,8 @@ class StratagemManager(
             "VENGEFUL SURGE",
             "VECTORED ENGINES",
             "WARDING SALVOES",
+            "BLADES OF ASURYAN",
+            "TIME TO STRIKE",
             "VIOLENT CRESCENDO",
             "VIOLENT EXCESS",
             "KHAINE'S VENGEANCE",
@@ -3283,6 +3287,47 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires your Movement phase, just after an AELDARI unit from your army Falls Back"
             return result
+        if name_u == "TIME TO STRIKE":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l and phase_name_l != "movement phase":
+                result["reason"] = "Requires your Movement phase"
+                return result
+            game = getattr(self, "game", None)
+            active_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+            if active_player is not self.player:
+                result["reason"] = "Only usable in your turn"
+                return result
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._aeldari_guardian_time_to_strike_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Movement phase and a Storm Guardians unit that has not been selected to move"
+            return result
+        if name_u == "BLADES OF ASURYAN":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l and phase_name_l != "shooting phase":
+                result["reason"] = "Requires your Shooting phase"
+                return result
+            game = getattr(self, "game", None)
+            active_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+            if active_player is not self.player:
+                result["reason"] = "Only usable in your turn"
+                return result
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._aeldari_guardian_dire_avengers_or_guardians_candidates(
+                    require_not_shot=True,
+                    require_not_fought=False,
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Shooting phase and an eligible Dire Avengers or Guardians unit that has not been selected to shoot"
+            return result
         if name_u == "COST OF VICTORY":
             phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
             if phase_name_l and phase_name_l != "fight phase":
@@ -3626,8 +3671,10 @@ class StratagemManager(
             "RAIDERS' SPOILS": "Target: your ANHRATHE unit that is within Engagement Range of one or more enemy units",
             "RAIDERS\u2019 SPOILS": "Target: your ANHRATHE unit that is within Engagement Range of one or more enemy units",
             "RUTHLESS KILLERS": "Target: your CORSAIR VOIDSCARRED unit that has not been selected to shoot/fight this phase",
+            "BLADES OF ASURYAN": "Target: your Dire Avengers or Guardians unit that has not been selected to shoot this phase; ranged weapons gain [PISTOL] this phase",
             "COST OF VICTORY": "Target: your Guardians unit that is not within Engagement Range at the end of the opponent's Fight phase; it enters Strategic Reserves and destroyed GUARDIANS models are returned",
             "SHIELD NODES": "Target: your Dire Avengers or Guardians unit selected by enemy Shooting/Fight attacks (if within objective range, attacks against it are -1 to wound this phase)",
+            "TIME TO STRIKE": "Target: your Storm Guardians unit that has not been selected to move this phase; it gains fixed Advance distance 6 and can shoot/charge after advancing this turn",
             "TRICKSTERS' RETORT": "Target: your TROUPE unit within 9\" of an enemy unit that just ended a Normal/Advance/Fall Back move",
             "TRICKSTERS\u2019 RETORT": "Target: your TROUPE unit within 9\" of an enemy unit that just ended a Normal/Advance/Fall Back move",
             "VAUL'S VENGEANCE": "Target: your War Walkers unit after an enemy unit destroys your Dire Avengers or Guardians unit; your unit shoots reactively and can only target that enemy (once per battle round)",

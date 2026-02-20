@@ -439,6 +439,29 @@ class AeldariStratagemMixin:
         name = str(getattr(root, "name", "") or "").strip().lower()
         return "guardian" in name
 
+    def _aeldari_guardian_is_storm_guardians(self, unit: Any) -> bool:
+        root = self._aeldari_root(unit)
+        if root is None:
+            return False
+        has_any = getattr(root, "has_any_keyword", None)
+        if callable(has_any):
+            try:
+                if bool(has_any("STORM GUARDIANS")):
+                    return True
+            except (AttributeError, TypeError, ValueError):
+                pass
+        name = str(getattr(root, "name", "") or "").strip().lower()
+        return "storm guardian" in name
+
+    @staticmethod
+    def _aeldari_selected_to_move_this_phase(unit: Any) -> bool:
+        round_state = getattr(unit, "round_state", None)
+        return bool(
+            getattr(round_state, "moved_this_round", False)
+            or getattr(round_state, "advanced_this_round", False)
+            or getattr(round_state, "fell_back_this_round", False)
+        )
+
     def _aeldari_guardian_is_war_walkers(self, unit: Any) -> bool:
         root = self._aeldari_root(unit)
         if root is None:
@@ -588,6 +611,33 @@ class AeldariStratagemMixin:
             if not self._aeldari_guardian_is_guardians_unit(root):
                 continue
             if self._aeldari_in_engagement_range(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_guardian_time_to_strike_candidates(self) -> List[Any]:
+        if not self._is_guardian_battlehost_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._aeldari_guardian_is_storm_guardians(root):
+                continue
+            if self._aeldari_selected_to_move_this_phase(root):
                 continue
             out.append(root)
         return sorted(out, key=self._aeldari_sort_key)
@@ -796,8 +846,58 @@ class AeldariStratagemMixin:
             return
         phase_key = str(getattr(phase, "name", "") or "").strip().upper()
         active_player = getattr(game, "get_current_player", lambda: None)()
-        if phase_key == "SHOOTING_PHASE" and active_player is not self.player:
+        if phase_key == "MOVEMENT_PHASE":
+            if active_player is not self.player:
+                return
+            stratagem = self._aeldari_get_stratagem_by_norm_name("TIME TO STRIKE")
+            if stratagem is None:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+                return
+            if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+                return
+            candidates = self._aeldari_guardian_time_to_strike_candidates()
+            if not candidates or self._aeldari_reaction_exists("phase_start", stratagem.name):
+                return
+            payload: Dict[str, Any] = {
+                "event": "phase_start",
+                "phase": "Movement phase",
+                "phase_name": "Movement phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
             return
+
+        if phase_key == "SHOOTING_PHASE":
+            if active_player is not self.player:
+                return
+            blades = self._aeldari_get_stratagem_by_norm_name("BLADES OF ASURYAN")
+            if blades is not None:
+                if int(getattr(self.player, "command_points", 0) or 0) >= int(getattr(blades, "cp_cost", 0) or 0):
+                    if self._aeldari_norm_name(blades.name) not in getattr(self, "_used_stratagems_this_phase", set()):
+                        blades_candidates = self._aeldari_guardian_dire_avengers_or_guardians_candidates(
+                            require_not_shot=True,
+                            require_not_fought=False,
+                        )
+                        if blades_candidates and not self._aeldari_reaction_exists("phase_start", blades.name):
+                            payload: Dict[str, Any] = {
+                                "event": "phase_start",
+                                "phase": "Shooting phase",
+                                "phase_name": "Shooting phase",
+                                "stratagem": blades.name,
+                                "cp_cost": blades.cp_cost,
+                                "candidates": blades_candidates,
+                            }
+                            if len(blades_candidates) == 1:
+                                payload["unit"] = blades_candidates[0]
+                                payload["target_unit"] = blades_candidates[0]
+                            self._queue_reaction(payload, use_timer=False)
+
         if phase_key not in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
             return
 
@@ -815,7 +915,7 @@ class AeldariStratagemMixin:
         if not candidates or self._aeldari_reaction_exists("phase_start", stratagem.name):
             return
         phase_label = "Shooting phase" if phase_key == "SHOOTING_PHASE" else "Fight phase"
-        payload: Dict[str, Any] = {
+        payload = {
             "event": "phase_start",
             "phase": phase_label,
             "phase_name": phase_label,
@@ -2202,6 +2302,35 @@ class AeldariStratagemMixin:
                         sr.pop(key, None)
                         changed = True
 
+            if phase_key == "SHOOTING_PHASE" and bool(sr.get("aeldari_blades_of_asuryan_active")):
+                for key in (
+                    "aeldari_blades_of_asuryan_active",
+                    "aeldari_blades_of_asuryan_expires_phase",
+                    "aeldari_blades_of_asuryan_turn_owner",
+                    "aeldari_blades_of_asuryan_turn",
+                    "aeldari_blades_of_asuryan_source",
+                ):
+                    if key in sr:
+                        sr.pop(key, None)
+                        changed = True
+
+            if phase_key == "MOVEMENT_PHASE":
+                adv_effects = list(sr.get("advance_no_roll_effects", []) or [])
+                filtered_effects = [
+                    effect
+                    for effect in adv_effects
+                    if not (
+                        isinstance(effect, dict)
+                        and str(effect.get("tag", "") or "") == "stratagem:aeldari_time_to_strike"
+                    )
+                ]
+                if len(filtered_effects) != len(adv_effects):
+                    if filtered_effects:
+                        sr["advance_no_roll_effects"] = filtered_effects
+                    else:
+                        sr.pop("advance_no_roll_effects", None)
+                    changed = True
+
             if bool(sr.get("aeldari_warding_salvoes_active")):
                 expires = str(sr.get("aeldari_warding_salvoes_expires_phase", "") or "").strip().upper()
                 if not expires or expires == phase_key:
@@ -2765,6 +2894,10 @@ class AeldariStratagemMixin:
         if stratagem is None or not self._is_guardian_battlehost_detachment():
             return None
         name_u = self._aeldari_norm_name(getattr(stratagem, "name", ""))
+        if name_u == "TIME TO STRIKE":
+            return self._use_aeldari_guardian_time_to_strike(stratagem, **kwargs)
+        if name_u == "BLADES OF ASURYAN":
+            return self._use_aeldari_guardian_blades_of_asuryan(stratagem, **kwargs)
         if name_u == "COST OF VICTORY":
             return self._use_aeldari_guardian_cost_of_victory(stratagem, **kwargs)
         if name_u == "WARDING SALVOES":
@@ -2774,6 +2907,173 @@ class AeldariStratagemMixin:
         if name_u == "VAUL'S VENGEANCE":
             return self._use_aeldari_guardian_vauls_vengeance(stratagem, **kwargs)
         return None
+
+    def _use_aeldari_guardian_time_to_strike(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: TIME TO STRIKE: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: TIME TO STRIKE: not your Movement phase")
+            return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_guardian_time_to_strike_candidates()
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: TIME TO STRIKE: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: TIME TO STRIKE: target must be an eligible Storm Guardians unit")
+            return False
+        if not self._aeldari_on_battlefield(target_root, require_targetable=True):
+            logger.error("ERROR: TIME TO STRIKE: target must be on the battlefield and targetable")
+            return False
+        if not self._aeldari_guardian_is_storm_guardians(target_root):
+            logger.error("ERROR: TIME TO STRIKE: target must be a Storm Guardians unit")
+            return False
+        if self._aeldari_selected_to_move_this_phase(target_root):
+            logger.error("ERROR: TIME TO STRIKE: target has already been selected to move this phase")
+            return False
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root):
+            return False
+
+        source = str(getattr(stratagem, "name", "TIME TO STRIKE") or "TIME TO STRIKE")
+        tag = "stratagem:aeldari_time_to_strike"
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        effects = list(sr.get("advance_no_roll_effects", []) or [])
+        effects = [entry for entry in effects if not (isinstance(entry, dict) and str(entry.get("tag", "") or "") == tag)]
+        effects.append(
+            {
+                "distance": 6,
+                "source": source,
+                "tag": tag,
+                "expires_phase": "MOVEMENT_PHASE",
+            }
+        )
+        sr["advance_no_roll_effects"] = effects
+        sr["aeldari_time_to_strike_active"] = True
+        sr["aeldari_time_to_strike_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["aeldari_time_to_strike_turn"] = int(getattr(game, "turn", 0) or 0)
+        sr["aeldari_time_to_strike_source"] = source
+        target_root.special_rules = sr
+
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: TIME TO STRIKE: %s gains fixed Advance distance 6 and can shoot/charge after advancing this turn.",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_aeldari_guardian_blades_of_asuryan(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: BLADES OF ASURYAN: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: BLADES OF ASURYAN: not your Shooting phase")
+            return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_guardian_dire_avengers_or_guardians_candidates(
+                require_not_shot=True,
+                require_not_fought=False,
+            )
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: BLADES OF ASURYAN: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: BLADES OF ASURYAN: target must be an eligible Dire Avengers or Guardians unit")
+            return False
+        if not self._aeldari_on_battlefield(target_root, require_targetable=True):
+            logger.error("ERROR: BLADES OF ASURYAN: target must be on the battlefield and targetable")
+            return False
+        if not self._aeldari_guardian_is_dire_avengers_or_guardians(target_root):
+            logger.error("ERROR: BLADES OF ASURYAN: target must be Dire Avengers or Guardians")
+            return False
+        if bool(getattr(getattr(target_root, "round_state", None), "shot_this_round", False)):
+            logger.error("ERROR: BLADES OF ASURYAN: target has already been selected to shoot this phase")
+            return False
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root):
+            return False
+
+        source = str(getattr(stratagem, "name", "BLADES OF ASURYAN") or "BLADES OF ASURYAN")
+        phase_key = "SHOOTING_PHASE"
+        for model_index, model in enumerate(list(getattr(target_root, "get_attached_unit_models", lambda: [])() or [])):
+            if model is None or not bool(getattr(model, "is_alive", True)):
+                continue
+            model_id = str(get_entity_id(model) or model_index)
+            for wargear_index, wargear in enumerate(list(getattr(model, "wargear", []) or [])):
+                if wargear is None:
+                    continue
+                is_ranged = getattr(wargear, "is_ranged", None)
+                if not callable(is_ranged) or not bool(is_ranged()):
+                    continue
+                weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                if not weapon_name:
+                    continue
+                key_base = f"aeldari_blades_of_asuryan:{model_id}:{wargear_index}:{weapon_name}".lower()
+                set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+                if callable(set_keywords):
+                    set_keywords(
+                        key=key_base,
+                        weapon_name=weapon_name,
+                        keywords=["PISTOL"],
+                        source=source,
+                        expires_phase=phase_key,
+                        attack_type="ranged",
+                    )
+                else:
+                    effects = getattr(model, "_temporary_effects", None)
+                    if not isinstance(effects, dict):
+                        effects = {}
+                        model._temporary_effects = effects
+                    effects[key_base] = {
+                        "expires_phase": phase_key,
+                        "weapon_keyword_bonuses": {weapon_name: ["PISTOL"]},
+                        "weapon_keyword_bonuses_source": source,
+                        "weapon_keyword_bonuses_attack_type": "ranged",
+                    }
+
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["aeldari_blades_of_asuryan_active"] = True
+        sr["aeldari_blades_of_asuryan_expires_phase"] = phase_key
+        sr["aeldari_blades_of_asuryan_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["aeldari_blades_of_asuryan_turn"] = int(getattr(game, "turn", 0) or 0)
+        sr["aeldari_blades_of_asuryan_source"] = source
+        target_root.special_rules = sr
+
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: BLADES OF ASURYAN: %s gains [PISTOL] on ranged weapons this phase.",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
 
     def _use_aeldari_guardian_warding_salvoes(self, stratagem, **kwargs) -> bool:
         context = self._aeldari_pending_context(stratagem.name, kwargs)

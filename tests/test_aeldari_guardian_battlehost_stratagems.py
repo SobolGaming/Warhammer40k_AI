@@ -373,6 +373,81 @@ class TestAeldariGuardianBattlehostStratagems(unittest.TestCase):
         self.assertTrue(bool(getattr(destroyed_model, "is_alive", False)))
         self.assertNotIn(destroyed_model, list(getattr(guardians, "models_lost", []) or []))
 
+    def test_time_to_strike_queues_and_grants_fixed_advance_with_advance_shoot_charge(self):
+        game, p1, _p2, aeldari_army, _enemy_army = _build_game()
+        storm_guardians = _make_unit(
+            "Storm Guardians",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["ASURYANI", "INFANTRY", "STORM GUARDIANS", "GUARDIANS"],
+            quantity=2,
+        )
+        aeldari_army.add_unit(storm_guardians)
+        _place_unit(game, storm_guardians, 10.0, 10.0)
+
+        _set_phase(game, p1, "MOVEMENT_PHASE", 0)
+        pending = _pending_by_name(p1.stratagems, "TIME TO STRIKE")
+        self.assertIsNotNone(pending)
+
+        ok = p1.stratagems.use(str(pending.get("stratagem", "")), unit=storm_guardians, dequeue=True)
+        self.assertTrue(ok)
+        self.assertEqual(int(p1.command_points or 0), 9)
+
+        effect = storm_guardians._get_advance_no_roll_effect()
+        self.assertIsNotNone(effect)
+        self.assertEqual(int(effect.get("distance") or 0), 6)
+        self.assertTrue(storm_guardians.can_shoot_after_advance(_ranged_profile(name="Guardian Rifle")))
+        self.assertTrue(storm_guardians.can_charge_after_advance())
+
+        game.event_system.publish("phase_end", player=p1, phase=SimpleNamespace(name="MOVEMENT_PHASE"))
+        effect_after = storm_guardians._get_advance_no_roll_effect()
+        self.assertIsNone(effect_after)
+
+    def test_blades_of_asuryan_queues_and_grants_pistol_to_ranged_weapons_until_phase_end(self):
+        game, p1, _p2, aeldari_army, _enemy_army = _build_game()
+        avengers = _make_unit(
+            "Dire Avengers",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["ASURYANI", "INFANTRY", "DIRE AVENGERS"],
+            quantity=2,
+        )
+        aeldari_army.add_unit(avengers)
+        _place_unit(game, avengers, 10.0, 10.0)
+
+        for model in list(avengers.models or []):
+            model.wargear = [
+                Wargear(
+                    {
+                        "name": "Shuriken Catapult",
+                        "type": "Ranged",
+                        "range": "18",
+                        "A": "2",
+                        "BS_WS": "3+",
+                        "S": "4",
+                        "AP": "0",
+                        "D": "1",
+                        "description": "",
+                    }
+                )
+            ]
+
+        _set_phase(game, p1, "SHOOTING_PHASE", 0)
+        pending = _pending_by_name(p1.stratagems, "BLADES OF ASURYAN")
+        self.assertIsNotNone(pending)
+
+        ok = p1.stratagems.use(str(pending.get("stratagem", "")), unit=avengers, dequeue=True)
+        self.assertTrue(ok)
+        self.assertEqual(int(p1.command_points or 0), 9)
+
+        first_model = avengers.models[0]
+        bonuses = list(first_model.get_temporary_weapon_keyword_bonuses("Shuriken Catapult") or [])
+        self.assertTrue(any(str(entry.get("keyword", "")).upper() == "PISTOL" for entry in bonuses))
+
+        game.event_system.publish("phase_end", player=p1, phase=SimpleNamespace(name="SHOOTING_PHASE"))
+        sr = getattr(avengers, "special_rules", None)
+        self.assertFalse(bool(isinstance(sr, dict) and sr.get("aeldari_blades_of_asuryan_active")))
+
     def test_guardian_battlehost_stratagem_descriptors_registered(self):
         warding = get_stratagem_tool_descriptor(stratagem_id="000009912002")
         self.assertIsNotNone(warding)
@@ -405,6 +480,18 @@ class TestAeldariGuardianBattlehostStratagems(unittest.TestCase):
         cost_by_name = get_stratagem_tool_descriptor(name="COST OF VICTORY")
         self.assertIsNotNone(cost_by_name)
         self.assertEqual(str(cost_by_name.stratagem_id), "000009912007")
+
+        blades = get_stratagem_tool_descriptor(stratagem_id="000009912006")
+        self.assertIsNotNone(blades)
+        self.assertEqual(str(blades.name), "Blades of Asuryan")
+        self.assertEqual(int(blades.cp_cost), 1)
+        self.assertEqual(str(blades.effect), "grant_pistol_to_ranged_weapons_until_end_of_phase")
+
+        time_to_strike = get_stratagem_tool_descriptor(stratagem_id="000009912005")
+        self.assertIsNotNone(time_to_strike)
+        self.assertEqual(str(time_to_strike.name), "Time to Strike")
+        self.assertEqual(int(time_to_strike.cp_cost), 1)
+        self.assertEqual(str(time_to_strike.effect), "fixed_advance_six_and_advance_shoot_charge")
 
 
 if __name__ == "__main__":

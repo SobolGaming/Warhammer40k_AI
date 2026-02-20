@@ -9934,6 +9934,16 @@ class ActionsMovementMixin:
             pass
         try:
             if self._thousand_sons_rubricae_stratagem_active(
+                active_key="aeldari_time_to_strike_active",
+                owner_key="aeldari_time_to_strike_turn_owner",
+                turn_key="aeldari_time_to_strike_turn",
+            ):
+                if getattr(profile, "parent_wargear", None) is not None and profile.parent_wargear.is_ranged():
+                    return True
+        except Exception:
+            pass
+        try:
+            if self._thousand_sons_rubricae_stratagem_active(
                 active_key="thousand_sons_inexorable_advance_assault_active",
                 owner_key="thousand_sons_inexorable_advance_turn_owner",
                 turn_key="thousand_sons_inexorable_advance_turn",
@@ -10254,6 +10264,15 @@ class ActionsMovementMixin:
             pass
         try:
             if self._dark_ritual_active():
+                return True
+        except Exception:
+            pass
+        try:
+            if self._thousand_sons_rubricae_stratagem_active(
+                active_key="aeldari_time_to_strike_active",
+                owner_key="aeldari_time_to_strike_turn_owner",
+                turn_key="aeldari_time_to_strike_turn",
+            ):
                 return True
         except Exception:
             pass
