@@ -79,6 +79,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BERSERK FUGUE",
     "BEAUTIFUL DEATH",
     "CLOUDSTRIKE",
+    "EMISSARIES OF YNNEAD",
     "DOOM INESCAPABLE",
     "DEATH ANSWERS DEATH",
     "DAEMONIC FURY",
@@ -154,6 +155,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "OUTCAST AMBUSH",
     "INTO THE BREACH",
     "LETHAL RUSE",
+    "PARTING THE VEIL",
     "PIRATES' DUE",
     "PIRATES’ DUE",
     "VENGEFUL SORROW",
@@ -304,6 +306,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "DEATH ANSWERS DEATH",
     "DEATHLESS DUTY",
     "DEATH ECSTASY",
+    "EMISSARIES OF YNNEAD",
     "EMBRACE THE PAIN",
     "ENSNARING TRAP",
     "HYPERSTIMMS",
@@ -341,6 +344,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "SMOKESCREEN",
     "SKYBORNE SANCTUARY",
     "TO THEIR FINAL BREATH",
+    "PARTING THE VEIL",
     "CORRUPT REALSPACE",
     "DAEMONIC INVULNERABILITY",
     "DELIRIUM UNMADE",
@@ -1505,6 +1509,7 @@ class StratagemManager(
             "DEFIANT TO THE LAST",
             "DEATHLESS DUTY",
             "DEATH ECSTASY",
+            "EMISSARIES OF YNNEAD",
             "FRENZIED RESILIENCE",
             "IMMORTAL FURY",
             "ARMOUR OF CONTEMPT",
@@ -1518,6 +1523,7 @@ class StratagemManager(
             "FLICKERING REALITY",
             "'ARD AS NAILS",
             "\u2019ARD AS NAILS",
+            "PARTING THE VEIL",
             "TO THEIR FINAL BREATH",
             "VOID HARDENED",
             "HYPERSTIMMS",
@@ -1645,6 +1651,7 @@ class StratagemManager(
             "MARTIAL PERFECTION",
             "LAYERED WARDS",
             "LYING IN WAIT",
+            "EMISSARIES OF YNNEAD",
             "PRIMED AND READIED",
             "COORDINATED TRAP",
             "LETHAL DOSAGE",
@@ -1661,6 +1668,7 @@ class StratagemManager(
             "OUTCAST AMBUSH",
             "PIRATES' DUE",
             "DOOM INESCAPABLE",
+            "PARTING THE VEIL",
             "PRETERNATURAL PRECISION",
             "TO THEIR FINAL BREATH",
             "WARRIOR FOCUS",
@@ -2604,6 +2612,33 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires end of opponent Shooting phase and a YNNARI non-WRAITH CONSTRUCT unit that lost models"
             return result
+        if name_u == "EMISSARIES OF YNNEAD":
+            emissaries_candidates = list(context.get("candidates") or [])
+            if not emissaries_candidates:
+                emissaries_candidates = list(
+                    self._aeldari_devoted_emissaries_candidates(attacking_unit=context.get("attacking_unit")) or []
+                )
+            if emissaries_candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires Fight phase and a friendly YNNARI INFANTRY unit that just selected targets"
+            return result
+        if name_u == "PARTING THE VEIL":
+            parting_candidates = list(context.get("candidates") or [])
+            if not parting_candidates:
+                parting_candidates = list(
+                    self._aeldari_devoted_parting_the_veil_candidates(
+                        target_units=list(context.get("target_units") or []),
+                    )
+                    or []
+                )
+            if parting_candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires Fight phase and a YNNARI unit selected as an enemy attack target"
+            return result
         if name_u == "MERCILESS RECLAMATION":
             if self._starshatter_merciless_reclamation_candidates(phase_name):
                 result["available"] = True
@@ -3233,6 +3268,8 @@ class StratagemManager(
             "PRETERNATURAL PRECISION": "Target: ASPECT WARRIORS unit not yet selected to shoot; choose 1 (or 2 if token spent) from Ignores Cover/Lethal Hits/Sustained Hits 1",
             "SOULSIGHT": "Target: Armoured Warhost AELDARI VEHICLE or Devoted of Ynnead YNNARI unit that has not been selected to shoot",
             "DEATH ANSWERS DEATH": "Target: your YNNARI unit (excluding WRAITH CONSTRUCT) that lost one or more models this opponent Shooting phase",
+            "EMISSARIES OF YNNEAD": "Target: your YNNARI INFANTRY unit that just selected fight targets",
+            "PARTING THE VEIL": "Target: your YNNARI unit selected as the target of enemy fight attacks",
             "SWIFT DEPLOYMENT": "Target: AELDARI TRANSPORT unit after it Advanced",
             "TO THEIR FINAL BREATH": "Target: ASPECT WARRIORS/AVATAR OF KHAINE unit selected as an enemy fight target (not fought)",
             "VENGEFUL SORROW": "Target: AELDARI INFANTRY unit that lost models to the just-resolved enemy shooting attacks and is not Battle-shocked/engaged",
@@ -8209,8 +8246,9 @@ class StratagemManager(
             raise
     def _on_fight_targets_selected(self, attacking_unit=None, target_units=None, **kwargs):
         """
-        Reaction windows for FRENZIED RESILIENCE and LIGHTNING-FAST REACTIONS:
-        Fight phase, just after an enemy unit has selected its targets.
+        Reaction windows for fight target selection stratagems (e.g. FRENZIED RESILIENCE,
+        LIGHTNING-FAST REACTIONS, EMISSARIES OF YNNEAD, PARTING THE VEIL):
+        Fight phase, just after a unit has selected its targets.
         """
         if attacking_unit is None:
             return
@@ -8218,6 +8256,13 @@ class StratagemManager(
             return
         try:
             owner_player = attacking_unit.get_parent_army().player
+        except Exception:
+            raise
+        try:
+            self._queue_aeldari_devoted_fight_targets_selected_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
         except Exception:
             raise
         if owner_player is None or owner_player is self.player:

@@ -906,6 +906,14 @@ class DamageDeathMixin:
                 except Exception:
                     is_melee = False
                 if is_melee:
+                    if bool(rule.get("automatic", False)):
+                        pending = getattr(root, "_melee_fight_on_death_pending_models", None)
+                        if not isinstance(pending, list):
+                            pending = []
+                        if model not in pending:
+                            pending.append(model)
+                        root._melee_fight_on_death_pending_models = pending
+                        return
                     roll = int(get_roll("D6"))
                     total = int(roll)
                     fortify_bonus = int(rule.get("fortify_takeover_bonus", 0) or 0)

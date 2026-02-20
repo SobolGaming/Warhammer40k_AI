@@ -1610,6 +1610,26 @@ _CORSAIR_COTERIE_STRATAGEM_BY_NAME = {
 }
 
 _DEVOTED_OF_YNNEAD_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009920004": StratagemToolDescriptor(
+        stratagem_id="000009920004",
+        name="Emissaries of Ynnead",
+        timing="fight_phase_after_select_targets",
+        target="attacking_ynnari_infantry_unit_that_selected_targets",
+        duration="until_end_of_phase",
+        effect="reroll_melee_hit_ones_or_full_if_below_starting_strength",
+        cp_cost=1,
+        effect_params={"attack_type": "melee", "reroll_hit_values": [1], "reroll_hit_full_if_attacker_below_starting_strength": True},
+    ),
+    "000009920005": StratagemToolDescriptor(
+        stratagem_id="000009920005",
+        name="Parting the Veil",
+        timing="fight_phase_after_enemy_select_targets",
+        target="ynnari_unit_selected_as_attack_target",
+        duration="until_end_of_phase",
+        effect="fight_on_death_after_attacks",
+        cp_cost=2,
+        effect_params={"attack_type": "melee", "fight_on_death_after_attacks": True, "automatic": True},
+    ),
     "000009920006": StratagemToolDescriptor(
         stratagem_id="000009920006",
         name="Soulsight",

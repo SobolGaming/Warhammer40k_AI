@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 from warhammer40k_ai.engine.decision_kinds import DECISION_DECLARE_SHOTS
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.units.wargear import Wargear
 from warhammer40k_ai.utility.entity_ids import get_entity_id
 
 
@@ -133,6 +135,23 @@ def _pending_by_name(stratagems, name_substring: str):
     return None
 
 
+def _melee_profile(*, strength: int = 4, ap: int = 0, damage: int = 2, name: str = "Test Blade"):
+    weapon = Wargear(
+        {
+            "name": name,
+            "type": "Melee",
+            "range": "Melee",
+            "A": "1",
+            "BS_WS": "3+",
+            "S": str(int(strength)),
+            "AP": str(int(ap)),
+            "D": str(int(damage)),
+            "description": "",
+        }
+    )
+    return weapon.profiles["default"]
+
+
 class TestAeldariDevotedOfYnneadStratagems(unittest.TestCase):
     def test_soulsight_grants_ranged_lethal_hits_and_ignores_cover(self):
         game, p1, _p2, aeldari_army, enemy_army = _build_game()
@@ -215,6 +234,97 @@ class TestAeldariDevotedOfYnneadStratagems(unittest.TestCase):
         self.assertTrue(bool(ctx.get("out_of_phase", False)))
         self.assertEqual(str(ctx.get("unit_id", "")), str(get_entity_id(victim) or ""))
         self.assertEqual(str(ctx.get("shoot_again_source", "")).strip().upper(), "DEATH ANSWERS DEATH")
+
+    def test_emissaries_of_ynnead_grants_melee_hit_rerolls(self):
+        game, p1, _p2, aeldari_army, enemy_army = _build_game()
+        fighter = _make_unit(
+            "Ynnari Fighters",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["ASURYANI", "INFANTRY"],
+            quantity=2,
+        )
+        enemy = _make_unit(
+            "Enemy Fighters",
+            faction_name="Enemy",
+            faction_keywords=["ENEMY"],
+            keywords=["INFANTRY"],
+            quantity=2,
+        )
+        aeldari_army.add_unit(fighter)
+        enemy_army.add_unit(enemy)
+        _place_unit(game, fighter, 10.0, 10.0)
+        _place_unit(game, enemy, 12.0, 10.0)
+
+        _set_phase(game, p1, "FIGHT_PHASE", 0)
+        game.event_system.publish("fight_targets_selected", attacking_unit=fighter, target_units=[enemy])
+        pending = _pending_by_name(p1.stratagems, "EMISSARIES OF YNNEAD")
+        self.assertIsNotNone(pending)
+        ok = p1.stratagems.use(str(pending.get("stratagem", "")), unit=fighter, attacking_unit=fighter, dequeue=True)
+        self.assertTrue(ok)
+
+        full_strength_mods = fighter.get_unit_hit_reroll_modifiers("melee", target=enemy)
+        self.assertIn(1, list(full_strength_mods.get("reroll_hit_values", ()) or ()))
+        self.assertFalse(bool(full_strength_mods.get("reroll_hit_full")))
+
+        fighter.models[0].wounds = 0
+        below_start_mods = fighter.get_unit_hit_reroll_modifiers("melee", target=enemy)
+        self.assertTrue(bool(below_start_mods.get("reroll_hit_full")))
+
+        game.event_system.publish("phase_end", player=p1, phase=SimpleNamespace(name="FIGHT_PHASE"))
+        after_mods = fighter.get_unit_hit_reroll_modifiers("melee", target=enemy)
+        self.assertFalse(bool(after_mods.get("reroll_hit_full")))
+        self.assertFalse(bool(list(after_mods.get("reroll_hit_values", ()) or ())))
+
+    def test_parting_the_veil_grants_automatic_melee_fight_on_death(self):
+        game, p1, p2, aeldari_army, enemy_army = _build_game()
+        target = _make_unit(
+            "Ynnari Squad",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["ASURYANI", "INFANTRY"],
+            quantity=2,
+        )
+        enemy = _make_unit(
+            "Enemy Fighters",
+            faction_name="Enemy",
+            faction_keywords=["ENEMY"],
+            keywords=["INFANTRY"],
+            quantity=2,
+        )
+        aeldari_army.add_unit(target)
+        enemy_army.add_unit(enemy)
+        _place_unit(game, target, 10.0, 10.0)
+        _place_unit(game, enemy, 12.0, 10.0)
+
+        _set_phase(game, p2, "FIGHT_PHASE", 1)
+        game.event_system.publish("fight_targets_selected", attacking_unit=enemy, target_units=[target])
+        pending = _pending_by_name(p1.stratagems, "PARTING THE VEIL")
+        self.assertIsNotNone(pending)
+        ok = p1.stratagems.use(
+            str(pending.get("stratagem", "")),
+            unit=target,
+            attacking_unit=enemy,
+            dequeue=True,
+        )
+        self.assertTrue(ok)
+
+        rule = target.get_melee_fight_on_death_after_attacks_rule()
+        self.assertTrue(bool(rule))
+        self.assertTrue(bool(rule.get("automatic")))
+        model = target.models[0]
+        target.round_state.fought_this_phase = False
+        target._last_destroyed_by_weapon_profile = _melee_profile(name="Enemy Blade")
+        with patch("warhammer40k_ai.units.unit_mixins.damage_death_mixin.get_roll", return_value=1) as mocked_roll:
+            model._wounds = 0
+            target._handle_model_destroyed(model, game.map)
+        self.assertEqual(mocked_roll.call_count, 0)
+
+        pending_models = list(getattr(target, "_melee_fight_on_death_pending_models", []) or [])
+        self.assertIn(model, pending_models)
+
+        game.event_system.publish("phase_end", player=p2, phase=SimpleNamespace(name="FIGHT_PHASE"))
+        self.assertIsNone(target.get_melee_fight_on_death_after_attacks_rule())
 
 
 if __name__ == "__main__":

@@ -247,6 +247,7 @@ class AeldariStratagemMixin:
         self,
         *,
         require_not_shot: bool = False,
+        require_not_fought: bool = False,
         exclude_wraith_construct: bool = False,
     ) -> List[Any]:
         if not self._is_devoted_of_ynnead_detachment():
@@ -277,6 +278,8 @@ class AeldariStratagemMixin:
                 continue
             if require_not_shot and bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
                 continue
+            if require_not_fought and bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+                continue
             out.append(root)
         return sorted(out, key=self._aeldari_sort_key)
 
@@ -302,6 +305,45 @@ class AeldariStratagemMixin:
             after = self._aeldari_models_alive(root)
             if before <= 0 or after >= before:
                 continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_devoted_emissaries_candidates(self, *, attacking_unit: Any = None) -> List[Any]:
+        candidates = self._aeldari_devoted_ynnari_candidates(
+            require_not_shot=False,
+            require_not_fought=True,
+            exclude_wraith_construct=False,
+        )
+        infantry_candidates = [unit for unit in candidates if self._aeldari_has_keyword(unit, "INFANTRY")]
+        if attacking_unit is None:
+            return sorted(infantry_candidates, key=self._aeldari_sort_key)
+        attacker_root = self._aeldari_root(attacking_unit)
+        if attacker_root is None:
+            return []
+        if attacker_root not in infantry_candidates:
+            return []
+        return [attacker_root]
+
+    def _aeldari_devoted_parting_the_veil_candidates(self, *, target_units: List[Any]) -> List[Any]:
+        if not self._is_devoted_of_ynnead_detachment():
+            return []
+        eligible_units = self._aeldari_devoted_ynnari_candidates(require_not_shot=False, exclude_wraith_construct=False)
+        eligible_ids = {self._aeldari_sort_key(unit) for unit in list(eligible_units or [])}
+        out: List[Any] = []
+        seen: set[str] = set()
+        for target in list(target_units or []):
+            root = self._aeldari_root(target)
+            uid = self._aeldari_sort_key(root)
+            if root is None:
+                continue
+            if uid and uid not in eligible_ids:
+                continue
+            if (not uid) and root not in eligible_units:
+                continue
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
             out.append(root)
         return sorted(out, key=self._aeldari_sort_key)
 
@@ -544,6 +586,82 @@ class AeldariStratagemMixin:
             "phase_name": "Shooting phase",
             "stratagem": stratagem.name,
             "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_aeldari_devoted_fight_targets_selected_reactions(
+        self,
+        *,
+        attacking_unit,
+        target_units: List[Any],
+    ) -> None:
+        game = getattr(self, "game", None)
+        if game is None or attacking_unit is None or not self._is_devoted_of_ynnead_detachment():
+            return
+        phase_key = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_key != "FIGHT_PHASE":
+            return
+        attacker_root = self._aeldari_root(attacking_unit)
+        if attacker_root is None:
+            return
+        try:
+            owner_player = attacker_root.get_parent_army().player
+        except (AttributeError, TypeError, ValueError):
+            return
+        target_list = list(target_units or [])
+
+        if owner_player is self.player:
+            stratagem = self.get_by_name("EMISSARIES OF YNNEAD")
+            if stratagem is None:
+                return
+            if self.player.command_points < int(getattr(stratagem, "cp_cost", 0) or 0):
+                return
+            if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+                return
+            candidates = self._aeldari_devoted_emissaries_candidates(attacking_unit=attacker_root)
+            if not candidates:
+                return
+            if self._aeldari_reaction_exists("fight_targets_selected", stratagem.name, unit=attacker_root):
+                return
+            payload: Dict[str, Any] = {
+                "event": "fight_targets_selected",
+                "phase_name": "Fight phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "attacking_unit": attacker_root,
+                "target_units": target_list,
+                "candidates": candidates,
+                "unit": attacker_root,
+                "target_unit": attacker_root,
+            }
+            self._queue_reaction(payload, use_timer=False)
+            return
+
+        if owner_player is None:
+            return
+        stratagem = self.get_by_name("PARTING THE VEIL")
+        if stratagem is None:
+            return
+        if self.player.command_points < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+            return
+        candidates = self._aeldari_devoted_parting_the_veil_candidates(target_units=target_list)
+        if not candidates:
+            return
+        if self._aeldari_reaction_exists("fight_targets_selected", stratagem.name):
+            return
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "target_units": target_list,
             "candidates": candidates,
         }
         if len(candidates) == 1:
@@ -828,6 +946,32 @@ class AeldariStratagemMixin:
                     if key in sr:
                         sr.pop(key, None)
                         changed = True
+
+            if phase_key == "FIGHT_PHASE" and bool(sr.get("aeldari_emissaries_of_ynnead_active")):
+                for key in (
+                    "aeldari_emissaries_of_ynnead_active",
+                    "aeldari_emissaries_of_ynnead_expires_phase",
+                    "aeldari_emissaries_of_ynnead_owner",
+                    "aeldari_emissaries_of_ynnead_turn",
+                    "aeldari_emissaries_of_ynnead_source",
+                ):
+                    if key in sr:
+                        sr.pop(key, None)
+                        changed = True
+
+            if phase_key == "FIGHT_PHASE" and bool(sr.get("aeldari_parting_the_veil_active")):
+                for key in (
+                    "aeldari_parting_the_veil_active",
+                    "aeldari_parting_the_veil_expires_phase",
+                    "aeldari_parting_the_veil_owner",
+                    "aeldari_parting_the_veil_turn",
+                    "aeldari_parting_the_veil_source",
+                    "aeldari_parting_the_veil_automatic",
+                ):
+                    if key in sr:
+                        sr.pop(key, None)
+                        changed = True
+                self._aeldari_clear_melee_fight_on_death_cache(root)
 
             if phase_key == "MOVEMENT_PHASE":
                 if (
@@ -1310,11 +1454,148 @@ class AeldariStratagemMixin:
         if stratagem is None or not self._is_devoted_of_ynnead_detachment():
             return None
         name_u = self._aeldari_norm_name(getattr(stratagem, "name", ""))
+        if name_u == "EMISSARIES OF YNNEAD":
+            return self._use_aeldari_devoted_emissaries_of_ynnead(stratagem, **kwargs)
+        if name_u == "PARTING THE VEIL":
+            return self._use_aeldari_devoted_parting_the_veil(stratagem, **kwargs)
         if name_u == "SOULSIGHT":
             return self._use_aeldari_devoted_soulsight(stratagem, **kwargs)
         if name_u == "DEATH ANSWERS DEATH":
             return self._use_aeldari_devoted_death_answers_death(stratagem, **kwargs)
         return None
+
+    def _use_aeldari_devoted_emissaries_of_ynnead(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: EMISSARIES OF YNNEAD: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        attacking_unit = context.get("attacking_unit")
+        attacking_root = self._aeldari_root(attacking_unit) if attacking_unit is not None else None
+        if attacking_root is not None:
+            try:
+                if attacking_root.get_parent_army().player is not self.player:
+                    logger.error("ERROR: EMISSARIES OF YNNEAD: attacking unit is not friendly")
+                    return False
+            except (AttributeError, TypeError, ValueError):
+                return False
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_devoted_emissaries_candidates(attacking_unit=attacking_root)
+        candidate_roots = [self._aeldari_root(unit) for unit in list(candidates or [])]
+        candidate_roots = [unit for unit in candidate_roots if unit is not None]
+        if target_root is None:
+            if attacking_root is not None:
+                target_root = attacking_root
+            elif len(candidate_roots) == 1:
+                target_root = candidate_roots[0]
+            else:
+                logger.error("ERROR: EMISSARIES OF YNNEAD: missing target unit")
+                return False
+        if candidate_roots and target_root not in candidate_roots:
+            logger.error("ERROR: EMISSARIES OF YNNEAD: target must be the attacking YNNARI INFANTRY unit")
+            return False
+        if attacking_root is not None and target_root is not attacking_root:
+            logger.error("ERROR: EMISSARIES OF YNNEAD: target must be the attacking unit")
+            return False
+        if not self._aeldari_has_keyword(target_root, "INFANTRY"):
+            logger.error("ERROR: EMISSARIES OF YNNEAD: target must be INFANTRY")
+            return False
+        if not self._aeldari_on_battlefield(target_root, require_targetable=True):
+            logger.error("ERROR: EMISSARIES OF YNNEAD: target must be on the battlefield and targetable")
+            return False
+        if bool(getattr(getattr(target_root, "round_state", None), "fought_this_phase", False)):
+            logger.error("ERROR: EMISSARIES OF YNNEAD: target has already fought this phase")
+            return False
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root):
+            return False
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        owner = str(getattr(self.player, "id", "") or "")
+        turn = int(getattr(game, "turn", 0) or 0)
+        sr["aeldari_emissaries_of_ynnead_active"] = True
+        sr["aeldari_emissaries_of_ynnead_expires_phase"] = "FIGHT_PHASE"
+        sr["aeldari_emissaries_of_ynnead_source"] = str(
+            getattr(stratagem, "name", "EMISSARIES OF YNNEAD") or "EMISSARIES OF YNNEAD"
+        )
+        if owner:
+            sr["aeldari_emissaries_of_ynnead_owner"] = owner
+        if turn:
+            sr["aeldari_emissaries_of_ynnead_turn"] = turn
+        target_root.special_rules = sr
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_aeldari_devoted_parting_the_veil(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: PARTING THE VEIL: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        attacking_unit = context.get("attacking_unit")
+        attacking_root = self._aeldari_root(attacking_unit) if attacking_unit is not None else None
+        if attacking_root is None:
+            logger.error("ERROR: PARTING THE VEIL: missing attacking unit")
+            return False
+        try:
+            if attacking_root.get_parent_army().player is self.player:
+                logger.error("ERROR: PARTING THE VEIL: attacking unit must be an enemy unit")
+                return False
+        except (AttributeError, TypeError, ValueError):
+            return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        target_window = list(context.get("target_units") or [])
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_devoted_parting_the_veil_candidates(target_units=target_window)
+        candidate_roots = [self._aeldari_root(unit) for unit in list(candidates or [])]
+        candidate_roots = [unit for unit in candidate_roots if unit is not None]
+        if target_root is None:
+            if len(candidate_roots) == 1:
+                target_root = candidate_roots[0]
+            else:
+                logger.error("ERROR: PARTING THE VEIL: missing target unit")
+                return False
+        if candidate_roots and target_root not in candidate_roots:
+            logger.error("ERROR: PARTING THE VEIL: target must have been selected as an enemy attack target")
+            return False
+        if not self._aeldari_on_battlefield(target_root, require_targetable=True):
+            logger.error("ERROR: PARTING THE VEIL: target must be on the battlefield and targetable")
+            return False
+        if not self._aeldari_armoured_spend_cp(
+            stratagem,
+            target_unit=target_root,
+            enemy_unit=attacking_root,
+        ):
+            return False
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        owner = str(getattr(self.player, "id", "") or "")
+        turn = int(getattr(game, "turn", 0) or 0)
+        sr["aeldari_parting_the_veil_active"] = True
+        sr["aeldari_parting_the_veil_expires_phase"] = "FIGHT_PHASE"
+        sr["aeldari_parting_the_veil_source"] = str(getattr(stratagem, "name", "PARTING THE VEIL") or "PARTING THE VEIL")
+        sr["aeldari_parting_the_veil_automatic"] = True
+        if owner:
+            sr["aeldari_parting_the_veil_owner"] = owner
+        if turn:
+            sr["aeldari_parting_the_veil_turn"] = turn
+        target_root.special_rules = sr
+        self._aeldari_clear_melee_fight_on_death_cache(target_root)
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
 
     def _use_aeldari_devoted_soulsight(self, stratagem, **kwargs) -> bool:
         context = self._aeldari_pending_context(stratagem.name, kwargs)

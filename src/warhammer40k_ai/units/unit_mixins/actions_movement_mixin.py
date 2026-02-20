@@ -3460,6 +3460,50 @@ class ActionsMovementMixin:
                 mods["reroll_hit_full"] = True
                 reroll_hit_full_reasons.append(f"{source}: re-roll Hit roll")
 
+        # Devoted of Ynnead: Emissaries of Ynnead (Fight phase melee hit rerolls).
+        try:
+            if atype in ("any", "melee"):
+                sr = getattr(root, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("aeldari_emissaries_of_ynnead_active"):
+                    applies = True
+                    owner_id = str(sr.get("aeldari_emissaries_of_ynnead_owner", "") or "")
+                    army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+                    player = getattr(army, "player", None) if army is not None else None
+                    attacker_owner = str(getattr(player, "id", "") or "") if player is not None else ""
+                    game_local = getattr(player, "game", None) if player is not None else None
+                    if owner_id and attacker_owner and owner_id != attacker_owner:
+                        applies = False
+                    exp_phase = str(sr.get("aeldari_emissaries_of_ynnead_expires_phase", "") or "").strip().upper()
+                    phase_name = str(getattr(getattr(game_local, "phase", None), "name", "") or "").strip().upper()
+                    if applies and exp_phase and phase_name and exp_phase != phase_name:
+                        applies = False
+                    try:
+                        marked_turn = int(sr.get("aeldari_emissaries_of_ynnead_turn", 0) or 0)
+                    except Exception:
+                        marked_turn = 0
+                    try:
+                        current_turn = int(getattr(game_local, "turn", 0) or 0)
+                    except Exception:
+                        current_turn = 0
+                    if applies and marked_turn and current_turn and marked_turn != current_turn:
+                        applies = False
+                    if applies:
+                        source = str(sr.get("aeldari_emissaries_of_ynnead_source", "") or "EMISSARIES OF YNNEAD").strip()
+                        source = source or "EMISSARIES OF YNNEAD"
+                        below_starting = False
+                        try:
+                            below_starting = bool(root.is_below_starting_strength())
+                        except Exception:
+                            below_starting = False
+                        if below_starting:
+                            mods["reroll_hit_full"] = True
+                            reroll_hit_full_reasons.append(f"{source}: re-roll Hit roll (below Starting Strength)")
+                        else:
+                            reroll_hit_values.add(1)
+                            reroll_hit_reasons.append(f"{source}: re-roll Hit rolls of 1")
+        except Exception:
+            pass
+
         # Virulent Vectorium: selected unit gains ranged hit rerolls vs Afflicted targets this phase.
         try:
             if atype in ("any", "ranged") and target is not None:
