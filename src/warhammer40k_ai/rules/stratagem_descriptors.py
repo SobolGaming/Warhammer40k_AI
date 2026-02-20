@@ -1816,6 +1816,32 @@ _WINDRIDER_HOST_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "conditional_no_charge_if_within": 9,
         },
     ),
+    "000009904002": StratagemToolDescriptor(
+        stratagem_id="000009904002",
+        name="Death from on High",
+        timing="your_shooting_or_fight_phase",
+        target="asuryani_mounted_or_vyper_unit_set_up_from_reserves_this_turn_not_yet_selected",
+        duration="until_end_of_phase",
+        effect="wound_reroll",
+        cp_cost=1,
+        effect_params={
+            "reroll_wound_full": True,
+            "requires_arrived_from_reserves_this_turn": True,
+        },
+    ),
+    "000009904003": StratagemToolDescriptor(
+        stratagem_id="000009904003",
+        name="Overflight",
+        timing="end_of_your_shooting_or_fight_phase",
+        target="asuryani_mounted_unit_that_destroyed_enemy_this_phase",
+        duration="immediate",
+        effect="reactive_normal_move",
+        cp_cost=1,
+        effect_params={
+            "max_distance": 7,
+            "movement_type": "normal",
+        },
+    ),
 }
 
 _WINDRIDER_HOST_STRATAGEM_BY_NAME = {

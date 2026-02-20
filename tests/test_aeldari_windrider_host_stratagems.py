@@ -217,6 +217,93 @@ class TestAeldariWindriderHostStratagems(unittest.TestCase):
         sr = getattr(riders, "special_rules", {}) or {}
         self.assertNotIn("aeldari_daring_riders_no_charge_if_within", sr)
 
+    def test_death_from_on_high_queues_and_grants_wound_rerolls_until_phase_end(self):
+        game, p1, _p2, aeldari_army, enemy_army = _build_game()
+        riders = _make_unit(
+            "Shining Spears",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["ASURYANI", "MOUNTED"],
+            quantity=1,
+        )
+        enemy = _make_unit(
+            "Enemy Unit",
+            faction_name="Enemy",
+            faction_keywords=["ENEMY"],
+            keywords=["INFANTRY"],
+            quantity=1,
+        )
+        aeldari_army.add_unit(riders)
+        enemy_army.add_unit(enemy)
+        _place_unit(game, riders, 10.0, 10.0)
+        _place_unit(game, enemy, 16.0, 10.0)
+        riders.arrived_from_reserves_this_turn = True
+
+        _set_phase(game, p1, "SHOOTING_PHASE", 0)
+        pending = _pending_by_name(p1.stratagems, "DEATH FROM ON HIGH")
+        self.assertIsNotNone(pending)
+
+        ok = p1.stratagems.use(str(pending.get("stratagem", "")), unit=riders, dequeue=True)
+        self.assertTrue(ok)
+        self.assertEqual(int(p1.command_points or 0), 9)
+
+        wound_mods = riders.get_unit_wound_reroll_modifiers("ranged", target=enemy)
+        self.assertTrue(bool(wound_mods.get("reroll_wound_full")))
+        self.assertTrue(
+            any(
+                "DEATH FROM ON HIGH" in str(reason).upper()
+                for reason in list(wound_mods.get("reroll_wound_full_reasons", ()) or ())
+            )
+        )
+
+        game.event_system.publish("phase_end", player=p1, phase=SimpleNamespace(name="SHOOTING_PHASE"))
+        wound_mods_after = riders.get_unit_wound_reroll_modifiers("ranged", target=enemy)
+        self.assertFalse(bool(wound_mods_after.get("reroll_wound_full")))
+
+    def test_overflight_queues_at_phase_end_after_destroying_enemy_and_creates_move_decision(self):
+        from warhammer40k_ai.engine.decision_kinds import DECISION_MOVE_UNIT
+
+        game, p1, _p2, aeldari_army, enemy_army = _build_game()
+        riders = _make_unit(
+            "Shining Spears",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["ASURYANI", "MOUNTED"],
+            quantity=1,
+        )
+        enemy = _make_unit(
+            "Enemy Unit",
+            faction_name="Enemy",
+            faction_keywords=["ENEMY"],
+            keywords=["INFANTRY"],
+            quantity=1,
+        )
+        aeldari_army.add_unit(riders)
+        enemy_army.add_unit(enemy)
+        _place_unit(game, riders, 10.0, 10.0)
+        _place_unit(game, enemy, 16.0, 10.0)
+
+        _set_phase(game, p1, "SHOOTING_PHASE", 0)
+        game.event_system.publish("unit_destroyed", unit=enemy, destroyed_by_unit=riders)
+        game.event_system.publish("phase_end", player=p1, phase=SimpleNamespace(name="SHOOTING_PHASE"))
+        pending = _pending_by_name(p1.stratagems, "OVERFLIGHT")
+        self.assertIsNotNone(pending)
+
+        ok = p1.stratagems.use(str(pending.get("stratagem", "")), unit=riders, dequeue=True)
+        self.assertTrue(ok)
+        self.assertEqual(int(p1.command_points or 0), 9)
+
+        move_requests = [
+            req
+            for req in list(game.decision_queue.list() or [])
+            if str(getattr(req, "decision_type", "") or "") == DECISION_MOVE_UNIT
+            and str((dict(getattr(req, "context", {}) or {})).get("reactive_move_kind", "") or "") == "overflight"
+        ]
+        self.assertEqual(len(move_requests), 1)
+        context = dict(getattr(move_requests[0], "context", {}) or {})
+        self.assertEqual(int(context.get("max_distance", 0) or 0), 7)
+        self.assertEqual(str(context.get("movement_type", "") or ""), "move")
+
     def test_windrider_host_step4_stratagem_descriptors_registered(self):
         wind_of_blades = get_stratagem_tool_descriptor(stratagem_id="000009904004")
         self.assertIsNotNone(wind_of_blades)
@@ -237,6 +324,26 @@ class TestAeldariWindriderHostStratagems(unittest.TestCase):
         by_name_daring = get_stratagem_tool_descriptor(name="DARING RIDERS")
         self.assertIsNotNone(by_name_daring)
         self.assertEqual(str(by_name_daring.stratagem_id), "000009904005")
+
+        death = get_stratagem_tool_descriptor(stratagem_id="000009904002")
+        self.assertIsNotNone(death)
+        self.assertEqual(str(death.name), "Death from on High")
+        self.assertEqual(int(death.cp_cost), 1)
+        self.assertEqual(str(death.effect), "wound_reroll")
+
+        overflight = get_stratagem_tool_descriptor(stratagem_id="000009904003")
+        self.assertIsNotNone(overflight)
+        self.assertEqual(str(overflight.name), "Overflight")
+        self.assertEqual(int(overflight.cp_cost), 1)
+        self.assertEqual(str(overflight.effect), "reactive_normal_move")
+
+        by_name_death = get_stratagem_tool_descriptor(name="DEATH FROM ON HIGH")
+        self.assertIsNotNone(by_name_death)
+        self.assertEqual(str(by_name_death.stratagem_id), "000009904002")
+
+        by_name_overflight = get_stratagem_tool_descriptor(name="OVERFLIGHT")
+        self.assertIsNotNone(by_name_overflight)
+        self.assertEqual(str(by_name_overflight.stratagem_id), "000009904003")
 
 
 if __name__ == "__main__":

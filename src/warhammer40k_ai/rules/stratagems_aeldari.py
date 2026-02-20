@@ -295,6 +295,14 @@ class AeldariStratagemMixin:
             return True
         return self._aeldari_has_keyword(root, "ASURYANI") and self._aeldari_has_keyword(root, "MOUNTED")
 
+    def _aeldari_windrider_is_asuryani_mounted(self, unit: Any) -> bool:
+        root = self._aeldari_root(unit)
+        if root is None:
+            return False
+        if self._aeldari_has_keyword(root, "VYPER"):
+            return False
+        return self._aeldari_has_keyword(root, "ASURYANI") and self._aeldari_has_keyword(root, "MOUNTED")
+
     def _aeldari_windrider_candidates(
         self,
         *,
@@ -348,6 +356,103 @@ class AeldariStratagemMixin:
                         continue
                 except (AttributeError, TypeError, ValueError):
                     continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_windrider_death_from_on_high_candidates(
+        self,
+        *,
+        require_not_shot: bool = False,
+        require_not_fought: bool = False,
+    ) -> List[Any]:
+        if not self._is_windrider_host_detachment():
+            return []
+        out: List[Any] = []
+        for root in self._aeldari_windrider_candidates(require_on_battlefield=True):
+            if not bool(getattr(root, "arrived_from_reserves_this_turn", False)):
+                continue
+            round_state = getattr(root, "round_state", None)
+            if require_not_shot and bool(getattr(round_state, "shot_this_round", False)):
+                continue
+            if require_not_fought and bool(getattr(round_state, "fought_this_phase", False)):
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _capture_aeldari_windrider_overflight_destroyed_enemy(self, *, destroyed_by_unit: Any) -> None:
+        if destroyed_by_unit is None or not self._is_windrider_host_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        phase_key = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_key not in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return
+
+        attacker_root = self._aeldari_root(destroyed_by_unit)
+        if attacker_root is None:
+            return
+        try:
+            if attacker_root.get_parent_army().player is not self.player:
+                return
+        except (AttributeError, TypeError, ValueError):
+            return
+        if not self._aeldari_windrider_is_asuryani_mounted(attacker_root):
+            return
+
+        tracker = getattr(self, "_aeldari_windrider_overflight_ready", None)
+        if not isinstance(tracker, dict):
+            tracker = {}
+            self._aeldari_windrider_overflight_ready = tracker
+        key = self._aeldari_sort_key(attacker_root)
+        if not key:
+            return
+        tracker[key] = {
+            "phase": phase_key,
+            "turn": int(getattr(game, "turn", 0) or 0),
+            "owner": str(getattr(self.player, "id", "") or ""),
+        }
+
+    def _aeldari_windrider_overflight_trigger_ready(self, unit: Any) -> bool:
+        root = self._aeldari_root(unit)
+        if root is None:
+            return False
+        key = self._aeldari_sort_key(root)
+        if not key:
+            return False
+        tracker = getattr(self, "_aeldari_windrider_overflight_ready", None)
+        if not isinstance(tracker, dict):
+            return False
+        entry = tracker.get(key)
+        if not isinstance(entry, dict):
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        current_turn = int(getattr(game, "turn", 0) or 0)
+        owner = str(getattr(self.player, "id", "") or "")
+        if str(entry.get("phase", "") or "").strip().upper() != current_phase:
+            return False
+        if int(entry.get("turn", 0) or 0) != current_turn:
+            return False
+        entry_owner = str(entry.get("owner", "") or "")
+        if owner and entry_owner and owner != entry_owner:
+            return False
+        return True
+
+    def _aeldari_windrider_overflight_candidates(self) -> List[Any]:
+        if not self._is_windrider_host_detachment():
+            return []
+        out: List[Any] = []
+        for root in self._aeldari_windrider_candidates(require_on_battlefield=True):
+            if not self._aeldari_windrider_is_asuryani_mounted(root):
+                continue
+            if not self._aeldari_windrider_overflight_trigger_ready(root):
+                continue
             out.append(root)
         return sorted(out, key=self._aeldari_sort_key)
 
@@ -3131,54 +3236,120 @@ class AeldariStratagemMixin:
         if game is None or not self._is_windrider_host_detachment():
             return
         phase_key = str(getattr(phase, "name", "") or "").strip().upper()
-        if phase_key != "MOVEMENT_PHASE":
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return
+
+        if phase_key == "MOVEMENT_PHASE":
+            wind_of_blades = self._aeldari_get_stratagem_by_norm_name("WIND OF BLADES")
+            if wind_of_blades is not None:
+                if int(getattr(self.player, "command_points", 0) or 0) >= int(getattr(wind_of_blades, "cp_cost", 0) or 0):
+                    if self._aeldari_norm_name(wind_of_blades.name) not in getattr(self, "_used_stratagems_this_phase", set()):
+                        candidates = self._aeldari_windrider_candidates(
+                            require_on_battlefield=True,
+                            require_not_moved=True,
+                        )
+                        if candidates and not self._aeldari_reaction_exists("phase_start", wind_of_blades.name):
+                            payload: Dict[str, Any] = {
+                                "event": "phase_start",
+                                "phase": "Movement phase",
+                                "phase_name": "Movement phase",
+                                "stratagem": wind_of_blades.name,
+                                "cp_cost": wind_of_blades.cp_cost,
+                                "candidates": candidates,
+                            }
+                            if len(candidates) == 1:
+                                payload["unit"] = candidates[0]
+                                payload["target_unit"] = candidates[0]
+                            self._queue_reaction(payload, use_timer=False)
+
+            daring_riders = self._aeldari_get_stratagem_by_norm_name("DARING RIDERS")
+            if daring_riders is None:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(daring_riders, "cp_cost", 0) or 0):
+                return
+            if self._aeldari_norm_name(daring_riders.name) in getattr(self, "_used_stratagems_this_phase", set()):
+                return
+            candidates = self._aeldari_windrider_candidates(
+                require_on_battlefield=False,
+                require_in_reserves=True,
+                require_can_arrive_from_reserves=True,
+            )
+            if not candidates or self._aeldari_reaction_exists("phase_start", daring_riders.name):
+                return
+            payload: Dict[str, Any] = {
+                "event": "phase_start",
+                "phase": "Movement phase",
+                "phase_name": "Movement phase",
+                "stratagem": daring_riders.name,
+                "cp_cost": daring_riders.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+            return
+
+        if phase_key not in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
+            return
+
+        death_from_on_high = self._aeldari_get_stratagem_by_norm_name("DEATH FROM ON HIGH")
+        if death_from_on_high is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(death_from_on_high, "cp_cost", 0) or 0):
+            return
+        if self._aeldari_norm_name(death_from_on_high.name) in getattr(self, "_used_stratagems_this_phase", set()):
+            return
+        if phase_key == "SHOOTING_PHASE":
+            candidates = self._aeldari_windrider_death_from_on_high_candidates(require_not_shot=True)
+            phase_label = "Shooting phase"
+        else:
+            candidates = self._aeldari_windrider_death_from_on_high_candidates(require_not_fought=True)
+            phase_label = "Fight phase"
+        if not candidates or self._aeldari_reaction_exists("phase_start", death_from_on_high.name):
+            return
+        payload: Dict[str, Any] = {
+            "event": "phase_start",
+            "phase": phase_label,
+            "phase_name": phase_label,
+            "stratagem": death_from_on_high.name,
+            "cp_cost": death_from_on_high.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_aeldari_windrider_phase_end_reactions(self, *, player, phase) -> None:
+        game = getattr(self, "game", None)
+        if game is None or not self._is_windrider_host_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key not in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
             return
         active_player = getattr(game, "get_current_player", lambda: None)()
         if active_player is not self.player:
             return
 
-        wind_of_blades = self._aeldari_get_stratagem_by_norm_name("WIND OF BLADES")
-        if wind_of_blades is not None:
-            if int(getattr(self.player, "command_points", 0) or 0) >= int(getattr(wind_of_blades, "cp_cost", 0) or 0):
-                if self._aeldari_norm_name(wind_of_blades.name) not in getattr(self, "_used_stratagems_this_phase", set()):
-                    candidates = self._aeldari_windrider_candidates(
-                        require_on_battlefield=True,
-                        require_not_moved=True,
-                    )
-                    if candidates and not self._aeldari_reaction_exists("phase_start", wind_of_blades.name):
-                        payload: Dict[str, Any] = {
-                            "event": "phase_start",
-                            "phase": "Movement phase",
-                            "phase_name": "Movement phase",
-                            "stratagem": wind_of_blades.name,
-                            "cp_cost": wind_of_blades.cp_cost,
-                            "candidates": candidates,
-                        }
-                        if len(candidates) == 1:
-                            payload["unit"] = candidates[0]
-                            payload["target_unit"] = candidates[0]
-                        self._queue_reaction(payload, use_timer=False)
-
-        daring_riders = self._aeldari_get_stratagem_by_norm_name("DARING RIDERS")
-        if daring_riders is None:
+        stratagem = self._aeldari_get_stratagem_by_norm_name("OVERFLIGHT")
+        if stratagem is None:
             return
-        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(daring_riders, "cp_cost", 0) or 0):
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
             return
-        if self._aeldari_norm_name(daring_riders.name) in getattr(self, "_used_stratagems_this_phase", set()):
+        if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
             return
-        candidates = self._aeldari_windrider_candidates(
-            require_on_battlefield=False,
-            require_in_reserves=True,
-            require_can_arrive_from_reserves=True,
-        )
-        if not candidates or self._aeldari_reaction_exists("phase_start", daring_riders.name):
+        candidates = self._aeldari_windrider_overflight_candidates()
+        if not candidates or self._aeldari_reaction_exists("phase_end", stratagem.name):
             return
+        phase_label = "Shooting phase" if phase_key == "SHOOTING_PHASE" else "Fight phase"
         payload: Dict[str, Any] = {
-            "event": "phase_start",
-            "phase": "Movement phase",
-            "phase_name": "Movement phase",
-            "stratagem": daring_riders.name,
-            "cp_cost": daring_riders.cp_cost,
+            "event": "phase_end",
+            "phase": phase_label,
+            "phase_name": phase_label,
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
             "candidates": candidates,
         }
         if len(candidates) == 1:
@@ -4253,6 +4424,20 @@ class AeldariStratagemMixin:
                             sr.pop(key, None)
                             changed = True
 
+            if bool(sr.get("aeldari_death_from_on_high_active")):
+                death_exp = str(sr.get("aeldari_death_from_on_high_expires_phase", "") or "").strip().upper()
+                if not death_exp or death_exp == phase_key:
+                    for key in (
+                        "aeldari_death_from_on_high_active",
+                        "aeldari_death_from_on_high_expires_phase",
+                        "aeldari_death_from_on_high_turn_owner",
+                        "aeldari_death_from_on_high_turn",
+                        "aeldari_death_from_on_high_source",
+                    ):
+                        if key in sr:
+                            sr.pop(key, None)
+                            changed = True
+
             if phase_key == "MOVEMENT_PHASE":
                 if (
                     "cloudstrike_temp_deep_strike" in sr
@@ -4363,6 +4548,11 @@ class AeldariStratagemMixin:
             into_breach = getattr(self, "_aeldari_corsair_into_the_breach_ready", None)
             if isinstance(into_breach, dict):
                 into_breach.clear()
+
+        if phase_key in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
+            overflight_tracker = getattr(self, "_aeldari_windrider_overflight_ready", None)
+            if isinstance(overflight_tracker, dict):
+                overflight_tracker.clear()
 
         if phase_key == "MOVEMENT_PHASE":
             fall_back_tracker = getattr(self, "_aeldari_corsair_fall_back_start_engagements", None)
@@ -4817,6 +5007,10 @@ class AeldariStratagemMixin:
             return self._use_aeldari_windrider_wind_of_blades(stratagem, **kwargs)
         if name_u == "DARING RIDERS":
             return self._use_aeldari_windrider_daring_riders(stratagem, **kwargs)
+        if name_u == "DEATH FROM ON HIGH":
+            return self._use_aeldari_windrider_death_from_on_high(stratagem, **kwargs)
+        if name_u == "OVERFLIGHT":
+            return self._use_aeldari_windrider_overflight(stratagem, **kwargs)
         return None
 
     def _use_aeldari_windrider_wind_of_blades(self, stratagem, **kwargs) -> bool:
@@ -4960,6 +5154,150 @@ class AeldariStratagemMixin:
         self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
         logger.info(
             "INFO: DARING RIDERS: %s can be set up from Reserves more than 6\" horizontally from enemies this phase.",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_aeldari_windrider_death_from_on_high(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: DEATH FROM ON HIGH: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: DEATH FROM ON HIGH: not your turn")
+            return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            if phase_name == "shooting phase":
+                candidates = self._aeldari_windrider_death_from_on_high_candidates(require_not_shot=True)
+            else:
+                candidates = self._aeldari_windrider_death_from_on_high_candidates(require_not_fought=True)
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: DEATH FROM ON HIGH: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error(
+                "ERROR: DEATH FROM ON HIGH: target must be an eligible ASURYANI MOUNTED or VYPER unit set up from Reserves this turn"
+            )
+            return False
+        if not self._aeldari_on_battlefield(target_root, require_targetable=True):
+            logger.error("ERROR: DEATH FROM ON HIGH: target must be on the battlefield and targetable")
+            return False
+        if not self._aeldari_windrider_is_asuryani_mounted_or_vyper(target_root):
+            logger.error("ERROR: DEATH FROM ON HIGH: target must be an ASURYANI MOUNTED or VYPER unit")
+            return False
+        if not bool(getattr(target_root, "arrived_from_reserves_this_turn", False)):
+            logger.error("ERROR: DEATH FROM ON HIGH: target must have been set up from Reserves this turn")
+            return False
+        round_state = getattr(target_root, "round_state", None)
+        if phase_name == "shooting phase" and bool(getattr(round_state, "shot_this_round", False)):
+            logger.error("ERROR: DEATH FROM ON HIGH: target has already been selected to shoot")
+            return False
+        if phase_name == "fight phase" and bool(getattr(round_state, "fought_this_phase", False)):
+            logger.error("ERROR: DEATH FROM ON HIGH: target has already been selected to fight")
+            return False
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root):
+            return False
+
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        owner = str(getattr(self.player, "id", "") or "")
+        turn = int(getattr(game, "turn", 0) or 0)
+        source = str(getattr(stratagem, "name", "DEATH FROM ON HIGH") or "DEATH FROM ON HIGH")
+        sr["aeldari_death_from_on_high_active"] = True
+        sr["aeldari_death_from_on_high_expires_phase"] = (
+            "SHOOTING_PHASE" if phase_name == "shooting phase" else "FIGHT_PHASE"
+        )
+        sr["aeldari_death_from_on_high_source"] = source
+        if owner:
+            sr["aeldari_death_from_on_high_turn_owner"] = owner
+        if turn:
+            sr["aeldari_death_from_on_high_turn"] = turn
+        target_root.special_rules = sr
+
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: DEATH FROM ON HIGH: %s can re-roll Wound rolls this phase.",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_aeldari_windrider_overflight(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: OVERFLIGHT: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: OVERFLIGHT: not your turn")
+            return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_windrider_overflight_candidates()
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: OVERFLIGHT: missing target unit")
+                return False
+        if candidates and target_root not in candidates:
+            logger.error("ERROR: OVERFLIGHT: target was not selected")
+            return False
+        if not self._aeldari_on_battlefield(target_root, require_targetable=True):
+            logger.error("ERROR: OVERFLIGHT: target must be on the battlefield and targetable")
+            return False
+        if not self._aeldari_windrider_is_asuryani_mounted(target_root):
+            logger.error("ERROR: OVERFLIGHT: target must be ASURYANI MOUNTED")
+            return False
+        trigger_ready = self._aeldari_windrider_overflight_trigger_ready(target_root)
+        if not trigger_ready and not candidates:
+            logger.error("ERROR: OVERFLIGHT: target did not destroy an enemy unit this phase")
+            return False
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root):
+            return False
+
+        queue_move = getattr(game, "_queue_reactive_move_movement_decision", None)
+        if not callable(queue_move):
+            logger.error("ERROR: OVERFLIGHT: reactive move queue unavailable")
+            return False
+        request = queue_move(
+            player=self.player,
+            unit=target_root,
+            max_distance=7,
+            kind="overflight",
+            movement_type="move",
+            source=str(getattr(stratagem, "name", "OVERFLIGHT") or "OVERFLIGHT"),
+            allow_skip=True,
+        )
+        if request is None:
+            logger.error("ERROR: OVERFLIGHT: failed to queue movement decision")
+            return False
+
+        tracker = getattr(self, "_aeldari_windrider_overflight_ready", None)
+        if isinstance(tracker, dict):
+            tracker.pop(self._aeldari_sort_key(target_root), None)
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: OVERFLIGHT: %s can make a Normal move up to 7\".",
             getattr(target_root, "name", "Unit"),
         )
         return True

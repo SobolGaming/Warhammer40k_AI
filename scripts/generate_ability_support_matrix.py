@@ -8763,6 +8763,8 @@ def _stratagem_support(
         "WRAITHBONE ARMOUR": "Opponent Shooting phase or the Fight phase reaction after enemy targets are selected: selected non-TITANIC WRAITH CONSTRUCT unit that was targeted reduces incoming Damage by 1 until end of phase.",
         "WIND OF BLADES": "Your Movement phase: selected ASURYANI MOUNTED or VYPER unit that has not been selected to move can shoot and declare a charge this turn after it Advances or Falls Back.",
         "DARING RIDERS": "Start of your Movement phase: selected ASURYANI MOUNTED or VYPER unit in Reserves that can arrive this turn can be set up more than 6\" horizontally from enemy models this phase, and if set up within 9\" of one or more enemy units it cannot declare a charge this turn.",
+        "DEATH FROM ON HIGH": "Your Shooting phase or the Fight phase: selected ASURYANI MOUNTED or VYPER unit that was set up from Reserves this turn and has not been selected this phase can re-roll Wound rolls until end of phase.",
+        "OVERFLIGHT": "End of your Shooting phase or the end of the Fight phase: selected ASURYANI MOUNTED unit that destroyed one or more enemy units this phase can make a Normal move of up to 7\".",
         "VENOMOUS WRATH": "Your Shooting phase: selected HARLEQUINS VEHICLE unit that has not been selected to shoot can make a Normal move up to 6\" after it shoots if it is not within Engagement Range, and it is not eligible to declare a charge until end of turn.",
         "FANGS OF THE BROOD": "Start of the Fight phase: selected TROUPE unit can gain all three Dance of Death abilities this phase instead of one.",
         "STRIKING STRIDE": "Your Charge phase: selected HARLEQUINS unit is eligible to declare a charge in a turn in which it Advanced until end of phase.",
