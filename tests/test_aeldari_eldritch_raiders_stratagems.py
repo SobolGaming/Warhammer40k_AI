@@ -357,7 +357,98 @@ class TestAeldariEldritchRaidersStratagems(unittest.TestCase):
             any("NO PREY TOO BIG" in str(item).upper() for item in list(wound_after.get("modifiers", []) or []))
         )
 
+    def test_raiders_spoils_queues_and_grants_objective_control_until_next_command_phase(self):
+        game, p1, p2, aeldari_army, enemy_army = _build_game()
+        anhrathe = _make_unit(
+            "Corsair Voidreavers",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["ANHRATHE", "INFANTRY"],
+            quantity=1,
+        )
+        enemy = _make_unit(
+            "Enemy Unit",
+            faction_name="Enemy",
+            faction_keywords=["ENEMY"],
+            keywords=["INFANTRY"],
+            quantity=1,
+        )
+        aeldari_army.add_unit(anhrathe)
+        enemy_army.add_unit(enemy)
+        _place_unit(game, anhrathe, 10.0, 10.0)
+        _place_unit(game, enemy, 11.5, 10.0)
+
+        baseline_oc = int(anhrathe.get_effective_model_characteristic(anhrathe.models[0], "objective_control"))
+
+        _set_phase(game, p1, "COMMAND_PHASE", 0)
+        pending = _pending_by_name(p1.stratagems, "RAIDERS")
+        self.assertIsNotNone(pending)
+
+        ok = p1.stratagems.use(str(pending.get("stratagem", "")), unit=anhrathe, dequeue=True)
+        self.assertTrue(ok)
+        self.assertEqual(int(p1.command_points or 0), 9)
+        boosted_oc = int(anhrathe.get_effective_model_characteristic(anhrathe.models[0], "objective_control"))
+        self.assertEqual(boosted_oc, baseline_oc + 1)
+
+        _set_phase(game, p2, "COMMAND_PHASE", 1)
+        after_oc = int(anhrathe.get_effective_model_characteristic(anhrathe.models[0], "objective_control"))
+        self.assertEqual(after_oc, baseline_oc)
+
+    def test_impeding_fire_queues_applies_non_cumulative_negative_charge_modifier_and_cleans_up(self):
+        game, p1, p2, aeldari_army, enemy_army = _build_game()
+        source_unit = _make_unit(
+            "Rangers",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["RANGERS", "INFANTRY"],
+            quantity=2,
+        )
+        enemy = _make_unit(
+            "Enemy Chargers",
+            faction_name="Enemy",
+            faction_keywords=["ENEMY"],
+            keywords=["INFANTRY"],
+            quantity=2,
+        )
+        aeldari_army.add_unit(source_unit)
+        enemy_army.add_unit(enemy)
+        _place_unit(game, source_unit, 10.0, 10.0)
+        _place_unit(game, enemy, 20.0, 10.0)
+
+        _set_phase(game, p2, "CHARGE_PHASE", 1)
+        pending = _pending_by_name(p1.stratagems, "IMPEDING FIRE")
+        self.assertIsNotNone(pending)
+
+        ok = p1.stratagems.use(
+            str(pending.get("stratagem", "")),
+            unit=source_unit,
+            enemy_unit=enemy,
+            dequeue=True,
+        )
+        self.assertTrue(ok)
+        self.assertEqual(int(p1.command_points or 0), 9)
+
+        enemy_sr = dict(getattr(enemy, "special_rules", {}) or {})
+        enemy_sr.setdefault("charge_roll_modifiers", []).append({"value": -1, "source": "Other penalty"})
+        enemy.special_rules = enemy_sr
+
+        modifiers = list(game.get_charge_roll_modifiers(enemy, target_unit=source_unit) or [])
+        negatives = [int(value) for value, _source in modifiers if int(value) < 0]
+        self.assertEqual(sum(negatives), -2)
+
+        game.event_system.publish("phase_end", player=p2, phase=SimpleNamespace(name="CHARGE_PHASE"))
+        mods_after = list((dict(getattr(enemy, "special_rules", {}) or {})).get("charge_roll_modifiers", []) or [])
+        self.assertFalse(
+            any(str(item.get("source_key", "") or "") == "aeldari_impeding_fire" for item in mods_after if isinstance(item, dict))
+        )
+
     def test_eldritch_raiders_stratagem_descriptors_registered(self):
+        raiders = get_stratagem_tool_descriptor(stratagem_id="000010700002")
+        self.assertIsNotNone(raiders)
+        self.assertEqual(str(raiders.name), "Raiders' Spoils")
+        self.assertEqual(int(raiders.cp_cost), 1)
+        self.assertEqual(str(raiders.effect), "objective_control_bonus")
+
         ruthless = get_stratagem_tool_descriptor(stratagem_id="000010700003")
         self.assertIsNotNone(ruthless)
         self.assertEqual(str(ruthless.name), "Ruthless Killers")
@@ -376,6 +467,12 @@ class TestAeldariEldritchRaidersStratagems(unittest.TestCase):
         self.assertEqual(int(no_prey.cp_cost), 1)
         self.assertEqual(str(no_prey.effect), "conditional_wound_roll_bonus")
 
+        impeding = get_stratagem_tool_descriptor(stratagem_id="000010700006")
+        self.assertIsNotNone(impeding)
+        self.assertEqual(str(impeding.name), "Impeding Fire")
+        self.assertEqual(int(impeding.cp_cost), 1)
+        self.assertEqual(str(impeding.effect), "enemy_charge_roll_modifier_non_cumulative_negative")
+
         withdraw = get_stratagem_tool_descriptor(stratagem_id="000010700007")
         self.assertIsNotNone(withdraw)
         self.assertEqual(str(withdraw.name), "Withdraw and Reinforce")
@@ -385,6 +482,10 @@ class TestAeldariEldritchRaidersStratagems(unittest.TestCase):
         by_name = get_stratagem_tool_descriptor(name="WITHDRAW AND REINFORCE")
         self.assertIsNotNone(by_name)
         self.assertEqual(str(by_name.stratagem_id), "000010700007")
+
+        by_name_raiders = get_stratagem_tool_descriptor(name="RAIDERS' SPOILS")
+        self.assertIsNotNone(by_name_raiders)
+        self.assertEqual(str(by_name_raiders.stratagem_id), "000010700002")
 
 
 if __name__ == "__main__":

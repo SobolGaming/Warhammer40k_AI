@@ -1677,6 +1677,16 @@ _DEVOTED_OF_YNNEAD_STRATAGEM_BY_NAME = {
 }
 
 _ELDRITCH_RAIDERS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010700002": StratagemToolDescriptor(
+        stratagem_id="000010700002",
+        name="Raiders' Spoils",
+        timing="command_phase",
+        target="anhrathe_unit_within_engagement_range",
+        duration="until_start_of_next_command_phase",
+        effect="objective_control_bonus",
+        cp_cost=1,
+        effect_params={"objective_control_bonus": 1},
+    ),
     "000010700003": StratagemToolDescriptor(
         stratagem_id="000010700003",
         name="Ruthless Killers",
@@ -1710,6 +1720,16 @@ _ELDRITCH_RAIDERS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "condition": "attacker_strength_less_than_target_highest_toughness",
             "attack_type": "ranged",
         },
+    ),
+    "000010700006": StratagemToolDescriptor(
+        stratagem_id="000010700006",
+        name="Impeding Fire",
+        timing="start_of_opponent_charge_phase",
+        target="rangers_shroud_runners_or_starfangs_unit_then_visible_non_titanic_enemy_within_36",
+        duration="until_end_of_phase",
+        effect="enemy_charge_roll_modifier_non_cumulative_negative",
+        cp_cost=1,
+        effect_params={"charge_roll_modifier": -2, "range_inches": 36, "exclude_keywords_any": ["TITANIC"]},
     ),
     "000010700007": StratagemToolDescriptor(
         stratagem_id="000010700007",

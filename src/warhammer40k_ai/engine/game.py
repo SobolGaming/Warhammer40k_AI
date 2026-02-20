@@ -7873,6 +7873,30 @@ class Game(
         if callable(filt):
             modifiers = filt(modifiers, kind="charge")
 
+        # IMPEDING FIRE: not cumulative with other negative charge modifiers.
+        has_impeding_fire = False
+        for _val, source in list(modifiers or []):
+            norm_source = str(source or "").replace("\u2019", "'").strip().upper()
+            if "IMPEDING FIRE" in norm_source:
+                has_impeding_fire = True
+                break
+        if has_impeding_fire:
+            strongest_negative = None
+            keep_positive = []
+            for val, source in list(modifiers or []):
+                try:
+                    ival = int(val or 0)
+                except Exception:
+                    ival = 0
+                if ival < 0:
+                    if strongest_negative is None or int(ival) < int(strongest_negative[0]):
+                        strongest_negative = (int(ival), source)
+                else:
+                    keep_positive.append((int(ival), source))
+            modifiers = list(keep_positive)
+            if strongest_negative is not None:
+                modifiers.append((int(strongest_negative[0]), strongest_negative[1]))
+
         return modifiers
 
     def _get_charge_roll_spec(

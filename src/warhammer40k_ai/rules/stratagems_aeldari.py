@@ -1002,6 +1002,105 @@ class AeldariStratagemMixin:
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload, use_timer=False)
 
+    def _cleanup_aeldari_eldritch_phase_start_effects(self, *, phase) -> None:
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "COMMAND_PHASE":
+            return
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except (AttributeError, TypeError, ValueError):
+                members = [root]
+            if not members:
+                members = [root]
+            for member in members:
+                sr = getattr(member, "special_rules", None)
+                if not isinstance(sr, dict) or not bool(sr.get("aeldari_raiders_spoils_active")):
+                    continue
+                remove_mods = getattr(member, "remove_characteristic_modifiers_by_source", None)
+                if callable(remove_mods):
+                    remove_mods("stratagem:aeldari_raiders_spoils")
+                for key in (
+                    "aeldari_raiders_spoils_active",
+                    "aeldari_raiders_spoils_owner",
+                    "aeldari_raiders_spoils_turn",
+                    "aeldari_raiders_spoils_source",
+                    "aeldari_raiders_spoils_expires_trigger",
+                ):
+                    sr.pop(key, None)
+                member.special_rules = sr
+
+    def _queue_aeldari_eldritch_phase_start_reactions(self, *, player, phase) -> None:
+        game = getattr(self, "game", None)
+        if game is None or not self._is_eldritch_raiders_detachment():
+            return
+        self._cleanup_aeldari_eldritch_phase_start_effects(phase=phase)
+
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        active_player = getattr(game, "get_current_player", lambda: None)()
+
+        if phase_key == "COMMAND_PHASE":
+            raiders = self._aeldari_get_stratagem_by_norm_name("RAIDERS' SPOILS")
+            if raiders is not None:
+                if int(getattr(self.player, "command_points", 0) or 0) >= int(getattr(raiders, "cp_cost", 0) or 0):
+                    if self._aeldari_norm_name(raiders.name) not in getattr(self, "_used_stratagems_this_phase", set()):
+                        candidates = self._aeldari_eldritch_raiders_spoils_candidates()
+                        if candidates and not self._aeldari_reaction_exists("phase_start", raiders.name):
+                            payload: Dict[str, Any] = {
+                                "event": "phase_start",
+                                "phase": "Command phase",
+                                "phase_name": "Command phase",
+                                "stratagem": raiders.name,
+                                "cp_cost": raiders.cp_cost,
+                                "candidates": candidates,
+                            }
+                            if len(candidates) == 1:
+                                payload["unit"] = candidates[0]
+                                payload["target_unit"] = candidates[0]
+                            self._queue_reaction(payload, use_timer=False)
+
+        if phase_key == "CHARGE_PHASE" and active_player is not self.player:
+            impeding = self._aeldari_get_stratagem_by_norm_name("IMPEDING FIRE")
+            if impeding is None:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(impeding, "cp_cost", 0) or 0):
+                return
+            if self._aeldari_norm_name(impeding.name) in getattr(self, "_used_stratagems_this_phase", set()):
+                return
+            candidates = self._aeldari_eldritch_impeding_fire_source_candidates()
+            if not candidates or self._aeldari_reaction_exists("phase_start", impeding.name):
+                return
+            payload: Dict[str, Any] = {
+                "event": "phase_start",
+                "phase": "Charge phase",
+                "phase_name": "Charge phase",
+                "stratagem": impeding.name,
+                "cp_cost": impeding.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+                enemy_candidates = self._aeldari_eldritch_impeding_fire_enemy_candidates(candidates[0])
+                if enemy_candidates:
+                    payload["enemy_candidates"] = enemy_candidates
+                    if len(enemy_candidates) == 1:
+                        payload["enemy_unit"] = enemy_candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+
     def _queue_aeldari_armoured_move_end_reactions(self, *, unit, action: str) -> None:
         game = getattr(self, "game", None)
         if game is None or unit is None or not self._is_armoured_warhost_detachment():
@@ -1450,7 +1549,8 @@ class AeldariStratagemMixin:
                         if not isinstance(item, dict):
                             keep.append(item)
                             continue
-                        if str(item.get("source_key", "") or "") != "aeldari_anti_grav_repulsion":
+                        source_key = str(item.get("source_key", "") or "")
+                        if source_key not in {"aeldari_anti_grav_repulsion", "aeldari_impeding_fire"}:
                             keep.append(item)
                             continue
                         exp = str(item.get("expires_phase", "") or "").strip().upper()
@@ -1823,6 +1923,10 @@ class AeldariStratagemMixin:
             return self._use_aeldari_eldritch_ruthless_killers(stratagem, **kwargs)
         if name_u == "NO PREY TOO BIG":
             return self._use_aeldari_eldritch_no_prey_too_big(stratagem, **kwargs)
+        if name_u in {"RAIDERS' SPOILS", "RAIDERS\u2019 SPOILS"}:
+            return self._use_aeldari_eldritch_raiders_spoils(stratagem, **kwargs)
+        if name_u == "IMPEDING FIRE":
+            return self._use_aeldari_eldritch_impeding_fire(stratagem, **kwargs)
         return None
 
     def _use_aeldari_eldritch_yriels_example(self, stratagem, **kwargs) -> bool:
@@ -2065,6 +2169,139 @@ class AeldariStratagemMixin:
         logger.info(
             "INFO: NO PREY TOO BIG: %s gains +1 to wound when its attack Strength is lower than the target unit's highest Toughness this phase.",
             getattr(target_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_aeldari_eldritch_raiders_spoils(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "command phase":
+            logger.error("ERROR: RAIDERS' SPOILS: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_eldritch_raiders_spoils_candidates()
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: RAIDERS' SPOILS: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: RAIDERS' SPOILS: target must be an ANHRATHE unit within Engagement Range")
+            return False
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root):
+            return False
+
+        from ..utility.modifiers import Modifier, ModifierOp
+
+        source_key = "stratagem:aeldari_raiders_spoils"
+        try:
+            members = list(target_root.get_attached_unit_members() or [])
+        except (AttributeError, TypeError, ValueError):
+            members = [target_root]
+        if not members:
+            members = [target_root]
+        for member in members:
+            if member is None:
+                continue
+            add_mod = getattr(member, "add_characteristic_modifier", None)
+            if callable(add_mod):
+                add_mod(
+                    "objective_control",
+                    Modifier(ModifierOp.ADD, 1, source=source_key),
+                )
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["aeldari_raiders_spoils_active"] = True
+            sr["aeldari_raiders_spoils_owner"] = str(getattr(self.player, "id", "") or "")
+            sr["aeldari_raiders_spoils_turn"] = int(getattr(game, "turn", 0) or 0)
+            sr["aeldari_raiders_spoils_source"] = str(getattr(stratagem, "name", "RAIDERS' SPOILS") or "RAIDERS' SPOILS")
+            sr["aeldari_raiders_spoils_expires_trigger"] = "NEXT_COMMAND_PHASE_START"
+            member.special_rules = sr
+
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: RAIDERS' SPOILS: %s gains +1 Objective Control until the start of the next Command phase.",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_aeldari_eldritch_impeding_fire(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "charge phase":
+            logger.error("ERROR: IMPEDING FIRE: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            logger.error("ERROR: IMPEDING FIRE: not opponent's turn")
+            return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        source_candidates = list(context.get("candidates") or [])
+        if not source_candidates:
+            source_candidates = self._aeldari_eldritch_impeding_fire_source_candidates()
+        if target_root is None:
+            if len(source_candidates) == 1:
+                target_root = source_candidates[0]
+            else:
+                logger.error("ERROR: IMPEDING FIRE: missing source unit")
+                return False
+        if target_root not in source_candidates:
+            logger.error("ERROR: IMPEDING FIRE: source unit must be Rangers, Shroud Runners, or Starfangs")
+            return False
+
+        enemy_unit = context.get("enemy_unit") or context.get("target_enemy_unit") or context.get("attacking_unit")
+        enemy_root = self._aeldari_root(enemy_unit) if enemy_unit is not None else None
+        enemy_candidates = list(context.get("enemy_candidates") or [])
+        if not enemy_candidates:
+            enemy_candidates = self._aeldari_eldritch_impeding_fire_enemy_candidates(target_root)
+        if enemy_root is None:
+            if len(enemy_candidates) == 1:
+                enemy_root = enemy_candidates[0]
+            else:
+                logger.error("ERROR: IMPEDING FIRE: missing enemy target")
+                return False
+        if enemy_candidates and enemy_root not in enemy_candidates:
+            logger.error("ERROR: IMPEDING FIRE: selected enemy is not visible and within 36\" of source unit")
+            return False
+        if self._aeldari_has_keyword(enemy_root, "TITANIC"):
+            logger.error("ERROR: IMPEDING FIRE: TITANIC units are ineligible")
+            return False
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root, enemy_unit=enemy_root):
+            return False
+
+        sr = getattr(enemy_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        mods = list(sr.get("charge_roll_modifiers", []) or [])
+        mods.append(
+            {
+                "value": -2,
+                "source": str(getattr(stratagem, "name", "IMPEDING FIRE") or "IMPEDING FIRE"),
+                "source_key": "aeldari_impeding_fire",
+                "expires_phase": "CHARGE_PHASE",
+            }
+        )
+        sr["charge_roll_modifiers"] = mods
+        enemy_root.special_rules = sr
+
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: IMPEDING FIRE: %s suffers -2 to Charge rolls this phase (non-cumulative with other negative modifiers).",
+            getattr(enemy_root, "name", "Enemy"),
         )
         return True
 
@@ -2575,6 +2812,23 @@ class AeldariStratagemMixin:
             name = ""
         return name in {"rangers", "shroud runners"}
 
+    def _aeldari_is_rangers_shroud_or_starfangs(self, unit: Any) -> bool:
+        root = self._aeldari_root(unit)
+        if root is None:
+            return False
+        if (
+            self._aeldari_has_keyword(root, "RANGERS")
+            or self._aeldari_has_keyword(root, "SHROUD RUNNERS")
+            or self._aeldari_has_keyword(root, "STARFANG")
+            or self._aeldari_has_keyword(root, "STARFANGS")
+        ):
+            return True
+        try:
+            name = str(getattr(root, "name", "") or "").strip().lower()
+        except (AttributeError, TypeError, ValueError):
+            name = ""
+        return name in {"rangers", "shroud runners", "starfang", "starfangs"}
+
     def _aeldari_is_corsair_voidscarred(self, unit: Any) -> bool:
         root = self._aeldari_root(unit)
         if root is None:
@@ -2710,6 +2964,112 @@ class AeldariStratagemMixin:
             if not (self._aeldari_is_anhrathe(root) or self._aeldari_is_rangers_or_shroud_runners(root)):
                 continue
             out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_eldritch_raiders_spoils_candidates(self) -> List[Any]:
+        if not self._is_eldritch_raiders_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._aeldari_is_anhrathe(root):
+                continue
+            if not self._aeldari_in_engagement_range(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_eldritch_impeding_fire_source_candidates(self) -> List[Any]:
+        if not self._is_eldritch_raiders_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._aeldari_is_rangers_shroud_or_starfangs(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_eldritch_impeding_fire_enemy_candidates(self, source_unit: Any) -> List[Any]:
+        source_root = self._aeldari_root(source_unit)
+        if source_root is None:
+            return []
+        game = getattr(self, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        if game_map is None:
+            return []
+        get_enemy = getattr(game_map, "get_enemy_units", None)
+        if not callable(get_enemy):
+            return []
+
+        from ..utility.aura_utils import unit_within_range_of_unit
+
+        can_see_fn = getattr(game, "_model_can_see_unit", None)
+        source_models = list(getattr(source_root, "get_attached_unit_models", lambda: [])() or [])
+        out: List[Any] = []
+        seen: set[str] = set()
+        for enemy in list(get_enemy(source_root) or []):
+            enemy_root = self._aeldari_root(enemy)
+            if enemy_root is None:
+                continue
+            uid = self._aeldari_sort_key(enemy_root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(enemy_root, require_targetable=False):
+                continue
+            if self._aeldari_in_reserves(enemy_root):
+                continue
+            if self._aeldari_has_keyword(enemy_root, "TITANIC"):
+                continue
+            if not unit_within_range_of_unit(source_root, enemy_root, 36.0, use_attached_aggregate=True):
+                continue
+            if callable(can_see_fn):
+                visible = False
+                for model in source_models:
+                    try:
+                        alive = getattr(model, "is_alive", True)
+                        if callable(alive):
+                            alive = alive()
+                        if not bool(alive):
+                            continue
+                        if bool(can_see_fn(model, enemy_root, game_map=game_map)):
+                            visible = True
+                            break
+                    except Exception:
+                        continue
+                if not visible:
+                    continue
+            out.append(enemy_root)
         return sorted(out, key=self._aeldari_sort_key)
 
     def _aeldari_corsair_outcast_ambush_candidates(self, *, require_not_shot: bool = True) -> List[Any]:

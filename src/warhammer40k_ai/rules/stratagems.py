@@ -155,10 +155,13 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "CLOAK AND SHADOW",
     "OUTCAST AMBUSH",
     "INTO THE BREACH",
+    "IMPEDING FIRE",
     "LETHAL RUSE",
     "NO PREY TOO BIG",
     "PALL OF DREAD",
     "PARTING THE VEIL",
+    "RAIDERS' SPOILS",
+    "RAIDERS\u2019 SPOILS",
     "RUTHLESS KILLERS",
     "WITHDRAW AND REINFORCE",
     "YRIEL'S EXAMPLE",
@@ -1680,10 +1683,12 @@ class StratagemManager(
             "SWIFT DEPLOYMENT",
             "SYCOPHANTIC SURGE",
             "CLOAK AND SHADOW",
+            "IMPEDING FIRE",
             "LETHAL RUSE",
             "NO PREY TOO BIG",
             "OUTCAST AMBUSH",
             "PIRATES' DUE",
+            "RAIDERS' SPOILS",
             "DOOM INESCAPABLE",
             "PARTING THE VEIL",
             "PRETERNATURAL PRECISION",
@@ -3289,6 +3294,46 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires your Shooting phase and an eligible ANHRATHE, Rangers, or Shroud Runners unit that has not been selected to shoot"
             return result
+        if name_u in {"RAIDERS' SPOILS", "RAIDERS\u2019 SPOILS"}:
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._aeldari_eldritch_raiders_spoils_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires Command phase and an ANHRATHE unit from your army within Engagement Range"
+            return result
+        if name_u == "IMPEDING FIRE":
+            source_candidates = list(context.get("candidates") or [])
+            if not source_candidates:
+                source_candidates = self._aeldari_eldritch_impeding_fire_source_candidates()
+            if not source_candidates:
+                result["reason"] = "Requires start of opponent Charge phase and an eligible Rangers, Shroud Runners, or Starfangs source unit"
+                return result
+            source_unit = context.get("unit") or context.get("target_unit")
+            source_root = self._aeldari_root(source_unit) if source_unit is not None else None
+            if source_root is None:
+                for source in source_candidates:
+                    enemy_candidates = self._aeldari_eldritch_impeding_fire_enemy_candidates(source)
+                    if enemy_candidates:
+                        result["available"] = True
+                        result["reason"] = None
+                        return result
+                result["reason"] = "Requires at least one visible non-TITANIC enemy unit within 36\" of an eligible source unit"
+                return result
+            if source_root not in source_candidates:
+                result["reason"] = "Source must be Rangers, Shroud Runners, or Starfangs"
+                return result
+            enemy_candidates = list(context.get("enemy_candidates") or [])
+            if not enemy_candidates:
+                enemy_candidates = self._aeldari_eldritch_impeding_fire_enemy_candidates(source_root)
+            if enemy_candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires a visible non-TITANIC enemy unit within 36\" of the selected source unit"
+            return result
         if stratagem.can_use(self.player, self.game, **context):
             result["available"] = True
             result["reason"] = None
@@ -3362,10 +3407,13 @@ class StratagemManager(
             "CLOAK AND SHADOW": "Target: AELDARI INFANTRY unit selected by an enemy shooter and within range of an objective marker you control",
             "OUTCAST AMBUSH": "Target: your Rangers or Shroud Runners unit that has not been selected to shoot this phase",
             "INTO THE BREACH": "Target: ANHRATHE unit that just destroyed one or more enemy units with its shooting attacks",
+            "IMPEDING FIRE": "Target: your Rangers, Shroud Runners, or Starfangs unit; then select one visible non-TITANIC enemy unit within 36\" of it",
             "LETHAL RUSE": "Target: your AELDARI unit that just Fell Back this Movement phase (ANHRATHE also selects one enemy unit it was in Engagement Range of at phase start)",
             "NO PREY TOO BIG": "Target: your ANHRATHE, Rangers, or Shroud Runners unit that has not been selected to shoot this phase",
             "PIRATES' DUE": "Target: your AELDARI unit that has not been selected to fight this phase",
             "PIRATES’ DUE": "Target: your AELDARI unit that has not been selected to fight this phase",
+            "RAIDERS' SPOILS": "Target: your ANHRATHE unit that is within Engagement Range of one or more enemy units",
+            "RAIDERS\u2019 SPOILS": "Target: your ANHRATHE unit that is within Engagement Range of one or more enemy units",
             "RUTHLESS KILLERS": "Target: your CORSAIR VOIDSCARRED unit that has not been selected to shoot/fight this phase",
             "WITHDRAW AND REINFORCE": "Target: your ANHRATHE unit that is not in Engagement Range at the end of the opponent's Fight phase",
             "YRIEL'S EXAMPLE": "Target: your AELDARI INFANTRY unit (excluding WRAITH CONSTRUCT) selected as a target of enemy fight attacks",
@@ -4014,6 +4062,10 @@ class StratagemManager(
             raise
         try:
             self._queue_aeldari_devoted_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_aeldari_eldritch_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
