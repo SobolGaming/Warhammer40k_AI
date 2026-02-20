@@ -2092,6 +2092,69 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
             if not bool(can_see_fn(model, target_root, game_map=getattr(game, "map", None))):
                 return ("Imperial Knights target must be visible to the bearer.",)
         return ()
+    if ability in (
+        "aeldari_light_of_clarity_target",
+        "aeldari_stave_of_kurnous_target",
+        "aeldari_rune_of_mists_target",
+    ):
+        if is_skip_choice(request, result):
+            return ("This Spirit Conclave enhancement selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Spirit Conclave source unit was not found.",)
+        source_army = getattr(source_unit, "get_parent_army", lambda: None)()
+        mgr = getattr(source_army, "aeldari_detachments", None) if source_army is not None else None
+        if mgr is None or not bool(getattr(mgr, "is_spirit_conclave", lambda: False)()):
+            return ("This selection requires an Aeldari Spirit Conclave army.",)
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict):
+            source_sr = {}
+        if ability == "aeldari_light_of_clarity_target" and not bool(source_sr.get("enhancement_light_of_clarity")):
+            return ("Source unit does not have Light of Clarity.",)
+        if ability == "aeldari_stave_of_kurnous_target" and not bool(source_sr.get("enhancement_stave_of_kurnous")):
+            return ("Source unit does not have Stave of Kurnous.",)
+        if ability == "aeldari_rune_of_mists_target" and not bool(source_sr.get("enhancement_rune_of_mists")):
+            return ("Source unit does not have Rune of Mists.",)
+
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"))
+        if target_unit is None:
+            return ("Spirit Conclave target unit was not found.",)
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        if source_root is None or target_root is None:
+            return ("Spirit Conclave source/target root was not found.",)
+        if source_root.get_parent_army() is not target_root.get_parent_army():
+            return ("Spirit Conclave target must be a friendly unit.",)
+        has_wraith_construct = False
+        try:
+            has_wraith_construct = bool(target_root.has_any_keyword("WRAITH CONSTRUCT") or target_root.has_keyword("WRAITH CONSTRUCT"))
+        except Exception:
+            has_wraith_construct = False
+        if not has_wraith_construct:
+            return ("Spirit Conclave target must have the WRAITH CONSTRUCT keyword.",)
+        if ability == "aeldari_stave_of_kurnous_target":
+            exclude_titanic = bool(ctx.get("exclude_titanic", True))
+            if exclude_titanic:
+                is_titanic = False
+                try:
+                    is_titanic = bool(target_root.has_any_keyword("TITANIC") or target_root.has_keyword("TITANIC"))
+                except Exception:
+                    is_titanic = False
+                if is_titanic:
+                    return ("Stave of Kurnous cannot target TITANIC units.",)
+        model = resolve_model(game, ctx.get("model_id"))
+        if model is None:
+            return ("Spirit Conclave bearer model was not found.",)
+        try:
+            range_inches = float(ctx.get("range", 12) or 12)
+        except (TypeError, ValueError):
+            range_inches = 12.0
+        in_range_fn = getattr(game, "_unit_within_range_of_model", None)
+        if callable(in_range_fn):
+            if not bool(in_range_fn(model, target_root, range_value=float(range_inches))):
+                return ("Spirit Conclave target is out of range.",)
+        return ()
     if ability == "aeldari_lucid_eye_fate_die":
         source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
         if source_unit is None:
@@ -2702,6 +2765,69 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 f"Strike Swiftly: {source_name} selected none.",
             )
         return selected_roots
+    if ability in (
+        "aeldari_light_of_clarity_target",
+        "aeldari_stave_of_kurnous_target",
+        "aeldari_rune_of_mists_target",
+    ):
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"))
+        if source_unit is None or target_unit is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            try:
+                player = getattr(source_unit.get_parent_army(), "player", None)
+            except Exception:
+                player = None
+        ability_name = str(ctx.get("ability_name", "") or "Spirit Conclave enhancement").strip() or "Spirit Conclave enhancement"
+        if ability == "aeldari_light_of_clarity_target":
+            try:
+                infantry_bonus = int(ctx.get("infantry_bonus", 1) or 1)
+            except Exception:
+                infantry_bonus = 1
+            try:
+                monster_bonus = int(ctx.get("monster_bonus", 3) or 3)
+            except Exception:
+                monster_bonus = 3
+            apply_fn = getattr(game, "_apply_aeldari_light_of_clarity_effect", None)
+            if callable(apply_fn):
+                return apply_fn(
+                    source_unit=source_unit,
+                    target_unit=target_unit,
+                    player=player,
+                    ability_name=ability_name,
+                    infantry_bonus=int(infantry_bonus),
+                    monster_bonus=int(monster_bonus),
+                )
+            return None
+        if ability == "aeldari_stave_of_kurnous_target":
+            apply_fn = getattr(game, "_apply_aeldari_stave_of_kurnous_effect", None)
+            if callable(apply_fn):
+                return apply_fn(
+                    source_unit=source_unit,
+                    target_unit=target_unit,
+                    player=player,
+                    ability_name=ability_name,
+                )
+            return None
+        if ability == "aeldari_rune_of_mists_target":
+            try:
+                threshold = int(ctx.get("min_attacker_distance_for_cover", 18) or 18)
+            except Exception:
+                threshold = 18
+            apply_fn = getattr(game, "_apply_aeldari_rune_of_mists_effect", None)
+            if callable(apply_fn):
+                return apply_fn(
+                    source_unit=source_unit,
+                    target_unit=target_unit,
+                    player=player,
+                    ability_name=ability_name,
+                    min_attacker_distance_for_cover=int(threshold),
+                )
+            return None
+        return None
     if ability == "aeldari_lucid_eye_fate_die":
         payload = _option_payload(request, result)
         source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))

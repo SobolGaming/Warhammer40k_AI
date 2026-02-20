@@ -2159,6 +2159,25 @@ class KeywordsDetachmentsMixin:
             return root._ability_cache[cache_key]
 
         rule = None
+        source_unit, source_sr = root._higher_duty_source_unit()
+        if source_unit is not None and isinstance(source_sr, dict):
+            try:
+                trigger_range = int(source_sr.get("enhancement_higher_duty_trigger_range", 9) or 9)
+            except Exception:
+                trigger_range = 9
+            try:
+                normal_move = int(source_sr.get("enhancement_higher_duty_normal_move_distance", 6) or 6)
+            except Exception:
+                normal_move = 6
+            source_name = (
+                str(source_sr.get("enhancement_higher_duty_source", "") or "Higher Duty").strip() or "Higher Duty"
+            )
+            rule = {
+                "range": int(max(1, trigger_range)),
+                "source": source_name,
+                "max_distance": int(max(1, normal_move)),
+            }
+
         seen = set()
         try:
             members = list(root.get_attached_unit_members() or [])
@@ -2210,6 +2229,52 @@ class KeywordsDetachmentsMixin:
             root._ability_cache = {}
         root._ability_cache[cache_key] = rule
         return rule
+
+    def _higher_duty_source_unit(self):
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return None, None
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_higher_duty")):
+                continue
+            bearer = None
+            bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "")
+            if bearer_id:
+                for model in list(getattr(member, "models", []) or []):
+                    model_id = str(get_entity_id(model) or getattr(model, "id", getattr(model, "_id", "")) or "")
+                    if model_id == bearer_id:
+                        bearer = model
+                        break
+            if bearer is None:
+                get_bearer = getattr(member, "_get_enhancement_bearer_model", None)
+                if callable(get_bearer):
+                    try:
+                        bearer = get_bearer()
+                    except Exception:
+                        bearer = None
+            if bearer is None:
+                continue
+            try:
+                alive_attr = getattr(bearer, "is_alive", True)
+                bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            except Exception:
+                bearer_alive = False
+            if not bearer_alive:
+                continue
+            return member, sr
+        return None, None
 
     def get_setup_reactive_shoot_or_charge_rule(self) -> Optional[dict]:
         """

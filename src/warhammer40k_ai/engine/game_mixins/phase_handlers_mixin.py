@@ -5923,6 +5923,233 @@ class GamePhaseHandlersMixin:
             own_player_id = str(getattr(player, "id", "") or "")
             opponent_player_id = str(getattr(opponent, "id", "") or "")
 
+            def _unit_has_keyword(root, keyword: str) -> bool:
+                if root is None or not keyword:
+                    return False
+                try:
+                    if root.has_any_keyword(keyword):
+                        return True
+                except Exception:
+                    pass
+                try:
+                    if root.has_keyword(keyword):
+                        return True
+                except Exception:
+                    pass
+                try:
+                    keys = list(getattr(root, "keywords", []) or []) + list(getattr(root, "faction_keywords", []) or [])
+                except Exception:
+                    keys = []
+                up = str(keyword or "").strip().upper()
+                return any(str(v or "").strip().upper() == up for v in keys)
+
+            # Spirit Conclave target effects expire at the start of the owning player's next Command phase.
+            if own_player_id:
+                light_prefix = f"enhancement:light_of_clarity:{own_player_id}:"
+                for unit in list(getattr(army, "units", []) or []):
+                    if unit is None:
+                        continue
+                    try:
+                        if hasattr(unit, "remove_characteristic_modifiers_by_source"):
+                            unit.remove_characteristic_modifiers_by_source(light_prefix)
+                    except Exception:
+                        continue
+                for root in _iter_unique_roots(getattr(army, "units", []) or []):
+                    sr = getattr(root, "special_rules", None)
+                    if not isinstance(sr, dict):
+                        continue
+                    if str(sr.get("enhancement_light_of_clarity_owner", "") or "") == own_player_id:
+                        for key in (
+                            "enhancement_light_of_clarity_active",
+                            "enhancement_light_of_clarity_owner",
+                            "enhancement_light_of_clarity_source",
+                            "enhancement_light_of_clarity_source_unit_id",
+                            "enhancement_light_of_clarity_infantry_oc_bonus",
+                            "enhancement_light_of_clarity_monster_oc_bonus",
+                        ):
+                            sr.pop(key, None)
+                    if str(sr.get("enhancement_stave_of_kurnous_owner", "") or "") == own_player_id:
+                        for key in (
+                            "enhancement_stave_of_kurnous_active",
+                            "enhancement_stave_of_kurnous_owner",
+                            "enhancement_stave_of_kurnous_source",
+                            "enhancement_stave_of_kurnous_source_unit_id",
+                        ):
+                            sr.pop(key, None)
+                    if str(sr.get("enhancement_rune_of_mists_owner", "") or "") == own_player_id:
+                        for key in (
+                            "enhancement_rune_of_mists_active",
+                            "enhancement_rune_of_mists_owner",
+                            "enhancement_rune_of_mists_source",
+                            "enhancement_rune_of_mists_source_unit_id",
+                            "enhancement_rune_of_mists_min_attacker_distance_for_cover",
+                        ):
+                            sr.pop(key, None)
+                    root.special_rules = sr
+
+            for unit in list(getattr(army, "units", []) or []):
+                sr = getattr(unit, "special_rules", None)
+                if not (isinstance(sr, dict) and sr.get("enhancement_light_of_clarity")):
+                    continue
+                if not _unit_active(unit):
+                    continue
+                bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+                bearer = bearer() if callable(bearer) else None
+                if bearer is None or not getattr(bearer, "is_alive", True):
+                    continue
+                try:
+                    range_inches = int(sr.get("enhancement_light_of_clarity_range", 12) or 12)
+                except (TypeError, ValueError):
+                    range_inches = 12
+                try:
+                    infantry_bonus = int(sr.get("enhancement_light_of_clarity_infantry_oc_bonus", 1) or 1)
+                except (TypeError, ValueError):
+                    infantry_bonus = 1
+                try:
+                    monster_bonus = int(sr.get("enhancement_light_of_clarity_monster_oc_bonus", 3) or 3)
+                except (TypeError, ValueError):
+                    monster_bonus = 3
+                candidates = []
+                for root in _iter_unique_roots(getattr(army, "units", []) or []):
+                    if not _unit_active(root):
+                        continue
+                    if not _unit_has_keyword(root, "WRAITH CONSTRUCT"):
+                        continue
+                    if not _model_in_unit_range(bearer, root, float(range_inches)):
+                        continue
+                    candidates.append(root)
+                if not candidates:
+                    continue
+                ability_name = str(getattr(getattr(unit, "enhancement", None), "name", "") or "Light of Clarity").strip()
+                if len(candidates) == 1:
+                    self._apply_aeldari_light_of_clarity_effect(
+                        source_unit=unit,
+                        target_unit=candidates[0],
+                        player=player,
+                        ability_name=ability_name,
+                        infantry_bonus=int(infantry_bonus),
+                        monster_bonus=int(monster_bonus),
+                    )
+                    continue
+                self._queue_aeldari_spirit_conclave_target(
+                    player=player,
+                    source_unit=unit,
+                    model=bearer,
+                    candidates=candidates,
+                    ability_key="aeldari_light_of_clarity_target",
+                    ability_name=ability_name,
+                    range_inches=int(range_inches),
+                    allow_skip=False,
+                    extra_context={
+                        "infantry_bonus": int(infantry_bonus),
+                        "monster_bonus": int(monster_bonus),
+                    },
+                )
+
+            for unit in list(getattr(army, "units", []) or []):
+                sr = getattr(unit, "special_rules", None)
+                if not (isinstance(sr, dict) and sr.get("enhancement_stave_of_kurnous")):
+                    continue
+                if not _unit_active(unit):
+                    continue
+                bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+                bearer = bearer() if callable(bearer) else None
+                if bearer is None or not getattr(bearer, "is_alive", True):
+                    continue
+                try:
+                    range_inches = int(sr.get("enhancement_stave_of_kurnous_range", 12) or 12)
+                except (TypeError, ValueError):
+                    range_inches = 12
+                exclude_titanic = bool(sr.get("enhancement_stave_of_kurnous_exclude_titanic", True))
+                candidates = []
+                for root in _iter_unique_roots(getattr(army, "units", []) or []):
+                    if not _unit_active(root):
+                        continue
+                    if not _unit_has_keyword(root, "WRAITH CONSTRUCT"):
+                        continue
+                    if exclude_titanic and _unit_has_keyword(root, "TITANIC"):
+                        continue
+                    if not _model_in_unit_range(bearer, root, float(range_inches)):
+                        continue
+                    candidates.append(root)
+                if not candidates:
+                    continue
+                ability_name = str(getattr(getattr(unit, "enhancement", None), "name", "") or "Stave of Kurnous").strip()
+                if len(candidates) == 1:
+                    self._apply_aeldari_stave_of_kurnous_effect(
+                        source_unit=unit,
+                        target_unit=candidates[0],
+                        player=player,
+                        ability_name=ability_name,
+                    )
+                    continue
+                self._queue_aeldari_spirit_conclave_target(
+                    player=player,
+                    source_unit=unit,
+                    model=bearer,
+                    candidates=candidates,
+                    ability_key="aeldari_stave_of_kurnous_target",
+                    ability_name=ability_name,
+                    range_inches=int(range_inches),
+                    allow_skip=False,
+                    extra_context={
+                        "exclude_titanic": bool(exclude_titanic),
+                    },
+                )
+
+            for unit in list(getattr(army, "units", []) or []):
+                sr = getattr(unit, "special_rules", None)
+                if not (isinstance(sr, dict) and sr.get("enhancement_rune_of_mists")):
+                    continue
+                if not _unit_active(unit):
+                    continue
+                bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+                bearer = bearer() if callable(bearer) else None
+                if bearer is None or not getattr(bearer, "is_alive", True):
+                    continue
+                try:
+                    range_inches = int(sr.get("enhancement_rune_of_mists_range", 12) or 12)
+                except (TypeError, ValueError):
+                    range_inches = 12
+                try:
+                    threshold = int(sr.get("enhancement_rune_of_mists_min_attacker_distance_for_cover", 18) or 18)
+                except (TypeError, ValueError):
+                    threshold = 18
+                candidates = []
+                for root in _iter_unique_roots(getattr(army, "units", []) or []):
+                    if not _unit_active(root):
+                        continue
+                    if not _unit_has_keyword(root, "WRAITH CONSTRUCT"):
+                        continue
+                    if not _model_in_unit_range(bearer, root, float(range_inches)):
+                        continue
+                    candidates.append(root)
+                if not candidates:
+                    continue
+                ability_name = str(getattr(getattr(unit, "enhancement", None), "name", "") or "Rune of Mists").strip()
+                if len(candidates) == 1:
+                    self._apply_aeldari_rune_of_mists_effect(
+                        source_unit=unit,
+                        target_unit=candidates[0],
+                        player=player,
+                        ability_name=ability_name,
+                        min_attacker_distance_for_cover=int(threshold),
+                    )
+                    continue
+                self._queue_aeldari_spirit_conclave_target(
+                    player=player,
+                    source_unit=unit,
+                    model=bearer,
+                    candidates=candidates,
+                    ability_key="aeldari_rune_of_mists_target",
+                    ability_name=ability_name,
+                    range_inches=int(range_inches),
+                    allow_skip=False,
+                    extra_context={
+                        "min_attacker_distance_for_cover": int(threshold),
+                    },
+                )
+
             for unit in list(getattr(army, "units", []) or []):
                 sr = getattr(unit, "special_rules", None)
                 if not (isinstance(sr, dict) and sr.get("enhancement_echoes_of_ulthanesh")):
@@ -6047,6 +6274,213 @@ class GamePhaseHandlersMixin:
                     range_inches=3,
                     allow_skip=True,
                 )
+
+    def _apply_aeldari_light_of_clarity_effect(
+        self,
+        *,
+        source_unit=None,
+        target_unit=None,
+        player=None,
+        ability_name: str = "Light of Clarity",
+        infantry_bonus: int = 1,
+        monster_bonus: int = 3,
+    ) -> bool:
+        if source_unit is None or target_unit is None:
+            return False
+        try:
+            from ...utility.entity_ids import get_entity_id
+            from ...utility.event_bus import append_action
+            from ...utility.modifiers import Modifier, ModifierOp
+        except Exception:
+            return False
+
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        if target_root is None:
+            return False
+
+        try:
+            source_root = source_unit.get_attached_unit_root()
+        except Exception:
+            source_root = source_unit
+        owner_id = str(getattr(player, "id", "") or "")
+        if not owner_id:
+            try:
+                source_army = source_root.get_parent_army() if source_root is not None else None
+            except Exception:
+                source_army = None
+            owner_id = str(getattr(getattr(source_army, "player", None), "id", "") or "")
+        source_unit_id = str(get_entity_id(source_root) or "")
+        source_prefix = f"enhancement:light_of_clarity:{owner_id}:{source_unit_id}".strip(":")
+
+        try:
+            members = list(target_root.get_attached_unit_members() or [])
+        except Exception:
+            members = [target_root]
+        if not members:
+            members = [target_root]
+
+        applied = False
+        inf_bonus = max(0, int(infantry_bonus or 0))
+        mon_bonus = max(0, int(monster_bonus or 0))
+        for member in members:
+            if member is None:
+                continue
+            member_bonus = 0
+            try:
+                if bool(member.has_any_keyword("MONSTER")):
+                    member_bonus = int(mon_bonus)
+                elif bool(member.has_any_keyword("INFANTRY")):
+                    member_bonus = int(inf_bonus)
+            except Exception:
+                member_bonus = 0
+            try:
+                if hasattr(member, "remove_characteristic_modifiers_by_source"):
+                    member.remove_characteristic_modifiers_by_source(source_prefix)
+            except Exception:
+                pass
+            if member_bonus <= 0:
+                continue
+            member.add_characteristic_modifier(
+                "objective_control",
+                Modifier(ModifierOp.ADD, int(member_bonus), source=f"{source_prefix}:objective_control"),
+            )
+            applied = True
+
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["enhancement_light_of_clarity_active"] = bool(applied)
+        sr["enhancement_light_of_clarity_owner"] = owner_id
+        sr["enhancement_light_of_clarity_source"] = str(ability_name or "Light of Clarity").strip() or "Light of Clarity"
+        sr["enhancement_light_of_clarity_source_unit_id"] = source_unit_id
+        sr["enhancement_light_of_clarity_infantry_oc_bonus"] = int(inf_bonus)
+        sr["enhancement_light_of_clarity_monster_oc_bonus"] = int(mon_bonus)
+        target_root.special_rules = sr
+
+        if applied:
+            try:
+                tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                append_action(
+                    player,
+                    f"{sr['enhancement_light_of_clarity_source']}: {tname} gains +{int(inf_bonus)} OC (INFANTRY) and +{int(mon_bonus)} OC (MONSTER).",
+                )
+            except Exception:
+                pass
+        return bool(applied)
+
+    def _apply_aeldari_stave_of_kurnous_effect(
+        self,
+        *,
+        source_unit=None,
+        target_unit=None,
+        player=None,
+        ability_name: str = "Stave of Kurnous",
+    ) -> bool:
+        if source_unit is None or target_unit is None:
+            return False
+        try:
+            from ...utility.entity_ids import get_entity_id
+            from ...utility.event_bus import append_action
+        except Exception:
+            return False
+
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        if target_root is None:
+            return False
+
+        try:
+            source_root = source_unit.get_attached_unit_root()
+        except Exception:
+            source_root = source_unit
+        owner_id = str(getattr(player, "id", "") or "")
+        if not owner_id:
+            try:
+                source_army = source_root.get_parent_army() if source_root is not None else None
+            except Exception:
+                source_army = None
+            owner_id = str(getattr(getattr(source_army, "player", None), "id", "") or "")
+
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["enhancement_stave_of_kurnous_active"] = True
+        sr["enhancement_stave_of_kurnous_owner"] = owner_id
+        sr["enhancement_stave_of_kurnous_source"] = str(ability_name or "Stave of Kurnous").strip() or "Stave of Kurnous"
+        sr["enhancement_stave_of_kurnous_source_unit_id"] = str(get_entity_id(source_root) or "")
+        target_root.special_rules = sr
+
+        try:
+            tname = str(getattr(target_root, "name", "Unit") or "Unit")
+            append_action(
+                player,
+                f"{sr['enhancement_stave_of_kurnous_source']}: {tname} gains [Precision] on Critical Wounds until your next Command phase.",
+            )
+        except Exception:
+            pass
+        return True
+
+    def _apply_aeldari_rune_of_mists_effect(
+        self,
+        *,
+        source_unit=None,
+        target_unit=None,
+        player=None,
+        ability_name: str = "Rune of Mists",
+        min_attacker_distance_for_cover: int = 18,
+    ) -> bool:
+        if source_unit is None or target_unit is None:
+            return False
+        try:
+            from ...utility.entity_ids import get_entity_id
+            from ...utility.event_bus import append_action
+        except Exception:
+            return False
+
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        if target_root is None:
+            return False
+
+        try:
+            source_root = source_unit.get_attached_unit_root()
+        except Exception:
+            source_root = source_unit
+        owner_id = str(getattr(player, "id", "") or "")
+        if not owner_id:
+            try:
+                source_army = source_root.get_parent_army() if source_root is not None else None
+            except Exception:
+                source_army = None
+            owner_id = str(getattr(getattr(source_army, "player", None), "id", "") or "")
+
+        threshold = max(1, int(min_attacker_distance_for_cover or 18))
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["enhancement_rune_of_mists_active"] = True
+        sr["enhancement_rune_of_mists_owner"] = owner_id
+        sr["enhancement_rune_of_mists_source"] = str(ability_name or "Rune of Mists").strip() or "Rune of Mists"
+        sr["enhancement_rune_of_mists_source_unit_id"] = str(get_entity_id(source_root) or "")
+        sr["enhancement_rune_of_mists_min_attacker_distance_for_cover"] = int(threshold)
+        target_root.special_rules = sr
+
+        try:
+            tname = str(getattr(target_root, "name", "Unit") or "Unit")
+            append_action(
+                player,
+                f"{sr['enhancement_rune_of_mists_source']}: {tname} gains Benefit of Cover vs ranged attacks from beyond {int(threshold)}\" until your next Command phase.",
+            )
+        except Exception:
+            pass
+        return True
 
     def _on_phase_start_tears_of_isha(self, player=None, phase=None, **_kwargs) -> None:
         """Spiritseer: Tears of Isha selection at start of Command phase."""

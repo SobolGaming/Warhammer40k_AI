@@ -387,6 +387,10 @@ class Enhancement:
         except Exception:
             is_eldritch_raiders = False
         try:
+            is_spirit_conclave = bool(ae_mgr and ae_mgr.is_spirit_conclave())
+        except Exception:
+            is_spirit_conclave = False
+        try:
             is_corsair_veterans = bool(ae_mgr and ae_mgr.has_veterans_of_the_void())
         except Exception:
             is_corsair_veterans = False
@@ -1664,6 +1668,75 @@ class Enhancement:
             source_name = str(getattr(self, "name", "") or "Mistweave").strip() or "Mistweave"
             unit.special_rules["enhancement_mistweave"] = True
             unit.special_rules["enhancement_mistweave_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "light of clarity" or enh_id == "000009907002":
+            if not is_spirit_conclave:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            infantry_bonus = _coerce_int(
+                params.get("infantry_objective_control_bonus", 1) or 1,
+                default=1,
+            )
+            monster_bonus = _coerce_int(
+                params.get("monster_objective_control_bonus", 3) or 3,
+                default=3,
+            )
+            source_name = str(getattr(self, "name", "") or "Light of Clarity").strip() or "Light of Clarity"
+            unit.special_rules["enhancement_light_of_clarity"] = True
+            unit.special_rules["enhancement_light_of_clarity_range"] = 12
+            unit.special_rules["enhancement_light_of_clarity_infantry_oc_bonus"] = int(max(0, infantry_bonus))
+            unit.special_rules["enhancement_light_of_clarity_monster_oc_bonus"] = int(max(0, monster_bonus))
+            unit.special_rules["enhancement_light_of_clarity_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "stave of kurnous" or enh_id == "000009907003":
+            if not is_spirit_conclave:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(self, "name", "") or "Stave of Kurnous").strip() or "Stave of Kurnous"
+            unit.special_rules["enhancement_stave_of_kurnous"] = True
+            unit.special_rules["enhancement_stave_of_kurnous_range"] = 12
+            unit.special_rules["enhancement_stave_of_kurnous_exclude_titanic"] = bool(
+                params.get("exclude_titanic", True)
+            )
+            unit.special_rules["enhancement_stave_of_kurnous_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "rune of mists" or enh_id == "000009907004":
+            if not is_spirit_conclave:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            threshold = _coerce_int(
+                params.get("minimum_attacker_distance_for_cover", 18) or 18,
+                default=18,
+            )
+            source_name = str(getattr(self, "name", "") or "Rune of Mists").strip() or "Rune of Mists"
+            unit.special_rules["enhancement_rune_of_mists"] = True
+            unit.special_rules["enhancement_rune_of_mists_range"] = 12
+            unit.special_rules["enhancement_rune_of_mists_min_attacker_distance_for_cover"] = int(max(1, threshold))
+            unit.special_rules["enhancement_rune_of_mists_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "higher duty" or enh_id == "000009907005":
+            if not is_spirit_conclave:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            trigger_range = _coerce_int(params.get("trigger_range", 9) or 9, default=9)
+            normal_move = _coerce_int(params.get("normal_move_distance", 6) or 6, default=6)
+            source_name = str(getattr(self, "name", "") or "Higher Duty").strip() or "Higher Duty"
+            unit.special_rules["enhancement_higher_duty"] = True
+            unit.special_rules["enhancement_higher_duty_trigger_range"] = int(max(1, trigger_range))
+            unit.special_rules["enhancement_higher_duty_normal_move_distance"] = int(max(1, normal_move))
+            unit.special_rules["enhancement_higher_duty_source"] = source_name
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 

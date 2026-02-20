@@ -1798,6 +1798,89 @@ class GameReactiveDecisionsMixin:
         self.request_decision(request)
         return request
 
+    def _queue_aeldari_spirit_conclave_target(
+        self,
+        *,
+        player,
+        source_unit,
+        model,
+        candidates: list,
+        ability_key: str,
+        ability_name: str,
+        range_inches: int,
+        allow_skip: bool = False,
+        extra_context: dict | None = None,
+    ) -> DecisionRequest | None:
+        if player is None or source_unit is None or model is None:
+            return None
+        if not bool(getattr(self, "is_authoritative", True)):
+            return None
+        if not candidates:
+            return None
+        ability = str(ability_key or "").strip().lower()
+        if not ability:
+            return None
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..decisions import DecisionOption, DecisionRequest
+        from ...utility.entity_ids import get_entity_id
+
+        model_id = get_entity_id(model)
+        unit_id = get_entity_id(source_unit)
+        if not model_id or not unit_id:
+            return None
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != ability:
+                    continue
+                if str(ctx.get("model_id", "") or "") == str(model_id):
+                    return None
+
+        def _cand_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        options = []
+        if allow_skip:
+            options.append(DecisionOption.create("None", payload={"action": "skip"}))
+        for cand in sorted(list(candidates), key=_cand_sort_key):
+            options.append(
+                DecisionOption.create(
+                    str(getattr(cand, "name", "Unit") or "Unit"),
+                    payload={"target_unit_id": get_entity_id(cand)},
+                )
+            )
+        if not options:
+            return None
+        ctx = {
+            "ability": ability,
+            "ability_name": str(ability_name or "Spirit Conclave enhancement").strip() or "Spirit Conclave enhancement",
+            "phase": "Command phase",
+            "unit": getattr(source_unit, "name", "") or "",
+            "unit_id": unit_id,
+            "source_unit_id": unit_id,
+            "model": getattr(model, "name", "") or "",
+            "model_id": model_id,
+            "range": int(range_inches),
+            "allow_skip": bool(allow_skip),
+        }
+        if isinstance(extra_context, dict):
+            ctx.update(dict(extra_context))
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{ctx['ability_name']}: select a target.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+        return request
+
     def _queue_imperial_knights_valourstrike_target(
         self,
         *,

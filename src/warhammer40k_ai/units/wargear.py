@@ -13777,6 +13777,57 @@ class WargearProfile:
                             attack_instance["benefit_of_cover_source"] = ", ".join(uniq) if uniq else "Bearer unit ability"
         except Exception:
             pass
+        # Aeldari: Rune of Mists (Spirit Conclave) grants conditional cover beyond threshold distance.
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            if t_unit is not None:
+                try:
+                    root = t_unit.get_attached_unit_root()
+                except Exception:
+                    root = t_unit
+                sr = getattr(root, "special_rules", None) if root is not None else None
+                if isinstance(sr, dict) and sr.get("enhancement_rune_of_mists_active"):
+                    is_melee = False
+                    is_ranged = False
+                    try:
+                        if self.parent_wargear is not None:
+                            is_melee = bool(self.parent_wargear.is_melee())
+                            is_ranged = bool(self.parent_wargear.is_ranged())
+                    except Exception:
+                        is_melee = False
+                        is_ranged = False
+                    if not is_melee and not is_ranged:
+                        try:
+                            is_ranged = bool(getattr(self, "range", None) and int(getattr(self.range, "max", 0) or 0) > 0)
+                        except Exception:
+                            is_ranged = False
+                    if is_ranged:
+                        dist_raw = attack_instance.get("distance_to_target") if isinstance(attack_instance, dict) else None
+                        if dist_raw is not None:
+                            try:
+                                attacker_distance = float(dist_raw)
+                            except (TypeError, ValueError):
+                                attacker_distance = None
+                            try:
+                                threshold = float(
+                                    sr.get("enhancement_rune_of_mists_min_attacker_distance_for_cover", 18) or 18
+                                )
+                            except (TypeError, ValueError):
+                                threshold = 18.0
+                            if attacker_distance is not None and attacker_distance > float(threshold) + 1e-6:
+                                attack_instance.setdefault("benefit_of_cover", True)
+                                source_name = str(
+                                    sr.get("enhancement_rune_of_mists_source", "") or "Rune of Mists"
+                                ).strip() or "Rune of Mists"
+                                existing_source = str(attack_instance.get("benefit_of_cover_source", "") or "").strip()
+                                if not existing_source:
+                                    attack_instance["benefit_of_cover_source"] = source_name
+                                elif source_name.lower() not in {
+                                    part.strip().lower() for part in existing_source.split(",") if part.strip()
+                                }:
+                                    attack_instance["benefit_of_cover_source"] = f"{existing_source}, {source_name}"
+        except Exception:
+            pass
         # Aura abilities: Benefit of Cover against ranged attacks that target the unit.
         try:
             t_unit = getattr(target_model, "parent_unit", None)

@@ -561,6 +561,65 @@ _AELDARI_GHOSTS_OF_THE_WEBWAY_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _AELDARI_GHOSTS_OF_THE_WEBWAY_DESCRIPTORS.values()
 }
 
+_AELDARI_SPIRIT_CONCLAVE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009907002": EnhancementToolDescriptor(
+        enhancement_id="000009907002",
+        name="Light of Clarity",
+        timing="start_of_command_phase",
+        target="friendly_wraith_construct_unit_within_range_of_bearer",
+        duration="until_start_of_next_command_phase",
+        effect="target_wraith_construct_model_objective_control_bonus",
+        range_in=12.0,
+        effect_params={
+            "infantry_objective_control_bonus": 1,
+            "monster_objective_control_bonus": 3,
+        },
+    ),
+    "000009907003": EnhancementToolDescriptor(
+        enhancement_id="000009907003",
+        name="Stave of Kurnous",
+        timing="start_of_command_phase",
+        target="friendly_non_titanic_wraith_construct_unit_within_range_of_bearer",
+        duration="until_start_of_next_command_phase",
+        effect="target_wraith_construct_precision_on_critical_wound",
+        range_in=12.0,
+        effect_params={
+            "precision_on_critical_wound": True,
+            "exclude_titanic": True,
+        },
+    ),
+    "000009907004": EnhancementToolDescriptor(
+        enhancement_id="000009907004",
+        name="Rune of Mists",
+        timing="start_of_command_phase",
+        target="friendly_wraith_construct_unit_within_range_of_bearer",
+        duration="until_start_of_next_command_phase",
+        effect="target_wraith_construct_ranged_cover_unless_attacker_within_distance",
+        range_in=12.0,
+        effect_params={
+            "minimum_attacker_distance_for_cover": 18,
+        },
+    ),
+    "000009907005": EnhancementToolDescriptor(
+        enhancement_id="000009907005",
+        name="Higher Duty",
+        timing="enemy_move_end_reactive",
+        target="bearer_unit",
+        duration="constant_once_per_turn",
+        effect="reactive_normal_move_when_enemy_move_ends_within_range",
+        effect_params={
+            "trigger_range": 9,
+            "normal_move_distance": 6,
+            "trigger_actions": ("move", "advance", "fall_back"),
+            "limit": "turn",
+        },
+    ),
+}
+
+_AELDARI_SPIRIT_CONCLAVE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _AELDARI_SPIRIT_CONCLAVE_DESCRIPTORS.values()
+}
+
 _EXPERIMENTAL_PROTOTYPE_CADRE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009983002": EnhancementToolDescriptor(
         enhancement_id="000009983002",
@@ -1441,6 +1500,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _AELDARI_GHOSTS_OF_THE_WEBWAY_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _AELDARI_SPIRIT_CONCLAVE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _EXPERIMENTAL_PROTOTYPE_CADRE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -1510,6 +1572,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _AELDARI_ELDRITCH_RAIDERS_BY_NAME.get(key)
         or _AELDARI_WINDRIDER_HOST_BY_NAME.get(key)
         or _AELDARI_GHOSTS_OF_THE_WEBWAY_BY_NAME.get(key)
+        or _AELDARI_SPIRIT_CONCLAVE_BY_NAME.get(key)
         or _EXPERIMENTAL_PROTOTYPE_CADRE_BY_NAME.get(key)
         or _MONTKA_BY_NAME.get(key)
         or _RAD_ZONE_CORPS_BY_NAME.get(key)

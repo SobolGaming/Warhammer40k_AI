@@ -3342,8 +3342,26 @@ class PositioningMixin:
         """
         Return attack keyword bonuses that are applied only when a critical wound is scored.
         """
+        if target is None:
+            return {}
         rules = list(self._get_attack_keyword_bonus_rules(model=model) or [])
-        if not rules or target is None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if isinstance(sr, dict) and bool(sr.get("enhancement_stave_of_kurnous_active")):
+            source_name = str(sr.get("enhancement_stave_of_kurnous_source", "") or "Stave of Kurnous").strip()
+            source_name = source_name or "Stave of Kurnous"
+            rules.append(
+                {
+                    "attack_type": "any",
+                    "keyword": "PRECISION",
+                    "source": source_name,
+                    "requires_critical_wound": True,
+                }
+            )
+        if not rules:
             return {}
         filtered = []
 
