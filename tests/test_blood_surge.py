@@ -206,6 +206,11 @@ class TestBloodSurge(unittest.TestCase):
         self.assertTrue(ok.get("valid"))
         self.assertFalse(bad.get("valid"))
 
+    def test_normal_move_validation_does_not_apply_surge_closest_enemy_rule(self):
+        rules = get_validation_rules(MovementType.MOVE)
+        self.assertFalse(bool(rules.get("must_end_as_close_as_possible_to_closest_enemy_unit", False)))
+        self.assertIsNone(rules.get("closest_enemy_unit_reason"))
+
     def test_blood_surge_fixed_distance_overrides_roll(self):
         army1 = Army("World Eaters", detachment_type="Berzerker Warband")
         army1.faction_id = "WE"

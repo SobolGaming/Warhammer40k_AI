@@ -69,6 +69,12 @@ class DamageDeathMixin:
                     if (not bool(getattr(self, "is_leader", False))) and list(getattr(self, "attached_leaders", []) or []):
                         any_leader_alive = any(len(getattr(l, "models", []) or []) > 0 for l in (getattr(self, "attached_leaders", []) or []))
                         if any_leader_alive:
+                            try:
+                                clear_tokens = getattr(self, "clear_aspect_shrine_tokens", None)
+                                if callable(clear_tokens):
+                                    clear_tokens()
+                            except Exception:
+                                pass
                             setattr(self, "_pending_leader_separation", True)
                             return
                 except Exception:
@@ -167,6 +173,12 @@ class DamageDeathMixin:
                 if (not bool(getattr(self, "is_leader", False))) and list(getattr(self, "attached_leaders", []) or []):
                     any_leader_alive = any(len(getattr(l, "models", []) or []) > 0 for l in (getattr(self, "attached_leaders", []) or []))
                     if any_leader_alive:
+                        try:
+                            clear_tokens = getattr(self, "clear_aspect_shrine_tokens", None)
+                            if callable(clear_tokens):
+                                clear_tokens()
+                        except Exception:
+                            pass
                         setattr(self, "_pending_leader_separation", True)
                         return
             except Exception:

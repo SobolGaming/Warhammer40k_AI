@@ -105,6 +105,41 @@ class TestEtherealForm(unittest.TestCase):
 
         self.assertEqual(model.wounds, 5)
 
+    def test_ethereal_form_heal_does_not_offer_partial_choice(self):
+        from warhammer40k_ai.utility import dice as dice_mod
+
+        ability = {
+            "name": "Ethereal Form",
+            "description": "Each time this model destroys an enemy unit, it regains up to D3 lost wounds.",
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, army2, _p1, _p2 = _build_game()
+
+        attacker = _make_unit("The Yncarne", abilities=[ability], wounds=6)
+        target = _make_unit("Target", keywords=["INFANTRY"], wounds=2)
+        army1.add_unit(attacker)
+        army2.add_unit(target)
+
+        model = attacker.models[0]
+        model.wounds = 2
+
+        original_get_dice_roll = dice_mod.get_dice_roll
+        dice_mod.get_dice_roll = lambda _size=6: 3
+        try:
+            game.event_system.publish(
+                "unit_destroyed",
+                unit=target,
+                destroyed_by_unit=attacker,
+                destroyed_by_model=model,
+                destroyed_by_weapon_profile=None,
+            )
+        finally:
+            dice_mod.get_dice_roll = original_get_dice_roll
+
+        self.assertEqual(model.wounds, 5)
+        self.assertEqual(len(list(game.decision_queue.list() or [])), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

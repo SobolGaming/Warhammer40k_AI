@@ -846,6 +846,21 @@ class ActionsMovementMixin:
         except Exception:
             pass
 
+    def clear_aspect_shrine_tokens(self) -> None:
+        root = self._get_aspect_shrine_root()
+        try:
+            setattr(root, "_aspect_shrine_tokens_total", 0)
+        except Exception:
+            pass
+        try:
+            setattr(root, "_aspect_shrine_tokens_used", 0)
+        except Exception:
+            pass
+        try:
+            setattr(root, "_aspect_shrine_prompt_suppressed", False)
+        except Exception:
+            pass
+
     def spend_aspect_shrine_token(self, count: int = 1) -> bool:
         root = self._get_aspect_shrine_root()
         try:

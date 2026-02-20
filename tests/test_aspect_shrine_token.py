@@ -2,6 +2,40 @@ import unittest
 from types import SimpleNamespace
 
 
+class _MockDatasheet:
+    def __init__(self, name: str):
+        self.name = name
+        self.faction_data = {"name": "Aeldari"}
+        self.keywords = ["INFANTRY"]
+        self.faction_keywords = ["AELDARI"]
+        self.datasheets_unit_composition = [{"description": "1 Test Model"}]
+        self.datasheets_models_cost = [{"description": "1 model", "cost": 100}]
+        self.datasheets_models = [
+            {
+                "M": "7",
+                "T": "3",
+                "Sv": "3",
+                "W": "2",
+                "Ld": "6",
+                "OC": "1",
+                "base_size": "28mm",
+                "inv_sv": "7",
+                "inv_sv_descr": "none",
+            }
+        ]
+        self.datasheets_wargear = []
+        self.datasheets_options = [{"description": "none"}]
+        self.datasheets_abilities = []
+        self.loadout = "This model is equipped with: nothing"
+        self.transport = ""
+
+
+def _make_unit(name: str):
+    from warhammer40k_ai.units.unit import Unit
+
+    return Unit(_MockDatasheet(name))
+
+
 class TestAspectShrineToken(unittest.TestCase):
     def test_parse_it_can_have_aspect_shrine_token(self):
         from warhammer40k_ai.units.wargear import parse_alternate_3
@@ -69,6 +103,30 @@ class TestAspectShrineToken(unittest.TestCase):
 
         u.apply_wargear_options()
         self.assertEqual(u.get_aspect_shrine_token_total(), 0)
+
+    def test_destroyed_aspect_bodyguard_does_not_leave_tokens_on_attached_leader(self):
+        bodyguard = _make_unit("Dire Avengers")
+        leader = _make_unit("Autarch")
+
+        leader.can_be_attached_to = ["dire avengers"]
+        leader.attached_to = bodyguard
+        bodyguard.attached_leaders = [leader]
+
+        bodyguard.add_aspect_shrine_tokens(2)
+        self.assertEqual(bodyguard.get_aspect_shrine_token_remaining(), 2)
+        self.assertEqual(leader.get_aspect_shrine_token_remaining(), 2)
+
+        last_model = bodyguard.models[0]
+        bodyguard.remove_model(last_model, fleed=False, game_map=None)
+
+        self.assertTrue(bool(getattr(bodyguard, "_pending_leader_separation", False)))
+        self.assertEqual(bodyguard.get_aspect_shrine_token_remaining(), 0)
+        self.assertEqual(leader.get_aspect_shrine_token_remaining(), 0)
+
+        bodyguard.resolve_pending_leader_separation(game_map=None)
+
+        self.assertIsNone(leader.attached_to)
+        self.assertEqual(leader.get_aspect_shrine_token_remaining(), 0)
 
 
 if __name__ == "__main__":

@@ -2307,7 +2307,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ),
         ("AE", "Aspect Shrine Token"): (
             "Supported",
-            "Per-roll prompt lets non-CHARACTER models change a hit or wound roll to an unmodified 6, consuming a token; tokens tracked from wargear options with per-activation prompt suppression.",
+            "Per-roll prompt lets non-CHARACTER models change a hit or wound roll to an unmodified 6, consuming a token; tokens tracked from wargear options with per-activation prompt suppression, and attached CHARACTERS do not retain tokens when the Aspect Warriors bodyguard is destroyed.",
         ),
         ("AE", "Psychic Communion (Psychic)"): (
             "Supported",
@@ -5938,7 +5938,7 @@ def _targeted_stratagem_cp_increase_support(description: str) -> Optional[Tuple[
     rng = m.group("range") if m else "?"
     return (
         "Supported",
-        f"Opponent stratagems targeting units within {rng}\" have +1CP (non-cumulative; unaffordable stratagems still count as used).",
+        f"Opponent stratagems targeting units within {rng}\" have +1CP (non-cumulative; if affordable the increased cost must be paid, otherwise no CP are spent/effects do not resolve and that Stratagem still counts as used).",
     )
 
 

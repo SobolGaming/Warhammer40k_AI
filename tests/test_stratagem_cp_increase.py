@@ -163,6 +163,40 @@ class TestStratagemCpIncrease(unittest.TestCase):
         self.assertTrue(used)
         self.assertEqual(int(player.command_points), 0)
 
+    def test_torc_optional_increase_unaffordable_counts_used_and_spends_no_cp(self):
+        from warhammer40k_ai.rules.stratagems import Stratagem
+
+        ability = {
+            "name": "Torc of Morai-Heg",
+            "description": self._optional_text(),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        opponent_unit = _make_unit("Seer", abilities=[ability])
+        active_unit = _make_unit("Defenders")
+        opponent_unit.models[0].model_base.set_position(0.0, 0.0, 0.0)
+        active_unit.models[0].model_base.set_position(6.0, 0.0, 0.0)
+
+        player, opponent, game = _make_players(active_unit, opponent_unit, turn=1, current_player_index=0)
+        opponent.decision_hook = lambda _p, key, _ctx: key == "OPPONENT_STRATAGEM_CP_INCREASE"
+        player.command_points = 1
+        strat = Stratagem(
+            id="x",
+            name="Test Strat",
+            type="Core",
+            description="",
+            cp_cost=1,
+            turn="Either",
+            phase="Any phase",
+            detachment="",
+            faction_id="",
+        )
+
+        used = strat.use(player, game, target_unit=active_unit)
+        self.assertFalse(used)
+        self.assertEqual(int(player.command_points), 1)
+        self.assertIn("TEST STRAT", player.stratagems._used_stratagems_this_phase)
+
     def test_enhancement_parsed_for_cp_increase(self):
         from warhammer40k_ai.rules.enhancement import Enhancement
 
