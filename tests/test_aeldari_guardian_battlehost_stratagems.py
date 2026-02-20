@@ -333,6 +333,46 @@ class TestAeldariGuardianBattlehostStratagems(unittest.TestCase):
         pending_again = _pending_by_name(p1.stratagems, "VAUL")
         self.assertIsNone(pending_again)
 
+    def test_cost_of_victory_queues_at_opponent_fight_phase_end_and_returns_guardians_models(self):
+        game, p1, p2, aeldari_army, enemy_army = _build_game()
+        guardians = _make_unit(
+            "Guardians",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["ASURYANI", "INFANTRY", "GUARDIANS"],
+            quantity=3,
+        )
+        enemy = _make_unit(
+            "Enemy Unit",
+            faction_name="Enemy",
+            faction_keywords=["ENEMY"],
+            keywords=["INFANTRY"],
+            quantity=2,
+        )
+        aeldari_army.add_unit(guardians)
+        enemy_army.add_unit(enemy)
+        _place_unit(game, guardians, 10.0, 10.0)
+        _place_unit(game, enemy, 26.0, 10.0)
+
+        destroyed_model = guardians.models[0]
+        destroyed_model.wounds = 0
+        guardians.models_lost.append(destroyed_model)
+        self.assertFalse(bool(getattr(destroyed_model, "is_alive", True)))
+        self.assertIn(destroyed_model, list(getattr(guardians, "models_lost", []) or []))
+
+        _set_phase(game, p2, "FIGHT_PHASE", 1)
+        game.event_system.publish("phase_end", player=p2, phase=SimpleNamespace(name="FIGHT_PHASE"))
+        pending = _pending_by_name(p1.stratagems, "COST OF VICTORY")
+        self.assertIsNotNone(pending)
+
+        ok = p1.stratagems.use(str(pending.get("stratagem", "")), unit=guardians, dequeue=True)
+        self.assertTrue(ok)
+        self.assertEqual(int(p1.command_points or 0), 9)
+
+        self.assertEqual(str(getattr(guardians, "reserve_status", "") or "").lower(), "strategic_reserves")
+        self.assertTrue(bool(getattr(destroyed_model, "is_alive", False)))
+        self.assertNotIn(destroyed_model, list(getattr(guardians, "models_lost", []) or []))
+
     def test_guardian_battlehost_stratagem_descriptors_registered(self):
         warding = get_stratagem_tool_descriptor(stratagem_id="000009912002")
         self.assertIsNotNone(warding)
@@ -355,6 +395,16 @@ class TestAeldariGuardianBattlehostStratagems(unittest.TestCase):
         by_name = get_stratagem_tool_descriptor(name="VAUL'S VENGEANCE")
         self.assertIsNotNone(by_name)
         self.assertEqual(str(by_name.stratagem_id), "000009912004")
+
+        cost = get_stratagem_tool_descriptor(stratagem_id="000009912007")
+        self.assertIsNotNone(cost)
+        self.assertEqual(str(cost.name), "Cost of Victory")
+        self.assertEqual(int(cost.cp_cost), 1)
+        self.assertEqual(str(cost.effect), "enter_strategic_reserves_and_return_destroyed_guardians_models")
+
+        cost_by_name = get_stratagem_tool_descriptor(name="COST OF VICTORY")
+        self.assertIsNotNone(cost_by_name)
+        self.assertEqual(str(cost_by_name.stratagem_id), "000009912007")
 
 
 if __name__ == "__main__":

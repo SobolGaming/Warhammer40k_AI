@@ -1640,6 +1640,16 @@ _GUARDIAN_BATTLEHOST_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] =
         cp_cost=1,
         effect_params={"force_target_attacker": True, "out_of_phase": True, "once_per_battle_round": True},
     ),
+    "000009912007": StratagemToolDescriptor(
+        stratagem_id="000009912007",
+        name="Cost of Victory",
+        timing="end_of_opponent_fight_phase",
+        target="guardians_unit_not_in_engagement_range",
+        duration="immediate",
+        effect="enter_strategic_reserves_and_return_destroyed_guardians_models",
+        cp_cost=1,
+        effect_params={"return_destroyed_model_keyword": "GUARDIANS"},
+    ),
 }
 
 _GUARDIAN_BATTLEHOST_STRATAGEM_BY_NAME = {

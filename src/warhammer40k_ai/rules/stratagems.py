@@ -168,6 +168,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "RAIDERS' SPOILS",
     "RAIDERS\u2019 SPOILS",
     "RUTHLESS KILLERS",
+    "COST OF VICTORY",
     "SHIELD NODES",
     "STAGED DEATH",
     "TRICKSTERS' RETORT",
@@ -421,6 +422,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "DIVINE INTERVENTION",
     "SHROUD OF CHAOS",
     "SOULSIGHT",
+    "COST OF VICTORY",
     "SHIELD NODES",
     "VAUL'S VENGEANCE",
     "VAUL\u2019S VENGEANCE",
@@ -1603,6 +1605,7 @@ class StratagemManager(
 
         phase_end_trigger_names = {
             "CRUEL RAIDERS",
+            "COST OF VICTORY",
             "DARK APPARITIONS",
             "DEATH ANSWERS DEATH",
             "BLOODY DANCE",
@@ -3280,6 +3283,25 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires your Movement phase, just after an AELDARI unit from your army Falls Back"
             return result
+        if name_u == "COST OF VICTORY":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l and phase_name_l != "fight phase":
+                result["reason"] = "Requires end of your opponent's Fight phase"
+                return result
+            game = getattr(self, "game", None)
+            active_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+            if active_player is self.player:
+                result["reason"] = "Only usable in your opponent's turn"
+                return result
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._aeldari_guardian_cost_of_victory_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires end of opponent Fight phase and a Guardians unit that is not in Engagement Range"
+            return result
         if name_u == "WARDING SALVOES":
             candidates = list(context.get("candidates") or [])
             if not candidates:
@@ -3604,6 +3626,7 @@ class StratagemManager(
             "RAIDERS' SPOILS": "Target: your ANHRATHE unit that is within Engagement Range of one or more enemy units",
             "RAIDERS\u2019 SPOILS": "Target: your ANHRATHE unit that is within Engagement Range of one or more enemy units",
             "RUTHLESS KILLERS": "Target: your CORSAIR VOIDSCARRED unit that has not been selected to shoot/fight this phase",
+            "COST OF VICTORY": "Target: your Guardians unit that is not within Engagement Range at the end of the opponent's Fight phase; it enters Strategic Reserves and destroyed GUARDIANS models are returned",
             "SHIELD NODES": "Target: your Dire Avengers or Guardians unit selected by enemy Shooting/Fight attacks (if within objective range, attacks against it are -1 to wound this phase)",
             "TRICKSTERS' RETORT": "Target: your TROUPE unit within 9\" of an enemy unit that just ended a Normal/Advance/Fall Back move",
             "TRICKSTERS\u2019 RETORT": "Target: your TROUPE unit within 9\" of an enemy unit that just ended a Normal/Advance/Fall Back move",
@@ -5131,6 +5154,10 @@ class StratagemManager(
             raise
         try:
             self._queue_aeldari_devoted_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_aeldari_guardian_phase_end_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:

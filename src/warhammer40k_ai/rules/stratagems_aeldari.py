@@ -425,6 +425,20 @@ class AeldariStratagemMixin:
         name = str(getattr(root, "name", "") or "").strip().lower()
         return "dire avenger" in name or "guardian" in name
 
+    def _aeldari_guardian_is_guardians_unit(self, unit: Any) -> bool:
+        root = self._aeldari_root(unit)
+        if root is None:
+            return False
+        has_any = getattr(root, "has_any_keyword", None)
+        if callable(has_any):
+            try:
+                if bool(has_any("GUARDIANS")) or bool(has_any("GUARDIAN")):
+                    return True
+            except (AttributeError, TypeError, ValueError):
+                pass
+        name = str(getattr(root, "name", "") or "").strip().lower()
+        return "guardian" in name
+
     def _aeldari_guardian_is_war_walkers(self, unit: Any) -> bool:
         root = self._aeldari_root(unit)
         if root is None:
@@ -547,6 +561,33 @@ class AeldariStratagemMixin:
             if not self._aeldari_on_battlefield(root, require_targetable=True):
                 continue
             if not self._aeldari_guardian_is_war_walkers(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_guardian_cost_of_victory_candidates(self) -> List[Any]:
+        if not self._is_guardian_battlehost_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._aeldari_guardian_is_guardians_unit(root):
+                continue
+            if self._aeldari_in_engagement_range(root):
                 continue
             out.append(root)
         return sorted(out, key=self._aeldari_sort_key)
@@ -778,6 +819,40 @@ class AeldariStratagemMixin:
             "event": "phase_start",
             "phase": phase_label,
             "phase_name": phase_label,
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_aeldari_guardian_phase_end_reactions(self, *, player, phase) -> None:
+        game = getattr(self, "game", None)
+        if game is None or not self._is_guardian_battlehost_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "FIGHT_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+
+        stratagem = self._aeldari_get_stratagem_by_norm_name("COST OF VICTORY")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+            return
+        candidates = self._aeldari_guardian_cost_of_victory_candidates()
+        if not candidates or self._aeldari_reaction_exists("phase_end", stratagem.name):
+            return
+        payload: Dict[str, Any] = {
+            "event": "phase_end",
+            "phase": "Fight phase",
+            "phase_name": "Fight phase",
             "stratagem": stratagem.name,
             "cp_cost": stratagem.cp_cost,
             "candidates": candidates,
@@ -2690,6 +2765,8 @@ class AeldariStratagemMixin:
         if stratagem is None or not self._is_guardian_battlehost_detachment():
             return None
         name_u = self._aeldari_norm_name(getattr(stratagem, "name", ""))
+        if name_u == "COST OF VICTORY":
+            return self._use_aeldari_guardian_cost_of_victory(stratagem, **kwargs)
         if name_u == "WARDING SALVOES":
             return self._use_aeldari_guardian_warding_salvoes(stratagem, **kwargs)
         if name_u == "SHIELD NODES":
@@ -2891,6 +2968,81 @@ class AeldariStratagemMixin:
             return False
         self._aeldari_guardian_mark_vauls_vengeance_used_round()
         self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_aeldari_guardian_cost_of_victory(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: COST OF VICTORY: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            logger.error("ERROR: COST OF VICTORY: not opponent's turn")
+            return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_guardian_cost_of_victory_candidates()
+        candidate_roots = [self._aeldari_root(unit) for unit in list(candidates or [])]
+        candidate_roots = [unit for unit in candidate_roots if unit is not None]
+        if target_root is None:
+            if len(candidate_roots) == 1:
+                target_root = candidate_roots[0]
+            else:
+                logger.error("ERROR: COST OF VICTORY: missing target unit")
+                return False
+        if candidate_roots and target_root not in candidate_roots:
+            logger.error("ERROR: COST OF VICTORY: target is not currently eligible")
+            return False
+        if not self._aeldari_on_battlefield(target_root, require_targetable=True):
+            logger.error("ERROR: COST OF VICTORY: target must be on the battlefield and targetable")
+            return False
+        if not self._aeldari_guardian_is_guardians_unit(target_root):
+            logger.error("ERROR: COST OF VICTORY: target must be a Guardians unit")
+            return False
+        if self._aeldari_in_engagement_range(target_root):
+            logger.error("ERROR: COST OF VICTORY: target must not be within Engagement Range")
+            return False
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root):
+            return False
+        if not self._aeldari_place_unit_into_strategic_reserves(
+            target_root,
+            reason=str(getattr(stratagem, "name", "COST OF VICTORY") or "COST OF VICTORY"),
+        ):
+            logger.error("ERROR: COST OF VICTORY: failed to place target into Strategic Reserves")
+            return False
+
+        returned = 0
+        destroyed_pool = list(getattr(target_root, "models_lost", []) or [])
+        returnable = [model for model in destroyed_pool if self._aeldari_model_has_keyword(model, "GUARDIANS")]
+        if returnable:
+            if hasattr(target_root, "models_lost"):
+                remaining = [model for model in destroyed_pool if model not in returnable]
+                target_root.models_lost = list(returnable) + remaining
+            return_full = getattr(self, "_return_destroyed_models_full", None)
+            if callable(return_full):
+                returned = int(
+                    return_full(
+                        target_root,
+                        amount=len(returnable),
+                        game_map=getattr(game, "map", None),
+                        skip_character=False,
+                    )
+                    or 0
+                )
+
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: COST OF VICTORY: %s entered Strategic Reserves and returned %d GUARDIANS model(s).",
+            getattr(target_root, "name", "Unit"),
+            int(returned),
+        )
         return True
 
     def _use_aeldari_ghosts_of_the_webway_stratagem(self, stratagem, **kwargs) -> Optional[bool]:
@@ -4082,6 +4234,34 @@ class AeldariStratagemMixin:
                     return True
             except (AttributeError, TypeError, ValueError):
                 pass
+        return False
+
+    @staticmethod
+    def _aeldari_model_has_keyword(model: Any, keyword: str) -> bool:
+        if model is None:
+            return False
+        wanted = str(keyword or "").strip().upper()
+        if not wanted:
+            return False
+        has_any = getattr(model, "has_any_keyword", None)
+        if callable(has_any):
+            try:
+                if bool(has_any(wanted)):
+                    return True
+            except (AttributeError, TypeError, ValueError):
+                pass
+        has_kw = getattr(model, "has_keyword", None)
+        if callable(has_kw):
+            try:
+                if bool(has_kw(wanted)) or bool(has_kw(wanted.title())):
+                    return True
+            except (AttributeError, TypeError, ValueError):
+                pass
+        for attr in ("keywords", "faction_keywords"):
+            values = list(getattr(model, attr, []) or [])
+            normalized = {str(v or "").strip().upper() for v in values if str(v or "").strip()}
+            if wanted in normalized:
+                return True
         return False
 
     def _aeldari_ghosts_staged_death_pending_returns(self) -> List[Dict[str, Any]]:
