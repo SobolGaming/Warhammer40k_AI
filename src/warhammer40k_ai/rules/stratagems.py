@@ -173,6 +173,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SHIELD NODES",
     "STAGED DEATH",
     "TIME TO STRIKE",
+    "PRESENTIMENT OF DREAD",
+    "FOREWARNED",
     "UNSHROUDED TRUTH",
     "FATE INESCAPABLE",
     "TRICKSTERS' RETORT",
@@ -376,6 +378,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "SKYBORNE SANCTUARY",
     "TO THEIR FINAL BREATH",
     "UNSHROUDED TRUTH",
+    "FOREWARNED",
     "ISHA'S FURY",
     "ISHA\u2019S FURY",
     "PSYCHIC SHIELD",
@@ -1577,6 +1580,7 @@ class StratagemManager(
             "'ARD AS NAILS",
             "\u2019ARD AS NAILS",
             "PARTING THE VEIL",
+            "FOREWARNED",
             "YRIEL'S EXAMPLE",
             "YRIEL\u2019S EXAMPLE",
             "TO THEIR FINAL BREATH",
@@ -2677,6 +2681,39 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires your Shooting phase and an eligible SOULSIGHT target that has not shot"
             return result
+        if name_u == "PRESENTIMENT OF DREAD":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l and phase_name_l != "command phase":
+                result["reason"] = "Requires Command phase"
+                return result
+            source_candidates = list(context.get("candidates") or [])
+            if not source_candidates:
+                source_candidates = list(self._aeldari_seer_presentiment_psyker_candidates() or [])
+            if source_candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires Command phase and an ASURYANI PSYKER with a visible enemy unit within 18\" to force a Battle-shock test at -1"
+            )
+            return result
+        if name_u == "FOREWARNED":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l and phase_name_l != "fight phase":
+                result["reason"] = "Requires Fight phase trigger"
+                return result
+            target_units = list(context.get("target_units") or [])
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = list(self._aeldari_seer_forewarned_candidates(target_units=target_units) or [])
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires Fight phase trigger after enemy targets are selected, targeting an eligible ASURYANI INFANTRY non-WRAITH CONSTRUCT unit within 9\" of one of your ASURYANI PSYKER units"
+            )
+            return result
         if name_u == "UNSHROUDED TRUTH":
             phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
             if phase_name_l and phase_name_l != "movement phase":
@@ -3773,6 +3810,8 @@ class StratagemManager(
             "COST OF VICTORY": "Target: your Guardians unit that is not within Engagement Range at the end of the opponent's Fight phase; it enters Strategic Reserves and destroyed GUARDIANS models are returned",
             "SHIELD NODES": "Target: your Dire Avengers or Guardians unit selected by enemy Shooting/Fight attacks (if within objective range, attacks against it are -1 to wound this phase)",
             "TIME TO STRIKE": "Target: your Storm Guardians unit that has not been selected to move this phase; it gains fixed Advance distance 6 and can shoot/charge after advancing this turn",
+            "PRESENTIMENT OF DREAD": "Target: one of your ASURYANI PSYKER models; select one visible enemy unit within 18\" of it to take a Battle-shock test at -1",
+            "FOREWARNED": "Target: your ASURYANI INFANTRY unit (excluding WRAITH CONSTRUCT) selected as a target of enemy fight attacks and within 9\" of a friendly ASURYANI PSYKER; attacks targeting it are -1 to Hit and -1 to Wound this phase",
             "UNSHROUDED TRUTH": "Target: your ASURYANI INFANTRY unit (excluding WRAITH CONSTRUCT) that has not been selected to move this phase, was not set up this phase, and is within 9\" of a friendly ASURYANI PSYKER; remove and set it up again more than 9\" horizontally from enemy models",
             "FATE INESCAPABLE": "Target: your ASURYANI INFANTRY unit (excluding WRAITH CONSTRUCT) that has not been selected to shoot this phase and is within 9\" of a friendly ASURYANI PSYKER; ranged attacks gain [IGNORES COVER] and improve AP by 1 on Critical Wounds this phase",
             "ISHA'S FURY": "Target: one of your ASURYANI PSYKER models within 9\" of an enemy unit that just ended a Normal/Advance/Fall Back move; roll 6D6 and that enemy suffers 1 mortal wound for each 3+",
@@ -8835,6 +8874,13 @@ class StratagemManager(
             raise
         try:
             self._queue_aeldari_guardian_fight_targets_selected_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_aeldari_seer_fight_targets_selected_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )

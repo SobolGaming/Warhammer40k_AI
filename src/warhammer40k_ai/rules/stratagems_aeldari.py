@@ -291,6 +291,88 @@ class AeldariStratagemMixin:
             out.append(root)
         return sorted(out, key=self._aeldari_sort_key)
 
+    def _aeldari_seer_presentiment_enemy_candidates(self, source_unit: Any) -> List[Any]:
+        if not self._is_seer_council_detachment():
+            return []
+        source_root = self._aeldari_root(source_unit)
+        if source_root is None:
+            return []
+        try:
+            if source_root.get_parent_army().player is not self.player:
+                return []
+        except (AttributeError, TypeError, ValueError):
+            return []
+        if not self._aeldari_on_battlefield(source_root, require_targetable=True):
+            return []
+        game = getattr(self, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        if game_map is None:
+            return []
+        get_enemy = getattr(game_map, "get_enemy_units", None)
+        if not callable(get_enemy):
+            return []
+
+        from ..utility.aura_utils import unit_within_range_of_unit
+
+        can_see_fn = getattr(game, "_model_can_see_unit", None)
+        source_models = list(getattr(source_root, "get_attached_unit_models", lambda: [])() or [])
+        out: List[Any] = []
+        seen: set[str] = set()
+        for enemy in list(get_enemy(source_root) or []):
+            enemy_root = self._aeldari_root(enemy)
+            if enemy_root is None:
+                continue
+            uid = self._aeldari_sort_key(enemy_root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(enemy_root, require_targetable=False):
+                continue
+            if self._aeldari_in_reserves(enemy_root):
+                continue
+            if not unit_within_range_of_unit(source_root, enemy_root, 18.0, use_attached_aggregate=True):
+                continue
+            if callable(can_see_fn):
+                visible = False
+                for model in source_models:
+                    try:
+                        alive = getattr(model, "is_alive", True)
+                        if callable(alive):
+                            alive = alive()
+                        if not bool(alive):
+                            continue
+                        if bool(can_see_fn(model, enemy_root, game_map=game_map)):
+                            visible = True
+                            break
+                    except Exception:
+                        continue
+                if not visible:
+                    continue
+            out.append(enemy_root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_seer_presentiment_psyker_candidates(self) -> List[Any]:
+        if not self._is_seer_council_detachment():
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for psyker in self._aeldari_seer_psyker_candidates():
+            root = self._aeldari_root(psyker)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_is_targetable(root):
+                continue
+            if not self._aeldari_seer_presentiment_enemy_candidates(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
     def _aeldari_seer_unshrouded_truth_candidates(self) -> List[Any]:
         if not self._is_seer_council_detachment():
             return []
@@ -416,7 +498,7 @@ class AeldariStratagemMixin:
             out.append(root)
         return sorted(out, key=self._aeldari_sort_key)
 
-    def _aeldari_seer_psychic_shield_candidates(self, *, target_units: List[Any]) -> List[Any]:
+    def _aeldari_seer_defensive_infantry_candidates(self, *, target_units: List[Any]) -> List[Any]:
         if not self._is_seer_council_detachment():
             return []
         psykers = self._aeldari_seer_psyker_candidates()
@@ -457,6 +539,12 @@ class AeldariStratagemMixin:
                 continue
             out.append(root)
         return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_seer_psychic_shield_candidates(self, *, target_units: List[Any]) -> List[Any]:
+        return self._aeldari_seer_defensive_infantry_candidates(target_units=target_units)
+
+    def _aeldari_seer_forewarned_candidates(self, *, target_units: List[Any]) -> List[Any]:
+        return self._aeldari_seer_defensive_infantry_candidates(target_units=target_units)
 
     def _aeldari_devoted_ynnari_candidates(
         self,
@@ -1044,6 +1132,36 @@ class AeldariStratagemMixin:
         if game is None or not self._is_seer_council_detachment():
             return
         phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key == "COMMAND_PHASE":
+            stratagem = self._aeldari_get_stratagem_by_norm_name("PRESENTIMENT OF DREAD")
+            if stratagem is None:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+                return
+            if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+                return
+            candidates = self._aeldari_seer_presentiment_psyker_candidates()
+            if not candidates or self._aeldari_reaction_exists("phase_start", stratagem.name):
+                return
+            payload: Dict[str, Any] = {
+                "event": "phase_start",
+                "phase": "Command phase",
+                "phase_name": "Command phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+                enemy_candidates = self._aeldari_seer_presentiment_enemy_candidates(candidates[0])
+                if enemy_candidates:
+                    payload["enemy_candidates"] = enemy_candidates
+                    if len(enemy_candidates) == 1:
+                        payload["enemy_unit"] = enemy_candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+            return
+
         if phase_key != "MOVEMENT_PHASE":
             return
         active_player = getattr(game, "get_current_player", lambda: None)()
@@ -1163,6 +1281,52 @@ class AeldariStratagemMixin:
         payload: Dict[str, Any] = {
             "event": "shooting_targets_selected",
             "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "enemy_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_aeldari_seer_fight_targets_selected_reactions(
+        self,
+        *,
+        attacking_unit,
+        target_units: List[Any],
+    ) -> None:
+        game = getattr(self, "game", None)
+        if game is None or attacking_unit is None or not self._is_seer_council_detachment():
+            return
+        phase_key = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_key != "FIGHT_PHASE":
+            return
+        attacker_root = self._aeldari_root(attacking_unit)
+        if attacker_root is None:
+            return
+        try:
+            if attacker_root.get_parent_army().player is self.player:
+                return
+        except (AttributeError, TypeError, ValueError):
+            return
+
+        stratagem = self._aeldari_get_stratagem_by_norm_name("FOREWARNED")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+            return
+        candidates = self._aeldari_seer_forewarned_candidates(target_units=list(target_units or []))
+        if not candidates or self._aeldari_reaction_exists("fight_targets_selected", stratagem.name):
+            return
+        payload: Dict[str, Any] = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
             "stratagem": stratagem.name,
             "cp_cost": stratagem.cp_cost,
             "attacking_unit": attacker_root,
@@ -3255,6 +3419,10 @@ class AeldariStratagemMixin:
         if stratagem is None or not self._is_seer_council_detachment():
             return None
         name_u = self._aeldari_norm_name(getattr(stratagem, "name", ""))
+        if name_u == "PRESENTIMENT OF DREAD":
+            return self._use_aeldari_seer_presentiment_of_dread(stratagem, **kwargs)
+        if name_u == "FOREWARNED":
+            return self._use_aeldari_seer_forewarned(stratagem, **kwargs)
         if name_u == "FATE INESCAPABLE":
             return self._use_aeldari_seer_fate_inescapable(stratagem, **kwargs)
         if name_u == "UNSHROUDED TRUTH":
@@ -3264,6 +3432,126 @@ class AeldariStratagemMixin:
         if name_u == "PSYCHIC SHIELD":
             return self._use_aeldari_seer_psychic_shield(stratagem, **kwargs)
         return None
+
+    def _use_aeldari_seer_presentiment_of_dread(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "command phase":
+            logger.error("ERROR: PRESENTIMENT OF DREAD: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+
+        source_unit = context.get("unit") or context.get("target_unit")
+        source_root = self._aeldari_root(source_unit) if source_unit is not None else None
+        source_candidates = list(context.get("candidates") or [])
+        if not source_candidates:
+            source_candidates = self._aeldari_seer_presentiment_psyker_candidates()
+        if source_root is None:
+            if len(source_candidates) == 1:
+                source_root = source_candidates[0]
+            else:
+                logger.error("ERROR: PRESENTIMENT OF DREAD: missing ASURYANI PSYKER source model")
+                return False
+        if source_root not in source_candidates:
+            logger.error("ERROR: PRESENTIMENT OF DREAD: source must be an eligible ASURYANI PSYKER model")
+            return False
+
+        enemy_unit = context.get("enemy_unit") or context.get("target_enemy_unit")
+        enemy_root = self._aeldari_root(enemy_unit) if enemy_unit is not None else None
+        enemy_candidates = list(context.get("enemy_candidates") or [])
+        if not enemy_candidates:
+            enemy_candidates = self._aeldari_seer_presentiment_enemy_candidates(source_root)
+        if enemy_root is None:
+            if len(enemy_candidates) == 1:
+                enemy_root = enemy_candidates[0]
+            else:
+                logger.error("ERROR: PRESENTIMENT OF DREAD: missing enemy target unit")
+                return False
+        if enemy_root not in enemy_candidates:
+            logger.error("ERROR: PRESENTIMENT OF DREAD: enemy target must be visible and within 18\" of source model")
+            return False
+
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=source_root, enemy_unit=enemy_root):
+            return False
+
+        sr = getattr(enemy_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["battle_shock_test_modifier"] = int(sr.get("battle_shock_test_modifier", 0) or 0) - 1
+        reasons = list(sr.get("battle_shock_test_modifier_reasons", []) or [])
+        reasons.append(str(getattr(stratagem, "name", "PRESENTIMENT OF DREAD") or "PRESENTIMENT OF DREAD"))
+        sr["battle_shock_test_modifier_reasons"] = reasons
+        enemy_root.special_rules = sr
+
+        take_test = getattr(enemy_root, "take_battle_shock_test", None)
+        if callable(take_test):
+            take_test(int(getattr(game, "turn", 0) or 0))
+
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: PRESENTIMENT OF DREAD: %s takes a Battle-shock test at -1.",
+            getattr(enemy_root, "name", "Enemy"),
+        )
+        return True
+
+    def _use_aeldari_seer_forewarned(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: FOREWARNED: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+
+        attacking_unit = context.get("attacking_unit") or context.get("enemy_unit")
+        attacking_root = self._aeldari_root(attacking_unit) if attacking_unit is not None else None
+        if attacking_root is not None:
+            try:
+                if attacking_root.get_parent_army().player is self.player:
+                    logger.error("ERROR: FOREWARNED: attacking unit must be enemy")
+                    return False
+            except (AttributeError, TypeError, ValueError):
+                return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        target_window = list(context.get("target_units") or [])
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_seer_forewarned_candidates(target_units=target_window)
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: FOREWARNED: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error(
+                "ERROR: FOREWARNED: target must be an eligible ASURYANI INFANTRY non-WRAITH CONSTRUCT unit selected as an enemy fight target and within 9\" of a friendly ASURYANI PSYKER"
+            )
+            return False
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root, enemy_unit=attacking_root):
+            return False
+
+        source_name = str(getattr(stratagem, "name", "FOREWARNED") or "FOREWARNED")
+        entry = {
+            "value": 1,
+            "attack_type": "any",
+            "expires_phase": "FIGHT_PHASE",
+            "source": source_name,
+        }
+        self._append_defensive_effect(target_root, "defensive_hit_mods", dict(entry))
+        self._append_defensive_effect(target_root, "defensive_wound_mods", dict(entry))
+
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: FOREWARNED: attacks targeting %s are -1 to Hit and -1 to Wound this phase.",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
 
     def _use_aeldari_seer_fate_inescapable(self, stratagem, **kwargs) -> bool:
         context = self._aeldari_pending_context(stratagem.name, kwargs)

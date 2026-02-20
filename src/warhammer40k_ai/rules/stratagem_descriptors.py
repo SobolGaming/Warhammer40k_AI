@@ -1610,6 +1610,35 @@ _CORSAIR_COTERIE_STRATAGEM_BY_NAME = {
 }
 
 _SEER_COUNCIL_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009924002": StratagemToolDescriptor(
+        stratagem_id="000009924002",
+        name="Presentiment of Dread",
+        timing="command_phase",
+        target="asuryani_psyker_model_then_visible_enemy_unit_within_18",
+        duration="immediate",
+        effect="force_battleshock_test_with_modifier",
+        cp_cost=1,
+        range_in=18.0,
+        effect_params={
+            "battle_shock_roll_modifier": -1,
+            "visibility_required": True,
+        },
+    ),
+    "000009924003": StratagemToolDescriptor(
+        stratagem_id="000009924003",
+        name="Forewarned",
+        timing="fight_phase_after_enemy_targets_selected",
+        target="asuryani_infantry_non_wraith_construct_selected_as_enemy_fight_target_within_9_of_friendly_asuryani_psyker",
+        duration="until_end_of_phase",
+        effect="defensive_hit_and_wound_penalty",
+        cp_cost=1,
+        range_in=9.0,
+        effect_params={
+            "attack_type": "any",
+            "hit_roll_modifier": -1,
+            "wound_roll_modifier": -1,
+        },
+    ),
     "000009924004": StratagemToolDescriptor(
         stratagem_id="000009924004",
         name="Unshrouded Truth",

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from warhammer40k_ai.engine.decision_kinds import DECISION_MOVE_UNIT
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
@@ -485,6 +485,134 @@ class TestAeldariSeerCouncilStratagems(unittest.TestCase):
         game.event_system.publish("phase_end", player=p2, phase=SimpleNamespace(name="SHOOTING_PHASE"))
         self.assertFalse(bool(getattr(defender, "special_rules", {}).get("aeldari_psychic_shield_active")))
 
+    def test_presentiment_of_dread_queues_and_forces_battleshock_test_at_minus_one(self):
+        game, p1, p2, aeldari_army, enemy_army = _build_game()
+        psyker = _make_unit(
+            "Farseer",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["ASURYANI", "INFANTRY", "PSYKER"],
+            quantity=1,
+        )
+        enemy = _make_unit(
+            "Enemy Unit",
+            faction_name="Enemy",
+            faction_keywords=["ENEMY"],
+            keywords=["INFANTRY"],
+            quantity=1,
+        )
+        aeldari_army.add_unit(psyker)
+        enemy_army.add_unit(enemy)
+        _place_unit(game, psyker, 10.0, 10.0)
+        _place_unit(game, enemy, 20.0, 10.0)
+        enemy.take_battle_shock_test = Mock()
+
+        _set_phase(game, p2, "COMMAND_PHASE", 1)
+        pending = _pending_by_name(p1.stratagems, "PRESENTIMENT OF DREAD")
+        self.assertIsNotNone(pending)
+
+        ok = p1.stratagems.use(
+            str(pending.get("stratagem", "")),
+            unit=psyker,
+            enemy_unit=enemy,
+            dequeue=True,
+        )
+        self.assertTrue(ok)
+        self.assertEqual(int(p1.command_points or 0), 9)
+        enemy.take_battle_shock_test.assert_called_once_with(2)
+        self.assertEqual(int(enemy.special_rules.get("battle_shock_test_modifier", 0) or 0), -1)
+        self.assertTrue(
+            any(
+                "PRESENTIMENT OF DREAD" in str(reason or "").upper()
+                for reason in list(enemy.special_rules.get("battle_shock_test_modifier_reasons", []) or [])
+            )
+        )
+
+    def test_forewarned_queues_and_applies_minus_one_to_hit_and_wound_until_phase_end(self):
+        game, p1, p2, aeldari_army, enemy_army = _build_game()
+        psyker = _make_unit(
+            "Warlock",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["ASURYANI", "INFANTRY", "PSYKER"],
+            quantity=1,
+        )
+        defender = _make_unit(
+            "Guardian Defenders",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["ASURYANI", "INFANTRY", "GUARDIANS"],
+            quantity=2,
+        )
+        attacker = _make_unit(
+            "Enemy Fighters",
+            faction_name="Enemy",
+            faction_keywords=["ENEMY"],
+            keywords=["INFANTRY"],
+            quantity=1,
+        )
+        aeldari_army.add_unit(psyker)
+        aeldari_army.add_unit(defender)
+        enemy_army.add_unit(attacker)
+        _place_unit(game, psyker, 10.0, 10.0)
+        _place_unit(game, defender, 13.0, 10.0)
+        _place_unit(game, attacker, 30.0, 10.0)
+
+        _set_phase(game, p2, "FIGHT_PHASE", 1)
+        game.event_system.publish("fight_targets_selected", attacking_unit=attacker, target_units=[defender])
+        pending = _pending_by_name(p1.stratagems, "FOREWARNED")
+        self.assertIsNotNone(pending)
+
+        ok = p1.stratagems.use(
+            str(pending.get("stratagem", "")),
+            unit=defender,
+            attacking_unit=attacker,
+            target_units=[defender],
+            dequeue=True,
+        )
+        self.assertTrue(ok)
+        self.assertEqual(int(p1.command_points or 0), 9)
+        self.assertTrue(
+            any("FOREWARNED" in str(entry.get("source", "")).upper() for entry in list(defender.special_rules.get("defensive_hit_mods", []) or []))
+        )
+        self.assertTrue(
+            any("FOREWARNED" in str(entry.get("source", "")).upper() for entry in list(defender.special_rules.get("defensive_wound_mods", []) or []))
+        )
+
+        weapon = Wargear(
+            {
+                "name": "Melee Weapon",
+                "type": "Melee",
+                "range": "Melee",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "4",
+                "AP": "0",
+                "D": "1",
+                "description": "",
+            }
+        )
+        profile = weapon.profiles["default"]
+        attack_instance = {
+            "crit_hit": False,
+            "crit_wound": False,
+            "mortal_wound": False,
+            "below_half_distance": False,
+            "damage": 0,
+            "target_toughness_override": None,
+        }
+
+        hit_result = profile._hit_target_with_tracking(defender, attacker.models[0], dict(attack_instance))
+        self.assertTrue(any("FOREWARNED" in str(mod).upper() for mod in list(hit_result.get("modifiers", []) or [])))
+        wound_result = profile._wound_target_with_tracking(defender, attacker.models[0], dict(attack_instance))
+        self.assertTrue(any("FOREWARNED" in str(mod).upper() for mod in list(wound_result.get("modifiers", []) or [])))
+
+        game.event_system.publish("phase_end", player=p2, phase=SimpleNamespace(name="FIGHT_PHASE"))
+        hit_after = profile._hit_target_with_tracking(defender, attacker.models[0], dict(attack_instance))
+        self.assertFalse(any("FOREWARNED" in str(mod).upper() for mod in list(hit_after.get("modifiers", []) or [])))
+        wound_after = profile._wound_target_with_tracking(defender, attacker.models[0], dict(attack_instance))
+        self.assertFalse(any("FOREWARNED" in str(mod).upper() for mod in list(wound_after.get("modifiers", []) or [])))
+
     def test_seer_council_step1_stratagem_descriptors_registered(self):
         unshrouded = get_stratagem_tool_descriptor(stratagem_id="000009924004")
         self.assertIsNotNone(unshrouded)
@@ -528,6 +656,26 @@ class TestAeldariSeerCouncilStratagems(unittest.TestCase):
         by_name_shield = get_stratagem_tool_descriptor(name="PSYCHIC SHIELD")
         self.assertIsNotNone(by_name_shield)
         self.assertEqual(str(by_name_shield.stratagem_id), "000009924007")
+
+        presentiment = get_stratagem_tool_descriptor(stratagem_id="000009924002")
+        self.assertIsNotNone(presentiment)
+        self.assertEqual(str(presentiment.name), "Presentiment of Dread")
+        self.assertEqual(int(presentiment.cp_cost), 1)
+        self.assertEqual(str(presentiment.effect), "force_battleshock_test_with_modifier")
+
+        forewarned = get_stratagem_tool_descriptor(stratagem_id="000009924003")
+        self.assertIsNotNone(forewarned)
+        self.assertEqual(str(forewarned.name), "Forewarned")
+        self.assertEqual(int(forewarned.cp_cost), 1)
+        self.assertEqual(str(forewarned.effect), "defensive_hit_and_wound_penalty")
+
+        by_name_presentiment = get_stratagem_tool_descriptor(name="PRESENTIMENT OF DREAD")
+        self.assertIsNotNone(by_name_presentiment)
+        self.assertEqual(str(by_name_presentiment.stratagem_id), "000009924002")
+
+        by_name_forewarned = get_stratagem_tool_descriptor(name="FOREWARNED")
+        self.assertIsNotNone(by_name_forewarned)
+        self.assertEqual(str(by_name_forewarned.stratagem_id), "000009924003")
 
 
 if __name__ == "__main__":
