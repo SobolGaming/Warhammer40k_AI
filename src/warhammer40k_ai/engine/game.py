@@ -2552,6 +2552,40 @@ class Game(
                     total_mw += 1
             if rolls:
                 roll_summary = f"rolls={rolls}"
+        elif kind == "per_model_engagement_flat_cap":
+            from ..utility.aura_utils import model_within_engagement_range_of_unit
+
+            models = list(unit.get_attached_unit_models() or [])
+            threshold = int(spec.get("threshold", 4) or 4)
+            mortal_per_success = int(spec.get("mortal_per_success", 1) or 1)
+            max_mortal_wounds = int(spec.get("max_mortal_wounds", 6) or 6)
+            threshold = max(2, min(6, threshold))
+            mortal_per_success = max(1, mortal_per_success)
+            max_mortal_wounds = max(1, max_mortal_wounds)
+
+            rolls = []
+            engaged_models = 0
+            for model in models:
+                if model is None:
+                    continue
+                try:
+                    alive_attr = getattr(model, "is_alive", True)
+                    alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                except Exception:
+                    alive = False
+                if not alive:
+                    continue
+                if not bool(model_within_engagement_range_of_unit(model, target_unit)):
+                    continue
+                engaged_models += 1
+                roll = int(get_roll("D6") or 0)
+                rolls.append(roll)
+                if roll >= threshold:
+                    total_mw += mortal_per_success
+            if total_mw > max_mortal_wounds:
+                total_mw = max_mortal_wounds
+            if rolls:
+                roll_summary = f"rolls={rolls}, engaged_models={engaged_models}"
         elif kind == "per_remaining_wounds_4plus_1_max6":
             models = list(unit.get_attached_unit_models() or [])
             alive = [m for m in models if getattr(m, "is_alive", False)]

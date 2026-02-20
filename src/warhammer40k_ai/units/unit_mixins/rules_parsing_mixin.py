@@ -1650,6 +1650,51 @@ class RulesParsingMixin:
                     }
                 )
 
+        # Ghosts of the Webway enhancement: Cegorach's Coil
+        for u in members:
+            if u is None:
+                continue
+            sr_u = getattr(u, "special_rules", None)
+            if not isinstance(sr_u, dict):
+                continue
+            if not bool(sr_u.get("enhancement_cegorachs_coil")):
+                continue
+            source = str(sr_u.get("enhancement_cegorachs_coil_source", "") or "").strip() or "Cegorach's Coil"
+            try:
+                threshold = int(sr_u.get("enhancement_cegorachs_coil_roll_threshold", 4) or 4)
+            except Exception:
+                threshold = 4
+            try:
+                mortal_per_success = int(sr_u.get("enhancement_cegorachs_coil_mortal_per_success", 1) or 1)
+            except Exception:
+                mortal_per_success = 1
+            try:
+                max_mortal_wounds = int(sr_u.get("enhancement_cegorachs_coil_max_mortal_wounds", 6) or 6)
+            except Exception:
+                max_mortal_wounds = 6
+            bearer_id = str(sr_u.get("enhancement_bearer_model_id", "") or "").strip()
+            key = (
+                "per_model_engagement_flat_cap",
+                source.lower(),
+                int(max(2, threshold)),
+                int(max(1, mortal_per_success)),
+                int(max(1, max_mortal_wounds)),
+                bearer_id,
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            spec = {
+                "kind": "per_model_engagement_flat_cap",
+                "name": source,
+                "threshold": int(max(2, threshold)),
+                "mortal_per_success": int(max(1, mortal_per_success)),
+                "max_mortal_wounds": int(max(1, max_mortal_wounds)),
+            }
+            if bearer_id:
+                spec["bearer_model_id"] = bearer_id
+            specs.append(spec)
+
         for u in members:
             if u is None:
                 continue

@@ -379,6 +379,10 @@ class Enhancement:
         except Exception:
             is_windrider_host = False
         try:
+            is_ghosts_of_the_webway = bool(ae_mgr and ae_mgr.is_ghosts_of_the_webway())
+        except Exception:
+            is_ghosts_of_the_webway = False
+        try:
             is_eldritch_raiders = bool(ae_mgr and ae_mgr.is_eldritch_raiders())
         except Exception:
             is_eldritch_raiders = False
@@ -1604,6 +1608,62 @@ class Enhancement:
             unit.special_rules["enhancement_echoes_of_ulthanesh_cp_gain"] = int(max(0, cp_gain))
             unit.special_rules["enhancement_echoes_of_ulthanesh_outside_own_zone_bonus"] = int(max(0, outside_bonus))
             unit.special_rules["enhancement_echoes_of_ulthanesh_enemy_zone_bonus"] = int(max(0, enemy_bonus))
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "cegorach's coil" or enh_id == "000009915002":
+            if not is_ghosts_of_the_webway:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            threshold = _coerce_int(params.get("roll_threshold", 4) or 4, default=4)
+            mortal_per_success = _coerce_int(params.get("mortal_per_success", 1) or 1, default=1)
+            max_mortal_wounds = _coerce_int(params.get("max_mortal_wounds", 6) or 6, default=6)
+            source_name = str(getattr(self, "name", "") or "Cegorach's Coil").strip() or "Cegorach's Coil"
+            unit.special_rules["enhancement_cegorachs_coil"] = True
+            unit.special_rules["enhancement_cegorachs_coil_roll_threshold"] = int(max(2, threshold))
+            unit.special_rules["enhancement_cegorachs_coil_mortal_per_success"] = int(max(1, mortal_per_success))
+            unit.special_rules["enhancement_cegorachs_coil_max_mortal_wounds"] = int(max(1, max_mortal_wounds))
+            unit.special_rules["enhancement_cegorachs_coil_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "mask of secrets" or enh_id == "000009915003":
+            if not is_ghosts_of_the_webway:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            bs_penalty = abs(
+                _coerce_int(
+                    params.get("battle_shock_test_modifier", -1) or -1,
+                    default=-1,
+                )
+            )
+            source_name = str(getattr(self, "name", "") or "Mask of Secrets").strip() or "Mask of Secrets"
+            unit.special_rules["enhancement_mask_of_secrets"] = True
+            unit.special_rules["enhancement_mask_of_secrets_exclude_monster_vehicle"] = bool(
+                params.get("exclude_monster_vehicle", True)
+            )
+            unit.special_rules["enhancement_mask_of_secrets_battleshock_penalty"] = int(max(0, bs_penalty))
+            unit.special_rules["enhancement_mask_of_secrets_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "murder's jest" or enh_id == "000009915004":
+            if not is_ghosts_of_the_webway:
+                return
+            source_name = str(getattr(self, "name", "") or "Murder's Jest").strip() or "Murder's Jest"
+            unit.special_rules["enhancement_murders_jest"] = True
+            unit.special_rules["enhancement_murders_jest_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "mistweave" or enh_id == "000009915005":
+            if not is_ghosts_of_the_webway:
+                return
+            source_name = str(getattr(self, "name", "") or "Mistweave").strip() or "Mistweave"
+            unit.special_rules["enhancement_mistweave"] = True
+            unit.special_rules["enhancement_mistweave_source"] = source_name
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 

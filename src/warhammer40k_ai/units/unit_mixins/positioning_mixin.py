@@ -5757,6 +5757,16 @@ class PositioningMixin:
             except Exception:
                 pass
         if not found:
+            try:
+                if self._attached_unit_has_active_leading_enhancement(
+                    "enhancement_mistweave",
+                    enhancement_id="000009915005",
+                    enhancement_name="mistweave",
+                ):
+                    found = True
+            except Exception:
+                pass
+        if not found:
             found, _ = self._find_ability_with_patterns(["infiltrators", "infiltrate"])
         
         # Cache the result

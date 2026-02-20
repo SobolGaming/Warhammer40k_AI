@@ -9559,6 +9559,33 @@ class WargearProfile:
             except Exception:
                 pass
         try:
+            unit = getattr(attacker, "parent_unit", None)
+            if unit is not None and hasattr(unit, "get_attached_unit_root"):
+                unit = unit.get_attached_unit_root()
+            if unit is not None and target is not None:
+                target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+                target_below_half = bool(getattr(target_root, "is_below_half_strength", lambda: False)())
+                if target_below_half:
+                    members = (
+                        list(unit.get_attached_unit_members() or [])
+                        if hasattr(unit, "get_attached_unit_members")
+                        else [unit]
+                    )
+                    for member in list(members or []):
+                        if member is None:
+                            continue
+                        sr = getattr(member, "special_rules", None)
+                        if not (isinstance(sr, dict) and sr.get("enhancement_murders_jest")):
+                            continue
+                        if not self._attacker_is_enhancement_bearer(attacker, sr):
+                            continue
+                        crit_threshold = min(int(crit_threshold), int(final_needed))
+                        source = str(sr.get("enhancement_murders_jest_source", "") or "Murder's Jest").strip() or "Murder's Jest"
+                        crit_hit_reasons.append(f"{source}: critical hit on successful hit")
+                        break
+        except Exception:
+            pass
+        try:
             unit = attacker.parent_unit
             army = unit.get_parent_army() if unit is not None else None
             mgr = getattr(army, "emperors_children", None) if army is not None else None

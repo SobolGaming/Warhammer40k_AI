@@ -9206,6 +9206,37 @@ class ActionsMovementMixin:
                                 continue
                         source_any_penalty = max(source_any_penalty, int(favoured_penalty))
 
+                mask_of_secrets_active = False
+                try:
+                    checker = getattr(enemy_root, "_attached_unit_has_active_enhancement", None)
+                    if callable(checker):
+                        mask_of_secrets_active = bool(
+                            checker(
+                                "enhancement_mask_of_secrets",
+                                enhancement_id="000009915003",
+                                enhancement_name="mask of secrets",
+                            )
+                        )
+                except Exception:
+                    mask_of_secrets_active = False
+                if mask_of_secrets_active:
+                    source_desperate = True
+                    for source_unit in members:
+                        source_sr = getattr(source_unit, "special_rules", None)
+                        if not isinstance(source_sr, dict):
+                            continue
+                        if not source_sr.get("enhancement_mask_of_secrets"):
+                            continue
+                        if bool(source_sr.get("enhancement_mask_of_secrets_exclude_monster_vehicle", True)):
+                            source_exclude_mv = True
+                        try:
+                            source_bs_penalty = max(
+                                source_bs_penalty,
+                                int(source_sr.get("enhancement_mask_of_secrets_battleshock_penalty", 1) or 1),
+                            )
+                        except Exception:
+                            continue
+
                 if not source_desperate:
                     continue
                 if source_exclude_mv:

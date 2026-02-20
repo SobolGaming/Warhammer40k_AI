@@ -511,6 +511,56 @@ _AELDARI_WINDRIDER_HOST_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _AELDARI_WINDRIDER_HOST_DESCRIPTORS.values()
 }
 
+_AELDARI_GHOSTS_OF_THE_WEBWAY_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009915002": EnhancementToolDescriptor(
+        enhancement_id="000009915002",
+        name="Cegorach's Coil",
+        timing="end_of_charge_move",
+        target="enemy_unit_within_engagement_range_of_bearer_unit",
+        duration="instant",
+        effect="charge_end_mortal_wounds_per_model_in_engagement_with_cap",
+        effect_params={
+            "roll": "D6",
+            "roll_threshold": 4,
+            "mortal_per_success": 1,
+            "max_mortal_wounds": 6,
+        },
+    ),
+    "000009915003": EnhancementToolDescriptor(
+        enhancement_id="000009915003",
+        name="Mask of Secrets",
+        timing="enemy_fall_back_within_engagement_range",
+        target="enemy_non_monster_non_vehicle_unit_within_engagement_range_of_bearer_unit",
+        duration="instant",
+        effect="enemy_fall_back_forced_desperate_escape_with_battleshock_penalty",
+        effect_params={
+            "exclude_monster_vehicle": True,
+            "battle_shock_test_modifier": -1,
+        },
+    ),
+    "000009915004": EnhancementToolDescriptor(
+        enhancement_id="000009915004",
+        name="Murder's Jest",
+        timing="on_attack_hit_roll",
+        target="bearer_attacks_vs_enemy_below_half_strength",
+        duration="constant_conditional",
+        effect="successful_hits_become_critical",
+        effect_params={"target_requires_below_half_strength": True},
+    ),
+    "000009915005": EnhancementToolDescriptor(
+        enhancement_id="000009915005",
+        name="Mistweave",
+        timing="passive_while_leading",
+        target="bearer_unit",
+        duration="constant",
+        effect="grant_infiltrators_while_leading",
+    ),
+}
+
+_AELDARI_GHOSTS_OF_THE_WEBWAY_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _AELDARI_GHOSTS_OF_THE_WEBWAY_DESCRIPTORS.values()
+}
+
 _EXPERIMENTAL_PROTOTYPE_CADRE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009983002": EnhancementToolDescriptor(
         enhancement_id="000009983002",
@@ -1388,6 +1438,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _AELDARI_WINDRIDER_HOST_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _AELDARI_GHOSTS_OF_THE_WEBWAY_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _EXPERIMENTAL_PROTOTYPE_CADRE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -1456,6 +1509,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _AELDARI_CORSAIR_COTERIE_BY_NAME.get(key)
         or _AELDARI_ELDRITCH_RAIDERS_BY_NAME.get(key)
         or _AELDARI_WINDRIDER_HOST_BY_NAME.get(key)
+        or _AELDARI_GHOSTS_OF_THE_WEBWAY_BY_NAME.get(key)
         or _EXPERIMENTAL_PROTOTYPE_CADRE_BY_NAME.get(key)
         or _MONTKA_BY_NAME.get(key)
         or _RAD_ZONE_CORPS_BY_NAME.get(key)
