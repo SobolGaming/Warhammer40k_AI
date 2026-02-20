@@ -168,9 +168,13 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "RAIDERS' SPOILS",
     "RAIDERS\u2019 SPOILS",
     "RUTHLESS KILLERS",
+    "SHIELD NODES",
     "STAGED DEATH",
     "TRICKSTERS' RETORT",
     "TRICKSTERS\u2019 RETORT",
+    "VAUL'S VENGEANCE",
+    "VAUL\u2019S VENGEANCE",
+    "WARDING SALVOES",
     "WITHDRAW AND REINFORCE",
     "YRIEL'S EXAMPLE",
     "YRIEL\u2019S EXAMPLE",
@@ -417,6 +421,9 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "DIVINE INTERVENTION",
     "SHROUD OF CHAOS",
     "SOULSIGHT",
+    "SHIELD NODES",
+    "VAUL'S VENGEANCE",
+    "VAUL\u2019S VENGEANCE",
     "TUNNEL CRAWLERS",
     "DARK VIGOUR",
     "CRUEL RAIDERS",
@@ -1412,6 +1419,7 @@ class StratagemManager(
             "BLOODY VENGEANCE",
             "DRAWN TO THE SLAUGHTER",
             "PALL OF DREAD",
+            "VAUL'S VENGEANCE",
             "HEIGHTENED JEALOUSY",
             "INTO THE BREACH",
             "ONTO THE NEXT",
@@ -1521,6 +1529,7 @@ class StratagemManager(
             "VOID HARDENED",
             "HYPERSTIMMS",
             "ORBITAL OVERSIGHT",
+            "SHIELD NODES",
         }
         fight_reaction_names = {
             "BALEFUL HALO",
@@ -1557,6 +1566,7 @@ class StratagemManager(
             "TO THEIR FINAL BREATH",
             "VOID HARDENED",
             "HYPERSTIMMS",
+            "SHIELD NODES",
         }
 
         has_generic_defensive_shooting = "shooting" in defensive_phases
@@ -1707,6 +1717,7 @@ class StratagemManager(
             "OUTCAST AMBUSH",
             "PIRATES' DUE",
             "RAIDERS' SPOILS",
+            "SHIELD NODES",
             "DOOM INESCAPABLE",
             "PARTING THE VEIL",
             "PRETERNATURAL PRECISION",
@@ -1717,6 +1728,7 @@ class StratagemManager(
             "UNSHAKEABLE OPPONENTS",
             "VENGEFUL SURGE",
             "VECTORED ENGINES",
+            "WARDING SALVOES",
             "VIOLENT CRESCENDO",
             "VIOLENT EXCESS",
             "KHAINE'S VENGEANCE",
@@ -3268,6 +3280,51 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires your Movement phase, just after an AELDARI unit from your army Falls Back"
             return result
+        if name_u == "WARDING SALVOES":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+                if phase_name_l in {"shooting phase", "fight phase"}:
+                    candidates = self._aeldari_guardian_dire_avengers_or_guardians_candidates(
+                        require_not_shot=phase_name_l == "shooting phase",
+                        require_not_fought=phase_name_l == "fight phase",
+                    )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Shooting phase or the Fight phase and an eligible Dire Avengers or Guardians unit that has not been selected this phase"
+            return result
+        if name_u == "SHIELD NODES":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._aeldari_guardian_shield_nodes_candidates(
+                    target_units=list(context.get("target_units") or []),
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires opponent Shooting/Fight target-selection trigger with a Dire Avengers or Guardians unit selected as a target"
+            return result
+        if name_u in {"VAUL'S VENGEANCE", "VAUL’S VENGEANCE"}:
+            if self._aeldari_guardian_vauls_vengeance_used_this_round():
+                result["reason"] = "Once per battle round used"
+                return result
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._aeldari_guardian_war_walkers_candidates()
+            if not candidates:
+                result["reason"] = "Requires opponent Shooting/Fight trigger and an eligible War Walkers unit"
+                return result
+            enemy_unit = context.get("enemy_unit") or context.get("destroyed_by_unit") or context.get("attacking_unit")
+            enemy_root = self._aeldari_root(enemy_unit) if enemy_unit is not None else None
+            if enemy_root is None:
+                result["reason"] = "Requires an enemy unit that just destroyed your Dire Avengers or Guardians unit"
+                return result
+            result["available"] = True
+            result["reason"] = None
+            return result
         if name_u == "BLOODY DANCE":
             candidates = list(context.get("candidates") or [])
             enemy_by_unit = context.get("enemy_by_unit")
@@ -3547,8 +3604,12 @@ class StratagemManager(
             "RAIDERS' SPOILS": "Target: your ANHRATHE unit that is within Engagement Range of one or more enemy units",
             "RAIDERS\u2019 SPOILS": "Target: your ANHRATHE unit that is within Engagement Range of one or more enemy units",
             "RUTHLESS KILLERS": "Target: your CORSAIR VOIDSCARRED unit that has not been selected to shoot/fight this phase",
+            "SHIELD NODES": "Target: your Dire Avengers or Guardians unit selected by enemy Shooting/Fight attacks (if within objective range, attacks against it are -1 to wound this phase)",
             "TRICKSTERS' RETORT": "Target: your TROUPE unit within 9\" of an enemy unit that just ended a Normal/Advance/Fall Back move",
             "TRICKSTERS\u2019 RETORT": "Target: your TROUPE unit within 9\" of an enemy unit that just ended a Normal/Advance/Fall Back move",
+            "VAUL'S VENGEANCE": "Target: your War Walkers unit after an enemy unit destroys your Dire Avengers or Guardians unit; your unit shoots reactively and can only target that enemy (once per battle round)",
+            "VAUL’S VENGEANCE": "Target: your War Walkers unit after an enemy unit destroys your Dire Avengers or Guardians unit; your unit shoots reactively and can only target that enemy (once per battle round)",
+            "WARDING SALVOES": "Target: your Dire Avengers or Guardians unit that has not been selected to shoot/fight this phase; it can re-roll Wound rolls when targeting enemies within objective range this phase",
             "WITHDRAW AND REINFORCE": "Target: your ANHRATHE unit that is not in Engagement Range at the end of the opponent's Fight phase",
             "YRIEL'S EXAMPLE": "Target: your AELDARI INFANTRY unit (excluding WRAITH CONSTRUCT) selected as a target of enemy fight attacks",
             "YRIEL\u2019S EXAMPLE": "Target: your AELDARI INFANTRY unit (excluding WRAITH CONSTRUCT) selected as a target of enemy fight attacks",
@@ -4192,6 +4253,10 @@ class StratagemManager(
             raise
         try:
             self._queue_aeldari_armoured_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_aeldari_guardian_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -7724,6 +7789,13 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_aeldari_guardian_shooting_targets_selected_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
             self._queue_aeldari_devoted_shooting_targets_selected_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
@@ -8570,6 +8642,13 @@ class StratagemManager(
             return
         try:
             owner_player = attacking_unit.get_parent_army().player
+        except Exception:
+            raise
+        try:
+            self._queue_aeldari_guardian_fight_targets_selected_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
         except Exception:
             raise
         try:
@@ -10812,6 +10891,13 @@ class StratagemManager(
         try:
             self._queue_emperors_children_carnival_unit_destroyed_reactions(
                 destroyed_unit=unit,
+                destroyed_by_unit=kwargs.get("destroyed_by_unit"),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_aeldari_guardian_unit_destroyed_reactions(
+                unit=unit,
                 destroyed_by_unit=kwargs.get("destroyed_by_unit"),
             )
         except Exception:
@@ -13497,6 +13583,9 @@ class StratagemManager(
         aeldari_armoured_result = self._use_aeldari_armoured_warhost_stratagem(s, **kwargs)
         if aeldari_armoured_result is not None:
             return aeldari_armoured_result
+        aeldari_guardian_result = self._use_aeldari_guardian_battlehost_stratagem(s, **kwargs)
+        if aeldari_guardian_result is not None:
+            return aeldari_guardian_result
         aeldari_devoted_result = self._use_aeldari_devoted_of_ynnead_stratagem(s, **kwargs)
         if aeldari_devoted_result is not None:
             return aeldari_devoted_result

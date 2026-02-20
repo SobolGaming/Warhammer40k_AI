@@ -1609,6 +1609,43 @@ _CORSAIR_COTERIE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _CORSAIR_COTERIE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_GUARDIAN_BATTLEHOST_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009912002": StratagemToolDescriptor(
+        stratagem_id="000009912002",
+        name="Warding Salvoes",
+        timing="your_shooting_phase_or_fight_phase",
+        target="dire_avengers_or_guardians_unit_not_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="conditional_wound_reroll_vs_targets_within_objective_range",
+        cp_cost=1,
+        effect_params={"attack_type": "any", "reroll_wound_full": True, "target_within_objective_range_required": True},
+    ),
+    "000009912003": StratagemToolDescriptor(
+        stratagem_id="000009912003",
+        name="Shield Nodes",
+        timing="opponent_shooting_or_fight_phase_after_enemy_targets_selected",
+        target="dire_avengers_or_guardians_unit_selected_as_attack_target",
+        duration="until_end_of_phase",
+        effect="conditional_defensive_minus_one_to_wound_if_within_objective_range",
+        cp_cost=1,
+        effect_params={"attack_type": "any", "wound_roll_modifier": -1, "target_within_objective_range_required": True},
+    ),
+    "000009912004": StratagemToolDescriptor(
+        stratagem_id="000009912004",
+        name="Vaul's Vengeance",
+        timing="opponent_shooting_or_fight_phase_after_enemy_destroys_guardian_unit",
+        target="war_walkers_unit",
+        duration="immediate",
+        effect="reactive_shooting_at_attacker_once_per_battle_round",
+        cp_cost=1,
+        effect_params={"force_target_attacker": True, "out_of_phase": True, "once_per_battle_round": True},
+    ),
+}
+
+_GUARDIAN_BATTLEHOST_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _GUARDIAN_BATTLEHOST_STRATAGEM_DESCRIPTORS.values()
+}
+
 _DEVOTED_OF_YNNEAD_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009920002": StratagemToolDescriptor(
         stratagem_id="000009920002",
@@ -2472,6 +2509,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _CORSAIR_COTERIE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _GUARDIAN_BATTLEHOST_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _DEVOTED_OF_YNNEAD_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -2528,6 +2568,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _ARMOURED_WARHOST_STRATAGEM_BY_NAME.get(key)
         or _ASPECT_HOST_STRATAGEM_BY_NAME.get(key)
         or _CORSAIR_COTERIE_STRATAGEM_BY_NAME.get(key)
+        or _GUARDIAN_BATTLEHOST_STRATAGEM_BY_NAME.get(key)
         or _DEVOTED_OF_YNNEAD_STRATAGEM_BY_NAME.get(key)
         or _GHOSTS_OF_THE_WEBWAY_STRATAGEM_BY_NAME.get(key)
         or _ELDRITCH_RAIDERS_STRATAGEM_BY_NAME.get(key)

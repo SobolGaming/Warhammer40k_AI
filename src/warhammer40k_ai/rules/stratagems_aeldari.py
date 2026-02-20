@@ -97,6 +97,11 @@ class AeldariStratagemMixin:
         checker = getattr(mgr, "is_eldritch_raiders", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_guardian_battlehost_detachment(self) -> bool:
+        mgr = self._aeldari_detachment_mgr()
+        checker = getattr(mgr, "is_guardian_battlehost", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _blitzing_firepower_candidates(self) -> List[Any]:
         if not self._is_warhost_detachment():
             return []
@@ -404,6 +409,162 @@ class AeldariStratagemMixin:
             return self._aeldari_devoted_soulsight_candidates()
         return []
 
+    def _aeldari_guardian_is_dire_avengers_or_guardians(self, unit: Any) -> bool:
+        root = self._aeldari_root(unit)
+        if root is None:
+            return False
+        has_any = getattr(root, "has_any_keyword", None)
+        if callable(has_any):
+            try:
+                if bool(has_any("DIRE AVENGERS")) or bool(has_any("DIRE AVENGER")):
+                    return True
+                if bool(has_any("GUARDIANS")) or bool(has_any("GUARDIAN")):
+                    return True
+            except (AttributeError, TypeError, ValueError):
+                pass
+        name = str(getattr(root, "name", "") or "").strip().lower()
+        return "dire avenger" in name or "guardian" in name
+
+    def _aeldari_guardian_is_war_walkers(self, unit: Any) -> bool:
+        root = self._aeldari_root(unit)
+        if root is None:
+            return False
+        has_any = getattr(root, "has_any_keyword", None)
+        if callable(has_any):
+            try:
+                if bool(has_any("WAR WALKERS")) or bool(has_any("WAR WALKER")):
+                    return True
+            except (AttributeError, TypeError, ValueError):
+                pass
+        name = str(getattr(root, "name", "") or "").strip().lower()
+        return "war walker" in name
+
+    def _aeldari_guardian_unit_within_objective_range(self, unit: Any) -> bool:
+        root = self._aeldari_root(unit)
+        if root is None:
+            return False
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        within_any = getattr(root, "is_within_any_objective_range", None)
+        if callable(within_any):
+            try:
+                return bool(within_any(game_map))
+            except (AttributeError, TypeError, ValueError):
+                pass
+        if game_map is None:
+            return False
+        within_one = getattr(root, "is_within_objective_range", None)
+        if not callable(within_one):
+            return False
+        for objective in list(getattr(game_map, "objectives", []) or []):
+            location = getattr(objective, "location", None)
+            if location is None:
+                location = objective
+            if location is None or bool(getattr(location, "removed", False)):
+                continue
+            try:
+                if bool(within_one(location)):
+                    return True
+            except (AttributeError, TypeError, ValueError):
+                continue
+        return False
+
+    def _aeldari_guardian_dire_avengers_or_guardians_candidates(
+        self,
+        *,
+        require_not_shot: bool = False,
+        require_not_fought: bool = False,
+    ) -> List[Any]:
+        if not self._is_guardian_battlehost_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._aeldari_guardian_is_dire_avengers_or_guardians(root):
+                continue
+            if require_not_shot and bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
+                continue
+            if require_not_fought and bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_guardian_shield_nodes_candidates(self, *, target_units: List[Any]) -> List[Any]:
+        eligible_units = self._aeldari_guardian_dire_avengers_or_guardians_candidates(
+            require_not_shot=False,
+            require_not_fought=False,
+        )
+        eligible_ids = {self._aeldari_sort_key(unit) for unit in list(eligible_units or [])}
+        out: List[Any] = []
+        seen: set[str] = set()
+        for target in list(target_units or []):
+            root = self._aeldari_root(target)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid not in eligible_ids:
+                continue
+            if (not uid) and root not in eligible_units:
+                continue
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_guardian_war_walkers_candidates(self) -> List[Any]:
+        if not self._is_guardian_battlehost_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._aeldari_guardian_is_war_walkers(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_guardian_vauls_vengeance_used_this_round(self) -> bool:
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        current_round = int(getattr(game, "turn", 0) or 0)
+        used_round = int(getattr(self, "_aeldari_guardian_vauls_vengeance_used_round", 0) or 0)
+        return bool(current_round and used_round and current_round == used_round)
+
+    def _aeldari_guardian_mark_vauls_vengeance_used_round(self) -> None:
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        setattr(self, "_aeldari_guardian_vauls_vengeance_used_round", int(getattr(game, "turn", 0) or 0))
+
     def _aeldari_armoured_anti_grav_targets(self, target_units: List[Any]) -> List[Any]:
         out: List[Any] = []
         seen: set[str] = set()
@@ -587,6 +748,195 @@ class AeldariStratagemMixin:
                                 payload["unit"] = candidates[0]
                                 payload["target_unit"] = candidates[0]
                             self._queue_reaction(payload, use_timer=False)
+
+    def _queue_aeldari_guardian_phase_start_reactions(self, *, player, phase) -> None:
+        game = getattr(self, "game", None)
+        if game is None or not self._is_guardian_battlehost_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if phase_key == "SHOOTING_PHASE" and active_player is not self.player:
+            return
+        if phase_key not in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
+            return
+
+        stratagem = self._aeldari_get_stratagem_by_norm_name("WARDING SALVOES")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+            return
+        candidates = self._aeldari_guardian_dire_avengers_or_guardians_candidates(
+            require_not_shot=phase_key == "SHOOTING_PHASE",
+            require_not_fought=phase_key == "FIGHT_PHASE",
+        )
+        if not candidates or self._aeldari_reaction_exists("phase_start", stratagem.name):
+            return
+        phase_label = "Shooting phase" if phase_key == "SHOOTING_PHASE" else "Fight phase"
+        payload: Dict[str, Any] = {
+            "event": "phase_start",
+            "phase": phase_label,
+            "phase_name": phase_label,
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_aeldari_guardian_shooting_targets_selected_reactions(
+        self,
+        *,
+        attacking_unit,
+        target_units: List[Any],
+    ) -> None:
+        game = getattr(self, "game", None)
+        if game is None or attacking_unit is None or not self._is_guardian_battlehost_detachment():
+            return
+        phase_key = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_key != "SHOOTING_PHASE":
+            return
+        attacker_root = self._aeldari_root(attacking_unit)
+        if attacker_root is None:
+            return
+        try:
+            if attacker_root.get_parent_army().player is self.player:
+                return
+        except (AttributeError, TypeError, ValueError):
+            return
+        stratagem = self._aeldari_get_stratagem_by_norm_name("SHIELD NODES")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+            return
+        candidates = self._aeldari_guardian_shield_nodes_candidates(target_units=list(target_units or []))
+        if not candidates or self._aeldari_reaction_exists("shooting_targets_selected", stratagem.name):
+            return
+        payload: Dict[str, Any] = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_aeldari_guardian_fight_targets_selected_reactions(
+        self,
+        *,
+        attacking_unit,
+        target_units: List[Any],
+    ) -> None:
+        game = getattr(self, "game", None)
+        if game is None or attacking_unit is None or not self._is_guardian_battlehost_detachment():
+            return
+        phase_key = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_key != "FIGHT_PHASE":
+            return
+        attacker_root = self._aeldari_root(attacking_unit)
+        if attacker_root is None:
+            return
+        try:
+            if attacker_root.get_parent_army().player is self.player:
+                return
+        except (AttributeError, TypeError, ValueError):
+            return
+        stratagem = self._aeldari_get_stratagem_by_norm_name("SHIELD NODES")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+            return
+        target_list = list(target_units or [])
+        candidates = self._aeldari_guardian_shield_nodes_candidates(target_units=target_list)
+        if not candidates or self._aeldari_reaction_exists("fight_targets_selected", stratagem.name):
+            return
+        payload: Dict[str, Any] = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "target_units": target_list,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_aeldari_guardian_unit_destroyed_reactions(
+        self,
+        *,
+        unit,
+        destroyed_by_unit=None,
+    ) -> None:
+        game = getattr(self, "game", None)
+        if game is None or unit is None or not self._is_guardian_battlehost_detachment():
+            return
+        phase_key = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_key not in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        root = self._aeldari_root(unit)
+        if root is None:
+            return
+        try:
+            if root.get_parent_army().player is not self.player:
+                return
+        except (AttributeError, TypeError, ValueError):
+            return
+        if not self._aeldari_guardian_is_dire_avengers_or_guardians(root):
+            return
+
+        enemy_root = self._aeldari_root(destroyed_by_unit)
+        if enemy_root is None:
+            return
+        try:
+            if enemy_root.get_parent_army().player is self.player:
+                return
+        except (AttributeError, TypeError, ValueError):
+            return
+
+        stratagem = self._aeldari_get_stratagem_by_norm_name("VAUL'S VENGEANCE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+            return
+        if self._aeldari_guardian_vauls_vengeance_used_this_round():
+            return
+        candidates = self._aeldari_guardian_war_walkers_candidates()
+        if not candidates or self._aeldari_reaction_exists("unit_destroyed", stratagem.name):
+            return
+        payload: Dict[str, Any] = {
+            "event": "unit_destroyed",
+            "phase_name": str(getattr(self, "_current_phase_name", "") or ""),
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "destroyed_unit": root,
+            "destroyed_by_unit": enemy_root,
+            "enemy_unit": enemy_root,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
 
     def _queue_aeldari_devoted_phase_start_reactions(self, *, player, phase) -> None:
         game = getattr(self, "game", None)
@@ -1777,6 +2127,20 @@ class AeldariStratagemMixin:
                         sr.pop(key, None)
                         changed = True
 
+            if bool(sr.get("aeldari_warding_salvoes_active")):
+                expires = str(sr.get("aeldari_warding_salvoes_expires_phase", "") or "").strip().upper()
+                if not expires or expires == phase_key:
+                    for key in (
+                        "aeldari_warding_salvoes_active",
+                        "aeldari_warding_salvoes_expires_phase",
+                        "aeldari_warding_salvoes_turn_owner",
+                        "aeldari_warding_salvoes_turn",
+                        "aeldari_warding_salvoes_source",
+                    ):
+                        if key in sr:
+                            sr.pop(key, None)
+                            changed = True
+
             if phase_key == "FIGHT_PHASE" and bool(sr.get("aeldari_pirates_due_active")):
                 for key in (
                     "aeldari_pirates_due_active",
@@ -2319,6 +2683,213 @@ class AeldariStratagemMixin:
         if turn:
             sr["vectored_engines_turn"] = turn
         target_root.special_rules = sr
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_aeldari_guardian_battlehost_stratagem(self, stratagem, **kwargs) -> Optional[bool]:
+        if stratagem is None or not self._is_guardian_battlehost_detachment():
+            return None
+        name_u = self._aeldari_norm_name(getattr(stratagem, "name", ""))
+        if name_u == "WARDING SALVOES":
+            return self._use_aeldari_guardian_warding_salvoes(stratagem, **kwargs)
+        if name_u == "SHIELD NODES":
+            return self._use_aeldari_guardian_shield_nodes(stratagem, **kwargs)
+        if name_u == "VAUL'S VENGEANCE":
+            return self._use_aeldari_guardian_vauls_vengeance(stratagem, **kwargs)
+        return None
+
+    def _use_aeldari_guardian_warding_salvoes(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: WARDING SALVOES: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if phase_name == "shooting phase" and active_player is not self.player:
+            logger.error("ERROR: WARDING SALVOES: only usable in your Shooting phase")
+            return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_guardian_dire_avengers_or_guardians_candidates(
+                require_not_shot=phase_name == "shooting phase",
+                require_not_fought=phase_name == "fight phase",
+            )
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: WARDING SALVOES: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: WARDING SALVOES: target must be an eligible Dire Avengers or Guardians unit")
+            return False
+        if not self._aeldari_on_battlefield(target_root, require_targetable=True):
+            logger.error("ERROR: WARDING SALVOES: target must be on the battlefield and targetable")
+            return False
+        if not self._aeldari_guardian_is_dire_avengers_or_guardians(target_root):
+            logger.error("ERROR: WARDING SALVOES: target must be Dire Avengers or Guardians")
+            return False
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root):
+            return False
+
+        phase_key = "SHOOTING_PHASE" if phase_name == "shooting phase" else "FIGHT_PHASE"
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["aeldari_warding_salvoes_active"] = True
+        sr["aeldari_warding_salvoes_expires_phase"] = phase_key
+        sr["aeldari_warding_salvoes_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["aeldari_warding_salvoes_turn"] = int(getattr(game, "turn", 0) or 0)
+        sr["aeldari_warding_salvoes_source"] = str(getattr(stratagem, "name", "WARDING SALVOES") or "WARDING SALVOES")
+        target_root.special_rules = sr
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: WARDING SALVOES: %s can re-roll Wound rolls against targets within objective range this phase.",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_aeldari_guardian_shield_nodes(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: SHIELD NODES: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            logger.error("ERROR: SHIELD NODES: not your opponent's phase")
+            return False
+
+        attacking_unit = context.get("attacking_unit") or context.get("enemy_unit")
+        attacking_root = self._aeldari_root(attacking_unit) if attacking_unit is not None else None
+        if attacking_root is not None:
+            try:
+                if attacking_root.get_parent_army().player is self.player:
+                    logger.error("ERROR: SHIELD NODES: attacking unit must be enemy")
+                    return False
+            except (AttributeError, TypeError, ValueError):
+                return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        target_window = list(context.get("target_units") or [])
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_guardian_shield_nodes_candidates(target_units=target_window)
+        candidate_roots = [self._aeldari_root(unit) for unit in list(candidates or [])]
+        candidate_roots = [unit for unit in candidate_roots if unit is not None]
+        if target_root is None:
+            if len(candidate_roots) == 1:
+                target_root = candidate_roots[0]
+            else:
+                logger.error("ERROR: SHIELD NODES: missing target unit")
+                return False
+        if candidate_roots and target_root not in candidate_roots:
+            logger.error("ERROR: SHIELD NODES: target must have been selected as an enemy attack target")
+            return False
+        if not self._aeldari_on_battlefield(target_root, require_targetable=True):
+            logger.error("ERROR: SHIELD NODES: target must be on the battlefield and targetable")
+            return False
+        if not self._aeldari_guardian_is_dire_avengers_or_guardians(target_root):
+            logger.error("ERROR: SHIELD NODES: target must be Dire Avengers or Guardians")
+            return False
+        if not self._aeldari_armoured_spend_cp(
+            stratagem,
+            target_unit=target_root,
+            enemy_unit=attacking_root,
+        ):
+            return False
+
+        if self._aeldari_guardian_unit_within_objective_range(target_root):
+            phase_key = "SHOOTING_PHASE" if phase_name == "shooting phase" else "FIGHT_PHASE"
+            self._append_defensive_effect(
+                target_root,
+                "defensive_wound_mods",
+                {
+                    "value": 1,
+                    "attack_type": "any",
+                    "expires_phase": phase_key,
+                    "source": str(getattr(stratagem, "name", "SHIELD NODES") or "SHIELD NODES"),
+                },
+            )
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_aeldari_guardian_vauls_vengeance(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: VAUL'S VENGEANCE: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            logger.error("ERROR: VAUL'S VENGEANCE: not your opponent's phase")
+            return False
+        if self._aeldari_guardian_vauls_vengeance_used_this_round():
+            logger.error("ERROR: VAUL'S VENGEANCE: already used this battle round")
+            return False
+
+        enemy_unit = context.get("enemy_unit") or context.get("destroyed_by_unit") or context.get("attacking_unit")
+        enemy_root = self._aeldari_root(enemy_unit) if enemy_unit is not None else None
+        if enemy_root is None:
+            logger.error("ERROR: VAUL'S VENGEANCE: missing enemy unit that destroyed the trigger unit")
+            return False
+        try:
+            if enemy_root.get_parent_army().player is self.player:
+                logger.error("ERROR: VAUL'S VENGEANCE: enemy trigger unit is not hostile")
+                return False
+        except (AttributeError, TypeError, ValueError):
+            return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_guardian_war_walkers_candidates()
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: VAUL'S VENGEANCE: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: VAUL'S VENGEANCE: target must be a War Walkers unit")
+            return False
+        if not self._aeldari_on_battlefield(target_root, require_targetable=True):
+            logger.error("ERROR: VAUL'S VENGEANCE: target must be on the battlefield and targetable")
+            return False
+        if not self._aeldari_guardian_is_war_walkers(target_root):
+            logger.error("ERROR: VAUL'S VENGEANCE: target must be War Walkers")
+            return False
+
+        queue_fn = getattr(game, "_queue_setup_reactive_shooting_decision", None)
+        if not callable(queue_fn):
+            logger.error("ERROR: VAUL'S VENGEANCE: reactive shooting queue unavailable")
+            return False
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root, enemy_unit=enemy_root):
+            return False
+        request = queue_fn(
+            player=self.player,
+            unit=target_root,
+            target_unit=enemy_root,
+            source=str(getattr(stratagem, "name", "VAUL'S VENGEANCE") or "VAUL'S VENGEANCE"),
+        )
+        if request is None:
+            logger.error("ERROR: VAUL'S VENGEANCE: failed to queue reactive shooting decision")
+            return False
+        self._aeldari_guardian_mark_vauls_vengeance_used_round()
         self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
         return True
 

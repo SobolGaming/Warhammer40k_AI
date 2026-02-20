@@ -4096,6 +4096,32 @@ class ActionsMovementMixin:
         except Exception:
             pass
 
+        # WARDING SALVOES: re-roll Wound rolls against enemy units within objective range.
+        try:
+            sr = getattr(root, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("aeldari_warding_salvoes_active") and target is not None:
+                owner_id = str(sr.get("aeldari_warding_salvoes_turn_owner", "") or "")
+                effect_turn = int(sr.get("aeldari_warding_salvoes_turn", 0) or 0)
+                expires_phase = str(sr.get("aeldari_warding_salvoes_expires_phase", "") or "").strip().upper()
+                phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+                current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                attacker_owner = str(getattr(getattr(army, "player", None), "id", "") or "") if army is not None else ""
+                active = True
+                if owner_id and attacker_owner and owner_id != attacker_owner:
+                    active = False
+                if active and effect_turn and current_turn and effect_turn != current_turn:
+                    active = False
+                if active and expires_phase and phase_name and expires_phase != phase_name:
+                    active = False
+                if active:
+                    game_map = getattr(game, "map", None) if game is not None else None
+                    if bool(self._target_within_objective_range(target, game_map=game_map)):
+                        source = str(sr.get("aeldari_warding_salvoes_source", "") or "WARDING SALVOES").strip() or "WARDING SALVOES"
+                        mods["reroll_wound_full"] = True
+                        reroll_wound_full_reasons.append(f"{source}: re-roll Wound roll vs targets within objective range")
+        except Exception:
+            pass
+
         # Fire Support: disembarked unit re-rolls wound rolls vs marked target.
         try:
             if target is not None:
