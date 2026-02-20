@@ -3756,6 +3756,22 @@ class KeywordsDetachmentsMixin:
                         total_bonus += int(sr.get("enhancement_sublime_prescience_round_bonus", 1) or 0)
                     except Exception:
                         pass
+
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        try:
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        except Exception:
+            game = None
+        ae_mgr = getattr(army, "aeldari_detachments", None) if army is not None else None
+        ride_bonus_fn = getattr(ae_mgr, "ride_the_wind_strategic_reserves_round_bonus", None) if ae_mgr is not None else None
+        if callable(ride_bonus_fn):
+            try:
+                total_bonus += int(ride_bonus_fn(root, game=game) or 0)
+            except Exception:
+                pass
         return max(0, int(total_bonus or 0))
 
     def get_strategic_reserves_setup_turn(self, *, game=None, current_turn: Optional[int] = None) -> int:

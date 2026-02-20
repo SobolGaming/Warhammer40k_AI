@@ -38,6 +38,7 @@ from .decision_kinds import (
     DECISION_SELECT_SETUP_REACTIVE_TARGET,
     DECISION_SELECT_TARGET_MODEL,
     DECISION_SELECT_OVERWATCH_SHOOTER,
+    DECISION_SELECT_REALM_OF_CHAOS_UNITS,
     DECISION_SELECT_REVERBERATING_SUMMONS_UNIT,
 )
 from .random_source import RandomSource
@@ -1233,6 +1234,7 @@ class Game(
         """Optional end-of-opponent-turn: remove eligible units to Strategic Reserves."""
         if turn_ending_player is None:
             return
+        turn_ending_player_id = str(getattr(turn_ending_player, "id", "") or "")
         game_map = self.map
         if game_map is None:
             raise RuntimeError("Strategic reserves prompt requires a game map.")
@@ -1246,6 +1248,86 @@ class Game(
             army = opp.get_army()
             if army is None:
                 raise RuntimeError(f"Strategic reserves prompt requires an army for {opp.name}.")
+
+            ae_mgr = getattr(army, "aeldari_detachments", None)
+            ride_candidates_fn = (
+                getattr(ae_mgr, "ride_the_wind_end_of_opponent_turn_candidates", None)
+                if ae_mgr is not None else None
+            )
+            ride_max_units_fn = (
+                getattr(ae_mgr, "ride_the_wind_end_of_opponent_turn_max_units", None)
+                if ae_mgr is not None else None
+            )
+            ride_resolved_fn = (
+                getattr(ae_mgr, "ride_the_wind_phase_already_resolved", None)
+                if ae_mgr is not None else None
+            )
+            if callable(ride_candidates_fn):
+                resolved = False
+                if callable(ride_resolved_fn):
+                    resolved = bool(ride_resolved_fn(game=self, turn_ending_player_id=turn_ending_player_id))
+                if not resolved:
+                    ride_candidates = list(
+                        ride_candidates_fn(
+                            game=self,
+                            turn_ending_player=turn_ending_player,
+                            game_map=game_map,
+                        ) or []
+                    )
+                    max_units = int(ride_max_units_fn(game=self) or 0) if callable(ride_max_units_fn) else 0
+                    max_units = max(0, min(int(max_units), len(ride_candidates)))
+                    candidate_ids = [
+                        str(get_entity_id(unit) or "")
+                        for unit in list(ride_candidates or [])
+                        if str(get_entity_id(unit) or "").strip()
+                    ]
+                    candidate_ids = sorted(set(candidate_ids))
+                    if candidate_ids and max_units > 0:
+                        phase_key = f"{int(getattr(self, 'turn', 0) or 0)}:{turn_ending_player_id}"
+                        pending = False
+                        queue = getattr(self, "decision_queue", None)
+                        if queue is not None and hasattr(queue, "list"):
+                            for req in list(queue.list() or []):
+                                if str(getattr(req, "decision_type", "") or "") != DECISION_SELECT_REALM_OF_CHAOS_UNITS:
+                                    continue
+                                if str(getattr(req, "player_id", "") or "") != str(getattr(opp, "id", "") or ""):
+                                    continue
+                                req_ctx = dict(getattr(req, "context", {}) or {})
+                                if str(req_ctx.get("ability", "") or "").strip().lower() != "ride_the_wind_end_of_opponent_turn":
+                                    continue
+                                if str(req_ctx.get("turn_key", "") or "") != phase_key:
+                                    continue
+                                pending = True
+                                break
+                        if not pending:
+                            request = DecisionRequest.create(
+                                DECISION_SELECT_REALM_OF_CHAOS_UNITS,
+                                "Ride the Wind: select units to place into Strategic Reserves.",
+                                player_id=getattr(opp, "id", None),
+                                options=[
+                                    DecisionOption.create("Confirm selection", payload={"action": "confirm"}),
+                                    DecisionOption.create("Do not use", payload={"action": "skip"}),
+                                ],
+                                context={
+                                    "ability": "ride_the_wind_end_of_opponent_turn",
+                                    "ability_name": "Ride the Wind",
+                                    "allowed_unit_ids": list(candidate_ids),
+                                    "outside_shadow_unit_ids": [],
+                                    "max_units": int(max_units),
+                                    "selection_effect": "enter_strategic_reserves",
+                                    "selection_effect_reason": "Ride the Wind",
+                                    "turn_key": phase_key,
+                                    "turn_ending_player_id": turn_ending_player_id,
+                                    "title": "Ride the Wind",
+                                    "subtitle": f"Select up to {int(max_units)} ASURYANI MOUNTED or VYPER unit(s)",
+                                    "instruction": (
+                                        "Choose units to remove from the battlefield and place into Strategic Reserves, "
+                                        "or select None to skip."
+                                    ),
+                                    "skip_label": "None (do not use this ability)",
+                                },
+                            )
+                            self.request_decision(request)
 
             eligible = []
             seen = set()
@@ -5886,14 +5968,19 @@ class Game(
                         decision = "reserves"
                 except Exception:
                     pass
-                started = decision in ("reserves", "strategic_reserves")
-                if decision == "deploy":
+                applied_decision = decision
+                ae_mgr = getattr(army, "aeldari_detachments", None)
+                status_fn = getattr(ae_mgr, "ride_the_wind_reserve_status_for_decision", None) if ae_mgr is not None else None
+                if callable(status_fn):
+                    applied_decision = str(status_fn(root, decision) or decision)
+                started = applied_decision in ("reserves", "strategic_reserves")
+                if applied_decision == "deploy":
                     root.set_reserve_status("deployed")
                     root.deployed = False
-                elif decision == "reserves":
+                elif applied_decision == "reserves":
                     root.set_reserve_status("reserves")
                     root.deployed = True
-                elif decision == "strategic_reserves":
+                elif applied_decision == "strategic_reserves":
                     root.set_reserve_status("strategic_reserves")
                     root.deployed = True
                 else:
@@ -5907,7 +5994,7 @@ class Game(
                 except Exception:
                     is_transport = False
                     must_reserves = False
-                if is_transport and must_reserves and decision in ("reserves", "strategic_reserves"):
+                if is_transport and must_reserves and applied_decision in ("reserves", "strategic_reserves"):
                     try:
                         passengers = list(getattr(root, "transport_passengers", []) or [])
                     except Exception:

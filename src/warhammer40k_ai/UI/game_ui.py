@@ -1450,6 +1450,7 @@ class GameView:
             title: Optional[str] = None,
             subtitle: Optional[str] = None,
             instruction: Optional[str] = None,
+            skip_label: Optional[str] = None,
         ):
             from ..engine.decision_kinds import DECISION_SELECT_REALM_OF_CHAOS_UNITS
             from ..engine.decisions import DecisionOption, DecisionRequest
@@ -1523,6 +1524,7 @@ class GameView:
                 title=title,
                 subtitle=subtitle,
                 instruction=instruction,
+                skip_label=skip_label,
             )
             try:
                 self.dialog_manager.open(dlg, modal=True)
@@ -3956,6 +3958,10 @@ class GameView:
                 on_confirm=_on_confirm,
                 outside_ids=outside_ids,
                 decision_request=request,
+                title=ctx.get("title"),
+                subtitle=ctx.get("subtitle"),
+                instruction=ctx.get("instruction"),
+                skip_label=ctx.get("skip_label"),
             )
             try:
                 self.dialog_manager.open(self.realm_of_chaos_units_dialog, modal=True)

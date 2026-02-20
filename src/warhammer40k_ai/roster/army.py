@@ -443,6 +443,9 @@ class Army:
         apply_fn = getattr(ae_mgr, "apply_acrobatic_onslaught_travelling_players", None) if ae_mgr is not None else None
         if callable(apply_fn):
             apply_fn(unit)
+        apply_fn = getattr(ae_mgr, "apply_ride_the_wind_battleline_keywords", None) if ae_mgr is not None else None
+        if callable(apply_fn):
+            apply_fn(unit)
         ia_mgr = getattr(self, "imperial_agents_detachments", None)
         apply_fn = getattr(ia_mgr, "apply_extremis_sanction_extra_uses", None) if ia_mgr is not None else None
         if callable(apply_fn):
@@ -764,7 +767,7 @@ class Army:
                 r = strategic_roots[0]
                 k = _root_key(r)
                 # Prefer keeping in (standard) reserves if unit can Deep Strike; else deploy it.
-                can_standard = bool(r.has_deep_strike())
+                can_standard = bool(r.has_deep_strike()) or bool(self._ride_the_wind_allows_standard_reserves(r))
                 modified[k] = "reserves" if can_standard else "deploy"
                 continue
 
@@ -885,6 +888,15 @@ class Army:
             return max(0, int(cap_fn() or 0))
         except (TypeError, ValueError):
             return 3
+
+    def _ride_the_wind_allows_standard_reserves(self, unit: Unit) -> bool:
+        ae_mgr = getattr(self, "aeldari_detachments", None)
+        if ae_mgr is None:
+            return False
+        allow_fn = getattr(ae_mgr, "ride_the_wind_allows_standard_reserves", None)
+        if not callable(allow_fn):
+            return False
+        return bool(allow_fn(unit))
 
     def validate_spawn_only_units(self):
         for unit in self.units:

@@ -27,6 +27,7 @@ class RealmOfChaosUnitsDialog(BaseDialog):
         self.title_text: str = "The Realm of Chaos"
         self.subtitle_text: str = ""
         self.instruction_text: str = "Choose units to place into Strategic Reserves, or select None to skip."
+        self.skip_label: str = "None (do not use the stratagem)"
 
         # Scrolling
         self.scroll_offset = 0
@@ -43,6 +44,7 @@ class RealmOfChaosUnitsDialog(BaseDialog):
         title: Optional[str] = None,
         subtitle: Optional[str] = None,
         instruction: Optional[str] = None,
+        skip_label: Optional[str] = None,
     ) -> None:
         self.units = list(units or [])
         self.max_units = max(1, int(max_units or 1))
@@ -56,6 +58,7 @@ class RealmOfChaosUnitsDialog(BaseDialog):
         self.instruction_text = str(
             instruction or "Choose units to place into Strategic Reserves, or select None to skip."
         )
+        self.skip_label = str(skip_label or "None (do not use the stratagem)")
         self.scroll_offset = 0
         self._entries = []
         self._entry_by_button = {}
@@ -80,6 +83,7 @@ class RealmOfChaosUnitsDialog(BaseDialog):
         self.title_text = "The Realm of Chaos"
         self.subtitle_text = ""
         self.instruction_text = "Choose units to place into Strategic Reserves, or select None to skip."
+        self.skip_label = "None (do not use the stratagem)"
         self.scroll_offset = 0
         self.max_scroll = 0
 
@@ -102,7 +106,7 @@ class RealmOfChaosUnitsDialog(BaseDialog):
             self._confirm_option_id = first_option_id(self.decision_request)
 
     def _build_entries(self) -> None:
-        self._entries = [{"kind": "skip", "label": "None (do not use the stratagem)"}]
+        self._entries = [{"kind": "skip", "label": self.skip_label or "None"}]
         for unit in self.units:
             uname = str(getattr(unit, "name", "") or "Unit")
             label = uname
@@ -180,7 +184,7 @@ class RealmOfChaosUnitsDialog(BaseDialog):
                     payload = {"skipped": True}
                 else:
                     option_id = self._confirm_option_id
-                    payload = {"unit_ids": list(self.selected_ids)}
+                    payload = {"unit_ids": sorted(str(uid) for uid in list(self.selected_ids or []))}
                 self.on_confirm(option_id, payload)
             self.hide()
             return True

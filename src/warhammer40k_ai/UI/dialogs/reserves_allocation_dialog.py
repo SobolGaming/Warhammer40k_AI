@@ -21,7 +21,7 @@ class ReservesAllocationDialog(BaseDialog):
     Rules enforced (Chapter Approved defaults, via Army.get_reserve_limits()):
     - Total reserves (Reserves + Strategic Reserves): <= 50% points AND <= 50% unit-count (post-attachment/embark groups)
     - Strategic Reserves: <= 25% battle size points
-    - Standard Reserves require Deep Strike (best-effort via unit.has_deep_strike()).
+    - Standard Reserves require Deep Strike, except detachment rules that explicitly allow otherwise (e.g., Ride the Wind).
 
     This dialog operates on "deployment groups" (roots):
     - attached leaders are not selectable separately
@@ -239,13 +239,18 @@ class ReservesAllocationDialog(BaseDialog):
             except Exception:
                 pass
 
-        # Standard Reserves requires Deep Strike (best-effort)
+        # Standard Reserves requires Deep Strike unless detachment rules allow otherwise.
         if decision == "reserves" and not must_reserves:
+            allows_detachment_reserves = False
+            allow_fn = getattr(self.army, "_ride_the_wind_allows_standard_reserves", None)
+            if callable(allow_fn):
+                allows_detachment_reserves = bool(allow_fn(unit))
             try:
-                if not bool(unit.has_deep_strike()):
-                    return False, "Requires Deep Strike"
+                if not bool(unit.has_deep_strike()) and not allows_detachment_reserves:
+                    return False, "Requires Deep Strike (or Ride the Wind)"
             except Exception:
-                return False, "Requires Deep Strike"
+                if not allows_detachment_reserves:
+                    return False, "Requires Deep Strike (or Ride the Wind)"
 
         limits = self.army.get_reserve_limits()
         reserve_units, reserve_points, strategic_points = self._current_totals_with_override(override=(idx, decision))
@@ -391,7 +396,7 @@ class ReservesAllocationDialog(BaseDialog):
         list_top = self.y + self.title_bar_height + 70
 
         # Instructions
-        inst = "Select a group on the left, then set it to Reserves (Deep Strike) or Strategic Reserves. Unselected = not in reserves."
+        inst = "Select a group, then set it to Reserves or Strategic Reserves. Unselected = not in reserves."
         inst_surface = self.font_small.render(inst, True, TEXT_SECONDARY)
         screen.blit(inst_surface, (self.x + pad, self.y + self.title_bar_height + 10))
 
@@ -437,7 +442,7 @@ class ReservesAllocationDialog(BaseDialog):
         _set_enabled("set_strategic", ok_str)
 
         # Draw right-side action buttons
-        self.draw_button(screen, "set_reserves", "Set: Reserves (Deep Strike)")
+        self.draw_button(screen, "set_reserves", "Set: Reserves")
         self.draw_button(screen, "set_strategic", "Set: Strategic Reserves")
         self.draw_button(screen, "clear_reserves", "Remove from Reserves")
 

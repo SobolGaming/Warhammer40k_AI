@@ -11,6 +11,7 @@ from .detachment_manager import DetachmentManagerBase
 class AeldariDetachmentManager(DetachmentManagerBase):
     faction_id = "AE"
     _RELENTLESS_RAIDERS_MOVE_ACTIONS = {"move", "advance", "fall_back", "charge"}
+    _RIDE_THE_WIND_BATTLELINE_NAME_SNIPPETS = ("windrider", "windriders")
     _DEFEND_AT_ALL_COSTS_MODEL_KEYWORDS = (
         "DIRE AVENGERS",
         "DIRE AVENGER",
@@ -48,6 +49,7 @@ class AeldariDetachmentManager(DetachmentManagerBase):
         self.devoted_of_ynnead_lethal_surge_turn_owner: str = ""
         self.devoted_of_ynnead_lethal_intent_phase_key: str = ""
         self.devoted_of_ynnead_lethal_intent_candidate_unit_ids: set[str] = set()
+        self.ride_the_wind_last_resolved_phase_key: str = ""
 
     @staticmethod
     def _normalize_unit_name(name: str) -> str:
@@ -252,6 +254,8 @@ class AeldariDetachmentManager(DetachmentManagerBase):
         if self.is_ghosts_of_the_webway():
             self.apply_acrobatic_onslaught_travelling_players()
             errors.extend(self._validate_acrobatic_onslaught_rules())
+        if self.is_windrider_host():
+            self.apply_ride_the_wind_battleline_keywords()
         if self.is_devoted_of_ynnead():
             errors.extend(self._validate_devoted_of_ynnead_rules())
         if self.has_veterans_of_the_void():
@@ -384,6 +388,11 @@ class AeldariDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Guardian Battlehost")
 
+    def is_windrider_host(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Windrider Host")
+
     @staticmethod
     def _model_has_keyword(model, keyword: str) -> bool:
         if model is None:
@@ -411,6 +420,189 @@ class AeldariDetachmentManager(DetachmentManagerBase):
             return True
         name = self._normalize_unit_name(getattr(unit, "name", ""))
         return name in {"troupe", "troupes"}
+
+    def _unit_is_asuryani_mounted_or_vyper(self, unit) -> bool:
+        if unit is None:
+            return False
+        if self._unit_has_keyword(unit, "VYPER"):
+            return True
+        return self._unit_has_keyword(unit, "ASURYANI") and self._unit_has_keyword(unit, "MOUNTED")
+
+    def _unit_is_windriders(self, unit) -> bool:
+        if unit is None:
+            return False
+        if self._unit_has_keyword(unit, "WINDRIDERS") or self._unit_has_keyword(unit, "WINDRIDER"):
+            return True
+        name = self._normalize_unit_name(getattr(unit, "name", ""))
+        if not name:
+            return False
+        return any(snippet in name for snippet in self._RIDE_THE_WIND_BATTLELINE_NAME_SNIPPETS)
+
+    def ride_the_wind_allows_standard_reserves(self, unit) -> bool:
+        if not self.is_windrider_host():
+            return False
+        if unit is None:
+            return False
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        return self._unit_is_asuryani_mounted_or_vyper(root)
+
+    def ride_the_wind_reserve_status_for_decision(self, unit, decision: str) -> str:
+        status = str(decision or "").strip().lower()
+        if status != "reserves":
+            return status
+        if not self.ride_the_wind_allows_standard_reserves(unit):
+            return status
+        # Ride the Wind "Reserves" entries arrive and set up using Strategic Reserves rules.
+        return "strategic_reserves"
+
+    def ride_the_wind_strategic_reserves_round_bonus(self, unit, *, game=None) -> int:
+        _ = game
+        if not self.is_windrider_host():
+            return 0
+        if unit is None:
+            return 0
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return 0
+        if not self._unit_in_army(root):
+            return 0
+        if not self._unit_is_asuryani_mounted_or_vyper(root):
+            return 0
+        is_in_strategic = getattr(root, "is_in_strategic_reserves", None)
+        if callable(is_in_strategic) and not bool(is_in_strategic()):
+            return 0
+        return 1
+
+    def apply_ride_the_wind_battleline_keywords(self, unit=None) -> None:
+        if not self.is_windrider_host() or self.army is None:
+            return
+        if unit is None:
+            units = list(getattr(self.army, "units", []) or [])
+        else:
+            units = [unit]
+        for entry in units:
+            if entry is None:
+                continue
+            root = entry.get_attached_unit_root() if hasattr(entry, "get_attached_unit_root") else entry
+            if root is None:
+                continue
+            if not self._unit_in_army(root):
+                continue
+            if not self._unit_is_windriders(root):
+                continue
+            keywords = list(getattr(root, "keywords", []) or [])
+            if not any(str(k or "").strip().lower() == "battleline" for k in keywords):
+                keywords.append("Battleline")
+                root.keywords = keywords
+
+    def ride_the_wind_end_of_opponent_turn_max_units(self, *, game=None) -> int:
+        if not self.is_windrider_host():
+            return 0
+        size_name = ""
+        if game is not None:
+            size = getattr(getattr(game, "battlefield", None), "size", None)
+            size_name = str(getattr(size, "name", "") or size or "")
+        size_name = size_name.strip().upper().replace(" ", "_")
+        if "INCURSION" in size_name:
+            return 1
+        if "STRIKE_FORCE" in size_name or "STRIKEFORCE" in size_name:
+            return 2
+        if "ONSLAUGHT" in size_name:
+            return 3
+        points_limit = int(getattr(self.army, "points_limit", 0) or 0) if self.army is not None else 0
+        if points_limit >= 3000:
+            return 3
+        if points_limit >= 2000:
+            return 2
+        return 1
+
+    def _ride_the_wind_phase_key(self, *, game=None, turn_ending_player_id: str = "") -> str:
+        if game is None:
+            player = getattr(self.army, "player", None) if self.army is not None else None
+            game = getattr(player, "game", None) if player is not None else None
+        try:
+            turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        return f"{turn}:{str(turn_ending_player_id or '').strip()}"
+
+    def ride_the_wind_phase_already_resolved(self, *, game=None, turn_ending_player_id: str = "") -> bool:
+        key = self._ride_the_wind_phase_key(game=game, turn_ending_player_id=turn_ending_player_id)
+        return bool(key) and key == str(self.ride_the_wind_last_resolved_phase_key or "")
+
+    def mark_ride_the_wind_phase_resolved(self, *, game=None, turn_ending_player_id: str = "") -> None:
+        self.ride_the_wind_last_resolved_phase_key = self._ride_the_wind_phase_key(
+            game=game,
+            turn_ending_player_id=turn_ending_player_id,
+        )
+
+    def ride_the_wind_end_of_opponent_turn_candidates(self, *, game=None, turn_ending_player=None, game_map=None) -> list:
+        if not self.is_windrider_host() or self.army is None:
+            return []
+        if game is None:
+            player = getattr(self.army, "player", None)
+            game = getattr(player, "game", None) if player is not None else None
+        if game_map is None and game is not None:
+            game_map = getattr(game, "map", None)
+        player = getattr(self.army, "player", None)
+        if player is None:
+            return []
+        if turn_ending_player is not None and turn_ending_player is player:
+            return []
+
+        candidates: list = []
+        for root in self._iter_unique_army_roots():
+            if not self.ride_the_wind_allows_standard_reserves(root):
+                continue
+            if not bool(getattr(root, "deployed", False)):
+                continue
+            reserve_status = str(getattr(root, "reserve_status", "deployed") or "deployed").strip().lower()
+            if reserve_status != "deployed":
+                continue
+            is_alive = getattr(root, "is_alive", None)
+            if callable(is_alive) and not bool(is_alive()):
+                continue
+            if bool(getattr(root, "embarked_in", None)) or bool(getattr(root, "is_embarked", False)):
+                continue
+            if game_map is None:
+                candidates.append(root)
+                continue
+            engaged = False
+            for enemy in list(getattr(game_map, "get_enemy_units", lambda _u: [])(root) or []):
+                if enemy is None:
+                    continue
+                try:
+                    enemy_root = enemy.get_attached_unit_root()
+                except Exception:
+                    enemy_root = enemy
+                if enemy_root is None:
+                    continue
+                enemy_alive = getattr(enemy_root, "is_alive", None)
+                if callable(enemy_alive) and not bool(enemy_alive()):
+                    continue
+                if not bool(getattr(enemy_root, "deployed", True)):
+                    continue
+                try:
+                    if game_map.is_within_engagement_range(root, enemy_root):
+                        engaged = True
+                        break
+                except Exception:
+                    continue
+            if engaged:
+                continue
+            candidates.append(root)
+        candidates.sort(key=lambda u: str(get_entity_id(u) or ""))
+        return candidates
 
     def acrobatic_onslaught_charge_move_through_enemy_applies(self, unit) -> bool:
         if not self.is_ghosts_of_the_webway():

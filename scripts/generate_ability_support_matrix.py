@@ -285,6 +285,11 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time a unit from your army performs the swift as the wind agile manoeuvre until the end of the phase add an additional \d+ to the move characteristic of models in that unit",
             r"each time a unit from your army performs an agile manoeuvre that involves rolling a d6 add \d+ to the result",
         ),
+        "Ride the Wind": (
+            r"in addition at the end of your opponents turn you can select a number of asuryani mounted or vyper units from your army excluding units within engagement range of one or more enemy units then remove those units from the battlefield and place them into strategic reserves",
+            r"the maximum number of units you can select depends on the battle size as shown below",
+            r"windriders units from your army gain the battleline keyword",
+        ),
         "Skilled Crews": (
             r"ranged weapons equipped by aeldari vehicle models from your army have the assault ability and you can reroll advance rolls made for aeldari vehicle fly units from your army",
             r"ranged weapons equipped by aeldari vehicle models from your army have the assault ability",
@@ -1748,6 +1753,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
             "Scintillating Legion: Flux tokens tracked and transferable; TZEENTCH LEGIONES DAEMONICA units can spend tokens for Advance/Hit/Wound/Save/Damage/Hazardous re-rolls (multi-die selections supported), opponents can spend tokens on Advance/Hit/Wound/Save re-rolls unless they also have Fates in Flux, and Command phase token gain applies when the opponent has tokens.",
         ),
         "Martial Grace": ("Supported", "Warhost: +1 Battle Focus token; Swift as the Wind +1\" move; +1 to D6 Agile Manoeuvre rolls."),
+        "Ride the Wind": (
+            "Supported",
+            "Windrider Host: ASURYANI MOUNTED/VYPER units can be allocated to Reserves and are treated as Strategic Reserves for setup timing/rules, gain +1 effective battle round when setting up from Strategic Reserves, and can be selected at end of the opponent turn (Incursion 1, Strike Force 2, Onslaught 3) to enter Strategic Reserves; Windriders gain BATTLELINE.",
+        ),
         "Bold Gallantry": (
             "Supported",
             "Valourstrike Lance: IMPERIAL KNIGHTS ranged weapons count as [ASSAULT] when checking Advance-and-shoot eligibility.",

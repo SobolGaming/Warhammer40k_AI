@@ -493,14 +493,19 @@ class DeploymentManager:
                         reserve_decision = "reserves"
                 except Exception:
                     pass
-                started = reserve_decision in ('reserves', 'strategic_reserves')
+                applied_decision = reserve_decision
+                allow_fn = getattr(player.get_army(), "_ride_the_wind_allows_standard_reserves", None)
+                if reserve_decision == "reserves" and callable(allow_fn) and bool(allow_fn(unit)):
+                    # Ride the Wind: units selected as "Reserves" arrive and set up using Strategic Reserves rules.
+                    applied_decision = "strategic_reserves"
+                started = applied_decision in ('reserves', 'strategic_reserves')
                 
-                if reserve_decision == 'deploy':
+                if applied_decision == 'deploy':
                     unit.set_reserve_status('deployed')
-                elif reserve_decision == 'reserves':
+                elif applied_decision == 'reserves':
                     unit.set_reserve_status('reserves')
                     logger.info(f"{unit.name} placed in standard reserves")
-                elif reserve_decision == 'strategic_reserves':
+                elif applied_decision == 'strategic_reserves':
                     unit.set_reserve_status('strategic_reserves')
                     logger.info(f"{unit.name} placed in strategic reserves")
                 else:
@@ -515,7 +520,7 @@ class DeploymentManager:
                 except Exception:
                     is_transport = False
                     must_reserves = False
-                if is_transport and must_reserves and reserve_decision in ("reserves", "strategic_reserves"):
+                if is_transport and must_reserves and applied_decision in ("reserves", "strategic_reserves"):
                     try:
                         passengers = list(getattr(unit, "transport_passengers", []) or [])
                     except Exception:
@@ -648,8 +653,12 @@ class HumanDeploymentDecisionMaker(DeploymentDecisionMaker):
                 except Exception:
                     pass
 
-                # Check if unit can use standard reserves
-                can_use_reserves = unit.has_deep_strike() or "Deep Strike" in unit.keywords
+                # Check if unit can use standard reserves (Deep Strike or detachment exception).
+                allows_detachment_reserves = False
+                allow_fn = getattr(army, "_ride_the_wind_allows_standard_reserves", None)
+                if callable(allow_fn):
+                    allows_detachment_reserves = bool(allow_fn(unit))
+                can_use_reserves = unit.has_deep_strike() or "Deep Strike" in unit.keywords or allows_detachment_reserves
                 
                 # Check if we can still add this unit to reserves
                 can_add_to_reserves = army.can_add_unit_to_reserves(unit, current_reserve_units, current_reserve_points)

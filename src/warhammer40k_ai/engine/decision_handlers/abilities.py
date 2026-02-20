@@ -371,10 +371,96 @@ def _validate_select_realm_of_chaos_units(game: object, request: DecisionRequest
             return ("The Realm of Chaos unit not found.",)
     if outside_selected and len(seen) > 1:
         return ("Only one unit can be selected if it is outside the Shadow of Chaos.",)
+
+    ability_key = str(ctx.get("ability", "") or "").strip().lower()
+    if ability_key == "ride_the_wind_end_of_opponent_turn":
+        player = resolve_player(game, request.player_id)
+        if player is None:
+            return ("Ride the Wind requires a player.",)
+        army = getattr(player, "get_army", lambda: None)()
+        if army is None:
+            return ("Ride the Wind requires an army.",)
+        mgr = getattr(army, "aeldari_detachments", None)
+        if mgr is None or not getattr(mgr, "is_windrider_host", lambda: False)():
+            return ("Ride the Wind requires a Windrider Host detachment.",)
+        turn_ending_player_id = str(ctx.get("turn_ending_player_id", "") or "")
+        turn_ending_player = resolve_player(game, turn_ending_player_id) if turn_ending_player_id else None
+        candidates_fn = getattr(mgr, "ride_the_wind_end_of_opponent_turn_candidates", None)
+        if not callable(candidates_fn):
+            return ("Ride the Wind candidate resolver is unavailable.",)
+        candidates = list(
+            candidates_fn(
+                game=game,
+                turn_ending_player=turn_ending_player,
+                game_map=getattr(game, "map", None),
+            ) or []
+        )
+        candidate_ids = {str(get_entity_id(unit) or "") for unit in list(candidates or []) if unit is not None}
+        for uid in seen:
+            if uid not in candidate_ids:
+                return ("Ride the Wind selection contains an ineligible unit.",)
+        max_units_fn = getattr(mgr, "ride_the_wind_end_of_opponent_turn_max_units", None)
+        max_units_allowed = int(max_units_fn(game=game) or 0) if callable(max_units_fn) else int(max_units or 0)
+        if len(seen) > max(0, int(max_units_allowed)):
+            return ("Too many units selected for Ride the Wind.",)
+        resolved_fn = getattr(mgr, "ride_the_wind_phase_already_resolved", None)
+        if callable(resolved_fn) and bool(resolved_fn(game=game, turn_ending_player_id=turn_ending_player_id)):
+            return ("Ride the Wind has already resolved this end-of-turn window.",)
     return ()
 
 
 def _apply_select_realm_of_chaos_units(game: object, request: DecisionRequest, result: DecisionResult):
+    ctx = dict(getattr(request, "context", {}) or {})
+    ability_key = str(ctx.get("ability", "") or "").strip().lower()
+
+    if ability_key == "ride_the_wind_end_of_opponent_turn":
+        player = resolve_player(game, request.player_id)
+        if player is None:
+            raise RuntimeError("Ride the Wind player not found.")
+        army = getattr(player, "get_army", lambda: None)()
+        if army is None:
+            raise RuntimeError("Ride the Wind army not found.")
+        mgr = getattr(army, "aeldari_detachments", None)
+        if mgr is None:
+            raise RuntimeError("Ride the Wind detachment manager not found.")
+
+        turn_ending_player_id = str(ctx.get("turn_ending_player_id", "") or "")
+        turn_ending_player = resolve_player(game, turn_ending_player_id) if turn_ending_player_id else None
+
+        moved_units = []
+        if not is_skip_choice(request, result):
+            unit_ids = sorted({str(uid or "") for uid in list(result.payload.get("unit_ids") or []) if str(uid or "").strip()})
+            candidates_fn = getattr(mgr, "ride_the_wind_end_of_opponent_turn_candidates", None)
+            candidates = list(
+                candidates_fn(
+                    game=game,
+                    turn_ending_player=turn_ending_player,
+                    game_map=getattr(game, "map", None),
+                ) or []
+            ) if callable(candidates_fn) else []
+            by_id = {str(get_entity_id(unit) or ""): unit for unit in list(candidates or []) if unit is not None}
+            game_map = getattr(game, "map", None)
+            for uid in unit_ids:
+                unit = by_id.get(uid)
+                if unit is None:
+                    continue
+                moved = unit.enter_strategic_reserves_midgame(
+                    game=game,
+                    game_map=game_map,
+                    reason="Ride the Wind",
+                )
+                if moved:
+                    moved_units.append(unit)
+
+            if moved_units:
+                labels = ", ".join(str(getattr(unit, "name", "Unit") or "Unit") for unit in list(moved_units or []))
+                _log_action_for_players(game, player, f"Ride the Wind: {labels} placed into Strategic Reserves.")
+
+        mark_fn = getattr(mgr, "mark_ride_the_wind_phase_resolved", None)
+        if callable(mark_fn):
+            mark_fn(game=game, turn_ending_player_id=turn_ending_player_id)
+        return moved_units
+
     if is_skip_choice(request, result):
         return None
     unit_ids = list(result.payload.get("unit_ids") or [])
