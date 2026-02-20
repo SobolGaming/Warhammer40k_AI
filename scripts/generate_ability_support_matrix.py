@@ -3405,6 +3405,7 @@ def _classify_ability_base(
     model_attack_roll_bonus_support = _model_attack_roll_bonus_support(description)
     model_closest_target_ap_bonus_support = _model_closest_target_ap_bonus_support(description)
     model_stationary_ranged_sustained_support = _model_stationary_ranged_sustained_hits_support(description)
+    ordered_stationary_heavy_sustained_support = _ordered_stationary_heavy_sustained_hits_support(description)
     targeted_stratagem_refund_support = _targeted_stratagem_cp_refund_support(description)
     targeted_stratagem_discount_support = _targeted_stratagem_cp_discount_support(description)
     targeted_stratagem_increase_support = _targeted_stratagem_cp_increase_support(description)
@@ -3711,6 +3712,8 @@ def _classify_ability_base(
         return model_closest_target_ap_bonus_support
     if model_stationary_ranged_sustained_support:
         return model_stationary_ranged_sustained_support
+    if ordered_stationary_heavy_sustained_support:
+        return ordered_stationary_heavy_sustained_support
     if targeted_stratagem_refund_support:
         return targeted_stratagem_refund_support
     if targeted_stratagem_discount_support:
@@ -5529,6 +5532,26 @@ def _model_stationary_ranged_sustained_hits_support(description: str) -> Optiona
     return (
         "Supported",
         f"If this model remains stationary in your Movement phase, its ranged weapons gain [SUSTAINED HITS {val}] until end of turn.",
+    )
+
+
+def _ordered_stationary_heavy_sustained_hits_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"while this unit is being affected by an order provided it remain(?:s|ed) stationary this turn "
+        r"all heavy weapons equipped by models in this unit have the sustained hits (?P<val>\d+|d3|d6) ability",
+        norm,
+    )
+    if not m:
+        return None
+    val = str(m.group("val") or "1").upper()
+    return (
+        "Supported",
+        f"While affected by an Order and after remaining stationary this turn, Heavy weapons in the unit gain [SUSTAINED HITS {val}].",
     )
 
 

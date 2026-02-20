@@ -4503,14 +4503,45 @@ class KeywordsDetachmentsMixin:
     def get_stationary_ranged_sustained_hits_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
         """
         Return rule info for abilities like:
-        "In your Movement phase, if this model Remains Stationary, until the end of the turn,
-         ranged weapons equipped by this model have the [SUSTAINED HITS 1] ability."
+        - "In your Movement phase, if this model Remains Stationary, until the end of the turn,
+           ranged weapons equipped by this model have the [SUSTAINED HITS 1] ability."
+        - "While this unit is being affected by an Order, provided it Remained Stationary this turn,
+           all Heavy weapons equipped by models in this unit have the [SUSTAINED HITS 1] ability."
         """
         if model is None:
             return None
         cache_key = f"stationary_ranged_sustained_hits_rule:{get_entity_id(model)}"
         if cache_key in getattr(self, "_ability_cache", {}):
             return self._ability_cache[cache_key]
+
+        def _parse_sustained_hits_rule(
+            low_text: str,
+            *,
+            source: str,
+            requires_remained_stationary: bool,
+            requires_owner_turn: bool,
+        ) -> Optional[dict]:
+            m = re.search(r"sustained\s+hits\s+(?P<val>\d+|d3|d6)", low_text)
+            if not m:
+                return None
+            raw_val = str(m.group("val") or "").strip().upper()
+            parsed_rule = {
+                "attack_type": "ranged",
+                "requires_remained_stationary": bool(requires_remained_stationary),
+                "requires_owner_turn": bool(requires_owner_turn),
+                "source": source,
+            }
+            if raw_val in ("D3", "D6"):
+                parsed_rule["sustained_hits_dice"] = raw_val
+                return parsed_rule
+            try:
+                sustained_val = int(raw_val or 0)
+            except Exception:
+                sustained_val = 0
+            if sustained_val <= 0:
+                return None
+            parsed_rule["sustained_hits_value"] = int(sustained_val)
+            return parsed_rule
 
         rule = None
         try:
@@ -4529,31 +4560,50 @@ class KeywordsDetachmentsMixin:
                     continue
                 if not re.search(r"\buntil\s+(?:the\s+)?end\s+of\s+(?:your\s+|the\s+)?turn\b", low):
                     continue
-                m = re.search(r"sustained\s+hits\s+(?P<val>\d+|d3|d6)", low)
-                if not m:
-                    continue
-                raw_val = str(m.group("val") or "").strip().upper()
                 source = str(name or "Remains Stationary").strip() or "Remains Stationary"
-                parsed_rule = {
-                    "attack_type": "ranged",
-                    "requires_remained_stationary": True,
-                    "requires_owner_turn": True,
-                    "source": source,
-                }
-                if raw_val in ("D3", "D6"):
-                    parsed_rule["sustained_hits_dice"] = raw_val
-                else:
-                    try:
-                        sustained_val = int(raw_val or 0)
-                    except Exception:
-                        sustained_val = 0
-                    if sustained_val <= 0:
-                        continue
-                    parsed_rule["sustained_hits_value"] = int(sustained_val)
+                parsed_rule = _parse_sustained_hits_rule(
+                    low,
+                    source=source,
+                    requires_remained_stationary=True,
+                    requires_owner_turn=True,
+                )
+                if not isinstance(parsed_rule, dict):
+                    continue
                 rule = parsed_rule
                 break
         except Exception:
             rule = None
+
+        if rule is None:
+            try:
+                for name, desc in self._iter_ability_entries_for_rules(model=None):
+                    text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
+                    if not text:
+                        continue
+                    low = text.lower().replace("\u2019", "'")
+                    if not re.search(r"\bwhile\s+this\s+unit\s+is\s+being\s+affected\s+by\s+an?\s+order\b", low):
+                        continue
+                    if not re.search(r"\bprovided\s+it\s+remain(?:s|ed)?\s+stationary\s+this\s+turn\b", low):
+                        continue
+                    if "heavy weapons equipped by models in this unit" not in low:
+                        continue
+                    if "sustained hits" not in low:
+                        continue
+                    source = str(name or "Ordered heavy weapons").strip() or "Ordered heavy weapons"
+                    parsed_rule = _parse_sustained_hits_rule(
+                        low,
+                        source=source,
+                        requires_remained_stationary=True,
+                        requires_owner_turn=True,
+                    )
+                    if not isinstance(parsed_rule, dict):
+                        continue
+                    parsed_rule["requires_active_order"] = True
+                    parsed_rule["requires_heavy_weapon"] = True
+                    rule = parsed_rule
+                    break
+            except Exception:
+                rule = None
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}

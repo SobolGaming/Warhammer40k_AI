@@ -2722,6 +2722,26 @@ class PositioningMixin:
                     current_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
                     if owner_player is None or current_player is not owner_player:
                         apply_bonus = False
+                if apply_bonus and bool(rule.get("requires_active_order")):
+                    active_order = ""
+                    for candidate in (unit, root):
+                        sr = getattr(candidate, "special_rules", None)
+                        if not isinstance(sr, dict):
+                            continue
+                        active_order = str(sr.get("voice_of_command_order_key", "") or "").strip().upper()
+                        if active_order:
+                            break
+                    if not active_order:
+                        apply_bonus = False
+                if apply_bonus and bool(rule.get("requires_heavy_weapon")):
+                    is_heavy_weapon = False
+                    try:
+                        if weapon_profile is not None and hasattr(weapon_profile, "is_heavy"):
+                            is_heavy_weapon = bool(weapon_profile.is_heavy())
+                    except Exception:
+                        is_heavy_weapon = False
+                    if not is_heavy_weapon:
+                        apply_bonus = False
                 if apply_bonus:
                     source = str(rule.get("source", "") or "Remains Stationary").strip() or "Remains Stationary"
                     sustained_hits_value = int(rule.get("sustained_hits_value", 0) or 0)

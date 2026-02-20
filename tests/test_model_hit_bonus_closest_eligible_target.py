@@ -381,6 +381,144 @@ class TestModelHitBonusClosestEligibleTarget(unittest.TestCase):
 
         self.assertEqual(int(attack_instance.get("sustained_hit", 0) or 0), 0)
 
+    def test_rearm_reload_fire_applies_to_heavy_weapons_when_ordered_and_stationary(self):
+        from warhammer40k_ai.units.wargear import WargearProfile
+
+        ability = {
+            "name": "Rearm, Reload, Fire",
+            "description": (
+                "While this unit is being affected by an Order, provided it Remained Stationary this turn, "
+                "all Heavy weapons equipped by models in this unit have the [SUSTAINED HITS 1] ability."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, army2 = _build_game()
+        attacker = _make_unit("Attacker", abilities=[ability], faction_name="Astra Militarum")
+        target = _make_unit("Target")
+        army1.add_unit(attacker)
+        army2.add_unit(target)
+
+        attacker.deployed = True
+        target.deployed = True
+        game.map.units = [attacker, target]
+        game.current_player_index = 0
+        attacker.round_state.remained_stationary_this_round = True
+        attacker.special_rules["voice_of_command_order_key"] = "TAKE_AIM"
+
+        parent = SimpleNamespace(name="Heavy Stubber", is_melee=lambda: False, is_ranged=lambda: True)
+        profile = WargearProfile(
+            profile_name="Ranged",
+            wargear_data={
+                "range": "36",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "4",
+                "AP": "0",
+                "D": "1",
+                "description": "Heavy",
+            },
+            parent_wargear=parent,
+        )
+        attack_instance = {"_aura_attack_mods": SimpleNamespace(hit=0, hit_reasons=())}
+
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=6):
+            hit_result = profile._hit_target_with_tracking(target, attacker.models[0], attack_instance)
+
+        self.assertTrue(bool(hit_result.get("hit")))
+        self.assertEqual(int(attack_instance.get("sustained_hit", 0) or 0), 1)
+
+    def test_rearm_reload_fire_not_applied_without_active_order(self):
+        from warhammer40k_ai.units.wargear import WargearProfile
+
+        ability = {
+            "name": "Rearm, Reload, Fire",
+            "description": (
+                "While this unit is being affected by an Order, provided it Remained Stationary this turn, "
+                "all Heavy weapons equipped by models in this unit have the [SUSTAINED HITS 1] ability."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, army2 = _build_game()
+        attacker = _make_unit("Attacker", abilities=[ability], faction_name="Astra Militarum")
+        target = _make_unit("Target")
+        army1.add_unit(attacker)
+        army2.add_unit(target)
+
+        attacker.deployed = True
+        target.deployed = True
+        game.map.units = [attacker, target]
+        game.current_player_index = 0
+        attacker.round_state.remained_stationary_this_round = True
+
+        parent = SimpleNamespace(name="Heavy Stubber", is_melee=lambda: False, is_ranged=lambda: True)
+        profile = WargearProfile(
+            profile_name="Ranged",
+            wargear_data={
+                "range": "36",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "4",
+                "AP": "0",
+                "D": "1",
+                "description": "Heavy",
+            },
+            parent_wargear=parent,
+        )
+        attack_instance = {"_aura_attack_mods": SimpleNamespace(hit=0, hit_reasons=())}
+
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=6):
+            profile._hit_target_with_tracking(target, attacker.models[0], attack_instance)
+
+        self.assertEqual(int(attack_instance.get("sustained_hit", 0) or 0), 0)
+
+    def test_rearm_reload_fire_not_applied_to_non_heavy_weapons(self):
+        from warhammer40k_ai.units.wargear import WargearProfile
+
+        ability = {
+            "name": "Rearm, Reload, Fire",
+            "description": (
+                "While this unit is being affected by an Order, provided it Remained Stationary this turn, "
+                "all Heavy weapons equipped by models in this unit have the [SUSTAINED HITS 1] ability."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, army2 = _build_game()
+        attacker = _make_unit("Attacker", abilities=[ability], faction_name="Astra Militarum")
+        target = _make_unit("Target")
+        army1.add_unit(attacker)
+        army2.add_unit(target)
+
+        attacker.deployed = True
+        target.deployed = True
+        game.map.units = [attacker, target]
+        game.current_player_index = 0
+        attacker.round_state.remained_stationary_this_round = True
+        attacker.special_rules["voice_of_command_order_key"] = "TAKE_AIM"
+
+        parent = SimpleNamespace(name="Lasgun", is_melee=lambda: False, is_ranged=lambda: True)
+        profile = WargearProfile(
+            profile_name="Ranged",
+            wargear_data={
+                "range": "24",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "3",
+                "AP": "0",
+                "D": "1",
+                "description": "",
+            },
+            parent_wargear=parent,
+        )
+        attack_instance = {"_aura_attack_mods": SimpleNamespace(hit=0, hit_reasons=())}
+
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=6):
+            profile._hit_target_with_tracking(target, attacker.models[0], attack_instance)
+
+        self.assertEqual(int(attack_instance.get("sustained_hit", 0) or 0), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
