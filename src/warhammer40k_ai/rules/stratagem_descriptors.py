@@ -1786,6 +1786,42 @@ _SPIRIT_CONCLAVE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPIRIT_CONCLAVE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_WINDRIDER_HOST_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009904004": StratagemToolDescriptor(
+        stratagem_id="000009904004",
+        name="Wind of Blades",
+        timing="your_movement_phase",
+        target="asuryani_mounted_or_vyper_unit_not_selected_to_move",
+        duration="until_end_of_turn",
+        effect="shoot_and_charge_after_advance_or_fall_back",
+        cp_cost=1,
+        effect_params={
+            "advance_and_shoot": True,
+            "advance_and_charge": True,
+            "fall_back_and_shoot": True,
+            "fall_back_and_charge": True,
+        },
+    ),
+    "000009904005": StratagemToolDescriptor(
+        stratagem_id="000009904005",
+        name="Daring Riders",
+        timing="start_of_your_movement_phase_reinforcements_step",
+        target="asuryani_mounted_or_vyper_unit_in_reserves_that_can_arrive_this_turn",
+        duration="this_turn_and_phase",
+        effect="deep_strike_min_distance_override_with_conditional_no_charge",
+        cp_cost=1,
+        effect_params={
+            "min_distance": 6,
+            "distance_type": "horizontal",
+            "conditional_no_charge_if_within": 9,
+        },
+    ),
+}
+
+_WINDRIDER_HOST_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _WINDRIDER_HOST_STRATAGEM_DESCRIPTORS.values()
+}
+
 _SERPENTS_BROOD_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010650002": StratagemToolDescriptor(
         stratagem_id="000010650002",
@@ -2801,6 +2837,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _SPIRIT_CONCLAVE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _WINDRIDER_HOST_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _GUARDIAN_BATTLEHOST_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -2865,6 +2904,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _CORSAIR_COTERIE_STRATAGEM_BY_NAME.get(key)
         or _SEER_COUNCIL_STRATAGEM_BY_NAME.get(key)
         or _SPIRIT_CONCLAVE_STRATAGEM_BY_NAME.get(key)
+        or _WINDRIDER_HOST_STRATAGEM_BY_NAME.get(key)
         or _GUARDIAN_BATTLEHOST_STRATAGEM_BY_NAME.get(key)
         or _DEVOTED_OF_YNNEAD_STRATAGEM_BY_NAME.get(key)
         or _GHOSTS_OF_THE_WEBWAY_STRATAGEM_BY_NAME.get(key)

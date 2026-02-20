@@ -1646,6 +1646,49 @@ class LateGameplayMixin:
         except Exception:
             pass
 
+        # Daring Riders: if set up within 9", cannot charge until end of turn.
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get("aeldari_daring_riders_no_charge_if_within")) and game_map is not None:
+                from ...utility.aura_utils import horizontal_distance_between_bases_2d
+
+                threshold = float(sr.get("aeldari_daring_riders_no_charge_distance", 9.0) or 9.0)
+                within_threshold = False
+                for enemy in list(game_map.get_enemy_units(self) or []):
+                    try:
+                        if not getattr(enemy, "is_alive", lambda: True)():
+                            continue
+                        if not getattr(enemy, "deployed", True):
+                            continue
+                    except Exception:
+                        continue
+                    for em in list(getattr(enemy, "models", []) or []):
+                        if not getattr(em, "is_alive", True):
+                            continue
+                        for m in list(getattr(self, "models", []) or []):
+                            if not getattr(m, "is_alive", True):
+                                continue
+                            if float(horizontal_distance_between_bases_2d(m.model_base, em.model_base)) <= threshold + 1e-6:
+                                within_threshold = True
+                                break
+                        if within_threshold:
+                            break
+                    if within_threshold:
+                        break
+                if within_threshold:
+                    owner = str(sr.get("aeldari_daring_riders_turn_owner", "") or "")
+                    if not owner:
+                        try:
+                            owner = str(self.get_parent_army().player.id or "")
+                        except Exception:
+                            owner = ""
+                    sr["pain_swooping_descent_no_charge_turn"] = int(turn or 0)
+                    if owner:
+                        sr["pain_swooping_descent_no_charge_turn_owner"] = owner
+                    self.special_rules = sr
+        except Exception:
+            pass
+
         # Clear temporary Deep Strike flags from Realm of Chaos/Denizens of the Warp.
         try:
             sr = getattr(self, "special_rules", None)
@@ -1685,6 +1728,16 @@ class LateGameplayMixin:
                         "cloudstrike_expires_phase",
                         "cloudstrike_source",
                         "cloudstrike_no_charge_on_arrival",
+                    ):
+                        sr.pop(key, None)
+                if "aeldari_daring_riders_no_charge_if_within" in sr or "aeldari_daring_riders_expires_phase" in sr:
+                    for key in (
+                        "aeldari_daring_riders_no_charge_if_within",
+                        "aeldari_daring_riders_no_charge_distance",
+                        "aeldari_daring_riders_turn_owner",
+                        "aeldari_daring_riders_turn",
+                        "aeldari_daring_riders_expires_phase",
+                        "aeldari_daring_riders_source",
                     ):
                         sr.pop(key, None)
                 if "tunnel_crawlers_deep_strike_min_distance" in sr or "tunnel_crawlers_expires_phase" in sr:

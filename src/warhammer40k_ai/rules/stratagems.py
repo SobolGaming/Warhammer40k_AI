@@ -181,6 +181,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "CRUSHING STRIDES",
     "WRAITHBONE ARMOUR",
     "SEER'S EYE",
+    "WIND OF BLADES",
+    "DARING RIDERS",
     "SEER’S EYE",
     "VENOMOUS WRATH",
     "FANGS OF THE BROOD",
@@ -3961,6 +3963,8 @@ class StratagemManager(
             "BLADES FROM BEYOND": "Target: your WRAITHBLADES, WRAITHLORD, or WRAITHKNIGHT unit that has not been selected to fight this phase; its melee weapons gain [DEVASTATING WOUNDS] until end of phase",
             "CRUSHING STRIDES": "Target: your WRAITHBLADES, WRAITHLORD, or WRAITHKNIGHT unit just after it ends a Charge move, and one enemy unit in Engagement Range; roll D6s by unit type and each 3+ deals 1 mortal wound",
             "WRAITHBONE ARMOUR": "Target: your non-TITANIC WRAITH CONSTRUCT unit selected as a target of enemy Shooting/Fight attacks; subtract 1 from incoming Damage allocated to that unit this phase",
+            "WIND OF BLADES": "Target: your ASURYANI MOUNTED or VYPER unit that has not been selected to move this phase; it can shoot and charge this turn after advancing or falling back",
+            "DARING RIDERS": "Target: your ASURYANI MOUNTED or VYPER unit in Reserves that can arrive this turn; it can be set up more than 6\" horizontally from enemies this phase and cannot charge if set up within 9\"",
             "FANGS OF THE BROOD": "Target: your TROUPE unit; this phase it can gain all three Dance of Death abilities instead of one",
             "VENOMOUS WRATH": "Target: your HARLEQUINS VEHICLE unit that has not been selected to shoot this phase; after it shoots it can make a Normal move up to 6\" if not in Engagement Range, and cannot declare a charge this turn",
             "STRIKING STRIDE": "Target: your HARLEQUINS unit; until end of the phase it can declare a charge in a turn in which it Advanced",
@@ -4649,6 +4653,10 @@ class StratagemManager(
             raise
         try:
             self._queue_aeldari_serpents_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_aeldari_windrider_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -14037,6 +14045,9 @@ class StratagemManager(
         aeldari_serpents_result = self._use_aeldari_serpents_brood_stratagem(s, **kwargs)
         if aeldari_serpents_result is not None:
             return aeldari_serpents_result
+        aeldari_windrider_result = self._use_aeldari_windrider_host_stratagem(s, **kwargs)
+        if aeldari_windrider_result is not None:
+            return aeldari_windrider_result
         aeldari_eldritch_result = self._use_aeldari_eldritch_raiders_stratagem(s, **kwargs)
         if aeldari_eldritch_result is not None:
             return aeldari_eldritch_result
