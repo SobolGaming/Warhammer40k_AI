@@ -80,6 +80,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BEAUTIFUL DEATH",
     "CLOUDSTRIKE",
     "EMISSARIES OF YNNEAD",
+    "MACABRE RESILIENCE",
     "DOOM INESCAPABLE",
     "DEATH ANSWERS DEATH",
     "DAEMONIC FURY",
@@ -155,6 +156,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "OUTCAST AMBUSH",
     "INTO THE BREACH",
     "LETHAL RUSE",
+    "PALL OF DREAD",
     "PARTING THE VEIL",
     "PIRATES' DUE",
     "PIRATES’ DUE",
@@ -307,6 +309,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "DEATHLESS DUTY",
     "DEATH ECSTASY",
     "EMISSARIES OF YNNEAD",
+    "MACABRE RESILIENCE",
     "EMBRACE THE PAIN",
     "ENSNARING TRAP",
     "HYPERSTIMMS",
@@ -344,6 +347,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "SMOKESCREEN",
     "SKYBORNE SANCTUARY",
     "TO THEIR FINAL BREATH",
+    "PALL OF DREAD",
     "PARTING THE VEIL",
     "CORRUPT REALSPACE",
     "DAEMONIC INVULNERABILITY",
@@ -1388,6 +1392,7 @@ class StratagemManager(
             "BLOOD OFFERING",
             "BLOODY VENGEANCE",
             "DRAWN TO THE SLAUGHTER",
+            "PALL OF DREAD",
             "HEIGHTENED JEALOUSY",
             "INTO THE BREACH",
             "ONTO THE NEXT",
@@ -1481,6 +1486,7 @@ class StratagemManager(
             "IN THE SHADOW OF BRASS IDOLS",
             "BLESSING OF BURNING BLOOD",
             "LIGHTNING-FAST REACTIONS",
+            "MACABRE RESILIENCE",
             "UNYIELDING FORMS",
             "'ARD AS NAILS",
             "\u2019ARD AS NAILS",
@@ -1510,6 +1516,7 @@ class StratagemManager(
             "DEATHLESS DUTY",
             "DEATH ECSTASY",
             "EMISSARIES OF YNNEAD",
+            "MACABRE RESILIENCE",
             "FRENZIED RESILIENCE",
             "IMMORTAL FURY",
             "ARMOUR OF CONTEMPT",
@@ -1652,6 +1659,7 @@ class StratagemManager(
             "LAYERED WARDS",
             "LYING IN WAIT",
             "EMISSARIES OF YNNEAD",
+            "MACABRE RESILIENCE",
             "PRIMED AND READIED",
             "COORDINATED TRAP",
             "LETHAL DOSAGE",
@@ -2552,7 +2560,7 @@ class StratagemManager(
 
         # Targeting restrictions for provided context
         target = _extract_friendly_target_unit_from_kwargs(context)
-        if target is not None and name_u not in ("BLOOD OFFERING", "A GRIM WARNING"):
+        if target is not None and name_u not in ("BLOOD OFFERING", "A GRIM WARNING", "PALL OF DREAD"):
             if _unit_cannot_be_target_of_stratagem(target):
                 if name_u != "INSANE BRAVERY":
                     result["reason"] = "Target cannot be selected"
@@ -2638,6 +2646,43 @@ class StratagemManager(
                 result["reason"] = None
                 return result
             result["reason"] = "Requires Fight phase and a YNNARI unit selected as an enemy attack target"
+            return result
+        if name_u == "MACABRE RESILIENCE":
+            macabre_candidates = list(context.get("candidates") or [])
+            if not macabre_candidates:
+                macabre_candidates = list(
+                    self._aeldari_devoted_macabre_resilience_candidates(
+                        target_units=list(context.get("target_units") or []),
+                    )
+                    or []
+                )
+            if macabre_candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires opponent Shooting phase or Fight phase and a YNNARI INFANTRY/MOUNTED non-WRAITH CONSTRUCT target"
+            )
+            return result
+        if name_u == "PALL OF DREAD":
+            objective_candidates = list(context.get("objective_candidates") or [])
+            if not objective_candidates:
+                unit_candidate = context.get("unit") or context.get("target_unit")
+                if unit_candidate is not None:
+                    objective_candidates = list(
+                        self._aeldari_devoted_pall_of_dread_objective_candidates(
+                            unit=unit_candidate,
+                            last_model=context.get("last_model"),
+                        )
+                        or []
+                    )
+            if objective_candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires a just-destroyed YNNARI unit within a previously controlled objective marker at end of previous phase"
+            )
             return result
         if name_u == "MERCILESS RECLAMATION":
             if self._starshatter_merciless_reclamation_candidates(phase_name):
@@ -3269,6 +3314,8 @@ class StratagemManager(
             "SOULSIGHT": "Target: Armoured Warhost AELDARI VEHICLE or Devoted of Ynnead YNNARI unit that has not been selected to shoot",
             "DEATH ANSWERS DEATH": "Target: your YNNARI unit (excluding WRAITH CONSTRUCT) that lost one or more models this opponent Shooting phase",
             "EMISSARIES OF YNNEAD": "Target: your YNNARI INFANTRY unit that just selected fight targets",
+            "MACABRE RESILIENCE": "Target: your YNNARI INFANTRY or YNNARI MOUNTED unit (excluding WRAITH CONSTRUCT) selected as an enemy attack target",
+            "PALL OF DREAD": "Target: your just-destroyed YNNARI unit that was within range of a previously controlled objective marker; choose one such objective marker",
             "PARTING THE VEIL": "Target: your YNNARI unit selected as the target of enemy fight attacks",
             "SWIFT DEPLOYMENT": "Target: AELDARI TRANSPORT unit after it Advanced",
             "TO THEIR FINAL BREATH": "Target: ASPECT WARRIORS/AVATAR OF KHAINE unit selected as an enemy fight target (not fought)",
@@ -7417,6 +7464,13 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_aeldari_devoted_shooting_targets_selected_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
             atk_key = self._attacker_unit_key(attacking_unit)
             if atk_key:
                 self._recent_shooting_targets[atk_key] = list(target_units or [])
@@ -10484,6 +10538,13 @@ class StratagemManager(
             )
         except Exception:
             raise
+        try:
+            self._queue_aeldari_devoted_unit_destroyed_reactions(
+                unit=unit,
+                last_model=last_model,
+            )
+        except Exception:
+            raise
         # EMPEROR'S CHILDREN: track units that destroyed enemies in their Fight phase.
         try:
             destroyed_by_unit = kwargs.get("destroyed_by_unit")
@@ -10808,7 +10869,13 @@ class StratagemManager(
         try:
             tgt = _extract_friendly_target_unit_from_kwargs(kwargs)
             name_u = (s.name or "").strip().upper()
-            if name_u not in ("BLOOD OFFERING", "A GRIM WARNING", "BLOODY VENGEANCE", "DRAWN TO THE SLAUGHTER") and _unit_cannot_be_target_of_stratagem(tgt):
+            if name_u not in (
+                "BLOOD OFFERING",
+                "A GRIM WARNING",
+                "BLOODY VENGEANCE",
+                "DRAWN TO THE SLAUGHTER",
+                "PALL OF DREAD",
+            ) and _unit_cannot_be_target_of_stratagem(tgt):
                 if name_u == "INSANE BRAVERY":
                     # Only bypass battle-shock restriction, not embarked restriction.
                     try:

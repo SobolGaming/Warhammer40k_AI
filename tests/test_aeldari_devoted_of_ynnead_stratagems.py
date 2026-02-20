@@ -326,6 +326,97 @@ class TestAeldariDevotedOfYnneadStratagems(unittest.TestCase):
         game.event_system.publish("phase_end", player=p2, phase=SimpleNamespace(name="FIGHT_PHASE"))
         self.assertIsNone(target.get_melee_fight_on_death_after_attacks_rule())
 
+    def test_macabre_resilience_applies_minus_one_to_wound(self):
+        game, p1, p2, aeldari_army, enemy_army = _build_game()
+        defender = _make_unit(
+            "Ynnari Defenders",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["ASURYANI", "INFANTRY"],
+        )
+        enemy = _make_unit(
+            "Enemy Shooters",
+            faction_name="Enemy",
+            faction_keywords=["ENEMY"],
+            keywords=["INFANTRY"],
+        )
+        aeldari_army.add_unit(defender)
+        enemy_army.add_unit(enemy)
+        _place_unit(game, defender, 10.0, 10.0)
+        _place_unit(game, enemy, 16.0, 10.0)
+
+        _set_phase(game, p2, "SHOOTING_PHASE", 1)
+        game.event_system.publish("shooting_targets_selected", attacking_unit=enemy, target_units=[defender])
+        pending = _pending_by_name(p1.stratagems, "MACABRE RESILIENCE")
+        self.assertIsNotNone(pending)
+        ok = p1.stratagems.use(
+            str(pending.get("stratagem", "")),
+            unit=defender,
+            attacking_unit=enemy,
+            dequeue=True,
+        )
+        self.assertTrue(ok)
+
+        ranged_profile = Wargear(
+            {
+                "name": "Test Rifle",
+                "type": "Ranged",
+                "range": "24",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "6",
+                "AP": "0",
+                "D": "1",
+                "description": "",
+            }
+        ).profiles["default"]
+        attack_instance = {
+            "crit_hit": False,
+            "crit_wound": False,
+            "mortal_wound": False,
+            "below_half_distance": False,
+            "damage": 0,
+            "target_toughness_override": None,
+        }
+        result = ranged_profile._wound_target_with_tracking(defender, enemy.models[0], dict(attack_instance))
+        self.assertTrue(any("MACABRE RESILIENCE" in str(mod).upper() for mod in list(result.get("modifiers", []) or [])))
+
+    def test_pall_of_dread_queues_and_sets_sticky_objective(self):
+        from warhammer40k_ai.battlefield.map import Objective, ObjectiveCategory, ObjectivePoint
+
+        game, p1, _p2, aeldari_army, _enemy_army = _build_game()
+        unit = _make_unit(
+            "Ynnari Objective Holders",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["ASURYANI", "INFANTRY"],
+        )
+        aeldari_army.add_unit(unit)
+        unit.deployed = True
+        unit.reserve_status = "deployed"
+        unit.models[0].set_location(1.0, 0.0, 0.0, 0.0)
+
+        objective_point = ObjectivePoint(0.0, 0.0, 0.0, control_radius=3.0)
+        objective = Objective(
+            name="Objective",
+            category=ObjectiveCategory.PRIMARY,
+            points=0,
+            description="",
+            conditions=lambda _g: False,
+            location=objective_point,
+        )
+        game.map.objectives.append(objective)
+        game._objective_control_snapshot = {objective.location: p1}
+
+        last_model = unit.models[0]
+        game.event_system.publish("unit_destroyed", unit=unit, last_model=last_model)
+        pending = _pending_by_name(p1.stratagems, "PALL OF DREAD")
+        self.assertIsNotNone(pending)
+        ok = p1.stratagems.use(str(pending.get("stratagem", "")), unit=unit, objective=objective, dequeue=True)
+        self.assertTrue(ok)
+        self.assertIs(objective.location.sticky_controller, p1)
+        self.assertEqual(str(objective.location.sticky_source or ""), "aeldari_pall_of_dread")
+
 
 if __name__ == "__main__":
     unittest.main()

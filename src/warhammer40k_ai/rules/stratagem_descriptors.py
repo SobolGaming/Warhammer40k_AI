@@ -1610,6 +1610,26 @@ _CORSAIR_COTERIE_STRATAGEM_BY_NAME = {
 }
 
 _DEVOTED_OF_YNNEAD_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009920002": StratagemToolDescriptor(
+        stratagem_id="000009920002",
+        name="Pall of Dread",
+        timing="any_phase_on_unit_destroyed",
+        target="just_destroyed_ynnari_unit_that_was_within_range_of_previously_controlled_objective",
+        duration="until_opponent_controls_objective",
+        effect="sticky_objective",
+        cp_cost=1,
+        effect_params={"objective_selection_required": True, "can_target_destroyed_unit": True},
+    ),
+    "000009920003": StratagemToolDescriptor(
+        stratagem_id="000009920003",
+        name="Macabre Resilience",
+        timing="shooting_or_fight_phase_after_enemy_select_targets",
+        target="ynnari_infantry_or_mounted_non_wraith_construct_selected_as_attack_target",
+        duration="until_end_of_phase",
+        effect="minus_one_to_wound_against_targeted_unit",
+        cp_cost=1,
+        effect_params={"attack_type": "any", "wound_modifier": -1},
+    ),
     "000009920004": StratagemToolDescriptor(
         stratagem_id="000009920004",
         name="Emissaries of Ynnead",

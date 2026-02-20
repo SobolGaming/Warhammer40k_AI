@@ -308,6 +308,16 @@ class AeldariStratagemMixin:
             out.append(root)
         return sorted(out, key=self._aeldari_sort_key)
 
+    def _aeldari_devoted_unit_counts_as_ynnari(self, unit: Any) -> bool:
+        root = self._aeldari_root(unit)
+        if root is None:
+            return False
+        mgr = self._aeldari_detachment_mgr()
+        counts_as_ynnari = getattr(mgr, "devoted_of_ynnead_unit_counts_as_ynnari", None) if mgr is not None else None
+        if callable(counts_as_ynnari):
+            return bool(counts_as_ynnari(root))
+        return self._aeldari_has_keyword(root, "YNNARI")
+
     def _aeldari_devoted_emissaries_candidates(self, *, attacking_unit: Any = None) -> List[Any]:
         candidates = self._aeldari_devoted_ynnari_candidates(
             require_not_shot=False,
@@ -339,6 +349,35 @@ class AeldariStratagemMixin:
             if uid and uid not in eligible_ids:
                 continue
             if (not uid) and root not in eligible_units:
+                continue
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_devoted_macabre_resilience_candidates(self, *, target_units: List[Any]) -> List[Any]:
+        if not self._is_devoted_of_ynnead_detachment():
+            return []
+        eligible_units = self._aeldari_devoted_ynnari_candidates(
+            require_not_shot=False,
+            require_not_fought=False,
+            exclude_wraith_construct=True,
+        )
+        eligible_ids = {self._aeldari_sort_key(unit) for unit in list(eligible_units or [])}
+        out: List[Any] = []
+        seen: set[str] = set()
+        for target in list(target_units or []):
+            root = self._aeldari_root(target)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid not in eligible_ids:
+                continue
+            if (not uid) and root not in eligible_units:
+                continue
+            if not (self._aeldari_has_keyword(root, "INFANTRY") or self._aeldari_has_keyword(root, "MOUNTED")):
                 continue
             if uid and uid in seen:
                 continue
@@ -593,6 +632,154 @@ class AeldariStratagemMixin:
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload, use_timer=False)
 
+    def _queue_aeldari_devoted_shooting_targets_selected_reactions(
+        self,
+        *,
+        attacking_unit,
+        target_units: List[Any],
+    ) -> None:
+        game = getattr(self, "game", None)
+        if game is None or attacking_unit is None or not self._is_devoted_of_ynnead_detachment():
+            return
+        phase_key = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_key != "SHOOTING_PHASE":
+            return
+        attacker_root = self._aeldari_root(attacking_unit)
+        if attacker_root is None:
+            return
+        try:
+            if attacker_root.get_parent_army().player is self.player:
+                return
+        except (AttributeError, TypeError, ValueError):
+            return
+        stratagem = self.get_by_name("MACABRE RESILIENCE")
+        if stratagem is None:
+            return
+        if self.player.command_points < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+            return
+        candidates = self._aeldari_devoted_macabre_resilience_candidates(target_units=list(target_units or []))
+        if not candidates or self._aeldari_reaction_exists("shooting_targets_selected", stratagem.name):
+            return
+        payload: Dict[str, Any] = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _aeldari_devoted_pall_of_dread_objective_candidates(self, *, unit, last_model=None) -> List[Any]:
+        game = getattr(self, "game", None)
+        if game is None or unit is None:
+            return []
+        snapshot = getattr(game, "_objective_control_snapshot", None)
+        if not isinstance(snapshot, dict) or not snapshot:
+            return []
+        pos = None
+        if last_model is not None:
+            try:
+                pos = last_model.get_location()
+            except (AttributeError, TypeError, ValueError):
+                pos = None
+        if pos is None:
+            try:
+                pos = getattr(unit, "position", None)
+            except (AttributeError, TypeError, ValueError):
+                pos = None
+        if pos is None:
+            return []
+        try:
+            ux, uy = float(pos[0]), float(pos[1])
+        except (AttributeError, TypeError, ValueError, IndexError):
+            return []
+
+        base_radius = 0.0
+        if last_model is not None:
+            try:
+                base = getattr(last_model, "model_base", None)
+                if base is not None:
+                    base_radius = float(getattr(base, "base_size", 0.0) or 0.0)
+            except (AttributeError, TypeError, ValueError):
+                base_radius = 0.0
+
+        out: List[Any] = []
+        for objective in list(getattr(getattr(game, "map", None), "objectives", []) or []):
+            try:
+                loc = getattr(objective, "location", None)
+                if loc is None or bool(getattr(loc, "removed", False)):
+                    continue
+                if snapshot.get(loc) is not self.player:
+                    continue
+                radius = float(getattr(loc, "control_radius", 0.0) or 0.0)
+                dx = ux - float(getattr(loc, "x", 0.0) or 0.0)
+                dy = uy - float(getattr(loc, "y", 0.0) or 0.0)
+                if (dx * dx + dy * dy) ** 0.5 > (radius + base_radius):
+                    continue
+                out.append(objective)
+            except (AttributeError, TypeError, ValueError):
+                continue
+        return sorted(
+            out,
+            key=lambda obj: (
+                float(getattr(getattr(obj, "location", None), "x", 0.0) or 0.0),
+                float(getattr(getattr(obj, "location", None), "y", 0.0) or 0.0),
+                str(getattr(obj, "name", "") or ""),
+            ),
+        )
+
+    def _queue_aeldari_devoted_unit_destroyed_reactions(self, *, unit, last_model=None) -> None:
+        game = getattr(self, "game", None)
+        if game is None or unit is None or not self._is_devoted_of_ynnead_detachment():
+            return
+        root = self._aeldari_root(unit)
+        if root is None:
+            return
+        try:
+            if root.get_parent_army().player is not self.player:
+                return
+        except (AttributeError, TypeError, ValueError):
+            return
+        if not self._aeldari_devoted_unit_counts_as_ynnari(root):
+            return
+        stratagem = self.get_by_name("PALL OF DREAD")
+        if stratagem is None:
+            return
+        if self.player.command_points < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+            return
+        objective_candidates = self._aeldari_devoted_pall_of_dread_objective_candidates(unit=root, last_model=last_model)
+        if not objective_candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if reaction.get("event") != "unit_destroyed":
+                continue
+            if self._aeldari_norm_name(reaction.get("stratagem", "")) != self._aeldari_norm_name(stratagem.name):
+                continue
+            if reaction.get("unit") is root:
+                return
+        payload: Dict[str, Any] = {
+            "event": "unit_destroyed",
+            "phase_name": str(getattr(self, "_current_phase_name", "") or ""),
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": root,
+            "last_model": last_model,
+            "objective_candidates": objective_candidates,
+        }
+        if len(objective_candidates) == 1:
+            payload["objective"] = objective_candidates[0]
+            payload["objective_marker"] = objective_candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
     def _queue_aeldari_devoted_fight_targets_selected_reactions(
         self,
         *,
@@ -643,31 +830,45 @@ class AeldariStratagemMixin:
 
         if owner_player is None:
             return
-        stratagem = self.get_by_name("PARTING THE VEIL")
-        if stratagem is None:
-            return
-        if self.player.command_points < int(getattr(stratagem, "cp_cost", 0) or 0):
-            return
-        if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
-            return
-        candidates = self._aeldari_devoted_parting_the_veil_candidates(target_units=target_list)
-        if not candidates:
-            return
-        if self._aeldari_reaction_exists("fight_targets_selected", stratagem.name):
-            return
-        payload = {
-            "event": "fight_targets_selected",
-            "phase_name": "Fight phase",
-            "stratagem": stratagem.name,
-            "cp_cost": stratagem.cp_cost,
-            "attacking_unit": attacker_root,
-            "target_units": target_list,
-            "candidates": candidates,
-        }
-        if len(candidates) == 1:
-            payload["unit"] = candidates[0]
-            payload["target_unit"] = candidates[0]
-        self._queue_reaction(payload, use_timer=False)
+        parting = self.get_by_name("PARTING THE VEIL")
+        if parting is not None:
+            if self.player.command_points >= int(getattr(parting, "cp_cost", 0) or 0):
+                if self._aeldari_norm_name(parting.name) not in getattr(self, "_used_stratagems_this_phase", set()):
+                    candidates = self._aeldari_devoted_parting_the_veil_candidates(target_units=target_list)
+                    if candidates and not self._aeldari_reaction_exists("fight_targets_selected", parting.name):
+                        payload: Dict[str, Any] = {
+                            "event": "fight_targets_selected",
+                            "phase_name": "Fight phase",
+                            "stratagem": parting.name,
+                            "cp_cost": parting.cp_cost,
+                            "attacking_unit": attacker_root,
+                            "target_units": target_list,
+                            "candidates": candidates,
+                        }
+                        if len(candidates) == 1:
+                            payload["unit"] = candidates[0]
+                            payload["target_unit"] = candidates[0]
+                        self._queue_reaction(payload, use_timer=False)
+
+        macabre = self.get_by_name("MACABRE RESILIENCE")
+        if macabre is not None:
+            if self.player.command_points >= int(getattr(macabre, "cp_cost", 0) or 0):
+                if self._aeldari_norm_name(macabre.name) not in getattr(self, "_used_stratagems_this_phase", set()):
+                    candidates = self._aeldari_devoted_macabre_resilience_candidates(target_units=target_list)
+                    if candidates and not self._aeldari_reaction_exists("fight_targets_selected", macabre.name):
+                        payload = {
+                            "event": "fight_targets_selected",
+                            "phase_name": "Fight phase",
+                            "stratagem": macabre.name,
+                            "cp_cost": macabre.cp_cost,
+                            "attacking_unit": attacker_root,
+                            "target_units": target_list,
+                            "candidates": candidates,
+                        }
+                        if len(candidates) == 1:
+                            payload["unit"] = candidates[0]
+                            payload["target_unit"] = candidates[0]
+                        self._queue_reaction(payload, use_timer=False)
 
     def _queue_aeldari_armoured_move_end_reactions(self, *, unit, action: str) -> None:
         game = getattr(self, "game", None)
@@ -1458,6 +1659,10 @@ class AeldariStratagemMixin:
             return self._use_aeldari_devoted_emissaries_of_ynnead(stratagem, **kwargs)
         if name_u == "PARTING THE VEIL":
             return self._use_aeldari_devoted_parting_the_veil(stratagem, **kwargs)
+        if name_u == "MACABRE RESILIENCE":
+            return self._use_aeldari_devoted_macabre_resilience(stratagem, **kwargs)
+        if name_u == "PALL OF DREAD":
+            return self._use_aeldari_devoted_pall_of_dread(stratagem, **kwargs)
         if name_u == "SOULSIGHT":
             return self._use_aeldari_devoted_soulsight(stratagem, **kwargs)
         if name_u == "DEATH ANSWERS DEATH":
@@ -1594,6 +1799,124 @@ class AeldariStratagemMixin:
             sr["aeldari_parting_the_veil_turn"] = turn
         target_root.special_rules = sr
         self._aeldari_clear_melee_fight_on_death_cache(target_root)
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_aeldari_devoted_macabre_resilience(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name not in ("shooting phase", "fight phase"):
+            logger.error("ERROR: MACABRE RESILIENCE: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        if phase_name == "shooting phase":
+            active_player = getattr(game, "get_current_player", lambda: None)()
+            if active_player is self.player:
+                logger.error("ERROR: MACABRE RESILIENCE: not opponent's Shooting phase")
+                return False
+        attacking_unit = context.get("attacking_unit") or context.get("attacker_unit")
+        attacking_root = self._aeldari_root(attacking_unit) if attacking_unit is not None else None
+        if attacking_root is not None:
+            try:
+                if attacking_root.get_parent_army().player is self.player:
+                    logger.error("ERROR: MACABRE RESILIENCE: attacking unit must be enemy")
+                    return False
+            except (AttributeError, TypeError, ValueError):
+                return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        target_window = list(context.get("target_units") or [])
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_devoted_macabre_resilience_candidates(target_units=target_window)
+        candidate_roots = [self._aeldari_root(unit) for unit in list(candidates or [])]
+        candidate_roots = [unit for unit in candidate_roots if unit is not None]
+        if target_root is None:
+            if len(candidate_roots) == 1:
+                target_root = candidate_roots[0]
+            else:
+                logger.error("ERROR: MACABRE RESILIENCE: missing target unit")
+                return False
+        if candidate_roots and target_root not in candidate_roots:
+            logger.error("ERROR: MACABRE RESILIENCE: target must be selected by the attacking unit")
+            return False
+        if not self._aeldari_on_battlefield(target_root, require_targetable=True):
+            logger.error("ERROR: MACABRE RESILIENCE: target must be on the battlefield and targetable")
+            return False
+        if self._aeldari_has_keyword(target_root, "WRAITH CONSTRUCT"):
+            logger.error("ERROR: MACABRE RESILIENCE: WRAITH CONSTRUCT units are ineligible")
+            return False
+        if not (self._aeldari_has_keyword(target_root, "INFANTRY") or self._aeldari_has_keyword(target_root, "MOUNTED")):
+            logger.error("ERROR: MACABRE RESILIENCE: target must be INFANTRY or MOUNTED")
+            return False
+        if not self._aeldari_devoted_unit_counts_as_ynnari(target_root):
+            logger.error("ERROR: MACABRE RESILIENCE: target must be a YNNARI unit")
+            return False
+        if not self._aeldari_armoured_spend_cp(
+            stratagem,
+            target_unit=target_root,
+            enemy_unit=attacking_root,
+        ):
+            return False
+        entry = {
+            "value": 1,
+            "attack_type": "any",
+            "expires_phase": "SHOOTING_PHASE" if phase_name == "shooting phase" else "FIGHT_PHASE",
+            "source": str(getattr(stratagem, "name", "MACABRE RESILIENCE") or "MACABRE RESILIENCE"),
+        }
+        self._append_defensive_effect(target_root, "defensive_wound_mods", entry)
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_aeldari_devoted_pall_of_dread(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            logger.error("ERROR: PALL OF DREAD: missing target unit")
+            return False
+        try:
+            if target_root.get_parent_army().player is not self.player:
+                logger.error("ERROR: PALL OF DREAD: target unit is not friendly")
+                return False
+        except (AttributeError, TypeError, ValueError):
+            return False
+        if not self._aeldari_devoted_unit_counts_as_ynnari(target_root):
+            logger.error("ERROR: PALL OF DREAD: target must be a YNNARI unit")
+            return False
+        objective = context.get("objective") or context.get("objective_marker")
+        objective_candidates = list(context.get("objective_candidates") or [])
+        if not objective_candidates:
+            objective_candidates = self._aeldari_devoted_pall_of_dread_objective_candidates(
+                unit=target_root,
+                last_model=context.get("last_model"),
+            )
+        if objective is None:
+            if len(objective_candidates) == 1:
+                objective = objective_candidates[0]
+            else:
+                logger.error("ERROR: PALL OF DREAD: missing objective marker selection")
+                return False
+        if objective_candidates and objective not in list(objective_candidates or []):
+            logger.error("ERROR: PALL OF DREAD: selected objective is not eligible")
+            return False
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root):
+            return False
+        loc = getattr(objective, "location", None)
+        if loc is None:
+            logger.error("ERROR: PALL OF DREAD: objective marker location unavailable")
+            return False
+        if hasattr(loc, "set_sticky_control"):
+            loc.set_sticky_control(self.player, source="aeldari_pall_of_dread")
+        else:
+            loc.sticky_controller = self.player
+            loc.sticky_source = "aeldari_pall_of_dread"
         self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
         return True
 
