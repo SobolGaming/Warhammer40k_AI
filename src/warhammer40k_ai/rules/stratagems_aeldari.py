@@ -97,6 +97,11 @@ class AeldariStratagemMixin:
         checker = getattr(mgr, "is_eldritch_raiders", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_seer_council_detachment(self) -> bool:
+        mgr = self._aeldari_detachment_mgr()
+        checker = getattr(mgr, "is_seer_council", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_guardian_battlehost_detachment(self) -> bool:
         mgr = self._aeldari_detachment_mgr()
         checker = getattr(mgr, "is_guardian_battlehost", None) if mgr is not None else None
@@ -258,6 +263,115 @@ class AeldariStratagemMixin:
             require_on_battlefield=True,
             require_not_shot=True,
         )
+
+    def _aeldari_seer_psyker_candidates(self) -> List[Any]:
+        if not self._is_seer_council_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._aeldari_has_keyword(root, "ASURYANI"):
+                continue
+            if not self._aeldari_has_keyword(root, "PSYKER"):
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_seer_unshrouded_truth_candidates(self) -> List[Any]:
+        if not self._is_seer_council_detachment():
+            return []
+        psykers = self._aeldari_seer_psyker_candidates()
+        if not psykers:
+            return []
+        from ..utility.aura_utils import unit_within_range_of_unit
+
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._aeldari_has_keyword(root, "ASURYANI"):
+                continue
+            if not self._aeldari_has_keyword(root, "INFANTRY"):
+                continue
+            if self._aeldari_has_keyword(root, "WRAITH CONSTRUCT"):
+                continue
+            if self._aeldari_selected_to_move_this_phase(root):
+                continue
+            was_set_up = getattr(root, "_was_set_up_this_turn", None)
+            if callable(was_set_up):
+                try:
+                    if bool(was_set_up(game=getattr(self, "game", None))):
+                        continue
+                except (AttributeError, TypeError, ValueError):
+                    pass
+            within_psyker = False
+            for psyker in psykers:
+                if unit_within_range_of_unit(root, psyker, 9.0, use_attached_aggregate=True):
+                    within_psyker = True
+                    break
+            if not within_psyker:
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_seer_ishas_fury_candidates(self, *, enemy_unit: Any) -> List[Any]:
+        if not self._is_seer_council_detachment():
+            return []
+        enemy_root = self._aeldari_root(enemy_unit)
+        if enemy_root is None:
+            return []
+        try:
+            if enemy_root.get_parent_army().player is self.player:
+                return []
+        except (AttributeError, TypeError, ValueError):
+            return []
+        if not self._aeldari_on_battlefield(enemy_root, require_targetable=False):
+            return []
+
+        from ..utility.aura_utils import unit_within_range_of_unit
+
+        out: List[Any] = []
+        seen: set[str] = set()
+        for psyker in self._aeldari_seer_psyker_candidates():
+            root = self._aeldari_root(psyker)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not unit_within_range_of_unit(root, enemy_root, 9.0, use_attached_aggregate=True):
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
 
     def _aeldari_devoted_ynnari_candidates(
         self,
@@ -839,6 +953,93 @@ class AeldariStratagemMixin:
                                 payload["unit"] = candidates[0]
                                 payload["target_unit"] = candidates[0]
                             self._queue_reaction(payload, use_timer=False)
+
+    def _queue_aeldari_seer_phase_start_reactions(self, *, player, phase) -> None:
+        game = getattr(self, "game", None)
+        if game is None or not self._is_seer_council_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "MOVEMENT_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return
+        stratagem = self._aeldari_get_stratagem_by_norm_name("UNSHROUDED TRUTH")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+            return
+        candidates = self._aeldari_seer_unshrouded_truth_candidates()
+        if not candidates or self._aeldari_reaction_exists("phase_start", stratagem.name):
+            return
+        payload: Dict[str, Any] = {
+            "event": "phase_start",
+            "phase": "Movement phase",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_aeldari_seer_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        game = getattr(self, "game", None)
+        if game is None or not self._is_seer_council_detachment():
+            return
+        phase_key = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_key != "MOVEMENT_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+
+        action_key = str(action or "").strip().lower().replace("_", " ")
+        if action_key not in {"move", "normal move", "advance", "fall back", "fallback"}:
+            return
+
+        enemy_root = self._aeldari_root(unit)
+        if enemy_root is None:
+            return
+        try:
+            if enemy_root.get_parent_army().player is self.player:
+                return
+        except (AttributeError, TypeError, ValueError):
+            return
+        if not self._aeldari_on_battlefield(enemy_root, require_targetable=False):
+            return
+
+        stratagem = self._aeldari_get_stratagem_by_norm_name("ISHA'S FURY")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+            return
+        candidates = self._aeldari_seer_ishas_fury_candidates(enemy_unit=enemy_root)
+        if not candidates:
+            return
+        if self._aeldari_reaction_exists("unit_move_ended", stratagem.name, unit=enemy_root):
+            return
+        payload: Dict[str, Any] = {
+            "event": "unit_move_ended",
+            "phase": "Movement phase",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": enemy_root,
+            "attacking_unit": enemy_root,
+            "action": str(action or ""),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
 
     def _queue_aeldari_guardian_phase_start_reactions(self, *, player, phase) -> None:
         game = getattr(self, "game", None)
@@ -2888,6 +3089,187 @@ class AeldariStratagemMixin:
             sr["vectored_engines_turn"] = turn
         target_root.special_rules = sr
         self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_aeldari_seer_council_stratagem(self, stratagem, **kwargs) -> Optional[bool]:
+        if stratagem is None or not self._is_seer_council_detachment():
+            return None
+        name_u = self._aeldari_norm_name(getattr(stratagem, "name", ""))
+        if name_u == "UNSHROUDED TRUTH":
+            return self._use_aeldari_seer_unshrouded_truth(stratagem, **kwargs)
+        if name_u in {"ISHA'S FURY", "ISHA’S FURY"}:
+            return self._use_aeldari_seer_ishas_fury(stratagem, **kwargs)
+        return None
+
+    def _use_aeldari_seer_unshrouded_truth(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: UNSHROUDED TRUTH: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: UNSHROUDED TRUTH: not your turn")
+            return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_seer_unshrouded_truth_candidates()
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: UNSHROUDED TRUTH: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: UNSHROUDED TRUTH: target must be an eligible ASURYANI INFANTRY unit")
+            return False
+
+        unit_id = str(get_entity_id(target_root) or "")
+        if not unit_id:
+            logger.error("ERROR: UNSHROUDED TRUTH: target unit id missing")
+            return False
+        allowed_ids = [str(get_entity_id(model) or "") for model in list(getattr(target_root, "models", []) or [])]
+        allowed_ids = [model_id for model_id in allowed_ids if model_id]
+        if not allowed_ids:
+            logger.error("ERROR: UNSHROUDED TRUTH: target unit has no models to place")
+            return False
+        request_decision = getattr(game, "request_decision", None)
+        if not callable(request_decision):
+            logger.error("ERROR: UNSHROUDED TRUTH: move decision queue unavailable")
+            return False
+        from ..engine.decision_kinds import DECISION_MOVE_UNIT
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        queue = getattr(game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != str(DECISION_MOVE_UNIT):
+                    continue
+                req_ctx = dict(getattr(req, "context", {}) or {})
+                if str(req_ctx.get("placement_kind", "") or "") != "aeldari_unshrouded_truth":
+                    continue
+                if str(req_ctx.get("unit_id", "") or "") != unit_id:
+                    continue
+                logger.error("ERROR: UNSHROUDED TRUTH: placement decision already queued for target unit")
+                return False
+
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root):
+            return False
+
+        for member in list(getattr(target_root, "get_attached_unit_members", lambda: [target_root])() or [target_root]):
+            round_state = getattr(member, "round_state", None)
+            if round_state is None:
+                continue
+            round_state.moved_this_round = True
+            round_state.remained_stationary_this_round = False
+
+        request = DecisionRequest.create(
+            DECISION_MOVE_UNIT,
+            f"{getattr(stratagem, 'name', 'UNSHROUDED TRUTH')}: set up {getattr(target_root, 'name', 'Unit')}",
+            player_id=getattr(self.player, "id", None),
+            options=[
+                DecisionOption.create(
+                    "Confirm",
+                    payload={"unit_id": unit_id, "movement_type": "deploy", "action": "confirm"},
+                )
+            ],
+            context={
+                "unit_id": unit_id,
+                "movement_type": "deploy",
+                "placement_kind": "aeldari_unshrouded_truth",
+                "allowed_model_ids": list(allowed_ids),
+                "allow_skip": False,
+                "ability_name": str(getattr(stratagem, "name", "UNSHROUDED TRUTH") or "UNSHROUDED TRUTH"),
+            },
+        )
+        request_decision(request)
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: UNSHROUDED TRUTH: %s must be set up again more than 9\" horizontally from enemy models.",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_aeldari_seer_ishas_fury(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: ISHA'S FURY: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            logger.error("ERROR: ISHA'S FURY: not opponent's turn")
+            return False
+
+        action_key = str(context.get("action", "") or "").strip().lower().replace("_", " ")
+        if action_key and action_key not in {"move", "normal move", "advance", "fall back", "fallback"}:
+            logger.error("ERROR: ISHA'S FURY: wrong trigger")
+            return False
+
+        enemy_unit = context.get("enemy_unit") or context.get("attacking_unit") or context.get("moving_unit")
+        enemy_root = self._aeldari_root(enemy_unit) if enemy_unit is not None else None
+        if enemy_root is None:
+            logger.error("ERROR: ISHA'S FURY: missing enemy unit")
+            return False
+        try:
+            if enemy_root.get_parent_army().player is self.player:
+                logger.error("ERROR: ISHA'S FURY: enemy unit is not hostile")
+                return False
+        except (AttributeError, TypeError, ValueError):
+            return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_seer_ishas_fury_candidates(enemy_unit=enemy_root)
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: ISHA'S FURY: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: ISHA'S FURY: target must be an ASURYANI PSYKER within 9\" of the moved enemy unit")
+            return False
+
+        if not self._aeldari_armoured_spend_cp(
+            stratagem,
+            target_unit=target_root,
+            enemy_unit=enemy_root,
+        ):
+            return False
+
+        mortal_wounds = context.get("mortal_wounds")
+        if mortal_wounds is None:
+            mortal_wounds = self._roll_aeldari_ishas_fury_mortal_wounds(target_root, enemy_root)
+        try:
+            mortal_wounds = int(mortal_wounds or 0)
+        except (TypeError, ValueError):
+            mortal_wounds = 0
+        if mortal_wounds > 0:
+            apply_mortals = getattr(enemy_root, "_apply_mortal_wounds_to_unit", None)
+            if callable(apply_mortals):
+                try:
+                    apply_mortals(enemy_root, int(mortal_wounds), game_map=getattr(game, "map", None))
+                except TypeError:
+                    apply_mortals(target_unit=enemy_root, amount=int(mortal_wounds), game_map=getattr(game, "map", None))
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: ISHA'S FURY: %s deals %d mortal wound(s) to %s.",
+            getattr(target_root, "name", "Unit"),
+            int(mortal_wounds),
+            getattr(enemy_root, "name", "Enemy"),
+        )
         return True
 
     def _use_aeldari_guardian_battlehost_stratagem(self, stratagem, **kwargs) -> Optional[bool]:
@@ -5878,6 +6260,23 @@ class AeldariStratagemMixin:
                 player,
                 (
                     f"Lethal Ruse rolls for {getattr(unit, 'name', 'Unit')} vs {getattr(enemy_unit, 'name', 'Enemy')}: "
+                    f"{rolls} => {int(mortals)} mortal wounds"
+                ),
+            )
+        return int(mortals)
+
+    def _roll_aeldari_ishas_fury_mortal_wounds(self, psyker_unit: Any, enemy_unit: Any) -> int:
+        from ..utility.dice import get_roll
+        from ..utility.event_bus import append_dice
+
+        rolls = [int(get_roll("D6") or 0) for _ in range(6)]
+        mortals = int(sum(1 for roll in rolls if int(roll or 0) >= 3))
+        player = getattr(psyker_unit.get_parent_army(), "player", None) if psyker_unit is not None else None
+        if player is not None:
+            append_dice(
+                player,
+                (
+                    f"Isha's Fury rolls for {getattr(psyker_unit, 'name', 'Unit')} vs {getattr(enemy_unit, 'name', 'Enemy')}: "
                     f"{rolls} => {int(mortals)} mortal wounds"
                 ),
             )

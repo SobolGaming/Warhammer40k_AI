@@ -506,6 +506,68 @@ def _validate_placement_positions(
         reserves_errors = _validate_reserves_arrival_positions(game, unit, model_positions)
         if reserves_errors:
             return reserves_errors
+    if str(placement_kind or "") == "aeldari_unshrouded_truth":
+        unshrouded_errors = _validate_aeldari_unshrouded_truth_positions(game, unit, candidate_bases)
+        if unshrouded_errors:
+            return unshrouded_errors
+
+    return ()
+
+
+def _validate_aeldari_unshrouded_truth_positions(
+    game: object,
+    unit: object,
+    candidate_bases: dict[str, object],
+) -> Sequence[str]:
+    if not candidate_bases:
+        return ()
+    game_map = getattr(game, "map", None)
+    if game_map is None:
+        return ()
+
+    try:
+        from ...utility.aura_utils import horizontal_distance_between_bases_2d
+    except Exception:
+        return ()
+
+    own_army_getter = getattr(unit, "get_parent_army", None)
+    own_army = own_army_getter() if callable(own_army_getter) else getattr(unit, "parent_army", None)
+
+    for enemy in list(getattr(game_map, "units", []) or []):
+        if enemy is unit:
+            continue
+        enemy_getter = getattr(enemy, "get_attached_unit_root", None)
+        enemy_root = enemy_getter() if callable(enemy_getter) else enemy
+        if enemy_root is None:
+            continue
+        enemy_army_getter = getattr(enemy_root, "get_parent_army", None)
+        enemy_army = enemy_army_getter() if callable(enemy_army_getter) else getattr(enemy_root, "parent_army", None)
+        if own_army is not None and enemy_army is own_army:
+            continue
+        if not bool(getattr(enemy_root, "deployed", True)):
+            continue
+        if bool(getattr(enemy_root, "is_embarked", False)) or getattr(enemy_root, "embarked_in", None) is not None:
+            continue
+        reserve_status = str(getattr(enemy_root, "reserve_status", "deployed") or "deployed")
+        if reserve_status != "deployed":
+            continue
+
+        enemy_models = list(getattr(enemy_root, "models", []) or [])
+        for enemy_model in enemy_models:
+            enemy_alive_value = getattr(enemy_model, "is_alive", True)
+            enemy_alive = bool(enemy_alive_value() if callable(enemy_alive_value) else enemy_alive_value)
+            if not enemy_alive:
+                continue
+            enemy_base = getattr(enemy_model, "model_base", None)
+            if enemy_base is None:
+                continue
+            for base in candidate_bases.values():
+                try:
+                    horizontal = float(horizontal_distance_between_bases_2d(base, enemy_base))
+                except Exception:
+                    continue
+                if horizontal <= 9.0 + 1e-6:
+                    return ("Move unit: Unshrouded Truth placement must be more than 9\" horizontally from enemy models.",)
 
     return ()
 

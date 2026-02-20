@@ -173,8 +173,11 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SHIELD NODES",
     "STAGED DEATH",
     "TIME TO STRIKE",
+    "UNSHROUDED TRUTH",
     "TRICKSTERS' RETORT",
     "TRICKSTERS\u2019 RETORT",
+    "ISHA'S FURY",
+    "ISHA\u2019S FURY",
     "VAUL'S VENGEANCE",
     "VAUL\u2019S VENGEANCE",
     "WARDING SALVOES",
@@ -370,6 +373,9 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "SMOKESCREEN",
     "SKYBORNE SANCTUARY",
     "TO THEIR FINAL BREATH",
+    "UNSHROUDED TRUTH",
+    "ISHA'S FURY",
+    "ISHA\u2019S FURY",
     "PALL OF DREAD",
     "PARTING THE VEIL",
     "CORRUPT REALSPACE",
@@ -1410,6 +1416,8 @@ class StratagemManager(
             "ORDERED RETREAT",
             "LETHAL RUSE",
             "MOCKING FLIGHT",
+            "ISHA'S FURY",
+            "ISHA\u2019S FURY",
         }:
             add("unit_move_ended", self._on_unit_move_ended)
         if names & {"ANTI-GRAV REPULSION", "ANTI‑GRAV REPULSION", "BLIND GRENADES", "A DEADLY SNARE"}:
@@ -1736,6 +1744,7 @@ class StratagemManager(
             "WARDING SALVOES",
             "BLADES OF ASURYAN",
             "TIME TO STRIKE",
+            "UNSHROUDED TRUTH",
             "VIOLENT CRESCENDO",
             "VIOLENT EXCESS",
             "KHAINE'S VENGEANCE",
@@ -2661,6 +2670,48 @@ class StratagemManager(
                 result["reason"] = None
                 return result
             result["reason"] = "Requires your Shooting phase and an eligible SOULSIGHT target that has not shot"
+            return result
+        if name_u == "UNSHROUDED TRUTH":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l and phase_name_l != "movement phase":
+                result["reason"] = "Requires your Movement phase"
+                return result
+            game = getattr(self, "game", None)
+            active_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+            if active_player is not self.player:
+                result["reason"] = "Only usable in your turn"
+                return result
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._aeldari_seer_unshrouded_truth_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires your Movement phase and an ASURYANI INFANTRY non-WRAITH CONSTRUCT unit that has not moved or been set up this phase and is within 9\" of a friendly ASURYANI PSYKER"
+            )
+            return result
+        if name_u in {"ISHA'S FURY", "ISHA’S FURY"}:
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l and phase_name_l != "movement phase":
+                result["reason"] = "Requires opponent Movement phase"
+                return result
+            game = getattr(self, "game", None)
+            active_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+            if active_player is self.player:
+                result["reason"] = "Only usable in your opponent's turn"
+                return result
+            enemy_unit = context.get("enemy_unit") or context.get("attacking_unit") or context.get("moving_unit")
+            enemy_root = self._aeldari_root(enemy_unit) if enemy_unit is not None else None
+            candidates = list(context.get("candidates") or [])
+            if not candidates and enemy_root is not None:
+                candidates = self._aeldari_seer_ishas_fury_candidates(enemy_unit=enemy_root)
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires opponent Movement phase trigger after an enemy Normal/Advance/Fall Back move ends within 9\" of one of your ASURYANI PSYKER units"
             return result
         if name_u == "DEATH ANSWERS DEATH":
             death_candidates = list(context.get("candidates") or [])
@@ -3675,6 +3726,9 @@ class StratagemManager(
             "COST OF VICTORY": "Target: your Guardians unit that is not within Engagement Range at the end of the opponent's Fight phase; it enters Strategic Reserves and destroyed GUARDIANS models are returned",
             "SHIELD NODES": "Target: your Dire Avengers or Guardians unit selected by enemy Shooting/Fight attacks (if within objective range, attacks against it are -1 to wound this phase)",
             "TIME TO STRIKE": "Target: your Storm Guardians unit that has not been selected to move this phase; it gains fixed Advance distance 6 and can shoot/charge after advancing this turn",
+            "UNSHROUDED TRUTH": "Target: your ASURYANI INFANTRY unit (excluding WRAITH CONSTRUCT) that has not been selected to move this phase, was not set up this phase, and is within 9\" of a friendly ASURYANI PSYKER; remove and set it up again more than 9\" horizontally from enemy models",
+            "ISHA'S FURY": "Target: one of your ASURYANI PSYKER models within 9\" of an enemy unit that just ended a Normal/Advance/Fall Back move; roll 6D6 and that enemy suffers 1 mortal wound for each 3+",
+            "ISHA’S FURY": "Target: one of your ASURYANI PSYKER models within 9\" of an enemy unit that just ended a Normal/Advance/Fall Back move; roll 6D6 and that enemy suffers 1 mortal wound for each 3+",
             "TRICKSTERS' RETORT": "Target: your TROUPE unit within 9\" of an enemy unit that just ended a Normal/Advance/Fall Back move",
             "TRICKSTERS\u2019 RETORT": "Target: your TROUPE unit within 9\" of an enemy unit that just ended a Normal/Advance/Fall Back move",
             "VAUL'S VENGEANCE": "Target: your War Walkers unit after an enemy unit destroys your Dire Avengers or Guardians unit; your unit shoots reactively and can only target that enemy (once per battle round)",
@@ -4323,6 +4377,10 @@ class StratagemManager(
             raise
         try:
             self._queue_aeldari_armoured_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_aeldari_seer_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -6942,6 +7000,7 @@ class StratagemManager(
         self._process_warpbane_fires_of_covenant_trigger(unit=unit, trigger_kind="move_end", action=action)
         self._queue_emperors_children_mercurial_move_end_reactions(unit=unit, action=action)
         self._queue_aeldari_armoured_move_end_reactions(unit=unit, action=action)
+        self._queue_aeldari_seer_move_end_reactions(unit=unit, action=action)
         self._queue_aeldari_corsair_move_end_reactions(unit=unit, action=action)
         self._queue_aeldari_ghosts_move_end_reactions(unit=unit, action=action)
         self._queue_votann_needgaard_move_end_reactions(unit=unit, action=action)
@@ -13657,6 +13716,9 @@ class StratagemManager(
         aeldari_armoured_result = self._use_aeldari_armoured_warhost_stratagem(s, **kwargs)
         if aeldari_armoured_result is not None:
             return aeldari_armoured_result
+        aeldari_seer_result = self._use_aeldari_seer_council_stratagem(s, **kwargs)
+        if aeldari_seer_result is not None:
+            return aeldari_seer_result
         aeldari_guardian_result = self._use_aeldari_guardian_battlehost_stratagem(s, **kwargs)
         if aeldari_guardian_result is not None:
             return aeldari_guardian_result

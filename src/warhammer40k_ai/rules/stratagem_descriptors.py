@@ -1609,6 +1609,43 @@ _CORSAIR_COTERIE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _CORSAIR_COTERIE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_SEER_COUNCIL_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009924004": StratagemToolDescriptor(
+        stratagem_id="000009924004",
+        name="Unshrouded Truth",
+        timing="your_movement_phase",
+        target="asuryani_infantry_non_wraith_construct_not_selected_to_move_not_set_up_this_phase_within_9_of_friendly_asuryani_psyker",
+        duration="immediate_and_until_end_of_phase",
+        effect="redeploy_unit_more_than_9_horizontal_from_enemy_models_and_mark_not_eligible_to_move",
+        cp_cost=1,
+        effect_params={
+            "setup_min_distance": 9,
+            "setup_distance_type": "horizontal",
+            "move_ineligible_until_end_of_phase": True,
+        },
+    ),
+    "000009924006": StratagemToolDescriptor(
+        stratagem_id="000009924006",
+        name="Isha's Fury",
+        timing="opponent_movement_phase_after_enemy_move_end",
+        target="asuryani_psyker_within_9_of_enemy_unit_that_ended_normal_advance_or_fall_back_move",
+        duration="immediate",
+        effect="roll_6d6_each_3plus_deals_1_mortal_wound_to_moved_enemy_unit",
+        cp_cost=1,
+        range_in=9.0,
+        effect_params={
+            "roll": "6D6",
+            "threshold": 3,
+            "mortal_wounds_per_success": 1,
+            "trigger_actions": ["normal_move", "advance", "fall_back"],
+        },
+    ),
+}
+
+_SEER_COUNCIL_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SEER_COUNCIL_STRATAGEM_DESCRIPTORS.values()
+}
+
 _GUARDIAN_BATTLEHOST_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009912002": StratagemToolDescriptor(
         stratagem_id="000009912002",
@@ -2539,6 +2576,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _CORSAIR_COTERIE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _SEER_COUNCIL_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _GUARDIAN_BATTLEHOST_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -2598,6 +2638,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _ARMOURED_WARHOST_STRATAGEM_BY_NAME.get(key)
         or _ASPECT_HOST_STRATAGEM_BY_NAME.get(key)
         or _CORSAIR_COTERIE_STRATAGEM_BY_NAME.get(key)
+        or _SEER_COUNCIL_STRATAGEM_BY_NAME.get(key)
         or _GUARDIAN_BATTLEHOST_STRATAGEM_BY_NAME.get(key)
         or _DEVOTED_OF_YNNEAD_STRATAGEM_BY_NAME.get(key)
         or _GHOSTS_OF_THE_WEBWAY_STRATAGEM_BY_NAME.get(key)
