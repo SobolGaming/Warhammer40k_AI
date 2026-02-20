@@ -1624,6 +1624,21 @@ _SEER_COUNCIL_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "move_ineligible_until_end_of_phase": True,
         },
     ),
+    "000009924005": StratagemToolDescriptor(
+        stratagem_id="000009924005",
+        name="Fate Inescapable",
+        timing="your_shooting_phase",
+        target="asuryani_infantry_non_wraith_construct_not_selected_to_shoot_within_9_of_friendly_asuryani_psyker",
+        duration="until_end_of_phase",
+        effect="ranged_ignores_cover_and_critical_wound_ap_bonus",
+        cp_cost=1,
+        range_in=9.0,
+        effect_params={
+            "attack_type": "ranged",
+            "grant_keywords": ["IGNORES COVER"],
+            "critical_wound_ap_bonus": 1,
+        },
+    ),
     "000009924006": StratagemToolDescriptor(
         stratagem_id="000009924006",
         name="Isha's Fury",
@@ -1638,6 +1653,20 @@ _SEER_COUNCIL_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "threshold": 3,
             "mortal_wounds_per_success": 1,
             "trigger_actions": ["normal_move", "advance", "fall_back"],
+        },
+    ),
+    "000009924007": StratagemToolDescriptor(
+        stratagem_id="000009924007",
+        name="Psychic Shield",
+        timing="opponent_shooting_phase_after_enemy_targets_selected",
+        target="asuryani_infantry_non_wraith_construct_selected_as_enemy_ranged_target_within_9_of_friendly_asuryani_psyker",
+        duration="until_end_of_phase",
+        effect="ranged_targeting_range_restriction",
+        cp_cost=1,
+        range_in=9.0,
+        effect_params={
+            "attack_type": "ranged",
+            "targeting_range": 18,
         },
     ),
 }

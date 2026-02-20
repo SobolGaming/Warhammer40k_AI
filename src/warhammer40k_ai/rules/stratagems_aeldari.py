@@ -373,6 +373,91 @@ class AeldariStratagemMixin:
             out.append(root)
         return sorted(out, key=self._aeldari_sort_key)
 
+    def _aeldari_seer_fate_inescapable_candidates(self) -> List[Any]:
+        if not self._is_seer_council_detachment():
+            return []
+        psykers = self._aeldari_seer_psyker_candidates()
+        if not psykers:
+            return []
+        from ..utility.aura_utils import unit_within_range_of_unit
+
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._aeldari_has_keyword(root, "ASURYANI"):
+                continue
+            if not self._aeldari_has_keyword(root, "INFANTRY"):
+                continue
+            if self._aeldari_has_keyword(root, "WRAITH CONSTRUCT"):
+                continue
+            if bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
+                continue
+            within_psyker = False
+            for psyker in psykers:
+                if unit_within_range_of_unit(root, psyker, 9.0, use_attached_aggregate=True):
+                    within_psyker = True
+                    break
+            if not within_psyker:
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_seer_psychic_shield_candidates(self, *, target_units: List[Any]) -> List[Any]:
+        if not self._is_seer_council_detachment():
+            return []
+        psykers = self._aeldari_seer_psyker_candidates()
+        if not psykers:
+            return []
+        from ..utility.aura_utils import unit_within_range_of_unit
+
+        out: List[Any] = []
+        seen: set[str] = set()
+        for target in list(target_units or []):
+            root = self._aeldari_root(target)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            try:
+                if root.get_parent_army().player is not self.player:
+                    continue
+            except (AttributeError, TypeError, ValueError):
+                continue
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._aeldari_has_keyword(root, "ASURYANI"):
+                continue
+            if not self._aeldari_has_keyword(root, "INFANTRY"):
+                continue
+            if self._aeldari_has_keyword(root, "WRAITH CONSTRUCT"):
+                continue
+            within_psyker = False
+            for psyker in psykers:
+                if unit_within_range_of_unit(root, psyker, 9.0, use_attached_aggregate=True):
+                    within_psyker = True
+                    break
+            if not within_psyker:
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
     def _aeldari_devoted_ynnari_candidates(
         self,
         *,
@@ -1034,6 +1119,55 @@ class AeldariStratagemMixin:
             "enemy_unit": enemy_root,
             "attacking_unit": enemy_root,
             "action": str(action or ""),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_aeldari_seer_shooting_targets_selected_reactions(
+        self,
+        *,
+        attacking_unit,
+        target_units: List[Any],
+    ) -> None:
+        game = getattr(self, "game", None)
+        if game is None or attacking_unit is None or not self._is_seer_council_detachment():
+            return
+        phase_key = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_key != "SHOOTING_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        attacker_root = self._aeldari_root(attacking_unit)
+        if attacker_root is None:
+            return
+        try:
+            if attacker_root.get_parent_army().player is self.player:
+                return
+        except (AttributeError, TypeError, ValueError):
+            return
+
+        stratagem = self._aeldari_get_stratagem_by_norm_name("PSYCHIC SHIELD")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+            return
+        candidates = self._aeldari_seer_psychic_shield_candidates(target_units=list(target_units or []))
+        if not candidates or self._aeldari_reaction_exists("shooting_targets_selected", stratagem.name):
+            return
+        payload: Dict[str, Any] = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "enemy_unit": attacker_root,
+            "target_units": list(target_units or []),
             "candidates": candidates,
         }
         if len(candidates) == 1:
@@ -2478,6 +2612,32 @@ class AeldariStratagemMixin:
                         sr.pop(key, None)
                         changed = True
 
+            if phase_key == "SHOOTING_PHASE" and bool(sr.get("aeldari_fate_inescapable_active")):
+                for key in (
+                    "aeldari_fate_inescapable_active",
+                    "aeldari_fate_inescapable_expires_phase",
+                    "aeldari_fate_inescapable_turn_owner",
+                    "aeldari_fate_inescapable_turn",
+                    "aeldari_fate_inescapable_source",
+                    "aeldari_fate_inescapable_critical_ap_bonus",
+                ):
+                    if key in sr:
+                        sr.pop(key, None)
+                        changed = True
+
+            if phase_key == "SHOOTING_PHASE" and bool(sr.get("aeldari_psychic_shield_active")):
+                for key in (
+                    "aeldari_psychic_shield_active",
+                    "aeldari_psychic_shield_targeting_range",
+                    "aeldari_psychic_shield_expires_phase",
+                    "aeldari_psychic_shield_turn_owner",
+                    "aeldari_psychic_shield_turn",
+                    "aeldari_psychic_shield_source",
+                ):
+                    if key in sr:
+                        sr.pop(key, None)
+                        changed = True
+
             if phase_key == "SHOOTING_PHASE" and bool(sr.get("aeldari_outcast_ambush_active")):
                 for key in (
                     "aeldari_outcast_ambush_active",
@@ -3095,11 +3255,78 @@ class AeldariStratagemMixin:
         if stratagem is None or not self._is_seer_council_detachment():
             return None
         name_u = self._aeldari_norm_name(getattr(stratagem, "name", ""))
+        if name_u == "FATE INESCAPABLE":
+            return self._use_aeldari_seer_fate_inescapable(stratagem, **kwargs)
         if name_u == "UNSHROUDED TRUTH":
             return self._use_aeldari_seer_unshrouded_truth(stratagem, **kwargs)
         if name_u in {"ISHA'S FURY", "ISHA’S FURY"}:
             return self._use_aeldari_seer_ishas_fury(stratagem, **kwargs)
+        if name_u == "PSYCHIC SHIELD":
+            return self._use_aeldari_seer_psychic_shield(stratagem, **kwargs)
         return None
+
+    def _use_aeldari_seer_fate_inescapable(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: FATE INESCAPABLE: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: FATE INESCAPABLE: not your turn")
+            return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_seer_fate_inescapable_candidates()
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: FATE INESCAPABLE: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error(
+                "ERROR: FATE INESCAPABLE: target must be an eligible ASURYANI INFANTRY non-WRAITH CONSTRUCT unit that has not shot"
+            )
+            return False
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root):
+            return False
+
+        effect_owner = str(getattr(self.player, "id", "") or "")
+        turn = int(getattr(game, "turn", 0) or 0)
+        source_name = str(getattr(stratagem, "name", "FATE INESCAPABLE") or "FATE INESCAPABLE")
+        try:
+            members = list(target_root.get_attached_unit_members() or [])
+        except (AttributeError, TypeError, ValueError):
+            members = [target_root]
+        if not members:
+            members = [target_root]
+        for unit in members:
+            if unit is None:
+                continue
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["aeldari_fate_inescapable_active"] = True
+            sr["aeldari_fate_inescapable_expires_phase"] = "SHOOTING_PHASE"
+            sr["aeldari_fate_inescapable_turn_owner"] = effect_owner
+            sr["aeldari_fate_inescapable_turn"] = int(turn)
+            sr["aeldari_fate_inescapable_source"] = source_name
+            sr["aeldari_fate_inescapable_critical_ap_bonus"] = 1
+            unit.special_rules = sr
+
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: FATE INESCAPABLE: %s gains [IGNORES COVER], and on Critical Wounds improves AP by 1 this phase.",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
 
     def _use_aeldari_seer_unshrouded_truth(self, stratagem, **kwargs) -> bool:
         context = self._aeldari_pending_context(stratagem.name, kwargs)
@@ -3269,6 +3496,82 @@ class AeldariStratagemMixin:
             getattr(target_root, "name", "Unit"),
             int(mortal_wounds),
             getattr(enemy_root, "name", "Enemy"),
+        )
+        return True
+
+    def _use_aeldari_seer_psychic_shield(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: PSYCHIC SHIELD: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            logger.error("ERROR: PSYCHIC SHIELD: not opponent's turn")
+            return False
+
+        attacking_unit = context.get("attacking_unit") or context.get("attacker_unit") or context.get("enemy_unit")
+        attacking_root = self._aeldari_root(attacking_unit)
+        if attacking_root is None:
+            logger.error("ERROR: PSYCHIC SHIELD: missing attacking unit context")
+            return False
+        try:
+            if attacking_root.get_parent_army().player is self.player:
+                logger.error("ERROR: PSYCHIC SHIELD: attacker is not enemy")
+                return False
+        except (AttributeError, TypeError, ValueError):
+            logger.error("ERROR: PSYCHIC SHIELD: attacker is invalid")
+            return False
+
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_seer_psychic_shield_candidates(target_units=list(context.get("target_units") or []))
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: PSYCHIC SHIELD: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error(
+                "ERROR: PSYCHIC SHIELD: target must be an eligible ASURYANI INFANTRY non-WRAITH CONSTRUCT unit selected as an attack target and within 9\" of a friendly ASURYANI PSYKER"
+            )
+            return False
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root, enemy_unit=attacking_root):
+            return False
+
+        effect_owner = str(getattr(self.player, "id", "") or "")
+        turn = int(getattr(game, "turn", 0) or 0)
+        source_name = str(getattr(stratagem, "name", "PSYCHIC SHIELD") or "PSYCHIC SHIELD")
+        try:
+            members = list(target_root.get_attached_unit_members() or [])
+        except (AttributeError, TypeError, ValueError):
+            members = [target_root]
+        if not members:
+            members = [target_root]
+        for unit in members:
+            if unit is None:
+                continue
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["aeldari_psychic_shield_active"] = True
+            sr["aeldari_psychic_shield_targeting_range"] = 18
+            sr["aeldari_psychic_shield_expires_phase"] = "SHOOTING_PHASE"
+            sr["aeldari_psychic_shield_turn_owner"] = effect_owner
+            sr["aeldari_psychic_shield_turn"] = int(turn)
+            sr["aeldari_psychic_shield_source"] = source_name
+            unit.special_rules = sr
+
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: PSYCHIC SHIELD: %s can only be targeted by ranged attacks from within 18\" this phase.",
+            getattr(target_root, "name", "Unit"),
         )
         return True
 

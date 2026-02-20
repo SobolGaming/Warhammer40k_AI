@@ -174,10 +174,12 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "STAGED DEATH",
     "TIME TO STRIKE",
     "UNSHROUDED TRUTH",
+    "FATE INESCAPABLE",
     "TRICKSTERS' RETORT",
     "TRICKSTERS\u2019 RETORT",
     "ISHA'S FURY",
     "ISHA\u2019S FURY",
+    "PSYCHIC SHIELD",
     "VAUL'S VENGEANCE",
     "VAUL\u2019S VENGEANCE",
     "WARDING SALVOES",
@@ -376,6 +378,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "UNSHROUDED TRUTH",
     "ISHA'S FURY",
     "ISHA\u2019S FURY",
+    "PSYCHIC SHIELD",
     "PALL OF DREAD",
     "PARTING THE VEIL",
     "CORRUPT REALSPACE",
@@ -1542,6 +1545,7 @@ class StratagemManager(
             "HYPERSTIMMS",
             "ORBITAL OVERSIGHT",
             "SHIELD NODES",
+            "PSYCHIC SHIELD",
         }
         fight_reaction_names = {
             "BALEFUL HALO",
@@ -1745,6 +1749,8 @@ class StratagemManager(
             "BLADES OF ASURYAN",
             "TIME TO STRIKE",
             "UNSHROUDED TRUTH",
+            "FATE INESCAPABLE",
+            "PSYCHIC SHIELD",
             "VIOLENT CRESCENDO",
             "VIOLENT EXCESS",
             "KHAINE'S VENGEANCE",
@@ -2692,6 +2698,27 @@ class StratagemManager(
                 "Requires your Movement phase and an ASURYANI INFANTRY non-WRAITH CONSTRUCT unit that has not moved or been set up this phase and is within 9\" of a friendly ASURYANI PSYKER"
             )
             return result
+        if name_u == "FATE INESCAPABLE":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l and phase_name_l != "shooting phase":
+                result["reason"] = "Requires your Shooting phase"
+                return result
+            game = getattr(self, "game", None)
+            active_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+            if active_player is not self.player:
+                result["reason"] = "Only usable in your turn"
+                return result
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._aeldari_seer_fate_inescapable_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = (
+                "Requires your Shooting phase and an ASURYANI INFANTRY non-WRAITH CONSTRUCT unit that has not been selected to shoot and is within 9\" of a friendly ASURYANI PSYKER"
+            )
+            return result
         if name_u in {"ISHA'S FURY", "ISHA’S FURY"}:
             phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
             if phase_name_l and phase_name_l != "movement phase":
@@ -2712,6 +2739,26 @@ class StratagemManager(
                 result["reason"] = None
                 return result
             result["reason"] = "Requires opponent Movement phase trigger after an enemy Normal/Advance/Fall Back move ends within 9\" of one of your ASURYANI PSYKER units"
+            return result
+        if name_u == "PSYCHIC SHIELD":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l and phase_name_l != "shooting phase":
+                result["reason"] = "Requires opponent Shooting phase"
+                return result
+            game = getattr(self, "game", None)
+            active_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+            if active_player is self.player:
+                result["reason"] = "Only usable in your opponent's turn"
+                return result
+            target_units = list(context.get("target_units") or [])
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._aeldari_seer_psychic_shield_candidates(target_units=target_units)
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires opponent Shooting phase trigger after enemy targets are selected, targeting an eligible ASURYANI INFANTRY non-WRAITH CONSTRUCT unit within 9\" of one of your ASURYANI PSYKER units"
             return result
         if name_u == "DEATH ANSWERS DEATH":
             death_candidates = list(context.get("candidates") or [])
@@ -3727,8 +3774,10 @@ class StratagemManager(
             "SHIELD NODES": "Target: your Dire Avengers or Guardians unit selected by enemy Shooting/Fight attacks (if within objective range, attacks against it are -1 to wound this phase)",
             "TIME TO STRIKE": "Target: your Storm Guardians unit that has not been selected to move this phase; it gains fixed Advance distance 6 and can shoot/charge after advancing this turn",
             "UNSHROUDED TRUTH": "Target: your ASURYANI INFANTRY unit (excluding WRAITH CONSTRUCT) that has not been selected to move this phase, was not set up this phase, and is within 9\" of a friendly ASURYANI PSYKER; remove and set it up again more than 9\" horizontally from enemy models",
+            "FATE INESCAPABLE": "Target: your ASURYANI INFANTRY unit (excluding WRAITH CONSTRUCT) that has not been selected to shoot this phase and is within 9\" of a friendly ASURYANI PSYKER; ranged attacks gain [IGNORES COVER] and improve AP by 1 on Critical Wounds this phase",
             "ISHA'S FURY": "Target: one of your ASURYANI PSYKER models within 9\" of an enemy unit that just ended a Normal/Advance/Fall Back move; roll 6D6 and that enemy suffers 1 mortal wound for each 3+",
             "ISHA’S FURY": "Target: one of your ASURYANI PSYKER models within 9\" of an enemy unit that just ended a Normal/Advance/Fall Back move; roll 6D6 and that enemy suffers 1 mortal wound for each 3+",
+            "PSYCHIC SHIELD": "Target: your ASURYANI INFANTRY unit (excluding WRAITH CONSTRUCT) selected as a ranged attack target and within 9\" of a friendly ASURYANI PSYKER; until end of phase it can only be targeted by ranged attacks from within 18\"",
             "TRICKSTERS' RETORT": "Target: your TROUPE unit within 9\" of an enemy unit that just ended a Normal/Advance/Fall Back move",
             "TRICKSTERS\u2019 RETORT": "Target: your TROUPE unit within 9\" of an enemy unit that just ended a Normal/Advance/Fall Back move",
             "VAUL'S VENGEANCE": "Target: your War Walkers unit after an enemy unit destroys your Dire Avengers or Guardians unit; your unit shoots reactively and can only target that enemy (once per battle round)",
@@ -7930,6 +7979,13 @@ class StratagemManager(
             raise
         try:
             self._queue_aeldari_devoted_shooting_targets_selected_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_aeldari_seer_shooting_targets_selected_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )

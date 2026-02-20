@@ -10,6 +10,7 @@ from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.rules.stratagem_descriptors import get_stratagem_tool_descriptor
 from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.units.wargear import Wargear
 from warhammer40k_ai.utility.decision_utils import resolve_decision_command
 from warhammer40k_ai.utility.entity_ids import get_entity_id
 
@@ -324,6 +325,166 @@ class TestAeldariSeerCouncilStratagems(unittest.TestCase):
         after_wounds = int(getattr(enemy_model, "wounds", 0) or 0)
         self.assertEqual(before_wounds - after_wounds, 4)
 
+    def test_fate_inescapable_applies_ignores_cover_and_critical_wound_ap_bonus(self):
+        game, p1, _p2, aeldari_army, enemy_army = _build_game()
+        psyker = _make_unit(
+            "Farseer",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["ASURYANI", "INFANTRY", "PSYKER"],
+            quantity=1,
+        )
+        infantry = _make_unit(
+            "Guardian Defenders",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["ASURYANI", "INFANTRY", "GUARDIANS"],
+            quantity=2,
+        )
+        enemy = _make_unit(
+            "Enemy Unit",
+            faction_name="Enemy",
+            faction_keywords=["ENEMY"],
+            keywords=["INFANTRY"],
+            quantity=1,
+        )
+        aeldari_army.add_unit(psyker)
+        aeldari_army.add_unit(infantry)
+        enemy_army.add_unit(enemy)
+        _place_unit(game, psyker, 10.0, 10.0)
+        _place_unit(game, infantry, 13.0, 10.0)
+        _place_unit(game, enemy, 20.0, 10.0)
+
+        _set_phase(game, p1, "SHOOTING_PHASE", 0)
+        ok = p1.stratagems.use("FATE INESCAPABLE", unit=infantry, phase_name="Shooting phase")
+        self.assertTrue(ok)
+        self.assertEqual(int(p1.command_points or 0), 9)
+
+        bonuses = infantry.get_attack_keyword_bonuses(
+            target=enemy,
+            attack_type="ranged",
+            model=infantry.models[0],
+        )
+        self.assertTrue(bool((bonuses or {}).get("ignores_cover", False)))
+
+        weapon = Wargear(
+            {
+                "name": "Test Rifle",
+                "type": "Ranged",
+                "range": "24",
+                "A": "1",
+                "BS_WS": "4+",
+                "S": "4",
+                "AP": "0",
+                "D": "1",
+                "description": "",
+            }
+        )
+        profile = weapon.profiles["default"]
+        save_result = profile._save_with_tracking(
+            enemy.models[0],
+            {
+                "attacker_model": infantry.models[0],
+                "attacker_unit": infantry,
+                "target_unit": enemy,
+                "crit_wound": True,
+            },
+            0,
+            roll_value=1,
+            allow_rerolls=False,
+            log_roll=False,
+        )
+        self.assertEqual(int(save_result.get("needed", 0) or 0), 4)
+        self.assertEqual(int(save_result.get("ap_modifier", 0) or 0), -1)
+        self.assertTrue(
+            any("FATE INESCAPABLE" in str(effect or "").upper() for effect in list(save_result.get("special_effects") or []))
+        )
+
+    def test_psychic_shield_queues_and_applies_ranged_targeting_cap(self):
+        game, p1, p2, aeldari_army, enemy_army = _build_game()
+        psyker = _make_unit(
+            "Warlock",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["ASURYANI", "INFANTRY", "PSYKER"],
+            quantity=1,
+        )
+        defender = _make_unit(
+            "Guardian Defenders",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["ASURYANI", "INFANTRY", "GUARDIANS"],
+            quantity=2,
+        )
+        attacker = _make_unit(
+            "Enemy Shooters",
+            faction_name="Enemy",
+            faction_keywords=["ENEMY"],
+            keywords=["INFANTRY"],
+            quantity=1,
+        )
+        aeldari_army.add_unit(psyker)
+        aeldari_army.add_unit(defender)
+        enemy_army.add_unit(attacker)
+        _place_unit(game, psyker, 10.0, 10.0)
+        _place_unit(game, defender, 13.0, 10.0)
+        _place_unit(game, attacker, 35.0, 10.0)
+
+        _set_phase(game, p2, "SHOOTING_PHASE", 1)
+        game.event_system.publish("shooting_targets_selected", attacking_unit=attacker, target_units=[defender])
+        pending = _pending_by_name(p1.stratagems, "PSYCHIC SHIELD")
+        self.assertIsNotNone(pending)
+
+        ok = p1.stratagems.use(
+            str(pending.get("stratagem", "")),
+            unit=defender,
+            attacking_unit=attacker,
+            target_units=[defender],
+            dequeue=True,
+        )
+        self.assertTrue(ok)
+        self.assertEqual(int(p1.command_points or 0), 9)
+
+        limit, sources = defender.get_ranged_targeting_restriction(game_map=game.map)
+        self.assertEqual(float(limit or 0.0), 18.0)
+        self.assertTrue(any("PSYCHIC SHIELD" in str(source or "").upper() for source in list(sources or [])))
+
+        weapon = Wargear(
+            {
+                "name": "Ranged Weapon",
+                "type": "Ranged",
+                "range": "30",
+                "A": "1",
+                "BS_WS": "4+",
+                "S": "4",
+                "AP": "0",
+                "D": "1",
+                "description": "",
+            }
+        )
+        profile = weapon.profiles["default"]
+        profile.is_indirect_fire = lambda: True
+
+        can_target_far = attacker._can_model_shoot_weapon_at_target(
+            attacker.models[0],
+            profile,
+            defender,
+            game.map,
+        )
+        self.assertFalse(can_target_far)
+
+        attacker.models[0].set_location(26.0, 10.0, 0.0, 0.0)
+        can_target_close = attacker._can_model_shoot_weapon_at_target(
+            attacker.models[0],
+            profile,
+            defender,
+            game.map,
+        )
+        self.assertTrue(can_target_close)
+
+        game.event_system.publish("phase_end", player=p2, phase=SimpleNamespace(name="SHOOTING_PHASE"))
+        self.assertFalse(bool(getattr(defender, "special_rules", {}).get("aeldari_psychic_shield_active")))
+
     def test_seer_council_step1_stratagem_descriptors_registered(self):
         unshrouded = get_stratagem_tool_descriptor(stratagem_id="000009924004")
         self.assertIsNotNone(unshrouded)
@@ -348,7 +509,26 @@ class TestAeldariSeerCouncilStratagems(unittest.TestCase):
         self.assertIsNotNone(by_name_unshrouded)
         self.assertEqual(str(by_name_unshrouded.stratagem_id), "000009924004")
 
+        fate = get_stratagem_tool_descriptor(stratagem_id="000009924005")
+        self.assertIsNotNone(fate)
+        self.assertEqual(str(fate.name), "Fate Inescapable")
+        self.assertEqual(int(fate.cp_cost), 1)
+        self.assertEqual(str(fate.effect), "ranged_ignores_cover_and_critical_wound_ap_bonus")
+
+        shield = get_stratagem_tool_descriptor(stratagem_id="000009924007")
+        self.assertIsNotNone(shield)
+        self.assertEqual(str(shield.name), "Psychic Shield")
+        self.assertEqual(int(shield.cp_cost), 1)
+        self.assertEqual(str(shield.effect), "ranged_targeting_range_restriction")
+
+        by_name_fate = get_stratagem_tool_descriptor(name="FATE INESCAPABLE")
+        self.assertIsNotNone(by_name_fate)
+        self.assertEqual(str(by_name_fate.stratagem_id), "000009924005")
+
+        by_name_shield = get_stratagem_tool_descriptor(name="PSYCHIC SHIELD")
+        self.assertIsNotNone(by_name_shield)
+        self.assertEqual(str(by_name_shield.stratagem_id), "000009924007")
+
 
 if __name__ == "__main__":
     unittest.main()
-
