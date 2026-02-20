@@ -900,6 +900,7 @@ def _keyword_support(canon: str, examples: Sequence[str]) -> Tuple[str, str]:
         "psychic assassin": "When targeting a unit with the PSYKER keyword, this weapon's Attacks characteristic becomes 6.",
         "conversion": "Unmodified successful hits of 4+ become critical hits when the target is beyond the Conversion distance.",
         "linked fire": "Linked Fire origin selection supported; range/LOS measured from origin and Attacks=1 override applied.",
+        "plasma warhead": "Marker-based fire workflow supported: declaration rules are validated and attacks resolve from the designated marker.",
         "reverberating summons": "Weapon ability: on destroying a model, return 1 Plaguebearer model to a friendly unit within 12\".",
         "c'tan power": "Powers of the C'tan selection limits are enforced when declaring shots.",
         # Ork-specific keywords
@@ -2211,6 +2212,14 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "While one or more OFFICER models are in the same attached unit as this model, OFFICER models in that unit gain Feel No Pain 4+.",
         ),
         ("AM", "Plasma Warhead"): (
+            "Supported",
+            "Marker-based firing is implemented: must remain stationary, cannot fire in a phase where Designate/Adjust was used, and resolves attacks against each unit within 6\" of the unit's Deathstrike marker without selecting a target unit.",
+        ),
+        ("GC", "Deathstrike Missile"): (
+            "Supported",
+            "Shooting phase action support: optional Designate/Adjust/None flow places or moves a unique Deathstrike marker for the unit, with phase-use and ONE SHOT constraints enforced.",
+        ),
+        ("GC", "Plasma Warhead"): (
             "Supported",
             "Marker-based firing is implemented: must remain stationary, cannot fire in a phase where Designate/Adjust was used, and resolves attacks against each unit within 6\" of the unit's Deathstrike marker without selecting a target unit.",
         ),
