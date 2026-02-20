@@ -209,6 +209,76 @@ class TestAeldariSerpentsBroodStratagems(unittest.TestCase):
             any("VILLAIN'S DOOM" in str(reason or "").upper() for reason in list(wound_after.get("wound_reasons", ()) or ()))
         )
 
+    def test_striking_stride_queues_and_grants_charge_after_advance_until_charge_phase_end(self):
+        game, p1, _p2, aeldari_army, _enemy_army = _build_game()
+        troupe = _make_unit(
+            "Troupe",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["HARLEQUINS", "INFANTRY", "TROUPE"],
+            quantity=2,
+        )
+        aeldari_army.add_unit(troupe)
+        _place_unit(game, troupe, 10.0, 10.0)
+
+        self.assertFalse(bool(troupe.can_charge_after_advance()))
+        _set_phase(game, p1, "CHARGE_PHASE", 0)
+        pending = _pending_by_name(p1.stratagems, "STRIKING STRIDE")
+        self.assertIsNotNone(pending)
+
+        ok = p1.stratagems.use(str(pending.get("stratagem", "")), unit=troupe, dequeue=True)
+        self.assertTrue(ok)
+        self.assertEqual(int(p1.command_points or 0), 9)
+        self.assertTrue(bool(troupe.special_rules.get("serpents_brood_striking_stride_active")))
+        self.assertTrue(bool(troupe.can_charge_after_advance()))
+
+        game.event_system.publish("phase_end", player=p1, phase=SimpleNamespace(name="CHARGE_PHASE"))
+        self.assertFalse(bool(troupe.special_rules.get("serpents_brood_striking_stride_active")))
+        self.assertFalse(bool(troupe.can_charge_after_advance()))
+
+    def test_weaving_stride_queues_reactive_normal_move_when_enemy_ends_move_within_nine(self):
+        game, p1, p2, aeldari_army, enemy_army = _build_game()
+        troupe = _make_unit(
+            "Troupe",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["HARLEQUINS", "INFANTRY", "TROUPE"],
+            quantity=2,
+        )
+        enemy = _make_unit(
+            "Enemy Unit",
+            faction_name="Enemy",
+            faction_keywords=["ENEMY"],
+            keywords=["INFANTRY"],
+            quantity=1,
+        )
+        aeldari_army.add_unit(troupe)
+        enemy_army.add_unit(enemy)
+        _place_unit(game, troupe, 10.0, 10.0)
+        _place_unit(game, enemy, 17.0, 10.0)
+
+        _set_phase(game, p2, "MOVEMENT_PHASE", 1)
+        game.event_system.publish("unit_move_ended", unit=enemy, action="move")
+        pending = _pending_by_name(p1.stratagems, "WEAVING STRIDE")
+        self.assertIsNotNone(pending)
+
+        ok = p1.stratagems.use(str(pending.get("stratagem", "")), unit=troupe, enemy_unit=enemy, dequeue=True)
+        self.assertTrue(ok)
+        self.assertEqual(int(p1.command_points or 0), 9)
+
+        requests = [
+            req
+            for req in list(game.decision_queue.list() or [])
+            if str(getattr(req, "decision_type", "") or "") == DECISION_MOVE_UNIT
+            and str((dict(getattr(req, "context", {}) or {})).get("reactive_move_kind", "") or "") == "weaving_stride"
+        ]
+        self.assertTrue(requests)
+        ctx = dict(getattr(requests[-1], "context", {}) or {})
+        self.assertEqual(str(ctx.get("movement_type", "") or ""), "move")
+        self.assertEqual(int(ctx.get("max_distance", 0) or 0), 6)
+        self.assertEqual(str(ctx.get("unit_id", "") or ""), str(get_entity_id(troupe) or ""))
+        self.assertEqual(str(ctx.get("reactive_move_attacker_unit_id", "") or ""), str(get_entity_id(enemy) or ""))
+
     def test_skyward_lunge_queues_and_places_unit_in_strategic_reserves(self):
         game, p1, p2, aeldari_army, enemy_army = _build_game()
         skyweavers = _make_unit(
@@ -335,11 +405,23 @@ class TestAeldariSerpentsBroodStratagems(unittest.TestCase):
         self.assertEqual(int(fangs.cp_cost), 1)
         self.assertEqual(str(fangs.effect), "dance_of_death_select_three_abilities")
 
+        striking = get_stratagem_tool_descriptor(stratagem_id="000010650004")
+        self.assertIsNotNone(striking)
+        self.assertEqual(str(striking.name), "Striking Stride")
+        self.assertEqual(int(striking.cp_cost), 1)
+        self.assertEqual(str(striking.effect), "charge_after_advance")
+
         weavers = get_stratagem_tool_descriptor(stratagem_id="000010650005")
         self.assertIsNotNone(weavers)
         self.assertEqual(str(weavers.name), "Weavers' Coils")
         self.assertEqual(int(weavers.cp_cost), 1)
         self.assertEqual(str(weavers.effect), "reactive_normal_or_fall_back_move")
+
+        weaving = get_stratagem_tool_descriptor(stratagem_id="000010650006")
+        self.assertIsNotNone(weaving)
+        self.assertEqual(str(weaving.name), "Weaving Stride")
+        self.assertEqual(int(weaving.cp_cost), 1)
+        self.assertEqual(str(weaving.effect), "reactive_normal_move")
 
         skyward = get_stratagem_tool_descriptor(stratagem_id="000010650007")
         self.assertIsNotNone(skyward)
@@ -351,9 +433,17 @@ class TestAeldariSerpentsBroodStratagems(unittest.TestCase):
         self.assertIsNotNone(by_name_fangs)
         self.assertEqual(str(by_name_fangs.stratagem_id), "000010650002")
 
+        by_name_striking = get_stratagem_tool_descriptor(name="STRIKING STRIDE")
+        self.assertIsNotNone(by_name_striking)
+        self.assertEqual(str(by_name_striking.stratagem_id), "000010650004")
+
         by_name_weavers = get_stratagem_tool_descriptor(name="WEAVERS' COILS")
         self.assertIsNotNone(by_name_weavers)
         self.assertEqual(str(by_name_weavers.stratagem_id), "000010650005")
+
+        by_name_weaving = get_stratagem_tool_descriptor(name="WEAVING STRIDE")
+        self.assertIsNotNone(by_name_weaving)
+        self.assertEqual(str(by_name_weaving.stratagem_id), "000010650006")
 
         by_name_skyward = get_stratagem_tool_descriptor(name="SKYWARD LUNGE")
         self.assertIsNotNone(by_name_skyward)

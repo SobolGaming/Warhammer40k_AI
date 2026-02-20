@@ -10305,6 +10305,16 @@ class ActionsMovementMixin:
         except Exception:
             pass
         try:
+            if self._thousand_sons_rubricae_stratagem_active(
+                active_key="serpents_brood_striking_stride_active",
+                owner_key="serpents_brood_striking_stride_turn_owner",
+                turn_key="serpents_brood_striking_stride_turn",
+                expires_phase_key="serpents_brood_striking_stride_expires_phase",
+            ):
+                return True
+        except Exception:
+            pass
+        try:
             army = self.get_parent_army()
             mgr = getattr(army, "combat_doctrines", None) if army is not None else None
             if mgr is not None and getattr(mgr, "can_charge_after_advance", None):

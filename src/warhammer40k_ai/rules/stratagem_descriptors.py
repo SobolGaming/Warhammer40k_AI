@@ -1718,6 +1718,15 @@ _SERPENTS_BROOD_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "selection_count": 3,
         },
     ),
+    "000010650004": StratagemToolDescriptor(
+        stratagem_id="000010650004",
+        name="Striking Stride",
+        timing="charge_phase",
+        target="harlequins_unit",
+        duration="until_end_of_phase",
+        effect="charge_after_advance",
+        cp_cost=1,
+    ),
     "000010650005": StratagemToolDescriptor(
         stratagem_id="000010650005",
         name="Weavers' Coils",
@@ -1729,6 +1738,20 @@ _SERPENTS_BROOD_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
         effect_params={
             "normal_move_if_not_engaged": True,
             "fall_back_distance_if_engaged_inches": 6.0,
+        },
+    ),
+    "000010650006": StratagemToolDescriptor(
+        stratagem_id="000010650006",
+        name="Weaving Stride",
+        timing="opponent_movement_phase_after_enemy_move_end",
+        target="harlequins_infantry_unit_within_9_of_enemy_move_end",
+        duration="immediate",
+        effect="reactive_normal_move",
+        cp_cost=1,
+        range_in=9.0,
+        effect_params={
+            "normal_move_distance_inches": 6.0,
+            "trigger_actions": ["normal_move", "advance", "fall_back"],
         },
     ),
     "000010650007": StratagemToolDescriptor(

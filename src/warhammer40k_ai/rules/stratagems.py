@@ -176,6 +176,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "PRESENTIMENT OF DREAD",
     "FOREWARNED",
     "FANGS OF THE BROOD",
+    "STRIKING STRIDE",
+    "WEAVING STRIDE",
     "SKYWARD LUNGE",
     "WEAVERS' COILS",
     "WEAVERS\u2019 COILS",
@@ -384,6 +386,8 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "UNSHROUDED TRUTH",
     "FOREWARNED",
     "FANGS OF THE BROOD",
+    "STRIKING STRIDE",
+    "WEAVING STRIDE",
     "SKYWARD LUNGE",
     "WEAVERS' COILS",
     "WEAVERS\u2019 COILS",
@@ -1432,6 +1436,7 @@ class StratagemManager(
             "MOCKING FLIGHT",
             "ISHA'S FURY",
             "ISHA\u2019S FURY",
+            "WEAVING STRIDE",
         }:
             add("unit_move_ended", self._on_unit_move_ended)
         if names & {"ANTI-GRAV REPULSION", "ANTI‑GRAV REPULSION", "BLIND GRENADES", "A DEADLY SNARE"}:
@@ -1763,6 +1768,7 @@ class StratagemManager(
             "WARDING SALVOES",
             "BLADES OF ASURYAN",
             "TIME TO STRIKE",
+            "STRIKING STRIDE",
             "UNSHROUDED TRUTH",
             "FATE INESCAPABLE",
             "PSYCHIC SHIELD",
@@ -2738,6 +2744,46 @@ class StratagemManager(
                 result["reason"] = None
                 return result
             result["reason"] = "Requires an eligible TROUPE unit on the battlefield"
+            return result
+        if name_u == "STRIKING STRIDE":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l and phase_name_l != "charge phase":
+                result["reason"] = "Requires your Charge phase"
+                return result
+            game = getattr(self, "game", None)
+            active_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+            if active_player is not self.player:
+                result["reason"] = "Only usable in your turn"
+                return result
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = list(self._aeldari_serpents_striking_stride_candidates() or [])
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires an eligible HARLEQUINS unit on the battlefield"
+            return result
+        if name_u == "WEAVING STRIDE":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l and phase_name_l != "movement phase":
+                result["reason"] = "Requires opponent Movement phase"
+                return result
+            game = getattr(self, "game", None)
+            active_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+            if active_player is self.player:
+                result["reason"] = "Only usable in your opponent's turn"
+                return result
+            enemy_unit = context.get("enemy_unit") or context.get("attacking_unit") or context.get("moving_unit")
+            enemy_root = self._aeldari_root(enemy_unit) if enemy_unit is not None else None
+            candidates = list(context.get("candidates") or [])
+            if not candidates and enemy_root is not None:
+                candidates = list(self._aeldari_serpents_weaving_stride_candidates(enemy_unit=enemy_root) or [])
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires opponent Movement phase trigger after an enemy Normal/Advance/Fall Back move ends within 9\" of your HARLEQUINS INFANTRY"
             return result
         if name_u == "SKYWARD LUNGE":
             phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
@@ -3876,6 +3922,8 @@ class StratagemManager(
             "PRESENTIMENT OF DREAD": "Target: one of your ASURYANI PSYKER models; select one visible enemy unit within 18\" of it to take a Battle-shock test at -1",
             "FOREWARNED": "Target: your ASURYANI INFANTRY unit (excluding WRAITH CONSTRUCT) selected as a target of enemy fight attacks and within 9\" of a friendly ASURYANI PSYKER; attacks targeting it are -1 to Hit and -1 to Wound this phase",
             "FANGS OF THE BROOD": "Target: your TROUPE unit; this phase it can gain all three Dance of Death abilities instead of one",
+            "STRIKING STRIDE": "Target: your HARLEQUINS unit; until end of the phase it can declare a charge in a turn in which it Advanced",
+            "WEAVING STRIDE": "Target: your HARLEQUINS INFANTRY unit within 9\" of an enemy unit that just ended a Normal/Advance/Fall Back move; it can make a Normal move up to 6\"",
             "SKYWARD LUNGE": "Target: your HARLEQUINS VEHICLE or HARLEQUINS MOUNTED unit that is not in Engagement Range at end of opponent's Fight phase; it enters Strategic Reserves",
             "WEAVERS' COILS": "Target: your HARLEQUINS MOUNTED unit that was eligible to fight this phase; it can make a Normal move, or a Fall Back move up to 6\" if in Engagement Range",
             "WEAVERS\u2019 COILS": "Target: your HARLEQUINS MOUNTED unit that was eligible to fight this phase; it can make a Normal move, or a Fall Back move up to 6\" if in Engagement Range",
@@ -7169,6 +7217,7 @@ class StratagemManager(
         self._queue_aeldari_armoured_move_end_reactions(unit=unit, action=action)
         self._queue_aeldari_seer_move_end_reactions(unit=unit, action=action)
         self._queue_aeldari_corsair_move_end_reactions(unit=unit, action=action)
+        self._queue_aeldari_serpents_move_end_reactions(unit=unit, action=action)
         self._queue_aeldari_ghosts_move_end_reactions(unit=unit, action=action)
         self._queue_votann_needgaard_move_end_reactions(unit=unit, action=action)
         self._queue_imperial_knights_valourstrike_move_end_reactions(unit=unit, action=action)

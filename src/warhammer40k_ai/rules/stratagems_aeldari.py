@@ -2062,23 +2062,51 @@ class AeldariStratagemMixin:
         if game is None or not self._is_serpents_brood_detachment():
             return
         phase_key = str(getattr(phase, "name", "") or "").strip().upper()
-        if phase_key != "FIGHT_PHASE":
+        if phase_key == "FIGHT_PHASE":
+            stratagem = self._aeldari_get_stratagem_by_norm_name("FANGS OF THE BROOD")
+            if stratagem is None:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+                return
+            if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+                return
+            candidates = self._aeldari_serpents_fangs_candidates()
+            if not candidates or self._aeldari_reaction_exists("phase_start", stratagem.name):
+                return
+            payload: Dict[str, Any] = {
+                "event": "phase_start",
+                "phase": "Fight phase",
+                "phase_name": "Fight phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
             return
 
-        stratagem = self._aeldari_get_stratagem_by_norm_name("FANGS OF THE BROOD")
+        if phase_key != "CHARGE_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return
+
+        stratagem = self._aeldari_get_stratagem_by_norm_name("STRIKING STRIDE")
         if stratagem is None:
             return
         if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
             return
         if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
             return
-        candidates = self._aeldari_serpents_fangs_candidates()
+        candidates = self._aeldari_serpents_striking_stride_candidates()
         if not candidates or self._aeldari_reaction_exists("phase_start", stratagem.name):
             return
         payload: Dict[str, Any] = {
             "event": "phase_start",
-            "phase": "Fight phase",
-            "phase_name": "Fight phase",
+            "phase": "Charge phase",
+            "phase_name": "Charge phase",
             "stratagem": stratagem.name,
             "cp_cost": stratagem.cp_cost,
             "candidates": candidates,
@@ -2140,6 +2168,61 @@ class AeldariStratagemMixin:
             "phase_name": "Fight phase",
             "stratagem": stratagem.name,
             "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_aeldari_serpents_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if unit is None or not self._is_serpents_brood_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        phase_key = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_key != "MOVEMENT_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        action_key = str(action or "").strip().lower().replace("_", " ")
+        if action_key not in {"move", "normal", "normal move", "advance", "fall back", "fallback"}:
+            return
+
+        enemy_root = self._aeldari_root(unit)
+        if enemy_root is None:
+            return
+        try:
+            if enemy_root.get_parent_army().player is self.player:
+                return
+        except (AttributeError, TypeError, ValueError):
+            return
+        if not self._aeldari_on_battlefield(enemy_root, require_targetable=False):
+            return
+
+        stratagem = self._aeldari_get_stratagem_by_norm_name("WEAVING STRIDE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+            return
+        candidates = self._aeldari_serpents_weaving_stride_candidates(enemy_unit=enemy_root)
+        if not candidates:
+            return
+        if self._aeldari_reaction_exists("unit_move_ended", stratagem.name, unit=enemy_root):
+            return
+        payload: Dict[str, Any] = {
+            "event": "unit_move_ended",
+            "phase": "Movement phase",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "enemy_unit": enemy_root,
+            "attacking_unit": enemy_root,
+            "action": str(action or ""),
             "candidates": candidates,
         }
         if len(candidates) == 1:
@@ -3166,7 +3249,7 @@ class AeldariStratagemMixin:
 
     def _cleanup_aeldari_serpents_phase_end_effects(self, *, phase) -> None:
         phase_key = str(getattr(phase, "name", "") or "").strip().upper()
-        if phase_key != "FIGHT_PHASE":
+        if phase_key not in {"FIGHT_PHASE", "CHARGE_PHASE"}:
             return
         if not self._is_serpents_brood_detachment():
             return
@@ -3188,16 +3271,28 @@ class AeldariStratagemMixin:
             if not isinstance(sr, dict):
                 continue
             changed = False
-            for key in (
-                "serpents_brood_fangs_of_the_brood_active",
-                "serpents_brood_fangs_of_the_brood_turn_owner",
-                "serpents_brood_fangs_of_the_brood_turn",
-                "serpents_brood_fangs_of_the_brood_expires_phase",
-                "serpents_brood_fangs_of_the_brood_source",
-            ):
-                if key in sr:
-                    sr.pop(key, None)
-                    changed = True
+            if phase_key == "FIGHT_PHASE":
+                for key in (
+                    "serpents_brood_fangs_of_the_brood_active",
+                    "serpents_brood_fangs_of_the_brood_turn_owner",
+                    "serpents_brood_fangs_of_the_brood_turn",
+                    "serpents_brood_fangs_of_the_brood_expires_phase",
+                    "serpents_brood_fangs_of_the_brood_source",
+                ):
+                    if key in sr:
+                        sr.pop(key, None)
+                        changed = True
+            if phase_key == "CHARGE_PHASE":
+                for key in (
+                    "serpents_brood_striking_stride_active",
+                    "serpents_brood_striking_stride_turn_owner",
+                    "serpents_brood_striking_stride_turn",
+                    "serpents_brood_striking_stride_expires_phase",
+                    "serpents_brood_striking_stride_source",
+                ):
+                    if key in sr:
+                        sr.pop(key, None)
+                        changed = True
             if changed:
                 root.special_rules = sr
 
@@ -4492,6 +4587,10 @@ class AeldariStratagemMixin:
         name_u = self._aeldari_norm_name(getattr(stratagem, "name", ""))
         if name_u == "FANGS OF THE BROOD":
             return self._use_aeldari_serpents_fangs_of_the_brood(stratagem, **kwargs)
+        if name_u == "STRIKING STRIDE":
+            return self._use_aeldari_serpents_striking_stride(stratagem, **kwargs)
+        if name_u == "WEAVING STRIDE":
+            return self._use_aeldari_serpents_weaving_stride(stratagem, **kwargs)
         if name_u == "SKYWARD LUNGE":
             return self._use_aeldari_serpents_skyward_lunge(stratagem, **kwargs)
         if name_u in {"WEAVERS' COILS", "WEAVERS\u2019 COILS"}:
@@ -4544,6 +4643,147 @@ class AeldariStratagemMixin:
         self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
         logger.info(
             "INFO: FANGS OF THE BROOD: %s can gain all three Dance of Death abilities this phase.",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_aeldari_serpents_striking_stride(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "charge phase":
+            logger.error("ERROR: STRIKING STRIDE: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: STRIKING STRIDE: not your turn")
+            return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_serpents_striking_stride_candidates()
+        candidate_roots = [self._aeldari_root(unit) for unit in list(candidates or [])]
+        candidate_roots = [unit for unit in candidate_roots if unit is not None]
+        if target_root is None:
+            if len(candidate_roots) == 1:
+                target_root = candidate_roots[0]
+            else:
+                logger.error("ERROR: STRIKING STRIDE: missing target unit")
+                return False
+        if candidate_roots and target_root not in candidate_roots:
+            logger.error("ERROR: STRIKING STRIDE: target is not currently eligible")
+            return False
+        if not self._aeldari_on_battlefield(target_root, require_targetable=True):
+            logger.error("ERROR: STRIKING STRIDE: target must be on the battlefield and targetable")
+            return False
+        if not self._aeldari_is_harlequins(target_root):
+            logger.error("ERROR: STRIKING STRIDE: target must be HARLEQUINS")
+            return False
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root):
+            return False
+
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["serpents_brood_striking_stride_active"] = True
+        sr["serpents_brood_striking_stride_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["serpents_brood_striking_stride_turn"] = int(getattr(game, "turn", 0) or 0)
+        sr["serpents_brood_striking_stride_expires_phase"] = "CHARGE_PHASE"
+        sr["serpents_brood_striking_stride_source"] = str(getattr(stratagem, "name", "STRIKING STRIDE") or "STRIKING STRIDE")
+        target_root.special_rules = sr
+
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: STRIKING STRIDE: %s can declare a charge in a turn in which it Advanced this phase.",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_aeldari_serpents_weaving_stride(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: WEAVING STRIDE: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            logger.error("ERROR: WEAVING STRIDE: not opponent's turn")
+            return False
+        action_key = str(context.get("action", "") or "").strip().lower().replace("_", " ")
+        if action_key and action_key not in {"move", "normal", "normal move", "advance", "fall back", "fallback"}:
+            logger.error("ERROR: WEAVING STRIDE: wrong trigger")
+            return False
+
+        enemy_unit = (
+            context.get("enemy_unit")
+            or context.get("attacking_unit")
+            or context.get("trigger_unit")
+            or context.get("moved_unit")
+        )
+        enemy_root = self._aeldari_root(enemy_unit) if enemy_unit is not None else None
+        if enemy_root is None:
+            logger.error("ERROR: WEAVING STRIDE: missing enemy trigger unit")
+            return False
+        try:
+            if enemy_root.get_parent_army().player is self.player:
+                logger.error("ERROR: WEAVING STRIDE: trigger unit must be enemy")
+                return False
+        except (AttributeError, TypeError, ValueError):
+            return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_serpents_weaving_stride_candidates(enemy_unit=enemy_root)
+        candidate_roots = [self._aeldari_root(unit) for unit in list(candidates or [])]
+        candidate_roots = [unit for unit in candidate_roots if unit is not None]
+        if target_root is None:
+            if len(candidate_roots) == 1:
+                target_root = candidate_roots[0]
+            else:
+                logger.error("ERROR: WEAVING STRIDE: missing target unit")
+                return False
+        if candidate_roots and target_root not in candidate_roots:
+            logger.error("ERROR: WEAVING STRIDE: target must be an eligible HARLEQUINS INFANTRY unit within 9\"")
+            return False
+        if not self._aeldari_on_battlefield(target_root, require_targetable=True):
+            logger.error("ERROR: WEAVING STRIDE: target must be on the battlefield and targetable")
+            return False
+        if not self._aeldari_is_harlequins(target_root) or not self._aeldari_has_keyword(target_root, "INFANTRY"):
+            logger.error("ERROR: WEAVING STRIDE: target must be HARLEQUINS INFANTRY")
+            return False
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root, enemy_unit=enemy_root):
+            return False
+
+        queue_move = getattr(game, "_queue_reactive_move_movement_decision", None)
+        if not callable(queue_move):
+            logger.error("ERROR: WEAVING STRIDE: reactive move queue unavailable")
+            return False
+        request = queue_move(
+            player=self.player,
+            unit=target_root,
+            attacker_unit=enemy_root,
+            max_distance=6,
+            kind="weaving_stride",
+            movement_type="move",
+            source=str(getattr(stratagem, "name", "WEAVING STRIDE") or "WEAVING STRIDE"),
+            allow_skip=True,
+        )
+        if request is None:
+            logger.error("ERROR: WEAVING STRIDE: failed to queue movement decision")
+            return False
+
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: WEAVING STRIDE: %s can make a Normal move up to 6\".",
             getattr(target_root, "name", "Unit"),
         )
         return True
@@ -6080,6 +6320,31 @@ class AeldariStratagemMixin:
             out.append(root)
         return sorted(out, key=self._aeldari_sort_key)
 
+    def _aeldari_serpents_striking_stride_candidates(self) -> List[Any]:
+        if not self._is_serpents_brood_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._aeldari_is_harlequins(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
     def _aeldari_serpents_skyward_lunge_candidates(self) -> List[Any]:
         if not self._is_serpents_brood_detachment():
             return []
@@ -6138,6 +6403,48 @@ class AeldariStratagemMixin:
             if not was_eligible and bool(getattr(round_state, "fought_this_phase", False)):
                 was_eligible = True
             if not was_eligible:
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_serpents_weaving_stride_candidates(self, *, enemy_unit: Any) -> List[Any]:
+        if not self._is_serpents_brood_detachment():
+            return []
+        enemy_root = self._aeldari_root(enemy_unit)
+        if enemy_root is None:
+            return []
+        try:
+            if enemy_root.get_parent_army().player is self.player:
+                return []
+        except (AttributeError, TypeError, ValueError):
+            return []
+        if not self._aeldari_on_battlefield(enemy_root, require_targetable=False):
+            return []
+
+        from ..utility.aura_utils import unit_within_range_of_unit
+
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._aeldari_is_harlequins(root):
+                continue
+            if not self._aeldari_has_keyword(root, "INFANTRY"):
+                continue
+            if not unit_within_range_of_unit(root, enemy_root, 9.0, use_attached_aggregate=True):
                 continue
             out.append(root)
         return sorted(out, key=self._aeldari_sort_key)
