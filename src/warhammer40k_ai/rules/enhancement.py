@@ -391,6 +391,10 @@ class Enhancement:
         except Exception:
             is_spirit_conclave = False
         try:
+            is_devoted_of_ynnead = bool(ae_mgr and ae_mgr.is_devoted_of_ynnead())
+        except Exception:
+            is_devoted_of_ynnead = False
+        try:
             is_serpents_brood = bool(ae_mgr and ae_mgr.is_serpents_brood())
         except Exception:
             is_serpents_brood = False
@@ -1790,6 +1794,47 @@ class Enhancement:
             if not is_serpents_brood:
                 return
             unit.special_rules["enhancement_shedskin_raiment"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "gaze of ynnead" or enh_id == "000009919002":
+            if not is_devoted_of_ynnead:
+                return
+            source_name = str(getattr(self, "name", "") or "Gaze of Ynnead").strip() or "Gaze of Ynnead"
+            unit.special_rules["enhancement_gaze_of_ynnead"] = True
+            unit.special_rules["enhancement_gaze_of_ynnead_weapon_name"] = "eldritch storm"
+            unit.special_rules["enhancement_gaze_of_ynnead_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "storm of whispers" or enh_id == "000009919003":
+            if not is_devoted_of_ynnead:
+                return
+            source_name = str(getattr(self, "name", "") or "Storm of Whispers").strip() or "Storm of Whispers"
+            unit.special_rules["enhancement_storm_of_whispers"] = True
+            unit.special_rules["enhancement_storm_of_whispers_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "borrowed vigour" or enh_id == "000009919004":
+            if not is_devoted_of_ynnead:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            attacks_bonus = _coerce_int(params.get("attacks_bonus", 2) or 2, default=2)
+            unit.special_rules["enhancement_borrowed_vigour"] = True
+            unit.special_rules["enhancement_bearer_melee_attacks_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_attacks_bonus", 0) or 0
+            ) + int(max(0, attacks_bonus))
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "morbid might" or enh_id == "000009919005":
+            if not is_devoted_of_ynnead:
+                return
+            source_name = str(getattr(self, "name", "") or "Morbid Might").strip() or "Morbid Might"
+            unit.special_rules["enhancement_morbid_might"] = True
+            unit.special_rules["enhancement_morbid_might_source"] = source_name
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 

@@ -2848,6 +2848,39 @@ class PositioningMixin:
             pass
         atype = str(attack_type or "").strip().lower()
         is_ranged_attack = atype in ("", "any", "ranged")
+        if is_ranged_attack and self._attached_unit_model_is_enhancement_bearer(
+            model,
+            flag_key="enhancement_gaze_of_ynnead",
+            enhancement_id="000009919002",
+            enhancement_name="gaze of ynnead",
+            require_leading=False,
+        ):
+            try:
+                root = self.get_attached_unit_root()
+            except Exception:
+                root = self
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            source = str(sr.get("enhancement_gaze_of_ynnead_source", "") or "Gaze of Ynnead").strip() or "Gaze of Ynnead"
+            weapon_names = [
+                str(sr.get("enhancement_gaze_of_ynnead_weapon_name", "eldritch storm") or "eldritch storm")
+            ]
+            gaze_weapon_name = str(weapon_name or "").strip()
+            if not gaze_weapon_name and weapon_profile is not None:
+                try:
+                    gaze_weapon_name = str(getattr(getattr(weapon_profile, "parent_wargear", None), "name", "") or "")
+                except Exception:
+                    gaze_weapon_name = ""
+                if not gaze_weapon_name:
+                    try:
+                        gaze_weapon_name = str(getattr(weapon_profile, "name", "") or "")
+                    except Exception:
+                        gaze_weapon_name = ""
+            if self._weapon_name_matches(weapon_names, gaze_weapon_name):
+                rules = list(rules or []) + [
+                    {"attack_type": "ranged", "keyword": "DEVASTATING WOUNDS", "source": source}
+                ]
         try:
             source_unit = getattr(model, "parent_unit", None) or self
             army = source_unit.get_parent_army() if hasattr(source_unit, "get_parent_army") else None

@@ -6317,6 +6317,22 @@ class KeywordsDetachmentsMixin:
                     reroll_full_reasons.append(f"{source}: re-roll Wound roll vs enemy WARLORD target")
         except Exception:
             pass
+        try:
+            atype = str(attack_type or "").strip().lower()
+            if atype not in ("melee", "ranged"):
+                atype = "any"
+            if model is not None and atype in ("any", "melee"):
+                root = self.get_attached_unit_root()
+                sr = getattr(root, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("enhancement_morbid_might"):
+                    bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "")
+                    model_id = str(get_entity_id(model) or "")
+                    if bearer_id and model_id and bearer_id == model_id:
+                        reroll_full = True
+                        source = str(sr.get("enhancement_morbid_might_source", "") or "Morbid Might").strip() or "Morbid Might"
+                        reroll_full_reasons.append(f"{source}: re-roll Wound roll")
+        except Exception:
+            pass
         seen = set()
         deduped_reasons: list[str] = []
         for reason in reroll_reasons:

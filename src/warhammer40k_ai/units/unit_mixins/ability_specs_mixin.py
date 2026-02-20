@@ -127,6 +127,22 @@ class AbilitySpecsMixin:
             seen.add(key)
             specs.append({"infantry_only": infantry_only, "source": source})
 
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if isinstance(sr, dict) and sr.get("enhancement_storm_of_whispers"):
+            bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "")
+            model_id = str(get_entity_id(model) or "")
+            if bearer_id and model_id and bearer_id == model_id:
+                source = str(sr.get("enhancement_storm_of_whispers_source", "") or "Storm of Whispers").strip()
+                source = source or "Storm of Whispers"
+                key = (source.lower(), False, 0, 0, False)
+                if key not in seen:
+                    seen.add(key)
+                    specs.append({"infantry_only": False, "exclude_monster_vehicle": False, "source": source})
+
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
         self._ability_cache[cache_key] = list(specs)

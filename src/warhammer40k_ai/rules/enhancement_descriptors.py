@@ -667,6 +667,53 @@ _AELDARI_SERPENTS_BROOD_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _AELDARI_SERPENTS_BROOD_DESCRIPTORS.values()
 }
 
+_AELDARI_DEVOTED_OF_YNNEAD_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009919002": EnhancementToolDescriptor(
+        enhancement_id="000009919002",
+        name="Gaze of Ynnead",
+        timing="passive",
+        target="bearer_weapon_eldritch_storm",
+        duration="constant",
+        effect="grant_weapon_keywords",
+        effect_params={
+            "weapon_name": "eldritch storm",
+            "attack_type": "ranged",
+            "keywords": ("DEVASTATING WOUNDS",),
+        },
+    ),
+    "000009919003": EnhancementToolDescriptor(
+        enhancement_id="000009919003",
+        name="Storm of Whispers",
+        timing="post_shooting",
+        target="enemy_unit_hit_by_bearer",
+        duration="instant",
+        effect="post_shoot_battleshock_test",
+        effect_params={"infantry_only": False},
+    ),
+    "000009919004": EnhancementToolDescriptor(
+        enhancement_id="000009919004",
+        name="Borrowed Vigour",
+        timing="passive",
+        target="bearer_melee_weapons",
+        duration="constant",
+        effect="bearer_melee_attacks_bonus",
+        effect_params={"attacks_bonus": 2},
+    ),
+    "000009919005": EnhancementToolDescriptor(
+        enhancement_id="000009919005",
+        name="Morbid Might",
+        timing="on_melee_attack",
+        target="bearer_melee_attacks",
+        duration="constant",
+        effect="bearer_melee_wound_reroll",
+        effect_params={"reroll_wound_full": True},
+    ),
+}
+
+_AELDARI_DEVOTED_OF_YNNEAD_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _AELDARI_DEVOTED_OF_YNNEAD_DESCRIPTORS.values()
+}
+
 _EXPERIMENTAL_PROTOTYPE_CADRE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009983002": EnhancementToolDescriptor(
         enhancement_id="000009983002",
@@ -1553,6 +1600,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _AELDARI_SERPENTS_BROOD_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _AELDARI_DEVOTED_OF_YNNEAD_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _EXPERIMENTAL_PROTOTYPE_CADRE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -1624,6 +1674,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _AELDARI_GHOSTS_OF_THE_WEBWAY_BY_NAME.get(key)
         or _AELDARI_SPIRIT_CONCLAVE_BY_NAME.get(key)
         or _AELDARI_SERPENTS_BROOD_BY_NAME.get(key)
+        or _AELDARI_DEVOTED_OF_YNNEAD_BY_NAME.get(key)
         or _EXPERIMENTAL_PROTOTYPE_CADRE_BY_NAME.get(key)
         or _MONTKA_BY_NAME.get(key)
         or _RAD_ZONE_CORPS_BY_NAME.get(key)
