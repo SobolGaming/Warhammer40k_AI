@@ -156,8 +156,10 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "OUTCAST AMBUSH",
     "INTO THE BREACH",
     "LETHAL RUSE",
+    "NO PREY TOO BIG",
     "PALL OF DREAD",
     "PARTING THE VEIL",
+    "RUTHLESS KILLERS",
     "WITHDRAW AND REINFORCE",
     "YRIEL'S EXAMPLE",
     "YRIEL\u2019S EXAMPLE",
@@ -1679,11 +1681,13 @@ class StratagemManager(
             "SYCOPHANTIC SURGE",
             "CLOAK AND SHADOW",
             "LETHAL RUSE",
+            "NO PREY TOO BIG",
             "OUTCAST AMBUSH",
             "PIRATES' DUE",
             "DOOM INESCAPABLE",
             "PARTING THE VEIL",
             "PRETERNATURAL PRECISION",
+            "RUTHLESS KILLERS",
             "TO THEIR FINAL BREATH",
             "WARRIOR FOCUS",
             "HONOUR THE PRINCE",
@@ -3264,6 +3268,27 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires end of opponent Fight phase and an ANHRATHE unit from your army not in Engagement Range"
             return result
+        if name_u == "RUTHLESS KILLERS":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+                candidates = self._aeldari_eldritch_ruthless_killers_candidates(phase_name=phase_name_l)
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires Shooting/Fight phase and an eligible CORSAIR VOIDSCARRED unit that has not been selected to shoot/fight this phase"
+            return result
+        if name_u == "NO PREY TOO BIG":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._aeldari_eldritch_no_prey_too_big_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Shooting phase and an eligible ANHRATHE, Rangers, or Shroud Runners unit that has not been selected to shoot"
+            return result
         if stratagem.can_use(self.player, self.game, **context):
             result["available"] = True
             result["reason"] = None
@@ -3338,8 +3363,10 @@ class StratagemManager(
             "OUTCAST AMBUSH": "Target: your Rangers or Shroud Runners unit that has not been selected to shoot this phase",
             "INTO THE BREACH": "Target: ANHRATHE unit that just destroyed one or more enemy units with its shooting attacks",
             "LETHAL RUSE": "Target: your AELDARI unit that just Fell Back this Movement phase (ANHRATHE also selects one enemy unit it was in Engagement Range of at phase start)",
+            "NO PREY TOO BIG": "Target: your ANHRATHE, Rangers, or Shroud Runners unit that has not been selected to shoot this phase",
             "PIRATES' DUE": "Target: your AELDARI unit that has not been selected to fight this phase",
             "PIRATES’ DUE": "Target: your AELDARI unit that has not been selected to fight this phase",
+            "RUTHLESS KILLERS": "Target: your CORSAIR VOIDSCARRED unit that has not been selected to shoot/fight this phase",
             "WITHDRAW AND REINFORCE": "Target: your ANHRATHE unit that is not in Engagement Range at the end of the opponent's Fight phase",
             "YRIEL'S EXAMPLE": "Target: your AELDARI INFANTRY unit (excluding WRAITH CONSTRUCT) selected as a target of enemy fight attacks",
             "YRIEL\u2019S EXAMPLE": "Target: your AELDARI INFANTRY unit (excluding WRAITH CONSTRUCT) selected as a target of enemy fight attacks",

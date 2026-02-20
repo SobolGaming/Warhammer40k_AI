@@ -11072,6 +11072,76 @@ class WargearProfile:
                     wound_result['modifiers'].append(reason or f"+{int(bonus)} to wound from Shepherds of the Dead")
         except Exception:
             pass
+        # Aeldari (Eldritch Raiders): NO PREY TOO BIG (+1 to wound if attack Strength is lower than target unit's highest Toughness).
+        try:
+            if self.parent_wargear and self.parent_wargear.is_ranged():
+                attacker_unit = getattr(attacker, "parent_unit", None)
+                army = attacker_unit.get_parent_army() if attacker_unit is not None else None
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                root = attacker_unit.get_attached_unit_root() if attacker_unit is not None and hasattr(attacker_unit, "get_attached_unit_root") else attacker_unit
+                sr = getattr(root, "special_rules", None) if root is not None else None
+                if isinstance(sr, dict) and sr.get("aeldari_no_prey_too_big_active"):
+                    applies = True
+                    owner_id = str(sr.get("aeldari_no_prey_too_big_turn_owner", "") or "")
+                    effect_owner = str(getattr(getattr(army, "player", None), "id", "") or "") if army is not None else ""
+                    if owner_id and effect_owner and owner_id != effect_owner:
+                        applies = False
+                    expires_phase = str(sr.get("aeldari_no_prey_too_big_expires_phase", "") or "").strip().upper()
+                    phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+                    if applies and expires_phase and phase_name and expires_phase != phase_name:
+                        applies = False
+                    try:
+                        effect_turn = int(sr.get("aeldari_no_prey_too_big_turn", 0) or 0)
+                    except Exception:
+                        effect_turn = 0
+                    try:
+                        current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                    except Exception:
+                        current_turn = 0
+                    if applies and effect_turn and current_turn and effect_turn != current_turn:
+                        applies = False
+                    if applies and target is not None:
+                        try:
+                            attack_strength = int(strength or 0)
+                        except Exception:
+                            attack_strength = 0
+                        highest_toughness = 0
+                        target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+                        if target_root is not None:
+                            get_models = getattr(target_root, "get_attached_unit_models", None)
+                            models = list(get_models() or []) if callable(get_models) else list(getattr(target_root, "models", []) or [])
+                            for model in models:
+                                try:
+                                    is_alive_attr = getattr(model, "is_alive", True)
+                                    model_alive = bool(is_alive_attr() if callable(is_alive_attr) else is_alive_attr)
+                                except Exception:
+                                    model_alive = True
+                                if not model_alive:
+                                    continue
+                                try:
+                                    model_t = int(getattr(model, "toughness", getattr(model, "_toughness", 0)) or 0)
+                                except Exception:
+                                    model_t = 0
+                                if model_t > highest_toughness:
+                                    highest_toughness = int(model_t)
+                        if highest_toughness <= 0:
+                            try:
+                                highest_toughness = int(target_toughness or 0)
+                            except Exception:
+                                highest_toughness = 0
+                        if attack_strength > 0 and highest_toughness > 0 and attack_strength < highest_toughness:
+                            try:
+                                wound_bonus = int(sr.get("aeldari_no_prey_too_big_wound_bonus", 1) or 1)
+                            except Exception:
+                                wound_bonus = 1
+                            if wound_bonus:
+                                source = str(sr.get("aeldari_no_prey_too_big_source", "") or "NO PREY TOO BIG").strip() or "NO PREY TOO BIG"
+                                dice_modifier += int(wound_bonus)
+                                wound_result["modifiers"].append(
+                                    f"+{int(wound_bonus)} to wound from {source} (S{int(attack_strength)} < highest Toughness {int(highest_toughness)})"
+                                )
+        except Exception:
+            pass
         # Fight phase target wound bonus (e.g., The Eternal Dance).
         try:
             attacker_unit = getattr(attacker, "parent_unit", None)
@@ -14955,6 +15025,47 @@ class WargearProfile:
                 )
                 if d_reasons:
                     damage_result['special_effects'].extend(list(d_reasons))
+        # Aeldari (Eldritch Raiders): RUTHLESS KILLERS (+1 Damage until end of phase).
+        try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            root = attacker_unit.get_attached_unit_root() if attacker_unit is not None and hasattr(attacker_unit, "get_attached_unit_root") else attacker_unit
+            sr = getattr(root, "special_rules", None) if root is not None else None
+            if isinstance(sr, dict) and sr.get("aeldari_ruthless_killers_active"):
+                applies = True
+                owner_id = str(sr.get("aeldari_ruthless_killers_turn_owner", "") or "")
+                unit_army = attacker_unit.get_parent_army() if attacker_unit is not None else None
+                game = getattr(getattr(unit_army, "player", None), "game", None) if unit_army is not None else None
+                attacker_owner = str(getattr(getattr(unit_army, "player", None), "id", "") or "") if unit_army is not None else ""
+                if owner_id and attacker_owner and owner_id != attacker_owner:
+                    applies = False
+                expires_phase = str(sr.get("aeldari_ruthless_killers_expires_phase", "") or "").strip().upper()
+                if applies and expires_phase and game is not None:
+                    phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    if phase_name and phase_name != expires_phase:
+                        applies = False
+                try:
+                    effect_turn = int(sr.get("aeldari_ruthless_killers_turn", 0) or 0)
+                except Exception:
+                    effect_turn = 0
+                try:
+                    current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                except Exception:
+                    current_turn = 0
+                if applies and effect_turn and current_turn and effect_turn != current_turn:
+                    applies = False
+                if applies:
+                    try:
+                        d_bonus = int(sr.get("aeldari_ruthless_killers_damage_bonus", 1) or 1)
+                    except Exception:
+                        d_bonus = 1
+                    if d_bonus:
+                        source = str(sr.get("aeldari_ruthless_killers_source", "") or "RUTHLESS KILLERS").strip() or "RUTHLESS KILLERS"
+                        damage_mods.append(
+                            Modifier(ModifierOp.ADD, int(d_bonus), source="stratagem:ruthless_killers_damage_add")
+                        )
+                        damage_result["special_effects"].append(f"{source} +{int(d_bonus)}D")
+        except Exception:
+            pass
         # Fight phase target bonuses: improve Damage vs selected target.
         try:
             target_unit = getattr(target_model, "parent_unit", None) if target_model is not None else None

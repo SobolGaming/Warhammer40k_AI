@@ -1268,6 +1268,19 @@ class AeldariStratagemMixin:
                         sr.pop(key, None)
                         changed = True
 
+            if phase_key == "SHOOTING_PHASE" and bool(sr.get("aeldari_no_prey_too_big_active")):
+                for key in (
+                    "aeldari_no_prey_too_big_active",
+                    "aeldari_no_prey_too_big_wound_bonus",
+                    "aeldari_no_prey_too_big_expires_phase",
+                    "aeldari_no_prey_too_big_turn_owner",
+                    "aeldari_no_prey_too_big_turn",
+                    "aeldari_no_prey_too_big_source",
+                ):
+                    if key in sr:
+                        sr.pop(key, None)
+                        changed = True
+
             if phase_key == "FIGHT_PHASE" and bool(sr.get("aeldari_pirates_due_active")):
                 for key in (
                     "aeldari_pirates_due_active",
@@ -1305,6 +1318,21 @@ class AeldariStratagemMixin:
                         sr.pop(key, None)
                         changed = True
                 self._aeldari_clear_melee_fight_on_death_cache(root)
+
+            if bool(sr.get("aeldari_ruthless_killers_active")):
+                ruthless_exp = str(sr.get("aeldari_ruthless_killers_expires_phase", "") or "").strip().upper()
+                if not ruthless_exp or ruthless_exp == phase_key:
+                    for key in (
+                        "aeldari_ruthless_killers_active",
+                        "aeldari_ruthless_killers_damage_bonus",
+                        "aeldari_ruthless_killers_expires_phase",
+                        "aeldari_ruthless_killers_turn_owner",
+                        "aeldari_ruthless_killers_turn",
+                        "aeldari_ruthless_killers_source",
+                    ):
+                        if key in sr:
+                            sr.pop(key, None)
+                            changed = True
 
             if phase_key == "MOVEMENT_PHASE":
                 if (
@@ -1791,6 +1819,10 @@ class AeldariStratagemMixin:
             return self._use_aeldari_eldritch_yriels_example(stratagem, **kwargs)
         if name_u == "WITHDRAW AND REINFORCE":
             return self._use_aeldari_eldritch_withdraw_and_reinforce(stratagem, **kwargs)
+        if name_u == "RUTHLESS KILLERS":
+            return self._use_aeldari_eldritch_ruthless_killers(stratagem, **kwargs)
+        if name_u == "NO PREY TOO BIG":
+            return self._use_aeldari_eldritch_no_prey_too_big(stratagem, **kwargs)
         return None
 
     def _use_aeldari_eldritch_yriels_example(self, stratagem, **kwargs) -> bool:
@@ -1935,6 +1967,104 @@ class AeldariStratagemMixin:
             "INFO: WITHDRAW AND REINFORCE: %s entered Strategic Reserves and returned %d model(s).",
             getattr(target_root, "name", "Unit"),
             int(returned),
+        )
+        return True
+
+    def _use_aeldari_eldritch_ruthless_killers(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            logger.error("ERROR: RUTHLESS KILLERS: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if phase_name == "shooting phase" and active_player is not self.player:
+            logger.error("ERROR: RUTHLESS KILLERS: Shooting phase use is only on your turn")
+            return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_eldritch_ruthless_killers_candidates(phase_name=phase_name)
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: RUTHLESS KILLERS: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: RUTHLESS KILLERS: target must be an eligible CORSAIR VOIDSCARRED unit")
+            return False
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root):
+            return False
+
+        expires_phase = "SHOOTING_PHASE" if phase_name == "shooting phase" else "FIGHT_PHASE"
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["aeldari_ruthless_killers_active"] = True
+        sr["aeldari_ruthless_killers_damage_bonus"] = 1
+        sr["aeldari_ruthless_killers_expires_phase"] = expires_phase
+        sr["aeldari_ruthless_killers_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["aeldari_ruthless_killers_turn"] = int(getattr(game, "turn", 0) or 0)
+        sr["aeldari_ruthless_killers_source"] = str(getattr(stratagem, "name", "RUTHLESS KILLERS") or "RUTHLESS KILLERS")
+        target_root.special_rules = sr
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: RUTHLESS KILLERS: %s gains +1 Damage until end of %s.",
+            getattr(target_root, "name", "Unit"),
+            "Shooting phase" if expires_phase == "SHOOTING_PHASE" else "Fight phase",
+        )
+        return True
+
+    def _use_aeldari_eldritch_no_prey_too_big(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: NO PREY TOO BIG: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: NO PREY TOO BIG: not your turn")
+            return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_eldritch_no_prey_too_big_candidates()
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: NO PREY TOO BIG: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: NO PREY TOO BIG: target must be ANHRATHE, Rangers, or Shroud Runners and not yet selected to shoot")
+            return False
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root):
+            return False
+
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["aeldari_no_prey_too_big_active"] = True
+        sr["aeldari_no_prey_too_big_wound_bonus"] = 1
+        sr["aeldari_no_prey_too_big_expires_phase"] = "SHOOTING_PHASE"
+        sr["aeldari_no_prey_too_big_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["aeldari_no_prey_too_big_turn"] = int(getattr(game, "turn", 0) or 0)
+        sr["aeldari_no_prey_too_big_source"] = str(getattr(stratagem, "name", "NO PREY TOO BIG") or "NO PREY TOO BIG")
+        target_root.special_rules = sr
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: NO PREY TOO BIG: %s gains +1 to wound when its attack Strength is lower than the target unit's highest Toughness this phase.",
+            getattr(target_root, "name", "Unit"),
         )
         return True
 
@@ -2445,6 +2575,18 @@ class AeldariStratagemMixin:
             name = ""
         return name in {"rangers", "shroud runners"}
 
+    def _aeldari_is_corsair_voidscarred(self, unit: Any) -> bool:
+        root = self._aeldari_root(unit)
+        if root is None:
+            return False
+        if self._aeldari_has_keyword(root, "CORSAIR VOIDSCARRED"):
+            return True
+        try:
+            name = str(getattr(root, "name", "") or "").strip().lower()
+        except (AttributeError, TypeError, ValueError):
+            name = ""
+        return name == "corsair voidscarred"
+
     def _aeldari_eldritch_yriels_example_candidates(self, *, target_units: List[Any]) -> List[Any]:
         if not self._is_eldritch_raiders_detachment():
             return []
@@ -2498,6 +2640,74 @@ class AeldariStratagemMixin:
             if not self._aeldari_is_anhrathe(root):
                 continue
             if self._aeldari_in_engagement_range(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_eldritch_ruthless_killers_candidates(self, *, phase_name: str) -> List[Any]:
+        if not self._is_eldritch_raiders_detachment():
+            return []
+        phase_key = str(phase_name or "").strip().lower()
+        require_not_shot = phase_key == "shooting phase"
+        require_not_fought = phase_key == "fight phase"
+        game = getattr(self, "game", None)
+        fight_mgr = getattr(game, "fight_phase_manager", None) if game is not None else None
+        fought_units = set(getattr(fight_mgr, "fought_units", set()) or set()) if fight_mgr is not None else set()
+
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._aeldari_is_corsair_voidscarred(root):
+                continue
+            if require_not_shot and bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
+                continue
+            if require_not_fought:
+                if bool(getattr(getattr(root, "round_state", None), "has_fought_this_round", False)):
+                    continue
+                if root in fought_units:
+                    continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_eldritch_no_prey_too_big_candidates(self) -> List[Any]:
+        if not self._is_eldritch_raiders_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            if bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
+                continue
+            if not (self._aeldari_is_anhrathe(root) or self._aeldari_is_rangers_or_shroud_runners(root)):
                 continue
             out.append(root)
         return sorted(out, key=self._aeldari_sort_key)

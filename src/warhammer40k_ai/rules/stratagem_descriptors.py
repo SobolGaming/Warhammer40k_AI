@@ -1677,6 +1677,16 @@ _DEVOTED_OF_YNNEAD_STRATAGEM_BY_NAME = {
 }
 
 _ELDRITCH_RAIDERS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010700003": StratagemToolDescriptor(
+        stratagem_id="000010700003",
+        name="Ruthless Killers",
+        timing="shooting_or_fight_phase",
+        target="corsair_voidscarred_unit_not_selected_this_phase",
+        duration="until_end_of_phase",
+        effect="damage_characteristic_bonus",
+        cp_cost=1,
+        effect_params={"damage_bonus": 1, "attack_type": "any"},
+    ),
     "000010700004": StratagemToolDescriptor(
         stratagem_id="000010700004",
         name="Yriel's Example",
@@ -1686,6 +1696,20 @@ _ELDRITCH_RAIDERS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
         effect="feel_no_pain",
         cp_cost=1,
         effect_params={"feel_no_pain_value": 5, "attack_type": "any"},
+    ),
+    "000010700005": StratagemToolDescriptor(
+        stratagem_id="000010700005",
+        name="No Prey Too Big",
+        timing="your_shooting_phase",
+        target="anhrathe_or_rangers_or_shroud_runners_not_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="conditional_wound_roll_bonus",
+        cp_cost=1,
+        effect_params={
+            "wound_bonus": 1,
+            "condition": "attacker_strength_less_than_target_highest_toughness",
+            "attack_type": "ranged",
+        },
     ),
     "000010700007": StratagemToolDescriptor(
         stratagem_id="000010700007",

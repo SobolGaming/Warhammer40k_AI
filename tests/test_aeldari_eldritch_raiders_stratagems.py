@@ -8,6 +8,7 @@ from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.rules.stratagem_descriptors import get_stratagem_tool_descriptor
 from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.units.wargear import Wargear
 
 
 class _MockDatasheet:
@@ -73,6 +74,29 @@ def _make_unit(
             model_count=int(quantity),
         ),
     )
+
+
+def _make_test_profile(
+    *,
+    name: str = "Test weapon",
+    weapon_type: str = "Ranged",
+    strength: str = "4",
+    damage: str = "1",
+):
+    weapon = Wargear(
+        {
+            "name": str(name),
+            "type": str(weapon_type),
+            "range": "24",
+            "A": "1",
+            "BS_WS": "3+",
+            "S": str(strength),
+            "AP": "0",
+            "D": str(damage),
+            "description": "",
+        }
+    )
+    return next(iter(weapon.profiles.values()))
 
 
 def _build_game():
@@ -213,12 +237,144 @@ class TestAeldariEldritchRaidersStratagems(unittest.TestCase):
         self.assertNotIn(destroyed_model, list(getattr(anhrathe, "models_lost", []) or []))
         self.assertEqual(len(list(getattr(anhrathe, "models", []) or [])), 3)
 
+    def test_ruthless_killers_grants_damage_bonus_until_phase_end(self):
+        game, p1, _p2, aeldari_army, enemy_army = _build_game()
+        voidscarred = _make_unit(
+            "Corsair Voidscarred",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["ANHRATHE", "INFANTRY", "CORSAIR VOIDSCARRED"],
+            quantity=2,
+        )
+        enemy = _make_unit(
+            "Enemy Unit",
+            faction_name="Enemy",
+            faction_keywords=["ENEMY"],
+            keywords=["INFANTRY"],
+            wounds="6",
+            quantity=1,
+        )
+        aeldari_army.add_unit(voidscarred)
+        enemy_army.add_unit(enemy)
+        _place_unit(game, voidscarred, 10.0, 10.0)
+        _place_unit(game, enemy, 16.0, 10.0)
+
+        _set_phase(game, p1, "SHOOTING_PHASE", 0)
+        ok = p1.stratagems.use("RUTHLESS KILLERS", unit=voidscarred)
+        self.assertTrue(ok)
+        self.assertEqual(int(p1.command_points or 0), 9)
+
+        profile = _make_test_profile(name="Shuriken Carbine", weapon_type="Ranged", strength="5", damage="1")
+        attacker_model = voidscarred.models[0]
+        target_model = enemy.models[0]
+        buffed = profile._damage_target_with_tracking(
+            target_model,
+            attacker_model,
+            {},
+            allow_rerolls=False,
+        )
+        self.assertEqual(int(buffed.get("damage_applied", 0) or 0), 2)
+        self.assertTrue(
+            any("RUTHLESS KILLERS" in str(item).upper() for item in list(buffed.get("special_effects", []) or []))
+        )
+
+        game.event_system.publish("phase_end", player=p1, phase=SimpleNamespace(name="SHOOTING_PHASE"))
+        unbuffed = profile._damage_target_with_tracking(
+            target_model,
+            attacker_model,
+            {},
+            allow_rerolls=False,
+        )
+        self.assertEqual(int(unbuffed.get("damage_applied", 0) or 0), 1)
+
+    def test_no_prey_too_big_grants_conditional_wound_bonus_until_phase_end(self):
+        game, p1, _p2, aeldari_army, enemy_army = _build_game()
+        anhrathe = _make_unit(
+            "Corsair Voidreavers",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["ANHRATHE", "INFANTRY"],
+            quantity=2,
+        )
+        enemy = _make_unit(
+            "Enemy Targets",
+            faction_name="Enemy",
+            faction_keywords=["ENEMY"],
+            keywords=["INFANTRY"],
+            quantity=2,
+        )
+        if len(enemy.models) > 1:
+            enemy.models[1].toughness = 8
+            enemy.models[1]._toughness = 8
+        aeldari_army.add_unit(anhrathe)
+        enemy_army.add_unit(enemy)
+        _place_unit(game, anhrathe, 10.0, 10.0)
+        _place_unit(game, enemy, 20.0, 10.0)
+
+        _set_phase(game, p1, "SHOOTING_PHASE", 0)
+        ok = p1.stratagems.use("NO PREY TOO BIG", unit=anhrathe)
+        self.assertTrue(ok)
+        self.assertEqual(int(p1.command_points or 0), 9)
+
+        attacker_model = anhrathe.models[0]
+        low_strength_profile = _make_test_profile(name="Low Strength", weapon_type="Ranged", strength="6", damage="1")
+        high_strength_profile = _make_test_profile(name="High Strength", weapon_type="Ranged", strength="9", damage="1")
+
+        wound_low = low_strength_profile._wound_target_with_tracking(
+            enemy,
+            attacker_model,
+            {},
+            roll_value=4,
+            allow_rerolls=False,
+            log_roll=False,
+        )
+        self.assertTrue(
+            any("NO PREY TOO BIG" in str(item).upper() for item in list(wound_low.get("modifiers", []) or []))
+        )
+
+        wound_high = high_strength_profile._wound_target_with_tracking(
+            enemy,
+            attacker_model,
+            {},
+            roll_value=4,
+            allow_rerolls=False,
+            log_roll=False,
+        )
+        self.assertFalse(
+            any("NO PREY TOO BIG" in str(item).upper() for item in list(wound_high.get("modifiers", []) or []))
+        )
+
+        game.event_system.publish("phase_end", player=p1, phase=SimpleNamespace(name="SHOOTING_PHASE"))
+        wound_after = low_strength_profile._wound_target_with_tracking(
+            enemy,
+            attacker_model,
+            {},
+            roll_value=4,
+            allow_rerolls=False,
+            log_roll=False,
+        )
+        self.assertFalse(
+            any("NO PREY TOO BIG" in str(item).upper() for item in list(wound_after.get("modifiers", []) or []))
+        )
+
     def test_eldritch_raiders_stratagem_descriptors_registered(self):
+        ruthless = get_stratagem_tool_descriptor(stratagem_id="000010700003")
+        self.assertIsNotNone(ruthless)
+        self.assertEqual(str(ruthless.name), "Ruthless Killers")
+        self.assertEqual(int(ruthless.cp_cost), 1)
+        self.assertEqual(str(ruthless.effect), "damage_characteristic_bonus")
+
         yriel = get_stratagem_tool_descriptor(stratagem_id="000010700004")
         self.assertIsNotNone(yriel)
         self.assertEqual(str(yriel.name), "Yriel's Example")
         self.assertEqual(int(yriel.cp_cost), 1)
         self.assertEqual(str(yriel.effect), "feel_no_pain")
+
+        no_prey = get_stratagem_tool_descriptor(stratagem_id="000010700005")
+        self.assertIsNotNone(no_prey)
+        self.assertEqual(str(no_prey.name), "No Prey Too Big")
+        self.assertEqual(int(no_prey.cp_cost), 1)
+        self.assertEqual(str(no_prey.effect), "conditional_wound_roll_bonus")
 
         withdraw = get_stratagem_tool_descriptor(stratagem_id="000010700007")
         self.assertIsNotNone(withdraw)
