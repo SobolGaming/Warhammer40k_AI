@@ -4,10 +4,12 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
+from warhammer40k_ai.engine.decision_kinds import DECISION_MOVE_UNIT
 from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.rules.stratagem_descriptors import get_stratagem_tool_descriptor
+from warhammer40k_ai.utility.entity_ids import get_entity_id
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.units.wargear import Wargear
 
@@ -231,12 +233,100 @@ class TestAeldariGhostsOfTheWebwayStratagems(unittest.TestCase):
         game.event_system.publish("phase_end", player=p2, phase=SimpleNamespace(name="FIGHT_PHASE"))
         self.assertIsNone(target.get_melee_fight_on_death_after_attacks_rule())
 
-    def test_ghosts_of_the_webway_step1_stratagem_descriptors_registered(self):
+    def test_mocking_flight_queues_and_grants_shoot_and_charge_after_fall_back(self):
+        game, p1, _p2, aeldari_army, _enemy_army = _build_game()
+        harlequins = _make_unit(
+            "Skyweavers",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["HARLEQUINS", "MOUNTED"],
+            quantity=2,
+        )
+        aeldari_army.add_unit(harlequins)
+        _place_unit(game, harlequins, 10.0, 10.0)
+
+        _set_phase(game, p1, "MOVEMENT_PHASE", 0)
+        harlequins.round_state.fell_back_this_round = True
+        game.event_system.publish("unit_move_ended", unit=harlequins, action="fall_back")
+        pending = _pending_by_name(p1.stratagems, "MOCKING FLIGHT")
+        self.assertIsNotNone(pending)
+
+        ok = p1.stratagems.use(
+            str(pending.get("stratagem", "")),
+            unit=harlequins,
+            action="fall_back",
+            dequeue=True,
+        )
+        self.assertTrue(ok)
+        self.assertEqual(int(p1.command_points or 0), 9)
+        self.assertTrue(bool(harlequins.has_fell_back_and_shoot()))
+        self.assertTrue(bool(harlequins.can_charge_after_fall_back()))
+
+    def test_tricksters_retort_queues_and_creates_reactive_move_decision(self):
+        game, p1, p2, aeldari_army, enemy_army = _build_game()
+        troupe = _make_unit(
+            "Troupe",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["HARLEQUINS", "INFANTRY", "TROUPE"],
+            quantity=2,
+        )
+        enemy = _make_unit(
+            "Enemy Unit",
+            faction_name="Enemy",
+            faction_keywords=["ENEMY"],
+            keywords=["INFANTRY"],
+            quantity=2,
+        )
+        aeldari_army.add_unit(troupe)
+        enemy_army.add_unit(enemy)
+        _place_unit(game, troupe, 10.0, 10.0)
+        _place_unit(game, enemy, 16.0, 10.0)
+
+        _set_phase(game, p2, "MOVEMENT_PHASE", 1)
+        game.event_system.publish("unit_move_ended", unit=enemy, action="move")
+        pending = _pending_by_name(p1.stratagems, "TRICKSTERS")
+        self.assertIsNotNone(pending)
+
+        ok = p1.stratagems.use(
+            str(pending.get("stratagem", "")),
+            unit=troupe,
+            enemy_unit=enemy,
+            action="move",
+            dequeue=True,
+        )
+        self.assertTrue(ok)
+        self.assertEqual(int(p1.command_points or 0), 9)
+
+        requests = [
+            req
+            for req in list(game.decision_queue.list() or [])
+            if str(getattr(req, "decision_type", "") or "") == DECISION_MOVE_UNIT
+            and str((dict(getattr(req, "context", {}) or {})).get("reactive_move_kind", "") or "") == "tricksters_retort"
+        ]
+        self.assertTrue(requests)
+        ctx = dict(getattr(requests[-1], "context", {}) or {})
+        self.assertEqual(int(ctx.get("max_distance", 0) or 0), 6)
+        self.assertEqual(str(ctx.get("unit_id", "") or ""), str(get_entity_id(troupe) or ""))
+
+    def test_ghosts_of_the_webway_stratagem_descriptors_registered(self):
         heroes = get_stratagem_tool_descriptor(stratagem_id="000009916003")
         self.assertIsNotNone(heroes)
         self.assertEqual(str(heroes.name), "Heroes' Fall")
         self.assertEqual(int(heroes.cp_cost), 1)
         self.assertEqual(str(heroes.effect), "fight_on_death_after_attacks")
+
+        mocking = get_stratagem_tool_descriptor(stratagem_id="000009916004")
+        self.assertIsNotNone(mocking)
+        self.assertEqual(str(mocking.name), "Mocking Flight")
+        self.assertEqual(int(mocking.cp_cost), 1)
+        self.assertEqual(str(mocking.effect), "eligible_to_shoot_and_charge_after_fall_back")
+
+        tricksters = get_stratagem_tool_descriptor(stratagem_id="000009916005")
+        self.assertIsNotNone(tricksters)
+        self.assertEqual(str(tricksters.name), "Tricksters' Retort")
+        self.assertEqual(int(tricksters.cp_cost), 1)
+        self.assertEqual(str(tricksters.effect), "reactive_normal_move")
 
         exit_stage = get_stratagem_tool_descriptor(stratagem_id="000009916007")
         self.assertIsNotNone(exit_stage)

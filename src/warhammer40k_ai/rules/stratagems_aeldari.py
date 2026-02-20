@@ -1006,6 +1006,85 @@ class AeldariStratagemMixin:
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload, use_timer=False)
 
+    def _queue_aeldari_ghosts_move_end_reactions(self, *, unit: Any, action: str) -> None:
+        if unit is None or not self._is_ghosts_of_the_webway_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        phase_key = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_key != "MOVEMENT_PHASE":
+            return
+        root = self._aeldari_root(unit)
+        if root is None:
+            return
+        action_key = str(action or "").strip().lower().replace("_", " ")
+        active_player = getattr(game, "get_current_player", lambda: None)()
+
+        if active_player is self.player:
+            if action_key not in {"fall back", "fallback"}:
+                return
+            try:
+                if root.get_parent_army().player is not self.player:
+                    return
+            except (AttributeError, TypeError, ValueError):
+                return
+            stratagem = self._aeldari_get_stratagem_by_norm_name("MOCKING FLIGHT")
+            if stratagem is None:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+                return
+            if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+                return
+            candidates = self._aeldari_ghosts_mocking_flight_candidates(moved_unit=root)
+            if root not in candidates:
+                return
+            if self._aeldari_reaction_exists("unit_move_ended", stratagem.name, unit=root):
+                return
+            payload: Dict[str, Any] = {
+                "event": "unit_move_ended",
+                "phase_name": "Movement phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "action": action,
+                "unit": root,
+                "target_unit": root,
+                "candidates": [root],
+            }
+            self._queue_reaction(payload, use_timer=False)
+            return
+
+        if action_key not in {"move", "normal", "advance", "fall back", "fallback"}:
+            return
+        try:
+            if root.get_parent_army().player is self.player:
+                return
+        except (AttributeError, TypeError, ValueError):
+            return
+        stratagem = self._aeldari_get_stratagem_by_norm_name("TRICKSTERS' RETORT")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+            return
+        candidates = self._aeldari_ghosts_tricksters_retort_candidates(enemy_unit=root)
+        if not candidates or self._aeldari_reaction_exists("unit_move_ended", stratagem.name):
+            return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "action": action,
+            "enemy_unit": root,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
     def _queue_aeldari_eldritch_fight_targets_selected_reactions(
         self,
         *,
@@ -2017,6 +2096,10 @@ class AeldariStratagemMixin:
         name_u = self._aeldari_norm_name(getattr(stratagem, "name", ""))
         if name_u == "EXIT THE STAGE":
             return self._use_aeldari_ghosts_exit_the_stage(stratagem, **kwargs)
+        if name_u == "MOCKING FLIGHT":
+            return self._use_aeldari_ghosts_mocking_flight(stratagem, **kwargs)
+        if name_u in {"TRICKSTERS' RETORT", "TRICKSTERS\u2019 RETORT"}:
+            return self._use_aeldari_ghosts_tricksters_retort(stratagem, **kwargs)
         if name_u in {"HEROES' FALL", "HEROES\u2019 FALL"}:
             return self._use_aeldari_ghosts_heroes_fall(stratagem, **kwargs)
         return None
@@ -2165,6 +2248,138 @@ class AeldariStratagemMixin:
         target_root.special_rules = sr
         self._aeldari_clear_melee_fight_on_death_cache(target_root)
         self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_aeldari_ghosts_mocking_flight(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: MOCKING FLIGHT: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: MOCKING FLIGHT: not your turn")
+            return False
+        action_key = str(context.get("action", "") or "").strip().lower().replace("_", " ")
+        if action_key and action_key not in {"fall back", "fallback"}:
+            logger.error("ERROR: MOCKING FLIGHT: wrong trigger")
+            return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_ghosts_mocking_flight_candidates(moved_unit=target_root)
+            if not candidates:
+                candidates = self._aeldari_ghosts_mocking_flight_candidates()
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: MOCKING FLIGHT: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: MOCKING FLIGHT: target must be a HARLEQUINS unit that Fell Back this phase")
+            return False
+        if not self._aeldari_is_harlequins(target_root):
+            logger.error("ERROR: MOCKING FLIGHT: target must be HARLEQUINS")
+            return False
+        if not bool(getattr(getattr(target_root, "round_state", None), "fell_back_this_round", False)):
+            logger.error("ERROR: MOCKING FLIGHT: target has not Fallen Back")
+            return False
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root):
+            return False
+
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["feigned_retreat_active"] = True
+        sr["feigned_retreat_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["feigned_retreat_turn"] = int(getattr(game, "turn", 0) or 0)
+        sr["feigned_retreat_source"] = str(getattr(stratagem, "name", "MOCKING FLIGHT") or "MOCKING FLIGHT")
+        target_root.special_rules = sr
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: MOCKING FLIGHT: %s can shoot and charge after Falling Back this turn.",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_aeldari_ghosts_tricksters_retort(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: TRICKSTERS' RETORT: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            logger.error("ERROR: TRICKSTERS' RETORT: not opponent's turn")
+            return False
+        action_key = str(context.get("action", "") or "").strip().lower().replace("_", " ")
+        if action_key and action_key not in {"move", "normal", "advance", "fall back", "fallback"}:
+            logger.error("ERROR: TRICKSTERS' RETORT: wrong trigger")
+            return False
+
+        enemy_unit = (
+            context.get("enemy_unit")
+            or context.get("attacking_unit")
+            or context.get("trigger_unit")
+            or context.get("moved_unit")
+        )
+        enemy_root = self._aeldari_root(enemy_unit) if enemy_unit is not None else None
+        if enemy_root is None:
+            logger.error("ERROR: TRICKSTERS' RETORT: missing enemy trigger unit")
+            return False
+        try:
+            if enemy_root.get_parent_army().player is self.player:
+                logger.error("ERROR: TRICKSTERS' RETORT: trigger unit must be enemy")
+                return False
+        except (AttributeError, TypeError, ValueError):
+            return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_ghosts_tricksters_retort_candidates(enemy_unit=enemy_root)
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: TRICKSTERS' RETORT: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: TRICKSTERS' RETORT: target must be a TROUPE unit within 9\" of the enemy trigger unit")
+            return False
+        if not self._aeldari_is_troupe(target_root):
+            logger.error("ERROR: TRICKSTERS' RETORT: target must be a TROUPE unit")
+            return False
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root, enemy_unit=enemy_root):
+            return False
+
+        queue_move = getattr(game, "_queue_reactive_move_movement_decision", None)
+        if callable(queue_move):
+            queue_move(
+                player=self.player,
+                unit=target_root,
+                attacker_unit=enemy_root,
+                max_distance=6,
+                kind="tricksters_retort",
+                movement_type="reactive",
+                source=str(getattr(stratagem, "name", "TRICKSTERS' RETORT") or "TRICKSTERS' RETORT"),
+            )
+
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: TRICKSTERS' RETORT: %s can make a reactive Normal move up to 6\".",
+            getattr(target_root, "name", "Unit"),
+        )
         return True
 
     def _use_aeldari_eldritch_yriels_example(self, stratagem, **kwargs) -> bool:
@@ -3050,6 +3265,18 @@ class AeldariStratagemMixin:
             name = ""
         return "harlequin" in name
 
+    def _aeldari_is_troupe(self, unit: Any) -> bool:
+        root = self._aeldari_root(unit)
+        if root is None:
+            return False
+        if self._aeldari_has_keyword(root, "TROUPE"):
+            return True
+        try:
+            name = str(getattr(root, "name", "") or "").strip().lower()
+        except (AttributeError, TypeError, ValueError):
+            name = ""
+        return name in {"troupe", "troupes"}
+
     def _aeldari_is_rangers_or_shroud_runners(self, unit: Any) -> bool:
         root = self._aeldari_root(unit)
         if root is None:
@@ -3140,6 +3367,74 @@ class AeldariStratagemMixin:
             except (AttributeError, TypeError, ValueError):
                 continue
             if not self._aeldari_is_harlequins(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_ghosts_mocking_flight_candidates(self, *, moved_unit: Any = None) -> List[Any]:
+        if not self._is_ghosts_of_the_webway_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        scope = [moved_unit] if moved_unit is not None else list(getattr(army, "units", []) or [])
+        for unit in scope:
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._aeldari_is_harlequins(root):
+                continue
+            if not bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_ghosts_tricksters_retort_candidates(self, *, enemy_unit: Any) -> List[Any]:
+        if not self._is_ghosts_of_the_webway_detachment():
+            return []
+        enemy_root = self._aeldari_root(enemy_unit)
+        if enemy_root is None:
+            return []
+        try:
+            if enemy_root.get_parent_army().player is self.player:
+                return []
+        except (AttributeError, TypeError, ValueError):
+            return []
+        if not self._aeldari_on_battlefield(enemy_root, require_targetable=False):
+            return []
+
+        from ..utility.aura_utils import unit_within_range_of_unit
+
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._aeldari_is_troupe(root):
+                continue
+            if not unit_within_range_of_unit(root, enemy_root, 9.0, use_attached_aggregate=True):
                 continue
             out.append(root)
         return sorted(out, key=self._aeldari_sort_key)

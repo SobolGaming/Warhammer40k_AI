@@ -156,6 +156,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "EXIT THE STAGE",
     "HEROES' FALL",
     "HEROES\u2019 FALL",
+    "MOCKING FLIGHT",
     "OUTCAST AMBUSH",
     "INTO THE BREACH",
     "IMPEDING FIRE",
@@ -166,6 +167,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "RAIDERS' SPOILS",
     "RAIDERS\u2019 SPOILS",
     "RUTHLESS KILLERS",
+    "TRICKSTERS' RETORT",
+    "TRICKSTERS\u2019 RETORT",
     "WITHDRAW AND REINFORCE",
     "YRIEL'S EXAMPLE",
     "YRIEL\u2019S EXAMPLE",
@@ -1388,9 +1391,12 @@ class StratagemManager(
             "A CHALLENGE MET",
             "DARK VIGOUR",
             "SWIFT DEPLOYMENT",
+            "TRICKSTERS' RETORT",
+            "TRICKSTERS\u2019 RETORT",
             "VECTORED ENGINES",
             "ORDERED RETREAT",
             "LETHAL RUSE",
+            "MOCKING FLIGHT",
         }:
             add("unit_move_ended", self._on_unit_move_ended)
         if names & {"ANTI-GRAV REPULSION", "ANTI‑GRAV REPULSION", "BLIND GRENADES", "A DEADLY SNARE"}:
@@ -3258,6 +3264,37 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires your Movement phase, just after an AELDARI unit from your army Falls Back"
             return result
+        if name_u == "MOCKING FLIGHT":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                moved_unit = context.get("unit") or context.get("target_unit")
+                candidates = self._aeldari_ghosts_mocking_flight_candidates(moved_unit=moved_unit)
+                if not candidates:
+                    candidates = self._aeldari_ghosts_mocking_flight_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires your Movement phase, just after a HARLEQUINS unit from your army Falls Back"
+            return result
+        if name_u in {"TRICKSTERS' RETORT", "TRICKSTERS\u2019 RETORT"}:
+            enemy_unit = context.get("enemy_unit") or context.get("attacking_unit") or context.get("trigger_unit")
+            candidates = []
+            if enemy_unit is not None:
+                candidates = self._aeldari_ghosts_tricksters_retort_candidates(enemy_unit=enemy_unit)
+            if not candidates:
+                game_map = getattr(getattr(self, "game", None), "map", None)
+                for enemy in list(getattr(game_map, "units", []) or []) if game_map is not None else []:
+                    candidate_list = self._aeldari_ghosts_tricksters_retort_candidates(enemy_unit=enemy)
+                    if candidate_list:
+                        candidates = candidate_list
+                        break
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires opponent Movement phase trigger after an enemy Normal/Advance/Fall Back move ends within 9\" of one of your TROUPE units"
+            return result
         if name_u in {"HEROES' FALL", "HEROES\u2019 FALL"}:
             candidates = list(context.get("candidates") or [])
             if not candidates:
@@ -3439,6 +3476,7 @@ class StratagemManager(
             "EXIT THE STAGE": "Target: your HARLEQUINS unit that is not in Engagement Range at the end of the opponent's Fight phase",
             "HEROES' FALL": "Target: your HARLEQUINS unit selected as a target of enemy fight attacks",
             "HEROES\u2019 FALL": "Target: your HARLEQUINS unit selected as a target of enemy fight attacks",
+            "MOCKING FLIGHT": "Target: your HARLEQUINS unit that just Fell Back this Movement phase",
             "OUTCAST AMBUSH": "Target: your Rangers or Shroud Runners unit that has not been selected to shoot this phase",
             "INTO THE BREACH": "Target: ANHRATHE unit that just destroyed one or more enemy units with its shooting attacks",
             "IMPEDING FIRE": "Target: your Rangers, Shroud Runners, or Starfangs unit; then select one visible non-TITANIC enemy unit within 36\" of it",
@@ -3449,6 +3487,8 @@ class StratagemManager(
             "RAIDERS' SPOILS": "Target: your ANHRATHE unit that is within Engagement Range of one or more enemy units",
             "RAIDERS\u2019 SPOILS": "Target: your ANHRATHE unit that is within Engagement Range of one or more enemy units",
             "RUTHLESS KILLERS": "Target: your CORSAIR VOIDSCARRED unit that has not been selected to shoot/fight this phase",
+            "TRICKSTERS' RETORT": "Target: your TROUPE unit within 9\" of an enemy unit that just ended a Normal/Advance/Fall Back move",
+            "TRICKSTERS\u2019 RETORT": "Target: your TROUPE unit within 9\" of an enemy unit that just ended a Normal/Advance/Fall Back move",
             "WITHDRAW AND REINFORCE": "Target: your ANHRATHE unit that is not in Engagement Range at the end of the opponent's Fight phase",
             "YRIEL'S EXAMPLE": "Target: your AELDARI INFANTRY unit (excluding WRAITH CONSTRUCT) selected as a target of enemy fight attacks",
             "YRIEL\u2019S EXAMPLE": "Target: your AELDARI INFANTRY unit (excluding WRAITH CONSTRUCT) selected as a target of enemy fight attacks",
@@ -6700,6 +6740,7 @@ class StratagemManager(
         self._queue_emperors_children_mercurial_move_end_reactions(unit=unit, action=action)
         self._queue_aeldari_armoured_move_end_reactions(unit=unit, action=action)
         self._queue_aeldari_corsair_move_end_reactions(unit=unit, action=action)
+        self._queue_aeldari_ghosts_move_end_reactions(unit=unit, action=action)
         self._queue_votann_needgaard_move_end_reactions(unit=unit, action=action)
         self._queue_imperial_knights_valourstrike_move_end_reactions(unit=unit, action=action)
 
