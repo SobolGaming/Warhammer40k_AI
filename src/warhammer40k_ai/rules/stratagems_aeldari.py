@@ -87,6 +87,11 @@ class AeldariStratagemMixin:
         checker = getattr(mgr, "is_devoted_of_ynnead", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_ghosts_of_the_webway_detachment(self) -> bool:
+        mgr = self._aeldari_detachment_mgr()
+        checker = getattr(mgr, "is_ghosts_of_the_webway", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _is_eldritch_raiders_detachment(self) -> bool:
         mgr = self._aeldari_detachment_mgr()
         checker = getattr(mgr, "is_eldritch_raiders", None) if mgr is not None else None
@@ -920,6 +925,87 @@ class AeldariStratagemMixin:
                             payload["target_unit"] = candidates[0]
                         self._queue_reaction(payload, use_timer=False)
 
+    def _queue_aeldari_ghosts_fight_targets_selected_reactions(
+        self,
+        *,
+        attacking_unit,
+        target_units: List[Any],
+    ) -> None:
+        game = getattr(self, "game", None)
+        if game is None or attacking_unit is None or not self._is_ghosts_of_the_webway_detachment():
+            return
+        phase_key = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_key != "FIGHT_PHASE":
+            return
+        attacker_root = self._aeldari_root(attacking_unit)
+        if attacker_root is None:
+            return
+        try:
+            owner_player = attacker_root.get_parent_army().player
+        except (AttributeError, TypeError, ValueError):
+            return
+        if owner_player is self.player:
+            return
+
+        stratagem = self._aeldari_get_stratagem_by_norm_name("HEROES' FALL")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+            return
+        target_list = list(target_units or [])
+        candidates = self._aeldari_ghosts_heroes_fall_candidates(target_units=target_list)
+        if not candidates or self._aeldari_reaction_exists("fight_targets_selected", stratagem.name):
+            return
+        payload: Dict[str, Any] = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "target_units": target_list,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_aeldari_ghosts_phase_end_reactions(self, *, player, phase) -> None:
+        game = getattr(self, "game", None)
+        if game is None or not self._is_ghosts_of_the_webway_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "FIGHT_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+
+        stratagem = self._aeldari_get_stratagem_by_norm_name("EXIT THE STAGE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+            return
+        candidates = self._aeldari_ghosts_exit_the_stage_candidates()
+        if not candidates or self._aeldari_reaction_exists("phase_end", stratagem.name):
+            return
+        payload: Dict[str, Any] = {
+            "event": "phase_end",
+            "phase": "Fight phase",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
     def _queue_aeldari_eldritch_fight_targets_selected_reactions(
         self,
         *,
@@ -1412,6 +1498,20 @@ class AeldariStratagemMixin:
                     "aeldari_parting_the_veil_turn",
                     "aeldari_parting_the_veil_source",
                     "aeldari_parting_the_veil_automatic",
+                ):
+                    if key in sr:
+                        sr.pop(key, None)
+                        changed = True
+                self._aeldari_clear_melee_fight_on_death_cache(root)
+
+            if phase_key == "FIGHT_PHASE" and bool(sr.get("aeldari_heroes_fall_active")):
+                for key in (
+                    "aeldari_heroes_fall_active",
+                    "aeldari_heroes_fall_expires_phase",
+                    "aeldari_heroes_fall_owner",
+                    "aeldari_heroes_fall_turn",
+                    "aeldari_heroes_fall_source",
+                    "aeldari_heroes_fall_threshold",
                 ):
                     if key in sr:
                         sr.pop(key, None)
@@ -1911,6 +2011,16 @@ class AeldariStratagemMixin:
         self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
         return True
 
+    def _use_aeldari_ghosts_of_the_webway_stratagem(self, stratagem, **kwargs) -> Optional[bool]:
+        if stratagem is None or not self._is_ghosts_of_the_webway_detachment():
+            return None
+        name_u = self._aeldari_norm_name(getattr(stratagem, "name", ""))
+        if name_u == "EXIT THE STAGE":
+            return self._use_aeldari_ghosts_exit_the_stage(stratagem, **kwargs)
+        if name_u in {"HEROES' FALL", "HEROES\u2019 FALL"}:
+            return self._use_aeldari_ghosts_heroes_fall(stratagem, **kwargs)
+        return None
+
     def _use_aeldari_eldritch_raiders_stratagem(self, stratagem, **kwargs) -> Optional[bool]:
         if stratagem is None or not self._is_eldritch_raiders_detachment():
             return None
@@ -1928,6 +2038,134 @@ class AeldariStratagemMixin:
         if name_u == "IMPEDING FIRE":
             return self._use_aeldari_eldritch_impeding_fire(stratagem, **kwargs)
         return None
+
+    def _use_aeldari_ghosts_exit_the_stage(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: EXIT THE STAGE: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            logger.error("ERROR: EXIT THE STAGE: not opponent's turn")
+            return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_ghosts_exit_the_stage_candidates()
+        candidate_roots = [self._aeldari_root(unit) for unit in list(candidates or [])]
+        candidate_roots = [unit for unit in candidate_roots if unit is not None]
+        if target_root is None:
+            if len(candidate_roots) == 1:
+                target_root = candidate_roots[0]
+            else:
+                logger.error("ERROR: EXIT THE STAGE: missing target unit")
+                return False
+        if candidate_roots and target_root not in candidate_roots:
+            logger.error("ERROR: EXIT THE STAGE: target is not currently eligible")
+            return False
+        if not self._aeldari_on_battlefield(target_root, require_targetable=True):
+            logger.error("ERROR: EXIT THE STAGE: target must be on the battlefield and targetable")
+            return False
+        if not self._aeldari_is_harlequins(target_root):
+            logger.error("ERROR: EXIT THE STAGE: target must be HARLEQUINS")
+            return False
+        if self._aeldari_in_engagement_range(target_root):
+            logger.error("ERROR: EXIT THE STAGE: target must not be within Engagement Range")
+            return False
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root):
+            return False
+        if not self._aeldari_place_unit_into_strategic_reserves(
+            target_root,
+            reason=str(getattr(stratagem, "name", "EXIT THE STAGE") or "EXIT THE STAGE"),
+        ):
+            logger.error("ERROR: EXIT THE STAGE: failed to place target into Strategic Reserves")
+            return False
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: EXIT THE STAGE: %s entered Strategic Reserves.",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_aeldari_ghosts_heroes_fall(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: HEROES' FALL: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        attacking_unit = context.get("attacking_unit") or context.get("attacker_unit")
+        attacking_root = self._aeldari_root(attacking_unit) if attacking_unit is not None else None
+        if attacking_root is None:
+            logger.error("ERROR: HEROES' FALL: missing attacking unit")
+            return False
+        try:
+            if attacking_root.get_parent_army().player is self.player:
+                logger.error("ERROR: HEROES' FALL: attacking unit must be enemy")
+                return False
+        except (AttributeError, TypeError, ValueError):
+            return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        target_window = list(context.get("target_units") or [])
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_ghosts_heroes_fall_candidates(target_units=target_window)
+        candidate_roots = [self._aeldari_root(unit) for unit in list(candidates or [])]
+        candidate_roots = [unit for unit in candidate_roots if unit is not None]
+        if target_root is None:
+            if len(candidate_roots) == 1:
+                target_root = candidate_roots[0]
+            else:
+                logger.error("ERROR: HEROES' FALL: missing target unit")
+                return False
+        if candidate_roots and target_root not in candidate_roots:
+            logger.error("ERROR: HEROES' FALL: target must be selected as an enemy fight target")
+            return False
+        if not self._aeldari_on_battlefield(target_root, require_targetable=True):
+            logger.error("ERROR: HEROES' FALL: target must be on the battlefield and targetable")
+            return False
+        if not self._aeldari_is_harlequins(target_root):
+            logger.error("ERROR: HEROES' FALL: target must be HARLEQUINS")
+            return False
+        if target_window:
+            selected_roots = [self._aeldari_root(unit) for unit in list(target_window or [])]
+            selected_roots = [unit for unit in selected_roots if unit is not None]
+            if selected_roots and target_root not in selected_roots:
+                logger.error("ERROR: HEROES' FALL: target must be selected by the attacking unit")
+                return False
+        if not self._aeldari_armoured_spend_cp(
+            stratagem,
+            target_unit=target_root,
+            enemy_unit=attacking_root,
+        ):
+            return False
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        owner = str(getattr(self.player, "id", "") or "")
+        turn = int(getattr(game, "turn", 0) or 0)
+        sr["aeldari_heroes_fall_active"] = True
+        sr["aeldari_heroes_fall_expires_phase"] = "FIGHT_PHASE"
+        sr["aeldari_heroes_fall_source"] = str(getattr(stratagem, "name", "HEROES' FALL") or "HEROES' FALL")
+        sr["aeldari_heroes_fall_threshold"] = 4
+        if owner:
+            sr["aeldari_heroes_fall_owner"] = owner
+        if turn:
+            sr["aeldari_heroes_fall_turn"] = turn
+        target_root.special_rules = sr
+        self._aeldari_clear_melee_fight_on_death_cache(target_root)
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
 
     def _use_aeldari_eldritch_yriels_example(self, stratagem, **kwargs) -> bool:
         context = self._aeldari_pending_context(stratagem.name, kwargs)
@@ -2800,6 +3038,18 @@ class AeldariStratagemMixin:
     def _aeldari_is_anhrathe(self, unit: Any) -> bool:
         return self._aeldari_has_keyword(unit, "ANHRATHE")
 
+    def _aeldari_is_harlequins(self, unit: Any) -> bool:
+        root = self._aeldari_root(unit)
+        if root is None:
+            return False
+        if self._aeldari_has_keyword(root, "HARLEQUINS"):
+            return True
+        try:
+            name = str(getattr(root, "name", "") or "").strip().lower()
+        except (AttributeError, TypeError, ValueError):
+            name = ""
+        return "harlequin" in name
+
     def _aeldari_is_rangers_or_shroud_runners(self, unit: Any) -> bool:
         root = self._aeldari_root(unit)
         if root is None:
@@ -2840,6 +3090,59 @@ class AeldariStratagemMixin:
         except (AttributeError, TypeError, ValueError):
             name = ""
         return name == "corsair voidscarred"
+
+    def _aeldari_ghosts_exit_the_stage_candidates(self) -> List[Any]:
+        if not self._is_ghosts_of_the_webway_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._aeldari_is_harlequins(root):
+                continue
+            if self._aeldari_in_engagement_range(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_ghosts_heroes_fall_candidates(self, *, target_units: List[Any]) -> List[Any]:
+        if not self._is_ghosts_of_the_webway_detachment():
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for target in list(target_units or []):
+            root = self._aeldari_root(target)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            try:
+                if root.get_parent_army().player is not self.player:
+                    continue
+            except (AttributeError, TypeError, ValueError):
+                continue
+            if not self._aeldari_is_harlequins(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
 
     def _aeldari_eldritch_yriels_example_candidates(self, *, target_units: List[Any]) -> List[Any]:
         if not self._is_eldritch_raiders_detachment():

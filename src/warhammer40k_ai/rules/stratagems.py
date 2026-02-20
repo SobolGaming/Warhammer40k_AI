@@ -153,6 +153,9 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "VETERAN SHARPSHOOTERS",
     "VOW OF RETRIBUTION",
     "CLOAK AND SHADOW",
+    "EXIT THE STAGE",
+    "HEROES' FALL",
+    "HEROES\u2019 FALL",
     "OUTCAST AMBUSH",
     "INTO THE BREACH",
     "IMPEDING FIRE",
@@ -1524,6 +1527,8 @@ class StratagemManager(
             "DEATHLESS DUTY",
             "DEATH ECSTASY",
             "EMISSARIES OF YNNEAD",
+            "HEROES' FALL",
+            "HEROES\u2019 FALL",
             "MACABRE RESILIENCE",
             "FRENZIED RESILIENCE",
             "IMMORTAL FURY",
@@ -1592,6 +1597,7 @@ class StratagemManager(
             "RAPID INGRESS",
             "SKYBORNE SANCTUARY",
             "WITHDRAW AND REINFORCE",
+            "EXIT THE STAGE",
             "WEBWAY TUNNEL",
             "ENDLESS SERVITUDE",
             "PROFANE SYMBIOSIS",
@@ -1671,6 +1677,8 @@ class StratagemManager(
             "LYING IN WAIT",
             "EMISSARIES OF YNNEAD",
             "MACABRE RESILIENCE",
+            "HEROES' FALL",
+            "HEROES\u2019 FALL",
             "PRIMED AND READIED",
             "COORDINATED TRAP",
             "LETHAL DOSAGE",
@@ -3250,6 +3258,29 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires your Movement phase, just after an AELDARI unit from your army Falls Back"
             return result
+        if name_u in {"HEROES' FALL", "HEROES\u2019 FALL"}:
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                target_units = context.get("target_units") or context.get("targets")
+                candidates = self._aeldari_ghosts_heroes_fall_candidates(
+                    target_units=list(target_units or []),
+                )
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires Fight phase target-selection trigger with an enemy unit that selected one of your HARLEQUINS units as a target"
+            return result
+        if name_u == "EXIT THE STAGE":
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = self._aeldari_ghosts_exit_the_stage_candidates()
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires end of opponent Fight phase and a HARLEQUINS unit from your army not in Engagement Range"
+            return result
         if name_u.startswith("YRIEL") and "EXAMPLE" in name_u:
             candidates = list(context.get("candidates") or [])
             if not candidates:
@@ -3405,6 +3436,9 @@ class StratagemManager(
             "KHAINE’S VENGEANCE": "Target: ASPECT WARRIORS/AVATAR OF KHAINE unit in Engagement Range of an enemy selected to Fall Back",
             "LAYERED WARDS": "Target: AELDARI VEHICLE unit after a mortal wound is allocated",
             "CLOAK AND SHADOW": "Target: AELDARI INFANTRY unit selected by an enemy shooter and within range of an objective marker you control",
+            "EXIT THE STAGE": "Target: your HARLEQUINS unit that is not in Engagement Range at the end of the opponent's Fight phase",
+            "HEROES' FALL": "Target: your HARLEQUINS unit selected as a target of enemy fight attacks",
+            "HEROES\u2019 FALL": "Target: your HARLEQUINS unit selected as a target of enemy fight attacks",
             "OUTCAST AMBUSH": "Target: your Rangers or Shroud Runners unit that has not been selected to shoot this phase",
             "INTO THE BREACH": "Target: ANHRATHE unit that just destroyed one or more enemy units with its shooting attacks",
             "IMPEDING FIRE": "Target: your Rangers, Shroud Runners, or Starfangs unit; then select one visible non-TITANIC enemy unit within 36\" of it",
@@ -4932,6 +4966,10 @@ class StratagemManager(
             raise
         try:
             self._queue_aeldari_devoted_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_aeldari_ghosts_phase_end_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -8438,6 +8476,13 @@ class StratagemManager(
             raise
         try:
             self._queue_aeldari_eldritch_fight_targets_selected_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_aeldari_ghosts_fight_targets_selected_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
@@ -13346,6 +13391,9 @@ class StratagemManager(
         aeldari_devoted_result = self._use_aeldari_devoted_of_ynnead_stratagem(s, **kwargs)
         if aeldari_devoted_result is not None:
             return aeldari_devoted_result
+        aeldari_ghosts_result = self._use_aeldari_ghosts_of_the_webway_stratagem(s, **kwargs)
+        if aeldari_ghosts_result is not None:
+            return aeldari_ghosts_result
         aeldari_eldritch_result = self._use_aeldari_eldritch_raiders_stratagem(s, **kwargs)
         if aeldari_eldritch_result is not None:
             return aeldari_eldritch_result

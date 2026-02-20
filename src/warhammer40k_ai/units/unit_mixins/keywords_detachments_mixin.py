@@ -494,6 +494,63 @@ class KeywordsDetachmentsMixin:
             return None
         return None
 
+    def _aeldari_heroes_fall_rule(self) -> Optional[dict]:
+        """Return active HEROES' FALL fight-on-death rule when present."""
+        try:
+            sr = getattr(self, "special_rules", None)
+            if not (isinstance(sr, dict) and sr.get("aeldari_heroes_fall_active")):
+                return None
+            phase_name = ""
+            current_turn = 0
+            try:
+                army = self.get_parent_army()
+            except Exception:
+                army = None
+            try:
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            except Exception:
+                game = None
+            if game is not None:
+                try:
+                    phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                except Exception:
+                    phase_name = ""
+                try:
+                    current_turn = int(getattr(game, "turn", 0) or 0)
+                except Exception:
+                    current_turn = 0
+            try:
+                marked_turn = int(sr.get("aeldari_heroes_fall_turn", 0) or 0)
+            except Exception:
+                marked_turn = 0
+            exp = str(sr.get("aeldari_heroes_fall_expires_phase", "") or "").strip().upper()
+            if phase_name == "FIGHT_PHASE" and (not exp or exp == "FIGHT_PHASE"):
+                if not (marked_turn and current_turn and marked_turn != current_turn):
+                    source = str(sr.get("aeldari_heroes_fall_source", "") or "HEROES' FALL").strip()
+                    source = source or "HEROES' FALL"
+                    try:
+                        threshold = int(sr.get("aeldari_heroes_fall_threshold", 4) or 4)
+                    except Exception:
+                        threshold = 4
+                    return {
+                        "threshold": max(2, min(6, int(threshold))),
+                        "source": source,
+                    }
+            if phase_name and phase_name != "FIGHT_PHASE":
+                for key in (
+                    "aeldari_heroes_fall_active",
+                    "aeldari_heroes_fall_expires_phase",
+                    "aeldari_heroes_fall_owner",
+                    "aeldari_heroes_fall_turn",
+                    "aeldari_heroes_fall_source",
+                    "aeldari_heroes_fall_threshold",
+                ):
+                    sr.pop(key, None)
+                self.special_rules = sr
+        except Exception:
+            return None
+        return None
+
     def empowered_by_death_sources(self) -> list[str]:
         """Return source names for Empowered by Death style Fight First abilities."""
         cache_key = "empowered_by_death_sources"
@@ -828,6 +885,14 @@ class KeywordsDetachmentsMixin:
         # Temporary effect hook: TO THEIR FINAL BREATH (Aeldari).
         try:
             rule = self._aeldari_to_their_final_breath_rule()
+            if rule is not None:
+                return rule
+        except Exception:
+            pass
+
+        # Temporary effect hook: HEROES' FALL (Aeldari).
+        try:
+            rule = self._aeldari_heroes_fall_rule()
             if rule is not None:
                 return rule
         except Exception:
