@@ -81,6 +81,11 @@ class AeldariStratagemMixin:
         checker = getattr(mgr, "is_corsair_coterie", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_devoted_of_ynnead_detachment(self) -> bool:
+        mgr = self._aeldari_detachment_mgr()
+        checker = getattr(mgr, "is_devoted_of_ynnead", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _blitzing_firepower_candidates(self) -> List[Any]:
         if not self._is_warhost_detachment():
             return []
@@ -238,6 +243,75 @@ class AeldariStratagemMixin:
             require_not_shot=True,
         )
 
+    def _aeldari_devoted_ynnari_candidates(
+        self,
+        *,
+        require_not_shot: bool = False,
+        exclude_wraith_construct: bool = False,
+    ) -> List[Any]:
+        if not self._is_devoted_of_ynnead_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        mgr = self._aeldari_detachment_mgr()
+        counts_as_ynnari = getattr(mgr, "devoted_of_ynnead_unit_counts_as_ynnari", None) if mgr is not None else None
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            is_ynnari = bool(counts_as_ynnari(root)) if callable(counts_as_ynnari) else self._aeldari_has_keyword(root, "YNNARI")
+            if not is_ynnari:
+                continue
+            if exclude_wraith_construct and self._aeldari_has_keyword(root, "WRAITH CONSTRUCT"):
+                continue
+            if require_not_shot and bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_devoted_soulsight_candidates(self) -> List[Any]:
+        return self._aeldari_devoted_ynnari_candidates(require_not_shot=True, exclude_wraith_construct=False)
+
+    def _aeldari_devoted_death_answers_death_candidates(self) -> List[Any]:
+        if not self._is_devoted_of_ynnead_detachment():
+            return []
+        snapshot = getattr(self, "_aeldari_devoted_models_before_opponent_shooting", None)
+        if not isinstance(snapshot, dict) or not snapshot:
+            return []
+        out: List[Any] = []
+        for root in self._aeldari_devoted_ynnari_candidates(require_not_shot=False, exclude_wraith_construct=True):
+            uid = self._aeldari_sort_key(root)
+            entry = snapshot.get(uid)
+            if not isinstance(entry, dict):
+                continue
+            try:
+                before = int(entry.get("models_before", 0) or 0)
+            except (TypeError, ValueError):
+                before = 0
+            after = self._aeldari_models_alive(root)
+            if before <= 0 or after >= before:
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_soulsight_candidates_for_active_detachment(self) -> List[Any]:
+        if self._is_armoured_warhost_detachment():
+            return self._aeldari_armoured_soulsight_candidates()
+        if self._is_devoted_of_ynnead_detachment():
+            return self._aeldari_devoted_soulsight_candidates()
+        return []
+
     def _aeldari_armoured_anti_grav_targets(self, target_units: List[Any]) -> List[Any]:
         out: List[Any] = []
         seen: set[str] = set()
@@ -377,6 +451,105 @@ class AeldariStratagemMixin:
                                 payload["unit"] = candidates[0]
                                 payload["target_unit"] = candidates[0]
                             self._queue_reaction(payload, use_timer=False)
+
+    def _queue_aeldari_devoted_phase_start_reactions(self, *, player, phase) -> None:
+        game = getattr(self, "game", None)
+        if game is None or not self._is_devoted_of_ynnead_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "SHOOTING_PHASE":
+            return
+
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        tracker = getattr(self, "_aeldari_devoted_models_before_opponent_shooting", None)
+        if not isinstance(tracker, dict):
+            tracker = {}
+            self._aeldari_devoted_models_before_opponent_shooting = tracker
+        else:
+            tracker.clear()
+
+        if active_player is self.player:
+            stratagem = self.get_by_name("SOULSIGHT")
+            if stratagem is None:
+                return
+            if self.player.command_points < int(getattr(stratagem, "cp_cost", 0) or 0):
+                return
+            if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+                return
+            candidates = self._aeldari_devoted_soulsight_candidates()
+            if not candidates or self._aeldari_reaction_exists("phase_start", stratagem.name):
+                return
+            payload: Dict[str, Any] = {
+                "event": "phase_start",
+                "phase": "Shooting phase",
+                "phase_name": "Shooting phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+            return
+
+        # Opponent Shooting phase: capture per-unit alive model counts for Death Answers Death.
+        for root in self._aeldari_devoted_ynnari_candidates(require_not_shot=False, exclude_wraith_construct=True):
+            uid = self._aeldari_sort_key(root)
+            if not uid:
+                continue
+            tracker[uid] = {
+                "unit": root,
+                "models_before": self._aeldari_models_alive(root),
+            }
+
+    def _queue_aeldari_devoted_phase_end_reactions(self, *, player, phase) -> None:
+        game = getattr(self, "game", None)
+        if game is None or not self._is_devoted_of_ynnead_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "SHOOTING_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            tracker = getattr(self, "_aeldari_devoted_models_before_opponent_shooting", None)
+            if isinstance(tracker, dict):
+                tracker.clear()
+            return
+        stratagem = self.get_by_name("DEATH ANSWERS DEATH")
+        if stratagem is None:
+            tracker = getattr(self, "_aeldari_devoted_models_before_opponent_shooting", None)
+            if isinstance(tracker, dict):
+                tracker.clear()
+            return
+        if self.player.command_points < int(getattr(stratagem, "cp_cost", 0) or 0):
+            tracker = getattr(self, "_aeldari_devoted_models_before_opponent_shooting", None)
+            if isinstance(tracker, dict):
+                tracker.clear()
+            return
+        if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+            tracker = getattr(self, "_aeldari_devoted_models_before_opponent_shooting", None)
+            if isinstance(tracker, dict):
+                tracker.clear()
+            return
+        candidates = self._aeldari_devoted_death_answers_death_candidates()
+        tracker = getattr(self, "_aeldari_devoted_models_before_opponent_shooting", None)
+        if isinstance(tracker, dict):
+            tracker.clear()
+        if not candidates or self._aeldari_reaction_exists("phase_end", stratagem.name):
+            return
+        payload: Dict[str, Any] = {
+            "event": "phase_end",
+            "phase": "Shooting phase",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
 
     def _queue_aeldari_armoured_move_end_reactions(self, *, unit, action: str) -> None:
         game = getattr(self, "game", None)
@@ -606,6 +779,18 @@ class AeldariStratagemMixin:
                             model.clear_selected_to_shoot_rerolls()
                         except Exception:
                             continue
+
+            if phase_key == "SHOOTING_PHASE" and bool(sr.get("aeldari_devoted_soulsight_active")):
+                for key in (
+                    "aeldari_devoted_soulsight_active",
+                    "aeldari_devoted_soulsight_expires_phase",
+                    "aeldari_devoted_soulsight_owner",
+                    "aeldari_devoted_soulsight_turn",
+                    "aeldari_devoted_soulsight_source",
+                ):
+                    if key in sr:
+                        sr.pop(key, None)
+                        changed = True
 
             if phase_key == "SHOOTING_PHASE" and bool(sr.get("aeldari_cloak_and_shadow_active")):
                 for key in (
@@ -1118,6 +1303,115 @@ class AeldariStratagemMixin:
         if turn:
             sr["vectored_engines_turn"] = turn
         target_root.special_rules = sr
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_aeldari_devoted_of_ynnead_stratagem(self, stratagem, **kwargs) -> Optional[bool]:
+        if stratagem is None or not self._is_devoted_of_ynnead_detachment():
+            return None
+        name_u = self._aeldari_norm_name(getattr(stratagem, "name", ""))
+        if name_u == "SOULSIGHT":
+            return self._use_aeldari_devoted_soulsight(stratagem, **kwargs)
+        if name_u == "DEATH ANSWERS DEATH":
+            return self._use_aeldari_devoted_death_answers_death(stratagem, **kwargs)
+        return None
+
+    def _use_aeldari_devoted_soulsight(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: DEVOTED SOULSIGHT: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: DEVOTED SOULSIGHT: not your turn")
+            return False
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_devoted_soulsight_candidates()
+        candidate_roots = [self._aeldari_root(unit) for unit in list(candidates or [])]
+        candidate_roots = [unit for unit in candidate_roots if unit is not None]
+        if target_root is None:
+            if len(candidate_roots) == 1:
+                target_root = candidate_roots[0]
+            else:
+                logger.error("ERROR: DEVOTED SOULSIGHT: missing target unit")
+                return False
+        if candidate_roots and target_root not in candidate_roots:
+            logger.error("ERROR: DEVOTED SOULSIGHT: target must be a YNNARI unit that has not shot")
+            return False
+        if not self._aeldari_on_battlefield(target_root, require_targetable=True):
+            logger.error("ERROR: DEVOTED SOULSIGHT: target must be on the battlefield and targetable")
+            return False
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root):
+            return False
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        owner = str(getattr(self.player, "id", "") or "")
+        turn = int(getattr(game, "turn", 0) or 0)
+        sr["aeldari_devoted_soulsight_active"] = True
+        sr["aeldari_devoted_soulsight_expires_phase"] = "SHOOTING_PHASE"
+        sr["aeldari_devoted_soulsight_source"] = str(getattr(stratagem, "name", "SOULSIGHT") or "SOULSIGHT")
+        if owner:
+            sr["aeldari_devoted_soulsight_owner"] = owner
+        if turn:
+            sr["aeldari_devoted_soulsight_turn"] = turn
+        target_root.special_rules = sr
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        return True
+
+    def _use_aeldari_devoted_death_answers_death(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: DEATH ANSWERS DEATH: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            logger.error("ERROR: DEATH ANSWERS DEATH: not opponent's turn")
+            return False
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_devoted_death_answers_death_candidates()
+        candidate_roots = [self._aeldari_root(unit) for unit in list(candidates or [])]
+        candidate_roots = [unit for unit in candidate_roots if unit is not None]
+        if target_root is None:
+            if len(candidate_roots) == 1:
+                target_root = candidate_roots[0]
+            else:
+                logger.error("ERROR: DEATH ANSWERS DEATH: missing target unit")
+                return False
+        if candidate_roots and target_root not in candidate_roots:
+            logger.error("ERROR: DEATH ANSWERS DEATH: target did not lose models this phase")
+            return False
+        if not self._aeldari_on_battlefield(target_root, require_targetable=True):
+            logger.error("ERROR: DEATH ANSWERS DEATH: target must be on the battlefield and targetable")
+            return False
+        queue_fn = getattr(game, "_queue_shoot_again_decision", None)
+        if not callable(queue_fn):
+            logger.error("ERROR: DEATH ANSWERS DEATH: shoot-again decision queue unavailable")
+            return False
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root):
+            return False
+        request = queue_fn(
+            player=self.player,
+            unit=target_root,
+            source=str(getattr(stratagem, "name", "DEATH ANSWERS DEATH") or "DEATH ANSWERS DEATH"),
+        )
+        if request is None:
+            logger.error("ERROR: DEATH ANSWERS DEATH: failed to queue shoot-again decision")
+            return False
         self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
         return True
 

@@ -80,6 +80,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BEAUTIFUL DEATH",
     "CLOUDSTRIKE",
     "DOOM INESCAPABLE",
+    "DEATH ANSWERS DEATH",
     "DAEMONIC FURY",
     "DAEMONIC STRENGTH",
     "DAEMONTIDE",
@@ -300,6 +301,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "CUT DOWN THE WEAK",
     "DEFIANT TO THE LAST",
     "DEATH FRENZY",
+    "DEATH ANSWERS DEATH",
     "DEATHLESS DUTY",
     "DEATH ECSTASY",
     "EMBRACE THE PAIN",
@@ -1229,6 +1231,8 @@ class StratagemManager(
         self._aeldari_corsair_into_the_breach_ready: Dict[str, Dict[str, Any]] = {}
         # Aeldari (Corsair Coterie): enemy units each friendly unit was engaged with at Movement phase start.
         self._aeldari_corsair_fall_back_start_engagements: Dict[str, Dict[str, Any]] = {}
+        # Aeldari (Devoted of Ynnead): pre-opponent-shooting alive model snapshots for DEATH ANSWERS DEATH.
+        self._aeldari_devoted_models_before_opponent_shooting: Dict[str, Dict[str, Any]] = {}
         # World Eaters (Vessels of Wrath): units that destroyed models with melee attacks this Fight phase.
         self._vessels_gory_dedication_units: Dict[str, Any] = {}
         # Drukhari (Spectacle of Spite): enemy units that moved/set up this Movement phase.
@@ -1270,6 +1274,8 @@ class StratagemManager(
             self._aeldari_corsair_into_the_breach_ready = {}
         if not isinstance(getattr(self, "_aeldari_corsair_fall_back_start_engagements", None), dict):
             self._aeldari_corsair_fall_back_start_engagements = {}
+        if not isinstance(getattr(self, "_aeldari_devoted_models_before_opponent_shooting", None), dict):
+            self._aeldari_devoted_models_before_opponent_shooting = {}
         if not isinstance(getattr(self, "_vessels_gory_dedication_units", None), dict):
             self._vessels_gory_dedication_units = {}
         if not isinstance(getattr(self, "_a_challenge_met_enemy_units", None), dict):
@@ -1552,6 +1558,7 @@ class StratagemManager(
         phase_end_trigger_names = {
             "CRUEL RAIDERS",
             "DARK APPARITIONS",
+            "DEATH ANSWERS DEATH",
             "DELIRIUM UNMADE",
             "ENDLESS PURSUIT OF VIOLENCE",
             "ENSNARING TRAP",
@@ -2578,10 +2585,25 @@ class StratagemManager(
                 result["reason"] = None
                 return result
         if name_u == "SOULSIGHT":
-            if self._aeldari_armoured_soulsight_candidates():
+            soulsight_candidates = list(context.get("candidates") or [])
+            if not soulsight_candidates:
+                soulsight_candidates = list(self._aeldari_soulsight_candidates_for_active_detachment() or [])
+            if soulsight_candidates:
                 result["available"] = True
                 result["reason"] = None
                 return result
+            result["reason"] = "Requires your Shooting phase and an eligible SOULSIGHT target that has not shot"
+            return result
+        if name_u == "DEATH ANSWERS DEATH":
+            death_candidates = list(context.get("candidates") or [])
+            if not death_candidates:
+                death_candidates = list(self._aeldari_devoted_death_answers_death_candidates() or [])
+            if death_candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires end of opponent Shooting phase and a YNNARI non-WRAITH CONSTRUCT unit that lost models"
+            return result
         if name_u == "MERCILESS RECLAMATION":
             if self._starshatter_merciless_reclamation_candidates(phase_name):
                 result["available"] = True
@@ -3209,7 +3231,8 @@ class StratagemManager(
             "PIRATES’ DUE": "Target: your AELDARI unit that has not been selected to fight this phase",
             "PRIMED AND READIED": "Target: your GENESTEALER CULTS unit that has not been selected to shoot/fight; selected unit scores critical hits on unmodified Hit rolls of 5+ this phase",
             "PRETERNATURAL PRECISION": "Target: ASPECT WARRIORS unit not yet selected to shoot; choose 1 (or 2 if token spent) from Ignores Cover/Lethal Hits/Sustained Hits 1",
-            "SOULSIGHT": "Target: AELDARI VEHICLE unit that has not been selected to shoot",
+            "SOULSIGHT": "Target: Armoured Warhost AELDARI VEHICLE or Devoted of Ynnead YNNARI unit that has not been selected to shoot",
+            "DEATH ANSWERS DEATH": "Target: your YNNARI unit (excluding WRAITH CONSTRUCT) that lost one or more models this opponent Shooting phase",
             "SWIFT DEPLOYMENT": "Target: AELDARI TRANSPORT unit after it Advanced",
             "TO THEIR FINAL BREATH": "Target: ASPECT WARRIORS/AVATAR OF KHAINE unit selected as an enemy fight target (not fought)",
             "VENGEFUL SORROW": "Target: AELDARI INFANTRY unit that lost models to the just-resolved enemy shooting attacks and is not Battle-shocked/engaged",
@@ -3842,6 +3865,10 @@ class StratagemManager(
             raise
         try:
             self._queue_aeldari_armoured_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_aeldari_devoted_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -4704,6 +4731,10 @@ class StratagemManager(
             raise
         try:
             self._queue_aeldari_aspect_host_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_aeldari_devoted_phase_end_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -13076,6 +13107,9 @@ class StratagemManager(
         aeldari_armoured_result = self._use_aeldari_armoured_warhost_stratagem(s, **kwargs)
         if aeldari_armoured_result is not None:
             return aeldari_armoured_result
+        aeldari_devoted_result = self._use_aeldari_devoted_of_ynnead_stratagem(s, **kwargs)
+        if aeldari_devoted_result is not None:
+            return aeldari_devoted_result
         aeldari_corsair_result = self._use_aeldari_corsair_coterie_stratagem(s, **kwargs)
         if aeldari_corsair_result is not None:
             return aeldari_corsair_result

@@ -8716,6 +8716,7 @@ def _stratagem_support(
         "BLESSING OF BURNING BLOOD": "Shooting/Fight phase: after enemy targets; BLOOD LEGIONS unit within 6\" of targeted WORLD EATERS grants 5++ (4++ if Boon of Blood active) until end of phase.",
         "BLITZING FIREPOWER": "Shooting phase: ASURYANI unit gains Sustained Hits 1 vs targets within 12\"; if already has Sustained Hits, crits on 5+.",
         "CLOUDSTRIKE": "Movement Reinforcements start: AELDARI VEHICLE FLY in Strategic Reserves gains temporary Deep Strike with >6\" setup; on arrival cannot charge this turn; affected Transports enforce >6\" disembark distance and no-charge for disembarking units this turn.",
+        "DEATH ANSWERS DEATH": "End of opponent Shooting phase: select one YNNARI unit (excluding WRAITH CONSTRUCT) that lost one or more models this phase; that unit can shoot as if it were your Shooting phase.",
         "DOOM INESCAPABLE": "Your Shooting phase: AVATAR OF KHAINE model not yet selected to shoot sets Wailing Doom ranged profile to Range 18\" and Damage 8 until end of phase.",
         "DEATHLESS DUTY": "Fight phase: DEATH COMPANY unit fights on death after the attacker finishes its attacks (until end of phase).",
         "FEIGNED RETREAT": "Movement phase: ASURYANI unit that Fell Back can shoot and charge this turn.",
@@ -8928,12 +8929,13 @@ def _stratagem_support(
         "SANCTIFIED KILL ZONE": "Shooting/Fight phase: targeted GREY KNIGHTS unit wholly within Hallowed Ground gains wound re-rolls (re-roll 1s, or full wound re-rolls for PURIFIER SQUAD) until end of phase.",
     }
 
-    # Some stratagem names are reused across detachments; only mark the implemented variants.
-    force_not_implemented = {
-        ("SOULSIGHT", "DEVOTED OF YNNEAD"),
-    }
-    if (name_u, det_u) in force_not_implemented:
-        return ("Not implemented", "No effect logic currently wired.", name_u)
+    # Some stratagem names are reused across detachments and require detachment-specific notes.
+    if name_u == "SOULSIGHT" and det_u == "DEVOTED OF YNNEAD":
+        return (
+            "Implemented",
+            "Your Shooting phase: selected YNNARI unit that has not been selected to shoot gains [LETHAL HITS] and [IGNORES COVER] on ranged weapons until end of phase.",
+            name_u,
+        )
 
     if name_u in IMPLEMENTED_STRATAGEM_NAMES_CANONICAL:
         return ("Implemented", notes.get(name_u, "Implemented in engine."), name_u)

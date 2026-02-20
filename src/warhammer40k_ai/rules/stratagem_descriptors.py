@@ -1609,6 +1609,33 @@ _CORSAIR_COTERIE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _CORSAIR_COTERIE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_DEVOTED_OF_YNNEAD_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009920006": StratagemToolDescriptor(
+        stratagem_id="000009920006",
+        name="Soulsight",
+        timing="shooting_phase_on_select_to_shoot",
+        target="ynnari_unit_not_yet_selected_to_shoot",
+        duration="until_end_of_phase",
+        effect="grant_ranged_lethal_hits_and_ignores_cover",
+        cp_cost=1,
+        effect_params={"attack_type": "ranged", "grant_keywords": ["LETHAL HITS", "IGNORES COVER"]},
+    ),
+    "000009920007": StratagemToolDescriptor(
+        stratagem_id="000009920007",
+        name="Death Answers Death",
+        timing="end_of_opponent_shooting_phase",
+        target="ynnari_unit_not_wraith_construct_that_lost_models_this_phase",
+        duration="immediate",
+        effect="shoot_as_if_shooting_phase",
+        cp_cost=1,
+        effect_params={"out_of_phase": True, "allow_target_selection": "normal_shooting_rules"},
+    ),
+}
+
+_DEVOTED_OF_YNNEAD_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _DEVOTED_OF_YNNEAD_STRATAGEM_DESCRIPTORS.values()
+}
+
 _EXPERIMENTAL_PROTOTYPE_CADRE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009984002": StratagemToolDescriptor(
         stratagem_id="000009984002",
@@ -2263,6 +2290,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _CORSAIR_COTERIE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _DEVOTED_OF_YNNEAD_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _EXPERIMENTAL_PROTOTYPE_CADRE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -2310,6 +2340,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _ARMOURED_WARHOST_STRATAGEM_BY_NAME.get(key)
         or _ASPECT_HOST_STRATAGEM_BY_NAME.get(key)
         or _CORSAIR_COTERIE_STRATAGEM_BY_NAME.get(key)
+        or _DEVOTED_OF_YNNEAD_STRATAGEM_BY_NAME.get(key)
         or _EXPERIMENTAL_PROTOTYPE_CADRE_STRATAGEM_BY_NAME.get(key)
         or _MONTKA_STRATAGEM_BY_NAME.get(key)
         or _INVASION_FLEET_STRATAGEM_BY_NAME.get(key)
