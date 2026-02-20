@@ -309,7 +309,105 @@ class TestAeldariGhostsOfTheWebwayStratagems(unittest.TestCase):
         self.assertEqual(int(ctx.get("max_distance", 0) or 0), 6)
         self.assertEqual(str(ctx.get("unit_id", "") or ""), str(get_entity_id(troupe) or ""))
 
+    def test_bloody_dance_queues_and_attempts_out_of_turn_charge_without_charge_bonus(self):
+        game, p1, p2, aeldari_army, enemy_army = _build_game()
+        harlequins = _make_unit(
+            "Troupe",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["HARLEQUINS", "INFANTRY", "TROUPE"],
+            quantity=2,
+        )
+        enemy = _make_unit(
+            "Enemy Unit",
+            faction_name="Enemy",
+            faction_keywords=["ENEMY"],
+            keywords=["INFANTRY"],
+            quantity=2,
+        )
+        aeldari_army.add_unit(harlequins)
+        enemy_army.add_unit(enemy)
+        _place_unit(game, harlequins, 10.0, 10.0)
+        _place_unit(game, enemy, 14.0, 10.0)
+
+        _set_phase(game, p2, "CHARGE_PHASE", 1)
+        game.event_system.publish("phase_end", player=p2, phase=SimpleNamespace(name="CHARGE_PHASE"))
+        pending = _pending_by_name(p1.stratagems, "BLOODY DANCE")
+        self.assertIsNotNone(pending)
+
+        with patch.object(game, "attempt_charge", return_value=True) as attempt_charge_mock:
+            ok = p1.stratagems.use(
+                str(pending.get("stratagem", "")),
+                unit=harlequins,
+                enemy_unit=enemy,
+                dequeue=True,
+            )
+        self.assertTrue(ok)
+        self.assertEqual(int(p1.command_points or 0), 9)
+        self.assertTrue(attempt_charge_mock.called)
+        args, kwargs = attempt_charge_mock.call_args
+        self.assertIs(args[0], harlequins)
+        self.assertIs(args[1], enemy)
+        self.assertTrue(bool(kwargs.get("out_of_turn", False)))
+        self.assertFalse(bool(kwargs.get("count_as_charged", True)))
+
+    def test_staged_death_queues_and_returns_destroyed_harlequins_character_at_phase_end(self):
+        game, p1, p2, aeldari_army, enemy_army = _build_game()
+        character = _make_unit(
+            "Shadowseer",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["HARLEQUINS", "INFANTRY", "CHARACTER"],
+            wounds="5",
+            quantity=1,
+        )
+        enemy = _make_unit(
+            "Enemy Unit",
+            faction_name="Enemy",
+            faction_keywords=["ENEMY"],
+            keywords=["INFANTRY"],
+            quantity=2,
+        )
+        aeldari_army.add_unit(character)
+        enemy_army.add_unit(enemy)
+        _place_unit(game, character, 10.0, 10.0)
+        _place_unit(game, enemy, 20.0, 10.0)
+
+        _set_phase(game, p2, "SHOOTING_PHASE", 1)
+        model = character.models[0]
+        model._wounds = 0
+        game.event_system.publish("model_destroyed_before_removal", unit=character, model=model)
+        pending = _pending_by_name(p1.stratagems, "STAGED DEATH")
+        self.assertIsNotNone(pending)
+
+        ok = p1.stratagems.use(
+            str(pending.get("stratagem", "")),
+            destroyed_unit=character,
+            destroyed_model=model,
+            dequeue=True,
+        )
+        self.assertTrue(ok)
+        self.assertEqual(int(p1.command_points or 0), 9)
+
+        game.event_system.publish("phase_end", player=p2, phase=SimpleNamespace(name="SHOOTING_PHASE"))
+        alive_fn = getattr(model, "is_alive", None)
+        alive = bool(alive_fn()) if callable(alive_fn) else bool(getattr(model, "is_alive", False))
+        self.assertTrue(alive)
+        self.assertEqual(int(getattr(model, "wounds", getattr(model, "_wounds", 0)) or 0), 3)
+        self.assertIn(character, list(getattr(game.map, "units", []) or []))
+
+        model._wounds = 0
+        game.event_system.publish("model_destroyed_before_removal", unit=character, model=model)
+        pending_again = _pending_by_name(p1.stratagems, "STAGED DEATH")
+        self.assertIsNone(pending_again)
+
     def test_ghosts_of_the_webway_stratagem_descriptors_registered(self):
+        staged = get_stratagem_tool_descriptor(stratagem_id="000009916002")
+        self.assertIsNotNone(staged)
+        self.assertEqual(str(staged.name), "Staged Death")
+        self.assertEqual(int(staged.cp_cost), 1)
+        self.assertIn("half_wounds", str(staged.effect))
+
         heroes = get_stratagem_tool_descriptor(stratagem_id="000009916003")
         self.assertIsNotNone(heroes)
         self.assertEqual(str(heroes.name), "Heroes' Fall")
@@ -327,6 +425,12 @@ class TestAeldariGhostsOfTheWebwayStratagems(unittest.TestCase):
         self.assertEqual(str(tricksters.name), "Tricksters' Retort")
         self.assertEqual(int(tricksters.cp_cost), 1)
         self.assertEqual(str(tricksters.effect), "reactive_normal_move")
+
+        bloody = get_stratagem_tool_descriptor(stratagem_id="000009916006")
+        self.assertIsNotNone(bloody)
+        self.assertEqual(str(bloody.name), "Bloody Dance")
+        self.assertEqual(int(bloody.cp_cost), 1)
+        self.assertEqual(str(bloody.effect), "out_of_turn_charge_without_charge_bonus")
 
         exit_stage = get_stratagem_tool_descriptor(stratagem_id="000009916007")
         self.assertIsNotNone(exit_stage)

@@ -977,12 +977,34 @@ class AeldariStratagemMixin:
         if game is None or not self._is_ghosts_of_the_webway_detachment():
             return
         phase_key = str(getattr(phase, "name", "") or "").strip().upper()
-        if phase_key != "FIGHT_PHASE":
-            return
         active_player = getattr(game, "get_current_player", lambda: None)()
         if active_player is self.player:
             return
 
+        if phase_key == "CHARGE_PHASE":
+            stratagem = self._aeldari_get_stratagem_by_norm_name("BLOODY DANCE")
+            if stratagem is not None:
+                if int(getattr(self.player, "command_points", 0) or 0) >= int(getattr(stratagem, "cp_cost", 0) or 0):
+                    if self._aeldari_norm_name(stratagem.name) not in getattr(self, "_used_stratagems_this_phase", set()):
+                        candidates, enemy_by_unit = self._aeldari_ghosts_bloody_dance_candidates()
+                        if candidates and not self._aeldari_reaction_exists("phase_end", stratagem.name):
+                            payload: Dict[str, Any] = {
+                                "event": "phase_end",
+                                "phase": "Charge phase",
+                                "phase_name": "Charge phase",
+                                "stratagem": stratagem.name,
+                                "cp_cost": stratagem.cp_cost,
+                                "candidates": candidates,
+                                "enemy_by_unit": enemy_by_unit,
+                            }
+                            if len(candidates) == 1:
+                                payload["unit"] = candidates[0]
+                                payload["target_unit"] = candidates[0]
+                            self._queue_reaction(payload, use_timer=False)
+            return
+
+        if phase_key != "FIGHT_PHASE":
+            return
         stratagem = self._aeldari_get_stratagem_by_norm_name("EXIT THE STAGE")
         if stratagem is None:
             return
@@ -1083,6 +1105,68 @@ class AeldariStratagemMixin:
         if len(candidates) == 1:
             payload["unit"] = candidates[0]
             payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_aeldari_ghosts_model_destroyed_reactions(self, *, unit: Any, model: Any) -> None:
+        if unit is None or model is None or not self._is_ghosts_of_the_webway_detachment():
+            return
+        root = self._aeldari_root(unit)
+        if root is None:
+            return
+        try:
+            if root.get_parent_army().player is not self.player:
+                return
+        except (AttributeError, TypeError, ValueError):
+            return
+        if not self._aeldari_ghosts_staged_death_model_eligible(unit=root, model=model):
+            return
+        model_id = str(get_entity_id(model) or "")
+        if model_id and model_id in self._aeldari_ghosts_staged_death_used_model_ids():
+            return
+        stratagem = self._aeldari_get_stratagem_by_norm_name("STAGED DEATH")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "model_destroyed_before_removal":
+                continue
+            if self._aeldari_norm_name(reaction.get("stratagem", "")) != self._aeldari_norm_name(stratagem.name):
+                continue
+            if str(reaction.get("destroyed_model_id", "") or "") == model_id:
+                return
+        destroyed_position = None
+        get_location = getattr(model, "get_location", None)
+        if callable(get_location):
+            try:
+                pos = get_location()
+            except (AttributeError, TypeError, ValueError):
+                pos = None
+            if isinstance(pos, (list, tuple)) and len(pos) >= 4:
+                try:
+                    destroyed_position = (
+                        float(pos[0]),
+                        float(pos[1]),
+                        float(pos[2]),
+                        float(pos[3]),
+                    )
+                except (TypeError, ValueError):
+                    destroyed_position = None
+        phase_name = str(getattr(self, "_current_phase_name", "") or "")
+        payload: Dict[str, Any] = {
+            "event": "model_destroyed_before_removal",
+            "phase_name": phase_name,
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "unit": root,
+            "target_unit": root,
+            "destroyed_unit": root,
+            "destroyed_model": model,
+            "destroyed_model_id": model_id,
+            "destroyed_position": destroyed_position,
+        }
         self._queue_reaction(payload, use_timer=False)
 
     def _queue_aeldari_eldritch_fight_targets_selected_reactions(
@@ -1435,6 +1519,154 @@ class AeldariStratagemMixin:
                 "target_model": target_model,
             }
         )
+
+    def _resolve_aeldari_ghosts_phase_end_effects(self, *, player, phase) -> None:
+        if not self._is_ghosts_of_the_webway_detachment():
+            return
+        pending = self._aeldari_ghosts_staged_death_pending_returns()
+        if not pending:
+            return
+        phase_key = self._aeldari_phase_key_from_name(
+            getattr(phase, "name", "") or getattr(self, "_current_phase_name", "")
+        )
+        if not phase_key:
+            return
+        game = getattr(self, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        find_pos = getattr(game, "_find_closest_valid_reposition_position", None) if game is not None else None
+        remaining: List[Dict[str, Any]] = []
+        for entry in list(pending):
+            if not isinstance(entry, dict):
+                continue
+            trigger_key = self._aeldari_phase_key_from_name(
+                entry.get("trigger_phase_key") or entry.get("trigger_phase_name") or ""
+            )
+            if trigger_key and trigger_key != phase_key:
+                remaining.append(entry)
+                continue
+            root = self._aeldari_root(entry.get("unit"))
+            model = entry.get("model")
+            if root is None or model is None:
+                continue
+
+            try:
+                in_unit = model in list(getattr(root, "models", []) or [])
+            except (AttributeError, TypeError, ValueError):
+                in_unit = False
+            if not in_unit:
+                try:
+                    if model in list(getattr(root, "models_lost", []) or []):
+                        root.models_lost.remove(model)
+                except (AttributeError, TypeError, ValueError):
+                    pass
+                add_model = getattr(root, "add_model", None)
+                if callable(add_model):
+                    try:
+                        add_model(model)
+                    except (AttributeError, TypeError, ValueError):
+                        try:
+                            root.models.append(model)
+                        except (AttributeError, TypeError, ValueError):
+                            pass
+                else:
+                    try:
+                        root.models.append(model)
+                    except (AttributeError, TypeError, ValueError):
+                        pass
+
+            try:
+                starting_wounds = int(
+                    getattr(
+                        model,
+                        "_base_wounds",
+                        getattr(model, "base_wounds", getattr(model, "wounds", getattr(model, "_wounds", 1))),
+                    )
+                    or 1
+                )
+            except (AttributeError, TypeError, ValueError):
+                starting_wounds = 1
+            wounds_remaining = max(1, (int(starting_wounds) + 1) // 2)
+            try:
+                model.wounds = int(wounds_remaining)
+            except (AttributeError, TypeError, ValueError):
+                try:
+                    model._wounds = int(wounds_remaining)
+                except (AttributeError, TypeError, ValueError):
+                    pass
+
+            for key, value in (
+                ("_on_death_reactions_resolved", False),
+                ("_fight_on_death_used", False),
+                ("_shoot_on_death_used", False),
+            ):
+                try:
+                    setattr(model, key, value)
+                except (AttributeError, TypeError, ValueError):
+                    pass
+
+            anchor = entry.get("destroyed_position")
+            if anchor is None:
+                get_location = getattr(model, "get_location", None)
+                if callable(get_location):
+                    try:
+                        anchor = get_location()
+                    except (AttributeError, TypeError, ValueError):
+                        anchor = None
+            placement = None
+            if callable(find_pos) and isinstance(anchor, (list, tuple)) and len(anchor) >= 3:
+                try:
+                    placement = find_pos(root, anchor, game_map=game_map)
+                except (AttributeError, TypeError, ValueError):
+                    placement = None
+            if placement is None and isinstance(anchor, (list, tuple)) and len(anchor) >= 4:
+                try:
+                    placement = (float(anchor[0]), float(anchor[1]), float(anchor[2]), float(anchor[3]))
+                except (TypeError, ValueError):
+                    placement = None
+            if placement is not None:
+                try:
+                    model.set_location(
+                        float(placement[0]),
+                        float(placement[1]),
+                        float(placement[2]),
+                        float(placement[3]),
+                    )
+                except (AttributeError, TypeError, ValueError):
+                    pass
+
+            root.deployed = True
+            try:
+                root.reserve_status = "deployed"
+            except (AttributeError, TypeError, ValueError):
+                pass
+            try:
+                root.embarked_in = None
+            except (AttributeError, TypeError, ValueError):
+                pass
+            try:
+                root.is_embarked = False
+            except (AttributeError, TypeError, ValueError):
+                pass
+
+            if game_map is not None:
+                units = list(getattr(game_map, "units", []) or [])
+                if root not in units:
+                    place_unit = getattr(game_map, "place_unit", None)
+                    if callable(place_unit):
+                        try:
+                            placed = bool(place_unit(root))
+                        except (AttributeError, TypeError, ValueError):
+                            placed = False
+                        if not placed and isinstance(getattr(game_map, "units", None), list):
+                            game_map.units.append(root)
+                    elif isinstance(getattr(game_map, "units", None), list):
+                        game_map.units.append(root)
+            logger.info(
+                "INFO: STAGED DEATH: returned %s with %d wound(s).",
+                getattr(model, "name", "Model"),
+                int(wounds_remaining),
+            )
+        self._aeldari_ghosts_staged_death_pending = remaining
 
     def _cleanup_aeldari_armoured_phase_end_effects(self, *, phase) -> None:
         phase_key = str(getattr(phase, "name", "") or "").strip().upper()
@@ -2094,10 +2326,14 @@ class AeldariStratagemMixin:
         if stratagem is None or not self._is_ghosts_of_the_webway_detachment():
             return None
         name_u = self._aeldari_norm_name(getattr(stratagem, "name", ""))
+        if name_u == "BLOODY DANCE":
+            return self._use_aeldari_ghosts_bloody_dance(stratagem, **kwargs)
         if name_u == "EXIT THE STAGE":
             return self._use_aeldari_ghosts_exit_the_stage(stratagem, **kwargs)
         if name_u == "MOCKING FLIGHT":
             return self._use_aeldari_ghosts_mocking_flight(stratagem, **kwargs)
+        if name_u == "STAGED DEATH":
+            return self._use_aeldari_ghosts_staged_death(stratagem, **kwargs)
         if name_u in {"TRICKSTERS' RETORT", "TRICKSTERS\u2019 RETORT"}:
             return self._use_aeldari_ghosts_tricksters_retort(stratagem, **kwargs)
         if name_u in {"HEROES' FALL", "HEROES\u2019 FALL"}:
@@ -2121,6 +2357,131 @@ class AeldariStratagemMixin:
         if name_u == "IMPEDING FIRE":
             return self._use_aeldari_eldritch_impeding_fire(stratagem, **kwargs)
         return None
+
+    def _use_aeldari_ghosts_bloody_dance(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "charge phase":
+            logger.error("ERROR: BLOODY DANCE: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            logger.error("ERROR: BLOODY DANCE: not opponent's turn")
+            return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        candidates = list(context.get("candidates") or [])
+        enemy_by_unit = context.get("enemy_by_unit")
+        if not isinstance(enemy_by_unit, dict):
+            enemy_by_unit = {}
+        if not candidates:
+            candidates, enemy_by_unit = self._aeldari_ghosts_bloody_dance_candidates()
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: BLOODY DANCE: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: BLOODY DANCE: target must be an eligible HARLEQUINS INFANTRY or MOUNTED unit")
+            return False
+
+        root_id = self._aeldari_sort_key(target_root)
+        valid_enemies = list(enemy_by_unit.get(root_id) or self._aeldari_ghosts_bloody_dance_enemy_candidates_for_unit(target_root))
+        enemy_unit = (
+            context.get("enemy_unit")
+            or context.get("attacking_unit")
+            or context.get("trigger_unit")
+            or context.get("target_enemy_unit")
+        )
+        enemy_root = self._aeldari_root(enemy_unit) if enemy_unit is not None else None
+        if enemy_root is None:
+            if len(valid_enemies) == 1:
+                enemy_root = valid_enemies[0]
+            elif valid_enemies:
+                enemy_root = valid_enemies[0]
+            else:
+                logger.error("ERROR: BLOODY DANCE: no eligible enemy charge target")
+                return False
+        if enemy_root not in valid_enemies:
+            logger.error("ERROR: BLOODY DANCE: selected enemy target is not eligible")
+            return False
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root, enemy_unit=enemy_root):
+            return False
+        ok = bool(game.attempt_charge(target_root, enemy_root, out_of_turn=True, count_as_charged=False))
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        if not ok:
+            logger.error("ERROR: BLOODY DANCE: charge failed")
+        else:
+            logger.info(
+                "INFO: BLOODY DANCE: %s declared an out-of-turn charge against %s (no charge bonus).",
+                getattr(target_root, "name", "Unit"),
+                getattr(enemy_root, "name", "Enemy Unit"),
+            )
+        return True
+
+    def _use_aeldari_ghosts_staged_death(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        root = self._aeldari_root(
+            context.get("destroyed_unit")
+            or context.get("unit")
+            or context.get("target_unit")
+        )
+        model = context.get("destroyed_model") or context.get("model")
+        if root is None or model is None:
+            logger.error("ERROR: STAGED DEATH: missing destroyed model context")
+            return False
+        try:
+            if root.get_parent_army().player is not self.player:
+                logger.error("ERROR: STAGED DEATH: target must be from your army")
+                return False
+        except (AttributeError, TypeError, ValueError):
+            return False
+        if not self._aeldari_ghosts_staged_death_model_eligible(unit=root, model=model):
+            logger.error("ERROR: STAGED DEATH: target must be a just-destroyed HARLEQUINS CHARACTER model")
+            return False
+        model_id = str(get_entity_id(model) or "")
+        if model_id and model_id in self._aeldari_ghosts_staged_death_used_model_ids():
+            logger.error("ERROR: STAGED DEATH: this model has already used STAGED DEATH this battle")
+            return False
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=root):
+            return False
+
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip()
+        phase_key = self._aeldari_phase_key_from_name(phase_name)
+        destroyed_position = context.get("destroyed_position")
+        if destroyed_position is None:
+            get_location = getattr(model, "get_location", None)
+            if callable(get_location):
+                try:
+                    pos = get_location()
+                except (AttributeError, TypeError, ValueError):
+                    pos = None
+                if isinstance(pos, (list, tuple)) and len(pos) >= 4:
+                    destroyed_position = (float(pos[0]), float(pos[1]), float(pos[2]), float(pos[3]))
+
+        self._aeldari_ghosts_staged_death_pending_returns().append(
+            {
+                "unit": root,
+                "model": model,
+                "destroyed_position": destroyed_position,
+                "trigger_phase_name": phase_name,
+                "trigger_phase_key": phase_key,
+                "source": str(getattr(stratagem, "name", "STAGED DEATH") or "STAGED DEATH"),
+            }
+        )
+        if model_id:
+            self._aeldari_ghosts_staged_death_used_model_ids().add(model_id)
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: STAGED DEATH: %s will return at phase end with half starting wounds.",
+            getattr(model, "name", "Model"),
+        )
+        return True
 
     def _use_aeldari_ghosts_exit_the_stage(self, stratagem, **kwargs) -> bool:
         context = self._aeldari_pending_context(stratagem.name, kwargs)
@@ -3127,6 +3488,66 @@ class AeldariStratagemMixin:
         return True
 
     @staticmethod
+    def _aeldari_phase_key_from_name(phase_name: str) -> str:
+        return str(phase_name or "").strip().upper().replace(" ", "_")
+
+    @staticmethod
+    def _aeldari_is_character_model(model: Any) -> bool:
+        if model is None:
+            return False
+        if bool(getattr(model, "is_character", False)):
+            return True
+        has_any = getattr(model, "has_any_keyword", None)
+        if callable(has_any):
+            try:
+                if bool(has_any("CHARACTER")):
+                    return True
+            except (AttributeError, TypeError, ValueError):
+                pass
+        has_kw = getattr(model, "has_keyword", None)
+        if callable(has_kw):
+            try:
+                if bool(has_kw("Character")) or bool(has_kw("CHARACTER")):
+                    return True
+            except (AttributeError, TypeError, ValueError):
+                pass
+        return False
+
+    def _aeldari_ghosts_staged_death_pending_returns(self) -> List[Dict[str, Any]]:
+        pending = getattr(self, "_aeldari_ghosts_staged_death_pending", None)
+        if not isinstance(pending, list):
+            pending = []
+            self._aeldari_ghosts_staged_death_pending = pending
+        return pending
+
+    def _aeldari_ghosts_staged_death_used_model_ids(self) -> set[str]:
+        used = getattr(self, "_aeldari_ghosts_staged_death_used_model_id_set", None)
+        if not isinstance(used, set):
+            used = set()
+            self._aeldari_ghosts_staged_death_used_model_id_set = used
+        return used
+
+    def _aeldari_ghosts_staged_death_model_eligible(self, *, unit: Any, model: Any) -> bool:
+        root = self._aeldari_root(unit)
+        if root is None or model is None:
+            return False
+        if not self._aeldari_is_harlequins(root):
+            return False
+        if not self._aeldari_is_character_model(model) and not self._aeldari_has_keyword(root, "CHARACTER"):
+            return False
+        model_alive = getattr(model, "is_alive", None)
+        if callable(model_alive):
+            try:
+                if bool(model_alive()):
+                    return False
+            except (AttributeError, TypeError, ValueError):
+                pass
+        else:
+            if bool(model_alive):
+                return False
+        return True
+
+    @staticmethod
     def _aeldari_models_alive(unit: Any) -> int:
         if unit is None:
             return 0
@@ -3276,6 +3697,82 @@ class AeldariStratagemMixin:
         except (AttributeError, TypeError, ValueError):
             name = ""
         return name in {"troupe", "troupes"}
+
+    def _aeldari_ghosts_bloody_dance_enemy_candidates_for_unit(self, unit: Any) -> List[Any]:
+        if not self._is_ghosts_of_the_webway_detachment():
+            return []
+        root = self._aeldari_root(unit)
+        if root is None:
+            return []
+        if not self._aeldari_on_battlefield(root, require_targetable=True):
+            return []
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        if game_map is None:
+            return []
+        get_enemy_units = getattr(game_map, "get_enemy_units", None)
+        if not callable(get_enemy_units):
+            return []
+
+        from ..utility.aura_utils import unit_within_range_of_unit
+
+        out: List[Any] = []
+        seen: set[str] = set()
+        for enemy in list(get_enemy_units(root) or []):
+            enemy_root = self._aeldari_root(enemy)
+            if enemy_root is None:
+                continue
+            eid = self._aeldari_sort_key(enemy_root)
+            if eid and eid in seen:
+                continue
+            if eid:
+                seen.add(eid)
+            if not self._aeldari_on_battlefield(enemy_root, require_targetable=False):
+                continue
+            if not unit_within_range_of_unit(root, enemy_root, 6.0, use_attached_aggregate=True):
+                continue
+            can_charge = getattr(root, "can_declare_charge_against", None)
+            if not callable(can_charge):
+                continue
+            try:
+                if not bool(can_charge(enemy_root, self.game, out_of_turn=True)):
+                    continue
+            except (AttributeError, TypeError, ValueError):
+                continue
+            out.append(enemy_root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_ghosts_bloody_dance_candidates(self) -> tuple[List[Any], Dict[str, List[Any]]]:
+        if not self._is_ghosts_of_the_webway_detachment():
+            return [], {}
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return [], {}
+        out: List[Any] = []
+        enemy_by_unit: Dict[str, List[Any]] = {}
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._aeldari_is_harlequins(root):
+                continue
+            if not (self._aeldari_has_keyword(root, "INFANTRY") or self._aeldari_has_keyword(root, "MOUNTED")):
+                continue
+            enemies = self._aeldari_ghosts_bloody_dance_enemy_candidates_for_unit(root)
+            if not enemies:
+                continue
+            out.append(root)
+            if uid:
+                enemy_by_unit[uid] = enemies
+        return sorted(out, key=self._aeldari_sort_key), enemy_by_unit
 
     def _aeldari_is_rangers_or_shroud_runners(self, unit: Any) -> bool:
         root = self._aeldari_root(unit)

@@ -1677,6 +1677,22 @@ _DEVOTED_OF_YNNEAD_STRATAGEM_BY_NAME = {
 }
 
 _GHOSTS_OF_THE_WEBWAY_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009916002": StratagemToolDescriptor(
+        stratagem_id="000009916002",
+        name="Staged Death",
+        timing="any_phase_on_friendly_character_model_destroyed_before_removal",
+        target="just_destroyed_harlequins_character_model_once_per_battle_per_model",
+        duration="end_of_phase",
+        effect="return_destroyed_model_at_half_wounds_as_close_as_possible_not_in_engagement",
+        cp_cost=1,
+        effect_params={
+            "return_timing": "end_of_phase",
+            "wounds_fraction": 0.5,
+            "round_up": True,
+            "once_per_battle_per_model": True,
+            "not_within_engagement_range": True,
+        },
+    ),
     "000009916003": StratagemToolDescriptor(
         stratagem_id="000009916003",
         name="Heroes' Fall",
@@ -1705,6 +1721,16 @@ _GHOSTS_OF_THE_WEBWAY_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] 
         effect="reactive_normal_move",
         cp_cost=1,
         effect_params={"movement_type": "normal", "max_distance_inches": 6.0},
+    ),
+    "000009916006": StratagemToolDescriptor(
+        stratagem_id="000009916006",
+        name="Bloody Dance",
+        timing="end_of_opponent_charge_phase",
+        target="harlequins_infantry_or_mounted_unit_within_6_of_enemy_it_can_charge",
+        duration="immediate",
+        effect="out_of_turn_charge_without_charge_bonus",
+        cp_cost=1,
+        effect_params={"out_of_turn": True, "count_as_charged": False, "range_inches": 6.0},
     ),
     "000009916007": StratagemToolDescriptor(
         stratagem_id="000009916007",

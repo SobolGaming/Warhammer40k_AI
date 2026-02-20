@@ -152,6 +152,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "UNBRIDLED CARNAGE",
     "VETERAN SHARPSHOOTERS",
     "VOW OF RETRIBUTION",
+    "BLOODY DANCE",
     "CLOAK AND SHADOW",
     "EXIT THE STAGE",
     "HEROES' FALL",
@@ -167,6 +168,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "RAIDERS' SPOILS",
     "RAIDERS\u2019 SPOILS",
     "RUTHLESS KILLERS",
+    "STAGED DEATH",
     "TRICKSTERS' RETORT",
     "TRICKSTERS\u2019 RETORT",
     "WITHDRAW AND REINFORCE",
@@ -1425,7 +1427,7 @@ class StratagemManager(
         if names & {"SKULLS FOR THE SKULL THRONE!", "FICKLEFIRE", "GORY DEDICATION", "REVENGE OF THE RUBRICAE"}:
             add("model_destroyed", self._on_model_destroyed)
 
-        if names & {"SUMMONED BY SLAUGHTER", "PUTRID DETONATION", "SANCTIFIED IMMOLATION"}:
+        if names & {"SUMMONED BY SLAUGHTER", "PUTRID DETONATION", "SANCTIFIED IMMOLATION", "STAGED DEATH"}:
             add("model_destroyed_before_removal", self._on_model_destroyed_before_removal)
         if names & {"BALEFUL BLESSING", "PROTECTION OF THE DARK PRINCE", "LAYERED WARDS"}:
             add("mortal_wound_allocated", self._on_mortal_wound_allocated)
@@ -1593,6 +1595,7 @@ class StratagemManager(
             "CRUEL RAIDERS",
             "DARK APPARITIONS",
             "DEATH ANSWERS DEATH",
+            "BLOODY DANCE",
             "DELIRIUM UNMADE",
             "ENDLESS PURSUIT OF VIOLENCE",
             "ENSNARING TRAP",
@@ -1685,6 +1688,7 @@ class StratagemManager(
             "MACABRE RESILIENCE",
             "HEROES' FALL",
             "HEROES\u2019 FALL",
+            "STAGED DEATH",
             "PRIMED AND READIED",
             "COORDINATED TRAP",
             "LETHAL DOSAGE",
@@ -3264,6 +3268,43 @@ class StratagemManager(
                 return result
             result["reason"] = "Requires your Movement phase, just after an AELDARI unit from your army Falls Back"
             return result
+        if name_u == "BLOODY DANCE":
+            candidates = list(context.get("candidates") or [])
+            enemy_by_unit = context.get("enemy_by_unit")
+            if not isinstance(enemy_by_unit, dict):
+                enemy_by_unit = {}
+            if not candidates:
+                candidates, enemy_by_unit = self._aeldari_ghosts_bloody_dance_candidates()
+            if not candidates:
+                result["reason"] = "Requires end of opponent Charge phase and an eligible HARLEQUINS INFANTRY or MOUNTED unit within 6\" of an enemy it can charge"
+                return result
+            target_unit = context.get("unit") or context.get("target_unit")
+            target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+            if target_root is None:
+                for candidate in candidates:
+                    cid = self._aeldari_sort_key(candidate)
+                    enemy_candidates = list(
+                        enemy_by_unit.get(cid) or self._aeldari_ghosts_bloody_dance_enemy_candidates_for_unit(candidate)
+                    )
+                    if enemy_candidates:
+                        result["available"] = True
+                        result["reason"] = None
+                        return result
+                result["reason"] = "Requires at least one eligible enemy unit within 6\" of a valid HARLEQUINS INFANTRY or MOUNTED unit"
+                return result
+            if target_root not in candidates:
+                result["reason"] = "Target must be an eligible HARLEQUINS INFANTRY or MOUNTED unit"
+                return result
+            root_id = self._aeldari_sort_key(target_root)
+            enemy_candidates = list(
+                enemy_by_unit.get(root_id) or self._aeldari_ghosts_bloody_dance_enemy_candidates_for_unit(target_root)
+            )
+            if enemy_candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Selected unit must be within 6\" of at least one enemy unit it can charge"
+            return result
         if name_u == "MOCKING FLIGHT":
             candidates = list(context.get("candidates") or [])
             if not candidates:
@@ -3307,6 +3348,23 @@ class StratagemManager(
                 result["reason"] = None
                 return result
             result["reason"] = "Requires Fight phase target-selection trigger with an enemy unit that selected one of your HARLEQUINS units as a target"
+            return result
+        if name_u == "STAGED DEATH":
+            destroyed_unit = context.get("destroyed_unit") or context.get("unit") or context.get("target_unit")
+            destroyed_model = context.get("destroyed_model") or context.get("model")
+            root = self._aeldari_root(destroyed_unit) if destroyed_unit is not None else None
+            if root is None or destroyed_model is None:
+                result["reason"] = "Requires model_destroyed_before_removal trigger for a just-destroyed HARLEQUINS CHARACTER model"
+                return result
+            if not self._aeldari_ghosts_staged_death_model_eligible(unit=root, model=destroyed_model):
+                result["reason"] = "Requires a just-destroyed HARLEQUINS CHARACTER model"
+                return result
+            model_id = str(get_entity_id(destroyed_model) or "")
+            if model_id and model_id in self._aeldari_ghosts_staged_death_used_model_ids():
+                result["reason"] = "Selected model can only be targeted by STAGED DEATH once per battle"
+                return result
+            result["available"] = True
+            result["reason"] = None
             return result
         if name_u == "EXIT THE STAGE":
             candidates = list(context.get("candidates") or [])
@@ -3472,11 +3530,13 @@ class StratagemManager(
             "KHAINE'S VENGEANCE": "Target: ASPECT WARRIORS/AVATAR OF KHAINE unit in Engagement Range of an enemy selected to Fall Back",
             "KHAINE’S VENGEANCE": "Target: ASPECT WARRIORS/AVATAR OF KHAINE unit in Engagement Range of an enemy selected to Fall Back",
             "LAYERED WARDS": "Target: AELDARI VEHICLE unit after a mortal wound is allocated",
+            "BLOODY DANCE": "Target: your HARLEQUINS INFANTRY or MOUNTED unit within 6\" of an enemy unit it can charge",
             "CLOAK AND SHADOW": "Target: AELDARI INFANTRY unit selected by an enemy shooter and within range of an objective marker you control",
             "EXIT THE STAGE": "Target: your HARLEQUINS unit that is not in Engagement Range at the end of the opponent's Fight phase",
             "HEROES' FALL": "Target: your HARLEQUINS unit selected as a target of enemy fight attacks",
             "HEROES\u2019 FALL": "Target: your HARLEQUINS unit selected as a target of enemy fight attacks",
             "MOCKING FLIGHT": "Target: your HARLEQUINS unit that just Fell Back this Movement phase",
+            "STAGED DEATH": "Target: your just-destroyed HARLEQUINS CHARACTER model (once per battle per model)",
             "OUTCAST AMBUSH": "Target: your Rangers or Shroud Runners unit that has not been selected to shoot this phase",
             "INTO THE BREACH": "Target: ANHRATHE unit that just destroyed one or more enemy units with its shooting attacks",
             "IMPEDING FIRE": "Target: your Rangers, Shroud Runners, or Starfangs unit; then select one visible non-TITANIC enemy unit within 36\" of it",
@@ -5010,6 +5070,10 @@ class StratagemManager(
             raise
         try:
             self._queue_aeldari_ghosts_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._resolve_aeldari_ghosts_phase_end_effects(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -10542,6 +10606,10 @@ class StratagemManager(
 
         try:
             self._queue_hallowed_martyrs_model_destroyed_reactions(unit=root, model=model)
+        except Exception:
+            raise
+        try:
+            self._queue_aeldari_ghosts_model_destroyed_reactions(unit=root, model=model)
         except Exception:
             raise
 
