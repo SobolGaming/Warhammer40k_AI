@@ -175,6 +175,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "TIME TO STRIKE",
     "PRESENTIMENT OF DREAD",
     "FOREWARNED",
+    "SOUL BRIDGE",
+    "SPIRIT TOKEN",
     "VENOMOUS WRATH",
     "FANGS OF THE BROOD",
     "STRIKING STRIDE",
@@ -3945,6 +3947,8 @@ class StratagemManager(
             "TIME TO STRIKE": "Target: your Storm Guardians unit that has not been selected to move this phase; it gains fixed Advance distance 6 and can shoot/charge after advancing this turn",
             "PRESENTIMENT OF DREAD": "Target: one of your ASURYANI PSYKER models; select one visible enemy unit within 18\" of it to take a Battle-shock test at -1",
             "FOREWARNED": "Target: your ASURYANI INFANTRY unit (excluding WRAITH CONSTRUCT) selected as a target of enemy fight attacks and within 9\" of a friendly ASURYANI PSYKER; attacks targeting it are -1 to Hit and -1 to Wound this phase",
+            "SOUL BRIDGE": "Target: your WRAITHBLADES/WRAITHGUARD/WRAITHLORD unit and one ASURYANI PSYKER model; until your next Command phase the selected WRAITH unit counts as within 12\" of that PSYKER for Psychic Guidance and Spirit Guides",
+            "SPIRIT TOKEN": "Target: your WRAITHBLADES or WRAITHGUARD unit; select one objective marker you control within that unit's range to remain sticky until opponent control becomes greater at phase end",
             "FANGS OF THE BROOD": "Target: your TROUPE unit; this phase it can gain all three Dance of Death abilities instead of one",
             "VENOMOUS WRATH": "Target: your HARLEQUINS VEHICLE unit that has not been selected to shoot this phase; after it shoots it can make a Normal move up to 6\" if not in Engagement Range, and cannot declare a charge this turn",
             "STRIKING STRIDE": "Target: your HARLEQUINS unit; until end of the phase it can declare a charge in a turn in which it Advanced",
@@ -4609,6 +4613,10 @@ class StratagemManager(
             raise
         try:
             self._queue_aeldari_seer_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_aeldari_spirit_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -13983,6 +13991,9 @@ class StratagemManager(
         aeldari_seer_result = self._use_aeldari_seer_council_stratagem(s, **kwargs)
         if aeldari_seer_result is not None:
             return aeldari_seer_result
+        aeldari_spirit_result = self._use_aeldari_spirit_conclave_stratagem(s, **kwargs)
+        if aeldari_spirit_result is not None:
+            return aeldari_spirit_result
         aeldari_guardian_result = self._use_aeldari_guardian_battlehost_stratagem(s, **kwargs)
         if aeldari_guardian_result is not None:
             return aeldari_guardian_result

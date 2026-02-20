@@ -112,6 +112,11 @@ class AeldariStratagemMixin:
         checker = getattr(mgr, "is_serpents_brood", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_spirit_conclave_detachment(self) -> bool:
+        mgr = self._aeldari_detachment_mgr()
+        checker = getattr(mgr, "is_spirit_conclave", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _blitzing_firepower_candidates(self) -> List[Any]:
         if not self._is_warhost_detachment():
             return []
@@ -268,6 +273,181 @@ class AeldariStratagemMixin:
             require_on_battlefield=True,
             require_not_shot=True,
         )
+
+    def _aeldari_spirit_is_wraithblades_or_wraithguard(self, unit: Any) -> bool:
+        root = self._aeldari_root(unit)
+        if root is None:
+            return False
+        if self._aeldari_has_keyword(root, "WRAITHBLADES") or self._aeldari_has_keyword(root, "WRAITHGUARD"):
+            return True
+        try:
+            name = str(getattr(root, "name", "") or "").strip().lower()
+        except (AttributeError, TypeError, ValueError):
+            name = ""
+        return bool("wraithblades" in name or "wraithguard" in name)
+
+    def _aeldari_spirit_is_wraith_target(self, unit: Any) -> bool:
+        root = self._aeldari_root(unit)
+        if root is None:
+            return False
+        if (
+            self._aeldari_has_keyword(root, "WRAITHBLADES")
+            or self._aeldari_has_keyword(root, "WRAITHGUARD")
+            or self._aeldari_has_keyword(root, "WRAITHLORD")
+        ):
+            return True
+        try:
+            name = str(getattr(root, "name", "") or "").strip().lower()
+        except (AttributeError, TypeError, ValueError):
+            name = ""
+        return bool("wraithblades" in name or "wraithguard" in name or "wraithlord" in name)
+
+    def _aeldari_spirit_wraithblades_or_guard_candidates(self) -> List[Any]:
+        if not self._is_spirit_conclave_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._aeldari_spirit_is_wraithblades_or_wraithguard(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_spirit_wraith_target_candidates(self) -> List[Any]:
+        if not self._is_spirit_conclave_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._aeldari_spirit_is_wraith_target(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_spirit_soul_bridge_psyker_candidates(self, *, target_unit: Any = None) -> List[Any]:
+        if not self._is_spirit_conclave_detachment():
+            return []
+        target_root = self._aeldari_root(target_unit)
+        if target_unit is not None:
+            if target_root is None or not self._aeldari_spirit_is_wraith_target(target_root):
+                return []
+            try:
+                if target_root.get_parent_army().player is not self.player:
+                    return []
+            except (AttributeError, TypeError, ValueError):
+                return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._aeldari_has_keyword(root, "ASURYANI"):
+                continue
+            if not self._aeldari_has_keyword(root, "PSYKER"):
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_spirit_token_objective_candidates(self, unit: Any) -> List[Any]:
+        if not self._is_spirit_conclave_detachment():
+            return []
+        root = self._aeldari_root(unit)
+        if root is None:
+            return []
+        try:
+            if root.get_parent_army().player is not self.player:
+                return []
+        except (AttributeError, TypeError, ValueError):
+            return []
+        if not self._aeldari_on_battlefield(root, require_targetable=True):
+            return []
+        if not self._aeldari_spirit_is_wraithblades_or_wraithguard(root):
+            return []
+        game = getattr(self, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        if game_map is None:
+            return []
+        within_one = getattr(root, "is_within_objective_range", None)
+        if not callable(within_one):
+            return []
+        out: List[Any] = []
+        for objective in list(getattr(game_map, "objectives", []) or []):
+            loc = getattr(objective, "location", None)
+            if loc is None:
+                loc = objective
+            if loc is None or bool(getattr(loc, "removed", False)):
+                continue
+            update_control = getattr(loc, "update_control", None)
+            if callable(update_control):
+                try:
+                    update_control(game)
+                except (AttributeError, TypeError, ValueError):
+                    continue
+            if getattr(loc, "controlling_player", None) is not self.player:
+                continue
+            try:
+                if not bool(within_one(loc)):
+                    continue
+            except (AttributeError, TypeError, ValueError):
+                continue
+            out.append(objective)
+
+        def _objective_sort_key(obj: Any) -> str:
+            loc = getattr(obj, "location", None)
+            if loc is None:
+                loc = obj
+            sid = str(get_entity_id(loc) or get_entity_id(obj) or "")
+            if sid:
+                return f"id:{sid}"
+            try:
+                x = float(getattr(loc, "x", 0.0) or 0.0)
+                y = float(getattr(loc, "y", 0.0) or 0.0)
+            except (AttributeError, TypeError, ValueError):
+                x = 0.0
+                y = 0.0
+            return f"xy:{x:.3f}:{y:.3f}"
+
+        return sorted(out, key=_objective_sort_key)
 
     def _aeldari_seer_psyker_candidates(self) -> List[Any]:
         if not self._is_seer_council_detachment():
@@ -1194,6 +1374,129 @@ class AeldariStratagemMixin:
             payload["unit"] = candidates[0]
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload, use_timer=False)
+
+    def _cleanup_aeldari_spirit_phase_start_effects(self, *, player, phase) -> None:
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "COMMAND_PHASE":
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player and player is not self.player:
+            return
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return
+        owner_id = str(getattr(self.player, "id", "") or "")
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            link_owner = str(sr.get("aeldari_soul_bridge_owner", "") or "")
+            if link_owner and owner_id and link_owner != owner_id:
+                continue
+            if not bool(sr.get("aeldari_soul_bridge_active")):
+                continue
+            for key in (
+                "aeldari_soul_bridge_active",
+                "aeldari_soul_bridge_owner",
+                "aeldari_soul_bridge_turn",
+                "aeldari_soul_bridge_source",
+                "aeldari_soul_bridge_psyker_unit_id",
+            ):
+                sr.pop(key, None)
+            root.special_rules = sr
+
+    def _queue_aeldari_spirit_phase_start_reactions(self, *, player, phase) -> None:
+        game = getattr(self, "game", None)
+        if game is None or not self._is_spirit_conclave_detachment():
+            return
+        self._cleanup_aeldari_spirit_phase_start_effects(player=player, phase=phase)
+
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return
+
+        if phase_key == "COMMAND_PHASE":
+            soul_bridge = self._aeldari_get_stratagem_by_norm_name("SOUL BRIDGE")
+            if soul_bridge is not None:
+                if int(getattr(self.player, "command_points", 0) or 0) >= int(getattr(soul_bridge, "cp_cost", 0) or 0):
+                    if self._aeldari_norm_name(soul_bridge.name) not in getattr(self, "_used_stratagems_this_phase", set()):
+                        candidates = self._aeldari_spirit_wraith_target_candidates()
+                        psykers = self._aeldari_spirit_soul_bridge_psyker_candidates()
+                        if candidates and psykers and not self._aeldari_reaction_exists("phase_start", soul_bridge.name):
+                            payload: Dict[str, Any] = {
+                                "event": "phase_start",
+                                "phase": "Command phase",
+                                "phase_name": "Command phase",
+                                "stratagem": soul_bridge.name,
+                                "cp_cost": soul_bridge.cp_cost,
+                                "candidates": candidates,
+                                "psyker_candidates": psykers,
+                            }
+                            if len(candidates) == 1:
+                                payload["unit"] = candidates[0]
+                                payload["target_unit"] = candidates[0]
+                                unit_psykers = self._aeldari_spirit_soul_bridge_psyker_candidates(target_unit=candidates[0])
+                                if unit_psykers:
+                                    payload["psyker_candidates"] = unit_psykers
+                                    if len(unit_psykers) == 1:
+                                        payload["source_unit"] = unit_psykers[0]
+                                        payload["source_psyker_unit"] = unit_psykers[0]
+                            self._queue_reaction(payload, use_timer=False)
+
+        if phase_key == "MOVEMENT_PHASE":
+            spirit_token = self._aeldari_get_stratagem_by_norm_name("SPIRIT TOKEN")
+            if spirit_token is None:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(spirit_token, "cp_cost", 0) or 0):
+                return
+            if self._aeldari_norm_name(spirit_token.name) in getattr(self, "_used_stratagems_this_phase", set()):
+                return
+            all_candidates = self._aeldari_spirit_wraithblades_or_guard_candidates()
+            candidate_units: List[Any] = []
+            objective_map: Dict[str, List[Any]] = {}
+            for unit in list(all_candidates or []):
+                objectives = self._aeldari_spirit_token_objective_candidates(unit)
+                if not objectives:
+                    continue
+                candidate_units.append(unit)
+                uid = self._aeldari_sort_key(unit)
+                if uid:
+                    objective_map[uid] = list(objectives)
+            if not candidate_units or self._aeldari_reaction_exists("phase_start", spirit_token.name):
+                return
+            payload: Dict[str, Any] = {
+                "event": "phase_start",
+                "phase": "Movement phase",
+                "phase_name": "Movement phase",
+                "stratagem": spirit_token.name,
+                "cp_cost": spirit_token.cp_cost,
+                "candidates": candidate_units,
+                "objective_candidates_by_unit": objective_map,
+            }
+            if len(candidate_units) == 1:
+                payload["unit"] = candidate_units[0]
+                payload["target_unit"] = candidate_units[0]
+                objective_candidates = self._aeldari_spirit_token_objective_candidates(candidate_units[0])
+                if objective_candidates:
+                    payload["objective_candidates"] = objective_candidates
+                    if len(objective_candidates) == 1:
+                        payload["objective"] = objective_candidates[0]
+                        payload["objective_marker"] = objective_candidates[0]
+            self._queue_reaction(payload, use_timer=False)
 
     def _queue_aeldari_seer_move_end_reactions(self, *, unit: Any, action: str) -> None:
         game = getattr(self, "game", None)
@@ -4668,6 +4971,179 @@ class AeldariStratagemMixin:
         if name_u in {"HEROES' FALL", "HEROES\u2019 FALL"}:
             return self._use_aeldari_ghosts_heroes_fall(stratagem, **kwargs)
         return None
+
+    def _use_aeldari_spirit_conclave_stratagem(self, stratagem, **kwargs) -> Optional[bool]:
+        if stratagem is None or not self._is_spirit_conclave_detachment():
+            return None
+        name_u = self._aeldari_norm_name(getattr(stratagem, "name", ""))
+        if name_u == "SPIRIT TOKEN":
+            return self._use_aeldari_spirit_token(stratagem, **kwargs)
+        if name_u == "SOUL BRIDGE":
+            return self._use_aeldari_soul_bridge(stratagem, **kwargs)
+        return None
+
+    def _use_aeldari_spirit_token(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "movement phase":
+            logger.error("ERROR: SPIRIT TOKEN: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: SPIRIT TOKEN: not your turn")
+            return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_spirit_wraithblades_or_guard_candidates()
+        candidate_roots = [self._aeldari_root(unit) for unit in list(candidates or [])]
+        candidate_roots = [unit for unit in candidate_roots if unit is not None]
+        if target_root is None:
+            if len(candidate_roots) == 1:
+                target_root = candidate_roots[0]
+            else:
+                logger.error("ERROR: SPIRIT TOKEN: missing target unit")
+                return False
+        if candidate_roots and target_root not in candidate_roots:
+            logger.error("ERROR: SPIRIT TOKEN: target must be WRAITHBLADES or WRAITHGUARD")
+            return False
+        if not self._aeldari_spirit_is_wraithblades_or_wraithguard(target_root):
+            logger.error("ERROR: SPIRIT TOKEN: target must be WRAITHBLADES or WRAITHGUARD")
+            return False
+        if not self._aeldari_on_battlefield(target_root, require_targetable=True):
+            logger.error("ERROR: SPIRIT TOKEN: target must be on the battlefield and targetable")
+            return False
+
+        objective = context.get("objective") or context.get("objective_marker")
+        objective_candidates = list(context.get("objective_candidates") or [])
+        if not objective_candidates:
+            objective_map = context.get("objective_candidates_by_unit")
+            if isinstance(objective_map, dict):
+                key = self._aeldari_sort_key(target_root)
+                objective_candidates = list(objective_map.get(key) or [])
+        if not objective_candidates:
+            objective_candidates = self._aeldari_spirit_token_objective_candidates(target_root)
+        if objective is None:
+            if len(objective_candidates) == 1:
+                objective = objective_candidates[0]
+            else:
+                logger.error("ERROR: SPIRIT TOKEN: missing objective marker selection")
+                return False
+        if objective_candidates and objective not in list(objective_candidates or []):
+            logger.error("ERROR: SPIRIT TOKEN: selected objective is not eligible")
+            return False
+
+        loc = getattr(objective, "location", None)
+        if loc is None:
+            loc = objective
+        if loc is None:
+            logger.error("ERROR: SPIRIT TOKEN: objective marker location unavailable")
+            return False
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root):
+            return False
+        set_sticky = getattr(loc, "set_sticky_control", None)
+        if callable(set_sticky):
+            set_sticky(self.player, source="aeldari_spirit_token")
+        else:
+            loc.sticky_controller = self.player
+            loc.sticky_source = "aeldari_spirit_token"
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: SPIRIT TOKEN: selected objective remains under your control until opponent control becomes greater.",
+        )
+        return True
+
+    def _use_aeldari_soul_bridge(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "command phase":
+            logger.error("ERROR: SOUL BRIDGE: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: SOUL BRIDGE: not your turn")
+            return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_spirit_wraith_target_candidates()
+        candidate_roots = [self._aeldari_root(unit) for unit in list(candidates or [])]
+        candidate_roots = [unit for unit in candidate_roots if unit is not None]
+        if target_root is None:
+            if len(candidate_roots) == 1:
+                target_root = candidate_roots[0]
+            else:
+                logger.error("ERROR: SOUL BRIDGE: missing WRAITH target unit")
+                return False
+        if candidate_roots and target_root not in candidate_roots:
+            logger.error("ERROR: SOUL BRIDGE: target must be WRAITHBLADES, WRAITHGUARD, or WRAITHLORD")
+            return False
+        if not self._aeldari_spirit_is_wraith_target(target_root):
+            logger.error("ERROR: SOUL BRIDGE: target must be WRAITHBLADES, WRAITHGUARD, or WRAITHLORD")
+            return False
+        if not self._aeldari_on_battlefield(target_root, require_targetable=True):
+            logger.error("ERROR: SOUL BRIDGE: WRAITH target must be on the battlefield and targetable")
+            return False
+
+        source_unit = (
+            context.get("source_unit")
+            or context.get("source_psyker_unit")
+            or context.get("psyker_unit")
+        )
+        source_root = self._aeldari_root(source_unit) if source_unit is not None else None
+        psyker_candidates = list(context.get("psyker_candidates") or [])
+        if not psyker_candidates:
+            psyker_candidates = self._aeldari_spirit_soul_bridge_psyker_candidates(target_unit=target_root)
+        psyker_roots = [self._aeldari_root(unit) for unit in list(psyker_candidates or [])]
+        psyker_roots = [unit for unit in psyker_roots if unit is not None]
+        if source_root is None:
+            if len(psyker_roots) == 1:
+                source_root = psyker_roots[0]
+            else:
+                logger.error("ERROR: SOUL BRIDGE: missing ASURYANI PSYKER source unit")
+                return False
+        if psyker_roots and source_root not in psyker_roots:
+            logger.error("ERROR: SOUL BRIDGE: source must be an eligible ASURYANI PSYKER")
+            return False
+        if not self._aeldari_on_battlefield(source_root, require_targetable=True):
+            logger.error("ERROR: SOUL BRIDGE: PSYKER source must be on the battlefield and targetable")
+            return False
+        if not self._aeldari_has_keyword(source_root, "ASURYANI") or not self._aeldari_has_keyword(source_root, "PSYKER"):
+            logger.error("ERROR: SOUL BRIDGE: source must be an ASURYANI PSYKER")
+            return False
+
+        if not self._aeldari_armoured_spend_cp(
+            stratagem,
+            target_unit=target_root,
+            enemy_unit=None,
+        ):
+            return False
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["aeldari_soul_bridge_active"] = True
+        sr["aeldari_soul_bridge_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["aeldari_soul_bridge_turn"] = int(getattr(game, "turn", 0) or 0)
+        sr["aeldari_soul_bridge_source"] = str(getattr(stratagem, "name", "SOUL BRIDGE") or "SOUL BRIDGE")
+        sr["aeldari_soul_bridge_psyker_unit_id"] = str(get_entity_id(source_root) or "")
+        target_root.special_rules = sr
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: SOUL BRIDGE: %s is treated as within 12\" of %s for Psychic Guidance and Spirit Guides until your next Command phase.",
+            getattr(target_root, "name", "Unit"),
+            getattr(source_root, "name", "Psyker"),
+        )
+        return True
 
     def _use_aeldari_eldritch_raiders_stratagem(self, stratagem, **kwargs) -> Optional[bool]:
         if stratagem is None or not self._is_eldritch_raiders_detachment():

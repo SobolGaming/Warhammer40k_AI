@@ -661,6 +661,20 @@ class AeldariDetachmentManager(DetachmentManagerBase):
             return False
         if not self._unit_is_active_for_rules(root):
             return False
+        sr = getattr(root, "special_rules", None)
+        if isinstance(sr, dict) and bool(sr.get("aeldari_soul_bridge_active")):
+            owner_id = str(sr.get("aeldari_soul_bridge_owner", "") or "")
+            player_id = str(getattr(getattr(self.army, "player", None), "id", "") or "")
+            if not owner_id or not player_id or owner_id == player_id:
+                source_id = str(sr.get("aeldari_soul_bridge_psyker_unit_id", "") or "")
+                if source_id:
+                    for source in list(self._iter_unique_army_roots() or []):
+                        if source is None:
+                            continue
+                        if str(get_entity_id(source) or "") != source_id:
+                            continue
+                        if self._unit_is_asuryani_psyker(source) and self._unit_is_active_for_rules(source):
+                            return True
         psyker_sources: list = []
         for candidate in list(self._iter_unique_army_roots() or []):
             if candidate is None:

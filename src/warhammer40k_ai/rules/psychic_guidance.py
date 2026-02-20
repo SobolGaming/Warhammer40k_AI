@@ -4,6 +4,7 @@ import re
 from typing import Iterable, Optional
 
 from ..utility.aura_utils import _model_is_alive, _unit_is_alive, distance_between_models_bases_3d
+from ..utility.entity_ids import get_entity_id
 
 ABILITY_NAME = "Psychic Guidance"
 RANGE_INCHES = 12.0
@@ -172,6 +173,45 @@ def _iter_psyker_sources(army) -> Iterable[object]:
     return out
 
 
+def _root_unit(unit):
+    if unit is None:
+        return None
+    get_root = getattr(unit, "get_attached_unit_root", None)
+    if callable(get_root):
+        return get_root()
+    return unit
+
+
+def _has_active_soul_bridge_link(unit, *, army) -> bool:
+    root = _root_unit(unit)
+    if root is None or army is None:
+        return False
+    sr = getattr(root, "special_rules", None)
+    if not isinstance(sr, dict):
+        return False
+    if not bool(sr.get("aeldari_soul_bridge_active")):
+        return False
+    owner_id = str(sr.get("aeldari_soul_bridge_owner", "") or "")
+    player_id = str(getattr(getattr(army, "player", None), "id", "") or "")
+    if owner_id and player_id and owner_id != player_id:
+        return False
+    source_id = str(sr.get("aeldari_soul_bridge_psyker_unit_id", "") or "")
+    if not source_id:
+        return False
+    for candidate in list(getattr(army, "units", []) or []):
+        source = _root_unit(candidate)
+        if source is None:
+            continue
+        if str(get_entity_id(source) or "") != source_id:
+            continue
+        if not _unit_on_battlefield(source):
+            continue
+        if not (_unit_has_keyword_local(source, "AELDARI") and _unit_has_keyword_local(source, "PSYKER")):
+            continue
+        return True
+    return False
+
+
 def unit_within_psyker_range(unit, *, range_inches: float = RANGE_INCHES) -> bool:
     if unit is None:
         return False
@@ -181,6 +221,8 @@ def unit_within_psyker_range(unit, *, range_inches: float = RANGE_INCHES) -> boo
     army = army() if callable(army) else getattr(unit, "parent_army", None)
     if army is None:
         return False
+    if _has_active_soul_bridge_link(unit, army=army):
+        return True
     target_models = _iter_unit_models(unit, use_attached=True)
     if not target_models:
         return False
@@ -201,6 +243,8 @@ def model_within_psyker_range(model, *, range_inches: float = RANGE_INCHES) -> b
     army = army() if callable(army) else getattr(unit, "parent_army", None)
     if army is None:
         return False
+    if _has_active_soul_bridge_link(unit, army=army):
+        return True
     target_models = [model]
     for source in _iter_psyker_sources(army):
         source_models = _iter_unit_models(source, use_attached=False)

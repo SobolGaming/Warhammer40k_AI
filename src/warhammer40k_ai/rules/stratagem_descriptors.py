@@ -1704,6 +1704,36 @@ _SEER_COUNCIL_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SEER_COUNCIL_STRATAGEM_DESCRIPTORS.values()
 }
 
+_SPIRIT_CONCLAVE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009908005": StratagemToolDescriptor(
+        stratagem_id="000009908005",
+        name="Soul Bridge",
+        timing="your_command_phase",
+        target="wraithblades_wraithguard_or_wraithlord_unit_and_asuryani_psyker_model",
+        duration="until_start_of_your_next_command_phase",
+        effect="count_as_within_12_of_selected_psyker_for_psychic_guidance_and_spirit_guides",
+        cp_cost=1,
+        effect_params={
+            "distance_inches": 12.0,
+            "applies_to_abilities": ["Psychic Guidance", "Spirit Guides"],
+        },
+    ),
+    "000009908006": StratagemToolDescriptor(
+        stratagem_id="000009908006",
+        name="Spirit Token",
+        timing="start_of_your_movement_phase",
+        target="wraithblades_or_wraithguard_unit_within_range_of_controlled_objective",
+        duration="until_opponent_controls_objective",
+        effect="sticky_objective",
+        cp_cost=1,
+        effect_params={"objective_selection_required": True},
+    ),
+}
+
+_SPIRIT_CONCLAVE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPIRIT_CONCLAVE_STRATAGEM_DESCRIPTORS.values()
+}
+
 _SERPENTS_BROOD_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010650002": StratagemToolDescriptor(
         stratagem_id="000010650002",
@@ -2716,6 +2746,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _SEER_COUNCIL_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _SPIRIT_CONCLAVE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _GUARDIAN_BATTLEHOST_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -2779,6 +2812,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _ASPECT_HOST_STRATAGEM_BY_NAME.get(key)
         or _CORSAIR_COTERIE_STRATAGEM_BY_NAME.get(key)
         or _SEER_COUNCIL_STRATAGEM_BY_NAME.get(key)
+        or _SPIRIT_CONCLAVE_STRATAGEM_BY_NAME.get(key)
         or _GUARDIAN_BATTLEHOST_STRATAGEM_BY_NAME.get(key)
         or _DEVOTED_OF_YNNEAD_STRATAGEM_BY_NAME.get(key)
         or _GHOSTS_OF_THE_WEBWAY_STRATAGEM_BY_NAME.get(key)
