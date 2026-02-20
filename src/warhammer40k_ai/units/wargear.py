@@ -772,6 +772,71 @@ class WargearProfile:
         source = str(sr.get("aeldari_fate_inescapable_source", "") or "FATE INESCAPABLE").strip() or "FATE INESCAPABLE"
         return int(bonus), source
 
+    def _aeldari_focused_firepower_ap_bonus(self, attack_instance: Dict) -> tuple[int, str]:
+        if not isinstance(attack_instance, dict):
+            return 0, ""
+        try:
+            is_ranged = bool(getattr(self.parent_wargear, "is_ranged", lambda: False)())
+        except Exception:
+            is_ranged = False
+        if not is_ranged:
+            return 0, ""
+        attacker_unit = attack_instance.get("attacker_unit")
+        if attacker_unit is None:
+            attacker_model = attack_instance.get("attacker_model")
+            attacker_unit = getattr(attacker_model, "parent_unit", None) if attacker_model is not None else None
+        if attacker_unit is None:
+            return 0, ""
+        try:
+            root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            root = attacker_unit
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("aeldari_focused_firepower_active")):
+            return 0, ""
+
+        applies = True
+        exp_phase = str(sr.get("aeldari_focused_firepower_expires_phase", "") or "").strip().upper()
+        owner_id = str(sr.get("aeldari_focused_firepower_turn_owner", "") or "").strip()
+        try:
+            effect_turn = int(sr.get("aeldari_focused_firepower_turn", 0) or 0)
+        except Exception:
+            effect_turn = 0
+        game = None
+        try:
+            game = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
+        except Exception:
+            game = None
+        if game is not None:
+            current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            if exp_phase and current_phase and current_phase != exp_phase:
+                applies = False
+            if owner_id:
+                current_player = getattr(game, "get_current_player", lambda: None)()
+                current_owner = str(getattr(current_player, "id", "") or "").strip()
+                if current_owner and current_owner != owner_id:
+                    applies = False
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                current_turn = 0
+            if effect_turn and current_turn and current_turn != effect_turn:
+                applies = False
+        if not applies:
+            return 0, ""
+
+        try:
+            bonus = int(sr.get("aeldari_focused_firepower_ap_bonus", 1) or 1)
+        except Exception:
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        source = (
+            str(sr.get("aeldari_focused_firepower_source", "") or "FOCUSED FIREPOWER").strip()
+            or "FOCUSED FIREPOWER"
+        )
+        return int(bonus), source
+
     def _effective_range_max(self, attacker: Optional['Model'] = None) -> int:
         """Return range max after applying model/unit effects (e.g., leading Melta range bonus)."""
         try:
@@ -14147,6 +14212,16 @@ class WargearProfile:
 
         # Calculate save value
         effective_ap = int(ap)
+        try:
+            focused_ap_bonus, focused_source = self._aeldari_focused_firepower_ap_bonus(attack_instance)
+        except Exception:
+            focused_ap_bonus, focused_source = 0, ""
+        if int(focused_ap_bonus or 0) > 0:
+            effective_ap = int(effective_ap) - int(focused_ap_bonus)
+            source_name = str(focused_source or "FOCUSED FIREPOWER").strip() or "FOCUSED FIREPOWER"
+            save_result["special_effects"].append(
+                f"{source_name}: AP improved by {int(focused_ap_bonus)}"
+            )
         try:
             fate_ap_bonus, fate_source = self._aeldari_fate_inescapable_critical_ap_bonus(attack_instance)
         except Exception:

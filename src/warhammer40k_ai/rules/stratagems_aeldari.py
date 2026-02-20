@@ -359,6 +359,16 @@ class AeldariStratagemMixin:
             out.append(root)
         return sorted(out, key=self._aeldari_sort_key)
 
+    def _aeldari_windrider_focused_firepower_candidates(self) -> List[Any]:
+        if not self._is_windrider_host_detachment():
+            return []
+        out: List[Any] = []
+        for root in self._aeldari_windrider_candidates(require_on_battlefield=True):
+            if bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
     def _aeldari_windrider_death_from_on_high_candidates(
         self,
         *,
@@ -452,6 +462,32 @@ class AeldariStratagemMixin:
             if not self._aeldari_windrider_is_asuryani_mounted(root):
                 continue
             if not self._aeldari_windrider_overflight_trigger_ready(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_windrider_spiralling_evasion_candidates(self, *, target_units: List[Any]) -> List[Any]:
+        if not self._is_windrider_host_detachment():
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            try:
+                if root.get_parent_army().player is not self.player:
+                    continue
+            except (AttributeError, TypeError, ValueError):
+                continue
+            if not self._aeldari_windrider_is_asuryani_mounted_or_vyper(root):
                 continue
             out.append(root)
         return sorted(out, key=self._aeldari_sort_key)
@@ -3294,6 +3330,26 @@ class AeldariStratagemMixin:
         if phase_key not in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
             return
 
+        if phase_key == "SHOOTING_PHASE":
+            focused_firepower = self._aeldari_get_stratagem_by_norm_name("FOCUSED FIREPOWER")
+            if focused_firepower is not None:
+                if int(getattr(self.player, "command_points", 0) or 0) >= int(getattr(focused_firepower, "cp_cost", 0) or 0):
+                    if self._aeldari_norm_name(focused_firepower.name) not in getattr(self, "_used_stratagems_this_phase", set()):
+                        candidates = self._aeldari_windrider_focused_firepower_candidates()
+                        if candidates and not self._aeldari_reaction_exists("phase_start", focused_firepower.name):
+                            payload: Dict[str, Any] = {
+                                "event": "phase_start",
+                                "phase": "Shooting phase",
+                                "phase_name": "Shooting phase",
+                                "stratagem": focused_firepower.name,
+                                "cp_cost": focused_firepower.cp_cost,
+                                "candidates": candidates,
+                            }
+                            if len(candidates) == 1:
+                                payload["unit"] = candidates[0]
+                                payload["target_unit"] = candidates[0]
+                            self._queue_reaction(payload, use_timer=False)
+
         death_from_on_high = self._aeldari_get_stratagem_by_norm_name("DEATH FROM ON HIGH")
         if death_from_on_high is None:
             return
@@ -3320,6 +3376,64 @@ class AeldariStratagemMixin:
         if len(candidates) == 1:
             payload["unit"] = candidates[0]
             payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_aeldari_windrider_shooting_targets_selected_reactions(
+        self,
+        *,
+        attacking_unit: Any,
+        target_units: List[Any],
+    ) -> None:
+        if attacking_unit is None or not self._is_windrider_host_detachment():
+            return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        phase_key = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_key != "SHOOTING_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        attacker_root = self._aeldari_root(attacking_unit)
+        if attacker_root is None:
+            return
+        try:
+            if attacker_root.get_parent_army().player is self.player:
+                return
+        except (AttributeError, TypeError, ValueError):
+            return
+
+        stratagem = self._aeldari_get_stratagem_by_norm_name("SPIRALLING EVASION")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+            return
+        candidates = self._aeldari_windrider_spiralling_evasion_candidates(target_units=list(target_units or []))
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "shooting_targets_selected":
+                continue
+            if self._aeldari_norm_name(reaction.get("stratagem", "")) != self._aeldari_norm_name(stratagem.name):
+                continue
+            if reaction.get("attacking_unit") is attacker_root:
+                return
+        payload: Dict[str, Any] = {
+            "event": "shooting_targets_selected",
+            "phase": "Shooting phase",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "attacking_unit": attacker_root,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["target_unit"] = candidates[0]
+            payload["unit"] = candidates[0]
         self._queue_reaction(payload, use_timer=False)
 
     def _queue_aeldari_windrider_phase_end_reactions(self, *, player, phase) -> None:
@@ -4438,6 +4552,21 @@ class AeldariStratagemMixin:
                             sr.pop(key, None)
                             changed = True
 
+            if bool(sr.get("aeldari_focused_firepower_active")):
+                focused_exp = str(sr.get("aeldari_focused_firepower_expires_phase", "") or "").strip().upper()
+                if not focused_exp or focused_exp == phase_key:
+                    for key in (
+                        "aeldari_focused_firepower_active",
+                        "aeldari_focused_firepower_ap_bonus",
+                        "aeldari_focused_firepower_expires_phase",
+                        "aeldari_focused_firepower_turn_owner",
+                        "aeldari_focused_firepower_turn",
+                        "aeldari_focused_firepower_source",
+                    ):
+                        if key in sr:
+                            sr.pop(key, None)
+                            changed = True
+
             if phase_key == "MOVEMENT_PHASE":
                 if (
                     "cloudstrike_temp_deep_strike" in sr
@@ -5007,10 +5136,14 @@ class AeldariStratagemMixin:
             return self._use_aeldari_windrider_wind_of_blades(stratagem, **kwargs)
         if name_u == "DARING RIDERS":
             return self._use_aeldari_windrider_daring_riders(stratagem, **kwargs)
+        if name_u == "FOCUSED FIREPOWER":
+            return self._use_aeldari_windrider_focused_firepower(stratagem, **kwargs)
         if name_u == "DEATH FROM ON HIGH":
             return self._use_aeldari_windrider_death_from_on_high(stratagem, **kwargs)
         if name_u == "OVERFLIGHT":
             return self._use_aeldari_windrider_overflight(stratagem, **kwargs)
+        if name_u == "SPIRALLING EVASION":
+            return self._use_aeldari_windrider_spiralling_evasion(stratagem, **kwargs)
         return None
 
     def _use_aeldari_windrider_wind_of_blades(self, stratagem, **kwargs) -> bool:
@@ -5158,6 +5291,69 @@ class AeldariStratagemMixin:
         )
         return True
 
+    def _use_aeldari_windrider_focused_firepower(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: FOCUSED FIREPOWER: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: FOCUSED FIREPOWER: not your turn")
+            return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_windrider_focused_firepower_candidates()
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: FOCUSED FIREPOWER: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: FOCUSED FIREPOWER: target must be an eligible ASURYANI MOUNTED or VYPER unit")
+            return False
+        if not self._aeldari_on_battlefield(target_root, require_targetable=True):
+            logger.error("ERROR: FOCUSED FIREPOWER: target must be on the battlefield and targetable")
+            return False
+        if not self._aeldari_windrider_is_asuryani_mounted_or_vyper(target_root):
+            logger.error("ERROR: FOCUSED FIREPOWER: target must be an ASURYANI MOUNTED or VYPER unit")
+            return False
+        if bool(getattr(getattr(target_root, "round_state", None), "shot_this_round", False)):
+            logger.error("ERROR: FOCUSED FIREPOWER: target has already been selected to shoot")
+            return False
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root):
+            return False
+
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        owner = str(getattr(self.player, "id", "") or "")
+        turn = int(getattr(game, "turn", 0) or 0)
+        source = str(getattr(stratagem, "name", "FOCUSED FIREPOWER") or "FOCUSED FIREPOWER")
+        sr["aeldari_focused_firepower_active"] = True
+        sr["aeldari_focused_firepower_ap_bonus"] = 1
+        sr["aeldari_focused_firepower_expires_phase"] = "SHOOTING_PHASE"
+        sr["aeldari_focused_firepower_source"] = source
+        if owner:
+            sr["aeldari_focused_firepower_turn_owner"] = owner
+        if turn:
+            sr["aeldari_focused_firepower_turn"] = turn
+        target_root.special_rules = sr
+
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: FOCUSED FIREPOWER: %s improves AP by 1 for attacks this phase.",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
+
     def _use_aeldari_windrider_death_from_on_high(self, stratagem, **kwargs) -> bool:
         context = self._aeldari_pending_context(stratagem.name, kwargs)
         phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
@@ -5298,6 +5494,87 @@ class AeldariStratagemMixin:
         self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
         logger.info(
             "INFO: OVERFLIGHT: %s can make a Normal move up to 7\".",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_aeldari_windrider_spiralling_evasion(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            logger.error("ERROR: SPIRALLING EVASION: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            logger.error("ERROR: SPIRALLING EVASION: only usable in your opponent's turn")
+            return False
+
+        attacking_unit = context.get("attacking_unit") or context.get("enemy_unit")
+        attacking_root = self._aeldari_root(attacking_unit) if attacking_unit is not None else None
+        if attacking_root is not None:
+            try:
+                if attacking_root.get_parent_army().player is self.player:
+                    logger.error("ERROR: SPIRALLING EVASION: attacking unit must be enemy")
+                    return False
+            except (AttributeError, TypeError, ValueError):
+                return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        target_window = list(context.get("target_units") or [])
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_windrider_spiralling_evasion_candidates(target_units=target_window)
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: SPIRALLING EVASION: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: SPIRALLING EVASION: selected target unit is ineligible")
+            return False
+        if not self._aeldari_on_battlefield(target_root, require_targetable=True):
+            logger.error("ERROR: SPIRALLING EVASION: target must be on the battlefield and targetable")
+            return False
+        if not self._aeldari_windrider_is_asuryani_mounted_or_vyper(target_root):
+            logger.error("ERROR: SPIRALLING EVASION: target must be ASURYANI MOUNTED or VYPER")
+            return False
+
+        if not self._aeldari_armoured_spend_cp(
+            stratagem,
+            target_unit=target_root,
+            enemy_unit=attacking_root,
+        ):
+            return False
+
+        entry: Dict[str, Any] = {
+            "value": 4,
+            "attack_type": "any",
+            "attacker_key": None,
+            "expires_phase": "SHOOTING_PHASE",
+            "source": str(getattr(stratagem, "name", "SPIRALLING EVASION") or "SPIRALLING EVASION"),
+        }
+        append_effect = getattr(self, "_append_defensive_effect", None)
+        if callable(append_effect):
+            append_effect(target_root, "defensive_invuln_overrides", entry)
+        else:
+            sr = getattr(target_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            entries = sr.get("defensive_invuln_overrides")
+            if not isinstance(entries, list):
+                entries = []
+            entries.append(dict(entry))
+            sr["defensive_invuln_overrides"] = entries
+            target_root.special_rules = sr
+
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: SPIRALLING EVASION: %s gains a 4+ invulnerable save until end of phase.",
             getattr(target_root, "name", "Unit"),
         )
         return True

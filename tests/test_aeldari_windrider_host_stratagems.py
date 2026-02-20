@@ -260,6 +260,83 @@ class TestAeldariWindriderHostStratagems(unittest.TestCase):
         wound_mods_after = riders.get_unit_wound_reroll_modifiers("ranged", target=enemy)
         self.assertFalse(bool(wound_mods_after.get("reroll_wound_full")))
 
+    def test_focused_firepower_queues_and_improves_ranged_ap_until_phase_end(self):
+        game, p1, _p2, aeldari_army, _enemy_army = _build_game()
+        riders = _make_unit(
+            "Shining Spears",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["ASURYANI", "MOUNTED"],
+            quantity=1,
+        )
+        aeldari_army.add_unit(riders)
+        _place_unit(game, riders, 10.0, 10.0)
+
+        _set_phase(game, p1, "SHOOTING_PHASE", 0)
+        pending = _pending_by_name(p1.stratagems, "FOCUSED FIREPOWER")
+        self.assertIsNotNone(pending)
+
+        ok = p1.stratagems.use(str(pending.get("stratagem", "")), unit=riders, dequeue=True)
+        self.assertTrue(ok)
+        self.assertEqual(int(p1.command_points or 0), 9)
+
+        profile = _ranged_profile("Laser Lance")
+        bonus, source = profile._aeldari_focused_firepower_ap_bonus(
+            {"attacker_model": riders.models[0], "attacker_unit": riders}
+        )
+        self.assertEqual(int(bonus or 0), 1)
+        self.assertIn("FOCUSED FIREPOWER", str(source or "").upper())
+
+        game.event_system.publish("phase_end", player=p1, phase=SimpleNamespace(name="SHOOTING_PHASE"))
+        bonus_after, _ = profile._aeldari_focused_firepower_ap_bonus(
+            {"attacker_model": riders.models[0], "attacker_unit": riders}
+        )
+        self.assertEqual(int(bonus_after or 0), 0)
+
+    def test_spiralling_evasion_queues_and_applies_invulnerable_save_until_phase_end(self):
+        game, p1, p2, aeldari_army, enemy_army = _build_game()
+        riders = _make_unit(
+            "Shining Spears",
+            faction_name="Aeldari",
+            faction_keywords=["AELDARI"],
+            keywords=["ASURYANI", "MOUNTED"],
+            quantity=1,
+        )
+        enemy = _make_unit(
+            "Enemy Shooters",
+            faction_name="Enemy",
+            faction_keywords=["ENEMY"],
+            keywords=["INFANTRY"],
+            quantity=1,
+        )
+        aeldari_army.add_unit(riders)
+        enemy_army.add_unit(enemy)
+        _place_unit(game, riders, 10.0, 10.0)
+        _place_unit(game, enemy, 18.0, 10.0)
+
+        _set_phase(game, p2, "SHOOTING_PHASE", 1)
+        game.event_system.publish("shooting_targets_selected", attacking_unit=enemy, target_units=[riders])
+        pending = _pending_by_name(p1.stratagems, "SPIRALLING EVASION")
+        self.assertIsNotNone(pending)
+
+        ok = p1.stratagems.use(str(pending.get("stratagem", "")), unit=riders, dequeue=True)
+        self.assertTrue(ok)
+        self.assertEqual(int(p1.command_points or 0), 9)
+
+        entries = list((getattr(riders, "special_rules", {}) or {}).get("defensive_invuln_overrides", []) or [])
+        self.assertTrue(
+            any(
+                int(entry.get("value", 0) or 0) == 4
+                and str(entry.get("expires_phase", "") or "").strip().upper() == "SHOOTING_PHASE"
+                and "SPIRALLING EVASION" in str(entry.get("source", "") or "").upper()
+                for entry in entries
+            )
+        )
+
+        game.event_system.publish("phase_end", player=p2, phase=SimpleNamespace(name="SHOOTING_PHASE"))
+        entries_after = list((getattr(riders, "special_rules", {}) or {}).get("defensive_invuln_overrides", []) or [])
+        self.assertEqual(entries_after, [])
+
     def test_overflight_queues_at_phase_end_after_destroying_enemy_and_creates_move_decision(self):
         from warhammer40k_ai.engine.decision_kinds import DECISION_MOVE_UNIT
 
@@ -337,6 +414,18 @@ class TestAeldariWindriderHostStratagems(unittest.TestCase):
         self.assertEqual(int(overflight.cp_cost), 1)
         self.assertEqual(str(overflight.effect), "reactive_normal_move")
 
+        focused_firepower = get_stratagem_tool_descriptor(stratagem_id="000009904006")
+        self.assertIsNotNone(focused_firepower)
+        self.assertEqual(str(focused_firepower.name), "Focused Firepower")
+        self.assertEqual(int(focused_firepower.cp_cost), 1)
+        self.assertEqual(str(focused_firepower.effect), "ranged_ap_bonus")
+
+        spiralling_evasion = get_stratagem_tool_descriptor(stratagem_id="000009904007")
+        self.assertIsNotNone(spiralling_evasion)
+        self.assertEqual(str(spiralling_evasion.name), "Spiralling Evasion")
+        self.assertEqual(int(spiralling_evasion.cp_cost), 1)
+        self.assertEqual(str(spiralling_evasion.effect), "invulnerable_save")
+
         by_name_death = get_stratagem_tool_descriptor(name="DEATH FROM ON HIGH")
         self.assertIsNotNone(by_name_death)
         self.assertEqual(str(by_name_death.stratagem_id), "000009904002")
@@ -344,6 +433,14 @@ class TestAeldariWindriderHostStratagems(unittest.TestCase):
         by_name_overflight = get_stratagem_tool_descriptor(name="OVERFLIGHT")
         self.assertIsNotNone(by_name_overflight)
         self.assertEqual(str(by_name_overflight.stratagem_id), "000009904003")
+
+        by_name_focused = get_stratagem_tool_descriptor(name="FOCUSED FIREPOWER")
+        self.assertIsNotNone(by_name_focused)
+        self.assertEqual(str(by_name_focused.stratagem_id), "000009904006")
+
+        by_name_spiralling = get_stratagem_tool_descriptor(name="SPIRALLING EVASION")
+        self.assertIsNotNone(by_name_spiralling)
+        self.assertEqual(str(by_name_spiralling.stratagem_id), "000009904007")
 
 
 if __name__ == "__main__":
