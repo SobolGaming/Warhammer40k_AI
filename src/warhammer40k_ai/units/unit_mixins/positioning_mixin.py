@@ -2816,8 +2816,76 @@ class PositioningMixin:
                 ]
         except Exception:
             pass
+        try:
+            if self._attached_unit_has_active_enhancement(
+                "enhancement_alacritous_assault",
+                enhancement_id="000010699003",
+                enhancement_name="alacritous assault",
+            ):
+                source = "Alacritous Assault"
+                try:
+                    root = self.get_attached_unit_root()
+                except Exception:
+                    root = self
+                try:
+                    members = list(root.get_attached_unit_members() or [])
+                except Exception:
+                    members = [root]
+                if not members:
+                    members = [root]
+                for member in members:
+                    sr = getattr(member, "special_rules", None)
+                    if not isinstance(sr, dict):
+                        continue
+                    if not sr.get("enhancement_alacritous_assault"):
+                        continue
+                    source = str(sr.get("enhancement_alacritous_assault_source", "") or "").strip() or "Alacritous Assault"
+                    break
+                rules = list(rules or []) + [
+                    {"attack_type": "melee", "keyword": "LANCE", "source": source}
+                ]
+        except Exception:
+            pass
         atype = str(attack_type or "").strip().lower()
         is_ranged_attack = atype in ("", "any", "ranged")
+        if is_ranged_attack and self._attached_unit_has_active_enhancement(
+            "enhancement_exotic_munitions",
+            enhancement_id="000010699004",
+            enhancement_name="exotic munitions",
+        ):
+            try:
+                root = self.get_attached_unit_root()
+            except Exception:
+                root = self
+            source = "Exotic Munitions"
+            anti_monster = 5
+            anti_vehicle = 5
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = [root]
+            if not members:
+                members = [root]
+            for member in members:
+                sr = getattr(member, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if not sr.get("enhancement_exotic_munitions"):
+                    continue
+                source = str(sr.get("enhancement_exotic_munitions_source", "") or "").strip() or "Exotic Munitions"
+                try:
+                    anti_monster = int(sr.get("enhancement_exotic_munitions_anti_monster", 5) or 5)
+                except Exception:
+                    anti_monster = 5
+                try:
+                    anti_vehicle = int(sr.get("enhancement_exotic_munitions_anti_vehicle", 5) or 5)
+                except Exception:
+                    anti_vehicle = 5
+                break
+            rules = list(rules or []) + [
+                {"attack_type": "ranged", "keyword": f"ANTI-MONSTER {int(max(2, anti_monster))}+", "source": source},
+                {"attack_type": "ranged", "keyword": f"ANTI-VEHICLE {int(max(2, anti_vehicle))}+", "source": source},
+            ]
         if is_ranged_attack and self._attached_unit_has_active_leading_enhancement(
             "enhancement_peerless_eradicator",
             enhancement_id="000008385004",

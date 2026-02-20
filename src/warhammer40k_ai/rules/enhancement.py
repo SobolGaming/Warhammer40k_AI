@@ -379,6 +379,10 @@ class Enhancement:
         except Exception:
             is_windrider_host = False
         try:
+            is_eldritch_raiders = bool(ae_mgr and ae_mgr.is_eldritch_raiders())
+        except Exception:
+            is_eldritch_raiders = False
+        try:
             is_corsair_veterans = bool(ae_mgr and ae_mgr.has_veterans_of_the_void())
         except Exception:
             is_corsair_veterans = False
@@ -1478,6 +1482,79 @@ class Enhancement:
             unit.special_rules["enhancement_timeless_strategist_battle_focus_bonus"] = int(
                 unit.special_rules.get("enhancement_timeless_strategist_battle_focus_bonus", 0) or 0
             ) + 1
+
+        if name == "pirate prince" or enh_id == "000010699002":
+            if not is_eldritch_raiders:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            refund_threshold = _coerce_int(params.get("refund_roll_threshold", 3) or 3, default=3)
+            refund_tokens = _coerce_int(params.get("refund_tokens", 1) or 1, default=1)
+            source_name = str(getattr(self, "name", "") or "Pirate Prince").strip() or "Pirate Prince"
+            unit.special_rules["enhancement_pirate_prince"] = True
+            unit.special_rules["enhancement_pirate_prince_refund_roll_threshold"] = int(max(2, refund_threshold))
+            unit.special_rules["enhancement_pirate_prince_refund_tokens"] = int(max(1, refund_tokens))
+            unit.special_rules["enhancement_pirate_prince_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "alacritous assault" or enh_id == "000010699003":
+            if not is_eldritch_raiders:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            keywords = tuple(str(v or "").strip().upper() for v in list(params.get("keywords", ("LANCE",))) if str(v or "").strip())
+            has_lance = any(v == "LANCE" for v in keywords)
+            source_name = str(getattr(self, "name", "") or "Alacritous Assault").strip() or "Alacritous Assault"
+            unit.special_rules["enhancement_alacritous_assault"] = bool(has_lance)
+            unit.special_rules["enhancement_alacritous_assault_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "exotic munitions" or enh_id == "000010699004":
+            if not is_eldritch_raiders:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            anti_monster = 5
+            anti_vehicle = 5
+            for raw in list(params.get("keywords", ()) or ()):
+                token = str(raw or "").strip().upper()
+                if not token:
+                    continue
+                m = re.search(r"ANTI-MONSTER\s+(\d)\+", token)
+                if m:
+                    anti_monster = _coerce_int(m.group(1), default=5)
+                m = re.search(r"ANTI-VEHICLE\s+(\d)\+", token)
+                if m:
+                    anti_vehicle = _coerce_int(m.group(1), default=5)
+            source_name = str(getattr(self, "name", "") or "Exotic Munitions").strip() or "Exotic Munitions"
+            unit.special_rules["enhancement_exotic_munitions"] = True
+            unit.special_rules["enhancement_exotic_munitions_anti_monster"] = int(max(2, anti_monster))
+            unit.special_rules["enhancement_exotic_munitions_anti_vehicle"] = int(max(2, anti_vehicle))
+            unit.special_rules["enhancement_exotic_munitions_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "adrenal infusions" or enh_id == "000010699005":
+            if not is_eldritch_raiders:
+                return
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            source_name = str(getattr(self, "name", "") or "Adrenal Infusions").strip() or "Adrenal Infusions"
+            unit.special_rules["enhancement_adrenal_infusions"] = True
+            unit.special_rules["enhancement_adrenal_infusions_free_fade_back"] = bool(
+                params.get("free_fade_back", True)
+            )
+            unit.special_rules["enhancement_adrenal_infusions_ignore_phase_fade_back_limit"] = bool(
+                params.get("ignore_phase_fade_back_limit", True)
+            )
+            unit.special_rules["enhancement_adrenal_infusions_no_phase_fade_back_consumption"] = bool(
+                params.get("does_not_consume_phase_fade_back_limit", True)
+            )
+            unit.special_rules["enhancement_adrenal_infusions_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 
         if name == "firstdrawn blade" or enh_id == "000009903002":
             if not is_windrider_host:

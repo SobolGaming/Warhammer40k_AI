@@ -416,6 +416,53 @@ _AELDARI_CORSAIR_COTERIE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _AELDARI_CORSAIR_COTERIE_DESCRIPTORS.values()
 }
 
+_AELDARI_ELDRITCH_RAIDERS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010699002": EnhancementToolDescriptor(
+        enhancement_id="000010699002",
+        name="Pirate Prince",
+        timing="on_battle_focus_token_spend",
+        target="bearer_unit_while_bearer_is_leading",
+        duration="instant",
+        effect="battle_focus_token_refund_on_agile_maneuver_spend",
+        effect_params={"refund_roll_threshold": 3, "refund_tokens": 1},
+    ),
+    "000010699003": EnhancementToolDescriptor(
+        enhancement_id="000010699003",
+        name="Alacritous Assault",
+        timing="passive",
+        target="bearer_unit_melee_weapons",
+        duration="constant",
+        effect="grant_weapon_keywords",
+        effect_params={"attack_type": "melee", "keywords": ("LANCE",)},
+    ),
+    "000010699004": EnhancementToolDescriptor(
+        enhancement_id="000010699004",
+        name="Exotic Munitions",
+        timing="passive",
+        target="bearer_unit_ranged_weapons",
+        duration="constant",
+        effect="grant_weapon_keywords",
+        effect_params={"attack_type": "ranged", "keywords": ("ANTI-MONSTER 5+", "ANTI-VEHICLE 5+")},
+    ),
+    "000010699005": EnhancementToolDescriptor(
+        enhancement_id="000010699005",
+        name="Adrenal Infusions",
+        timing="reactive_battle_focus_fade_back",
+        target="bearer_unit",
+        duration="constant",
+        effect="grant_fade_back_without_battle_focus_token",
+        effect_params={
+            "free_fade_back": True,
+            "ignore_phase_fade_back_limit": True,
+            "does_not_consume_phase_fade_back_limit": True,
+        },
+    ),
+}
+
+_AELDARI_ELDRITCH_RAIDERS_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _AELDARI_ELDRITCH_RAIDERS_DESCRIPTORS.values()
+}
+
 _AELDARI_WINDRIDER_HOST_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009903002": EnhancementToolDescriptor(
         enhancement_id="000009903002",
@@ -1335,6 +1382,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _AELDARI_CORSAIR_COTERIE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _AELDARI_ELDRITCH_RAIDERS_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _AELDARI_WINDRIDER_HOST_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -1404,6 +1454,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _AELDARI_GUARDIAN_BATTLEHOST_BY_NAME.get(key)
         or _AELDARI_SEER_COUNCIL_BY_NAME.get(key)
         or _AELDARI_CORSAIR_COTERIE_BY_NAME.get(key)
+        or _AELDARI_ELDRITCH_RAIDERS_BY_NAME.get(key)
         or _AELDARI_WINDRIDER_HOST_BY_NAME.get(key)
         or _EXPERIMENTAL_PROTOTYPE_CADRE_BY_NAME.get(key)
         or _MONTKA_BY_NAME.get(key)

@@ -329,18 +329,26 @@ class BattleFocusManager:
             if threshold <= 0:
                 threshold = 3
             try:
+                refund_tokens = int(spec.get("refund_tokens", 1) or 1)
+            except Exception:
+                refund_tokens = 1
+            refund_tokens = max(1, int(refund_tokens))
+            try:
                 roll = int(get_roll("D6")) if callable(get_roll) else 1
             except Exception:
                 roll = 1
             if roll < threshold:
                 continue
-            self.tokens = int(self.tokens) + 1
+            self.tokens = int(self.tokens) + int(refund_tokens)
             try:
                 from ..utility.event_bus import append_action
                 player = getattr(self.army, "player", None)
                 unit_name = str(getattr(unit, "name", "Unit") or "Unit")
                 source = str(spec.get("source", "") or "Battle Focus").strip() or "Battle Focus"
-                append_action(player, f"{source}: regained 1 Battle Focus token ({unit_name}, roll {roll}).")
+                append_action(
+                    player,
+                    f"{source}: regained {int(refund_tokens)} Battle Focus token(s) ({unit_name}, roll {roll}).",
+                )
             except Exception:
                 pass
 

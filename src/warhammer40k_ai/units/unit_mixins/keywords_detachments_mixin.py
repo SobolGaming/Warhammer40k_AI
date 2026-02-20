@@ -5086,7 +5086,29 @@ class KeywordsDetachmentsMixin:
             return bool(root._ability_cache[cache_key])
         found = False
         try:
-            found, _ = root._find_ability_with_patterns(["fleet of foot"])
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get("enhancement_adrenal_infusions")):
+                found = True
+                break
+            enh = getattr(member, "enhancement", None)
+            if enh is None:
+                continue
+            enh_id = str(getattr(enh, "id", "") or "").strip()
+            enh_name = str(getattr(enh, "name", "") or "").strip().lower()
+            if enh_id == "000010699005" or enh_name == "adrenal infusions":
+                found = True
+                break
+        try:
+            if not found:
+                found, _ = root._find_ability_with_patterns(["fleet of foot"])
         except Exception:
             found = False
         if not hasattr(root, "_ability_cache"):

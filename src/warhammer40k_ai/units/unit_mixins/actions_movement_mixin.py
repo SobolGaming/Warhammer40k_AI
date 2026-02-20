@@ -1341,6 +1341,7 @@ class ActionsMovementMixin:
         Returns list of specs with keys:
             - source: ability name
             - threshold: int (D6 roll needed)
+            - refund_tokens: optional int (defaults to 1)
         """
         try:
             root = self.get_attached_unit_root()
@@ -1390,6 +1391,39 @@ class ActionsMovementMixin:
                     "threshold": int(threshold),
                 }
             )
+
+        # Eldritch Raiders - Pirate Prince enhancement:
+        # attached leader refunds Battle Focus tokens when the led unit spends one.
+        for leader in list(getattr(root, "attached_leaders", []) or []):
+            if leader is None:
+                continue
+            try:
+                if hasattr(leader, "is_alive") and not bool(leader.is_alive()):
+                    continue
+            except Exception:
+                continue
+            sr = getattr(leader, "special_rules", None)
+            if not (isinstance(sr, dict) and bool(sr.get("enhancement_pirate_prince"))):
+                continue
+            try:
+                threshold = int(sr.get("enhancement_pirate_prince_refund_roll_threshold", 3) or 3)
+            except Exception:
+                threshold = 3
+            if threshold <= 0:
+                threshold = 3
+            try:
+                refund_tokens = int(sr.get("enhancement_pirate_prince_refund_tokens", 1) or 1)
+            except Exception:
+                refund_tokens = 1
+            refund_tokens = max(1, int(refund_tokens))
+            source = str(sr.get("enhancement_pirate_prince_source", "") or "").strip()
+            if not source:
+                source = str(getattr(getattr(leader, "enhancement", None), "name", "") or "Pirate Prince").strip() or "Pirate Prince"
+            key = (source.lower(), int(threshold), int(refund_tokens))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append({"source": source, "threshold": int(threshold), "refund_tokens": int(refund_tokens)})
 
         if not isinstance(cache, dict):
             cache = {}
