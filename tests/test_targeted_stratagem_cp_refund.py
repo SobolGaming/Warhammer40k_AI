@@ -41,13 +41,16 @@ def _make_unit(name, *, abilities=None, keywords=None, faction_keywords=None):
 
 
 class TestTargetedStratagemCpRefund(unittest.TestCase):
-    def _make_player(self, unit):
+    def _make_player(self, unit, *, extra_units=None):
         from warhammer40k_ai.roster.army import Army
         from warhammer40k_ai.roster.player import Player, PlayerControl
 
         army = Army("Test", "Test")
-        army.units = [unit]
-        unit.set_parent_army(army)
+        all_units = [unit]
+        all_units.extend(list(extra_units or []))
+        army.units = all_units
+        for u in all_units:
+            u.set_parent_army(army)
         player = Player("P1", control=PlayerControl.LOCAL, army=army)
         player.set_game(SimpleNamespace(turn=1))
         return player
@@ -115,6 +118,78 @@ class TestTargetedStratagemCpRefund(unittest.TestCase):
         self.assertTrue(specs)
         self.assertEqual(int(specs[0].get("roll_min", 0) or 0), 5)
         self.assertEqual(int(specs[0].get("cp_gain", 0) or 0), 1)
+
+    def test_parses_vox_caster_officer_bonus_refund(self):
+        ability = {
+            "name": "Vox-caster",
+            "description": (
+                "Each time you target the bearer's unit with a Stratagem, roll one D6, adding 1 to the result if "
+                "there are one or more friendly Officer models within 6\": on a 5+, you gain 1CP."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        unit = _make_unit("Infantry Squad", abilities=[ability])
+        specs = list(unit.special_rules.get("stratagem_target_cp_refund_specs", []) or [])
+
+        self.assertTrue(specs)
+        self.assertEqual(int(specs[0].get("roll_min", 0) or 0), 5)
+        self.assertEqual(int(specs[0].get("cp_gain", 0) or 0), 1)
+        self.assertEqual(int(specs[0].get("roll_bonus", 0) or 0), 1)
+        self.assertEqual(str(specs[0].get("roll_bonus_keyword", "") or "").upper(), "OFFICER")
+        self.assertEqual(int(specs[0].get("roll_bonus_range", 0) or 0), 6)
+
+    def test_vox_caster_bonus_applies_when_officer_within_6(self):
+        ability = {
+            "name": "Vox-caster",
+            "description": (
+                "Each time you target the bearer's unit with a Stratagem, roll one D6, adding 1 to the result if "
+                "there are one or more friendly Officer models within 6\": on a 5+, you gain 1CP."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        unit = _make_unit("Infantry Squad", abilities=[ability])
+        officer_unit = _make_unit("Command Squad", keywords=["Officer"])
+        unit.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        officer_unit.models[0].set_location(5.0, 0.0, 0.0, 0.0)
+        player = self._make_player(unit, extra_units=[officer_unit])
+
+        player.command_points = 2
+        player._pending_stratagem_target_unit_id = str(get_entity_id(unit) or "")
+        player._pending_stratagem_name = "Rapid Fire"
+
+        with patch("warhammer40k_ai.utility.dice.get_roll", return_value=4):
+            ok = bool(player.spend_command_points(1, reason="Stratagem: Rapid Fire", source="stratagem"))
+
+        self.assertTrue(ok)
+        self.assertEqual(int(player.command_points or 0), 2)
+
+    def test_vox_caster_bonus_not_applied_when_officer_outside_6(self):
+        ability = {
+            "name": "Vox-caster",
+            "description": (
+                "Each time you target the bearer's unit with a Stratagem, roll one D6, adding 1 to the result if "
+                "there are one or more friendly Officer models within 6\": on a 5+, you gain 1CP."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        unit = _make_unit("Infantry Squad", abilities=[ability])
+        officer_unit = _make_unit("Command Squad", keywords=["Officer"])
+        unit.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        officer_unit.models[0].set_location(24.0, 0.0, 0.0, 0.0)
+        player = self._make_player(unit, extra_units=[officer_unit])
+
+        player.command_points = 2
+        player._pending_stratagem_target_unit_id = str(get_entity_id(unit) or "")
+        player._pending_stratagem_name = "Rapid Fire"
+
+        with patch("warhammer40k_ai.utility.dice.get_roll", return_value=4):
+            ok = bool(player.spend_command_points(1, reason="Stratagem: Rapid Fire", source="stratagem"))
+
+        self.assertTrue(ok)
+        self.assertEqual(int(player.command_points or 0), 1)
 
 
 if __name__ == "__main__":

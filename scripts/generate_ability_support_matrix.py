@@ -5825,15 +5825,23 @@ def _targeted_stratagem_cp_refund_support(description: str) -> Optional[Tuple[st
     if not norm:
         return None
 
+    bonus_clause = (
+        r"(?:adding (?P<bonus>\d+) to the result if there (?:are|is) one or more friendly "
+        r"(?P<bonus_keyword>[a-z0-9 ]+?) models? within (?P<bonus_range>\d+) )?"
+    )
     direct_pattern = (
         r"(?:the bearer loses the smoke keyword but )?each time you target "
         r"(?:this unit|that unit|the bearer|the bearers unit|the bearer s unit|this models unit|this model s unit) "
-        r"with a stratagem roll one d6 on a (?P<roll>\d+) (?:you )?gain (?P<cp>\d+) ?cp"
+        r"with a stratagem roll one d6 "
+        + bonus_clause +
+        r"on a (?P<roll>\d+) (?:you )?gain (?P<cp>\d+) ?cp"
     )
     select_pattern = (
         r"each time you select "
         r"(?:the bearers unit|the bearer s unit|this models unit|this model s unit|its unit|that unit|this unit) "
-        r"as the target of a stratagem roll one d6 on a (?P<roll>\d+) (?:you )?gain (?P<cp>\d+) ?cp"
+        r"as the target of a stratagem roll one d6 "
+        + bonus_clause +
+        r"on a (?P<roll>\d+) (?:you )?gain (?P<cp>\d+) ?cp"
     )
     smoke_loss = "bearer loses the smoke keyword" in norm
     for pattern in (direct_pattern, select_pattern):
@@ -5842,14 +5850,20 @@ def _targeted_stratagem_cp_refund_support(description: str) -> Optional[Tuple[st
             continue
         roll = m.group("roll") or "5"
         cp = m.group("cp") or "1"
+        bonus = m.group("bonus")
+        bonus_keyword = re.sub(r"\s+", " ", str(m.group("bonus_keyword") or "").strip()).upper()
+        bonus_range = m.group("bonus_range") or "0"
+        bonus_note = ""
+        if bonus:
+            bonus_note = f", adding {bonus} if one or more friendly {bonus_keyword} models are within {bonus_range}\""
         if smoke_loss:
             return (
                 "Supported",
-                f"Bearer loses the SMOKE keyword; when targeted by a Stratagem, roll D6 and gain {cp} CP on {roll}+ (CP gain guardrail respected).",
+                f"Bearer loses the SMOKE keyword; when targeted by a Stratagem, roll D6{bonus_note} and gain {cp} CP on {roll}+ (CP gain guardrail respected).",
             )
         return (
             "Supported",
-            f"When targeted by a Stratagem, roll D6 and gain {cp} CP on {roll}+ (CP gain guardrail respected).",
+            f"When targeted by a Stratagem, roll D6{bonus_note} and gain {cp} CP on {roll}+ (CP gain guardrail respected).",
         )
     return None
 

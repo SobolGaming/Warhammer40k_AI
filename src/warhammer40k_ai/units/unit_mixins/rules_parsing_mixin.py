@@ -1197,6 +1197,12 @@ class RulesParsingMixin:
         for model in list(getattr(self, "models", []) or []):
             entries.extend(list(self._iter_ability_entries_for_rules(model=model)))
 
+        bonus_clause_re = re.compile(
+            r"adding\s+(?P<bonus>\d+)\s+to\s+the\s+result\s+if\s+there\s+(?:are|is)\s+one\s+or\s+more\s+friendly\s+"
+            r"(?P<keyword>[a-z0-9 ]+?)\s+models?\s+within\s+(?P<range>\d+)",
+            re.IGNORECASE,
+        )
+
         specs: list[dict] = []
         seen_entries: set[tuple[str, str]] = set()
         for name, desc in entries:
@@ -1216,9 +1222,26 @@ class RulesParsingMixin:
             if not norm or "stratagem" not in norm:
                 continue
 
-            m = self._TARGETED_STRATAGEM_CP_REFUND_RE.fullmatch(norm)
+            roll_bonus = 0
+            roll_bonus_keyword = ""
+            roll_bonus_range = 0
+            norm_for_match = norm
+            m_bonus = bonus_clause_re.search(norm)
+            if m_bonus:
+                try:
+                    roll_bonus = int(m_bonus.group("bonus") or 0)
+                except (TypeError, ValueError):
+                    roll_bonus = 0
+                try:
+                    roll_bonus_range = int(m_bonus.group("range") or 0)
+                except (TypeError, ValueError):
+                    roll_bonus_range = 0
+                roll_bonus_keyword = re.sub(r"\s+", " ", str(m_bonus.group("keyword") or "").strip()).upper()
+                norm_for_match = re.sub(r"\s+", " ", f"{norm[:m_bonus.start()]} {norm[m_bonus.end():]}").strip()
+
+            m = self._TARGETED_STRATAGEM_CP_REFUND_RE.fullmatch(norm_for_match)
             if not m:
-                m = self._TARGETED_STRATAGEM_CP_REFUND_SELECT_RE.fullmatch(norm)
+                m = self._TARGETED_STRATAGEM_CP_REFUND_SELECT_RE.fullmatch(norm_for_match)
             if not m:
                 continue
             try:
@@ -1231,14 +1254,17 @@ class RulesParsingMixin:
                 cp_gain = 1
             if roll_min <= 0 or cp_gain <= 0:
                 continue
-            specs.append(
-                {
-                    "roll_min": int(roll_min),
-                    "cp_gain": int(cp_gain),
-                    "name": name or "Stratagem CP Refund",
-                    "description": desc or "",
-                }
-            )
+            spec = {
+                "roll_min": int(roll_min),
+                "cp_gain": int(cp_gain),
+                "name": name or "Stratagem CP Refund",
+                "description": desc or "",
+            }
+            if roll_bonus > 0 and roll_bonus_keyword and roll_bonus_range > 0:
+                spec["roll_bonus"] = int(roll_bonus)
+                spec["roll_bonus_keyword"] = str(roll_bonus_keyword)
+                spec["roll_bonus_range"] = int(roll_bonus_range)
+            specs.append(spec)
 
         if specs:
             seen_specs: set[tuple] = set()
@@ -1248,6 +1274,9 @@ class RulesParsingMixin:
                     int(spec.get("roll_min", 0) or 0),
                     int(spec.get("cp_gain", 0) or 0),
                     str(spec.get("name", "") or "").strip().lower(),
+                    int(spec.get("roll_bonus", 0) or 0),
+                    str(spec.get("roll_bonus_keyword", "") or "").strip().upper(),
+                    int(spec.get("roll_bonus_range", 0) or 0),
                 )
                 if key in seen_specs:
                     continue

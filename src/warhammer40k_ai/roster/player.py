@@ -471,10 +471,22 @@ class Player:
         seen = set()
         deduped: list[dict] = []
         for spec in specs:
+            try:
+                bonus_roll = int(spec.get("roll_bonus", 0) or 0)
+            except (TypeError, ValueError):
+                bonus_roll = 0
+            bonus_keyword = str(spec.get("roll_bonus_keyword", "") or "").strip().upper()
+            try:
+                bonus_range = int(spec.get("roll_bonus_range", 0) or 0)
+            except (TypeError, ValueError):
+                bonus_range = 0
             key = (
                 int(spec.get("roll_min", 0) or 0),
                 int(spec.get("cp_gain", 0) or 0),
                 str(spec.get("name", "") or "").strip().lower(),
+                int(bonus_roll),
+                str(bonus_keyword),
+                int(bonus_range),
             )
             if key in seen:
                 continue
@@ -485,9 +497,39 @@ class Player:
                 str(item.get("name", "") or "").strip().lower(),
                 int(item.get("roll_min", 0) or 0),
                 int(item.get("cp_gain", 0) or 0),
+                int(item.get("roll_bonus", 0) or 0),
+                str(item.get("roll_bonus_keyword", "") or "").strip().upper(),
+                int(item.get("roll_bonus_range", 0) or 0),
             )
         )
         return deduped
+
+    def _friendly_keyword_within_range_of_unit(self, *, target_unit, keyword: str, rng: float) -> bool:
+        if target_unit is None:
+            return False
+        kw = str(keyword or "").strip().upper()
+        if not kw:
+            return False
+        try:
+            range_val = float(rng or 0.0)
+        except (TypeError, ValueError):
+            range_val = 0.0
+        if range_val <= 0.0:
+            return False
+        parent = self._target_unit_parent_army(target_unit)
+        if parent is not None and parent is not self.get_army():
+            return False
+        army = self.get_army()
+        if army is None:
+            return False
+        for source_unit in list(getattr(army, "units", []) or []):
+            if not self._unit_is_alive_or_unknown(source_unit):
+                continue
+            if not self._unit_has_keyword(source_unit, kw):
+                continue
+            if self._source_model_within_range_for_ability(source_unit, target_unit, range_val, ""):
+                return True
+        return False
 
     def _maybe_apply_targeted_stratagem_cp_refund(self, *, target_unit_id: str, stratagem_name: str = "") -> None:
         root = self._resolve_owned_unit_root_by_id(target_unit_id)
@@ -515,13 +557,34 @@ class Player:
                 cp_gain = int(spec.get("cp_gain", 1) or 1)
             except Exception:
                 cp_gain = 1
+            try:
+                roll_bonus_value = int(spec.get("roll_bonus", 0) or 0)
+            except (TypeError, ValueError):
+                roll_bonus_value = 0
+            roll_bonus_keyword = str(spec.get("roll_bonus_keyword", "") or "").strip().upper()
+            try:
+                roll_bonus_range = float(spec.get("roll_bonus_range", 0) or 0)
+            except (TypeError, ValueError):
+                roll_bonus_range = 0.0
+            roll_bonus = 0
+            if roll_bonus_value > 0 and roll_bonus_keyword and roll_bonus_range > 0:
+                if self._friendly_keyword_within_range_of_unit(
+                    target_unit=root,
+                    keyword=roll_bonus_keyword,
+                    rng=roll_bonus_range,
+                ):
+                    roll_bonus = int(roll_bonus_value)
+            effective_roll = int(roll + roll_bonus)
             gained = 0
-            if roll >= roll_min and cp_gain > 0:
+            if effective_roll >= roll_min and cp_gain > 0:
                 gained = int(self.gain_command_points(cp_gain, reason=label) or 0)
             try:
                 from ..utility.event_bus import append_dice, append_action
 
-                append_dice(self, f"{label} roll: {int(roll)}")
+                if roll_bonus > 0:
+                    append_dice(self, f"{label} roll: {int(roll)} (+{int(roll_bonus)}) = {int(effective_roll)}")
+                else:
+                    append_dice(self, f"{label} roll: {int(roll)}")
                 if gained > 0:
                     append_action(self, f"{label}: gained {int(gained)} CP.")
                 else:
@@ -537,6 +600,8 @@ class Player:
                         reason=label,
                         target_unit=root,
                         roll=int(roll),
+                        roll_bonus=int(roll_bonus),
+                        effective_roll=int(effective_roll),
                         stratagem_name=str(stratagem_name or ""),
                     )
                 except Exception:
