@@ -1704,6 +1704,48 @@ _SEER_COUNCIL_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SEER_COUNCIL_STRATAGEM_DESCRIPTORS.values()
 }
 
+_SERPENTS_BROOD_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010650002": StratagemToolDescriptor(
+        stratagem_id="000010650002",
+        name="Fangs of the Brood",
+        timing="start_of_fight_phase",
+        target="troupe_unit",
+        duration="until_end_of_phase",
+        effect="dance_of_death_select_three_abilities",
+        cp_cost=1,
+        effect_params={
+            "abilities": ["HERO", "VILLAIN", "TRICKSTER"],
+            "selection_count": 3,
+        },
+    ),
+    "000010650005": StratagemToolDescriptor(
+        stratagem_id="000010650005",
+        name="Weavers' Coils",
+        timing="end_of_your_fight_phase",
+        target="harlequins_mounted_unit_eligible_to_fight_this_phase",
+        duration="immediate",
+        effect="reactive_normal_or_fall_back_move",
+        cp_cost=1,
+        effect_params={
+            "normal_move_if_not_engaged": True,
+            "fall_back_distance_if_engaged_inches": 6.0,
+        },
+    ),
+    "000010650007": StratagemToolDescriptor(
+        stratagem_id="000010650007",
+        name="Skyward Lunge",
+        timing="end_of_opponent_fight_phase",
+        target="harlequins_vehicle_or_mounted_unit_not_within_engagement_range",
+        duration="immediate",
+        effect="enter_strategic_reserves",
+        cp_cost=1,
+    ),
+}
+
+_SERPENTS_BROOD_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SERPENTS_BROOD_STRATAGEM_DESCRIPTORS.values()
+}
+
 _GUARDIAN_BATTLEHOST_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009912002": StratagemToolDescriptor(
         stratagem_id="000009912002",
@@ -2646,6 +2688,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _GHOSTS_OF_THE_WEBWAY_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _SERPENTS_BROOD_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _ELDRITCH_RAIDERS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -2700,6 +2745,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _GUARDIAN_BATTLEHOST_STRATAGEM_BY_NAME.get(key)
         or _DEVOTED_OF_YNNEAD_STRATAGEM_BY_NAME.get(key)
         or _GHOSTS_OF_THE_WEBWAY_STRATAGEM_BY_NAME.get(key)
+        or _SERPENTS_BROOD_STRATAGEM_BY_NAME.get(key)
         or _ELDRITCH_RAIDERS_STRATAGEM_BY_NAME.get(key)
         or _EXPERIMENTAL_PROTOTYPE_CADRE_STRATAGEM_BY_NAME.get(key)
         or _MONTKA_STRATAGEM_BY_NAME.get(key)

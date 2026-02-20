@@ -175,6 +175,10 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "TIME TO STRIKE",
     "PRESENTIMENT OF DREAD",
     "FOREWARNED",
+    "FANGS OF THE BROOD",
+    "SKYWARD LUNGE",
+    "WEAVERS' COILS",
+    "WEAVERS\u2019 COILS",
     "UNSHROUDED TRUTH",
     "FATE INESCAPABLE",
     "TRICKSTERS' RETORT",
@@ -379,6 +383,10 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "TO THEIR FINAL BREATH",
     "UNSHROUDED TRUTH",
     "FOREWARNED",
+    "FANGS OF THE BROOD",
+    "SKYWARD LUNGE",
+    "WEAVERS' COILS",
+    "WEAVERS\u2019 COILS",
     "ISHA'S FURY",
     "ISHA\u2019S FURY",
     "PSYCHIC SHIELD",
@@ -1637,6 +1645,9 @@ class StratagemManager(
             "RAPID INGRESS",
             "SKYBORNE SANCTUARY",
             "WITHDRAW AND REINFORCE",
+            "SKYWARD LUNGE",
+            "WEAVERS' COILS",
+            "WEAVERS\u2019 COILS",
             "EXIT THE STAGE",
             "WEBWAY TUNNEL",
             "ENDLESS SERVITUDE",
@@ -2713,6 +2724,58 @@ class StratagemManager(
             result["reason"] = (
                 "Requires Fight phase trigger after enemy targets are selected, targeting an eligible ASURYANI INFANTRY non-WRAITH CONSTRUCT unit within 9\" of one of your ASURYANI PSYKER units"
             )
+            return result
+        if name_u == "FANGS OF THE BROOD":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l and phase_name_l != "fight phase":
+                result["reason"] = "Requires Fight phase"
+                return result
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = list(self._aeldari_serpents_fangs_candidates() or [])
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires an eligible TROUPE unit on the battlefield"
+            return result
+        if name_u == "SKYWARD LUNGE":
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l and phase_name_l != "fight phase":
+                result["reason"] = "Requires end of opponent's Fight phase"
+                return result
+            game = getattr(self, "game", None)
+            active_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+            if active_player is self.player:
+                result["reason"] = "Only usable at end of opponent's Fight phase"
+                return result
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = list(self._aeldari_serpents_skyward_lunge_candidates() or [])
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires a HARLEQUINS VEHICLE or HARLEQUINS MOUNTED unit that is not in Engagement Range"
+            return result
+        if name_u in {"WEAVERS' COILS", "WEAVERS\u2019 COILS"}:
+            phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
+            if phase_name_l and phase_name_l != "fight phase":
+                result["reason"] = "Requires end of your Fight phase"
+                return result
+            game = getattr(self, "game", None)
+            active_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+            if active_player is not self.player:
+                result["reason"] = "Only usable at end of your Fight phase"
+                return result
+            candidates = list(context.get("candidates") or [])
+            if not candidates:
+                candidates = list(self._aeldari_serpents_weavers_coils_candidates() or [])
+            if candidates:
+                result["available"] = True
+                result["reason"] = None
+                return result
+            result["reason"] = "Requires a HARLEQUINS MOUNTED unit that was eligible to fight this phase"
             return result
         if name_u == "UNSHROUDED TRUTH":
             phase_name_l = str(context.get("phase_name") or self._current_phase_name or "").strip().lower()
@@ -3812,6 +3875,10 @@ class StratagemManager(
             "TIME TO STRIKE": "Target: your Storm Guardians unit that has not been selected to move this phase; it gains fixed Advance distance 6 and can shoot/charge after advancing this turn",
             "PRESENTIMENT OF DREAD": "Target: one of your ASURYANI PSYKER models; select one visible enemy unit within 18\" of it to take a Battle-shock test at -1",
             "FOREWARNED": "Target: your ASURYANI INFANTRY unit (excluding WRAITH CONSTRUCT) selected as a target of enemy fight attacks and within 9\" of a friendly ASURYANI PSYKER; attacks targeting it are -1 to Hit and -1 to Wound this phase",
+            "FANGS OF THE BROOD": "Target: your TROUPE unit; this phase it can gain all three Dance of Death abilities instead of one",
+            "SKYWARD LUNGE": "Target: your HARLEQUINS VEHICLE or HARLEQUINS MOUNTED unit that is not in Engagement Range at end of opponent's Fight phase; it enters Strategic Reserves",
+            "WEAVERS' COILS": "Target: your HARLEQUINS MOUNTED unit that was eligible to fight this phase; it can make a Normal move, or a Fall Back move up to 6\" if in Engagement Range",
+            "WEAVERS\u2019 COILS": "Target: your HARLEQUINS MOUNTED unit that was eligible to fight this phase; it can make a Normal move, or a Fall Back move up to 6\" if in Engagement Range",
             "UNSHROUDED TRUTH": "Target: your ASURYANI INFANTRY unit (excluding WRAITH CONSTRUCT) that has not been selected to move this phase, was not set up this phase, and is within 9\" of a friendly ASURYANI PSYKER; remove and set it up again more than 9\" horizontally from enemy models",
             "FATE INESCAPABLE": "Target: your ASURYANI INFANTRY unit (excluding WRAITH CONSTRUCT) that has not been selected to shoot this phase and is within 9\" of a friendly ASURYANI PSYKER; ranged attacks gain [IGNORES COVER] and improve AP by 1 on Critical Wounds this phase",
             "ISHA'S FURY": "Target: one of your ASURYANI PSYKER models within 9\" of an enemy unit that just ended a Normal/Advance/Fall Back move; roll 6D6 and that enemy suffers 1 mortal wound for each 3+",
@@ -4485,6 +4552,10 @@ class StratagemManager(
             raise
         try:
             self._queue_aeldari_aspect_host_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_aeldari_serpents_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -5354,6 +5425,10 @@ class StratagemManager(
         except Exception:
             raise
         try:
+            self._queue_aeldari_serpents_phase_end_reactions(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
             self._queue_aeldari_ghosts_phase_end_reactions(player=player, phase=phase)
         except Exception:
             raise
@@ -5367,6 +5442,10 @@ class StratagemManager(
             raise
         try:
             self._cleanup_aeldari_armoured_phase_end_effects(phase=phase)
+        except Exception:
+            raise
+        try:
+            self._cleanup_aeldari_serpents_phase_end_effects(phase=phase)
         except Exception:
             raise
         try:
@@ -13830,6 +13909,9 @@ class StratagemManager(
         aeldari_ghosts_result = self._use_aeldari_ghosts_of_the_webway_stratagem(s, **kwargs)
         if aeldari_ghosts_result is not None:
             return aeldari_ghosts_result
+        aeldari_serpents_result = self._use_aeldari_serpents_brood_stratagem(s, **kwargs)
+        if aeldari_serpents_result is not None:
+            return aeldari_serpents_result
         aeldari_eldritch_result = self._use_aeldari_eldritch_raiders_stratagem(s, **kwargs)
         if aeldari_eldritch_result is not None:
             return aeldari_eldritch_result

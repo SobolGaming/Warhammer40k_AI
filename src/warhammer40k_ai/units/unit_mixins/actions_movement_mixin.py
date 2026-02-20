@@ -2883,6 +2883,34 @@ class ActionsMovementMixin:
         sr = getattr(root, "special_rules", None)
         if not isinstance(sr, dict):
             return ""
+        if bool(sr.get("serpents_brood_fangs_of_the_brood_active")):
+            active = True
+            exp = str(sr.get("serpents_brood_fangs_of_the_brood_expires_phase", "") or "").strip().upper()
+            try:
+                effect_turn = int(sr.get("serpents_brood_fangs_of_the_brood_turn", 0) or 0)
+            except (TypeError, ValueError):
+                effect_turn = 0
+            if game is None:
+                try:
+                    army = root.get_parent_army()
+                except (AttributeError, TypeError, ValueError):
+                    army = None
+                try:
+                    game = getattr(getattr(army, "player", None), "game", None)
+                except (AttributeError, TypeError, ValueError):
+                    game = None
+            if game is not None:
+                phase_name = str(getattr(getattr(game, "phase", None), "name", "") or getattr(game, "phase", "") or "").strip().upper()
+                if exp and phase_name and phase_name != exp:
+                    active = False
+                try:
+                    current_turn = int(getattr(game, "turn", 0) or 0)
+                except (TypeError, ValueError):
+                    current_turn = 0
+                if effect_turn and current_turn and effect_turn != current_turn:
+                    active = False
+            if active:
+                return "ALL"
         choice = str(sr.get("dance_of_death_choice", "") or "").strip().upper()
         if not choice:
             return ""
@@ -3163,7 +3191,7 @@ class ActionsMovementMixin:
                 choice = choice_fn()
         except Exception:
             choice = ""
-        if choice == "HERO":
+        if choice in ("HERO", "ALL"):
             reroll_hit_values.add(1)
             reroll_hit_reasons.append("Dance of Death (Hero's Prowess): re-roll Hit rolls of 1")
 
@@ -3808,7 +3836,7 @@ class ActionsMovementMixin:
                 choice = choice_fn()
         except Exception:
             choice = ""
-        if choice == "VILLAIN":
+        if choice in ("VILLAIN", "ALL"):
             mods["wound"] += 1
             wound_reasons.append("Dance of Death (Villain's Doom): +1 to wound")
 

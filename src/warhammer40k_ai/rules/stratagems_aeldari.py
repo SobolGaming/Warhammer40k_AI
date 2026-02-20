@@ -107,6 +107,11 @@ class AeldariStratagemMixin:
         checker = getattr(mgr, "is_guardian_battlehost", None) if mgr is not None else None
         return bool(checker()) if callable(checker) else False
 
+    def _is_serpents_brood_detachment(self) -> bool:
+        mgr = self._aeldari_detachment_mgr()
+        checker = getattr(mgr, "is_serpents_brood", None) if mgr is not None else None
+        return bool(checker()) if callable(checker) else False
+
     def _blitzing_firepower_candidates(self) -> List[Any]:
         if not self._is_warhost_detachment():
             return []
@@ -2052,6 +2057,96 @@ class AeldariStratagemMixin:
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload, use_timer=False)
 
+    def _queue_aeldari_serpents_phase_start_reactions(self, *, player, phase) -> None:
+        game = getattr(self, "game", None)
+        if game is None or not self._is_serpents_brood_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "FIGHT_PHASE":
+            return
+
+        stratagem = self._aeldari_get_stratagem_by_norm_name("FANGS OF THE BROOD")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+            return
+        candidates = self._aeldari_serpents_fangs_candidates()
+        if not candidates or self._aeldari_reaction_exists("phase_start", stratagem.name):
+            return
+        payload: Dict[str, Any] = {
+            "event": "phase_start",
+            "phase": "Fight phase",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
+    def _queue_aeldari_serpents_phase_end_reactions(self, *, player, phase) -> None:
+        game = getattr(self, "game", None)
+        if game is None or not self._is_serpents_brood_detachment():
+            return
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "FIGHT_PHASE":
+            return
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is None:
+            return
+
+        if active_player is self.player:
+            stratagem = self._aeldari_get_stratagem_by_norm_name("WEAVERS' COILS")
+            if stratagem is None:
+                return
+            if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+                return
+            if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+                return
+            candidates = self._aeldari_serpents_weavers_coils_candidates()
+            if not candidates or self._aeldari_reaction_exists("phase_end", stratagem.name):
+                return
+            payload: Dict[str, Any] = {
+                "event": "phase_end",
+                "phase": "Fight phase",
+                "phase_name": "Fight phase",
+                "stratagem": stratagem.name,
+                "cp_cost": stratagem.cp_cost,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["unit"] = candidates[0]
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload, use_timer=False)
+            return
+
+        stratagem = self._aeldari_get_stratagem_by_norm_name("SKYWARD LUNGE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if self._aeldari_norm_name(stratagem.name) in getattr(self, "_used_stratagems_this_phase", set()):
+            return
+        candidates = self._aeldari_serpents_skyward_lunge_candidates()
+        if not candidates or self._aeldari_reaction_exists("phase_end", stratagem.name):
+            return
+        payload = {
+            "event": "phase_end",
+            "phase": "Fight phase",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": stratagem.cp_cost,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
     def _queue_aeldari_ghosts_move_end_reactions(self, *, unit: Any, action: str) -> None:
         if unit is None or not self._is_ghosts_of_the_webway_detachment():
             return
@@ -3068,6 +3163,43 @@ class AeldariStratagemMixin:
                         else:
                             sr.pop("charge_roll_modifiers", None)
                         root.special_rules = sr
+
+    def _cleanup_aeldari_serpents_phase_end_effects(self, *, phase) -> None:
+        phase_key = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_key != "FIGHT_PHASE":
+            return
+        if not self._is_serpents_brood_detachment():
+            return
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            changed = False
+            for key in (
+                "serpents_brood_fangs_of_the_brood_active",
+                "serpents_brood_fangs_of_the_brood_turn_owner",
+                "serpents_brood_fangs_of_the_brood_turn",
+                "serpents_brood_fangs_of_the_brood_expires_phase",
+                "serpents_brood_fangs_of_the_brood_source",
+            ):
+                if key in sr:
+                    sr.pop(key, None)
+                    changed = True
+            if changed:
+                root.special_rules = sr
 
     def _use_aeldari_armoured_warhost_stratagem(self, stratagem, **kwargs) -> Optional[bool]:
         if stratagem is None or not self._is_armoured_warhost_detachment():
@@ -4353,6 +4485,207 @@ class AeldariStratagemMixin:
         if name_u == "IMPEDING FIRE":
             return self._use_aeldari_eldritch_impeding_fire(stratagem, **kwargs)
         return None
+
+    def _use_aeldari_serpents_brood_stratagem(self, stratagem, **kwargs) -> Optional[bool]:
+        if stratagem is None or not self._is_serpents_brood_detachment():
+            return None
+        name_u = self._aeldari_norm_name(getattr(stratagem, "name", ""))
+        if name_u == "FANGS OF THE BROOD":
+            return self._use_aeldari_serpents_fangs_of_the_brood(stratagem, **kwargs)
+        if name_u == "SKYWARD LUNGE":
+            return self._use_aeldari_serpents_skyward_lunge(stratagem, **kwargs)
+        if name_u in {"WEAVERS' COILS", "WEAVERS\u2019 COILS"}:
+            return self._use_aeldari_serpents_weavers_coils(stratagem, **kwargs)
+        return None
+
+    def _use_aeldari_serpents_fangs_of_the_brood(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: FANGS OF THE BROOD: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_serpents_fangs_candidates()
+        if target_root is None:
+            if len(candidates) == 1:
+                target_root = candidates[0]
+            else:
+                logger.error("ERROR: FANGS OF THE BROOD: missing target unit")
+                return False
+        if target_root not in candidates:
+            logger.error("ERROR: FANGS OF THE BROOD: target must be an eligible TROUPE unit")
+            return False
+        if not self._aeldari_on_battlefield(target_root, require_targetable=True):
+            logger.error("ERROR: FANGS OF THE BROOD: target must be on the battlefield and targetable")
+            return False
+        if not self._aeldari_is_troupe(target_root):
+            logger.error("ERROR: FANGS OF THE BROOD: target must be a TROUPE unit")
+            return False
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root):
+            return False
+
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["serpents_brood_fangs_of_the_brood_active"] = True
+        sr["serpents_brood_fangs_of_the_brood_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        sr["serpents_brood_fangs_of_the_brood_turn"] = int(getattr(game, "turn", 0) or 0)
+        sr["serpents_brood_fangs_of_the_brood_expires_phase"] = "FIGHT_PHASE"
+        sr["serpents_brood_fangs_of_the_brood_source"] = str(getattr(stratagem, "name", "FANGS OF THE BROOD") or "FANGS OF THE BROOD")
+        target_root.special_rules = sr
+
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: FANGS OF THE BROOD: %s can gain all three Dance of Death abilities this phase.",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_aeldari_serpents_skyward_lunge(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: SKYWARD LUNGE: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            logger.error("ERROR: SKYWARD LUNGE: not opponent's turn")
+            return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_serpents_skyward_lunge_candidates()
+        candidate_roots = [self._aeldari_root(unit) for unit in list(candidates or [])]
+        candidate_roots = [unit for unit in candidate_roots if unit is not None]
+        if target_root is None:
+            if len(candidate_roots) == 1:
+                target_root = candidate_roots[0]
+            else:
+                logger.error("ERROR: SKYWARD LUNGE: missing target unit")
+                return False
+        if candidate_roots and target_root not in candidate_roots:
+            logger.error("ERROR: SKYWARD LUNGE: target is not currently eligible")
+            return False
+        if not self._aeldari_on_battlefield(target_root, require_targetable=True):
+            logger.error("ERROR: SKYWARD LUNGE: target must be on the battlefield and targetable")
+            return False
+        if not self._aeldari_is_harlequins(target_root):
+            logger.error("ERROR: SKYWARD LUNGE: target must be HARLEQUINS")
+            return False
+        if not (self._aeldari_has_keyword(target_root, "VEHICLE") or self._aeldari_has_keyword(target_root, "MOUNTED")):
+            logger.error("ERROR: SKYWARD LUNGE: target must be HARLEQUINS VEHICLE or HARLEQUINS MOUNTED")
+            return False
+        if self._aeldari_in_engagement_range(target_root):
+            logger.error("ERROR: SKYWARD LUNGE: target must not be within Engagement Range")
+            return False
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root):
+            return False
+        if not self._aeldari_place_unit_into_strategic_reserves(
+            target_root,
+            reason=str(getattr(stratagem, "name", "SKYWARD LUNGE") or "SKYWARD LUNGE"),
+        ):
+            logger.error("ERROR: SKYWARD LUNGE: failed to place target into Strategic Reserves")
+            return False
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: SKYWARD LUNGE: %s entered Strategic Reserves.",
+            getattr(target_root, "name", "Unit"),
+        )
+        return True
+
+    def _use_aeldari_serpents_weavers_coils(self, stratagem, **kwargs) -> bool:
+        context = self._aeldari_pending_context(stratagem.name, kwargs)
+        phase_name = str(context.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            logger.error("ERROR: WEAVERS' COILS: wrong phase")
+            return False
+        game = getattr(self, "game", None)
+        if game is None:
+            return False
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            logger.error("ERROR: WEAVERS' COILS: not your turn")
+            return False
+
+        target_unit = context.get("unit") or context.get("target_unit")
+        target_root = self._aeldari_root(target_unit) if target_unit is not None else None
+        candidates = list(context.get("candidates") or [])
+        if not candidates:
+            candidates = self._aeldari_serpents_weavers_coils_candidates()
+        candidate_roots = [self._aeldari_root(unit) for unit in list(candidates or [])]
+        candidate_roots = [unit for unit in candidate_roots if unit is not None]
+        if target_root is None:
+            if len(candidate_roots) == 1:
+                target_root = candidate_roots[0]
+            else:
+                logger.error("ERROR: WEAVERS' COILS: missing target unit")
+                return False
+        if candidate_roots and target_root not in candidate_roots:
+            logger.error("ERROR: WEAVERS' COILS: target is not currently eligible")
+            return False
+        if not self._aeldari_on_battlefield(target_root, require_targetable=True):
+            logger.error("ERROR: WEAVERS' COILS: target must be on the battlefield and targetable")
+            return False
+        if not self._aeldari_is_harlequins(target_root):
+            logger.error("ERROR: WEAVERS' COILS: target must be HARLEQUINS")
+            return False
+        if not self._aeldari_has_keyword(target_root, "MOUNTED"):
+            logger.error("ERROR: WEAVERS' COILS: target must be HARLEQUINS MOUNTED")
+            return False
+        round_state = getattr(target_root, "round_state", None)
+        was_eligible = bool(getattr(round_state, "eligible_to_fight_this_phase", False))
+        if not was_eligible and bool(getattr(round_state, "fought_this_phase", False)):
+            was_eligible = True
+        if not was_eligible:
+            logger.error("ERROR: WEAVERS' COILS: target must have been eligible to fight this phase")
+            return False
+        if not self._aeldari_armoured_spend_cp(stratagem, target_unit=target_root):
+            return False
+
+        engaged = self._aeldari_in_engagement_range(target_root)
+        movement_type = "fall_back" if engaged else "move"
+        max_distance = 6 if engaged else int(self._aeldari_serpents_normal_move_distance(target_root) or 0)
+        if max_distance <= 0:
+            logger.error("ERROR: WEAVERS' COILS: movement distance is invalid")
+            return False
+
+        queue_move = getattr(game, "_queue_reactive_move_movement_decision", None)
+        if not callable(queue_move):
+            logger.error("ERROR: WEAVERS' COILS: reactive move queue unavailable")
+            return False
+        request = queue_move(
+            player=self.player,
+            unit=target_root,
+            max_distance=int(max_distance),
+            kind="weavers_coils",
+            movement_type=movement_type,
+            source=str(getattr(stratagem, "name", "WEAVERS' COILS") or "WEAVERS' COILS"),
+            allow_skip=True,
+        )
+        if request is None:
+            logger.error("ERROR: WEAVERS' COILS: failed to queue movement decision")
+            return False
+
+        self._aeldari_armoured_finalize_use(stratagem, dequeue=bool(context.get("dequeue")))
+        logger.info(
+            "INFO: WEAVERS' COILS: %s can make a %s move up to %d\".",
+            getattr(target_root, "name", "Unit"),
+            "Fall Back" if engaged else "Normal",
+            int(max_distance),
+        )
+        return True
 
     def _use_aeldari_ghosts_bloody_dance(self, stratagem, **kwargs) -> bool:
         context = self._aeldari_pending_context(stratagem.name, kwargs)
@@ -5721,6 +6054,135 @@ class AeldariStratagemMixin:
         except (AttributeError, TypeError, ValueError):
             name = ""
         return name in {"troupe", "troupes"}
+
+    def _aeldari_serpents_fangs_candidates(self) -> List[Any]:
+        if not self._is_serpents_brood_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._aeldari_is_troupe(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_serpents_skyward_lunge_candidates(self) -> List[Any]:
+        if not self._is_serpents_brood_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._aeldari_is_harlequins(root):
+                continue
+            if not (self._aeldari_has_keyword(root, "VEHICLE") or self._aeldari_has_keyword(root, "MOUNTED")):
+                continue
+            if self._aeldari_in_engagement_range(root):
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_serpents_weavers_coils_candidates(self) -> List[Any]:
+        if not self._is_serpents_brood_detachment():
+            return []
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        if army is None:
+            return []
+        out: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._aeldari_root(unit)
+            if root is None:
+                continue
+            uid = self._aeldari_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if not self._aeldari_on_battlefield(root, require_targetable=True):
+                continue
+            if not self._aeldari_is_harlequins(root):
+                continue
+            if not self._aeldari_has_keyword(root, "MOUNTED"):
+                continue
+            round_state = getattr(root, "round_state", None)
+            was_eligible = bool(getattr(round_state, "eligible_to_fight_this_phase", False))
+            if not was_eligible and bool(getattr(round_state, "fought_this_phase", False)):
+                was_eligible = True
+            if not was_eligible:
+                continue
+            out.append(root)
+        return sorted(out, key=self._aeldari_sort_key)
+
+    def _aeldari_serpents_normal_move_distance(self, unit: Any) -> int:
+        root = self._aeldari_root(unit)
+        if root is None:
+            return 0
+        game_map = getattr(getattr(self, "game", None), "map", None)
+        model = None
+        models = list(getattr(root, "get_attached_unit_models", lambda: [])() or [])
+        if not models:
+            models = list(getattr(root, "models", []) or [])
+        for member in list(models or []):
+            try:
+                alive = getattr(member, "is_alive", True)
+                if callable(alive):
+                    alive = alive()
+            except (AttributeError, TypeError, ValueError):
+                alive = True
+            if bool(alive):
+                model = member
+                break
+        get_effective = getattr(root, "get_effective_model_characteristic", None)
+        if model is not None and callable(get_effective):
+            try:
+                distance = int(get_effective(model, "movement", game_map=game_map) or 0)
+            except (AttributeError, TypeError, ValueError):
+                distance = 0
+            if distance > 0:
+                return int(distance)
+        try:
+            distance = int(getattr(root, "movement", 0) or 0)
+        except (AttributeError, TypeError, ValueError):
+            distance = 0
+        if distance > 0:
+            return int(distance)
+        if model is not None:
+            try:
+                distance = int(getattr(model, "movement", getattr(model, "_movement", 0)) or 0)
+            except (AttributeError, TypeError, ValueError):
+                distance = 0
+            if distance > 0:
+                return int(distance)
+        return 0
 
     def _aeldari_ghosts_bloody_dance_enemy_candidates_for_unit(self, unit: Any) -> List[Any]:
         if not self._is_ghosts_of_the_webway_detachment():

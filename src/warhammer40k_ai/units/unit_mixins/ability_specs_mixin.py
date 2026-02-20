@@ -6782,7 +6782,7 @@ class AbilitySpecsMixin:
                 choice = choice_fn()
         except Exception:
             choice = ""
-        if choice == "TRICKSTER":
+        if choice in ("TRICKSTER", "ALL"):
             penalty += 1
             reasons.append("Dance of Death (Trickster's Grace): -1 to hit")
 
