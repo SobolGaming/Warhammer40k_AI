@@ -217,6 +217,11 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Company of Hunters")
 
+    def is_firestorm_assault_force(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Firestorm Assault Force")
+
     def is_blade_of_ultramar(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
             return False
@@ -559,6 +564,56 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
 
     def masters_of_manoeuvre_charge_after_fall_back_applies(self, unit) -> bool:
         return self.masters_of_manoeuvre_charge_after_advance_applies(unit)
+
+    def close_range_eradication_assault_applies(self, unit, weapon_profile=None) -> bool:
+        if not self.is_firestorm_assault_force():
+            return False
+        if unit is None:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(unit):
+            return False
+        if weapon_profile is None:
+            return True
+        parent = getattr(weapon_profile, "parent_wargear", None)
+        if parent is None:
+            return False
+        return bool(getattr(parent, "is_ranged", lambda: False)())
+
+    def close_range_eradication_strength_bonus(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        weapon_profile=None,
+        attack_instance=None,
+    ) -> tuple[int, str]:
+        if not self.is_firestorm_assault_force():
+            return 0, ""
+        if attacker_model is None:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        if attacker_unit is None:
+            return 0, ""
+        if not self.close_range_eradication_assault_applies(attacker_unit, weapon_profile):
+            return 0, ""
+        try:
+            distance = float((attack_instance or {}).get("distance_to_target", 0.0) or 0.0)
+        except Exception:
+            distance = 0.0
+        if distance <= 0.0 and target_unit is not None:
+            game_map = None
+            try:
+                game_map = getattr(getattr(attacker_unit.get_parent_army(), "player", None), "game", None).map
+            except Exception:
+                game_map = None
+            if game_map is not None:
+                try:
+                    distance = float(game_map.get_distance_between_units(attacker_unit, target_unit))
+                except Exception:
+                    distance = 0.0
+        if distance <= 0.0 or distance > 12.0 + 1e-6:
+            return 0, ""
+        return 1, "Close-range Eradication"
 
     def storm_swift_onslaught_charge_after_advance_applies(self, unit) -> bool:
         if not self.is_spearpoint_task_force():

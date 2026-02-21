@@ -592,6 +592,11 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"your army can include dark angels units but it cannot include any adeptus astartes units drawn from any other chapter",
             r"outrider squad units from your army gain the battleline keyword",
         ),
+        "Close-range Eradication": (
+            r"ranged weapons equipped by adeptus astartes models from your army have the assault ability",
+            r"each time an attack made with such a weapon targets a unit within 12 add \d+ to the strength characteristic of that attack",
+            r"ranged weapons equipped by adeptus astartes models from your army have the assault ability and each time an attack made with such a weapon targets a unit within 12 add \d+ to the strength characteristic of that attack",
+        ),
         "Storm-swift Onslaught": (
             r"adeptus astartes units from your army are eligible to declare a charge in a turn in which they advanced or fell back",
         ),
@@ -1829,6 +1834,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Masters Of Manoeuvre": (
             "Supported",
             "Company of Hunters: ADEPTUS ASTARTES units can shoot after Advancing/Falling Back, ADEPTUS ASTARTES MOUNTED units can also charge after Advancing/Falling Back, Dark Angels chapter restriction enforced, and Outrider Squad units gain Battleline.",
+        ),
+        "Close-range Eradication": (
+            "Supported",
+            "Firestorm Assault Force: ADEPTUS ASTARTES ranged weapons count as [ASSAULT], and attacks with those weapons gain +1 Strength against targets within 12\".",
         ),
         "Storm-swift Onslaught": (
             "Supported",

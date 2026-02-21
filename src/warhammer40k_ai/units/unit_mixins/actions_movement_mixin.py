@@ -10246,6 +10246,14 @@ class ActionsMovementMixin:
                     return True
         except Exception:
             pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "close_range_eradication_assault_applies", None):
+                if mgr.close_range_eradication_assault_applies(self, profile):
+                    return True
+        except Exception:
+            pass
         # Check for Assault weapons
         if profile.is_assault():
             return True
