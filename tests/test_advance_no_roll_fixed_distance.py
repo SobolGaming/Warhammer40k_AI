@@ -11,6 +11,12 @@ _ADVANCE_NO_ROLL_TEXT = (
     'Each time this unit Advances, do not make an Advance roll. Instead, until the end of the '
     'phase, add 6" to the Move characteristic of models in this unit.'
 )
+_ADVANCE_NO_ROLL_PHASE_MOVE_TEXT = (
+    "Each time this model's unit Advances, do not make an Advance roll for it. Instead, until the end of the phase, "
+    'add 6" to the Move characteristic of models in that unit. In addition, each time a model in that unit makes a '
+    "Normal, Advance or Fall Back move, until that move is finished, it can move horizontally through models and "
+    "terrain features (it cannot finish a move on top of another model or its base)."
+)
 _LEADING_ADVANCE_VERTICAL_TEXT = (
     'While this model is leading a unit, each time that unit Advances, do not make an Advance roll. '
     'Instead, until the end of the phase, add 6" to the Move characteristic of models in that unit '
@@ -125,6 +131,35 @@ def test_advance_no_roll_ignores_advance_roll_modifiers():
     unit.special_rules = sr
 
     assert unit._apply_advance_roll_modifiers(1) == 6
+
+
+def test_advance_no_roll_with_phase_move_through_models_and_terrain():
+    from warhammer40k_ai.utility.calcs import MovementType, get_validation_rules
+
+    unit = _make_unit(_ADVANCE_NO_ROLL_PHASE_MOVE_TEXT)
+    effect = unit._get_advance_no_roll_effect()
+    assert effect is not None
+    assert int(effect.get("distance", 0) or 0) == 6
+
+    with patch("warhammer40k_ai.units.unit.get_roll") as roll_mock:
+        advance = unit.prepare_advance()
+    assert int(advance or 0) == 6
+    roll_mock.assert_not_called()
+
+    sr = dict(getattr(unit, "special_rules", {}) or {})
+    assert set(sr.get("bearer_unit_phase_move_types", []) or []) >= {"move", "advance", "fall_back"}
+
+    move_rules = get_validation_rules(MovementType.MOVE, moving_unit=unit)
+    assert bool(move_rules.get("can_move_through_enemy_models"))
+    assert bool(move_rules.get("can_move_through_terrain"))
+    assert bool(move_rules.get("cannot_move_within_engagement_range", True)) is False
+    assert bool(move_rules.get("cannot_end_in_engagement_range"))
+
+    advance_rules = get_validation_rules(MovementType.ADVANCE, moving_unit=unit)
+    assert bool(advance_rules.get("can_move_through_enemy_models"))
+    assert bool(advance_rules.get("can_move_through_terrain"))
+    assert bool(advance_rules.get("cannot_move_within_engagement_range", True)) is False
+    assert bool(advance_rules.get("cannot_end_in_engagement_range"))
 
 
 def test_leading_advance_ignore_vertical_distance():

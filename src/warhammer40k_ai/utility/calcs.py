@@ -1593,6 +1593,11 @@ def get_validation_rules(
             base_rules['block_monster_vehicle_models'] = True
         elif base_rules.get('block_monster_vehicle_models', False):
             base_rules['block_monster_vehicle_models'] = False
+        # "Move through models" wording for Normal/Advance implies passing through Engagement Range,
+        # but still not ending there.
+        if move_tag in ("move", "advance"):
+            base_rules['cannot_move_within_engagement_range'] = False
+            base_rules['cannot_end_in_engagement_range'] = True
     elif move_tag and move_tag in phase_move_terrain_only_types:
         base_rules['can_move_through_terrain'] = True
 

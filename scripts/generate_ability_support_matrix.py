@@ -3470,6 +3470,7 @@ def _classify_ability_base(
     aura_toughness_support = _aura_toughness_support(description)
     aura_melee_ap_support = _aura_melee_ap_support(description)
     fall_back_shoot_support = _fall_back_shoot_support(description)
+    advance_no_roll_phase_move_support = _advance_no_roll_with_phase_move_support(description)
     advance_no_roll_support = _advance_no_roll_fixed_distance_support(description)
     movement_ignore_vertical_support = _movement_ignore_vertical_distance_support(description)
     charge_move_devastating_support = _charge_move_devastating_wounds_support(description)
@@ -3678,6 +3679,8 @@ def _classify_ability_base(
         return aura_melee_ap_support
     if fall_back_shoot_support:
         return fall_back_shoot_support
+    if advance_no_roll_phase_move_support:
+        return advance_no_roll_phase_move_support
     if advance_no_roll_support:
         return advance_no_roll_support
     if movement_ignore_vertical_support:
@@ -8268,6 +8271,47 @@ def _fall_back_shoot_support(description: str) -> Optional[Tuple[str, str]]:
     return ("Supported", " ".join(notes))
 
 
+def _advance_no_roll_with_phase_move_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+
+    advance_pattern = (
+        r"each time (?:this unit|this model|this models unit|this model s unit|the bearer s unit|that unit) advances "
+        r"do not make an advance roll(?: for it)? "
+        r"instead until the end of the phase add (?P<dist>\d+) to the move characteristic "
+        r"(?:of (?:models in )?)?(?:this unit|this model|this models unit|this model s unit|the bearer s unit|that unit)"
+    )
+    advance_match = re.search(advance_pattern, norm)
+    if not advance_match:
+        return None
+    try:
+        dist = int(advance_match.group("dist") or 0)
+    except Exception:
+        dist = 0
+    if dist <= 0:
+        return None
+
+    phase_move_pattern = (
+        r"each time a model in (?:the bearer s|that|this|this model s|this models) unit makes a "
+        r"(?P<moves>.+?) move(?: until that move is finished)? "
+        r"it can move horizontally through models and terrain features"
+    )
+    phase_move_match = re.search(phase_move_pattern, norm)
+    if not phase_move_match:
+        return None
+    moves_text = str(phase_move_match.group("moves") or "")
+    if "normal" not in moves_text or "advance" not in moves_text or "fall back" not in moves_text:
+        return None
+
+    return (
+        "Supported",
+        f"Advance: fixed +{dist}\" Move instead of rolling. Normal/Advance/Fall Back: move horizontally through models and terrain; cannot end overlapping models.",
+    )
+
+
 def _advance_no_roll_fixed_distance_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -8275,11 +8319,12 @@ def _advance_no_roll_fixed_distance_support(description: str) -> Optional[Tuple[
     if not norm:
         return None
     pattern = (
+        r"(?:[a-z0-9 ]+ model only )?"
         r"(?:while this model is leading a unit )?"
-        r"each time (?:this unit|this model|this models unit|this model s unit|that unit) advances "
+        r"each time (?:this unit|this model|this models unit|this model s unit|the bearer s unit|that unit) advances "
         r"do not make an advance roll(?: for it)? "
         r"instead until the end of the phase add (?P<dist>\d+) to the move characteristic "
-        r"(?:of (?:models in )?)?(?:this unit|this model|this models unit|that unit)"
+        r"(?:of (?:models in )?)?(?:this unit|this model|this models unit|this model s unit|the bearer s unit|that unit)"
     )
     m = re.fullmatch(pattern, norm)
     if not m:

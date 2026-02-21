@@ -228,6 +228,8 @@ class TestNecronsStarshatterStratagems(unittest.TestCase):
         self.assertFalse(any("Merciless Reclamation" in m for m in far_result.get("modifiers", [])))
 
     def test_dimensional_tunnel_sets_and_clears_move_types(self):
+        from warhammer40k_ai.utility.calcs import MovementType, get_validation_rules
+
         game, p1, _p2, army1, _army2 = _build_game()
         unit = _make_unit(
             "Doomsday Ark",
@@ -246,6 +248,11 @@ class TestNecronsStarshatterStratagems(unittest.TestCase):
         sr = unit.special_rules
         self.assertTrue(sr.get("dimensional_tunnel_active"))
         self.assertTrue(set(sr.get("bearer_unit_phase_move_types", [])) >= {"move", "advance", "fall_back"})
+        move_rules = get_validation_rules(MovementType.MOVE, moving_unit=unit)
+        self.assertTrue(bool(move_rules.get("can_move_through_enemy_models")))
+        self.assertTrue(bool(move_rules.get("can_move_through_terrain")))
+        self.assertFalse(bool(move_rules.get("cannot_move_within_engagement_range", True)))
+        self.assertTrue(bool(move_rules.get("cannot_end_in_engagement_range")))
 
         game.event_system.publish("phase_end", player=p1, phase=phase)
         sr = unit.special_rules

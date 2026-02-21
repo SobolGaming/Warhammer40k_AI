@@ -2020,15 +2020,15 @@ class Unit(
         re.IGNORECASE,
     )
     _BEARER_UNIT_PHASE_MOVE_RE = re.compile(
-        r"each\s+time\s+a\s+model\s+in\s+(?:the\s+bearer'?s|that)\s+unit\s+makes\s+a\s+.*?\bmove\b.*?move\s+horizontally\s+through\s+models\s+and\s+terrain\s+features",
+        r"each\s+time\s+a\s+model\s+in\s+(?:the\s+bearer'?s|that|this|this\s+model'?s|this\s+models)\s+unit\s+makes\s+a\s+.*?\bmove\b.*?move\s+horizontally\s+through\s+models\s+and\s+terrain\s+features",
         re.IGNORECASE,
     )
     _BEARER_UNIT_PHASE_TERRAIN_ONLY_RE = re.compile(
-        r"each\s+time\s+a\s+model\s+in\s+(?:the\s+bearer'?s|that)\s+unit\s+makes\s+a\s+.*?\bmove\b.*?move\s+horizontally\s+through\s+terrain\s+features",
+        r"each\s+time\s+a\s+model\s+in\s+(?:the\s+bearer'?s|that|this|this\s+model'?s|this\s+models)\s+unit\s+makes\s+a\s+.*?\bmove\b.*?move\s+horizontally\s+through\s+terrain\s+features",
         re.IGNORECASE,
     )
     _BEARER_UNIT_PHASE_ENGAGEMENT_RE = re.compile(
-        r"models\s+in\s+(?:the\s+bearer'?s|that)\s+unit\s+can\s+move\s+within\s+engagement\s+range\s+of\s+enemy\s+models.*?"
+        r"models\s+in\s+(?:the\s+bearer'?s|that|this|this\s+model'?s|this\s+models)\s+unit\s+can\s+move\s+within\s+engagement\s+range\s+of\s+enemy\s+models.*?"
         r"cannot\s+end\s+that\s+move\s+within\s+engagement\s+range\s+of\s+them",
         re.IGNORECASE,
     )
