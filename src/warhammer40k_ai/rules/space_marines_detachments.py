@@ -222,6 +222,11 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Firestorm Assault Force")
 
+    def is_vanguard_spearhead(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Vanguard Spearhead")
+
     def is_liberator_assault_group(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
             return False
@@ -619,6 +624,74 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         if distance <= 0.0 or distance > 12.0 + 1e-6:
             return 0, ""
         return 1, "Close-range Eradication"
+
+    def _shadow_masters_attack_distance(
+        self,
+        target_unit,
+        *,
+        attacker_model=None,
+        attack_instance=None,
+    ) -> float:
+        try:
+            distance = float((attack_instance or {}).get("distance_to_target", 0.0) or 0.0)
+        except Exception:
+            distance = 0.0
+        if distance > 0.0:
+            return float(distance)
+        if attacker_model is None or target_unit is None:
+            return 0.0
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        if attacker_unit is None:
+            return 0.0
+        try:
+            game_map = getattr(getattr(attacker_unit.get_parent_army(), "player", None), "game", None).map
+        except Exception:
+            game_map = None
+        if game_map is None:
+            return 0.0
+        try:
+            return float(game_map.get_distance_between_units(attacker_unit, target_unit))
+        except Exception:
+            return 0.0
+
+    def shadow_masters_applies(self, target_unit) -> bool:
+        if not self.is_vanguard_spearhead():
+            return False
+        if target_unit is None:
+            return False
+        return self.attached_unit_is_adeptus_astartes(target_unit)
+
+    def shadow_masters_ranged_hit_penalty(
+        self,
+        target_unit,
+        *,
+        attacker_model=None,
+        attack_instance=None,
+    ) -> tuple[int, str]:
+        if not self.shadow_masters_applies(target_unit):
+            return 0, ""
+        distance = self._shadow_masters_attack_distance(
+            target_unit,
+            attacker_model=attacker_model,
+            attack_instance=attack_instance,
+        )
+        if distance <= 0.0 or distance <= 12.0 + 1e-6:
+            return 0, ""
+        return 1, "Shadow Masters"
+
+    def shadow_masters_benefit_of_cover(
+        self,
+        target_unit,
+        *,
+        attacker_model=None,
+        attack_instance=None,
+    ) -> tuple[bool, str]:
+        penalty, source = self.shadow_masters_ranged_hit_penalty(
+            target_unit,
+            attacker_model=attacker_model,
+            attack_instance=attack_instance,
+        )
+        return bool(penalty > 0), source
 
     def storm_swift_onslaught_charge_after_advance_applies(self, unit) -> bool:
         if not self.is_spearpoint_task_force():

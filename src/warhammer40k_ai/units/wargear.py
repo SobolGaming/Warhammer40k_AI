@@ -7623,6 +7623,27 @@ class WargearProfile:
                         _add_hit_mod(-int(penalty), "-1 from Move to the Shadows")
         except Exception:
             pass
+        try:
+            if is_ranged:
+                target_army = None
+                try:
+                    get_parent_army = getattr(target, "get_parent_army", None)
+                    if callable(get_parent_army):
+                        target_army = get_parent_army()
+                except Exception:
+                    target_army = None
+                sm_mgr = getattr(target_army, "space_marines_detachments", None) if target_army is not None else None
+                if sm_mgr is not None and callable(getattr(sm_mgr, "shadow_masters_ranged_hit_penalty", None)):
+                    penalty, source = sm_mgr.shadow_masters_ranged_hit_penalty(
+                        target,
+                        attacker_model=attacker,
+                        attack_instance=attack_instance,
+                    )
+                    if penalty:
+                        source_name = str(source or "Shadow Masters").strip() or "Shadow Masters"
+                        _add_hit_mod(-int(penalty), f"-{int(penalty)} from {source_name}")
+        except Exception:
+            pass
         # Warhost: Lightning-Fast Reactions (-1 to hit while active).
         try:
             try:
@@ -14175,6 +14196,45 @@ class WargearProfile:
                                 seen.add(key)
                                 uniq.append(src)
                             attack_instance["benefit_of_cover_source"] = ", ".join(uniq) if uniq else "Bearer unit ability"
+        except Exception:
+            pass
+        # Space Marines: Vanguard Spearhead (Shadow Masters) grants conditional cover beyond 12".
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            if t_unit is not None:
+                is_melee = False
+                is_ranged = False
+                try:
+                    if self.parent_wargear is not None:
+                        is_melee = bool(self.parent_wargear.is_melee())
+                        is_ranged = bool(self.parent_wargear.is_ranged())
+                except Exception:
+                    is_melee = False
+                    is_ranged = False
+                if not is_melee and not is_ranged:
+                    try:
+                        is_ranged = bool(getattr(self, "range", None) and int(getattr(self.range, "max", 0) or 0) > 0)
+                    except Exception:
+                        is_ranged = False
+                if is_ranged:
+                    t_army = t_unit.get_parent_army() if hasattr(t_unit, "get_parent_army") else None
+                    sm_mgr = getattr(t_army, "space_marines_detachments", None) if t_army is not None else None
+                    if sm_mgr is not None and callable(getattr(sm_mgr, "shadow_masters_benefit_of_cover", None)):
+                        has_cover, source = sm_mgr.shadow_masters_benefit_of_cover(
+                            t_unit,
+                            attacker_model=attack_instance.get("attacker_model") if isinstance(attack_instance, dict) else None,
+                            attack_instance=attack_instance,
+                        )
+                        if has_cover:
+                            attack_instance.setdefault("benefit_of_cover", True)
+                            source_name = str(source or "Shadow Masters").strip() or "Shadow Masters"
+                            existing_source = str(attack_instance.get("benefit_of_cover_source", "") or "").strip()
+                            if not existing_source:
+                                attack_instance["benefit_of_cover_source"] = source_name
+                            elif source_name.lower() not in {
+                                part.strip().lower() for part in existing_source.split(",") if part.strip()
+                            }:
+                                attack_instance["benefit_of_cover_source"] = f"{existing_source}, {source_name}"
         except Exception:
             pass
         # Aeldari: Rune of Mists (Spirit Conclave) grants conditional cover beyond threshold distance.

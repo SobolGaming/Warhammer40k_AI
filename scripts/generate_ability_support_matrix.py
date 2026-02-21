@@ -607,6 +607,9 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time an adeptus astartes unit from your army is selected to fight if that unit made a charge move this turn until the end of the phase add \d+ to the attacks characteristic and add \d+ to the strength characteristic of melee weapons equipped by models in that unit",
             r"your army can include blood angels units but it cannot include any adeptus astartes units drawn from any other chapter",
         ),
+        "Shadow Masters": (
+            r"each time a ranged attack targets an adeptus astartes unit from your army unless the attacking model is within 12 subtract \d+ from the hit roll and the target has the benefit of cover against that attack",
+        ),
         "Maddened Ferocity": (
             r"each time an adeptus astartes model from your army makes a melee attack reroll a wound roll of \d+",
             r"each time an adeptus astartes unit from your army is selected to fight if that unit made a charge move this turn until the end of the phase add \d+ to the attacks characteristic of melee weapons equipped by models in that unit",
@@ -1854,6 +1857,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Red Thirst": (
             "Supported",
             "Liberator Assault Group: ADEPTUS ASTARTES units that charged gain +1 Attacks and +2 Strength for melee weapons when selected to fight until end of phase; Blood Angels-only chapter restriction enforced.",
+        ),
+        "Shadow Masters": (
+            "Supported",
+            "Vanguard Spearhead: ranged attacks targeting ADEPTUS ASTARTES units from more than 12\" away suffer -1 to hit, and those targets gain the Benefit of Cover.",
         ),
         "Legacy of the Angel": (
             "Supported",
