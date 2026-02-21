@@ -579,6 +579,9 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"until the end of the turn that enemy unit is auspex scanned",
             r"each time an adeptus astartes model from your army makes an attack that targets an auspex scanned unit reroll a hit roll of \d+",
         ),
+        "Lightning Assault": (
+            r"adeptus astartes units from your army are eligible to declare a charge in a turn in which they advanced or fell back",
+        ),
         "Maddened Ferocity": (
             r"each time an adeptus astartes model from your army makes a melee attack reroll a wound roll of \d+",
             r"each time an adeptus astartes unit from your army is selected to fight if that unit made a charge move this turn until the end of the phase add \d+ to the attacks characteristic of melee weapons equipped by models in that unit",
@@ -1798,6 +1801,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Interlocking Tactics": (
             "Supported",
             "Bastion Task Force: ADEPTUS ASTARTES BATTLELINE units can shoot/charge and start Actions after Advancing or Falling Back, and after such a unit resolves attacks it selects one hit enemy as auspex scanned until end of turn, granting ADEPTUS ASTARTES attacks re-roll Hit rolls of 1 against that unit.",
+        ),
+        "Lightning Assault": (
+            "Supported",
+            "Stormlance Task Force: ADEPTUS ASTARTES units can declare charges in turns when they Advanced or Fell Back.",
         ),
         "Legacy of the Angel": (
             "Supported",

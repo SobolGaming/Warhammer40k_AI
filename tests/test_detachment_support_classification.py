@@ -198,6 +198,18 @@ class TestDetachmentSupportClassification(unittest.TestCase):
         self.assertEqual(status, "Supported")
         self.assertIn("bastion task force", notes.lower())
 
+    def test_lightning_assault_is_supported(self):
+        gsm, detachment_abilities = self._seed_support_maps()
+        row = next(r for r in detachment_abilities if str(r.get("name", "") or "") == "Lightning Assault")
+        status, notes = gsm._classify_ability(
+            row.get("name", ""),
+            row.get("description", ""),
+            ability_id=row.get("id", ""),
+            faction_id=row.get("faction_id", ""),
+        )
+        self.assertEqual(status, "Supported")
+        self.assertIn("stormlance task force", notes.lower())
+
     def test_strength_from_death_is_supported(self):
         gsm, detachment_abilities = self._seed_support_maps()
         row = next(r for r in detachment_abilities if str(r.get("name", "") or "") == "Strength from Death")
