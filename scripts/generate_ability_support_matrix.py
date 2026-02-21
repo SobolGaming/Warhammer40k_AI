@@ -7724,13 +7724,29 @@ def _fight_phase_end_mortal_wounds_support(description: str) -> Optional[Tuple[s
     norm = _norm_rules_text(description)
     if not norm:
         return None
-    pattern = (
+    engaged_pattern = (
         r"at the end of the fight phase you can select one enemy unit within engagement range of this model "
         r"and roll (?:eight|8) d6 for each 4 that enemy unit suffers 1 mortal wounds?"
     )
-    if not re.fullmatch(pattern, norm):
+    if re.fullmatch(engaged_pattern, norm):
+        return ("Supported", "End of Fight phase: pick an engaged enemy; roll 8D6, each 4+ inflicts 1 mortal wound.")
+
+    aura_threshold_pattern = (
+        r"at the end of the fight phase roll (?:one|1) d6 for each enemy unit within (?P<range>\d+) of this model "
+        r"on a (?P<threshold>\d) that enemy unit suffers (?P<mw>d3|d6|\d+) mortal wounds?"
+    )
+    m = re.fullmatch(aura_threshold_pattern, norm)
+    if not m:
         return None
-    return ("Supported", "End of Fight phase: pick an engaged enemy; roll 8D6, each 4+ inflicts 1 mortal wound.")
+    range_val = str(m.group("range") or "").strip()
+    threshold = str(m.group("threshold") or "").strip()
+    mortal = str(m.group("mw") or "").strip().upper()
+    if not range_val.isdigit() or not threshold.isdigit() or not mortal:
+        return None
+    return (
+        "Supported",
+        f'End of Fight phase: roll D6 for each enemy within {range_val}"; on {threshold}+ it suffers {mortal} mortal wounds.',
+    )
 
 
 def _fight_phase_once_melee_attacks_ap_support(description: str) -> Optional[Tuple[str, str]]:

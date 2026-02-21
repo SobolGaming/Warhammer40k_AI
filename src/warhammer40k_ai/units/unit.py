@@ -2782,6 +2782,11 @@ class Unit(
         r"and roll (?:eight|8) d6 for each 4 that enemy unit suffers 1 mortal wounds?",
         re.IGNORECASE,
     )
+    _FIGHT_PHASE_END_ENEMY_WITHIN_RANGE_MORTAL_THRESHOLD_RE = re.compile(
+        r"at the end of the fight phase roll (?:one|1) d6 for each enemy unit within (?P<range>\d+) of this model "
+        r"on a (?P<threshold>\d)\+? that enemy unit suffers (?P<mw>d3|d6|\d+) mortal wounds?",
+        re.IGNORECASE,
+    )
     _LEADING_WEAPON_ATTACKS_BONUS_RE = re.compile(
         r"while this model is leading a unit add (?P<bonus>\d+) to the attacks characteristic of "
         r"(?P<weapon>[a-z0-9 ]+?) weapons? equipped by models in that unit",

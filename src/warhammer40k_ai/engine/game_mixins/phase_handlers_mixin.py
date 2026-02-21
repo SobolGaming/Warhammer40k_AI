@@ -10151,6 +10151,8 @@ class GamePhaseHandlersMixin:
         if game_map is None:
             return
         from ...utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
+        from ...utility.dice import get_roll
+        from ...utility.event_bus import append_action, append_dice
 
         def _model_in_engagement_with_unit(model, target_unit) -> bool:
             if not getattr(model, "is_alive", False):
@@ -10168,6 +10170,28 @@ class GamePhaseHandlersMixin:
                 if horizontal <= ENGAGEMENT_RANGE_HORIZONTAL and vertical <= ENGAGEMENT_RANGE_VERTICAL:
                     return True
             return False
+
+        def _unit_sort_key(u):
+            unit_id = str(get_entity_id(u) or "").strip()
+            if unit_id:
+                return unit_id
+            return str(getattr(u, "name", "") or "")
+
+        def _resolve_mortal_wounds_value(mortal_spec) -> tuple[int, str]:
+            if isinstance(mortal_spec, int):
+                mortal = int(mortal_spec)
+                return max(0, mortal), f"flat={int(max(0, mortal))}"
+            token = str(mortal_spec or "").strip().lower()
+            if token == "d3":
+                roll = int(get_roll("D3") or 0)
+                return int(max(0, roll)), f"d3={int(roll)}"
+            if token == "d6":
+                roll = int(get_roll("D6") or 0)
+                return int(max(0, roll)), f"d6={int(roll)}"
+            if token.isdigit():
+                mortal = int(token)
+                return int(max(0, mortal)), f"flat={int(max(0, mortal))}"
+            return 0, ""
 
         for p in list(self.players or []):
             if p is None:
@@ -10192,17 +10216,15 @@ class GamePhaseHandlersMixin:
                 for model in list(unit.models or []):
                     if not getattr(model, "is_alive", False):
                         continue
-                    specs = unit.model_end_fight_phase_engagement_mortal_wounds_specs(model) or []
-                    if not specs:
-                        continue
-
-                    candidates = []
+                    enemy_roots = []
                     seen_enemy = set()
                     for enemy in enemies:
                         if enemy is None:
                             continue
                         root = enemy.get_attached_unit_root()
-                        key = get_entity_id(root)
+                        key = str(get_entity_id(root) or "").strip()
+                        if not key:
+                            key = f"obj:{id(root)}"
                         if key in seen_enemy:
                             continue
                         seen_enemy.add(key)
@@ -10212,13 +10234,16 @@ class GamePhaseHandlersMixin:
                             continue
                         if root.is_embarked:
                             continue
-                        if _model_in_engagement_with_unit(model, root):
-                            candidates.append(root)
-
-                    if not candidates:
+                        enemy_roots.append(root)
+                    if not enemy_roots:
                         continue
+                    enemy_roots = sorted(enemy_roots, key=_unit_sort_key)
 
+                    specs = unit.model_end_fight_phase_engagement_mortal_wounds_specs(model) or []
                     for spec in specs:
+                        candidates = [root for root in enemy_roots if _model_in_engagement_with_unit(model, root)]
+                        if not candidates:
+                            continue
                         self._queue_mortal_wounds_target_decision(
                             player=p,
                             unit=unit,
@@ -10229,6 +10254,64 @@ class GamePhaseHandlersMixin:
                             allow_skip=True,
                             phase="Fight phase",
                         )
+
+                    range_specs = unit.model_fight_phase_end_enemy_within_range_mortal_threshold_specs(model) or []
+                    if not range_specs:
+                        continue
+                    source_unit = getattr(model, "parent_unit", None) or unit
+                    source_player = getattr(source_unit.get_parent_army(), "player", None)
+                    if source_player is None:
+                        source_player = p
+
+                    for spec in range_specs:
+                        range_token = str(spec.get("range", "") or "").strip()
+                        threshold_token = str(spec.get("threshold", "") or "").strip()
+                        if not range_token.isdigit() or not threshold_token.isdigit():
+                            continue
+                        range_value = int(range_token)
+                        threshold = int(threshold_token)
+                        if range_value <= 0 or threshold <= 0:
+                            continue
+                        mortal_spec = spec.get("mortal_wounds")
+                        ability_name = str(spec.get("source", "") or "Fight phase mortals").strip() or "Fight phase mortals"
+                        targets = [
+                            root for root in enemy_roots
+                            if self._unit_within_range_of_model(model, root, range_value=float(range_value))
+                        ]
+                        if not targets:
+                            continue
+
+                        for target_unit in targets:
+                            trigger_roll = int(get_roll("D6") or 0)
+                            mortal_wounds = 0
+                            mortal_note = ""
+                            if trigger_roll >= threshold:
+                                mortal_wounds, mortal_note = _resolve_mortal_wounds_value(mortal_spec)
+                                if mortal_wounds > 0:
+                                    source_unit._apply_mortal_wounds_to_unit(
+                                        target_unit,
+                                        int(mortal_wounds),
+                                        game_map=getattr(self, "map", None),
+                                    )
+
+                            target_name = str(getattr(target_unit, "name", "Unit") or "Unit")
+                            dice_summary = f"roll {int(trigger_roll)} ({int(threshold)}+)"
+                            if mortal_note:
+                                dice_summary = f"{dice_summary}, {mortal_note}"
+                            append_dice(
+                                source_player,
+                                f"{ability_name}: {target_name} {dice_summary} -> {int(mortal_wounds)} mortal wounds.",
+                            )
+                            if mortal_wounds > 0:
+                                append_action(
+                                    source_player,
+                                    f"{ability_name}: {target_name} suffers {int(mortal_wounds)} mortal wounds.",
+                                )
+                            else:
+                                append_action(
+                                    source_player,
+                                    f"{ability_name}: {target_name} suffers no mortal wounds.",
+                                )
 
     def _on_phase_end_fight_phase_destroyed_strategic_reserves(self, player=None, phase=None, **_kwargs) -> None:
         """Fight phase end: units that destroyed enemies can enter Strategic Reserves (Warp Strike)."""

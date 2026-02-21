@@ -6300,6 +6300,81 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_fight_phase_end_enemy_within_range_mortal_threshold_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: end of Fight phase, roll D6 for each enemy unit within range;
+        on a threshold, that enemy unit suffers mortal wounds.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - range: int
+            - threshold: int
+            - mortal_wounds: str | int
+        """
+        if model is None:
+            return []
+        cache_key = f"model_fight_phase_end_enemy_within_range_mortal_threshold:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, int, str]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._FIGHT_PHASE_END_ENEMY_WITHIN_RANGE_MORTAL_THRESHOLD_RE.fullmatch(normalized)
+            if not m:
+                continue
+
+            range_token = str(m.group("range") or "").strip()
+            threshold_token = str(m.group("threshold") or "").strip()
+            if not range_token.isdigit() or not threshold_token.isdigit():
+                continue
+            range_value = int(range_token)
+            threshold = int(threshold_token)
+            if range_value <= 0 or threshold <= 0:
+                continue
+
+            mortal_raw = str(m.group("mw") or "").strip().lower()
+            if not mortal_raw:
+                continue
+            mortal_wounds: str | int
+            if mortal_raw in ("d3", "d6"):
+                mortal_wounds = mortal_raw
+            elif mortal_raw.isdigit():
+                mortal_wounds = int(mortal_raw)
+                if int(mortal_wounds) <= 0:
+                    continue
+            else:
+                continue
+
+            source = str(name or "Fight phase mortals").strip() or "Fight phase mortals"
+            key = (source.lower(), int(range_value), int(threshold), str(mortal_wounds))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "range": int(range_value),
+                    "threshold": int(threshold),
+                    "mortal_wounds": mortal_wounds,
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def unit_start_fight_phase_malign_sacrifice_specs(self) -> List[dict]:
         """
         Unit-specific rule: at the start of the Fight phase, select a Dark Disciple and an engaged enemy,
