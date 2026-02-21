@@ -222,6 +222,11 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Firestorm Assault Force")
 
+    def is_liberator_assault_group(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Liberator Assault Group")
+
     def is_blade_of_ultramar(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
             return False
@@ -665,6 +670,13 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         if strength <= target_toughness:
             return 0, ""
         return 1, "Dutiful Tenacity"
+
+    def red_thirst_applies(self, unit) -> bool:
+        if unit is None:
+            return False
+        if not self.is_liberator_assault_group():
+            return False
+        return self.attached_unit_is_adeptus_astartes(unit)
 
     def maddened_ferocity_applies(self, unit) -> bool:
         if unit is None:

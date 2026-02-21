@@ -5917,6 +5917,8 @@ class GameShootingFightHandlersMixin:
             members = list(root.get_attached_unit_members() or [])
         except Exception:
             members = [root]
+        if not members:
+            members = [root]
         for member in members:
             sr = getattr(member, "special_rules", None)
             if not isinstance(sr, dict):
@@ -5927,6 +5929,42 @@ class GameShootingFightHandlersMixin:
             else:
                 sr.pop("maddened_ferocity_melee_attacks_bonus", None)
                 sr.pop("maddened_ferocity_expires_phase", None)
+            member.special_rules = sr
+
+    def _on_fight_unit_selected_red_thirst(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+        if mgr is None or not getattr(mgr, "red_thirst_applies", lambda _u: False)(root):
+            return
+
+        charged = bool(getattr(getattr(root, "round_state", None), "charged_this_round", False))
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            if charged:
+                sr["red_thirst_melee_attacks_bonus"] = 1
+                sr["red_thirst_melee_strength_bonus"] = 2
+                sr["red_thirst_expires_phase"] = "FIGHT_PHASE"
+            else:
+                sr.pop("red_thirst_melee_attacks_bonus", None)
+                sr.pop("red_thirst_melee_strength_bonus", None)
+                sr.pop("red_thirst_expires_phase", None)
             member.special_rules = sr
 
     def _on_fight_unit_selected_enemy_melee_hit_penalty(self, unit=None, **_kwargs) -> None:

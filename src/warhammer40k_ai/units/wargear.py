@@ -3897,6 +3897,15 @@ class WargearProfile:
 
         try:
             if self.parent_wargear and self.parent_wargear.is_melee():
+                bonus = int(getattr(attacker.parent_unit, "special_rules", {}).get("red_thirst_melee_attacks_bonus", 0) or 0)
+                if bonus:
+                    atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="detachment:red_thirst_attacks"))
+                    attack_result.attacks_special_modifiers.append(f"Red Thirst +{bonus}A (melee)")
+        except Exception:
+            pass
+
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
                 sr = getattr(attacker.parent_unit, "special_rules", {}) or {}
                 bonus = int(sr.get("peerless_warrior_melee_attacks_bonus", 0) or 0)
                 if bonus:
@@ -10733,6 +10742,27 @@ class WargearProfile:
                         wound_result.setdefault("modifiers", []).append(
                             f"+{s_bonus}S from Heightened Jealousy"
                         )
+        except Exception:
+            pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee() and isinstance(strength, int):
+                sr = getattr(attacker.parent_unit, "special_rules", {}) or {}
+                s_bonus = int(sr.get("red_thirst_melee_strength_bonus", 0) or 0)
+                if s_bonus:
+                    exp = str(sr.get("red_thirst_expires_phase", "") or "").strip().upper()
+                    apply_bonus = True
+                    if exp:
+                        try:
+                            army = attacker.parent_unit.get_parent_army()
+                            game = getattr(getattr(army, "player", None), "game", None)
+                            pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                        except Exception:
+                            pname = ""
+                        if pname and pname != exp:
+                            apply_bonus = False
+                    if apply_bonus:
+                        strength = strength + s_bonus
+                        wound_result.setdefault("modifiers", []).append(f"+{s_bonus}S from Red Thirst")
         except Exception:
             pass
         # Drukhari: Power from Pain (Macro-steroids) set melee Strength.

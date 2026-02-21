@@ -8333,6 +8333,14 @@ class GamePhaseHandlersMixin:
                         "maddened_ferocity_expires_phase",
                     ):
                         sr.pop(k, None)
+                exp = str(sr.get("red_thirst_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "red_thirst_melee_attacks_bonus",
+                        "red_thirst_melee_strength_bonus",
+                        "red_thirst_expires_phase",
+                    ):
+                        sr.pop(k, None)
                 exp = str(sr.get("fight_selected_enemy_melee_hit_penalty_expires_phase", "") or "").strip().upper()
                 if exp and exp == pname:
                     for k in (

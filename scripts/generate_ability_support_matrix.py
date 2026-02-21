@@ -603,6 +603,10 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Wrath of the First Khan": (
             r"at the end of the fight phase if a suboden khan unit from your army destroyed one or more enemy units this phase and is not within engagement range of one or more enemy units that unit can make a normal move of up to \d+",
         ),
+        "Red Thirst": (
+            r"each time an adeptus astartes unit from your army is selected to fight if that unit made a charge move this turn until the end of the phase add \d+ to the attacks characteristic and add \d+ to the strength characteristic of melee weapons equipped by models in that unit",
+            r"your army can include blood angels units but it cannot include any adeptus astartes units drawn from any other chapter",
+        ),
         "Maddened Ferocity": (
             r"each time an adeptus astartes model from your army makes a melee attack reroll a wound roll of \d+",
             r"each time an adeptus astartes unit from your army is selected to fight if that unit made a charge move this turn until the end of the phase add \d+ to the attacks characteristic of melee weapons equipped by models in that unit",
@@ -1846,6 +1850,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Wrath of the First Khan": (
             "Supported",
             "Spearpoint Task Force: at the end of the Fight phase, eligible Suboden Khan units that destroyed enemy units this phase and are no longer engaged can make a Normal move up to 6\".",
+        ),
+        "Red Thirst": (
+            "Supported",
+            "Liberator Assault Group: ADEPTUS ASTARTES units that charged gain +1 Attacks and +2 Strength for melee weapons when selected to fight until end of phase; Blood Angels-only chapter restriction enforced.",
         ),
         "Legacy of the Angel": (
             "Supported",
