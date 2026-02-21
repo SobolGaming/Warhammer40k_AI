@@ -2385,6 +2385,13 @@ class Unit(
         r"on a 6 that enemy unit suffers d3 3 mortal wounds",
         re.IGNORECASE,
     )
+    _SHOOTING_PHASE_DICE_POOL_MORTAL_RE = re.compile(
+        r"in your shooting phase select one enemy unit within (?P<range>\d+) of and visible to this model "
+        r"excluding units with the lone operative ability that are not part of an attached unit and are not within (?P<lone_range>\d+) of this model "
+        r"and roll (?P<dice>one|two|three|four|five|six|seven|eight|nine|ten|1|2|3|4|5|6|7|8|9|10) d6 "
+        r"for each (?P<threshold>\d)\+? that enemy unit suffers (?P<mw>d3|d6|\d+) mortal wounds?",
+        re.IGNORECASE,
+    )
     _RANGED_ATTACK_PSYCHIC_HIT_MONSTER_VEHICLE_HIT_DAMAGE_REROLL_RE = re.compile(
         r"each time this model makes a ranged attack that targets a monster or vehicle unit that was hit by one or more psychic attacks "
         r"made by a thousand sons psyker model from your army this phase including the doombolt ritual "
@@ -2439,6 +2446,11 @@ class Unit(
         r"at the start of your shooting phase select one visible enemy vehicle unit within (?P<range>\d+) of this model and roll "
         r"(?:one|1) d6 on a 2 3 that enemy unit suffers d3 mortal wounds on a 4 5 that enemy unit suffers 3 mortal wounds "
         r"on a 6 that enemy unit suffers d3 3 mortal wounds",
+        re.IGNORECASE,
+    )
+    _START_SHOOTING_PHASE_VEHICLE_MORTAL_HEAL_RE = re.compile(
+        r"at the start of your shooting phase select one enemy vehicle unit within (?P<range>\d+) of this model and roll (?:one|1) d6 "
+        r"on a (?P<threshold>\d)\+? that enemy unit suffers (?P<mw>d3|d6|\d+) mortal wounds? and this model regains up to that many lost wounds?",
         re.IGNORECASE,
     )
     _START_OPP_SHOOTING_PHASE_MISCHIEF_CONFUSION_RE = re.compile(
@@ -2831,7 +2843,7 @@ class Unit(
         re.IGNORECASE,
     )
     _THUNDERSHOCK_RE = re.compile(
-        r"in your shooting phase each time you select a target for this model s (?P<weapon>[a-z0-9 ]+) roll one d6 for the target unit and one d6 for each other "
+        r"in your shooting phase each time you select a target for this model s (?P<weapon>[a-z0-9 ]+) roll one d6 for the target unit and one d6 for (?:each|every) other "
         r"enemy unit within (?P<range>\d+) of the target unit on a (?P<threshold>\d)\+? the unit being rolled for is struck by arcing energies after resolving all "
         r"of this model s attacks against the target unit each unit struck by arcing energies suffers (?P<mw>d3|d6|\d+) mortal wounds?",
         re.IGNORECASE,
@@ -2862,6 +2874,13 @@ class Unit(
         r"you can select one of those models and one enemy unit within engagement range of this unit then roll one d6 "
         r"on a 2 5 that enemy unit suffers 1 mortal wound on a 6 that enemy unit suffers d3 mortal wounds "
         r"that (?P=model) model is then destroyed",
+        re.IGNORECASE,
+    )
+    _START_FIGHT_PHASE_SELF_DESTRUCTION_RE = re.compile(
+        r"at the start of the fight phase if this unit is within engagement range of one or more enemy units "
+        r"you can select one model in this unit to destroy if you do select one enemy unit within engagement range of that model "
+        r"and roll one d6 adding (?P<vehicle_bonus>\d+) to the result if that unit is a vehicle "
+        r"on a 2 5 that unit suffers d3 mortal wounds on a 6 that unit suffers (?P<high>\d+) mortal wounds?",
         re.IGNORECASE,
     )
     _HYSTERICAL_FRENZY_RE = re.compile(

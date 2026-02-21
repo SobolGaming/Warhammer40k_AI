@@ -2929,6 +2929,52 @@ class PositioningMixin:
         except Exception:
             pass
         try:
+            rule = None
+            get_rule = getattr(root, "get_stationary_ranged_weapon_keyword_rule", None)
+            if callable(get_rule):
+                rule = get_rule(model)
+            if isinstance(rule, dict):
+                apply_bonus = True
+                atype = str(attack_type or "").strip().lower()
+                if atype and atype not in ("any", "ranged"):
+                    apply_bonus = False
+                unit = getattr(model, "parent_unit", None) or root
+                if bool(rule.get("requires_remained_stationary")):
+                    if not bool(getattr(getattr(unit, "round_state", None), "remained_stationary_this_round", False)):
+                        apply_bonus = False
+                if apply_bonus and bool(rule.get("requires_owner_turn")):
+                    owner_army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
+                    owner_player = getattr(owner_army, "player", None) if owner_army is not None else None
+                    game = getattr(owner_player, "game", None) if owner_player is not None else None
+                    current_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+                    if owner_player is None or current_player is not owner_player:
+                        apply_bonus = False
+                if apply_bonus:
+                    allowed_names = list(rule.get("weapon_names", []) or [])
+                    if allowed_names:
+                        current_weapon_name = str(weapon_name or "").strip()
+                        if not current_weapon_name and weapon_profile is not None:
+                            try:
+                                current_weapon_name = str(getattr(getattr(weapon_profile, "parent_wargear", None), "name", "") or "")
+                            except Exception:
+                                current_weapon_name = ""
+                            if not current_weapon_name:
+                                try:
+                                    current_weapon_name = str(getattr(weapon_profile, "name", "") or "")
+                                except Exception:
+                                    current_weapon_name = ""
+                        if not self._weapon_name_matches(allowed_names, current_weapon_name):
+                            apply_bonus = False
+                if apply_bonus:
+                    keyword = str(rule.get("keyword", "") or "").strip().upper()
+                    if keyword:
+                        source = str(rule.get("source", "") or "Remains Stationary").strip() or "Remains Stationary"
+                        rules = list(rules or []) + [
+                            {"attack_type": "ranged", "keyword": keyword, "source": source}
+                        ]
+        except Exception:
+            pass
+        try:
             if target is not None:
                 sr = getattr(self, "special_rules", None)
                 if isinstance(sr, dict) and sr.get("spirit_mark_active"):

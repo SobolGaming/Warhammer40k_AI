@@ -4501,7 +4501,7 @@ class AbilitySpecsMixin:
             return list(self._ability_cache[cache_key])
 
         specs: list[dict] = []
-        seen: set[tuple[str, int, int]] = set()
+        seen: set[tuple[str, int, int, str, int, int, str]] = set()
 
         for name, desc in self._iter_model_specific_ability_entries(model):
             text_src = desc or name or ""
@@ -4513,7 +4513,42 @@ class AbilitySpecsMixin:
             normalized = normalized.lower()
             normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
             normalized = re.sub(r"\s+", " ", normalized).strip()
+            source = str(name or "Eater Plague").strip() or "Eater Plague"
+
             m = self._SHOOTING_PHASE_EATER_PLAGUE_RE.fullmatch(normalized)
+            if m:
+                try:
+                    range_value = int(m.group("range") or 0)
+                except Exception:
+                    range_value = 0
+                if range_value <= 0:
+                    continue
+                try:
+                    lone_range = int(m.group("lone_range") or 0)
+                except Exception:
+                    lone_range = 0
+                if lone_range <= 0:
+                    lone_range = 12
+                key = (source.lower(), int(range_value), int(lone_range), "table", 0, 0, "")
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "range": int(range_value),
+                        "lone_operative_range": int(lone_range),
+                        "optional": True,
+                        "roll_mode": "table_d6_self_1_target_2_5_6",
+                        "self_mortal_on_one": "d3",
+                        "target_mortal_on_mid": "d6",
+                        "target_mortal_on_six": "d3+3",
+                        "count_as_curse_of_walking_pox": True,
+                    }
+                )
+                continue
+
+            m = self._SHOOTING_PHASE_DICE_POOL_MORTAL_RE.fullmatch(normalized)
             if not m:
                 continue
             try:
@@ -4528,8 +4563,19 @@ class AbilitySpecsMixin:
                 lone_range = 0
             if lone_range <= 0:
                 lone_range = 12
-            source = str(name or "Eater Plague").strip() or "Eater Plague"
-            key = (source.lower(), int(range_value), int(lone_range))
+            dice_token = str(m.group("dice") or "").strip().lower()
+            if dice_token.isdigit():
+                dice_count = int(dice_token)
+            else:
+                dice_count = int(self._NUMBER_WORDS.get(dice_token, 0) or 0)
+            try:
+                threshold = int(m.group("threshold") or 0)
+            except Exception:
+                threshold = 0
+            mw_token = str(m.group("mw") or "").strip().lower()
+            if dice_count <= 0 or threshold <= 0 or not mw_token:
+                continue
+            key = (source.lower(), int(range_value), int(lone_range), "dice_pool", int(dice_count), int(threshold), mw_token)
             if key in seen:
                 continue
             seen.add(key)
@@ -4539,9 +4585,11 @@ class AbilitySpecsMixin:
                     "range": int(range_value),
                     "lone_operative_range": int(lone_range),
                     "optional": True,
-                    "self_mortal_on_one": "d3",
-                    "target_mortal_on_mid": "d6",
-                    "target_mortal_on_six": "d3+3",
+                    "roll_mode": "dice_pool_threshold",
+                    "dice_count": int(dice_count),
+                    "threshold": int(threshold),
+                    "mortal_per_success": mw_token,
+                    "count_as_curse_of_walking_pox": False,
                 }
             )
 
@@ -5189,7 +5237,7 @@ class AbilitySpecsMixin:
             return list(self._ability_cache[cache_key])
 
         specs: list[dict] = []
-        seen: set[tuple[str, int]] = set()
+        seen: set[tuple[str, int, str, int, str, bool]] = set()
 
         for name, desc in self._iter_model_specific_ability_entries(model):
             text_src = desc or name or ""
@@ -5201,7 +5249,30 @@ class AbilitySpecsMixin:
             normalized = normalized.lower()
             normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
             normalized = re.sub(r"\s+", " ", normalized).strip()
+            source = str(name or "Corrupt Machine Spirits").strip() or "Corrupt Machine Spirits"
+
             m = self._START_SHOOTING_PHASE_CORRUPT_MACHINE_SPIRITS_RE.fullmatch(normalized)
+            if m:
+                try:
+                    range_value = int(m.group("range") or 0)
+                except Exception:
+                    range_value = 0
+                if range_value <= 0:
+                    continue
+                key = (source.lower(), int(range_value), "table", 0, "", False)
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "range": int(range_value),
+                        "roll_mode": "table_2_3_d3_4_5_3_6_d3plus3",
+                    }
+                )
+                continue
+
+            m = self._START_SHOOTING_PHASE_VEHICLE_MORTAL_HEAL_RE.fullmatch(normalized)
             if not m:
                 continue
             try:
@@ -5210,8 +5281,14 @@ class AbilitySpecsMixin:
                 range_value = 0
             if range_value <= 0:
                 continue
-            source = str(name or "Corrupt Machine Spirits").strip() or "Corrupt Machine Spirits"
-            key = (source.lower(), int(range_value))
+            try:
+                threshold = int(m.group("threshold") or 0)
+            except Exception:
+                threshold = 0
+            mw_token = str(m.group("mw") or "").strip().lower()
+            if threshold <= 0 or not mw_token:
+                continue
+            key = (source.lower(), int(range_value), "single_threshold", int(threshold), mw_token, True)
             if key in seen:
                 continue
             seen.add(key)
@@ -5219,6 +5296,10 @@ class AbilitySpecsMixin:
                 {
                     "source": source,
                     "range": int(range_value),
+                    "roll_mode": "single_threshold",
+                    "threshold": int(threshold),
+                    "mortal_on_success": mw_token,
+                    "heal_self_on_success": True,
                 }
             )
 
@@ -6241,16 +6322,59 @@ class AbilitySpecsMixin:
             normalized = normalized.lower()
             normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
             normalized = re.sub(r"\s+", " ", normalized).strip()
+            source = str(name or "Malign Sacrifice").strip() or "Malign Sacrifice"
+
             m = self._MALIGN_SACRIFICE_RE.fullmatch(normalized)
+            if m:
+                model_name = str(m.group("model") or "dark disciple").strip() or "dark disciple"
+                key = source.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "model_name": model_name,
+                        "allow_any_model": False,
+                        "roll_bonus_vs_vehicle": 0,
+                        "roll_low_min": 2,
+                        "roll_low_max": 5,
+                        "roll_low_mortal": "1",
+                        "roll_high_threshold": 6,
+                        "roll_high_mortal": "d3",
+                        "destroy_selected_model": True,
+                    }
+                )
+                continue
+
+            m = self._START_FIGHT_PHASE_SELF_DESTRUCTION_RE.fullmatch(normalized)
             if not m:
                 continue
-            model_name = str(m.group("model") or "dark disciple").strip() or "dark disciple"
-            source = str(name or "Malign Sacrifice").strip() or "Malign Sacrifice"
+            try:
+                vehicle_bonus = int(m.group("vehicle_bonus") or 0)
+            except Exception:
+                vehicle_bonus = 0
+            high_raw = str(m.group("high") or "").strip()
+            if not high_raw:
+                high_raw = "3"
             key = source.lower()
             if key in seen:
                 continue
             seen.add(key)
-            specs.append({"source": source, "model_name": model_name})
+            specs.append(
+                {
+                    "source": source,
+                    "model_name": "",
+                    "allow_any_model": True,
+                    "roll_bonus_vs_vehicle": int(max(0, vehicle_bonus)),
+                    "roll_low_min": 2,
+                    "roll_low_max": 5,
+                    "roll_low_mortal": "d3",
+                    "roll_high_threshold": 6,
+                    "roll_high_mortal": high_raw,
+                    "destroy_selected_model": True,
+                }
+            )
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}

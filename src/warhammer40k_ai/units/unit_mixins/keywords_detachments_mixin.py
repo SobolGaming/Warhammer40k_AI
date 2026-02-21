@@ -4842,6 +4842,60 @@ class KeywordsDetachmentsMixin:
         self._ability_cache[cache_key] = rule
         return rule
 
+    def get_stationary_ranged_weapon_keyword_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        - "In your Movement phase, if this model Remains Stationary, until the end of the turn,
+           its doomsday cannon has the [DEVASTATING WOUNDS] ability."
+        """
+        if model is None:
+            return None
+        cache_key = f"stationary_ranged_weapon_keyword_rule:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        rule = None
+        try:
+            for name, desc in self._iter_model_specific_ability_entries(model):
+                text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
+                if not text:
+                    continue
+                low = text.lower().replace("\u2019", "'")
+                if not re.search(r"\b(?:in|during)\s+your\s+movement\s+phase\b", low):
+                    continue
+                if not re.search(r"\bif\s+this\s+model\s+remain(?:s|ed)?\s+stationary\b", low):
+                    continue
+                if not re.search(r"\buntil\s+(?:the\s+)?end\s+of\s+(?:your\s+|the\s+)?turn\b", low):
+                    continue
+                m = re.search(
+                    r"\bits\s+(?P<weapon>[a-z0-9][a-z0-9 '\-]*)\s+has\s+the\s+\[?(?P<keyword>[a-z0-9 +\-]+)\]?\s+ability\b",
+                    low,
+                )
+                if not m:
+                    continue
+                weapon_name = str(m.group("weapon") or "").strip()
+                keyword = str(m.group("keyword") or "").strip().upper()
+                keyword = re.sub(r"\s+", " ", keyword)
+                if not weapon_name or not keyword:
+                    continue
+                source = str(name or "Remains Stationary").strip() or "Remains Stationary"
+                rule = {
+                    "attack_type": "ranged",
+                    "requires_remained_stationary": True,
+                    "requires_owner_turn": True,
+                    "weapon_names": [weapon_name],
+                    "keyword": keyword,
+                    "source": source,
+                }
+                break
+        except Exception:
+            rule = None
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = rule
+        return rule
+
     def get_closest_monster_vehicle_reroll_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
         """
         Return rule info for abilities like:

@@ -310,15 +310,60 @@ def handle_malign_sacrifice_roll(game: object, state: DiceRollState):
         return None
     ability_name = str(spec.get("ability_name", "") or "Malign Sacrifice").strip() or "Malign Sacrifice"
     roll_val = int(state.total or 0)
-    mortal = 0
-    if roll_val >= 6:
+    try:
+        from ..utility.dice import get_roll
+    except Exception:
+        get_roll = None
+
+    def _resolve_mortal_token(token: str) -> int:
+        tok = str(token or "").strip().lower()
+        if not tok:
+            return 0
+        if tok == "d3":
+            return int(get_roll("D3") or 0) if callable(get_roll) else 0
+        if tok == "d6":
+            return int(get_roll("D6") or 0) if callable(get_roll) else 0
+        if tok in ("d3+3", "d3 3"):
+            d3_val = int(get_roll("D3") or 0) if callable(get_roll) else 0
+            return int(d3_val + 3)
         try:
-            from ..utility.dice import get_roll
-            mortal = int(get_roll("D3") or 0)
+            return int(tok)
         except Exception:
-            mortal = 0
-    elif roll_val >= 2:
-        mortal = 1
+            return 0
+
+    try:
+        vehicle_bonus = int(spec.get("roll_bonus_vs_vehicle", 0) or 0)
+    except Exception:
+        vehicle_bonus = 0
+    try:
+        is_vehicle = bool(target_unit.has_any_keyword("VEHICLE"))
+    except Exception:
+        try:
+            is_vehicle = bool(target_unit.has_keyword("VEHICLE"))
+        except Exception:
+            is_vehicle = False
+    effective_roll = int(roll_val + (vehicle_bonus if is_vehicle else 0))
+
+    try:
+        low_min = int(spec.get("roll_low_min", 2) or 2)
+    except Exception:
+        low_min = 2
+    try:
+        low_max = int(spec.get("roll_low_max", 5) or 5)
+    except Exception:
+        low_max = 5
+    low_token = str(spec.get("roll_low_mortal", "1") or "1")
+    try:
+        high_threshold = int(spec.get("roll_high_threshold", 6) or 6)
+    except Exception:
+        high_threshold = 6
+    high_token = str(spec.get("roll_high_mortal", "d3") or "d3")
+
+    mortal = 0
+    if int(effective_roll) >= int(high_threshold):
+        mortal = int(_resolve_mortal_token(high_token))
+    elif int(low_min) <= int(effective_roll) <= int(low_max):
+        mortal = int(_resolve_mortal_token(low_token))
 
     if mortal > 0:
         try:
@@ -326,23 +371,24 @@ def handle_malign_sacrifice_roll(game: object, state: DiceRollState):
                 source_unit._apply_mortal_wounds_to_unit(target_unit, int(mortal), game_map=getattr(game, "map", None))
         except Exception:
             pass
-    try:
-        if model is not None and hasattr(model, "die"):
-            model.die(game_map=getattr(game, "map", None))
-    except Exception:
-        pass
+    if bool(spec.get("destroy_selected_model", True)):
+        try:
+            if model is not None and hasattr(model, "die"):
+                model.die(game_map=getattr(game, "map", None))
+        except Exception:
+            pass
     try:
         from ..utility.event_bus import append_action, append_dice
         player = source_unit.get_parent_army().player if hasattr(source_unit, "get_parent_army") else None
         if player is not None:
             append_dice(
                 player,
-                f"{ability_name}: roll {roll_val} => {int(mortal)} mortal wounds to {getattr(target_unit, 'name', 'Unit')}.",
+                f"{ability_name}: roll {roll_val} (effective {effective_roll}) => {int(mortal)} mortal wounds to {getattr(target_unit, 'name', 'Unit')}.",
             )
-            append_action(
-                player,
-                f"{ability_name}: {getattr(target_unit, 'name', 'Unit')} suffers {int(mortal)} mortal wounds; {getattr(model, 'name', 'Model')} destroyed.",
-            )
+            action = f"{ability_name}: {getattr(target_unit, 'name', 'Unit')} suffers {int(mortal)} mortal wounds."
+            if bool(spec.get("destroy_selected_model", True)):
+                action = f"{action} {getattr(model, 'name', 'Model')} destroyed."
+            append_action(player, action)
     except Exception:
         pass
     return int(mortal)

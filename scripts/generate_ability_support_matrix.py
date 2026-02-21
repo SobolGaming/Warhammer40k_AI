@@ -3507,6 +3507,8 @@ def _classify_ability_base(
     phase_end_leadership_cp_gain_support = _phase_end_leadership_cp_gain_support(description)
     command_phase_regain_wound_support = _command_phase_regain_wound_support(description)
     start_shooting_phase_visible_battleshock_support = _start_shooting_phase_visible_battleshock_support(description)
+    shooting_phase_dice_pool_mortal_support = _shooting_phase_dice_pool_mortal_support(description)
+    start_shooting_phase_vehicle_mortal_heal_support = _start_shooting_phase_vehicle_mortal_heal_support(description)
     post_shoot_battleshock_support = _post_shoot_battleshock_support(description)
     post_shoot_afflicted_support = _post_shoot_afflicted_support(description)
     post_shoot_shoot_again_support = _post_shoot_shoot_again_support(description)
@@ -3576,6 +3578,7 @@ def _classify_ability_base(
     model_attack_roll_bonus_support = _model_attack_roll_bonus_support(description)
     model_closest_target_ap_bonus_support = _model_closest_target_ap_bonus_support(description)
     model_stationary_ranged_sustained_support = _model_stationary_ranged_sustained_hits_support(description)
+    model_stationary_weapon_keyword_support = _model_stationary_weapon_keyword_support(description)
     ordered_stationary_heavy_sustained_support = _ordered_stationary_heavy_sustained_hits_support(description)
     targeted_stratagem_refund_support = _targeted_stratagem_cp_refund_support(description)
     targeted_stratagem_discount_support = _targeted_stratagem_cp_discount_support(description)
@@ -3583,6 +3586,8 @@ def _classify_ability_base(
     overwatch_hit_threshold_support = _overwatch_hit_threshold_support(description)
     brutal_example_overwatch_support = _brutal_example_overwatch_support(description)
     charge_end_mortal_support = _charge_end_mortal_wounds_support(description)
+    start_fight_phase_self_destruction_support = _start_fight_phase_self_destruction_support(description)
+    shooting_target_arcing_mortals_support = _shooting_target_arcing_mortals_support(description)
     fight_within_3_support = _fight_within_3_support(description)
     allocated_damage_reduction_support = _allocated_damage_reduction_support(description)
     allocated_damage_zero_support = _allocated_damage_set_zero_support(description)
@@ -3766,6 +3771,10 @@ def _classify_ability_base(
         return command_phase_regain_wound_support
     if start_shooting_phase_visible_battleshock_support:
         return start_shooting_phase_visible_battleshock_support
+    if shooting_phase_dice_pool_mortal_support:
+        return shooting_phase_dice_pool_mortal_support
+    if start_shooting_phase_vehicle_mortal_heal_support:
+        return start_shooting_phase_vehicle_mortal_heal_support
     if post_shoot_battleshock_support:
         return post_shoot_battleshock_support
     if post_shoot_afflicted_support:
@@ -3888,6 +3897,8 @@ def _classify_ability_base(
         return model_closest_target_ap_bonus_support
     if model_stationary_ranged_sustained_support:
         return model_stationary_ranged_sustained_support
+    if model_stationary_weapon_keyword_support:
+        return model_stationary_weapon_keyword_support
     if ordered_stationary_heavy_sustained_support:
         return ordered_stationary_heavy_sustained_support
     if targeted_stratagem_refund_support:
@@ -3900,8 +3911,12 @@ def _classify_ability_base(
         return overwatch_hit_threshold_support
     if brutal_example_overwatch_support:
         return brutal_example_overwatch_support
+    if shooting_target_arcing_mortals_support:
+        return shooting_target_arcing_mortals_support
     if charge_end_mortal_support:
         return charge_end_mortal_support
+    if start_fight_phase_self_destruction_support:
+        return start_fight_phase_self_destruction_support
     if fight_within_3_support:
         return fight_within_3_support
     if allocated_damage_zero_support:
@@ -5721,6 +5736,29 @@ def _model_stationary_ranged_sustained_hits_support(description: str) -> Optiona
     )
 
 
+def _model_stationary_weapon_keyword_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"(?:in|during) your movement phase if this model remains stationary until (?:the )?end of (?:the |your )?turn "
+        r"its (?P<weapon>[a-z0-9 ]+) has the (?P<keyword>[a-z0-9 ]+) ability",
+        norm,
+    )
+    if not m:
+        return None
+    weapon = str(m.group("weapon") or "").strip()
+    keyword = str(m.group("keyword") or "").strip().upper()
+    if not weapon or not keyword:
+        return None
+    return (
+        "Supported",
+        f"If this model remains stationary in your Movement phase, its {weapon} gains [{keyword}] until end of turn.",
+    )
+
+
 def _ordered_stationary_heavy_sustained_hits_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -5826,6 +5864,10 @@ def _charge_end_mortal_wounds_support(description: str) -> Optional[Tuple[str, s
         r"each time (?:this models unit|this unit) ends a charge move select one enemy unit within engagement range of (?:this unit|this model) "
         r"(?:then |and (?:then )?)?roll one d6 on a 2 3 that enemy unit suffers 1 mortal wounds? on a 4 5 that enemy unit suffers d3 mortal wounds? on a 6 that enemy unit suffers d3 3 mortal wounds?"
     )
+    table_2_5 = (
+        r"each time this model ends a charge move select one enemy unit within engagement range of this model "
+        r"(?:then |and (?:then )?)?roll one d6 on a 2 5 that unit suffers d3 mortal wounds? on a 6 that unit suffers d3 3 mortal wounds?"
+    )
     remaining_wounds = (
         r"each time this model ends a charge move select one enemy unit within engagement range of it "
         r"(?:then |and (?:then )?)?roll one d6 for each of this models remaining wounds for each 4 that enemy unit suffers 1 mortal wounds?"
@@ -5841,12 +5883,110 @@ def _charge_end_mortal_wounds_support(description: str) -> Optional[Tuple[str, s
             "Supported",
             "Charge end: pick an engaged enemy; D6 table for mortal wounds (2-3=1, 4-5=D3, 6=D3+3).",
         )
+    if re.fullmatch(table_2_5, norm):
+        return (
+            "Supported",
+            "Charge end: pick an engaged enemy; D6 table for mortal wounds (2-5=D3, 6=D3+3).",
+        )
     if re.fullmatch(remaining_wounds, norm):
         return (
             "Supported",
             "Charge end: pick an engaged enemy; D6 per remaining wound, each 4+ inflicts 1 mortal wound (max 6).",
         )
     return None
+
+
+def _start_fight_phase_self_destruction_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"at the start of the fight phase if this unit is within engagement range of one or more enemy units "
+        r"you can select one model in this unit to destroy if you do select one enemy unit within engagement range of that model "
+        r"and roll one d6 adding (?P<bonus>\d+) to the result if that unit is a vehicle "
+        r"on a 2 5 that unit suffers d3 mortal wounds on a 6 that unit suffers (?P<high>\d+) mortal wounds?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    bonus = m.group("bonus") or "1"
+    high = m.group("high") or "3"
+    return (
+        "Supported",
+        f"Start of Fight phase: optional self-destruct model; D6 (+{bonus} vs VEHICLE), 2-5=D3 mortal wounds, 6+={high} mortal wounds.",
+    )
+
+
+def _shooting_phase_dice_pool_mortal_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"in your shooting phase select one enemy unit within (?P<range>\d+) of and visible to this model "
+        r"excluding units with the lone operative ability that are not part of an attached unit and are not within (?P<lone>\d+) of this model "
+        r"and roll (?P<dice>one|two|three|four|five|six|seven|eight|nine|ten|\d+) d6 "
+        r"for each (?P<threshold>\d)\+? that enemy unit suffers (?P<mw>d3|d6|\d+) mortal wounds?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    dice = str(m.group("dice") or "").upper()
+    threshold = m.group("threshold") or "4"
+    mw = str(m.group("mw") or "1").upper()
+    range_val = m.group("range") or "18"
+    lone = m.group("lone") or "12"
+    return (
+        "Supported",
+        f"Shooting phase: pick visible enemy within {range_val}\" (Lone Operative exception {lone}\"); roll {dice}D6, each {threshold}+ inflicts {mw} mortal wounds.",
+    )
+
+
+def _start_shooting_phase_vehicle_mortal_heal_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"at the start of your shooting phase select one enemy vehicle unit within (?P<range>\d+) of this model and roll one d6 "
+        r"on a (?P<threshold>\d)\+? that enemy unit suffers (?P<mw>d3|d6|\d+) mortal wounds and this model regains up to that many lost wounds?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    return (
+        "Supported",
+        f"Start of Shooting phase: pick enemy VEHICLE within {m.group('range')}\"; on {m.group('threshold')}+ it suffers {str(m.group('mw') or 'D3').upper()} mortal wounds and bearer heals the same amount.",
+    )
+
+
+def _shooting_target_arcing_mortals_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"in your shooting phase each time you select a target for this models (?P<weapon>[a-z0-9 ]+) roll one d6 for the target unit "
+        r"and one d6 for (?:each|every) other enemy unit within (?P<range>\d+) of the target unit on a (?P<threshold>\d)\+? "
+        r"the unit being rolled for is struck by arcing energies after resolving all of this models attacks against the target unit "
+        r"each unit struck by arcing energies suffers (?P<mw>d3|d6|\d+) mortal wounds?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    weapon = str(m.group("weapon") or "weapon").strip()
+    range_val = m.group("range") or "3"
+    threshold = m.group("threshold") or "5"
+    mw = str(m.group("mw") or "D3").upper()
+    return (
+        "Supported",
+        f"Shooting target selection ({weapon}): roll D6 for target and nearby enemies within {range_val}\"; on {threshold}+ mark struck units, then each struck unit suffers {mw} mortal wounds after attacks resolve.",
+    )
 
 
 def _selected_to_shoot_single_reroll_support(description: str) -> Optional[Tuple[str, str]]:

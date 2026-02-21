@@ -4471,6 +4471,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         model_id = payload.get("model_id") or ctx.get("model_id")
         if not model_id:
             return None
+        ctx_spec = dict(ctx.get("spec", {}) or {})
         try:
             player = getattr(getattr(source_unit, "get_parent_army", lambda: None)(), "player", None)
         except Exception:
@@ -4486,6 +4487,13 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             "target_unit_id": get_entity_id(chosen),
             "model_id": model_id,
             "ability_name": ability_name,
+            "roll_bonus_vs_vehicle": int(ctx_spec.get("roll_bonus_vs_vehicle", 0) or 0),
+            "roll_low_min": int(ctx_spec.get("roll_low_min", 2) or 2),
+            "roll_low_max": int(ctx_spec.get("roll_low_max", 5) or 5),
+            "roll_low_mortal": str(ctx_spec.get("roll_low_mortal", "1") or "1"),
+            "roll_high_threshold": int(ctx_spec.get("roll_high_threshold", 6) or 6),
+            "roll_high_mortal": str(ctx_spec.get("roll_high_mortal", "d3") or "d3"),
+            "destroy_selected_model": bool(ctx_spec.get("destroy_selected_model", True)),
         }
         try:
             if hasattr(game, "request_dice_roll"):
@@ -4687,17 +4695,41 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         except Exception:
             get_roll = None
             append_dice = None
+        roll_mode = str(ctx.get("roll_mode", "") or "table_2_3_d3_4_5_3_6_d3plus3").strip().lower()
         roll = int(get_roll("D6") or 0) if callable(get_roll) else 0
         if callable(append_dice) and player is not None:
             append_dice(player, f"{ability_name} roll: {roll}")
+
+        def _resolve_mortal_token(token: str) -> int:
+            tok = str(token or "").strip().lower()
+            if not tok:
+                return 0
+            if tok == "d3":
+                return int(get_roll("D3") or 0) if callable(get_roll) else 0
+            if tok == "d6":
+                return int(get_roll("D6") or 0) if callable(get_roll) else 0
+            try:
+                return int(tok)
+            except Exception:
+                return 0
+
         mortal = 0
-        if 2 <= roll <= 3:
-            mortal = int(get_roll("D3") or 0) if callable(get_roll) else 0
-        elif 4 <= roll <= 5:
-            mortal = 3
-        elif roll >= 6:
-            d3 = int(get_roll("D3") or 0) if callable(get_roll) else 0
-            mortal = int(d3 + 3)
+        if roll_mode == "single_threshold":
+            try:
+                threshold = int(ctx.get("threshold", 2) or 2)
+            except Exception:
+                threshold = 2
+            mw_token = str(ctx.get("mortal_on_success", "") or "d3")
+            if roll >= int(threshold):
+                mortal = int(_resolve_mortal_token(mw_token))
+        else:
+            if 2 <= roll <= 3:
+                mortal = int(get_roll("D3") or 0) if callable(get_roll) else 0
+            elif 4 <= roll <= 5:
+                mortal = 3
+            elif roll >= 6:
+                d3 = int(get_roll("D3") or 0) if callable(get_roll) else 0
+                mortal = int(d3 + 3)
         if mortal > 0:
             try:
                 source_unit._apply_mortal_wounds_to_unit(
@@ -4707,6 +4739,27 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 )
             except Exception:
                 pass
+        if mortal > 0 and bool(ctx.get("heal_self_on_success", False)):
+            heal_target = model
+            if heal_target is None:
+                try:
+                    alive = [m for m in list(getattr(source_unit, "models", []) or []) if getattr(m, "is_alive", True)]
+                except Exception:
+                    alive = []
+                heal_target = alive[0] if alive else None
+            if heal_target is not None:
+                try:
+                    base_wounds = int(getattr(heal_target, "_base_wounds", getattr(heal_target, "base_wounds", 0)) or 0)
+                    current_wounds = int(getattr(heal_target, "wounds", 0) or 0)
+                    if base_wounds > 0 and current_wounds < base_wounds:
+                        healed = min(int(mortal), int(base_wounds - current_wounds))
+                        heal_target.wounds = int(current_wounds + healed)
+                        if hasattr(heal_target, "_check_damaged_profile"):
+                            heal_target._check_damaged_profile()
+                        if callable(append_dice) and player is not None and healed > 0:
+                            append_dice(player, f"{ability_name}: {getattr(heal_target, 'name', 'Model')} regains {int(healed)} wound(s).")
+                except Exception:
+                    pass
         try:
             tname = str(getattr(target_unit, "name", "Unit") or "Unit")
             _log_action_for_players(game, player, f"{ability_name}: {tname} suffers {int(mortal)} mortal wounds.")
@@ -6148,41 +6201,91 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         except Exception:
             get_roll = None
             append_dice = None
-        roll = int(get_roll("D6") or 0) if callable(get_roll) else 0
-        if callable(append_dice) and player is not None:
-            append_dice(player, f"{ability_name} roll: {roll}")
+
+        def _resolve_mortal_token(token: str) -> int:
+            tok = str(token or "").strip().lower()
+            if not tok:
+                return 0
+            if tok == "d3":
+                return int(get_roll("D3") or 0) if callable(get_roll) else 0
+            if tok == "d6":
+                return int(get_roll("D6") or 0) if callable(get_roll) else 0
+            if tok in ("d3+3", "d3 3"):
+                d3v = int(get_roll("D3") or 0) if callable(get_roll) else 0
+                return int(d3v + 3)
+            try:
+                return int(tok)
+            except Exception:
+                return 0
+
+        roll_mode = str(ctx.get("roll_mode", "") or "table_d6_self_1_target_2_5_6").strip().lower()
         mortal = 0
         recipient = target_root
-        if roll <= 1:
-            mortal = int(get_roll("D3") or 0) if callable(get_roll) else 0
-            recipient = source_root
-        elif roll <= 5:
-            mortal = int(get_roll("D6") or 0) if callable(get_roll) else 0
-            recipient = target_root
+        is_psychic = bool(roll_mode == "table_d6_self_1_target_2_5_6")
+
+        if roll_mode == "dice_pool_threshold":
+            try:
+                dice_count = int(ctx.get("dice_count", 0) or 0)
+            except Exception:
+                dice_count = 0
+            try:
+                threshold = int(ctx.get("threshold", 0) or 0)
+            except Exception:
+                threshold = 0
+            mw_token = str(ctx.get("mortal_per_success", "") or "1")
+            if dice_count > 0 and threshold > 0:
+                rolls = [int(get_roll("D6") or 0) if callable(get_roll) else 0 for _ in range(int(dice_count))]
+                successes = sum(1 for r in rolls if int(r) >= int(threshold))
+                if mw_token.strip().lower() in ("d3", "d6", "d3+3", "d3 3"):
+                    mortal = sum(_resolve_mortal_token(mw_token) for _ in range(int(successes)))
+                else:
+                    per_success = _resolve_mortal_token(mw_token)
+                    mortal = int(max(0, per_success) * int(successes))
+                if callable(append_dice) and player is not None:
+                    append_dice(
+                        player,
+                        f"{ability_name}: rolls {rolls} ({int(threshold)}+) => {int(successes)} success(es), {int(mortal)} mortal wounds.",
+                    )
         else:
-            d3 = int(get_roll("D3") or 0) if callable(get_roll) else 0
-            mortal = int(d3 + 3)
-            recipient = target_root
+            roll = int(get_roll("D6") or 0) if callable(get_roll) else 0
+            if callable(append_dice) and player is not None:
+                append_dice(player, f"{ability_name} roll: {roll}")
+            self_token = str(ctx.get("self_mortal_on_one", "") or "d3")
+            mid_token = str(ctx.get("target_mortal_on_mid", "") or "d6")
+            high_token = str(ctx.get("target_mortal_on_six", "") or "d3+3")
+            if roll <= 1:
+                mortal = int(_resolve_mortal_token(self_token))
+                recipient = source_root
+            elif roll <= 5:
+                mortal = int(_resolve_mortal_token(mid_token))
+                recipient = target_root
+            else:
+                mortal = int(_resolve_mortal_token(high_token))
+                recipient = target_root
+
         if callable(append_dice) and player is not None:
             append_dice(player, f"{ability_name} mortal wounds: {int(mortal)}")
         if mortal > 0 and source_root is not None and recipient is not None:
-            sr_source = getattr(source_root, "special_rules", None)
-            if not isinstance(sr_source, dict):
-                sr_source = {}
-            had_marker = bool(sr_source.get("curse_of_walking_pox_count_eater_plague", False))
-            sr_source["curse_of_walking_pox_count_eater_plague"] = True
-            source_root.special_rules = sr_source
+            count_for_curse = bool(ctx.get("count_as_curse_of_walking_pox", bool(roll_mode != "dice_pool_threshold")))
+            had_marker = False
+            if count_for_curse:
+                sr_source = getattr(source_root, "special_rules", None)
+                if not isinstance(sr_source, dict):
+                    sr_source = {}
+                had_marker = bool(sr_source.get("curse_of_walking_pox_count_eater_plague", False))
+                sr_source["curse_of_walking_pox_count_eater_plague"] = True
+                source_root.special_rules = sr_source
             try:
                 source_root._apply_mortal_wounds_to_unit(
                     recipient,
                     int(mortal),
                     game_map=getattr(game, "map", None),
-                    is_psychic_attack=True,
+                    is_psychic_attack=bool(is_psychic),
                 )
             except Exception:
                 pass
             finally:
-                if not had_marker:
+                if count_for_curse and not had_marker:
                     sr_source = getattr(source_root, "special_rules", None)
                     if not isinstance(sr_source, dict):
                         sr_source = {}

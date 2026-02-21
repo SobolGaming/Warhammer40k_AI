@@ -3737,6 +3737,7 @@ class GamePhaseHandlersMixin:
                 ability_name = str(spec.get("source", "") or "Malign Sacrifice").strip() or "Malign Sacrifice"
                 model_name = str(spec.get("model_name", "") or "dark disciple").strip() or "dark disciple"
                 norm_target = root._normalize_attached_unit_name(model_name)
+                allow_any_model = bool(spec.get("allow_any_model", False))
                 try:
                     models = list(root.get_attached_unit_models() or [])
                 except Exception:
@@ -3748,6 +3749,9 @@ class GamePhaseHandlersMixin:
                         if not getattr(m, "is_alive", True):
                             continue
                     except Exception:
+                        continue
+                    if allow_any_model:
+                        disciples.append(m)
                         continue
                     name = root._normalize_attached_unit_name(getattr(m, "name", ""))
                     if not name:
@@ -3823,6 +3827,7 @@ class GamePhaseHandlersMixin:
                         "ability": "malign_sacrifice",
                         "ability_name": ability_name,
                         "source_unit_id": uid,
+                        "spec": dict(spec or {}),
                     },
                 )
                 self.request_decision(request)
@@ -4674,6 +4679,14 @@ class GamePhaseHandlersMixin:
                         "model_id": model_id,
                         "range": int(range_value),
                         "lone_operative_range": int(lone_range),
+                        "roll_mode": str(spec.get("roll_mode", "") or ""),
+                        "dice_count": int(spec.get("dice_count", 0) or 0),
+                        "threshold": int(spec.get("threshold", 0) or 0),
+                        "mortal_per_success": str(spec.get("mortal_per_success", "") or ""),
+                        "self_mortal_on_one": str(spec.get("self_mortal_on_one", "") or ""),
+                        "target_mortal_on_mid": str(spec.get("target_mortal_on_mid", "") or ""),
+                        "target_mortal_on_six": str(spec.get("target_mortal_on_six", "") or ""),
+                        "count_as_curse_of_walking_pox": bool(spec.get("count_as_curse_of_walking_pox", False)),
                     }
                     request = DecisionRequest.create(
                         DECISION_CHOOSE_QUARRY,
@@ -4841,6 +4854,10 @@ class GamePhaseHandlersMixin:
                             "range": int(range_value or 0),
                             "keyword": str(spec.get("keyword", "") or "").strip().lower(),
                             "phase": "Shooting phase",
+                            "roll_mode": str(spec.get("roll_mode", "") or ""),
+                            "threshold": int(spec.get("threshold", 0) or 0),
+                            "mortal_on_success": str(spec.get("mortal_on_success", "") or ""),
+                            "heal_self_on_success": bool(spec.get("heal_self_on_success", False)),
                         },
                     )
                     self.request_decision(request)
