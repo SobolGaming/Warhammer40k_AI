@@ -6774,7 +6774,11 @@ class ActionsMovementMixin:
 
     def _is_chaos_undivided(self) -> bool:
         try:
-            if self.has_any_keyword("UNIDIVIDED") or self.has_any_keyword("CHAOS UNDIVIDED"):
+            if (
+                self.has_any_keyword("UNDIVIDED")
+                or self.has_any_keyword("UNIDIVIDED")
+                or self.has_any_keyword("CHAOS UNDIVIDED")
+            ):
                 return True
         except Exception:
             pass

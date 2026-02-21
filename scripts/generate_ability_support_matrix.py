@@ -351,6 +351,30 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"in each players command phase select one enemy unit within your armys shadow of chaos",
             r"that unit must take a battle shock test",
         ),
+        "Thralls of the First Prince": (
+            r"when mustering your army you cannot include any daemon prince daemon prince with wings or epic hero units excluding be lakor but you can include the following heretic astartes units",
+            r"the combined points value of such units depends on your battle size as shown below",
+            r"incursion up to 500 pts",
+            r"strike force up to 1000 pts",
+            r"onslaught up to 1500 pts",
+            r"be lakor and heretic astartes units from your army gain the shadow legion and undivided keywords",
+            r"legiones daemonica units from your army gain the shadow legion keyword",
+        ),
+        "First Prince of Chaos": (
+            r"units from your army have the relevant abilities presented below",
+            r"shadow legion khorne units only",
+            r"this unit is eligible to shoot and declare a charge in a turn in which it advanced",
+            r"shadow legion tzeentch units only",
+            r"each time an attack targets this unit subtract 1 from the hit roll",
+            r"shadow legion nurgle units only",
+            r"each time an attack targets this unit if the strength characteristic of that attack is greater than this units toughness characteristic subtract 1 from the wound roll",
+            r"shadow legion slaanesh units only",
+            r"enemy units cannot use the fire overwatch stratagem to shoot at this unit",
+            r"shadow legion undivided units only",
+            r"this unit has the dark pacts army rule and can use it as described in codex.*",
+            r"if this unit is be lakor it automatically passes the leadership test required for dark pacts",
+            r"shadow legion heretic astartes models in this unit have the deep strike ability",
+        ),
         "Fates in Flux": (
             r"you start the battle with three flux tokens we recommend using a dice to track how many flux tokens you have",
             r"you can spend one flux token just after an advance roll hit roll wound roll damage roll saving throw or hazardous test is made for a legiones daemonica tzeentch model or legiones daemonica tzeentch unit from your army to reroll the result of that roll throw or test",
@@ -1806,6 +1830,14 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Melancholic Miasma": (
             "Supported",
             "Plague Legion: enemy units within 9\" of eligible NURGLE LEGIONES DAEMONICA units count as within your Shadow of Chaos; each Command phase queues a deterministic enemy-unit selection in your Shadow of Chaos to take a Battle-shock test.",
+        ),
+        "Thralls of the First Prince": (
+            "Supported",
+            "Shadow Legion: muster validation enforces Daemon Prince/non-Be'lakor Epic Hero bans, allows only listed HERETIC ASTARTES or DAMNED picks, applies battle-size points caps, and applies SHADOW LEGION/UNDIVIDED keyword grants.",
+        ),
+        "First Prince of Chaos": (
+            "Supported",
+            "Shadow Legion: MURDERER'S COWL advance-and-shoot/charge, PENUMBRAL PUPPETRY -1 to hit, GLOAM ROT -1 to wound when Strength exceeds Toughness, SHADOW'S CARESS no Overwatch targeting, and DISCIPLES OF BE'LAKOR Dark Pacts with Be'lakor auto-pass plus SHADOW LEGION HERETIC ASTARTES Deep Strike are implemented.",
         ),
         "Fates in Flux": (
             "Supported",
