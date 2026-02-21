@@ -3953,6 +3953,22 @@ class ActionsMovementMixin:
         except Exception:
             pass
 
+        # Emperor's Shield: Wrath of Dorn (vs Oath target) re-roll Wound rolls of 1;
+        # Darnath Lysander units re-roll the Wound roll instead.
+        try:
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            oath_mgr = getattr(army, "oath_of_moment", None) if army is not None else None
+            apply_ones_fn = getattr(oath_mgr, "wrath_of_dorn_reroll_wound_ones_applies", None) if oath_mgr is not None else None
+            apply_full_fn = getattr(oath_mgr, "wrath_of_dorn_reroll_wound_full_applies", None) if oath_mgr is not None else None
+            if callable(apply_ones_fn) and apply_ones_fn(root, target):
+                reroll_wound_values.add(1)
+                reroll_wound_reasons.append("Wrath of Dorn: re-roll Wound rolls of 1")
+            if callable(apply_full_fn) and apply_full_fn(root, target):
+                mods["reroll_wound_full"] = True
+                reroll_wound_full_reasons.append("Wrath of Dorn: re-roll Wound roll")
+        except Exception:
+            pass
+
         # Needgaard Oathband: HUNTR'S MARK grants ranged re-roll Wound rolls of 1.
         try:
             active_fn = getattr(root, "_needgaard_huntrs_mark_active_for_shooting", None)

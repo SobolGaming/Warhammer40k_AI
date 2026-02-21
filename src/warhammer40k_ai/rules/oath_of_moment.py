@@ -113,6 +113,41 @@ class OathOfMomentManager:
             return False
         return bool(check())
 
+    def _army_is_emperors_shield(self) -> bool:
+        if self.army is None:
+            return False
+        mgr = getattr(self.army, "space_marines_detachments", None)
+        if mgr is None:
+            return False
+        check = getattr(mgr, "is_emperors_shield", None)
+        if not callable(check):
+            return False
+        return bool(check())
+
+    def _unit_contains_name(self, unit, name_fragment: str) -> bool:
+        if unit is None:
+            return False
+        target = str(name_fragment or "").strip().upper()
+        if not target:
+            return False
+        root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+        if root is None:
+            return False
+        members = list(root.get_attached_unit_members() or []) if hasattr(root, "get_attached_unit_members") else [root]
+        if not members:
+            members = [root]
+        for member in members:
+            if member is None:
+                continue
+            member_name = str(getattr(member, "name", "") or "").strip().upper()
+            if target in member_name:
+                return True
+            for model in list(getattr(member, "models", []) or []):
+                model_name = str(getattr(model, "name", "") or "").strip().upper()
+                if target in model_name:
+                    return True
+        return False
+
     def _recalculating_source_units(self) -> list:
         army = self.army
         if army is None:
@@ -238,6 +273,18 @@ class OathOfMomentManager:
         if not self._army_is_hammer_of_avernii():
             return False
         return self.can_reroll_hit(attacker_unit, target_unit)
+
+    def wrath_of_dorn_reroll_wound_ones_applies(self, attacker_unit, target_unit) -> bool:
+        if not self._army_is_emperors_shield():
+            return False
+        return self.can_reroll_hit(attacker_unit, target_unit)
+
+    def wrath_of_dorn_reroll_wound_full_applies(self, attacker_unit, target_unit) -> bool:
+        if not self._army_is_emperors_shield():
+            return False
+        if not self.can_reroll_hit(attacker_unit, target_unit):
+            return False
+        return self._unit_contains_name(attacker_unit, "DARNATH LYSANDER")
 
     def _current_battle_round(self, *, game=None) -> int:
         if game is not None:
