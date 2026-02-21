@@ -80,6 +80,197 @@ class GameShootingFightHandlersMixin:
                     hits_by_unit=dict(hits_map),
                 )
 
+    def _interlocking_tactics_hit_candidates(self, attacker_unit=None, hits_by_target=None):
+        if attacker_unit is None or not isinstance(hits_by_target, dict):
+            return None, None, None, []
+        try:
+            attacker_root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = attacker_unit
+        attacker_army = attacker_root.get_parent_army() if attacker_root is not None else None
+        if attacker_army is None:
+            return None, None, None, []
+        attacker_player = getattr(attacker_army, "player", None)
+        sm_mgr = getattr(attacker_army, "space_marines_detachments", None)
+        if sm_mgr is None or not getattr(sm_mgr, "interlocking_tactics_battleline_applies", None):
+            return None, None, None, []
+        if not sm_mgr.interlocking_tactics_battleline_applies(attacker_root):
+            return None, None, None, []
+
+        candidates_by_id = {}
+        for target_unit, hits in list((hits_by_target or {}).items()):
+            if target_unit is None:
+                continue
+            if int(hits or 0) <= 0:
+                continue
+            try:
+                target_root = target_unit.get_attached_unit_root()
+            except Exception:
+                target_root = target_unit
+            if target_root is None:
+                continue
+            try:
+                if target_root.get_parent_army() is attacker_army:
+                    continue
+            except Exception:
+                continue
+            try:
+                if not bool(target_root.is_alive()):
+                    continue
+            except Exception:
+                continue
+            tid = str(get_entity_id(target_root) or "")
+            if not tid:
+                continue
+            if tid not in candidates_by_id:
+                candidates_by_id[tid] = target_root
+
+        candidates = list(candidates_by_id.values())
+        try:
+            candidates = sorted(candidates, key=lambda u: str(maybe_entity_id(u) or ""))
+        except Exception:
+            candidates = list(candidates)
+        return attacker_root, attacker_player, sm_mgr, candidates
+
+    def _queue_interlocking_tactics_auspex_scan(self, *, attacker_root=None, attacker_player=None, candidates=None) -> None:
+        if attacker_root is None or attacker_player is None:
+            return
+        candidate_list = list(candidates or [])
+        if not candidate_list:
+            return
+        options = [
+            DecisionOption.create(
+                str(getattr(cand, "name", "Unit") or "Unit"),
+                payload={"target_unit_id": get_entity_id(cand)},
+            )
+            for cand in candidate_list
+        ]
+        if not options:
+            return
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Interlocking Tactics: select an auspex scanned unit.",
+            player_id=getattr(attacker_player, "id", None),
+            options=options,
+            context={
+                "ability": "interlocking_tactics_auspex_scan",
+                "ability_name": "Interlocking Tactics",
+                "attacker_unit_id": get_entity_id(attacker_root),
+                "turn": int(getattr(self, "turn", 0) or 0),
+            },
+        )
+        self.request_decision(request)
+
+    def _on_unit_shooting_resolved_interlocking_tactics(self, attacker_unit=None, hits_by_target=None, **_kwargs) -> None:
+        attacker_root, attacker_player, _sm_mgr, candidates = self._interlocking_tactics_hit_candidates(
+            attacker_unit=attacker_unit,
+            hits_by_target=hits_by_target,
+        )
+        if attacker_root is None or attacker_player is None or not candidates:
+            return
+        self._queue_interlocking_tactics_auspex_scan(
+            attacker_root=attacker_root,
+            attacker_player=attacker_player,
+            candidates=candidates,
+        )
+
+    def _on_fight_attacks_resolved_interlocking_tactics(self, unit=None, hits_by_target=None, **_kwargs) -> None:
+        attacker_root, attacker_player, _sm_mgr, candidates = self._interlocking_tactics_hit_candidates(
+            attacker_unit=unit,
+            hits_by_target=hits_by_target,
+        )
+        if attacker_root is None or attacker_player is None or not candidates:
+            return
+        owner_id = str(getattr(attacker_player, "id", "") or "")
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        sr = getattr(attacker_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        pending_turn = int(sr.get("interlocking_tactics_pending_turn", 0) or 0)
+        pending_owner = str(sr.get("interlocking_tactics_pending_owner", "") or "")
+        if pending_turn != current_turn or pending_owner != owner_id:
+            pending_ids = []
+        else:
+            pending_ids = [str(v or "") for v in list(sr.get("interlocking_tactics_pending_target_ids", []) or []) if str(v or "")]
+        for cand in candidates:
+            cid = str(get_entity_id(cand) or "")
+            if cid and cid not in pending_ids:
+                pending_ids.append(cid)
+        sr["interlocking_tactics_pending_turn"] = int(current_turn or 0)
+        sr["interlocking_tactics_pending_owner"] = owner_id
+        sr["interlocking_tactics_pending_target_ids"] = sorted(set(pending_ids))
+        attacker_root.special_rules = sr
+
+    def _on_fight_sequence_complete_interlocking_tactics(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        try:
+            attacker_root = unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = unit
+        if attacker_root is None:
+            return
+        attacker_army = attacker_root.get_parent_army() if hasattr(attacker_root, "get_parent_army") else None
+        attacker_player = getattr(attacker_army, "player", None) if attacker_army is not None else None
+        if attacker_player is None:
+            return
+        owner_id = str(getattr(attacker_player, "id", "") or "")
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        sr = getattr(attacker_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        pending_turn = int(sr.get("interlocking_tactics_pending_turn", 0) or 0)
+        pending_owner = str(sr.get("interlocking_tactics_pending_owner", "") or "")
+        pending_ids = [str(v or "") for v in list(sr.get("interlocking_tactics_pending_target_ids", []) or []) if str(v or "")]
+        if pending_turn != current_turn or pending_owner != owner_id or not pending_ids:
+            return
+        candidates = []
+        for unit_id in pending_ids:
+            target = None
+            registry = getattr(self, "entity_registry", None)
+            if registry is not None and callable(getattr(registry, "get", None)):
+                target = registry.get(unit_id, kind="unit")
+            if target is None:
+                continue
+            try:
+                target_root = target.get_attached_unit_root()
+            except Exception:
+                target_root = target
+            if target_root is None:
+                continue
+            try:
+                if target_root.get_parent_army() is attacker_army:
+                    continue
+            except Exception:
+                continue
+            try:
+                if not bool(target_root.is_alive()):
+                    continue
+            except Exception:
+                continue
+            candidates.append(target_root)
+        try:
+            candidates = sorted(candidates, key=lambda u: str(maybe_entity_id(u) or ""))
+        except Exception:
+            candidates = list(candidates)
+        sr.pop("interlocking_tactics_pending_turn", None)
+        sr.pop("interlocking_tactics_pending_owner", None)
+        sr.pop("interlocking_tactics_pending_target_ids", None)
+        attacker_root.special_rules = sr
+        if not candidates:
+            return
+        self._queue_interlocking_tactics_auspex_scan(
+            attacker_root=attacker_root,
+            attacker_player=attacker_player,
+            candidates=candidates,
+        )
+
     def _on_unit_shooting_resolved_tactical_acumen(
         self,
         attacker_unit=None,

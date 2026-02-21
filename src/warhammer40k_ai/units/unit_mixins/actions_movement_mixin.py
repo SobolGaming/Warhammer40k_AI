@@ -3269,6 +3269,19 @@ class ActionsMovementMixin:
         except Exception:
             pass
 
+        # Bastion Task Force: Interlocking Tactics re-roll Hit rolls of 1 vs auspex scanned units.
+        try:
+            if target is not None:
+                army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+                sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                if sm_mgr is not None and getattr(sm_mgr, "interlocking_tactics_target_is_auspex_scanned_for", None):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    if sm_mgr.interlocking_tactics_target_is_auspex_scanned_for(root, target, game=game):
+                        reroll_hit_values.add(1)
+                        reroll_hit_reasons.append("Interlocking Tactics: re-roll Hit rolls of 1 vs auspex scanned units")
+        except Exception:
+            pass
+
         # Needgaard Oathband: HUNTR'S MARK grants ranged re-roll Hit rolls of 1.
         try:
             active_fn = getattr(root, "_needgaard_huntrs_mark_active_for_shooting", None)
@@ -10201,6 +10214,14 @@ class ActionsMovementMixin:
                     return True
         except Exception:
             pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "interlocking_tactics_shoot_after_advance_applies", None):
+                if mgr.interlocking_tactics_shoot_after_advance_applies(self, profile):
+                    return True
+        except Exception:
+            pass
         # Check for Assault weapons
         if profile.is_assault():
             return True
@@ -10259,6 +10280,14 @@ class ActionsMovementMixin:
             if mgr is not None and getattr(mgr, "can_shoot_after_fall_back", None):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if mgr.can_shoot_after_fall_back(self, profile, game=game):
+                    return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "interlocking_tactics_shoot_after_fall_back_applies", None):
+                if mgr.interlocking_tactics_shoot_after_fall_back_applies(self, profile):
                     return True
         except Exception:
             pass
@@ -10477,6 +10506,14 @@ class ActionsMovementMixin:
             pass
         try:
             army = self.get_parent_army()
+            mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "interlocking_tactics_charge_after_advance_applies", None):
+                if mgr.interlocking_tactics_charge_after_advance_applies(self):
+                    return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
             mgr = getattr(army, "aeldari_detachments", None) if army is not None else None
             if mgr is not None and getattr(mgr, "can_charge_after_advance", None):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
@@ -10528,6 +10565,14 @@ class ActionsMovementMixin:
         """Check if this unit can charge after falling back."""
         if self.has_thrill_seekers():
             return True
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "interlocking_tactics_charge_after_fall_back_applies", None):
+                if mgr.interlocking_tactics_charge_after_fall_back_applies(self):
+                    return True
+        except Exception:
+            pass
         try:
             army = self.get_parent_army()
             mgr = getattr(army, "space_marines_detachments", None) if army is not None else None

@@ -311,10 +311,13 @@ def build_default_rule_providers() -> List[RuleProvider]:
             predicate=lambda ctxs, _g: any_manager(
                 ctxs,
                 "space_marines_detachments",
-                ("is_rage_cursed_onslaught",),
+                ("is_rage_cursed_onslaught", "is_bastion_task_force"),
             ),
             subscriptions=[
                 ("fight_unit_selected", "_on_fight_unit_selected_maddened_ferocity"),
+                ("unit_shooting_resolved", "_on_unit_shooting_resolved_interlocking_tactics"),
+                ("fight_attacks_resolved", "_on_fight_attacks_resolved_interlocking_tactics"),
+                ("fight_sequence_complete", "_on_fight_sequence_complete_interlocking_tactics"),
             ],
         )
     )

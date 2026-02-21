@@ -192,6 +192,11 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Anvil Siege Force")
 
+    def is_bastion_task_force(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Bastion Task Force")
+
     def is_blade_of_ultramar(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
             return False
@@ -367,6 +372,89 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not remained_stationary:
             return 0, ""
         return 1, "Shield of the Imperium"
+
+    def interlocking_tactics_battleline_applies(self, unit) -> bool:
+        if unit is None:
+            return False
+        if not self.is_bastion_task_force():
+            return False
+        if not self.attached_unit_is_adeptus_astartes(unit):
+            return False
+        return self._attached_unit_has_keyword(unit, "BATTLELINE")
+
+    def interlocking_tactics_shoot_after_advance_applies(self, unit, weapon_profile=None) -> bool:
+        if not self.interlocking_tactics_battleline_applies(unit):
+            return False
+        if weapon_profile is None:
+            return True
+        parent = getattr(weapon_profile, "parent_wargear", None)
+        if parent is None:
+            return False
+        return bool(getattr(parent, "is_ranged", lambda: False)())
+
+    def interlocking_tactics_shoot_after_fall_back_applies(self, unit, weapon_profile=None) -> bool:
+        return self.interlocking_tactics_shoot_after_advance_applies(unit, weapon_profile)
+
+    def interlocking_tactics_charge_after_advance_applies(self, unit) -> bool:
+        return self.interlocking_tactics_battleline_applies(unit)
+
+    def interlocking_tactics_charge_after_fall_back_applies(self, unit) -> bool:
+        return self.interlocking_tactics_battleline_applies(unit)
+
+    def interlocking_tactics_allow_action_after_advance_or_fall_back(self, unit, game) -> bool:
+        if not self.interlocking_tactics_battleline_applies(unit):
+            return False
+        if game is None:
+            return False
+        for flag in ("actions_enabled", "mission_actions_enabled", "mission_has_actions"):
+            try:
+                enabled = getattr(game, flag)
+            except Exception:
+                continue
+            if enabled is False:
+                return False
+        return True
+
+    def interlocking_tactics_target_is_auspex_scanned_for(self, attacker_unit, target_unit, *, game=None) -> bool:
+        if not self.is_bastion_task_force():
+            return False
+        if attacker_unit is None or target_unit is None:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(attacker_unit):
+            return False
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        if not bool(sr.get("interlocking_tactics_auspex_scanned_active", False)):
+            return False
+        owner_ids = list(sr.get("interlocking_tactics_auspex_scanned_owner_ids", []) or [])
+        owner_ids = [str(v or "").strip() for v in owner_ids if str(v or "").strip()]
+        if not owner_ids:
+            single_owner = str(sr.get("interlocking_tactics_auspex_scanned_owner", "") or "").strip()
+            if single_owner:
+                owner_ids = [single_owner]
+        owner_id = str(getattr(getattr(self.army, "player", None), "id", "") or "").strip()
+        if owner_id and owner_ids and owner_id not in owner_ids:
+            return False
+        game_obj = game
+        if game_obj is None:
+            game_obj = getattr(getattr(self.army, "player", None), "game", None)
+        if game_obj is not None:
+            try:
+                current_turn = int(getattr(game_obj, "turn", 0) or 0)
+            except Exception:
+                current_turn = 0
+            try:
+                marked_turn = int(sr.get("interlocking_tactics_auspex_scanned_turn", 0) or 0)
+            except Exception:
+                marked_turn = 0
+            if current_turn and marked_turn and current_turn != marked_turn:
+                return False
+        return True
 
     def dutiful_tenacity_wound_roll_penalty(self, target_unit, *, strength=None, target_toughness=None) -> tuple[int, str]:
         if not self.is_wrath_of_the_rock():

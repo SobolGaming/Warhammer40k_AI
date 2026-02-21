@@ -7233,6 +7233,48 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 )
             except Exception:
                 pass
+    if str(ctx.get("ability", "") or "") == "interlocking_tactics_auspex_scan":
+        if chosen is not None:
+            try:
+                target_root = chosen.get_attached_unit_root()
+            except Exception:
+                target_root = chosen
+            attacker_unit = resolve_unit(game, ctx.get("attacker_unit_id"))
+            try:
+                player = getattr(attacker_unit.get_parent_army(), "player", None) if attacker_unit is not None else None
+            except Exception:
+                player = None
+            owner_id = str(getattr(player, "id", "") or "")
+            try:
+                marked_turn = int(ctx.get("turn", 0) or getattr(game, "turn", 0) or 0)
+            except Exception:
+                marked_turn = int(getattr(game, "turn", 0) or 0)
+            ability_name = str(ctx.get("ability_name", "") or "Interlocking Tactics").strip() or "Interlocking Tactics"
+            sr = getattr(target_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            existing_turn = int(sr.get("interlocking_tactics_auspex_scanned_turn", 0) or 0)
+            if existing_turn == int(marked_turn or 0):
+                owner_ids = [str(v or "") for v in list(sr.get("interlocking_tactics_auspex_scanned_owner_ids", []) or []) if str(v or "")]
+            else:
+                owner_ids = []
+            if owner_id and owner_id not in owner_ids:
+                owner_ids.append(owner_id)
+            sr["interlocking_tactics_auspex_scanned_active"] = True
+            sr["interlocking_tactics_auspex_scanned_owner"] = owner_id
+            sr["interlocking_tactics_auspex_scanned_owner_ids"] = sorted(set(owner_ids))
+            sr["interlocking_tactics_auspex_scanned_turn"] = int(marked_turn or 0)
+            sr["interlocking_tactics_auspex_scanned_source"] = ability_name
+            target_root.special_rules = sr
+            try:
+                tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"{ability_name}: {tname} is auspex scanned until end of turn.",
+                )
+            except Exception:
+                pass
     if str(ctx.get("ability", "") or "") == "post_shoot_keyword_wound_reroll":
         if chosen is not None:
             try:

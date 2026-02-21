@@ -792,17 +792,22 @@ class GameMissionsScoringActionsMixin:
                for enemy in self.map.get_enemy_units(unit) if enemy.is_alive()):
             if not (getattr(unit, 'is_titanic', False) and getattr(unit, 'is_character', False)):
                 return {"valid": False, "reason": "Units in Engagement Range cannot perform Actions"}
-        # Not if advanced or fell back (Templar Vows: Uphold allows INFANTRY to start Actions after advancing).
-        if unit.round_state.fell_back_this_round:
-            return {"valid": False, "reason": "Units that Fell Back cannot perform Actions"}
-        if unit.round_state.advanced_this_round:
-            allow_advance_action = False
-            army = unit.get_parent_army()
-            mgr = getattr(army, "templar_vows", None) if army is not None else None
-            if mgr is not None and mgr.allow_action_after_advance(unit, self):
+        # Not if advanced or fell back, unless a rule allows it.
+        allow_advance_action = False
+        allow_fall_back_action = False
+        army = unit.get_parent_army()
+        mgr = getattr(army, "templar_vows", None) if army is not None else None
+        if mgr is not None and mgr.allow_action_after_advance(unit, self):
+            allow_advance_action = True
+        sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+        if sm_mgr is not None and getattr(sm_mgr, "interlocking_tactics_allow_action_after_advance_or_fall_back", None):
+            if sm_mgr.interlocking_tactics_allow_action_after_advance_or_fall_back(unit, self):
                 allow_advance_action = True
-            if not allow_advance_action:
-                return {"valid": False, "reason": "Units that Advanced cannot perform Actions"}
+                allow_fall_back_action = True
+        if unit.round_state.fell_back_this_round and not allow_fall_back_action:
+            return {"valid": False, "reason": "Units that Fell Back cannot perform Actions"}
+        if unit.round_state.advanced_this_round and not allow_advance_action:
+            return {"valid": False, "reason": "Units that Advanced cannot perform Actions"}
         # Not if not eligible to shoot this phase (includes units that have already been selected to shoot)
         if unit.round_state.shot_this_round:
             return {"valid": False, "reason": "Units already selected to shoot cannot start an Action this phase"}
