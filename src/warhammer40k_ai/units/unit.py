@@ -2044,7 +2044,9 @@ class Unit(
         r"(?:(?:is wholly within (?P<edge_dist>\d+) of one or more battlefield edges? and )?"
         r"(?:(?:is\s+)?not within engagement range of one or more enemy units?|is more than (?P<min_dist>\d+) horizontally away from all enemy units?)"
         r"|(?:(?:is\s+)?not within engagement range of one or more enemy units?) and is wholly within (?P<edge_dist_alt>\d+) of one or more battlefield edges?) "
-        r"you can remove (?:it|that unit|this unit) from the battlefield and place it into strategic reserves?",
+        r"you can remove (?:it|that unit|this unit) from the battlefield "
+        r"(?:and place (?:it|that unit|this unit) into strategic reserves?"
+        r"|in the reinforcements step of your next movement phase set it up anywhere on the battlefield that is more than (?P<return_dist>\d+) horizontally away from all enemy models?)",
         re.IGNORECASE,
     )
     _FIGHT_PHASE_END_DESTROYED_STRATEGIC_RESERVES_RE = re.compile(
@@ -2164,7 +2166,8 @@ class Unit(
         re.IGNORECASE,
     )
     _BEARER_WEAPON_ALWAYS_KEYWORD_RE = re.compile(
-        r"(?:the\s+bearer'?s|this\s+model'?s)\s+(?P<atype>melee|ranged)?\s*weapons?\s+"
+        r"(?:(?:(?:the\s+bearer'?s|this\s+model'?s)\s+(?P<atype>melee|ranged)?\s*weapons?)|"
+        r"(?:(?P<atype_alt>melee|ranged)?\s*weapons?\s+equipped\s+by\s+the\s+bearer))\s+"
         r"\b(?:have|has|gain)\s+the\s+\[(?P<keyword>[^\]]+)\]\s+ability\b",
         re.IGNORECASE,
     )
@@ -3042,10 +3045,10 @@ class Unit(
     )
     _END_OF_FIGHT_EMBARK_RE = re.compile(
         r"at the end of the fight phase if there are no models currently embarked within this transport you can select one "
-        r"friendly (?P<keyword>[a-z0-9 ]+) infantry unit that "
-        r"(?:only includes models from the units listed in this unit s transport section )?"
-        r"(?:that )?has (?P<max>\d+) or fewer models "
-        r"(?:and )?that is wholly within (?P<range>\d+) of this transport "
+        r"friendly (?P<keyword>[a-z0-9 ]+) infantry unit "
+        r"(?:that only includes models from the units listed in this unit s transport section )?"
+        r"(?:(?:that )?has (?P<max>\d+) or fewer models (?:and )?)?"
+        r"(?:that is )?wholly within (?P<range>\d+) of this transport "
         r"(?:you cannot select a unit that can fly )?"
         r"unless that unit is within engagement range of one or more enemy units it can embark within this transport",
         re.IGNORECASE,
@@ -3300,8 +3303,8 @@ class Unit(
     )
     _BEARER_ALLOCATED_DAMAGE_REDUCTION_RE = re.compile(
         r"each\s+time\s+(?:an|a)\s+(?:(?P<atype>melee|ranged)\s+)?attack\s+is\s+allocated\s+"
-        r"to\s+the\s+bearer,\s*subtract\s+(?P<val>\d+)\s+from\s+the\s+damage\s+"
-        r"characteristic\s+of\s+that\s+attack",
+        r"to\s+(?:the\s+bearer|this\s+model)(?:,\s*)?\s*subtract\s+(?P<val>\d+)\s+from\s+"
+        r"(?:the\s+damage\s+characteristic\s+of\s+that\s+attack|that\s+attack'?s\s+damage\s+characteristic|that\s+attack\s+s\s+damage\s+characteristic|that\s+attacks\s+damage\s+characteristic)",
         re.IGNORECASE,
     )
     _BEARER_ALLOCATED_DAMAGE_HALVING_RE = re.compile(

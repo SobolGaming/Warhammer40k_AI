@@ -3920,11 +3920,14 @@ class AbilitySpecsMixin:
             keyword = str(m.group("keyword") or "").strip()
             if not keyword:
                 continue
+            max_models = 0
             try:
-                max_models = int(m.group("max") or 0)
+                max_raw = str(m.group("max") or "").strip()
+                if max_raw:
+                    max_models = int(max_raw)
             except Exception:
                 max_models = 0
-            if max_models <= 0:
+            if max_models < 0:
                 continue
             try:
                 range_value = int(m.group("range") or 0)

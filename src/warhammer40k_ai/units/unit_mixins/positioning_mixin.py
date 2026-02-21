@@ -2608,7 +2608,7 @@ class PositioningMixin:
                 keyword = str(match.group("keyword") or "").strip()
                 if not keyword:
                     continue
-                atype = str(match.group("atype") or "").strip().lower()
+                atype = str((match.group("atype") or match.group("atype_alt") or "")).strip().lower()
                 if atype not in ("melee", "ranged"):
                     atype = "any"
                 source = str(name or "Ability")

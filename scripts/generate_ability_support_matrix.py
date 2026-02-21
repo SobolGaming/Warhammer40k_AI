@@ -3495,6 +3495,7 @@ def _classify_ability_base(
     enemy_move_reactive_d6_support = _enemy_move_reactive_d6_support(description)
     horde_move_support = _horde_move_support(description)
     setup_reactive_shoot_charge_support = _setup_reactive_shoot_or_charge_support(description)
+    post_deployment_redeploy_support = _post_deployment_redeploy_support(description)
     sticky_support = _sticky_objective_support(description)
     bodyguard_return_support = _command_phase_bodyguard_return_support(description)
     charge_phase_bodyguard_loss_support = _charge_phase_bodyguard_loss_support(description)
@@ -3741,6 +3742,8 @@ def _classify_ability_base(
         return horde_move_support
     if setup_reactive_shoot_charge_support:
         return setup_reactive_shoot_charge_support
+    if post_deployment_redeploy_support:
+        return post_deployment_redeploy_support
     if sticky_support:
         return sticky_support
     if bodyguard_return_support:
@@ -4937,6 +4940,11 @@ def _weapon_keyword_grant_support(description: str) -> Optional[Tuple[str, str]]
             "bearer",
         ),
         (
+            rf"{lead_prefix}(?:(?P<scope>melee|ranged) )?weapons equipped by the bearer "
+            r"(?:have|has|gain) (?:the )?(?P<kw_section>[a-z0-9 \-]+?) abil(?:ity|ies)",
+            "bearer",
+        ),
+        (
             rf"{lead_prefix}(?:(?P<scope>melee|ranged) )?weapons equipped by this model (?:have|gain) "
             r"(?:the )?(?P<kw_section>[a-z0-9 \-]+?) abil(?:ity|ies)",
             "model",
@@ -5915,12 +5923,13 @@ def _allocated_damage_reduction_support(description: str) -> Optional[Tuple[str,
     if not norm:
         return None
     base = r"each time (?:a|an) (?:melee |ranged )?attack is allocated to (?:this model|a model in this unit)"
+    damage_ref = r"(?:the damage characteristic of that attack|that attack s damage characteristic|that attacks damage characteristic)"
     half_patterns = [
-        rf"{base} (?:halve|half) the damage characteristic of that attack",
-        rf"{base} the damage characteristic of that attack is halved",
+        rf"{base} (?:halve|half) {damage_ref}",
+        rf"{base} {damage_ref} is halved",
         rf"{base} .* damage characteristic .* halved",
     ]
-    sub_pattern = rf"{base} subtract (?P<val>\d+) from the damage characteristic of that attack"
+    sub_pattern = rf"{base} subtract (?P<val>\d+) from {damage_ref}"
     if any(re.fullmatch(p, norm) for p in half_patterns):
         atype = ""
         m2 = re.search(r"each time (?:a|an) (melee|ranged) attack is allocated", norm)
@@ -6643,8 +6652,8 @@ def _end_of_fight_embark_support(description: str) -> Optional[Tuple[str, str]]:
         r"at the end of the fight phase if there are no models currently embarked within this transport you can select one friendly "
         r"(?P<keyword>[a-z0-9 ]+) infantry unit "
         r"(?:that only includes models from the units listed in this (?:unit s|units) transport section )?"
-        r"(?:that )?has (?P<max>\d+) or fewer models "
-        r"(?:and )?that is wholly within (?P<range>\d+) of this transport "
+        r"(?:(?:that )?has (?P<max>\d+) or fewer models (?:and )?)?"
+        r"(?:that is )?wholly within (?P<range>\d+) of this transport "
         r"(?:you cannot select a unit that can fly )?"
         r"unless that unit is within engagement range of one or more enemy units it can embark within this transport"
     )
@@ -6806,6 +6815,33 @@ def _setup_reactive_shoot_or_charge_support(description: str) -> Optional[Tuple[
     )
 
 
+def _post_deployment_redeploy_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"(?:if your army includes this model )?after both players have deployed their armies "
+        r"select up to (?P<count>\d+|one|two|three|four|five|six|d3(?: \+ \d+)?) "
+        r"(?P<filter>[a-z0-9 ']+?) units? from your army and redeploy them(?: (?P<tail>.*))?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    count = str(m.group("count") or "").strip().upper()
+    if not count:
+        count = "3"
+    unit_filter = str(m.group("filter") or "").strip().upper()
+    if not unit_filter:
+        unit_filter = "friendly"
+    tail = str(m.group("tail") or "").strip()
+    note = f"After deployment: redeploy up to {count} {unit_filter} unit(s)."
+    if "strategic reserves" in tail or "strategic reserves" in norm:
+        note = f"{note} Selected units can be placed into Strategic Reserves regardless of normal limits."
+    return ("Supported", note)
+
+
 def _sticky_objective_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -6898,13 +6934,27 @@ def _opponent_turn_strategic_reserves_support(description: str) -> Optional[Tupl
     norm = _norm_rules_text(description)
     if not norm:
         return None
-    pattern = (
+    base = (
         r"(?:once per battle(?:,)?\s+)?at the end of your opponents turn if this unit is not within engagement range of one or more enemy units "
-        r"you can remove it from the battlefield and place it into strategic reserves"
+        r"you can remove (?:it|this unit|that unit) from the battlefield"
     )
-    if not re.fullmatch(pattern, norm):
+    strategic_reserves_pattern = rf"{base} and place (?:it|this unit|that unit) into strategic reserves"
+    tunneling_pattern = (
+        rf"{base} in the reinforcements step of your next movement phase set it up anywhere on the battlefield "
+        r"that is more than (?P<dist>\d+) horizontally away from all enemy models"
+    )
+    if re.fullmatch(strategic_reserves_pattern, norm):
+        note = "End of opponent's turn: if not in Engagement Range, may enter Strategic Reserves."
+        if "once per battle" in norm:
+            note = f"{note} Once per battle."
+        return ("Supported", note)
+    m = re.fullmatch(tunneling_pattern, norm)
+    if not m:
         return None
-    note = "End of opponent's turn: if not in Engagement Range, may enter Strategic Reserves."
+    note = (
+        "End of opponent's turn: if not in Engagement Range, remove the unit and set it up in your next Reinforcements "
+        f"step more than {m.group('dist')}\" horizontally from enemy models."
+    )
     if "once per battle" in norm:
         note = f"{note} Once per battle."
     return ("Supported", note)
@@ -7831,10 +7881,11 @@ def _melee_fight_on_death_after_attacks_support(description: str) -> Optional[Tu
     if not norm:
         return None
     pattern = (
-        r"(?:each time |if )?(?:a model in this unit|this model) is destroyed by a melee attack if (?:that model|it) has not fought this phase "
+        r"(?:each time |if )?(?:(?:an? )?[a-z0-9 ]+ model in this unit|a model in this unit|this model) "
+        r"is destroyed by a melee attack if (?:that model|it) has not fought this phase "
         r"roll one d6 on a (?P<threshold>\d+) do not remove (?:it|this model|that destroyed model) from play "
-        r"(?:that destroyed model|this model) can fight after the attacking (?:unit|model s unit) has finished making its attacks "
-        r"and is then removed from play"
+        r"(?:that destroyed model|the destroyed model|this model) can fight after the attacking (?:unit|model s unit|models unit) has finished making its attacks "
+        r"and (?:is|it is) then removed from play"
     )
     m = re.fullmatch(pattern, norm)
     if not m:

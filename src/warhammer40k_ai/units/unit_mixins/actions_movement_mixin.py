@@ -1276,6 +1276,23 @@ class ActionsMovementMixin:
             except Exception:
                 continue
 
+        # Unit-level abilities on single-model units can apply to "this model" wording.
+        try:
+            models = list(getattr(self, "models", []) or [])
+            if len(models) == 1 and models[0] is model:
+                for ab in list(getattr(self, "possible_abilities", []) or []):
+                    try:
+                        desc = ab if isinstance(ab, str) else (getattr(ab, "description", "") or "")
+                        name = ab if isinstance(ab, str) else (getattr(ab, "name", "") or "Unit ability")
+                    except Exception:
+                        desc = ""
+                        name = "Unit ability"
+                    found = self._parse_bearer_allocated_damage_reductions(desc)
+                    if found:
+                        _add_entries(found, str(name or "Unit ability"))
+        except Exception:
+            pass
+
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
         self._ability_cache[cache_key] = entries
