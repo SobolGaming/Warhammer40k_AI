@@ -3203,23 +3203,38 @@ class KeywordsDetachmentsMixin:
                     break
 
                 m_fortify = u._FORTIFY_OVERWATCH_RE.fullmatch(normalized)
-                if not m_fortify:
+                if m_fortify:
+                    try:
+                        base_threshold = int(m_fortify.group("base") or 0)
+                    except Exception:
+                        base_threshold = 0
+                    try:
+                        fortify_threshold = int(m_fortify.group("fortify") or 0)
+                    except Exception:
+                        fortify_threshold = 0
+                    if base_threshold <= 0 or fortify_threshold <= 0:
+                        continue
+                    source = str(name or "Overwatch").strip() or "Overwatch"
+                    rule = {
+                        "source": source,
+                        "base_threshold": int(base_threshold),
+                        "fortify_takeover_threshold": int(fortify_threshold),
+                    }
+                    break
+
+                m_simple = u._OVERWATCH_HIT_THRESHOLD_RE.fullmatch(normalized)
+                if not m_simple:
                     continue
                 try:
-                    base_threshold = int(m_fortify.group("base") or 0)
+                    threshold = int(m_simple.group("threshold") or 0)
                 except Exception:
-                    base_threshold = 0
-                try:
-                    fortify_threshold = int(m_fortify.group("fortify") or 0)
-                except Exception:
-                    fortify_threshold = 0
-                if base_threshold <= 0 or fortify_threshold <= 0:
+                    threshold = 0
+                if threshold <= 0:
                     continue
                 source = str(name or "Overwatch").strip() or "Overwatch"
                 rule = {
                     "source": source,
-                    "base_threshold": int(base_threshold),
-                    "fortify_takeover_threshold": int(fortify_threshold),
+                    "base_threshold": int(threshold),
                 }
                 break
             if rule is not None:
@@ -4577,23 +4592,33 @@ class KeywordsDetachmentsMixin:
                     continue
                 if ("re-roll" not in low) and ("reroll" not in low):
                     continue
-                m_full = re.search(r"re-?roll\s+the\s+hit\s+roll(?:\s+instead)?", low)
                 m_value = re.search(r"re-?roll\s+a\s+hit\s+roll\s+of\s+(?P<val>\d+)", low)
+                m_full = re.search(r"re-?roll\s+the\s+hit\s+roll(?:\s+instead)?", low)
+                full_if_uncontrolled_objective = bool(
+                    re.search(
+                        r"if\s+the\s+target\s+of\s+that\s+attack\s+is\s+within\s+range\s+of\s+an?\s+objective\s+marker\s+"
+                        r"(?:you\s+do\s+not\s+control|your\s+opponent\s+controls)",
+                        low,
+                    )
+                )
                 if not m_full and not m_value:
                     continue
                 source = str(name or "Closest enemy unit").strip() or "Closest enemy unit"
                 rule = {"source": source}
-                if m_full:
-                    rule["reroll_full"] = True
-                elif m_value:
+                if m_value:
                     try:
                         roll_value = int(m_value.group("val") or 0)
                     except Exception:
                         roll_value = 0
                     if roll_value <= 0:
                         continue
-                    rule["reroll_full"] = False
                     rule["reroll_values"] = (int(roll_value),)
+                if m_full and not full_if_uncontrolled_objective:
+                    rule["reroll_full"] = True
+                else:
+                    rule["reroll_full"] = False
+                if full_if_uncontrolled_objective:
+                    rule["reroll_full_if_target_uncontrolled_objective"] = True
                 break
         except Exception:
             rule = None

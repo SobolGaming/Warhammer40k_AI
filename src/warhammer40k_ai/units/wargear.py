@@ -4331,7 +4331,15 @@ class WargearProfile:
                                 gm = None
                         if gm is not None and getattr(unit, "is_target_closest_eligible", None):
                             if unit.is_target_closest_eligible(attacker, self, target, gm):
-                                closest_enemy_hit_reroll_rule = rule
+                                resolved_rule = dict(rule or {})
+                                if bool(resolved_rule.get("reroll_full_if_target_uncontrolled_objective")):
+                                    applies_full = False
+                                    try:
+                                        applies_full = bool(unit._target_within_uncontrolled_objective_range(target, game_map=gm))
+                                    except Exception:
+                                        applies_full = False
+                                    resolved_rule["reroll_full"] = bool(applies_full)
+                                closest_enemy_hit_reroll_rule = resolved_rule
         except Exception:
             closest_enemy_hit_reroll_rule = None
         closest_eligible_hit_bonus_rule = None

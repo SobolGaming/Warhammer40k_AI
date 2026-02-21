@@ -3514,6 +3514,7 @@ def _classify_ability_base(
     post_shoot_infantry_mortal_support = _post_shoot_infantry_mortal_wounds_battleshock_support(description)
     post_shoot_wracking_agonies_support = _post_shoot_wracking_agonies_support(description)
     post_shoot_suppression_support = _post_shoot_suppression_support(description)
+    post_shoot_reactive_move_no_charge_support = _post_shoot_reactive_move_no_charge_support(description)
     post_shoot_no_cover_support = _post_shoot_no_cover_support(description)
     post_shoot_snare_support = _post_shoot_snare_support(description)
     post_shoot_leadership_debuff_support = _post_shoot_leadership_debuff_support(description)
@@ -3578,6 +3579,7 @@ def _classify_ability_base(
     targeted_stratagem_refund_support = _targeted_stratagem_cp_refund_support(description)
     targeted_stratagem_discount_support = _targeted_stratagem_cp_discount_support(description)
     targeted_stratagem_increase_support = _targeted_stratagem_cp_increase_support(description)
+    overwatch_hit_threshold_support = _overwatch_hit_threshold_support(description)
     brutal_example_overwatch_support = _brutal_example_overwatch_support(description)
     charge_end_mortal_support = _charge_end_mortal_wounds_support(description)
     fight_within_3_support = _fight_within_3_support(description)
@@ -3777,6 +3779,8 @@ def _classify_ability_base(
         return post_shoot_wracking_agonies_support
     if post_shoot_suppression_support:
         return post_shoot_suppression_support
+    if post_shoot_reactive_move_no_charge_support:
+        return post_shoot_reactive_move_no_charge_support
     if post_shoot_no_cover_support:
         return post_shoot_no_cover_support
     if post_shoot_snare_support:
@@ -3889,6 +3893,8 @@ def _classify_ability_base(
         return targeted_stratagem_discount_support
     if targeted_stratagem_increase_support:
         return targeted_stratagem_increase_support
+    if overwatch_hit_threshold_support:
+        return overwatch_hit_threshold_support
     if brutal_example_overwatch_support:
         return brutal_example_overwatch_support
     if charge_end_mortal_support:
@@ -5094,13 +5100,16 @@ def _attack_roll_rule_support(description: str) -> Optional[Tuple[str, str]]:
             return None
         if rule.scope not in ("unit", "leading"):
             return None
-        if rule.subject not in ("model_in_this_unit", "model_in_that_unit"):
+        if rule.subject not in ("model_in_this_unit", "model_in_that_unit", "this_model"):
             return None
         rules.append(rule)
     if not rules:
         return None
     scopes = {r.scope for r in rules}
-    if scopes == {"leading"}:
+    subjects = {r.subject for r in rules}
+    if subjects == {"this_model"}:
+        note = "Model attack roll modifiers supported."
+    elif scopes == {"leading"}:
         note = "Leading: attack roll modifiers supported."
     elif scopes == {"unit"}:
         note = "Unit attack roll modifiers supported."
@@ -6082,6 +6091,25 @@ def _targeted_stratagem_cp_increase_support(description: str) -> Optional[Tuple[
     )
 
 
+def _overwatch_hit_threshold_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"each time you target this unit with the fire overwatch stratagem "
+        r"(?:while|when) resolving that stratagem hits are scored on unmodified hit rolls of (?P<threshold>\d)\+?",
+        norm,
+    )
+    if not m:
+        return None
+    threshold = str(m.group("threshold") or "").strip()
+    if threshold not in {"2", "3", "4", "5", "6"}:
+        return None
+    return ("Supported", f"Fire Overwatch with this unit scores hits on unmodified {threshold}+ while resolving the Stratagem.")
+
+
 def _brutal_example_overwatch_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -6313,22 +6341,30 @@ def _unit_hit_reroll_ones_support(description: str) -> Optional[Tuple[str, str]]
 
     base_typed_re = re.compile(
         r"^each time a model in this unit makes (?:a|an) (?P<atype>melee|ranged) attack(?:s)?"
+        r"(?: that targets (?:an?|the)?\s*(?:closest (?:eligible )?)?(?:enemy\s+)?(?:unit|target))?"
         r"[,;:]?\s*(?:you can\s*)?re-?roll (?:a|any)?\s*hit roll(?:s)? of 1$",
         re.IGNORECASE,
     )
     base_any_re = re.compile(
         r"^each time a model in this unit makes (?:a|an) attack(?:s)?"
+        r"(?: that targets (?:an?|the)?\s*(?:closest (?:eligible )?)?(?:enemy\s+)?(?:unit|target))?"
         r"[,;:]?\s*(?:you can\s*)?re-?roll (?:a|any)?\s*hit roll(?:s)? of 1$",
         re.IGNORECASE,
     )
     objective_clause_re = re.compile(
         r"^if (?:that attack targets|the target of that attack is) (?:a unit )?(?:that is )?"
         r"within range of (?:an|one or more) objective marker(?:s)?"
+        r"(?: you do not control| your opponent controls)?"
         r"\s*[,;:]?\s*(?:you can\s*)?re-?roll the hit roll instead$",
         re.IGNORECASE,
     )
     closest_clause_re = re.compile(
         r"^if (?:that attack targets|the target of that attack is) the closest (?:eligible )?(?:enemy )?(?:unit|target)"
+        r"\s*[,;:]?\s*(?:you can\s*)?re-?roll the hit roll instead$",
+        re.IGNORECASE,
+    )
+    charge_clause_re = re.compile(
+        r"^if this unit made a charge move this turn"
         r"\s*[,;:]?\s*(?:you can\s*)?re-?roll the hit roll instead$",
         re.IGNORECASE,
     )
@@ -6368,18 +6404,22 @@ def _unit_hit_reroll_ones_support(description: str) -> Optional[Tuple[str, str]]
     notes = [f"Unit attacks re-roll Hit rolls of 1 for {attack_scope} attacks."]
     objective_sentences = [s for s in sentences if objective_clause_re.match(s.lower())]
     closest_sentences = [s for s in sentences if closest_clause_re.match(s.lower())]
+    charge_sentences = [s for s in sentences if charge_clause_re.match(s.lower())]
     unsupported = [
         s
         for s in sentences
         if s not in base_sentences
         and not objective_clause_re.match(s.lower())
         and not closest_clause_re.match(s.lower())
+        and not charge_clause_re.match(s.lower())
     ]
 
     if objective_sentences:
         notes.append("If the target is within range of an objective marker, the Hit roll can be re-rolled instead (optional).")
     if closest_sentences:
         notes.append("If the target is the closest eligible target, the Hit roll can be re-rolled instead (optional).")
+    if charge_sentences:
+        notes.append("If this unit made a Charge move this turn, the Hit roll can be re-rolled instead (optional).")
 
     if multiple_bases or unsupported:
         notes.append("Additional clauses not handled.")
@@ -6421,8 +6461,10 @@ def _unit_wound_reroll_ones_support(description: str) -> Optional[Tuple[str, str
         re.IGNORECASE,
     )
     objective_clause_re = re.compile(
-        r"^if (?:that attack targets|the target of that attack is|that enemy unit is) (?:a unit )?(?:that is )?"
+        r"^if (?:that attack targets|the target of that attack is|that enemy unit is) "
+        r"(?:(?:a|an) (?:enemy )?unit )?(?:that is )?"
         r"within range of (?:an|one or more) objective marker(?:s)?"
+        r"(?: you do not control| your opponent controls)?"
         r"\s*[,;:]?\s*(?:you can\s*)?re-?roll the wound roll instead$",
         re.IGNORECASE,
     )
@@ -7113,6 +7155,31 @@ def _post_shoot_suppression_support(description: str) -> Optional[Tuple[str, str
     return ("Supported", "After shooting, suppress a hit enemy unit for -1 to hit until your next turn.")
 
 
+def _post_shoot_reactive_move_no_charge_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"in your shooting phase after this (?:model s unit|models unit|unit) has shot"
+        r"(?: if it is not within engagement range of (?:one or more|any) enemy units)? "
+        r"(?:it|that unit|this unit) can make a normal move of up to (?P<move>d6|\d+)"
+        r"(?: as if it were your movement phase)? "
+        r"if it does until the end of the turn (?:that unit|this unit) is not eligible to declare a charge"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    move = str(m.group("move") or "").strip().upper()
+    move_label = "D6" if move == "D6" else move
+    gated = "if it is not within engagement range" in norm
+    note = f"After shooting: this unit can make a Normal move of up to {move_label}\" and then cannot charge this turn."
+    if gated:
+        note = f"After shooting (if not in Engagement Range): this unit can make a Normal move of up to {move_label}\" and then cannot charge this turn."
+    return ("Supported", note)
+
+
 def _post_shoot_no_cover_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -7120,7 +7187,8 @@ def _post_shoot_no_cover_support(description: str) -> Optional[Tuple[str, str]]:
     if not norm:
         return None
     pattern = (
-        r"in your shooting phase after this (?P<subject>model|unit) has shot select one enemy unit "
+        r"in your shooting phase (?:(?:each time )?this (?P<sel_subject>model|unit) is selected to shoot )?"
+        r"after (?:this (?P<subject>model|unit) has shot|resolving (?:its|those) attacks) select one enemy unit "
         r"(?:that was )?hit by one or more of those attacks "
         r"(?:made with (?:a|an|the|its) (?P<weapon>[a-z0-9 ]+) )?"
         r"until the (?P<duration>end of the phase|start of your next shooting phase) "

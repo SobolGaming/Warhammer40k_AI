@@ -2400,6 +2400,12 @@ class Unit(
         r"of one or more thousand sons psyker units from your army a hit is scored on an unmodified hit roll of (?P<near>\d)(?:\+)? instead",
         re.IGNORECASE,
     )
+    _OVERWATCH_HIT_THRESHOLD_RE = re.compile(
+        r"each time you target this unit with the fire overwatch stratagem "
+        r"(?:while|when) resolving that stratagem "
+        r"hits are scored on unmodified hit rolls of (?P<threshold>\d)(?:\+)?",
+        re.IGNORECASE,
+    )
     _FORTIFY_OVERWATCH_RE = re.compile(
         r"each time you target this unit with the fire overwatch stratagem hits are scored on unmodified hit rolls of (?P<base>\d)(?:\+)? "
         r"(?:when|while) resolving that stratagem if units from your army have fortify takeover hits are scored on unmodified hit rolls "
@@ -2544,8 +2550,11 @@ class Unit(
         re.IGNORECASE,
     )
     _POST_SHOOT_REACTIVE_MOVE_NO_CHARGE_RE = re.compile(
-        r"in your shooting phase after this unit has shot(?: if it is not within engagement range of one or more enemy units)? "
-        r"it can make a normal move of up to (?P<range_expr>d6|\d+)\s*\"?\s*if it does until the end of the turn this unit is not eligible to declare a charge",
+        r"in your shooting phase after this (?:model s unit|unit) has shot"
+        r"(?: if it is not within engagement range of (?:one or more|any) enemy units)? "
+        r"(?:it|that unit|this unit) can make a normal move of up to (?P<range_expr>d6|\d+)\s*\"?\s*"
+        r"(?:as if it were your movement phase )?"
+        r"if it does until the end of the turn (?:that unit|this unit) is not eligible to declare a charge",
         re.IGNORECASE,
     )
     _SHADOW_FIELD_RE = re.compile(
@@ -2616,7 +2625,9 @@ class Unit(
         re.IGNORECASE,
     )
     _POST_SHOOT_NO_COVER_RE = re.compile(
-        r"in your shooting phase after this (?:model|unit) has shot select one enemy unit (?:that was )?hit by one or more of those attacks "
+        r"in your shooting phase (?:(?:each time )?this (?:model|unit) is selected to shoot )?"
+        r"after (?:this (?:model|unit) has shot|resolving (?:its|those) attacks) "
+        r"select one enemy unit (?:that was )?hit by one or more of those attacks "
         r"until the (?P<duration>end of the phase|start of your next shooting phase) that (?:enemy )?unit cannot have the benefit of cover",
         re.IGNORECASE,
     )
