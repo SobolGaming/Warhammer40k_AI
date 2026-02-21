@@ -7460,6 +7460,7 @@ class WargearProfile:
             hit_mods.append((val, tuple(reasons)))
 
         heavy_from_doctrina = False
+        heavy_from_shield_of_the_imperium = False
         try:
             unit = getattr(attacker, "parent_unit", None)
             army = unit.get_parent_army() if unit is not None else None
@@ -7471,12 +7472,27 @@ class WargearProfile:
                         heavy_from_doctrina = True
         except Exception:
             heavy_from_doctrina = False
-        if (self.is_heavy() or heavy_from_doctrina or bonus_heavy) and attacker.parent_unit.round_state.remained_stationary_this_round:
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if sm_mgr is not None and callable(getattr(sm_mgr, "shield_of_the_imperium_heavy_applies", None)):
+                heavy_from_shield_of_the_imperium = bool(sm_mgr.shield_of_the_imperium_heavy_applies(unit, self))
+        except Exception:
+            heavy_from_shield_of_the_imperium = False
+        if (
+            self.is_heavy()
+            or heavy_from_doctrina
+            or heavy_from_shield_of_the_imperium
+            or bonus_heavy
+        ) and attacker.parent_unit.round_state.remained_stationary_this_round:
             if bonus_heavy and not self.is_heavy():
                 label = bonus_heavy_label or "Objective Target"
                 _add_hit_mod(1, f"+1 from Heavy [{label}]")
             elif heavy_from_doctrina and not self.is_heavy():
                 _add_hit_mod(1, "+1 from Protector Imperative (counts as Heavy)")
+            elif heavy_from_shield_of_the_imperium and not self.is_heavy():
+                _add_hit_mod(1, "+1 from Shield of the Imperium (counts as Heavy)")
             else:
                 _add_hit_mod(1, "+1 from Heavy (stationary)")
 
@@ -11801,6 +11817,22 @@ class WargearProfile:
                 dice_modifier -= int(penalty)
                 label = reason or "Dutiful Tenacity"
                 wound_result['modifiers'].append(f"-{int(penalty)} to wound from {label}")
+
+        # Space Marines: Shield of the Imperium (Anvil Siege Force) +1 to wound for Heavy weapons
+        # that already have [HEAVY] while the attacker remained stationary.
+        try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            attacker_army = attacker_unit.get_parent_army() if attacker_unit is not None else None
+            sm_mgr = getattr(attacker_army, "space_marines_detachments", None) if attacker_army is not None else None
+            if sm_mgr is not None and callable(getattr(sm_mgr, "shield_of_the_imperium_wound_bonus", None)):
+                wound_bonus, source = sm_mgr.shield_of_the_imperium_wound_bonus(attacker, self)
+                if wound_bonus:
+                    dice_modifier += int(wound_bonus)
+                    wound_result["modifiers"].append(
+                        f"+{int(wound_bonus)} to wound from {source or 'Shield of the Imperium'}"
+                    )
+        except Exception:
+            pass
 
         # First Prince of Chaos (Shadow Legion Nurgle): -1 to wound if Strength > Toughness.
         try:

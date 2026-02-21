@@ -187,6 +187,11 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Gladius Task Force")
 
+    def is_anvil_siege_force(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Anvil Siege Force")
+
     def is_blade_of_ultramar(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
             return False
@@ -329,6 +334,39 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not self._legacy_of_the_angel_recipient(unit):
             return False
         return self.angelic_legacy_option_active(self._ANGELIC_LEGACY_THEIR_APPOINTED_HOUR)
+
+    def shield_of_the_imperium_heavy_applies(self, unit, weapon_profile=None) -> bool:
+        if not self.is_anvil_siege_force():
+            return False
+        if unit is None:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(unit):
+            return False
+        if weapon_profile is None:
+            return True
+        parent = getattr(weapon_profile, "parent_wargear", None)
+        if parent is None:
+            return False
+        return bool(getattr(parent, "is_ranged", lambda: False)())
+
+    def shield_of_the_imperium_wound_bonus(self, attacker_model, weapon_profile=None) -> tuple[int, str]:
+        if not self.is_anvil_siege_force():
+            return 0, ""
+        if attacker_model is None:
+            return 0, ""
+        unit = getattr(attacker_model, "parent_unit", None)
+        if unit is None:
+            return 0, ""
+        if not self.shield_of_the_imperium_heavy_applies(unit, weapon_profile):
+            return 0, ""
+        if weapon_profile is None or not bool(getattr(weapon_profile, "is_heavy", lambda: False)()):
+            return 0, ""
+        remained_stationary = bool(
+            getattr(getattr(unit, "round_state", None), "remained_stationary_this_round", False)
+        )
+        if not remained_stationary:
+            return 0, ""
+        return 1, "Shield of the Imperium"
 
     def dutiful_tenacity_wound_roll_penalty(self, target_unit, *, strength=None, target_toughness=None) -> tuple[int, str]:
         if not self.is_wrath_of_the_rock():

@@ -585,6 +585,10 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"you can reroll advance and charge rolls made for this unit",
             r"your army can include blood angels units but it cannot include adeptus astartes units drawn from any other chapter",
         ),
+        "Shield of the Imperium": (
+            r"ranged weapons equipped by adeptus astartes models from your army have the heavy ability",
+            r"if such a weapon already has this ability each time an attack is made with that weapon if the attacking models unit remained stationary this turn add \d+ to the wound roll",
+        ),
         "Hyper-adaptations": (
             r"at the start of the first battle round select one of the following hyper adaptations to be active for tyranids units from your army until the end of the battle",
             r"each time a tyranids model with this hyper adaptation makes an attack that targets an infantry or swarm unit that attack has the sustained hits \d+ ability",
@@ -1786,6 +1790,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Legacy of the Angel": (
             "Supported",
             "Angelic Inheritors: start-of-first-battle-round selection of exactly two Angelic Legacy abilities (Sanguinary Grace, Carmine Wrath, Their Appointed Hour) with Character-unit gating, plus Blood Angels chapter restriction enforcement.",
+        ),
+        "Shield of the Imperium": (
+            "Supported",
+            "Anvil Siege Force: all ADEPTUS ASTARTES ranged weapons count as [HEAVY], and weapons that already have [HEAVY] gain +1 to wound while their unit remained stationary.",
         ),
         "Dutiful Tenacity": (
             "Supported",
