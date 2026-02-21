@@ -538,6 +538,18 @@ class ActionsMovementMixin:
                 return bool(unit_has_active_crimson_king(self, key))
         except Exception:
             pass
+        try:
+            from ...rules.necrons_voice_of_triarch import (
+                ability_name_to_key,
+                unit_has_active_voice_of_triarch,
+                unit_has_voice_of_triarch_ability,
+            )
+            name = ability if isinstance(ability, str) else getattr(ability, "name", "")
+            key = ability_name_to_key(name)
+            if key and unit_has_voice_of_triarch_ability(self):
+                return bool(unit_has_active_voice_of_triarch(self, key))
+        except Exception:
+            pass
 
         # Power from Pain: pain abilities only apply while the unit is Empowered.
         try:

@@ -274,6 +274,7 @@ class Army:
         self.acts_of_faith = None
         self.doctrina_imperatives = None
         self.voice_of_command = None
+        self.voice_of_triarch = None
         self.gate_of_infinity = None
         self.daemon_primarch_slaanesh = None
         self.csm_warmaster = None
@@ -352,6 +353,10 @@ class Army:
         if fid == "TAU":
             from ..rules.for_the_greater_good import ForTheGreaterGoodManager
             self.for_the_greater_good = ForTheGreaterGoodManager(self)
+
+        if fid == "NEC":
+            from ..rules.necrons_voice_of_triarch import VoiceOfTriarchManager
+            self.voice_of_triarch = VoiceOfTriarchManager(self)
 
         if fid == "ORK":
             from ..rules.waaagh import WaaaghManager
@@ -2432,6 +2437,9 @@ class Army:
             # Orders per officer are tracked by battle round.
             for unit in list(getattr(self, "units", []) or []):
                 mgr._order_issued_state(unit, int(battle_round))
+        mgr = getattr(self, "voice_of_triarch", None)
+        if mgr is not None:
+            mgr.on_battle_round_start(int(battle_round), game=game)
         self._queue_monarch_of_the_hunt(game=game, battle_round=int(battle_round))
         self._queue_piratical_raiders(game=game, battle_round=int(battle_round))
         self._queue_methodical_destruction(game=game, battle_round=int(battle_round))

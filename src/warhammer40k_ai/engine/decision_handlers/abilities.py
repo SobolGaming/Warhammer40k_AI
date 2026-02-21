@@ -2043,6 +2043,45 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
                 if not bool(in_range_fn(bearer_model, target_root, range_value=6.0)):
                     return ("Resurrection Orb target must be within 6\" of the bearer.",)
         return ()
+    if ability == "voice_of_triarch":
+        if is_skip_choice(request, result):
+            return ("Voice of the Triarch selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Voice of the Triarch source unit was not found.",)
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return ("Voice of the Triarch source unit was not found.",)
+        if not _resurrection_orb_unit_on_battlefield(source_root):
+            return ("Voice of the Triarch source unit must be on the battlefield.",)
+        from ...rules.necrons_voice_of_triarch import VOICE_OF_TRIARCH_BY_KEY, unit_has_voice_of_triarch_ability
+
+        if not bool(unit_has_voice_of_triarch_ability(source_root)):
+            return ("Voice of the Triarch source unit does not have Voice of the Triarch.",)
+
+        choice_key = str(payload.get("choice_key", "") or "").strip().upper()
+        if not choice_key:
+            return ("Voice of the Triarch requires selecting one Triarch ability.",)
+        allowed_keys = {str(val).strip().upper() for val in list(ctx.get("allowed_choice_keys", []) or []) if str(val).strip()}
+        if allowed_keys and choice_key not in allowed_keys:
+            return ("Voice of the Triarch selected ability is not an eligible choice.",)
+        if choice_key not in VOICE_OF_TRIARCH_BY_KEY:
+            return ("Voice of the Triarch selected ability is not supported.",)
+        battle_round = int(getattr(game, "turn", 0) or 0)
+        try:
+            required_round = int(ctx.get("battle_round", 0) or 0)
+        except (TypeError, ValueError):
+            required_round = 0
+        if required_round > 0 and battle_round != required_round:
+            return ("Voice of the Triarch selection is no longer valid for this battle round.",)
+        return ()
     if ability == "decoy_targets":
         payload = _option_payload(request, result)
         if is_skip_choice(request, result):
@@ -3740,6 +3779,86 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         except Exception:
             pass
         return None
+    if ability == "voice_of_triarch":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return None
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None or not _resurrection_orb_unit_on_battlefield(source_root):
+            return None
+        from ...rules.necrons_voice_of_triarch import (
+            VOICE_OF_TRIARCH_BY_KEY,
+            set_active_voice_of_triarch,
+            unit_has_voice_of_triarch_ability,
+        )
+
+        if not bool(unit_has_voice_of_triarch_ability(source_root)):
+            return None
+
+        battle_round = int(getattr(game, "turn", 0) or 0)
+        try:
+            start_round = int(ctx.get("battle_round", 0) or battle_round)
+        except (TypeError, ValueError):
+            start_round = int(battle_round)
+        if start_round > 0 and battle_round != start_round:
+            return None
+
+        choice_key = str(payload.get("choice_key", "") or "").strip().upper()
+        if not choice_key:
+            return None
+        allowed_keys = {str(val).strip().upper() for val in list(ctx.get("allowed_choice_keys", []) or []) if str(val).strip()}
+        if allowed_keys and choice_key not in allowed_keys:
+            return None
+        if choice_key not in VOICE_OF_TRIARCH_BY_KEY:
+            return None
+
+        try:
+            expires_round = int(ctx.get("expires_round", 0) or (start_round + 1))
+        except (TypeError, ValueError):
+            expires_round = int(start_round + 1)
+        player_id = str(ctx.get("player_id", "") or "")
+        if not player_id:
+            owner = getattr(source_root.get_parent_army(), "player", None) if hasattr(source_root, "get_parent_army") else None
+            player_id = str(getattr(owner, "id", "") or "")
+
+        set_active_voice_of_triarch(
+            source_root,
+            choice_key,
+            start_round=int(start_round or 0),
+            expires_round=int(expires_round or 0),
+            player_id=player_id,
+        )
+
+        option = VOICE_OF_TRIARCH_BY_KEY.get(choice_key)
+        choice_name = str(
+            payload.get("choice_name", "")
+            or payload.get("label", "")
+            or (getattr(option, "name", "") if option is not None else "")
+            or choice_key
+        ).strip() or choice_key
+
+        ability_name = str(ctx.get("ability_name", "") or "Voice of the Triarch").strip() or "Voice of the Triarch"
+        player = getattr(source_root.get_parent_army(), "player", None) if hasattr(source_root, "get_parent_army") else None
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {getattr(source_root, 'name', 'Unit')} selected {choice_name}.",
+        )
+        return {
+            "source_unit_id": str(get_entity_id(source_root) or ""),
+            "choice_key": str(choice_key),
+            "choice_name": str(choice_name),
+            "battle_round": int(start_round or 0),
+        }
     if ability == "possessed_blade":
         if is_skip_choice(request, result):
             return None

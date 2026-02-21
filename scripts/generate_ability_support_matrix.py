@@ -2061,6 +2061,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Once per battle, end of any phase: optional target selection supports both variants (nearby NECRONS INFANTRY/MOUNTED within 6\" and bearer-leading-unit only), activates Reanimation Protocols for D6 wounds, and enforces at most one resurrected unit per turn.",
         ),
+        ("NEC", "Voice of the Triarch"): (
+            "Supported",
+            "Start of each battle round, select exactly one Triarch ability for The Silent King (Phaeron of the Stars, Phaeron of the Blades, or Relentless March); only the selected Triarch aura is active until the next battle round.",
+        ),
         ("DG", "Blight Bombardment"): (
             "Supported",
             "Start of Shooting: select a visible enemy within 30\"; friendly DEATH GUARD ranged attacks vs that unit re-roll Hit rolls of 1, and BLAST attacks can re-roll Hit rolls.",

@@ -185,6 +185,7 @@ Command phase:
 - grand_coven_dialog: CHOOSE_GRAND_COVEN {choice_key | skip} (context `army_id`, `battle_round`)
 - combat_drugs_dialog: CHOOSE_COMBAT_DRUGS {choice_key} (context `army_id`, `battle_round`)
 - warmaster_dialog: CHOOSE_WARMASTER_ABILITY {choice_key} (context `unit_id`, `battle_round`, `player_id`, `expires_round`)
+- voice_of_triarch_dialog: CHOOSE_QUARRY {choice_key} (context `ability="voice_of_triarch"`, `source_unit_id`, `battle_round`, `expires_round`, `player_id`, `allowed_choice_keys`)
 - blood_tithe_dialog: CHOOSE_BLOOD_TITHE {ability_key | skip} (context `army_id`, `timing`)
 - idols_of_khorne_dialog: CHOOSE_IDOL_OF_KHORNE {ability_key | skip} (context `army_id`, `timing`)
 - vessels_of_wrath_models_dialog: SELECT_VESSEL_OF_WRATH_MODELS {model_ids | skip} (context `army_id`, `battle_round`, `max_models`)
