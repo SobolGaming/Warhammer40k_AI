@@ -10238,6 +10238,14 @@ class ActionsMovementMixin:
                     return True
         except Exception:
             pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "masters_of_manoeuvre_shoot_after_advance_applies", None):
+                if mgr.masters_of_manoeuvre_shoot_after_advance_applies(self, profile):
+                    return True
+        except Exception:
+            pass
         # Check for Assault weapons
         if profile.is_assault():
             return True
@@ -10304,6 +10312,14 @@ class ActionsMovementMixin:
             mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
             if mgr is not None and getattr(mgr, "interlocking_tactics_shoot_after_fall_back_applies", None):
                 if mgr.interlocking_tactics_shoot_after_fall_back_applies(self, profile):
+                    return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "masters_of_manoeuvre_shoot_after_fall_back_applies", None):
+                if mgr.masters_of_manoeuvre_shoot_after_fall_back_applies(self, profile):
                     return True
         except Exception:
             pass
@@ -10531,6 +10547,14 @@ class ActionsMovementMixin:
         try:
             army = self.get_parent_army()
             mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "masters_of_manoeuvre_charge_after_advance_applies", None):
+                if mgr.masters_of_manoeuvre_charge_after_advance_applies(self):
+                    return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
             if mgr is not None and getattr(mgr, "lightning_assault_charge_after_advance_applies", None):
                 if mgr.lightning_assault_charge_after_advance_applies(self):
                     return True
@@ -10602,6 +10626,14 @@ class ActionsMovementMixin:
             mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
             if mgr is not None and getattr(mgr, "interlocking_tactics_charge_after_fall_back_applies", None):
                 if mgr.interlocking_tactics_charge_after_fall_back_applies(self):
+                    return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "masters_of_manoeuvre_charge_after_fall_back_applies", None):
+                if mgr.masters_of_manoeuvre_charge_after_fall_back_applies(self):
                     return True
         except Exception:
             pass

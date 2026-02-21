@@ -586,6 +586,12 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"you can reroll advance and charge rolls made for adeptus astartes units from your army",
             r"your army can include black templars units but it cannot include any adeptus astartes units drawn from any other chapter",
         ),
+        "Masters Of Manoeuvre": (
+            r"adeptus astartes units from your army are eligible to shoot in a turn in which they advanced or fell back",
+            r"adeptus astartes mounted units from your army are eligible to shoot and declare a charge in a turn in which they advanced or fell back",
+            r"your army can include dark angels units but it cannot include any adeptus astartes units drawn from any other chapter",
+            r"outrider squad units from your army gain the battleline keyword",
+        ),
         "Storm-swift Onslaught": (
             r"adeptus astartes units from your army are eligible to declare a charge in a turn in which they advanced or fell back",
         ),
@@ -1819,6 +1825,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Righteous Fervour": (
             "Supported",
             "Companions of Vehemence: ADEPTUS ASTARTES units can re-roll Advance and Charge rolls; Black Templars-only chapter restriction enforced.",
+        ),
+        "Masters Of Manoeuvre": (
+            "Supported",
+            "Company of Hunters: ADEPTUS ASTARTES units can shoot after Advancing/Falling Back, ADEPTUS ASTARTES MOUNTED units can also charge after Advancing/Falling Back, Dark Angels chapter restriction enforced, and Outrider Squad units gain Battleline.",
         ),
         "Storm-swift Onslaught": (
             "Supported",

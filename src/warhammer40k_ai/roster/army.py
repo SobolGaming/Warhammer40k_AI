@@ -462,6 +462,10 @@ class Army:
         apply_fn = getattr(ia_mgr, "apply_extremis_sanction_extra_uses", None) if ia_mgr is not None else None
         if callable(apply_fn):
             apply_fn(unit)
+        sm_mgr = getattr(self, "space_marines_detachments", None)
+        apply_fn = getattr(sm_mgr, "apply_company_of_hunters_battleline_keywords", None) if sm_mgr is not None else None
+        if callable(apply_fn):
+            apply_fn(unit)
         game = getattr(getattr(self, "player", None), "game", None)
         refresh_fn = getattr(game, "refresh_rule_subscribers", None) if game is not None else None
         if callable(refresh_fn):

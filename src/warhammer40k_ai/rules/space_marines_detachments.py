@@ -212,6 +212,11 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Spearpoint Task Force")
 
+    def is_company_of_hunters(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Company of Hunters")
+
     def is_blade_of_ultramar(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
             return False
@@ -490,6 +495,70 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
 
     def righteous_fervour_reroll_charge_applies(self, unit) -> bool:
         return self.righteous_fervour_reroll_advance_applies(unit)
+
+    def _unit_is_company_of_hunters_outrider(self, unit) -> bool:
+        if unit is None:
+            return False
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        name = str(getattr(root, "name", "") or "").strip().lower()
+        return "outrider squad" in name
+
+    def apply_company_of_hunters_battleline_keywords(self, unit=None) -> None:
+        if not self.is_company_of_hunters() or self.army is None:
+            return
+        if unit is None:
+            units = list(getattr(self.army, "units", []) or [])
+        else:
+            units = [unit]
+        for entry in units:
+            if entry is None:
+                continue
+            root = entry.get_attached_unit_root() if hasattr(entry, "get_attached_unit_root") else entry
+            if root is None:
+                continue
+            try:
+                if root.get_parent_army() is not self.army:
+                    continue
+            except Exception:
+                continue
+            if not self._unit_is_company_of_hunters_outrider(root):
+                continue
+            keywords = list(getattr(root, "keywords", []) or [])
+            if not any(str(k or "").strip().lower() == "battleline" for k in keywords):
+                keywords.append("Battleline")
+                root.keywords = keywords
+
+    def masters_of_manoeuvre_shoot_after_advance_applies(self, unit, weapon_profile=None) -> bool:
+        if not self.is_company_of_hunters():
+            return False
+        if unit is None:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(unit):
+            return False
+        if weapon_profile is None:
+            return True
+        parent = getattr(weapon_profile, "parent_wargear", None)
+        if parent is None:
+            return False
+        return bool(getattr(parent, "is_ranged", lambda: False)())
+
+    def masters_of_manoeuvre_shoot_after_fall_back_applies(self, unit, weapon_profile=None) -> bool:
+        return self.masters_of_manoeuvre_shoot_after_advance_applies(unit, weapon_profile)
+
+    def masters_of_manoeuvre_charge_after_advance_applies(self, unit) -> bool:
+        if not self.is_company_of_hunters():
+            return False
+        if unit is None:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(unit):
+            return False
+        return self._attached_unit_has_keyword(unit, "MOUNTED")
+
+    def masters_of_manoeuvre_charge_after_fall_back_applies(self, unit) -> bool:
+        return self.masters_of_manoeuvre_charge_after_advance_applies(unit)
 
     def storm_swift_onslaught_charge_after_advance_applies(self, unit) -> bool:
         if not self.is_spearpoint_task_force():
