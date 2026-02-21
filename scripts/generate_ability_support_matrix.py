@@ -346,6 +346,11 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time this unit ends a charge move you can declare it will perform a seductive gambit",
             r"if you do until the end of the turn this unit does not have the fights first ability but instead each time a model in this unit makes an attack you can reroll the hit roll and you can reroll a wound roll of 1",
         ),
+        "Melancholic Miasma": (
+            r"while an enemy unit is within 9 of one or more legiones daemonica nurgle units from your army that enemy unit is within your armys shadow of chaos",
+            r"in each players command phase select one enemy unit within your armys shadow of chaos",
+            r"that unit must take a battle shock test",
+        ),
         "Fates in Flux": (
             r"you start the battle with three flux tokens we recommend using a dice to track how many flux tokens you have",
             r"you can spend one flux token just after an advance roll hit roll wound roll damage roll saving throw or hazardous test is made for a legiones daemonica tzeentch model or legiones daemonica tzeentch unit from your army to reroll the result of that roll throw or test",
@@ -1797,6 +1802,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Seductive Gambit": (
             "Supported",
             "Legion of Excess: charge-end optional Seductive Gambit decision toggles off Fights First until end of turn while granting melee re-roll Hit and re-roll Wound rolls of 1.",
+        ),
+        "Melancholic Miasma": (
+            "Supported",
+            "Plague Legion: enemy units within 9\" of eligible NURGLE LEGIONES DAEMONICA units count as within your Shadow of Chaos; each Command phase queues a deterministic enemy-unit selection in your Shadow of Chaos to take a Battle-shock test.",
         ),
         "Fates in Flux": (
             "Supported",

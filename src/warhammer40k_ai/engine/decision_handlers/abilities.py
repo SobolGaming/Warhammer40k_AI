@@ -2738,6 +2738,42 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not bool(unit_within_range_of_unit(selected_root, moving_root, 6.0, use_attached_aggregate=True)):
             return ("Murdercall reacting unit must be within 6\" of the trigger unit.",)
         return ()
+    if ability == "melancholic_miasma":
+        if is_skip_choice(request, result):
+            return ("Melancholic Miasma selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"))
+        if target_unit is None:
+            return ("Melancholic Miasma target unit was not found.",)
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None or not _resurrection_orb_unit_on_battlefield(target_root):
+            return ("Melancholic Miasma target unit must be on the battlefield.",)
+        target_id = str(get_entity_id(target_root) or "")
+        candidate_ids = {str(value) for value in list(ctx.get("candidate_unit_ids", []) or []) if str(value)}
+        if candidate_ids and target_id not in candidate_ids:
+            return ("Melancholic Miasma selected unit is not an eligible candidate.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            return ("Melancholic Miasma source player was not found.",)
+        army = getattr(player, "get_army", lambda: None)()
+        if army is None:
+            return ("Melancholic Miasma source army was not found.",)
+        cd_mgr = getattr(army, "chaos_daemons_detachments", None)
+        if cd_mgr is None or not bool(getattr(cd_mgr, "is_plague_legion_detachment", lambda: False)()):
+            return ("Melancholic Miasma requires a Plague Legion army.",)
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if target_army is army:
+            return ("Melancholic Miasma target must be an enemy unit.",)
+        shadow_mgr = getattr(army, "shadow_of_chaos", None)
+        if shadow_mgr is None or not callable(getattr(shadow_mgr, "_unit_within_shadow_for_player", None)):
+            return ("Melancholic Miasma Shadow of Chaos manager is unavailable.",)
+        if not bool(shadow_mgr._unit_within_shadow_for_player(target_root, game=game, player=player)):
+            return ("Melancholic Miasma target must be within your army's Shadow of Chaos.",)
+        return ()
     if is_skip_choice(request, result):
         return ()
     if ability not in ("strategic_conqueror", "archons_will_objective"):
@@ -2850,6 +2886,49 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             "moving_unit_id": str(get_entity_id(moving_root) or ""),
             "surge_distance": int(surge_distance),
         }
+    if ability == "melancholic_miasma":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return None
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None or not _resurrection_orb_unit_on_battlefield(target_root):
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            return None
+        army = getattr(player, "get_army", lambda: None)()
+        if army is None:
+            return None
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if target_army is army:
+            return None
+        candidate_ids = {str(value) for value in list(ctx.get("candidate_unit_ids", []) or []) if str(value)}
+        target_id = str(get_entity_id(target_root) or "")
+        if candidate_ids and target_id not in candidate_ids:
+            return None
+        shadow_mgr = getattr(army, "shadow_of_chaos", None)
+        if shadow_mgr is None or not callable(getattr(shadow_mgr, "_unit_within_shadow_for_player", None)):
+            return None
+        if not bool(shadow_mgr._unit_within_shadow_for_player(target_root, game=game, player=player)):
+            return None
+        target_root.take_battle_shock_test(int(getattr(game, "turn", 0) or 1))
+        ability_name = str(ctx.get("ability_name", "") or "Melancholic Miasma").strip() or "Melancholic Miasma"
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {getattr(target_root, 'name', 'Unit')} takes a Battle-shock test.",
+        )
+        return target_root
     if ability == "resurrection_orb":
         payload = _option_payload(request, result)
         source_unit = resolve_unit(

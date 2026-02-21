@@ -7819,6 +7819,7 @@ class GamePhaseHandlersMixin:
         game_map = getattr(self, "map", None)
         if game_map is None:
             return
+        self._on_phase_start_plague_legion_miasma(player=player, phase=phase)
 
         blood_legion_present = False
         for p in list(getattr(self, "players", []) or []):
@@ -7898,6 +7899,94 @@ class GamePhaseHandlersMixin:
                 sr["blood_tainted_phase_snapshot_turn_owner"] = turn_owner_id
                 sr["blood_tainted_phase_snapshot_objective_ids"] = sorted(set(objective_ids))
                 root.special_rules = sr
+
+    def _on_phase_start_plague_legion_miasma(self, player=None, phase=None, **_kwargs) -> None:
+        """Command phase start: Plague Legion selects one enemy unit in Shadow of Chaos for a Battle-shock test."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+
+        turn = int(getattr(self, "turn", 0) or 0)
+        turn_owner = self.get_current_player()
+        turn_owner_id = str(getattr(turn_owner, "id", "") or "")
+
+        pending_keys: set[tuple[str, int, str]] = set()
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "melancholic_miasma":
+                    continue
+                pending_keys.add(
+                    (
+                        str(getattr(req, "player_id", "") or ""),
+                        int(ctx.get("turn", 0) or 0),
+                        str(ctx.get("turn_owner_id", "") or ""),
+                    )
+                )
+
+        def _unit_sort_key(unit_obj):
+            try:
+                return str(get_entity_id(unit_obj))
+            except Exception:
+                return str(getattr(unit_obj, "name", "") or "")
+
+        for p in list(getattr(self, "players", []) or []):
+            if p is None:
+                continue
+            key = (str(getattr(p, "id", "") or ""), int(turn), turn_owner_id)
+            if key in pending_keys:
+                continue
+            army = self._get_player_army(p)
+            if army is None:
+                continue
+            cd_mgr = getattr(army, "chaos_daemons_detachments", None)
+            if cd_mgr is None or not callable(getattr(cd_mgr, "is_plague_legion_detachment", None)):
+                continue
+            if not bool(cd_mgr.is_plague_legion_detachment()):
+                continue
+            shadow_mgr = getattr(army, "shadow_of_chaos", None)
+            if shadow_mgr is None or not callable(getattr(shadow_mgr, "_unit_within_shadow_for_player", None)):
+                continue
+
+            candidates = []
+            for enemy_root in sorted(list(self._collect_enemy_unit_roots(p) or []), key=_unit_sort_key):
+                if enemy_root is None:
+                    continue
+                if not bool(shadow_mgr._unit_within_shadow_for_player(enemy_root, game=self, player=p)):
+                    continue
+                candidates.append(enemy_root)
+            if not candidates:
+                continue
+
+            options = [
+                DecisionOption.create(
+                    str(getattr(enemy_root, "name", "Unit") or "Unit"),
+                    payload={"target_unit_id": get_entity_id(enemy_root)},
+                )
+                for enemy_root in candidates
+                if str(get_entity_id(enemy_root) or "")
+            ]
+            if not options:
+                continue
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                "Melancholic Miasma: select one enemy unit within your Shadow of Chaos to take a Battle-shock test.",
+                player_id=getattr(p, "id", None),
+                options=options,
+                context={
+                    "ability": "melancholic_miasma",
+                    "ability_name": "Melancholic Miasma",
+                    "turn": int(turn),
+                    "turn_owner_id": turn_owner_id,
+                    "candidate_unit_ids": [str(get_entity_id(enemy_root) or "") for enemy_root in candidates],
+                },
+            )
+            self.request_decision(request)
 
     def _on_phase_end_blood_legion_detachment_rules(self, player=None, phase=None, **_kwargs) -> None:
         """Phase end: resolve Blood Legion Blood Tainted sticky objective control."""

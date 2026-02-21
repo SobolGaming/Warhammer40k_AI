@@ -78,3 +78,13 @@ class ChaosDaemonsDetachmentManager(DetachmentManagerBase):
 
     def seductive_gambit_applies(self, unit) -> bool:
         return self.beguiling_aura_applies(unit)
+
+    def melancholic_miasma_source_applies(self, unit) -> bool:
+        if not self.is_plague_legion_detachment():
+            return False
+        if unit is None:
+            return False
+        return bool(
+            self._attached_unit_has_keyword(unit, "LEGIONES DAEMONICA")
+            and self._attached_unit_has_keyword(unit, "NURGLE")
+        )

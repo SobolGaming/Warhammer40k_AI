@@ -271,6 +271,71 @@ class ShadowOfChaosManager:
         return False
 
     @classmethod
+    def unit_within_plague_legion_miasma(cls, unit, army, *, game=None) -> bool:
+        if unit is None or army is None:
+            return False
+        try:
+            if game is None:
+                player = getattr(army, "player", None)
+                game = getattr(player, "game", None) if player is not None else None
+        except Exception:
+            game = None
+        if game is None:
+            return False
+        try:
+            unit_army = unit.get_parent_army()
+        except Exception:
+            unit_army = None
+        if unit_army is army:
+            return False
+        cd_mgr = getattr(army, "chaos_daemons_detachments", None)
+        if cd_mgr is None or not callable(getattr(cd_mgr, "melancholic_miasma_source_applies", None)):
+            return False
+        if not bool(getattr(cd_mgr, "is_plague_legion_detachment", lambda: False)()):
+            return False
+        try:
+            from ..utility.aura_utils import unit_within_range_of_unit
+        except Exception:
+            return False
+        try:
+            from ..utility.entity_ids import get_entity_id
+        except Exception:
+            get_entity_id = None
+        seen: set[str] = set()
+        for source in list(getattr(army, "units", []) or []):
+            if source is None:
+                continue
+            try:
+                root = source.get_attached_unit_root()
+            except Exception:
+                root = source
+            if root is None:
+                continue
+            rid = str(get_entity_id(root) or "") if callable(get_entity_id) else str(getattr(root, "_id", "") or "")
+            if rid:
+                if rid in seen:
+                    continue
+                seen.add(rid)
+            try:
+                if not root.is_alive() or not getattr(root, "deployed", True):
+                    continue
+            except Exception:
+                continue
+            try:
+                if root.is_in_reserves() or root.is_embarked:
+                    continue
+            except Exception:
+                pass
+            if not bool(cd_mgr.melancholic_miasma_source_applies(root)):
+                continue
+            try:
+                if unit_within_range_of_unit(root, unit, 9.0, use_attached_aggregate=True):
+                    return True
+            except Exception:
+                continue
+        return False
+
+    @classmethod
     def unit_wholly_within_dark_master_aura(cls, unit, army, *, game=None) -> bool:
         if unit is None or army is None:
             return False
@@ -347,6 +412,8 @@ class ShadowOfChaosManager:
             player_army = getattr(player, "army", None)
         except Exception:
             player_army = None
+        if self.unit_within_plague_legion_miasma(unit, player_army, game=game):
+            return True
         if self.unit_within_dark_master_aura(unit, player_army, game=game):
             return True
         if self.unit_within_shadow_of_khorne_aura(unit, player_army, game=game):
