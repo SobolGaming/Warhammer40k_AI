@@ -2900,9 +2900,37 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("DRU", "Blur of Blades"): ("Supported", "Leading: unit gains Fights First."),
         ("DRU", "Blur of Movement"): ("Supported", "Charge-after-Advance eligibility."),
         ("DRU", "Aethersails"): ("Supported", "Advance: fixed +6\" Move instead of rolling."),
+        ("DRU", "Archon's Will"): (
+            "Supported",
+            "Start of first battle round objective selection is decision-routed; while in range of the selected objective and not Battle-shocked, the unit has a 5+ invulnerable save and OC 3.",
+        ),
         ("DRU", "Disparate Paths"): (
             "Supported",
             "Mustering restrictions validated: allows DRUKHARI armies to include HARLEQUINS units while rejecting non-permitted faction-keyword mixes; HARLEQUINS/Ynnari Army Faction selection is disallowed by validation.",
+        ),
+        ("DRU", "Precognisant"): (
+            "Supported",
+            "After deployment redeploy supports selecting up to three DRUKHARI units with optional Strategic Reserves placement regardless of normal reserve limits.",
+        ),
+        ("DRU", "Vanguard of the Dark City"): (
+            "Supported",
+            "Start of Command phase mode selection is decision-routed (Masters of the Shadowed Sky, Speed of the Kill, or Visions of Butchery) and persisted until the next Command phase.",
+        ),
+        ("DRU", "Masters of the Shadowed Sky"): (
+            "Supported",
+            "Sticky objective transport clause applies only while this Vanguard mode is selected and one or more Kabalite Warriors units are embarked.",
+        ),
+        ("DRU", "Speed of the Kill"): (
+            "Supported",
+            "While this Vanguard mode is selected, WYCHES disembarking from this model use a 6\" disembark placement distance (excluding Emergency Disembarkation flow).",
+        ),
+        ("DRU", "Visions of Butchery"): (
+            "Supported",
+            "While this Vanguard mode is selected, bladevanes/chainsnares gain +1 Attacks per embarked WRACKS model.",
+        ),
+        ("DRU", "Void Mine"): (
+            "Supported",
+            "Once per battle after a Normal move: optional moved-over enemy model selection (with None), then roll radius and resolve per-enemy-unit 4+ to inflict D6 mortal wounds within that radius.",
         ),
         ("DRU", "Eviscerating Fly-by"): (
             "Supported",

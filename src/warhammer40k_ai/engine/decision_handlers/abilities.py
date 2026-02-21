@@ -2348,15 +2348,73 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not callable(in_zone) or not bool(in_zone(target_unit, player_id, game=game)):
             return ("Rad-bombardment target must be within the opponent deployment zone.",)
         return ()
+    if ability == "vanguard_of_dark_city":
+        if is_skip_choice(request, result):
+            return ("Vanguard of the Dark City selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Vanguard of the Dark City source unit was not found.",)
+        has_vanguard = getattr(source_unit, "has_vanguard_of_dark_city", None)
+        if not callable(has_vanguard) or not bool(has_vanguard()):
+            return ("Vanguard of the Dark City is not active on the selected source unit.",)
+        mode = str(payload.get("vanguard_mode", "") or "").strip().lower()
+        if mode not in ("masters_of_the_shadowed_sky", "speed_of_the_kill", "visions_of_butchery"):
+            return ("Vanguard of the Dark City choice must be Masters of the Shadowed Sky, Speed of the Kill, or Visions of Butchery.",)
+        return ()
+    if ability == "void_mine":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Void Mine source unit was not found.",)
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return ("Void Mine source unit was not found.",)
+        if bool(getattr(source_root, "has_used_unit_once_per_battle", lambda _k: False)("void_mine")):
+            return ("Void Mine has already been used this battle.",)
+        if is_skip_choice(request, result):
+            return ()
+        target_model_id = str(payload.get("target_model_id") or payload.get("model_id") or "").strip()
+        if not target_model_id:
+            return ("Void Mine selection requires target_model_id.",)
+        candidate_ids = [str(v or "").strip() for v in list(ctx.get("candidate_model_ids", []) or []) if str(v or "").strip()]
+        if candidate_ids and target_model_id not in candidate_ids:
+            return ("Void Mine target model is not a legal moved-over candidate.",)
+        target_model = resolve_model(game, target_model_id)
+        if target_model is None:
+            return ("Void Mine target model was not found.",)
+        try:
+            if not bool(getattr(target_model, "is_alive", False)):
+                return ("Void Mine target model must be alive.",)
+        except Exception:
+            return ("Void Mine target model must be alive.",)
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        target_parent = getattr(target_model, "parent_unit", None)
+        target_root = (
+            target_parent.get_attached_unit_root()
+            if target_parent is not None and hasattr(target_parent, "get_attached_unit_root")
+            else target_parent
+        )
+        target_army = target_root.get_parent_army() if target_root is not None and hasattr(target_root, "get_parent_army") else None
+        if source_army is not None and target_army is not None and source_army is target_army:
+            return ("Void Mine target model must belong to an enemy unit.",)
+        return ()
     if is_skip_choice(request, result):
         return ()
-    if ability != "strategic_conqueror":
+    if ability not in ("strategic_conqueror", "archons_will_objective"):
         return ()
     payload = _option_payload(request, result)
+    source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+    if source_unit is None:
+        return ("Source unit was not found.",)
     objective_id = payload.get("objective_id") or ctx.get("objective_id")
     if not objective_id:
+        if ability == "archons_will_objective":
+            return ("Archon's Will selection requires objective_id.",)
         return ("Strategic Conqueror selection requires objective_id.",)
     if get_objective(game, str(objective_id or "")) is None:
+        if ability == "archons_will_objective":
+            return ("Archon's Will selected objective marker was not found.",)
         return ("Selected objective marker was not found.",)
     return ()
 
@@ -2700,6 +2758,188 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                     f"Rad-bombardment: {target_name} stood firm and suffered no mortal wounds (roll {int(roll)}).",
                 )
         return target_root
+    if ability == "vanguard_of_dark_city":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return None
+        mode = str(payload.get("vanguard_mode", "") or "").strip().lower()
+        if mode not in ("masters_of_the_shadowed_sky", "speed_of_the_kill", "visions_of_butchery"):
+            return None
+        try:
+            members = list(source_root.get_attached_unit_members() or [])
+        except Exception:
+            members = [source_root]
+        if not members:
+            members = [source_root]
+        for member in list(members or []):
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr = dict(sr)
+            sr["vanguard_of_dark_city_selected_mode"] = mode
+            member.special_rules = sr
+        try:
+            player = getattr(source_root.get_parent_army(), "player", None)
+        except Exception:
+            player = None
+        mode_label = mode.replace("_", " ").title()
+        source_name = str(getattr(source_root, "name", "Unit") or "Unit")
+        ability_name = str(ctx.get("ability_name", "") or "Vanguard of the Dark City").strip() or "Vanguard of the Dark City"
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {source_name} selected {mode_label}.",
+        )
+        return {"mode": mode}
+    if ability == "archons_will_objective":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return None
+        objective_id = str(payload.get("objective_id") or ctx.get("objective_id") or "").strip()
+        if not objective_id:
+            return None
+        objective = get_objective(game, objective_id)
+        if objective is None:
+            return None
+        try:
+            members = list(source_root.get_attached_unit_members() or [])
+        except Exception:
+            members = [source_root]
+        if not members:
+            members = [source_root]
+        for member in list(members or []):
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr = dict(sr)
+            sr["archons_will_objective_id"] = objective_id
+            member.special_rules = sr
+        try:
+            player = getattr(source_root.get_parent_army(), "player", None)
+        except Exception:
+            player = None
+        source_name = str(getattr(source_root, "name", "Unit") or "Unit")
+        objective_name = str(getattr(objective, "name", "") or "Objective marker")
+        _log_action_for_players(
+            game,
+            player,
+            f"Archon's Will: {source_name} selected {objective_name}.",
+        )
+        return objective
+    if ability == "void_mine":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return None
+        if bool(getattr(source_root, "has_used_unit_once_per_battle", lambda _k: False)("void_mine")):
+            return None
+        ability_name = str(ctx.get("ability_name", "") or "Void Mine").strip() or "Void Mine"
+        try:
+            player = getattr(source_root.get_parent_army(), "player", None)
+        except Exception:
+            player = None
+        if is_skip_choice(request, result):
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {getattr(source_root, 'name', 'Unit')} selected none.",
+            )
+            return None
+
+        target_model_id = str(payload.get("target_model_id") or payload.get("model_id") or "").strip()
+        target_model = resolve_model(game, target_model_id) if target_model_id else None
+        if target_model is None:
+            return None
+        target_unit = getattr(target_model, "parent_unit", None)
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if target_unit is not None and hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return None
+
+        from ...utility.aura_utils import model_within_range_of_unit
+        from ...utility.dice import get_roll
+
+        radius = int(get_roll("D6") or 0)
+        if radius <= 0:
+            return None
+        game_map = getattr(game, "map", None)
+        if game_map is None:
+            return None
+
+        nearby_enemy_units = []
+        try:
+            enemies = list(game_map.get_enemy_units(source_root) or [])
+        except Exception:
+            enemies = []
+        seen_enemy_ids: set[str] = set()
+        for enemy in list(enemies or []):
+            if enemy is None:
+                continue
+            enemy_root = enemy.get_attached_unit_root() if hasattr(enemy, "get_attached_unit_root") else enemy
+            if enemy_root is None:
+                continue
+            enemy_id = str(get_entity_id(enemy_root) or "")
+            if not enemy_id or enemy_id in seen_enemy_ids:
+                continue
+            seen_enemy_ids.add(enemy_id)
+            try:
+                if not enemy_root.is_alive() or not bool(getattr(enemy_root, "deployed", True)):
+                    continue
+            except Exception:
+                continue
+            try:
+                if enemy_root.is_in_reserves() or enemy_root.is_embarked:
+                    continue
+            except Exception:
+                pass
+            if model_within_range_of_unit(target_model, enemy_root, float(radius)):
+                nearby_enemy_units.append(enemy_root)
+
+        summary_parts: list[str] = []
+        for enemy_root in sorted(list(nearby_enemy_units or []), key=lambda u: str(get_entity_id(u) or "")):
+            trigger = int(get_roll("D6") or 0)
+            enemy_name = str(getattr(enemy_root, "name", "Enemy unit") or "Enemy unit")
+            if trigger >= 4:
+                mortals = int(get_roll("D6") or 0)
+                if mortals > 0:
+                    apply_mortal_wounds = getattr(enemy_root, "_apply_mortal_wounds_to_unit", None)
+                    if callable(apply_mortal_wounds):
+                        apply_mortal_wounds(enemy_root, int(mortals), game_map=game_map)
+                summary_parts.append(f"{enemy_name}: roll {int(trigger)} -> {int(mortals)} mortal wounds")
+            else:
+                summary_parts.append(f"{enemy_name}: roll {int(trigger)} -> no effect")
+
+        mark_used = getattr(source_root, "mark_unit_once_per_battle_used", None)
+        if callable(mark_used):
+            mark_used("void_mine", ability_name=ability_name)
+
+        source_name = str(getattr(source_root, "name", "Unit") or "Unit")
+        target_name = str(getattr(target_model, "name", "Model") or "Model")
+        detail = "; ".join(summary_parts) if summary_parts else "no enemy units were within range"
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {source_name} selected {target_name}; blast radius {int(radius)}\"; {detail}.",
+        )
+        return {"target_model_id": target_model_id, "radius": int(radius)}
     if ability == "strategic_conqueror":
         if is_skip_choice(request, result):
             return None

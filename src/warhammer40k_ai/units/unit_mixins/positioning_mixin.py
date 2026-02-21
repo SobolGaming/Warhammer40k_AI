@@ -1329,6 +1329,131 @@ class PositioningMixin:
                 continue
         return False
 
+    def _transport_embarked_models_with_keyword_count(self, keyword: str) -> int:
+        kw = str(keyword or "").strip()
+        if not kw:
+            return 0
+        try:
+            if not bool(getattr(self, "is_transport", False)):
+                return 0
+        except Exception:
+            return 0
+        passengers = list(getattr(self, "transport_passengers", []) or [])
+        if not passengers:
+            return 0
+        total = 0
+        for passenger in passengers:
+            if passenger is None:
+                continue
+            try:
+                root = passenger.get_attached_unit_root()
+            except Exception:
+                root = passenger
+            if root is None:
+                continue
+            try:
+                if not bool(root.has_any_keyword(kw)):
+                    continue
+            except Exception:
+                continue
+            try:
+                models = list(root.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(root, "models", []) or [])
+            total += sum(1 for m in list(models or []) if getattr(m, "is_alive", False))
+        return int(total)
+
+    def has_vanguard_of_dark_city(self) -> bool:
+        cache_key = "vanguard_of_dark_city"
+        cache = getattr(self, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return bool(cache.get(cache_key))
+        found = False
+        try:
+            found, _ = self._find_ability_with_patterns(["vanguard of the dark city"])
+        except Exception:
+            found = False
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = bool(found)
+        return bool(found)
+
+    def get_vanguard_of_dark_city_selected_mode(self) -> str:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return ""
+        return str(sr.get("vanguard_of_dark_city_selected_mode", "") or "").strip().lower()
+
+    def vanguard_of_dark_city_mode_active(self, mode_key: str) -> bool:
+        mode = str(mode_key or "").strip().lower()
+        if not mode:
+            return False
+        if not self.has_vanguard_of_dark_city():
+            return False
+        return self.get_vanguard_of_dark_city_selected_mode() == mode
+
+    def command_phase_sticky_objective_prerequisites_met(self) -> bool:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return True
+        required_mode = str(sr.get("sticky_objectives_requires_vanguard_mode", "") or "").strip().lower()
+        if required_mode and not self.vanguard_of_dark_city_mode_active(required_mode):
+            return False
+        required_keyword = str(sr.get("sticky_objectives_requires_embarked_keyword", "") or "").strip()
+        if required_keyword and not self._transport_has_embarked_keyword(required_keyword):
+            return False
+        return True
+
+    def visions_of_butchery_attacks_bonus_for_weapon(self, weapon_name: str) -> int:
+        if not self.vanguard_of_dark_city_mode_active("visions_of_butchery"):
+            return 0
+        weapon_norm = re.sub(r"[^a-z0-9]+", " ", str(weapon_name or "").lower()).strip()
+        if not weapon_norm:
+            return 0
+        if "bladevane" not in weapon_norm and "chainsnare" not in weapon_norm:
+            return 0
+        return max(0, int(self._transport_embarked_models_with_keyword_count("WRACKS")))
+
+    def archons_will_effects_active(self, *, game=None, game_map=None) -> bool:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        objective_id = str(sr.get("archons_will_objective_id", "") or "").strip()
+        if not objective_id:
+            return False
+        if self.is_battle_shocked():
+            return False
+
+        objective = None
+        if game_map is None and game is None:
+            try:
+                army = self.get_parent_army()
+            except Exception:
+                army = None
+            try:
+                game = getattr(getattr(army, "player", None), "game", None)
+            except Exception:
+                game = None
+        if game_map is None and game is not None:
+            game_map = getattr(game, "map", None)
+
+        for obj in list(getattr(game_map, "objectives", []) or []):
+            if str(get_entity_id(obj) or "") == objective_id:
+                objective = obj
+                break
+        if objective is None:
+            for obj in list(getattr(game, "objectives", []) or []):
+                if str(get_entity_id(obj) or "") == objective_id:
+                    objective = obj
+                    break
+        if objective is None:
+            return False
+
+        loc = getattr(objective, "location", None)
+        if loc is None or bool(getattr(loc, "removed", False)):
+            return False
+        return bool(self.is_within_objective_range(loc))
+
     def _has_aethersails(self) -> bool:
         try:
             root = self.get_attached_unit_root()
@@ -6406,6 +6531,8 @@ class PositioningMixin:
                     or "<heretic astartes> unit" in text
                 ):
                     redeploy_filters = ["HERETIC ASTARTES"]
+                if "drukhari units" in text or "drukhari unit" in text:
+                    redeploy_filters = ["DRUKHARI"]
 
         result = (has_redeploy, count, can_place_in_reserves)
         # Cache the result

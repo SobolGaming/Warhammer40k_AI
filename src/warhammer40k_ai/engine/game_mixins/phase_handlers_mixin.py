@@ -131,6 +131,7 @@ class GamePhaseHandlersMixin:
         pname = str(getattr(phase, "name", "") or "").strip().upper()
         self._on_phase_start_paragon_of_sanctity(player=player, phase=phase)
         self._on_phase_start_decoy_targets(player=player, phase=phase)
+        self._on_phase_start_vanguard_of_dark_city(player=player, phase=phase)
         if pname:
             for p in list(getattr(self, "players", []) or []):
                 if p is None:
@@ -2519,6 +2520,98 @@ class GamePhaseHandlersMixin:
                     "max_uses": int(max_uses),
                     "per_battle_round_limit": int(per_round_limit),
                     "optional": True,
+                },
+            )
+            self.request_decision(request)
+
+    def _on_phase_start_vanguard_of_dark_city(self, player=None, phase=None, **_kwargs) -> None:
+        """Command phase start: Raider Vanguard of the Dark City mode selection."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+
+        army = self._get_player_army(player)
+        if army is None:
+            return
+
+        queue = getattr(self, "decision_queue", None)
+        pending_sources: set[str] = set()
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "vanguard_of_dark_city":
+                    continue
+                source_id = str(ctx.get("source_unit_id", "") or "")
+                if source_id:
+                    pending_sources.add(source_id)
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        seen_roots: set[str] = set()
+        for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if not root_id or root_id in seen_roots:
+                continue
+            seen_roots.add(root_id)
+            if root_id in pending_sources:
+                continue
+            if not bool(getattr(root, "is_alive", lambda: False)()):
+                continue
+            if not bool(getattr(root, "deployed", False)):
+                continue
+            try:
+                if root.is_in_reserves() or root.is_embarked:
+                    continue
+            except Exception:
+                pass
+            has_vanguard = getattr(root, "has_vanguard_of_dark_city", None)
+            if not callable(has_vanguard) or not bool(has_vanguard()):
+                continue
+
+            options = [
+                DecisionOption.create(
+                    "Masters of the Shadowed Sky",
+                    payload={"vanguard_mode": "masters_of_the_shadowed_sky"},
+                ),
+                DecisionOption.create(
+                    "Speed of the Kill",
+                    payload={"vanguard_mode": "speed_of_the_kill"},
+                ),
+                DecisionOption.create(
+                    "Visions of Butchery",
+                    payload={"vanguard_mode": "visions_of_butchery"},
+                ),
+            ]
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                "Vanguard of the Dark City: select one mode for this model until your next Command phase.",
+                player_id=getattr(player, "id", None),
+                options=options,
+                context={
+                    "ability": "vanguard_of_dark_city",
+                    "ability_name": "Vanguard of the Dark City",
+                    "phase": "Command phase",
+                    "source_unit_id": root_id,
+                    "unit_id": root_id,
+                    "optional": False,
                 },
             )
             self.request_decision(request)
@@ -8410,6 +8503,9 @@ class GamePhaseHandlersMixin:
                         continue
                     seen.add(uid)
                     if not root.attached_unit_has_command_phase_sticky_objective():
+                        continue
+                    prereq_fn = getattr(root, "command_phase_sticky_objective_prerequisites_met", None)
+                    if callable(prereq_fn) and not bool(prereq_fn()):
                         continue
                     for obj in objectives:
                         loc = getattr(obj, "location", None)

@@ -3279,6 +3279,14 @@ class ShootingMixin:
             tsr = getattr(transport_unit, "special_rules", None)
         except Exception:
             tsr = None
+        mode_active_fn = getattr(transport_unit, "vanguard_of_dark_city_mode_active", None) if transport_unit is not None else None
+        if callable(mode_active_fn) and bool(mode_active_fn("speed_of_the_kill")):
+            if bool(getattr(self, "has_any_keyword", lambda *_k: False)("WYCHES")):
+                try:
+                    current = float(overrides.get("max_distance", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    current = 0.0
+                overrides["max_distance"] = max(6.0, float(current))
         if isinstance(tsr, dict) and tsr.get("swift_deployment_active"):
             swift_active = True
             exp = str(tsr.get("swift_deployment_expires_phase", "") or "").strip().upper()

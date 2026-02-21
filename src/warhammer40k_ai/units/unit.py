@@ -674,6 +674,14 @@ class Unit(
             except Exception:
                 pass
 
+            # Archon's Will: while in range of the selected objective and not Battle-shocked, models have OC 3.
+            try:
+                archons_active_fn = getattr(root, "archons_will_effects_active", None)
+                if callable(archons_active_fn) and bool(archons_active_fn(game_map=game_map)):
+                    mods.append(Modifier(ModifierOp.SET, 3, source="ability:archons_will"))
+            except Exception:
+                pass
+
             # Kill-reward persistent Objective Control bonuses (e.g. Trophy Takers).
             try:
                 sr_root = getattr(root, "special_rules", None)

@@ -2437,6 +2437,7 @@ class Army:
         self._queue_methodical_destruction(game=game, battle_round=int(battle_round))
         self._queue_exemplar_of_the_code(game=game, battle_round=int(battle_round))
         self._queue_prey_selection(game=game, battle_round=int(battle_round))
+        self._queue_archons_will(game=game, battle_round=int(battle_round))
         self._assigned_agents_destroy_empty_transports(int(battle_round), game=game)
 
     def _eligible_quarry_units(self, enemy_units: list, *, exclude_embarked: bool = False) -> list:
@@ -2549,6 +2550,115 @@ class Army:
             options=options,
             context=context,
         )
+
+    def _queue_archons_will(self, *, game, battle_round: int) -> None:
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return
+        if int(battle_round or 0) != 1:
+            return
+        player = getattr(self, "player", None)
+        if player is None:
+            return
+
+        objective_pool = list(getattr(game, "objectives", []) or [])
+        if not objective_pool:
+            objective_pool = list(getattr(getattr(game, "map", None), "objectives", []) or [])
+        objectives = []
+        for objective in objective_pool:
+            objective_id = str(get_entity_id(objective) or "")
+            if not objective_id:
+                continue
+            objective_point = getattr(objective, "location", None)
+            if objective_point is None or bool(getattr(objective_point, "removed", False)):
+                continue
+            objectives.append((objective_id, objective))
+        objectives.sort(key=lambda item: str(item[0]))
+        if not objectives:
+            return
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        queue = getattr(game, "decision_queue", None)
+        seen_roots: set[str] = set()
+        for unit in list(getattr(self, "units", []) or []):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if not root_id or root_id in seen_roots:
+                continue
+            seen_roots.add(root_id)
+            try:
+                if not root.is_alive():
+                    continue
+            except Exception:
+                continue
+
+            has_archons_will = False
+            try:
+                has_archons_will, _ = root._find_ability_with_patterns(["archon's will", "archons will"])
+            except Exception:
+                has_archons_will = False
+            if not has_archons_will:
+                continue
+
+            sr = getattr(root, "special_rules", None)
+            if isinstance(sr, dict) and str(sr.get("archons_will_objective_id", "") or "").strip():
+                continue
+
+            duplicate = False
+            if queue is not None and hasattr(queue, "list"):
+                for pending in list(queue.list() or []):
+                    if str(getattr(pending, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                        continue
+                    pending_ctx = dict(getattr(pending, "context", {}) or {})
+                    if str(pending_ctx.get("ability", "") or "") != "archons_will_objective":
+                        continue
+                    if str(pending_ctx.get("source_unit_id", "") or "") != root_id:
+                        continue
+                    duplicate = True
+                    break
+            if duplicate:
+                continue
+
+            options = []
+            for idx, (objective_id, objective) in enumerate(objectives):
+                label = str(getattr(objective, "name", "") or f"Objective {idx + 1}")
+                objective_point = getattr(objective, "location", None)
+                try:
+                    if objective_point is not None:
+                        label = (
+                            f"{label} "
+                            f"({float(getattr(objective_point, 'x', 0.0)):.1f}, "
+                            f"{float(getattr(objective_point, 'y', 0.0)):.1f})"
+                        )
+                except Exception:
+                    pass
+                options.append(DecisionOption.create(label, payload={"objective_id": objective_id}))
+            if not options:
+                continue
+
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                "Archon's Will: select one objective marker on the battlefield.",
+                player_id=getattr(player, "id", None),
+                options=options,
+                context={
+                    "ability": "archons_will_objective",
+                    "ability_name": "Archon's Will",
+                    "source_unit_id": root_id,
+                    "unit_id": root_id,
+                    "optional": False,
+                },
+            )
+            if hasattr(game, "request_decision"):
+                game.request_decision(request)
 
     def _queue_monarch_of_the_hunt(self, *, game, battle_round: int) -> None:
         if game is None or not bool(getattr(game, "is_authoritative", True)):

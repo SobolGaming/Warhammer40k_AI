@@ -370,10 +370,18 @@ class RulesParsingMixin:
     def _scan_command_phase_sticky_objective(self) -> bool:
         found = False
         allow_transport = False
+        requires_embarked_keyword = ""
+        requires_vanguard_mode = ""
         for ab in self._iter_active_abilities():
             try:
-                desc = ab if isinstance(ab, str) else (getattr(ab, "description", "") or getattr(ab, "name", ""))
+                if isinstance(ab, str):
+                    name = ""
+                    desc = ab
+                else:
+                    name = str(getattr(ab, "name", "") or "")
+                    desc = getattr(ab, "description", "") or getattr(ab, "name", "")
             except Exception:
+                name = ""
                 desc = ""
             text = self._normalize_rules_text(desc or "")
             if not text:
@@ -394,6 +402,10 @@ class RulesParsingMixin:
             found = True
             if "transport it is embarked within" in low:
                 allow_transport = True
+            if "one or more kabalite warriors units are embarked within this model" in low:
+                requires_embarked_keyword = "KABALITE WARRIORS"
+                if "masters of the shadowed sky" in str(name or "").lower():
+                    requires_vanguard_mode = "masters_of_the_shadowed_sky"
 
         sr = getattr(self, "special_rules", None)
         if not isinstance(sr, dict):
@@ -402,6 +414,14 @@ class RulesParsingMixin:
             sr["sticky_objectives_allow_embarked_transport"] = True
         else:
             sr.pop("sticky_objectives_allow_embarked_transport", None)
+        if found and requires_embarked_keyword:
+            sr["sticky_objectives_requires_embarked_keyword"] = str(requires_embarked_keyword)
+        else:
+            sr.pop("sticky_objectives_requires_embarked_keyword", None)
+        if found and requires_vanguard_mode:
+            sr["sticky_objectives_requires_vanguard_mode"] = str(requires_vanguard_mode)
+        else:
+            sr.pop("sticky_objectives_requires_vanguard_mode", None)
         self.special_rules = sr
         return bool(found)
 

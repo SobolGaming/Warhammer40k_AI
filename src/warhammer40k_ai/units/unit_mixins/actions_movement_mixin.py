@@ -1023,6 +1023,7 @@ class ActionsMovementMixin:
             return None, None
         sr = getattr(self, "special_rules", None)
         aegis_active = bool(isinstance(sr, dict) and sr.get("aegis_eternal_active"))
+        archons_dynamic = bool(isinstance(sr, dict) and str(sr.get("archons_will_objective_id", "") or "").strip())
         try:
             temp_val, temp_source = getattr(model, "get_temporary_invulnerable_save", lambda: (0, ""))()
             if temp_val:
@@ -1030,11 +1031,19 @@ class ActionsMovementMixin:
         except Exception:
             pass
         cache_key = f"model_invulnerable_save:{get_entity_id(model)}"
-        if not aegis_active and cache_key in getattr(self, "_ability_cache", {}):
+        if not aegis_active and not archons_dynamic and cache_key in getattr(self, "_ability_cache", {}):
             return self._ability_cache[cache_key]
 
         best_value: Optional[int] = None
         best_source: Optional[str] = None
+        archons_active_fn = getattr(self, "archons_will_effects_active", None)
+        if callable(archons_active_fn):
+            try:
+                archons_active = bool(archons_active_fn())
+            except Exception:
+                archons_active = False
+        else:
+            archons_active = False
 
         # Model-level abilities (if any)
         try:
@@ -1093,11 +1102,20 @@ class ActionsMovementMixin:
                         val = int(val)
                     except Exception:
                         continue
+                    source_text = str(source or "").strip()
+                    source_norm = source_text.lower().replace("\u2019", "'")
+                    if ("archon's will" in source_norm or "archons will" in source_norm) and not archons_active:
+                        continue
                     if best_value is None or val < best_value:
                         best_value = int(val)
-                        best_source = str(source or "Bearer unit ability")
+                        best_source = source_text or "Bearer unit ability"
         except Exception:
             pass
+
+        # Archon's Will: active only while this unit is in range of the selected objective and not Battle-shocked.
+        if archons_active and (best_value is None or 5 < best_value):
+            best_value = 5
+            best_source = "Archon's Will"
 
         # AEGIS ETERNAL: models wholly within Hallowed Ground gain a 4+ invulnerable save.
         if isinstance(sr, dict) and sr.get("aegis_eternal_active"):
@@ -1124,7 +1142,7 @@ class ActionsMovementMixin:
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
-        if not aegis_active:
+        if not aegis_active and not archons_dynamic:
             self._ability_cache[cache_key] = (best_value, best_source)
         return best_value, best_source
 

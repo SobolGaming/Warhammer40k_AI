@@ -3801,6 +3801,27 @@ class WargearProfile:
             pass
 
         try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                unit = getattr(attacker, "parent_unit", None)
+                bonus_fn = getattr(unit, "visions_of_butchery_attacks_bonus_for_weapon", None) if unit is not None else None
+                if callable(bonus_fn):
+                    weapon_name = str(getattr(self.parent_wargear, "name", "") or getattr(self, "name", "") or "")
+                    visions_bonus = int(bonus_fn(weapon_name) or 0)
+                    if visions_bonus > 0:
+                        atk_mods.append(
+                            Modifier(
+                                ModifierOp.ADD,
+                                int(visions_bonus),
+                                source="ability:visions_of_butchery_attacks_add",
+                            )
+                        )
+                        attack_result.attacks_special_modifiers.append(
+                            f"Visions of Butchery +{int(visions_bonus)}A ({weapon_name or 'weapon'})"
+                        )
+        except Exception:
+            pass
+
+        try:
             sr = self._unit_special_rules(attacker)
             bonuses = list(sr.get("daemonic_allegiance_weapon_bonuses", []) or []) if isinstance(sr, dict) else []
             if bonuses and self.parent_wargear:

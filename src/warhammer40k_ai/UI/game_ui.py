@@ -6764,6 +6764,9 @@ class GameView:
                 "unearthly_power",
                 "strategic_conqueror",
                 "strike_swiftly",
+                "archons_will_objective",
+                "vanguard_of_dark_city",
+                "void_mine",
             ):
                 return
             unit = self._resolve_unit_by_id(ctx.get("source_unit_id"))
@@ -15023,6 +15026,18 @@ class GameView:
             title = ability_name or "Strike Swiftly"
             subtitle = "Select up to two friendly T'AU EMPIRE units within 6\" that do not have Scouts."
             header = f"{getattr(source_unit, 'name', 'Model')} selects units to gain Scouts 6\"."
+        elif str(ability_key) == "archons_will_objective":
+            title = ability_name or "Archon's Will"
+            subtitle = "Select one objective marker on the battlefield."
+            header = f"{getattr(source_unit, 'name', 'Model')} selects an objective marker."
+        elif str(ability_key) == "vanguard_of_dark_city":
+            title = ability_name or "Vanguard of the Dark City"
+            subtitle = "Select one Vanguard mode until your next Command phase."
+            header = f"{getattr(source_unit, 'name', 'Model')} selects a Vanguard mode."
+        elif str(ability_key) == "void_mine":
+            title = ability_name or "Void Mine"
+            subtitle = "Select one enemy model moved over this move, or None."
+            header = f"{getattr(source_unit, 'name', 'Model')} selects a void mine target."
         else:
             title = ability_name or "Select Quarry"
             subtitle = ""

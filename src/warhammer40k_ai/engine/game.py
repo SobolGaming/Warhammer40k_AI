@@ -3432,7 +3432,104 @@ class Game(
         if not models:
             return
 
-        from ..utility.calcs import get_enemy_units_moved_over
+        from ..utility.calcs import get_enemy_models_moved_over, get_enemy_units_moved_over
+
+        # Void Mine (Voidraven Bomber): once per battle after a Normal move.
+        if action_key == "move":
+            has_void_mine = False
+            void_mine_name = "Void Mine"
+            try:
+                for name, desc in root._iter_ability_entries_for_rules(model=None):
+                    text = f"{name or ''} {desc or ''}".lower()
+                    if "void mine" in text:
+                        has_void_mine = True
+                        void_mine_name = str(name or "Void Mine").strip() or "Void Mine"
+                        break
+            except Exception:
+                has_void_mine = False
+
+            if has_void_mine and not root.has_used_unit_once_per_battle("void_mine"):
+                root_id = str(get_entity_id(root) or "")
+                pending = False
+                queue = getattr(self, "decision_queue", None)
+                if queue is not None and hasattr(queue, "list"):
+                    for req in list(queue.list() or []):
+                        if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                            continue
+                        ctx = dict(getattr(req, "context", {}) or {})
+                        if str(ctx.get("ability", "") or "") != "void_mine":
+                            continue
+                        if str(ctx.get("source_unit_id", "") or "") == root_id:
+                            pending = True
+                            break
+                if not pending:
+                    moved_over_models = []
+                    seen_models: set[str] = set()
+                    for model in models:
+                        if not bool(getattr(model, "is_alive", False)):
+                            continue
+                        path = getattr(model, "last_move_path", None)
+                        for enemy_model in list(
+                            get_enemy_models_moved_over(model, path, game_map, require_vertical_overlap=True) or []
+                        ):
+                            enemy_model_id = str(get_entity_id(enemy_model) or "")
+                            if not enemy_model_id or enemy_model_id in seen_models:
+                                continue
+                            seen_models.add(enemy_model_id)
+                            moved_over_models.append(enemy_model)
+                    if moved_over_models:
+                        try:
+                            player = root.get_parent_army().player
+                        except Exception:
+                            player = None
+                        if player is not None:
+                            sorted_models = sorted(
+                                list(moved_over_models),
+                                key=lambda m: str(get_entity_id(m) or ""),
+                            )
+                            options = [DecisionOption.create("None", payload={"action": "skip", "skip": True})]
+                            used_labels: set[str] = set()
+                            candidate_ids: list[str] = []
+                            for enemy_model in sorted_models:
+                                enemy_model_id = str(get_entity_id(enemy_model) or "")
+                                if not enemy_model_id:
+                                    continue
+                                candidate_ids.append(enemy_model_id)
+                                model_label = str(getattr(enemy_model, "name", "") or "Enemy model")
+                                enemy_unit = getattr(enemy_model, "parent_unit", None)
+                                unit_label = str(getattr(enemy_unit, "name", "") or "")
+                                label = f"{model_label} ({unit_label})" if unit_label else model_label
+                                base_label = label
+                                suffix = 2
+                                while label in used_labels:
+                                    label = f"{base_label} ({suffix})"
+                                    suffix += 1
+                                used_labels.add(label)
+                                options.append(
+                                    DecisionOption.create(
+                                        label,
+                                        payload={"target_model_id": enemy_model_id},
+                                    )
+                                )
+                            if len(options) > 1:
+                                request = DecisionRequest.create(
+                                    DECISION_CHOOSE_QUARRY,
+                                    f"{void_mine_name}: select one enemy model moved over (or None).",
+                                    player_id=getattr(player, "id", None),
+                                    options=options,
+                                    context={
+                                        "ability": "void_mine",
+                                        "ability_name": void_mine_name,
+                                        "phase": "Movement phase",
+                                        "source_unit_id": root_id,
+                                        "unit_id": root_id,
+                                        "optional": True,
+                                        "allow_skip": True,
+                                        "candidate_model_ids": sorted(list(candidate_ids)),
+                                        "ability_key": "void_mine",
+                                    },
+                                )
+                                self.request_decision(request)
 
         for model in models:
             if not getattr(model, "is_alive", False):
