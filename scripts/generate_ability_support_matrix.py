@@ -3547,6 +3547,7 @@ def _classify_ability_base(
     start_any_phase_damage_set_one_support = _start_any_phase_damage_set_one_support(description)
     start_any_phase_unit_invuln_support = _start_any_phase_unit_invuln_support(description)
     start_any_phase_unit_fnp_support = _start_any_phase_unit_fnp_support(description)
+    command_phase_end_mortal_table_support = _command_phase_end_enemy_within_range_mortal_table_support(description)
     dark_ritual_support = _dark_ritual_support(description)
     movement_phase_normal_move_weapon_attacks_bonus_support = _movement_phase_once_normal_move_weapon_attacks_bonus_support(description)
     movement_phase_speed_mortal_support = _movement_phase_normal_move_speed_mortal_wounds_support(description)
@@ -3836,6 +3837,8 @@ def _classify_ability_base(
         return start_any_phase_unit_invuln_support
     if start_any_phase_unit_fnp_support:
         return start_any_phase_unit_fnp_support
+    if command_phase_end_mortal_table_support:
+        return command_phase_end_mortal_table_support
     if dark_ritual_support:
         return dark_ritual_support
     if movement_phase_normal_move_weapon_attacks_bonus_support:
@@ -7768,6 +7771,28 @@ def _start_any_phase_unit_fnp_support(description: str) -> Optional[Tuple[str, s
     return (
         "Supported",
         f"Once per battle (start of any phase): unit gains Feel No Pain {m.group('val')}+ until end of phase.",
+    )
+
+
+def _command_phase_end_enemy_within_range_mortal_table_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"once per battle at the end of your command phase this model can use this ability "
+        r"if it does roll (?:one|1) d6 for each enemy unit within (?P<range>\d+) of this model "
+        r"on a 2 5 that enemy unit suffers d3 mortal wounds? "
+        r"on a 6 that enemy unit suffers d3 3 mortal wounds?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    range_val = m.group("range") or "12"
+    return (
+        "Supported",
+        f"Once per battle (end of Command phase): roll D6 for each enemy within {range_val}\"; 2-5=D3 mortal wounds, 6=D3+3 mortal wounds.",
     )
 
 

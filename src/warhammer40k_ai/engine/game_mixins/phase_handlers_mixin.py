@@ -10547,6 +10547,110 @@ class GamePhaseHandlersMixin:
 
         self._phase_enemy_unit_destroyers[pname] = set()
 
+    def _on_phase_end_command_phase_mortal_table(self, player=None, phase=None, **_kwargs) -> None:
+        """End of Command phase: queue optional once-per-battle mortal table abilities (e.g., Lord of the Storm)."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+
+        def _unit_sort_key(unit):
+            try:
+                return str(get_entity_id(unit))
+            except Exception:
+                return str(getattr(unit, "name", "") or "")
+
+        def _model_sort_key(model):
+            try:
+                return str(get_entity_id(model))
+            except Exception:
+                return str(getattr(model, "name", "") or "")
+
+        processed_roots: set[str] = set()
+        for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if not root_id or root_id in processed_roots:
+                continue
+            processed_roots.add(root_id)
+            if not bool(getattr(root, "is_alive", lambda: False)()):
+                continue
+            if not bool(getattr(root, "deployed", False)):
+                continue
+            try:
+                if root.is_in_reserves() or root.is_embarked:
+                    continue
+            except Exception:
+                pass
+
+            spec_fn = getattr(root, "model_command_phase_end_enemy_within_range_mortal_table_specs", None)
+            if not callable(spec_fn):
+                continue
+            try:
+                models = list(root.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(root, "models", []) or [])
+            alive_models = [m for m in list(models or []) if getattr(m, "is_alive", False)]
+            if not alive_models:
+                continue
+
+            for model in sorted(alive_models, key=_model_sort_key):
+                model_id = str(get_entity_id(model) or "")
+                if not model_id:
+                    continue
+                specs = list(spec_fn(model) or [])
+                for spec in specs:
+                    ability_key = str(spec.get("ability_key", "") or "lord_of_the_storm").strip().lower()
+                    if not ability_key:
+                        ability_key = "lord_of_the_storm"
+                    if getattr(model, "has_used_once_per_battle", lambda _k: False)(ability_key):
+                        continue
+                    try:
+                        range_value = int(spec.get("range", 0) or 0)
+                    except Exception:
+                        range_value = 0
+                    if range_value <= 0:
+                        continue
+                    ability_name = str(spec.get("source", "") or "Command phase mortals").strip() or "Command phase mortals"
+                    ctx = {
+                        "ability": "lord_of_the_storm",
+                        "ability_key": ability_key,
+                        "ability_name": ability_name,
+                        "phase": "Command phase",
+                        "unit": getattr(root, "name", "") or "",
+                        "unit_id": root_id,
+                        "model": getattr(model, "name", "") or "",
+                        "model_id": model_id,
+                        "range": int(range_value),
+                    }
+                    self._queue_optional_ability_confirmation(
+                        player=player,
+                        ability_key="lord_of_the_storm",
+                        ability_name=ability_name,
+                        message=f"Activate {ability_name} for {getattr(model, 'name', 'Model')}?",
+                        context=ctx,
+                        payload={
+                            "unit_id": root_id,
+                            "model_id": model_id,
+                            "ability_key": ability_key,
+                            "range": int(range_value),
+                        },
+                        instance_key=f"{model_id}:{ability_key}",
+                    )
+
     def _on_phase_end_acts_of_faith_enhancements(self, player=None, phase=None, **_kwargs) -> None:
         """End of Command phase: resolve Acts of Faith enhancement effects (e.g. Chaplet of Sacrifice)."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

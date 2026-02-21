@@ -3394,6 +3394,7 @@ class GameReactiveDecisionsMixin:
             "hand_of_asuryan",
             "shieldbreaker",
             "soulless_horror",
+            "lord_of_the_storm",
             "ammo_runt",
             "flickerjump",
             "daemonic_patrons",
@@ -4614,6 +4615,118 @@ class GameReactiveDecisionsMixin:
                 weapon_name=weapon_name,
                 wound_bonus=int(wound_bonus),
             )
+            return
+
+        if ability_key == "lord_of_the_storm":
+            model_id = str(payload.get("model_id") or ctx.get("model_id") or "")
+            if not model_id:
+                return
+            model = self._resolve_model_by_id(model_id)
+            if model is None or not getattr(model, "is_alive", True):
+                return
+            source_unit = getattr(model, "parent_unit", None)
+            if source_unit is None:
+                return
+            try:
+                source_root = source_unit.get_attached_unit_root()
+            except Exception:
+                source_root = source_unit
+            if source_root is None:
+                return
+            if not bool(getattr(source_root, "is_alive", lambda: False)()):
+                return
+            if not bool(getattr(source_root, "deployed", False)):
+                return
+            try:
+                if source_root.is_in_reserves() or source_root.is_embarked:
+                    return
+            except Exception:
+                pass
+            source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+            if source_army is None:
+                return
+            key = str(payload.get("ability_key") or ctx.get("ability_key") or "lord_of_the_storm").strip().lower()
+            if not key:
+                key = "lord_of_the_storm"
+            if getattr(model, "has_used_once_per_battle", lambda _k: False)(key):
+                return
+            try:
+                range_value = float(payload.get("range") or ctx.get("range") or 0)
+            except Exception:
+                range_value = 0.0
+            if range_value <= 0:
+                return
+            ability_name = str(payload.get("ability_name") or ctx.get("ability_name") or "Lord of the Storm").strip() or "Lord of the Storm"
+            if not model.mark_used_once_per_battle(key, ability_name=ability_name, source="datasheet"):
+                return
+
+            from ...utility.event_bus import append_action, append_dice
+
+            def _unit_sort_key(unit):
+                try:
+                    return str(get_entity_id(unit))
+                except Exception:
+                    return str(getattr(unit, "name", "") or "")
+
+            owner = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+            seen_targets: set[str] = set()
+            for p in sorted(list(getattr(self, "players", []) or []), key=lambda x: str(getattr(x, "id", "") or "")):
+                if p is None:
+                    continue
+                enemy_army = self._get_player_army(p)
+                if enemy_army is None or enemy_army is source_army:
+                    continue
+                for candidate in sorted(list(getattr(enemy_army, "units", []) or []), key=_unit_sort_key):
+                    if candidate is None:
+                        continue
+                    try:
+                        target_root = candidate.get_attached_unit_root()
+                    except Exception:
+                        target_root = candidate
+                    if target_root is None:
+                        continue
+                    target_id = str(get_entity_id(target_root) or "")
+                    if not target_id or target_id in seen_targets:
+                        continue
+                    seen_targets.add(target_id)
+                    if not bool(getattr(target_root, "is_alive", lambda: False)()):
+                        continue
+                    if not bool(getattr(target_root, "deployed", False)):
+                        continue
+                    try:
+                        if target_root.is_in_reserves() or target_root.is_embarked:
+                            continue
+                    except Exception:
+                        pass
+
+                    try:
+                        in_range = bool(source_root._model_within_range_of_unit(model, target_root, float(range_value)))
+                    except Exception:
+                        in_range = False
+                    if not in_range:
+                        continue
+
+                    trigger_roll = int(get_roll("D6") or 0)
+                    mortal_wounds = 0
+                    if trigger_roll == 6:
+                        mortal_wounds = int(get_roll("D3") or 0) + 3
+                    elif trigger_roll >= 2:
+                        mortal_wounds = int(get_roll("D3") or 0)
+                    if mortal_wounds > 0 and hasattr(source_root, "_apply_mortal_wounds_to_unit"):
+                        source_root._apply_mortal_wounds_to_unit(target_root, int(mortal_wounds), game_map=getattr(self, "map", None))
+
+                    if owner is not None:
+                        tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                        if trigger_roll == 6:
+                            append_dice(owner, f"{ability_name}: {tname} roll {int(trigger_roll)} -> D3+3 = {int(mortal_wounds)} mortal wounds.")
+                        elif trigger_roll >= 2:
+                            append_dice(owner, f"{ability_name}: {tname} roll {int(trigger_roll)} -> D3 = {int(mortal_wounds)} mortal wounds.")
+                        else:
+                            append_dice(owner, f"{ability_name}: {tname} roll {int(trigger_roll)} -> no effect.")
+                        if mortal_wounds > 0:
+                            append_action(owner, f"{ability_name}: {tname} suffers {int(mortal_wounds)} mortal wounds.")
+                        else:
+                            append_action(owner, f"{ability_name}: {tname} suffers no mortal wounds.")
             return
 
         if ability_key == "soulless_horror":

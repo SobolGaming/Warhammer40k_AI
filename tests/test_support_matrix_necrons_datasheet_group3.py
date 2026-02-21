@@ -12,6 +12,14 @@ import pytest
             ),
         ),
         (
+            "Lord of the Storm",
+            (
+                "Once per battle, at the end of your Command phase, this model can use this ability. If it does, roll one "
+                "D6 for each enemy unit within 12\" of this model: on a 2-5, that enemy unit suffers D3 mortal wounds; "
+                "on a 6, that enemy unit suffers D3+3 mortal wounds."
+            ),
+        ),
+        (
             "Self-destruction",
             (
                 "At the start of the Fight phase, if this unit is within Engagement Range of one or more enemy units, you can "
