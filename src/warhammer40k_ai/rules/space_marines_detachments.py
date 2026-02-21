@@ -159,6 +159,7 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         super().__init__(army)
         self.angelic_legacy_selected_keys: tuple[str, ...] = ()
         self.angelic_legacy_selected_round: int = 0
+        self.unparalleled_tactician_used_round: int = 0
 
     def _simple_norm(self, text: str) -> str:
         return _normalize_detachment_name(text)
@@ -226,6 +227,11 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Vanguard Spearhead")
+
+    def is_shadowmark_talon(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Shadowmark Talon")
 
     def is_liberator_assault_group(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -743,11 +749,16 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return 0.0
 
     def shadow_masters_applies(self, target_unit) -> bool:
-        if not self.is_vanguard_spearhead():
+        if not (self.is_vanguard_spearhead() or self.is_shadowmark_talon()):
             return False
         if target_unit is None:
             return False
         return self.attached_unit_is_adeptus_astartes(target_unit)
+
+    def _shadow_masters_source_name(self) -> str:
+        if self.is_shadowmark_talon():
+            return "Masters of Shadow"
+        return "Shadow Masters"
 
     def shadow_masters_ranged_hit_penalty(
         self,
@@ -765,7 +776,7 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         )
         if distance <= 0.0 or distance <= 12.0 + 1e-6:
             return 0, ""
-        return 1, "Shadow Masters"
+        return 1, self._shadow_masters_source_name()
 
     def shadow_masters_benefit_of_cover(
         self,
@@ -845,6 +856,73 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not self.is_rage_cursed_onslaught():
             return False
         return self.attached_unit_is_adeptus_astartes(unit)
+
+    def has_aethon_shaan_on_battlefield(self) -> bool:
+        army = self.army
+        if army is None:
+            return False
+
+        def _unit_matches(unit) -> bool:
+            if unit is None:
+                return False
+            name = str(getattr(unit, "name", "") or "").strip().upper()
+            if "AETHON SHAAN" not in name:
+                return False
+            reserve_status = str(getattr(unit, "reserve_status", "") or "").strip().lower()
+            if reserve_status in {"reserves", "strategic_reserves"}:
+                return False
+            models = getattr(unit, "models", None)
+            if isinstance(models, list) and len(models) > 0:
+                return True
+            is_alive_fn = getattr(unit, "is_alive", None)
+            if callable(is_alive_fn):
+                return bool(is_alive_fn())
+            return False
+
+        units = list(getattr(army, "units", []) or [])
+        for unit in units:
+            if _unit_matches(unit):
+                return True
+            root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+            members = root.get_attached_unit_members() if hasattr(root, "get_attached_unit_members") else [root]
+            for member in members:
+                if member is unit:
+                    continue
+                if _unit_matches(member):
+                    return True
+        return False
+
+    def can_use_unparalleled_tactician_into_darkness_discount(self, *, game=None) -> bool:
+        if not self.is_shadowmark_talon():
+            return False
+        if not self.has_aethon_shaan_on_battlefield():
+            return False
+        game_obj = game
+        if game_obj is None:
+            game_obj = getattr(getattr(self.army, "player", None), "game", None) if self.army is not None else None
+        if game_obj is None:
+            return False
+        try:
+            battle_round = int(getattr(game_obj, "turn", 0) or 0)
+        except Exception:
+            return False
+        if battle_round <= 0:
+            return False
+        return int(getattr(self, "unparalleled_tactician_used_round", 0) or 0) != battle_round
+
+    def mark_unparalleled_tactician_used(self, *, game=None) -> None:
+        game_obj = game
+        if game_obj is None:
+            game_obj = getattr(getattr(self.army, "player", None), "game", None) if self.army is not None else None
+        if game_obj is None:
+            return
+        try:
+            battle_round = int(getattr(game_obj, "turn", 0) or 0)
+        except Exception:
+            return
+        if battle_round <= 0:
+            return
+        self.unparalleled_tactician_used_round = battle_round
 
     def has_divergent_chapter_keywords(self) -> bool:
         army = self.army

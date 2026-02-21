@@ -610,6 +610,15 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Shadow Masters": (
             r"each time a ranged attack targets an adeptus astartes unit from your army unless the attacking model is within 12 subtract \d+ from the hit roll and the target has the benefit of cover against that attack",
         ),
+        "Masters of Shadow": (
+            r"each time a ranged attack targets an adeptus astartes unit from your army unless the attacking model is within 12 subtract \d+ from the hit roll and the target has the benefit of cover against that attack",
+        ),
+        "Unparalleled Tactician": (
+            r"once per battle round if an aethon shaan model from your army is on the battlefield you can use the into darkness stratagem for 0cp",
+        ),
+        "Restrictions": (
+            r"your army can include raven guard units but it cannot include any adeptus astartes units drawn from any other chapter",
+        ),
         "Calculated Annihilation": (
             r"each time a model from your army with the oath of moment ability makes an attack that targets your oath of moment target you can reroll a wound roll of \d+",
         ),
@@ -1879,6 +1888,14 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Shadow Masters": (
             "Supported",
             "Vanguard Spearhead: ranged attacks targeting ADEPTUS ASTARTES units from more than 12\" away suffer -1 to hit, and those targets gain the Benefit of Cover.",
+        ),
+        "Masters of Shadow": (
+            "Supported",
+            "Shadowmark Talon: ranged attacks targeting ADEPTUS ASTARTES units from more than 12\" away suffer -1 to hit, and those targets gain the Benefit of Cover.",
+        ),
+        "Unparalleled Tactician": (
+            "Supported",
+            "Shadowmark Talon: once per battle round, if Aethon Shaan is on the battlefield, you can use INTO DARKNESS for 0CP.",
         ),
         "Calculated Annihilation": (
             "Supported",

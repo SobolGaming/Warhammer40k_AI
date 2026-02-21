@@ -1497,6 +1497,29 @@ class Player:
             return 0
         return 1
 
+    def _preview_unparalleled_tactician_discount(self, *, stratagem=None) -> int:
+        """
+        Unparalleled Tactician (Shadowmark Talon):
+        Once per battle round, if Aethon Shaan is on the battlefield, you can use
+        INTO DARKNESS for 0CP.
+        """
+        if stratagem is None:
+            return 0
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u != "INTO DARKNESS":
+            return 0
+        army = self.get_army()
+        sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+        can_fn = (
+            getattr(sm_mgr, "can_use_unparalleled_tactician_into_darkness_discount", None)
+            if sm_mgr is not None
+            else None
+        )
+        if not callable(can_fn) or not bool(can_fn(game=self.game)):
+            return 0
+        base = int(getattr(stratagem, "cp_cost", 0) or 0)
+        return max(0, base)
+
     def _should_use_optional_ability(self, key: str, context: dict) -> bool:
         """
         Check for one-shot override decisions for optional abilities.
@@ -1574,6 +1597,18 @@ class Player:
         discount = 0
         reasons: list[str] = []
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+
+        unparalleled = self._preview_unparalleled_tactician_discount(stratagem=stratagem)
+        if unparalleled:
+            ctx = {
+                "ability_name": "Unparalleled Tactician",
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_preview_optional_ability("UNPARALLELED_TACTICIAN", ctx, assume=assume_optional_discounts):
+                discount = base
+                reasons.append("Unparalleled Tactician: Into Darkness for 0CP.")
+                return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
 
         faultless = self._preview_faultless_opportunist_discount(stratagem=stratagem, target_unit=target_unit)
         if faultless:
@@ -1905,6 +1940,46 @@ class Player:
                 target_root_id = ""
         self._pending_stratagem_target_unit_id = str(target_root_id or "")
         self._pending_stratagem_name = str(getattr(stratagem, "name", "") or "").strip()
+        unparalleled = self._preview_unparalleled_tactician_discount(stratagem=stratagem)
+        if unparalleled:
+            ctx = {
+                "ability_name": "Unparalleled Tactician",
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_use_optional_ability("UNPARALLELED_TACTICIAN", ctx):
+                cost = 0
+                increase = 0
+                increase_reasons: list[str] = []
+                opponent = self._get_opponent_player()
+                if opponent is not None:
+                    inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                        target_unit=target_unit,
+                        stratagem=stratagem,
+                        current_cost=cost,
+                    )
+                    increase = int(inc_info.get("increase", 0) or 0)
+                    increase_reasons = list(inc_info.get("reasons", []) or [])
+                    if increase:
+                        cost = max(0, cost + increase)
+                self._pending_stratagem_cp_increase = {
+                    "increase": int(increase or 0),
+                    "reasons": increase_reasons,
+                    "stratagem_name": getattr(stratagem, "name", None) or "",
+                }
+                army = self.get_army()
+                sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                mark_used = getattr(sm_mgr, "mark_unparalleled_tactician_used", None) if sm_mgr is not None else None
+                if callable(mark_used):
+                    mark_used(game=self.game)
+                return {
+                    "base": base,
+                    "discount": base,
+                    "cost": cost,
+                    "reasons": ["Unparalleled Tactician: Into Darkness for 0CP."],
+                    "increase": increase,
+                    "increase_reasons": increase_reasons,
+                }
         faultless = self._preview_faultless_opportunist_discount(stratagem=stratagem, target_unit=target_unit)
         if faultless:
             cost = 0
