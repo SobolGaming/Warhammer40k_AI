@@ -526,6 +526,67 @@ class GamePhaseHandlersMixin:
                 for m in models:
                     if not getattr(m, "is_alive", True):
                         continue
+                    get_specs = getattr(unit, "model_start_fight_phase_melee_attacks_set_invuln_specs", None)
+                    specs = list(get_specs(m) or []) if callable(get_specs) else []
+                    if not specs:
+                        continue
+                    for spec in specs:
+                        key = str(spec.get("key") or "fight_phase_melee_attacks_set_invuln").strip().lower()
+                        if not key:
+                            key = "fight_phase_melee_attacks_set_invuln"
+                        if getattr(m, "has_used_once_per_battle", lambda _k: False)(key):
+                            continue
+                        unit_id = maybe_entity_id(unit)
+                        model_id = maybe_entity_id(m)
+                        ability_name = str(spec.get("source", "") or "Fight phase invulnerable/attacks set").strip()
+                        try:
+                            invuln = int(spec.get("invuln", 0) or 0)
+                        except Exception:
+                            invuln = 0
+                        try:
+                            attacks_value = int(spec.get("attacks_value", 0) or 0)
+                        except Exception:
+                            attacks_value = 0
+                        if invuln <= 0 or attacks_value <= 0:
+                            continue
+                        ctx = {
+                            "ability_name": ability_name,
+                            "unit": getattr(unit, "name", "") or "",
+                            "model": getattr(m, "name", "") or "",
+                            "phase": "Fight phase",
+                            "unit_id": unit_id,
+                            "model_id": model_id,
+                            "buff_key": key,
+                            "invuln": int(invuln),
+                            "attacks_value": int(attacks_value),
+                        }
+                        message = (
+                            f"Activate {ability_name} for {getattr(m, 'name', 'Model')} "
+                            f"({getattr(unit, 'name', 'Unit')})?"
+                        )
+                        self._queue_optional_ability_confirmation(
+                            player=player,
+                            ability_key="thrilling_spectacle",
+                            ability_name=ability_name,
+                            message=message,
+                            context=ctx,
+                            payload={
+                                "unit_id": unit_id,
+                                "model_id": model_id,
+                                "buff_key": key,
+                                "invuln": int(invuln),
+                                "attacks_value": int(attacks_value),
+                            },
+                            instance_key=f"{model_id}:{key}",
+                        )
+            # Once per battle: start of Fight phase -> improve S/A/AP/D for this model.
+            for unit in list(army.units):
+                if not unit.is_alive():
+                    continue
+                models = list(getattr(unit, "models", []) or [])
+                for m in models:
+                    if not getattr(m, "is_alive", True):
+                        continue
                     get_specs = getattr(unit, "model_start_fight_phase_melee_full_characteristic_boost_specs", None)
                     specs = list(get_specs(m) or []) if callable(get_specs) else []
                     if not specs:

@@ -5319,7 +5319,7 @@ class KeywordsDetachmentsMixin:
         try:
             for name, desc in self._iter_model_specific_ability_entries(model):
                 name_norm = str(name or "").strip().lower()
-                if name_norm == "shadow field":
+                if name_norm in ("shadow field", "shadowfield"):
                     found = True
                     break
                 text_src = desc or name or ""
@@ -6351,6 +6351,221 @@ class KeywordsDetachmentsMixin:
         self._ability_cache[cache_key] = rule
         return rule
 
+    @staticmethod
+    def _target_at_starting_strength(target: Optional['Unit']) -> bool:
+        if target is None:
+            return False
+        try:
+            return not bool(target.is_below_starting_strength())
+        except Exception:
+            return False
+
+    def get_eradicate_the_foe_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
+        """Parse Eradicate the Foe hit reroll mode against targets at Starting Strength."""
+        if model is None:
+            return None
+        cache_key = f"eradicate_the_foe_rule:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        rule: Optional[dict] = None
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            source = str(name or "").strip()
+            source_key = source.lower()
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            low = normalized.lower().replace("reroll", "re roll")
+            low = re.sub(r"[^a-z0-9]+", " ", low)
+            low = re.sub(r"\s+", " ", low).strip()
+            if source_key != "eradicate the foe" and "at its starting strength" not in low:
+                continue
+            if "at its starting strength" not in low:
+                continue
+            if "re roll a hit roll of 1" in low:
+                rule = {
+                    "source": source or "Eradicate the Foe",
+                    "mode": "ones",
+                }
+                break
+            if "re roll the hit roll" in low:
+                rule = {
+                    "source": source or "Eradicate the Foe",
+                    "mode": "full",
+                }
+                break
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = rule
+        return rule
+
+    def get_silent_executioner_source(self, model: Optional['Model'] = None) -> str:
+        """Return the active Silent Executioner source name for this model, if present."""
+        if model is None:
+            return ""
+        cache_key = f"silent_executioner_source:{get_entity_id(model)}"
+        cache = getattr(self, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return str(cache.get(cache_key) or "")
+
+        source = ""
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            source_name = str(name or "").strip()
+            source_key = source_name.lower()
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            low = normalized.lower().replace("reroll", "re roll")
+            low = re.sub(r"[^a-z0-9]+", " ", low)
+            low = re.sub(r"\s+", " ", low).strip()
+            if source_key != "silent executioner" and "targets a unit that is below its starting strength" not in low:
+                continue
+            if "re roll the hit roll" not in low:
+                continue
+            if "below half strength" not in low or "re roll the wound roll" not in low:
+                continue
+            source = source_name or "Silent Executioner"
+            break
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = source
+        return str(source or "")
+
+    def get_model_soul_trap_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
+        """Parse Soul Trap rule for baseline and post-first-melee-kill bonuses."""
+        if model is None:
+            return None
+        cache_key = f"soul_trap_rule:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        rule: Optional[dict] = None
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            source = str(name or "").strip()
+            source_key = source.lower()
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            low = normalized.lower()
+            low = re.sub(r"[^a-z0-9]+", " ", low)
+            low = re.sub(r"\s+", " ", low).strip()
+            if source_key != "soul trap" and "add 1 to the attacks and strength characteristics" not in low:
+                continue
+            if "melee weapons" not in low:
+                continue
+            if "first time" not in low:
+                continue
+            if "after all the bearer s attacks have been resolved" not in low and "after all the bearer attacks have been resolved" not in low:
+                continue
+            rule = {
+                "source": source or "Soul Trap",
+                "base_bonus": 1,
+                "empowered_bonus": 1,
+            }
+            break
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = rule
+        return rule
+
+    def model_has_soul_trap_ability(self, model: Optional['Model'] = None) -> bool:
+        return bool(self.get_model_soul_trap_rule(model))
+
+    def model_has_soul_trap_empowerment(self, model: Optional['Model'] = None) -> bool:
+        if model is None:
+            return False
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        empowered_ids = list(sr.get("soul_trap_empowered_model_ids", []) or [])
+        return str(get_entity_id(model) or "") in empowered_ids
+
+    def mark_model_soul_trap_pending(self, model: Optional['Model'] = None) -> None:
+        if model is None:
+            return
+        if not self.model_has_soul_trap_ability(model):
+            return
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        model_id = str(get_entity_id(model) or "")
+        if not model_id:
+            return
+        empowered_ids = list(sr.get("soul_trap_empowered_model_ids", []) or [])
+        if model_id in empowered_ids:
+            return
+        pending_ids = list(sr.get("soul_trap_pending_model_ids", []) or [])
+        if model_id not in pending_ids:
+            pending_ids.append(model_id)
+            pending_ids.sort()
+        sr["soul_trap_pending_model_ids"] = pending_ids
+        root.special_rules = sr
+
+    def promote_pending_soul_trap_models(self) -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        pending_ids = list(sr.get("soul_trap_pending_model_ids", []) or [])
+        if not pending_ids:
+            return
+        empowered_ids = list(sr.get("soul_trap_empowered_model_ids", []) or [])
+        changed = False
+        for model_id in pending_ids:
+            mid = str(model_id or "")
+            if not mid or mid in empowered_ids:
+                continue
+            empowered_ids.append(mid)
+            changed = True
+        empowered_ids.sort()
+        sr["soul_trap_empowered_model_ids"] = empowered_ids
+        sr["soul_trap_pending_model_ids"] = []
+        if changed:
+            root.special_rules = sr
+
+    def get_model_soul_trap_melee_bonuses(self, model: Optional['Model'] = None) -> tuple[int, int, str]:
+        """
+        Return (attacks_bonus, strength_bonus, source) for Soul Trap.
+
+        Baseline bonus is +1A/+1S. After first melee kill resolves, bonus becomes +2A/+2S.
+        """
+        rule = self.get_model_soul_trap_rule(model)
+        if not rule:
+            return 0, 0, ""
+        try:
+            base_bonus = int(rule.get("base_bonus", 1) or 1)
+        except Exception:
+            base_bonus = 1
+        try:
+            empowered_bonus = int(rule.get("empowered_bonus", 1) or 1)
+        except Exception:
+            empowered_bonus = 1
+        total = int(base_bonus)
+        if self.model_has_soul_trap_empowerment(model):
+            total += int(empowered_bonus)
+        source = str(rule.get("source", "") or "Soul Trap").strip() or "Soul Trap"
+        return int(total), int(total), source
+
     def get_model_hit_reroll_modifiers(self, model: Optional['Model'] = None, *, attack_type: str = "any", target=None) -> dict:
         mods = self._get_model_reroll_modifiers(model, attack_type=attack_type, target=target, roll="hit")
         reroll_values = set(mods.get("reroll_values", ()) or ())
@@ -6375,6 +6590,27 @@ class KeywordsDetachmentsMixin:
                         except Exception:
                             continue
                     reroll_reasons.append(f"{source}: re-roll Hit rolls of 1 vs CHARACTER targets")
+        eradicate = self.get_eradicate_the_foe_rule(model)
+        if eradicate and target is not None and self._target_at_starting_strength(target):
+            source = str(eradicate.get("source", "") or "Eradicate the Foe").strip() or "Eradicate the Foe"
+            mode = str(eradicate.get("mode", "") or "").strip().lower()
+            if mode == "full":
+                reroll_full = True
+                reroll_full_reasons.append(f"{source}: re-roll Hit roll vs targets at Starting Strength")
+            elif mode == "ones":
+                reroll_values.add(1)
+                reroll_reasons.append(f"{source}: re-roll Hit rolls of 1 vs targets at Starting Strength")
+        silent_source = self.get_silent_executioner_source(model)
+        if silent_source and target is not None:
+            try:
+                below_starting = bool(target.is_below_starting_strength())
+            except Exception:
+                below_starting = False
+            if below_starting:
+                reroll_full = True
+                reroll_full_reasons.append(
+                    f"{silent_source}: re-roll Hit roll vs targets below Starting Strength"
+                )
         seen = set()
         deduped_reasons: list[str] = []
         for reason in reroll_reasons:
@@ -6422,6 +6658,17 @@ class KeywordsDetachmentsMixin:
                         except Exception:
                             continue
                     reroll_reasons.append(f"{source}: re-roll Wound rolls of 1 vs CHARACTER targets")
+        silent_source = self.get_silent_executioner_source(model)
+        if silent_source and target is not None:
+            try:
+                below_half = bool(target.is_below_half_strength())
+            except Exception:
+                below_half = False
+            if below_half:
+                reroll_full = True
+                reroll_full_reasons.append(
+                    f"{silent_source}: re-roll Wound roll vs targets below Half-strength"
+                )
         try:
             prime_target_active = getattr(self, "_imperial_agents_prime_target_active", None)
             applies, source = prime_target_active() if callable(prime_target_active) else (False, "")

@@ -1973,6 +1973,34 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Once per battle, end of Fight phase after unit fights: Fall Back if engaged, otherwise Normal move.",
         ),
         ("AC", "Tactical Perception"): ("Supported", "Leading: unit gains Fights First."),
+        ("DRU", "Devoted to Pain"): (
+            "Supported",
+            "If equipped with two macro-scalpels, those weapons gain [TWIN-LINKED].",
+        ),
+        ("DRU", "Eradicate the Foe"): (
+            "Supported",
+            "Hit rerolls against targets at Starting Strength are applied for both full-reroll and reroll-1 variants.",
+        ),
+        ("DRU", "Onslaught"): (
+            "Supported",
+            "Leading: pile-in and consolidation moves can move up to 6\" instead of 3\".",
+        ),
+        ("DRU", "Shadowfield"): (
+            "Supported",
+            "Bearer cannot re-roll invulnerable saves; first failed invulnerable save removes the invulnerable save for the rest of the battle.",
+        ),
+        ("DRU", "Silent Executioner"): (
+            "Supported",
+            "Re-roll Hit rolls vs targets below Starting Strength; re-roll Wound rolls vs targets below Half-strength.",
+        ),
+        ("DRU", "Soul Trap"): (
+            "Supported",
+            "Bearer melee weapons gain +1 Attacks/+1 Strength, increasing to +2 Attacks/+2 Strength after the first melee kill resolves.",
+        ),
+        ("DRU", "Thrilling Spectacle"): (
+            "Supported",
+            "Once per battle, start of Fight phase optional activation: bearer gains a 3+ invulnerable save and sets melee weapon Attacks to 12 until end of phase.",
+        ),
         ("CD", "Cruel Hunter"): ("Supported", "Leading: pile-in/consolidate up to 6\"."),
         ("CD", "A Gory Path"): ("Supported", "Consolidate up to 6\"."),
         ("CD", "Jolly Gutpipes"): (

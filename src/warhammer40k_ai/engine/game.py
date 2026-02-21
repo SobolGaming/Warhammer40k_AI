@@ -4274,6 +4274,26 @@ class Game(
                         spec=spec,
                     )
 
+        # Drukhari: Soul Trap (first melee kill marks pending; applied after attacks resolve).
+        try:
+            if attacker_model is not None:
+                root = attacker_unit.get_attached_unit_root() if hasattr(attacker_unit, "get_attached_unit_root") else attacker_unit
+                if root is not None and hasattr(root, "model_has_soul_trap_ability"):
+                    if root.model_has_soul_trap_ability(attacker_model):
+                        is_melee_kill = False
+                        wp = _kwargs.get("weapon_profile", None)
+                        pw = getattr(wp, "parent_wargear", None)
+                        if wp is not None and pw is not None and callable(getattr(pw, "is_melee", None)):
+                            is_melee_kill = bool(pw.is_melee())
+                        if is_melee_kill:
+                            has_empowerment = False
+                            if hasattr(root, "model_has_soul_trap_empowerment"):
+                                has_empowerment = bool(root.model_has_soul_trap_empowerment(attacker_model))
+                            if not has_empowerment and hasattr(root, "mark_model_soul_trap_pending"):
+                                root.mark_model_soul_trap_pending(attacker_model)
+        except Exception:
+            pass
+
         try:
             sr = getattr(attacker_unit, "special_rules", None)
         except Exception:
@@ -4370,6 +4390,21 @@ class Game(
             },
         )
         self.request_decision(req)
+        return
+
+    def _on_fight_attacks_resolved_soul_trap(self, unit=None, **_kwargs) -> None:
+        """Promote pending Soul Trap kills once the attacking unit has resolved all of its fight attacks."""
+        if unit is None:
+            return
+        try:
+            root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        promote_fn = getattr(root, "promote_pending_soul_trap_models", None)
+        if callable(promote_fn):
+            promote_fn()
         return
 
     def _on_model_destroyed_spirit_snare(

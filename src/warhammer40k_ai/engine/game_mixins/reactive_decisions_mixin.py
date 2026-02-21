@@ -3279,6 +3279,7 @@ class GameReactiveDecisionsMixin:
             "possessed_lord",
             "fight_phase_melee_ap_boost",
             "might_of_titan",
+            "thrilling_spectacle",
             "chance_for_glory",
             "malefic_destruction",
             "sacrificial_dagger",
@@ -3867,6 +3868,72 @@ class GameReactiveDecisionsMixin:
                 attacks_bonus=int(attacks_bonus),
                 strength_bonus=int(strength_bonus),
             )
+            return
+
+        if ability_key == "thrilling_spectacle":
+            model_id = str(payload.get("model_id") or ctx.get("model_id") or "")
+            if not model_id:
+                return
+            model = self._resolve_model_by_id(model_id)
+            if model is None:
+                return
+            key = str(
+                payload.get("buff_key")
+                or ctx.get("buff_key")
+                or "fight_phase_melee_attacks_set_invuln"
+            ).strip().lower()
+            if not key:
+                key = "fight_phase_melee_attacks_set_invuln"
+            if getattr(model, "has_used_once_per_battle", lambda _k: False)(key):
+                return
+            if not getattr(model, "is_alive", True):
+                return
+            ability_name = str(ctx.get("ability_name", "") or "Thrilling Spectacle").strip() or "Thrilling Spectacle"
+            try:
+                invuln = int(payload.get("invuln") or ctx.get("invuln") or 0)
+            except Exception:
+                invuln = 0
+            try:
+                attacks_value = int(payload.get("attacks_value") or ctx.get("attacks_value") or 0)
+            except Exception:
+                attacks_value = 0
+            if invuln <= 0 or attacks_value <= 0:
+                return
+            phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+            if not phase_name:
+                phase_name = str(ctx.get("phase", "") or "").strip().upper()
+            if not phase_name:
+                phase_name = "FIGHT_PHASE"
+            if hasattr(model, "set_temporary_invulnerable_save"):
+                model.set_temporary_invulnerable_save(
+                    key=key,
+                    value=int(invuln),
+                    source=ability_name,
+                    expires_phase=phase_name,
+                )
+            melee_weapon_names: list[str] = []
+            for wargear in list(getattr(model, "wargear", []) or []):
+                if wargear is None:
+                    continue
+                try:
+                    is_melee = bool(getattr(wargear, "is_melee", lambda: False)())
+                except Exception:
+                    is_melee = False
+                if not is_melee:
+                    continue
+                name = str(getattr(wargear, "name", "") or "").strip()
+                if name:
+                    melee_weapon_names.append(name)
+            if melee_weapon_names and hasattr(model, "set_temporary_weapon_attacks_override"):
+                for idx, weapon_name in enumerate(sorted(set(melee_weapon_names), key=lambda n: str(n).lower())):
+                    model.set_temporary_weapon_attacks_override(
+                        key=f"{key}:weapon:{idx}",
+                        weapon_name=str(weapon_name),
+                        attacks_value=int(attacks_value),
+                        source=ability_name,
+                        expires_phase=phase_name,
+                    )
+            model.mark_used_once_per_battle(key, ability_name=ability_name, source="datasheet")
             return
 
         if ability_key == "chance_for_glory":

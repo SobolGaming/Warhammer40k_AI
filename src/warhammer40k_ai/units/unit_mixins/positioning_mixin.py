@@ -2690,6 +2690,53 @@ class PositioningMixin:
         if temp_rules:
             rules = list(rules or []) + list(temp_rules or [])
         try:
+            atype = str(attack_type or "").strip().lower()
+            is_melee_attack = atype in ("", "any", "melee")
+            if is_melee_attack:
+                current_weapon_name = str(weapon_name or "").strip()
+                if not current_weapon_name and weapon_profile is not None:
+                    try:
+                        current_weapon_name = str(getattr(getattr(weapon_profile, "parent_wargear", None), "name", "") or "")
+                    except Exception:
+                        current_weapon_name = ""
+                    if not current_weapon_name:
+                        try:
+                            current_weapon_name = str(getattr(weapon_profile, "name", "") or "")
+                        except Exception:
+                            current_weapon_name = ""
+                if current_weapon_name and self._weapon_name_matches(["macro-scalpel", "macro scalpel"], current_weapon_name):
+                    has_rule = False
+                    source = "Devoted to Pain"
+                    for name, desc in self._iter_model_specific_ability_entries(model):
+                        source_name = str(name or "").strip()
+                        text_src = desc or name or ""
+                        if not text_src:
+                            continue
+                        normalized = self._normalize_rules_text(self._strip_eligibility_prefix(text_src))
+                        normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                        normalized = normalized.lower()
+                        normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                        normalized = re.sub(r"\s+", " ", normalized).strip()
+                        if source_name.lower() != "devoted to pain" and "equipped with 2 macro scalpels" not in normalized:
+                            continue
+                        if "gain the twin linked ability" not in normalized and "gain twin linked" not in normalized:
+                            continue
+                        has_rule = True
+                        source = source_name or "Devoted to Pain"
+                        break
+                    if has_rule:
+                        macro_scalpel_count = 0
+                        for wargear in list(getattr(model, "wargear", []) or []):
+                            name = str(getattr(wargear, "name", "") or "").strip()
+                            if name and self._weapon_name_matches(["macro-scalpel", "macro scalpel"], name):
+                                macro_scalpel_count += 1
+                        if macro_scalpel_count >= 2:
+                            rules = list(rules or []) + [
+                                {"attack_type": "melee", "keyword": "TWIN-LINKED", "source": source}
+                            ]
+        except Exception:
+            pass
+        try:
             if weapon_profile is not None:
                 from ...utility.aura_effects import get_aura_weapon_keyword_bonuses
                 aura_rules = get_aura_weapon_keyword_bonuses(self, weapon_profile)
@@ -3710,9 +3757,7 @@ class PositioningMixin:
             except Exception:
                 name = ""
                 desc = ""
-            if name.strip().lower() == "choreographer of war":
-                source = name or "Choreographer of War"
-                break
+            name_norm = name.strip().lower()
             text = root._normalize_rules_text(desc or "")
             if not text:
                 continue
@@ -3720,12 +3765,27 @@ class PositioningMixin:
             norm = re.sub(r"'s\b", " s", norm)
             norm = re.sub(r"[^a-z0-9]+", " ", norm)
             norm = re.sub(r"\s+", " ", norm).strip()
+            if name_norm == "choreographer of war":
+                source = name or "Choreographer of War"
+                break
+            if name_norm == "onslaught":
+                if (
+                    "pile in" in norm
+                    and "consolidation move" in norm
+                    and "move up to 6" in norm
+                    and "instead of up to 3" in norm
+                ):
+                    source = name or "Onslaught"
+                    break
             if (
                 "pile in" in norm
                 and "consolidation move" in norm
                 and "move up to 6" in norm
                 and "instead of up to 3" in norm
-                and "as close as possible to the closest enemy unit" in norm
+                and (
+                    "as close as possible to the closest enemy unit" in norm
+                    or "while this model is leading a unit" in norm
+                )
             ):
                 source = name or "Choreographer of War"
                 break

@@ -2768,6 +2768,12 @@ class Unit(
         r"add (?P<attacks>\d+) to the attacks and strength characteristics of melee weapons equipped by this model",
         re.IGNORECASE,
     )
+    _FIGHT_PHASE_MELEE_ATTACKS_SET_INVULN_RE = re.compile(
+        r"once per battle at the start of the fight phase this model can use this ability if it does until the end of the phase "
+        r"this model has a (?P<invuln>\d)\+? invulnerable save and change the attacks characteristic of melee weapons "
+        r"equipped by this model to (?P<attacks>\d+)",
+        re.IGNORECASE,
+    )
     _FIGHT_PHASE_MELEE_FULL_BUFF_RE = re.compile(
         r"once per battle at the start of the fight phase this model can use this ability if it does until the end of the phase "
         r"improve the strength attacks armou?r penetration and damage characteristics of melee weapons equipped by this model by (?P<val>\d+)",

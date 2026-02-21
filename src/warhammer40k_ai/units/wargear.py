@@ -3832,6 +3832,17 @@ class WargearProfile:
         if bonus:
             atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="ability:soul_eater_attacks_add"))
             attack_result.attacks_special_modifiers.append(f"Soul Eater +{bonus}A")
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                unit = getattr(attacker, "parent_unit", None)
+                if unit is not None and hasattr(unit, "get_model_soul_trap_melee_bonuses"):
+                    attacks_bonus, _strength_bonus, source = unit.get_model_soul_trap_melee_bonuses(attacker)
+                    if attacks_bonus:
+                        atk_mods.append(Modifier(ModifierOp.ADD, int(attacks_bonus), source="ability:soul_trap_attacks_add"))
+                        source_name = str(source or "Soul Trap").strip() or "Soul Trap"
+                        attack_result.attacks_special_modifiers.append(f"{source_name} +{int(attacks_bonus)}A")
+        except Exception:
+            pass
 
         try:
             if self.parent_wargear and self.parent_wargear.is_melee():
@@ -10944,6 +10955,18 @@ class WargearProfile:
                 if s_bonus and isinstance(strength, int):
                     strength = strength + s_bonus
                     wound_result.setdefault("modifiers", []).append(f"+{s_bonus}S from Power from Pain (melee)")
+        except Exception:
+            pass
+        # Drukhari: Soul Trap (baseline +1S; +2S after first melee kill resolves).
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                unit = getattr(attacker, "parent_unit", None)
+                if unit is not None and hasattr(unit, "get_model_soul_trap_melee_bonuses"):
+                    _a_bonus, s_bonus, source = unit.get_model_soul_trap_melee_bonuses(attacker)
+                    if s_bonus and isinstance(strength, int):
+                        strength = strength + int(s_bonus)
+                        source_name = str(source or "Soul Trap").strip() or "Soul Trap"
+                        wound_result.setdefault("modifiers", []).append(f"+{int(s_bonus)}S from {source_name} (melee)")
         except Exception:
             pass
         # Drukhari: Combat Drugs (Grave Lotus).

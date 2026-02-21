@@ -1,7 +1,9 @@
 import unittest
+from types import SimpleNamespace
 
-from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET
+from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET, DECISION_CONFIRM_YES_NO
 from warhammer40k_ai.engine.phase import BattleRoundPhases
+from warhammer40k_ai.utility.decision_utils import resolve_decision_command
 from warhammer40k_ai.utility.entity_ids import get_entity_id
 
 
@@ -60,6 +62,214 @@ def _build_game():
 
 
 class TestDrukhariBatch3Abilities(unittest.TestCase):
+    def test_devoted_to_pain_grants_twin_linked_with_two_macro_scalpels(self):
+        ability = {
+            "name": "Devoted to Pain",
+            "description": (
+                "If this model is equipped with 2 macro-scalpels, those weapons gain the [TWIN-LINKED] ability."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        attacker = _make_unit("Talos", abilities=[ability], model_count=1)
+        model = attacker.models[0]
+        model.wargear = [
+            SimpleNamespace(name="macro-scalpel"),
+            SimpleNamespace(name="macro-scalpel"),
+        ]
+        target = _make_unit("Enemy", model_count=1)
+
+        bonuses = attacker.get_model_weapon_keyword_bonuses(
+            attack_type="melee",
+            model=model,
+            weapon_name="macro-scalpel",
+            target=target,
+        )
+        self.assertTrue(bool(bonuses.get("twin_linked", False)))
+        self.assertTrue(any("devoted to pain" in str(src).lower() for src in list(bonuses.get("sources", []) or [])))
+
+    def test_eradicate_the_foe_full_hit_reroll_variant(self):
+        ability = {
+            "name": "Eradicate the Foe",
+            "description": (
+                "Each time this model makes an attack that targets a unit that is at its Starting Strength, "
+                "you can re-roll the Hit roll."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        attacker = _make_unit("Ravager", abilities=[ability], model_count=1)
+        model = attacker.models[0]
+        target = _make_unit("Enemy", model_count=2)
+        mods = attacker.get_model_hit_reroll_modifiers(model, attack_type="ranged", target=target)
+        self.assertTrue(bool(mods.get("reroll_hit_full", False)))
+
+        damaged_target = _make_unit("Enemy", model_count=2)
+        damaged_target.models = list(damaged_target.models[:1])
+        mods_damaged = attacker.get_model_hit_reroll_modifiers(model, attack_type="ranged", target=damaged_target)
+        self.assertFalse(bool(mods_damaged.get("reroll_hit_full", False)))
+
+    def test_eradicate_the_foe_reroll_ones_variant(self):
+        ability = {
+            "name": "Eradicate the Foe",
+            "description": (
+                "Each time this model makes an attack that targets a unit that is at its Starting Strength, "
+                "re-roll a Hit roll of 1."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        attacker = _make_unit("Ravager", abilities=[ability], model_count=1)
+        model = attacker.models[0]
+        target = _make_unit("Enemy", model_count=2)
+        mods = attacker.get_model_hit_reroll_modifiers(model, attack_type="ranged", target=target)
+        self.assertFalse(bool(mods.get("reroll_hit_full", False)))
+        self.assertIn(1, tuple(mods.get("reroll_hit_values", ()) or ()))
+
+    def test_silent_executioner_rerolls_track_target_strength_state(self):
+        ability = {
+            "name": "Silent Executioner",
+            "description": (
+                "Each time this model makes an attack that targets a unit that is below its Starting Strength, "
+                "you can re-roll the Hit roll. If that target is Below Half-strength, you can re-roll the Wound roll as well."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        attacker = _make_unit("Drazhar", abilities=[ability], model_count=1)
+        model = attacker.models[0]
+
+        below_starting_target = _make_unit("Enemy", model_count=3)
+        below_starting_target.models = list(below_starting_target.models[:2])
+        hit_mods = attacker.get_model_hit_reroll_modifiers(model, attack_type="melee", target=below_starting_target)
+        self.assertTrue(bool(hit_mods.get("reroll_hit_full", False)))
+
+        below_half_target = _make_unit("Enemy", model_count=3)
+        below_half_target.models = list(below_half_target.models[:1])
+        wound_mods = attacker.get_model_wound_reroll_modifiers(model, attack_type="melee", target=below_half_target)
+        self.assertTrue(bool(wound_mods.get("reroll_wound_full", False)))
+
+    def test_onslaught_grants_fight_phase_move_override(self):
+        unit = _make_unit("Drazhar", model_count=1)
+        onslaught = SimpleNamespace(
+            name="Onslaught",
+            description=(
+                "While this model is leading a unit, each time a model in that unit makes a Pile-in or Consolidation move, "
+                "it can move up to 6\" instead of up to 3\"."
+            ),
+        )
+        unit._iter_attached_leader_leading_abilities = lambda: [(onslaught, unit)]
+        source = unit.get_choreographer_of_war_source()
+        self.assertEqual(source, "Onslaught")
+        self.assertEqual(unit.get_fight_phase_move_distance_override("pile_in"), 6.0)
+        self.assertEqual(unit.get_fight_phase_move_distance_override("consolidate"), 6.0)
+
+    def test_shadowfield_name_without_space_is_detected(self):
+        ability = {
+            "name": "Shadowfield",
+            "description": (
+                "You cannot re-roll invulnerable saving throws made for the bearer. The first time an invulnerable "
+                "saving throw made for the bearer is failed, until the end of the battle, the bearer has no invulnerable save."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        archon = _make_unit("Archon", abilities=[ability], model_count=1)
+        self.assertTrue(archon.model_has_shadow_field_ability(archon.models[0]))
+
+    def test_soul_trap_promotes_after_fight_attacks_resolved(self):
+        ability = {
+            "name": "Soul Trap",
+            "description": (
+                "Add 1 to the Attacks and Strength characteristics of the bearer's melee weapons. The first time the bearer "
+                "makes a melee attack that destroys an enemy model, after all the bearer's attacks have been resolved, until "
+                "the end of the battle, add an additional 1 to the Attacks and Strength characteristics of the bearer's melee weapons."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, army2 = _build_game()
+        attacker = _make_unit("Archon", abilities=[ability], model_count=1)
+        target = _make_unit("Enemy", model_count=1)
+        for unit in (attacker, target):
+            unit.deployed = True
+            unit.reserve_status = "deployed"
+        army1.add_unit(attacker)
+        army2.add_unit(target)
+        game.map.units = [attacker, target]
+        game.rebuild_entity_registry()
+
+        attacker_model = attacker.models[0]
+        target_model = target.models[0]
+        weapon_profile = SimpleNamespace(parent_wargear=SimpleNamespace(is_melee=lambda: True))
+        game._on_model_destroyed_rules(
+            attacker_model=attacker_model,
+            attacker_unit=attacker,
+            target_model=target_model,
+            target_unit=target,
+            weapon_profile=weapon_profile,
+        )
+        attacks_bonus, strength_bonus, _source = attacker.get_model_soul_trap_melee_bonuses(attacker_model)
+        self.assertEqual((attacks_bonus, strength_bonus), (1, 1))
+
+        game._on_fight_attacks_resolved_soul_trap(unit=attacker, target_unit=target)
+        attacks_bonus, strength_bonus, _source = attacker.get_model_soul_trap_melee_bonuses(attacker_model)
+        self.assertEqual((attacks_bonus, strength_bonus), (2, 2))
+
+    def test_thrilling_spectacle_queues_and_applies(self):
+        ability = {
+            "name": "Thrilling Spectacle",
+            "description": (
+                "Once per battle, at the start of the Fight phase, this model can use this ability. If it does, until the end "
+                "of the phase, this model has a 3+ invulnerable save and change the Attacks characteristic of melee weapons "
+                "equipped by this model to 12."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, army2 = _build_game()
+        lelith = _make_unit("Lelith Hesperax", abilities=[ability], model_count=1)
+        lelith_model = lelith.models[0]
+        enemy = _make_unit("Enemy", model_count=1)
+        for unit in (lelith, enemy):
+            unit.deployed = True
+            unit.reserve_status = "deployed"
+        army1.add_unit(lelith)
+        army2.add_unit(enemy)
+        game.map.units = [lelith, enemy]
+        game.phase = BattleRoundPhases.FIGHT_PHASE
+        game.current_player_index = 0
+        game.rebuild_entity_registry()
+        lelith_model.wargear = [SimpleNamespace(name="Lelith's Blades", is_melee=lambda: True)]
+
+        player = game.get_current_player()
+        game._on_phase_start_optional_abilities(player=player, phase=BattleRoundPhases.FIGHT_PHASE)
+
+        requests = [r for r in game.decision_queue.list() if r.decision_type == DECISION_CONFIRM_YES_NO]
+        self.assertTrue(requests)
+        req = None
+        for candidate in requests:
+            ctx = dict(candidate.context or {})
+            if str(ctx.get("ability", "") or "").strip().lower() == "thrilling_spectacle":
+                req = candidate
+                break
+        self.assertIsNotNone(req)
+        use_option_id = None
+        for opt in list(req.options or []):
+            if bool((opt.payload or {}).get("choice")):
+                use_option_id = opt.option_id
+                break
+        self.assertIsNotNone(use_option_id)
+        resolve_decision_command(game, req, use_option_id, player_id=player.id)
+
+        buff_key = str((req.context or {}).get("buff_key") or "")
+        self.assertTrue(bool(buff_key))
+        self.assertTrue(lelith_model.has_used_once_per_battle(buff_key))
+        invuln, _source = lelith_model.get_temporary_invulnerable_save()
+        self.assertEqual(invuln, 3)
+        attacks_override, _source = lelith_model.get_temporary_weapon_attacks_override("Lelith's Blades")
+        self.assertEqual(attacks_override, 12)
+
     def test_torturers_craft_specs_include_vehicle_exclusion_and_fight_trigger(self):
         ability = {
             "name": "Torturer's Craft",

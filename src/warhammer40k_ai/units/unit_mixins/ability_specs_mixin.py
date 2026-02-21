@@ -2884,6 +2884,72 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_start_fight_phase_melee_attacks_set_invuln_specs(
+        self,
+        model: Optional['Model'] = None,
+    ) -> List[dict]:
+        """
+        Model-specific rule: once per battle, at the start of the Fight phase, set melee weapon Attacks and invulnerable save.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - key: once-per-battle tracking key
+            - attacks_value: int (set Attacks characteristic for melee weapons)
+            - invuln: int (invulnerable save value)
+        """
+        if model is None:
+            return []
+        cache_key = f"model_fight_phase_melee_attacks_set_invuln:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, int]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._FIGHT_PHASE_MELEE_ATTACKS_SET_INVULN_RE.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                invuln = int(m.group("invuln") or 0)
+            except Exception:
+                invuln = 0
+            try:
+                attacks_value = int(m.group("attacks") or 0)
+            except Exception:
+                attacks_value = 0
+            if invuln <= 0 or attacks_value <= 0:
+                continue
+            source = str(name or "Fight phase melee attacks set").strip() or "Fight phase melee attacks set"
+            key_seed = self._normalize_keyword_phrase(source) or "fight_phase_melee_attacks_set_invuln"
+            key = f"fight_phase_melee_attacks_set_invuln:{key_seed}"
+            spec_key = (key, int(invuln), int(attacks_value))
+            if spec_key in seen:
+                continue
+            seen.add(spec_key)
+            specs.append(
+                {
+                    "source": source,
+                    "key": key,
+                    "invuln": int(invuln),
+                    "attacks_value": int(attacks_value),
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_start_fight_phase_data_spike_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model-specific rule: at the start of the Fight phase, optionally select one engaged enemy VEHICLE unit,
