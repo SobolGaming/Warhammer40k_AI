@@ -582,6 +582,10 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Lightning Assault": (
             r"adeptus astartes units from your army are eligible to declare a charge in a turn in which they advanced or fell back",
         ),
+        "Righteous Fervour": (
+            r"you can reroll advance and charge rolls made for adeptus astartes units from your army",
+            r"your army can include black templars units but it cannot include any adeptus astartes units drawn from any other chapter",
+        ),
         "Maddened Ferocity": (
             r"each time an adeptus astartes model from your army makes a melee attack reroll a wound roll of \d+",
             r"each time an adeptus astartes unit from your army is selected to fight if that unit made a charge move this turn until the end of the phase add \d+ to the attacks characteristic of melee weapons equipped by models in that unit",
@@ -1805,6 +1809,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Lightning Assault": (
             "Supported",
             "Stormlance Task Force: ADEPTUS ASTARTES units can declare charges in turns when they Advanced or Fell Back.",
+        ),
+        "Righteous Fervour": (
+            "Supported",
+            "Companions of Vehemence: ADEPTUS ASTARTES units can re-roll Advance and Charge rolls; Black Templars-only chapter restriction enforced.",
         ),
         "Legacy of the Angel": (
             "Supported",

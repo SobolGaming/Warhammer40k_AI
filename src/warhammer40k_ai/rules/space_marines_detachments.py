@@ -202,6 +202,11 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Stormlance Task Force")
 
+    def is_companions_of_vehemence(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Companions of Vehemence")
+
     def is_blade_of_ultramar(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
             return False
@@ -470,6 +475,16 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
 
     def lightning_assault_charge_after_fall_back_applies(self, unit) -> bool:
         return self.lightning_assault_charge_after_advance_applies(unit)
+
+    def righteous_fervour_reroll_advance_applies(self, unit) -> bool:
+        if not self.is_companions_of_vehemence():
+            return False
+        if unit is None:
+            return False
+        return self.attached_unit_is_adeptus_astartes(unit)
+
+    def righteous_fervour_reroll_charge_applies(self, unit) -> bool:
+        return self.righteous_fervour_reroll_advance_applies(unit)
 
     def dutiful_tenacity_wound_roll_penalty(self, target_unit, *, strength=None, target_toughness=None) -> tuple[int, str]:
         if not self.is_wrath_of_the_rock():
