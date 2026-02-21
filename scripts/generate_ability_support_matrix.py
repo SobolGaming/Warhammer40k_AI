@@ -618,6 +618,7 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         ),
         "Restrictions": (
             r"your army can include raven guard units but it cannot include any adeptus astartes units drawn from any other chapter",
+            r"your army can include iron hands units but it cannot include any adeptus astartes units drawn from any other chapter",
         ),
         "Calculated Annihilation": (
             r"each time a model from your army with the oath of moment ability makes an attack that targets your oath of moment target you can reroll a wound roll of \d+",
