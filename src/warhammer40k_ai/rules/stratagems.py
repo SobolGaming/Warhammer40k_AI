@@ -18345,7 +18345,13 @@ class StratagemManager(
                 try:
                     provider = getattr(game_map, "reanimation_allocation_provider", None)
                     is_human = bool(getattr(self.player, "has_control", lambda: False)())
-                    root.apply_reanimation_protocols(roll, game_map=game_map, is_human=is_human, provider=provider)
+                    root.apply_reanimation_protocols(
+                        roll,
+                        game_map=game_map,
+                        is_human=is_human,
+                        provider=provider,
+                        roll_expr="D3",
+                    )
                 except Exception:
                     raise
             if kwargs.get("dequeue") is True:

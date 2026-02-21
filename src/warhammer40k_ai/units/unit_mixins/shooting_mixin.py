@@ -2522,6 +2522,7 @@ class ShootingMixin:
         game_map: Optional['Map'] = None,
         is_human: bool = False,
         provider=None,
+        roll_expr: Optional[str] = None,
     ) -> dict:
         """
         Resolve Reanimation Protocols for this (attached) unit group.
@@ -2529,7 +2530,11 @@ class ShootingMixin:
         Returns a dict with counts of healed wounds and returned models.
         """
         result = {"healed": 0, "returned": 0}
-        if int(wounds_to_restore or 0) <= 0:
+        try:
+            resolved_wounds = int(wounds_to_restore or 0)
+        except Exception:
+            resolved_wounds = 0
+        if resolved_wounds <= 0:
             return result
 
         try:
@@ -2563,6 +2568,158 @@ class ShootingMixin:
         except Exception:
             members = [root]
 
+        roll_expr_norm = str(roll_expr or "").strip().upper()
+
+        # Their Number is Legion: auto-apply re-roll when the re-roll is strictly better.
+        if roll_expr_norm in ("D3", "D6"):
+            try:
+                reroll_specs = list(root.unit_reanimation_dice_reroll_specs() or [])
+            except Exception:
+                reroll_specs = []
+            if reroll_specs:
+                max_roll = 3 if roll_expr_norm == "D3" else 6
+                if int(resolved_wounds or 0) < int(max_roll):
+                    try:
+                        rerolled = int(get_roll(roll_expr_norm) or 0)
+                    except Exception:
+                        rerolled = int(resolved_wounds or 0)
+                    if int(rerolled or 0) > int(resolved_wounds or 0):
+                        resolved_wounds = int(rerolled or 0)
+
+        # Necrons Reanimation interactions:
+        # - Nanoscarab Reanimation Beam (Aura): add one additional D3 while in range.
+        # - Nanoscarab Projector: auto-use one eligible unused bearer (+1, once per battle round).
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        if game_map is None and game is not None:
+            game_map = getattr(game, "map", None)
+
+        is_necrons_target = False
+        try:
+            has_any_keyword = getattr(root, "has_any_keyword", None)
+            if callable(has_any_keyword):
+                is_necrons_target = bool(has_any_keyword("NECRONS"))
+        except Exception:
+            is_necrons_target = False
+
+        if army is not None and is_necrons_target:
+            def _unit_sort_key(unit):
+                try:
+                    return str(get_entity_id(unit))
+                except Exception:
+                    return str(getattr(unit, "name", "") or "")
+
+            def _model_sort_key(model):
+                try:
+                    return str(get_entity_id(model))
+                except Exception:
+                    return str(getattr(model, "name", "") or "")
+
+            seen_roots: set[str] = set()
+            beam_applied = False
+            projector_applied = False
+            for source_unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+                if source_unit is None:
+                    continue
+                try:
+                    source_root = source_unit.get_attached_unit_root()
+                except Exception:
+                    source_root = source_unit
+                if source_root is None:
+                    continue
+                source_root_id = str(get_entity_id(source_root) or "")
+                if not source_root_id or source_root_id in seen_roots:
+                    continue
+                seen_roots.add(source_root_id)
+                if not bool(getattr(source_root, "is_alive", lambda: False)()):
+                    continue
+                if not bool(getattr(source_root, "deployed", True)):
+                    continue
+                try:
+                    if source_root.is_in_reserves() or source_root.is_embarked:
+                        continue
+                except Exception:
+                    pass
+                try:
+                    source_models = list(source_root.get_attached_unit_models() or [])
+                except Exception:
+                    source_models = list(getattr(source_root, "models", []) or [])
+                alive_models_for_source = [m for m in list(source_models or []) if bool(getattr(m, "is_alive", True))]
+                if not alive_models_for_source:
+                    continue
+                for source_model in sorted(alive_models_for_source, key=_model_sort_key):
+                    model_owner = getattr(source_model, "parent_unit", None) or source_root
+                    spec_fn = getattr(model_owner, "model_reanimation_protocol_bonus_specs", None)
+                    if not callable(spec_fn):
+                        continue
+                    try:
+                        specs = list(spec_fn(source_model) or [])
+                    except Exception:
+                        specs = []
+                    if not specs:
+                        continue
+                    for spec in list(specs or []):
+                        stype = str(spec.get("type", "") or "").strip().lower()
+                        if stype not in ("nanoscarab_reanimation_beam", "nanoscarab_projector"):
+                            continue
+                        try:
+                            range_value = float(spec.get("range", 0) or 0)
+                        except Exception:
+                            range_value = 0.0
+                        if range_value <= 0:
+                            continue
+                        try:
+                            in_range = bool(source_root._model_within_range_of_unit(source_model, root, float(range_value)))
+                        except Exception:
+                            in_range = False
+                        if not in_range:
+                            continue
+
+                        if stype == "nanoscarab_reanimation_beam":
+                            if beam_applied:
+                                continue
+                            try:
+                                bonus_roll = int(get_roll("D3") or 0)
+                            except Exception:
+                                bonus_roll = 0
+                            if bonus_roll > 0:
+                                resolved_wounds += int(bonus_roll)
+                            beam_applied = True
+                            continue
+
+                        if stype == "nanoscarab_projector":
+                            if projector_applied:
+                                continue
+                            key = str(spec.get("ability_key", "") or "nanoscarab_projector").strip().lower()
+                            if not key:
+                                key = "nanoscarab_projector"
+                            has_used_round = getattr(source_model, "has_used_once_per_battle_round", None)
+                            if callable(has_used_round):
+                                try:
+                                    if bool(has_used_round(key)):
+                                        continue
+                                except Exception:
+                                    pass
+                            mark_used_round = getattr(source_model, "mark_used_once_per_battle_round", None)
+                            if callable(mark_used_round):
+                                source_name = str(spec.get("source", "") or "Nanoscarab Projector").strip() or "Nanoscarab Projector"
+                                if not bool(mark_used_round(key, ability_name=source_name, source="wargear")):
+                                    continue
+                            try:
+                                bonus = int(spec.get("bonus", 1) or 1)
+                            except Exception:
+                                bonus = 1
+                            if bonus > 0:
+                                resolved_wounds += int(bonus)
+                            projector_applied = True
+                            continue
+
+        if int(resolved_wounds or 0) <= 0:
+            return result
+
         def _is_alive_model(m) -> bool:
             try:
                 return bool(getattr(m, "is_alive", True))
@@ -2586,7 +2743,7 @@ class ShootingMixin:
 
         returned_models: list[Model] = []
 
-        for _ in range(int(wounds_to_restore or 0)):
+        for _ in range(int(resolved_wounds or 0)):
             wounded = [m for m in alive_models if _is_wounded_model(m)]
             if wounded:
                 target = self._reanimation_choose_model(

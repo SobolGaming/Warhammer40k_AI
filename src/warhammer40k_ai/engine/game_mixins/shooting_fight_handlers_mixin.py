@@ -6638,6 +6638,519 @@ class GameShootingFightHandlersMixin:
         )
         self.request_decision(request)
 
+    def _unit_total_wounds_for_repair_barge(self, unit) -> int:
+        if unit is None:
+            return 0
+        try:
+            models = list(unit.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(unit, "models", []) or [])
+        total = 0
+        for model in list(models or []):
+            if model is None:
+                continue
+            try:
+                alive_attr = getattr(model, "is_alive", True)
+                is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            except Exception:
+                is_alive = True
+            if not is_alive:
+                continue
+            try:
+                total += int(getattr(model, "wounds", 0) or 0)
+            except Exception:
+                continue
+        return int(total)
+
+    def _unit_is_necron_warriors_for_repair_barge(self, unit) -> bool:
+        if unit is None:
+            return False
+        try:
+            matcher = getattr(unit, "_unit_matches_keyword_phrase", None)
+            if callable(matcher) and (
+                bool(matcher(unit, "NECRON WARRIORS")) or bool(matcher(unit, "NECRONS WARRIORS"))
+            ):
+                return True
+        except Exception:
+            pass
+        has_any = getattr(unit, "has_any_keyword", None)
+        if callable(has_any):
+            try:
+                if bool(has_any("NECRON WARRIORS")):
+                    return True
+            except Exception:
+                pass
+            try:
+                if bool(has_any("NECRONS WARRIORS")):
+                    return True
+            except Exception:
+                pass
+            try:
+                if (bool(has_any("NECRON")) or bool(has_any("NECRONS"))) and bool(has_any("WARRIORS")):
+                    return True
+            except Exception:
+                pass
+        return False
+
+    def _repair_barge_model_used_this_turn(self, source_unit, model_id: str, *, turn: int, turn_owner_id: str) -> bool:
+        if source_unit is None or not model_id:
+            return False
+        sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        used = sr.get("repair_barge_model_used_turn_by_id")
+        if not isinstance(used, dict):
+            return False
+        entry = used.get(str(model_id))
+        if not isinstance(entry, dict):
+            return False
+        try:
+            used_turn = int(entry.get("turn", -1))
+        except Exception:
+            return False
+        if used_turn != int(turn):
+            return False
+        used_owner = str(entry.get("turn_owner_id", "") or "")
+        if turn_owner_id and used_owner and used_owner != str(turn_owner_id):
+            return False
+        return True
+
+    def _mark_repair_barge_model_used_this_turn(self, source_unit, model_id: str, *, turn: int, turn_owner_id: str) -> None:
+        if source_unit is None or not model_id:
+            return
+        sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        used = sr.get("repair_barge_model_used_turn_by_id")
+        if not isinstance(used, dict):
+            used = {}
+        updated = dict(used)
+        updated[str(model_id)] = {
+            "turn": int(turn),
+            "turn_owner_id": str(turn_owner_id or ""),
+        }
+        sr["repair_barge_model_used_turn_by_id"] = updated
+        source_unit.special_rules = sr
+
+    def _repair_barge_target_selected_this_turn(self, target_unit, *, turn: int, turn_owner_id: str) -> bool:
+        if target_unit is None:
+            return False
+        sr = getattr(target_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        try:
+            selected_turn = int(sr.get("repair_barge_selected_turn", -1))
+        except Exception:
+            return False
+        if selected_turn != int(turn):
+            return False
+        selected_owner = str(sr.get("repair_barge_selected_turn_owner", "") or "")
+        if turn_owner_id and selected_owner and selected_owner != str(turn_owner_id):
+            return False
+        return True
+
+    def _mark_repair_barge_target_selected_this_turn(self, target_unit, *, turn: int, turn_owner_id: str) -> None:
+        if target_unit is None:
+            return
+        sr = getattr(target_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["repair_barge_selected_turn"] = int(turn)
+        sr["repair_barge_selected_turn_owner"] = str(turn_owner_id or "")
+        target_unit.special_rules = sr
+
+    def _iter_repair_barge_sources_for_player(self, player, *, turn: int, turn_owner_id: str) -> list[dict]:
+        if player is None:
+            return []
+        army = self._get_player_army(player)
+        if army is None:
+            return []
+        out: list[dict] = []
+
+        def _model_sort_key(model):
+            try:
+                return str(get_entity_id(model))
+            except Exception:
+                return str(getattr(model, "name", "") or "")
+
+        for source_root in list(self._iter_unique_army_roots(army) or []):
+            if source_root is None:
+                continue
+            if not self._unit_is_active_for_reactive_trigger(source_root):
+                continue
+            try:
+                source_models = list(source_root.get_attached_unit_models() or [])
+            except Exception:
+                source_models = list(getattr(source_root, "models", []) or [])
+            alive_models = [m for m in list(source_models or []) if bool(getattr(m, "is_alive", True))]
+            if not alive_models:
+                continue
+            for source_model in sorted(alive_models, key=_model_sort_key):
+                model_owner = getattr(source_model, "parent_unit", None) or source_root
+                spec_fn = getattr(model_owner, "model_repair_barge_specs", None)
+                if not callable(spec_fn):
+                    continue
+                try:
+                    specs = list(spec_fn(source_model) or [])
+                except Exception:
+                    specs = []
+                for spec in list(specs or []):
+                    try:
+                        range_value = float(spec.get("range", 0) or 0)
+                    except Exception:
+                        range_value = 0.0
+                    if range_value <= 0:
+                        continue
+                    model_id = str(get_entity_id(source_model) or "")
+                    if not model_id:
+                        continue
+                    if self._repair_barge_model_used_this_turn(
+                        source_root,
+                        model_id,
+                        turn=int(turn),
+                        turn_owner_id=str(turn_owner_id or ""),
+                    ):
+                        continue
+                    out.append(
+                        {
+                            "source_root": source_root,
+                            "source_model": source_model,
+                            "model_owner": model_owner,
+                            "model_id": model_id,
+                            "ability_name": str(spec.get("source", "") or "Repair Barge").strip() or "Repair Barge",
+                            "range": float(range_value),
+                        }
+                    )
+        out.sort(key=lambda item: (str(get_entity_id(item["source_root"]) or ""), str(item["model_id"])))
+        return out
+
+    def _queue_repair_barge_decision(
+        self,
+        *,
+        player,
+        source_root,
+        source_model,
+        ability_name: str,
+        range_inches: float,
+        candidates: list,
+        turn: int,
+        turn_owner_id: str,
+    ) -> DecisionRequest | None:
+        if player is None or source_root is None or source_model is None:
+            return None
+        if not bool(getattr(self, "is_authoritative", True)):
+            return None
+        if not candidates:
+            return None
+        source_unit_id = str(get_entity_id(source_root) or "")
+        source_model_id = str(get_entity_id(source_model) or "")
+        if not source_unit_id or not source_model_id:
+            return None
+
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "repair_barge":
+                    continue
+                if str(ctx.get("source_unit_id", "") or "") != source_unit_id:
+                    continue
+                if str(ctx.get("model_id", "") or "") != source_model_id:
+                    continue
+                if str(ctx.get("turn_owner", "") or "") != str(turn_owner_id or ""):
+                    continue
+                if int(ctx.get("turn", 0) or 0) != int(turn or 0):
+                    continue
+                return None
+
+        def _unit_sort_key(unit):
+            try:
+                return str(get_entity_id(unit))
+            except Exception:
+                return str(getattr(unit, "name", "") or "")
+
+        options = [DecisionOption.create("None", payload={"action": "skip"})]
+        allowed_target_ids: list[str] = []
+        for cand in sorted(list(candidates or []), key=_unit_sort_key):
+            if cand is None:
+                continue
+            target_id = str(get_entity_id(cand) or "")
+            if not target_id or target_id in allowed_target_ids:
+                continue
+            allowed_target_ids.append(target_id)
+            options.append(
+                DecisionOption.create(
+                    str(getattr(cand, "name", "Unit") or "Unit"),
+                    payload={"target_unit_id": target_id},
+                )
+            )
+        if len(options) <= 1:
+            return None
+
+        context = {
+            "ability": "repair_barge",
+            "ability_name": str(ability_name or "Repair Barge").strip() or "Repair Barge",
+            "phase": str(getattr(getattr(self, "phase", None), "name", "") or "").replace("_", " ").title() or "Phase",
+            "optional": True,
+            "source_unit_id": source_unit_id,
+            "unit_id": source_unit_id,
+            "model_id": source_model_id,
+            "range": float(range_inches),
+            "allowed_target_unit_ids": list(allowed_target_ids),
+            "turn_owner": str(turn_owner_id or ""),
+            "turn": int(turn or 0),
+        }
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{context['ability_name']}: select one friendly NECRON WARRIORS unit to activate Reanimation Protocols (or None).",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=context,
+        )
+        self.request_decision(request)
+        return request
+
+    def _capture_repair_barge_snapshot(self, *, attacker_root, target_units, snapshot_attr: str) -> None:
+        if attacker_root is None or not target_units:
+            return
+        attacker_army = attacker_root.get_parent_army() if hasattr(attacker_root, "get_parent_army") else None
+        current_player = self.get_current_player()
+        turn_owner_id = str(getattr(current_player, "id", "") or "")
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        if turn <= 0:
+            return
+
+        snapshots = getattr(self, snapshot_attr, None)
+        if not isinstance(snapshots, dict):
+            snapshots = {}
+            setattr(self, snapshot_attr, snapshots)
+        existing = dict(snapshots.get(attacker_root, {}) or {})
+
+        seen_targets: set[str] = set()
+        for target in list(target_units or []):
+            if target is None:
+                continue
+            try:
+                target_root = target.get_attached_unit_root()
+            except Exception:
+                target_root = target
+            if target_root is None:
+                continue
+            target_id = str(get_entity_id(target_root) or "")
+            if not target_id or target_id in seen_targets:
+                continue
+            seen_targets.add(target_id)
+            if not self._unit_is_active_for_reactive_trigger(target_root):
+                continue
+            if not self._unit_is_necron_warriors_for_repair_barge(target_root):
+                continue
+            target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+            if target_army is None or target_army is attacker_army:
+                continue
+            target_player = getattr(target_army, "player", None)
+            if target_player is None:
+                continue
+            if self._repair_barge_target_selected_this_turn(
+                target_root,
+                turn=int(turn),
+                turn_owner_id=str(turn_owner_id or ""),
+            ):
+                continue
+            has_source = False
+            for source in list(
+                self._iter_repair_barge_sources_for_player(
+                    target_player,
+                    turn=int(turn),
+                    turn_owner_id=str(turn_owner_id or ""),
+                )
+                or []
+            ):
+                source_root = source.get("source_root")
+                source_model = source.get("source_model")
+                range_value = float(source.get("range", 0.0) or 0.0)
+                if source_root is None or source_model is None or range_value <= 0:
+                    continue
+                try:
+                    if bool(source_root._model_within_range_of_unit(source_model, target_root, range_value)):
+                        has_source = True
+                        break
+                except Exception:
+                    continue
+            if not has_source:
+                continue
+            existing[target_root] = int(self._unit_total_wounds_for_repair_barge(target_root))
+
+        if existing:
+            snapshots[attacker_root] = existing
+
+    def _queue_repair_barge_for_affected_targets(self, *, attacker_root, affected_targets: list) -> None:
+        if attacker_root is None or not affected_targets:
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        attacker_army = attacker_root.get_parent_army() if hasattr(attacker_root, "get_parent_army") else None
+        attacker_player = getattr(attacker_army, "player", None) if attacker_army is not None else None
+        current_player = self.get_current_player()
+        turn_owner_id = str(getattr(current_player, "id", "") or "")
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        if turn <= 0:
+            return
+
+        by_player: dict[Any, list[Any]] = {}
+        for target_root in list(affected_targets or []):
+            if target_root is None:
+                continue
+            target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+            target_player = getattr(target_army, "player", None) if target_army is not None else None
+            if target_player is None:
+                continue
+            if attacker_player is not None and target_player is attacker_player:
+                continue
+            by_player.setdefault(target_player, []).append(target_root)
+
+        for player, targets in list(by_player.items()):
+            unique_targets: dict[str, Any] = {}
+            for target in list(targets or []):
+                tid = str(get_entity_id(target) or "")
+                if tid:
+                    unique_targets[tid] = target
+            ordered_targets = [unique_targets[k] for k in sorted(unique_targets.keys())]
+            if not ordered_targets:
+                continue
+            for source in list(
+                self._iter_repair_barge_sources_for_player(
+                    player,
+                    turn=int(turn),
+                    turn_owner_id=str(turn_owner_id or ""),
+                )
+                or []
+            ):
+                source_root = source.get("source_root")
+                source_model = source.get("source_model")
+                ability_name = str(source.get("ability_name", "") or "Repair Barge")
+                range_value = float(source.get("range", 0.0) or 0.0)
+                if source_root is None or source_model is None or range_value <= 0:
+                    continue
+                candidates: list[Any] = []
+                for target_root in list(ordered_targets):
+                    if target_root is None:
+                        continue
+                    if self._repair_barge_target_selected_this_turn(
+                        target_root,
+                        turn=int(turn),
+                        turn_owner_id=str(turn_owner_id or ""),
+                    ):
+                        continue
+                    try:
+                        in_range = bool(source_root._model_within_range_of_unit(source_model, target_root, range_value))
+                    except Exception:
+                        in_range = False
+                    if not in_range:
+                        continue
+                    candidates.append(target_root)
+                if not candidates:
+                    continue
+                self._queue_repair_barge_decision(
+                    player=player,
+                    source_root=source_root,
+                    source_model=source_model,
+                    ability_name=ability_name,
+                    range_inches=float(range_value),
+                    candidates=candidates,
+                    turn=int(turn),
+                    turn_owner_id=str(turn_owner_id or ""),
+                )
+
+    def _on_shooting_targets_selected_repair_barge(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None or not target_units:
+            return
+        try:
+            attacker_root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = attacking_unit
+        if attacker_root is None:
+            return
+        self._capture_repair_barge_snapshot(
+            attacker_root=attacker_root,
+            target_units=list(target_units or []),
+            snapshot_attr="_repair_barge_shooting_snapshot",
+        )
+
+    def _on_unit_shooting_resolved_repair_barge(self, attacker_unit=None, **_kwargs) -> None:
+        if attacker_unit is None:
+            return
+        try:
+            attacker_root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = attacker_unit
+        if attacker_root is None:
+            return
+        snapshots = getattr(self, "_repair_barge_shooting_snapshot", None)
+        if not isinstance(snapshots, dict):
+            return
+        snapshot = dict(snapshots.pop(attacker_root, {}) or {})
+        if not snapshot:
+            return
+        affected: list[Any] = []
+        for target_root, before in list(snapshot.items()):
+            if target_root is None:
+                continue
+            after = int(self._unit_total_wounds_for_repair_barge(target_root))
+            if int(after or 0) < int(before or 0):
+                affected.append(target_root)
+        if not affected:
+            return
+        self._queue_repair_barge_for_affected_targets(attacker_root=attacker_root, affected_targets=affected)
+
+    def _on_fight_targets_selected_repair_barge(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None or not target_units:
+            return
+        try:
+            attacker_root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = attacking_unit
+        if attacker_root is None:
+            return
+        self._capture_repair_barge_snapshot(
+            attacker_root=attacker_root,
+            target_units=list(target_units or []),
+            snapshot_attr="_repair_barge_fight_snapshot",
+        )
+
+    def _on_fight_sequence_complete_repair_barge(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        try:
+            attacker_root = unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = unit
+        if attacker_root is None:
+            return
+        snapshots = getattr(self, "_repair_barge_fight_snapshot", None)
+        if not isinstance(snapshots, dict):
+            return
+        snapshot = dict(snapshots.pop(attacker_root, {}) or {})
+        if not snapshot:
+            return
+        affected: list[Any] = []
+        for target_root, before in list(snapshot.items()):
+            if target_root is None:
+                continue
+            after = int(self._unit_total_wounds_for_repair_barge(target_root))
+            if int(after or 0) < int(before or 0):
+                affected.append(target_root)
+        if not affected:
+            return
+        self._queue_repair_barge_for_affected_targets(attacker_root=attacker_root, affected_targets=affected)
+
     def _iter_unique_army_roots(self, army) -> list:
         if army is None:
             return []

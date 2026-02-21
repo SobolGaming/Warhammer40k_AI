@@ -224,6 +224,9 @@ class Game(
         # Drukhari: Pain Parasite snapshots (attacker -> {target: model_count})
         self._pain_parasite_shooting_snapshot: Dict['Unit', Dict['Unit', int]] = {}
         self._pain_parasite_fight_snapshot: Dict['Unit', Dict['Unit', int]] = {}
+        # Necrons: Repair Barge snapshots (attacker -> {target: total_alive_wounds_before_attacks})
+        self._repair_barge_shooting_snapshot: Dict['Unit', Dict['Unit', int]] = {}
+        self._repair_barge_fight_snapshot: Dict['Unit', Dict['Unit', int]] = {}
         # Optional in-engine army mustering requests (player1/player2) for setup phase.
         self.army_muster_requests: Dict[str, Any] = {}
         self.entity_registry = EntityRegistry()
@@ -791,7 +794,13 @@ class Game(
             d3 = int(get_roll("D3") or 0)
             if d3 <= 0:
                 continue
-            root.apply_reanimation_protocols(d3, game_map=game_map, is_human=is_human, provider=provider)
+            root.apply_reanimation_protocols(
+                d3,
+                game_map=game_map,
+                is_human=is_human,
+                provider=provider,
+                roll_expr="D3",
+            )
 
     def _apply_command_phase_regain_wounds(self, current_player) -> None:
         if current_player is None:

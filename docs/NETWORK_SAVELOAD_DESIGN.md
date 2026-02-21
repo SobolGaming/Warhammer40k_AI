@@ -266,6 +266,7 @@ Shooting:
 - shooting_declaration_dialog: DECLARE_SHOTS {unit_id, declarations[]}
 - linked_fire_origin_dialog: DECLARE_SHOTS {unit_id, declarations[].linked_fire_origin_unit_id | None, declarations[].linked_fire_mode}
 - deathstrike_action_dialog: DEATHSTRIKE_ACTION {unit_id, action, position?}
+- repair_barge_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="repair_barge"`, `source_unit_id`, `model_id`, `range=3`, `allowed_target_unit_ids`, `turn_owner`, `turn`, `optional=true`)
 - post_shoot_crit_hit_threshold_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="post_shoot_crit_hit_threshold"`, `attacker_unit_id`, `model_id`, `keyword`, `threshold`)
 - firing_deck_dialog: DECLARE_FIRING_DECK {transport_id, declarations[]}
 - overwatch_shooter_dialog: SELECT_OVERWATCH_SHOOTER {unit_id} (also used for stratagem unit selection; context may include enemy_unit_id)

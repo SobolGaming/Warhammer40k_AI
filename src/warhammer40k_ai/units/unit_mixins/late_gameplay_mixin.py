@@ -11,6 +11,23 @@ _COMMAND_PHASE_END_ENEMY_WITHIN_RANGE_MORTAL_TABLE_RE = re.compile(
     r"on a 2 5 that enemy unit suffers d3 mortal wounds? "
     r"on a 6 that enemy unit suffers d3 3 mortal wounds?"
 )
+_REANIMATION_DICE_REROLL_RE = re.compile(
+    r"each time this unit s reanimation protocols activate you can re roll the dice to see how many wounds are reanimated"
+)
+_NANOSCARAB_REANIMATION_BEAM_RE = re.compile(
+    r"while a friendly necrons unit is within (?P<range>\d+) of this model each time that unit s reanimation protocols activate "
+    r"that unit reanimates an additional d(?P<die>\d+) wounds?"
+)
+_NANOSCARAB_PROJECTOR_RE = re.compile(
+    r"once per battle round when a friendly necrons unit within (?P<range>\d+) of the bearer activates its reanimation protocols "
+    r"the bearer can use this ability if it does that unit reanimates (?P<bonus>\d+) additional wounds?"
+)
+_REPAIR_BARGE_RE = re.compile(
+    r"once per turn just after an enemy unit finishes making its attacks if one or more friendly necron warriors units within "
+    r"(?P<range>\d+) of this model lost one or more wounds as a result of those attacks this model can use this ability if it does "
+    r"select one of those necron warriors units that unit s reanimation protocols activate the same necron warriors unit cannot be "
+    r"selected for this ability more than once per turn"
+)
 
 
 class LateGameplayMixin:
@@ -151,6 +168,182 @@ class LateGameplayMixin:
                     "source": source,
                     "range": int(range_value),
                     "ability_key": ability_key,
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def unit_reanimation_dice_reroll_specs(self) -> List[dict]:
+        """Return unit-level Reanimation Protocols dice re-roll specs (e.g. Their Number is Legion)."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_reanimation_dice_reroll_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+
+        specs: List[dict] = []
+        seen: set[str] = set()
+        for unit in list(members or []):
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if not _REANIMATION_DICE_REROLL_RE.fullmatch(normalized):
+                    continue
+                source = str(name or "Their Number is Legion").strip() or "Their Number is Legion"
+                key = str(source).lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "type": "reanimation_dice_reroll",
+                        "source": source,
+                        "ability_key": "their_number_is_legion",
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_reanimation_protocol_bonus_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific Reanimation Protocols bonus specs.
+
+        Supports:
+        - Nanoscarab Reanimation Beam (Aura): +D3 while within range.
+        - Nanoscarab Projector: once per battle round, +1 while within range.
+        """
+        if model is None:
+            return []
+        cache_key = f"model_reanimation_protocol_bonus_specs:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: List[dict] = []
+        seen: set[tuple[str, int, str]] = set()
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = self._strip_eligibility_prefix(desc or name or "")
+            if not text_src:
+                continue
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+
+            beam = _NANOSCARAB_REANIMATION_BEAM_RE.fullmatch(normalized)
+            if beam:
+                try:
+                    range_value = int(beam.group("range") or 0)
+                except Exception:
+                    range_value = 0
+                if range_value > 0:
+                    source = str(name or "Nanoscarab Reanimation Beam (Aura)").strip() or "Nanoscarab Reanimation Beam (Aura)"
+                    skey = (source.lower(), int(range_value), "nanoscarab_reanimation_beam")
+                    if skey not in seen:
+                        seen.add(skey)
+                        specs.append(
+                            {
+                                "type": "nanoscarab_reanimation_beam",
+                                "source": source,
+                                "ability_key": "nanoscarab_reanimation_beam",
+                                "range": int(range_value),
+                                "bonus_expr": "D3",
+                            }
+                        )
+                continue
+
+            projector = _NANOSCARAB_PROJECTOR_RE.fullmatch(normalized)
+            if projector:
+                try:
+                    range_value = int(projector.group("range") or 0)
+                except Exception:
+                    range_value = 0
+                try:
+                    bonus = int(projector.group("bonus") or 0)
+                except Exception:
+                    bonus = 0
+                if range_value > 0 and bonus > 0:
+                    source = str(name or "Nanoscarab Projector").strip() or "Nanoscarab Projector"
+                    skey = (source.lower(), int(range_value), "nanoscarab_projector")
+                    if skey not in seen:
+                        seen.add(skey)
+                        specs.append(
+                            {
+                                "type": "nanoscarab_projector",
+                                "source": source,
+                                "ability_key": "nanoscarab_projector",
+                                "range": int(range_value),
+                                "bonus": int(bonus),
+                                "once_per_battle_round": True,
+                            }
+                        )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_repair_barge_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """Model-specific Repair Barge trigger specs."""
+        if model is None:
+            return []
+        cache_key = f"model_repair_barge_specs:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: List[dict] = []
+        seen: set[tuple[str, int]] = set()
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = self._strip_eligibility_prefix(desc or name or "")
+            if not text_src:
+                continue
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = _REPAIR_BARGE_RE.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                range_value = int(m.group("range") or 0)
+            except Exception:
+                range_value = 0
+            if range_value <= 0:
+                continue
+            source = str(name or "Repair Barge").strip() or "Repair Barge"
+            key = (source.lower(), int(range_value))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "type": "repair_barge",
+                    "source": source,
+                    "ability_key": "repair_barge",
+                    "range": int(range_value),
+                    "target_keyword_phrase": "NECRON WARRIORS",
                 }
             )
 

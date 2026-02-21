@@ -20,6 +20,33 @@ import pytest
             ),
         ),
         (
+            "Their Number is Legion",
+            "Each time this unit's Reanimation Protocols activate, you can re-roll the dice to see how many wounds are reanimated.",
+        ),
+        (
+            "Nanoscarab Reanimation Beam (Aura)",
+            (
+                "While a friendly NECRONS unit is within 3\" of this model, each time that unit's Reanimation Protocols "
+                "activate, that unit reanimates an additional D3 wounds."
+            ),
+        ),
+        (
+            "Nanoscarab Projector",
+            (
+                "Once per battle round, when a friendly NECRONS unit within 3\" of the bearer activates its Reanimation "
+                "Protocols, the bearer can use this ability. If it does, that unit reanimates 1 additional wound."
+            ),
+        ),
+        (
+            "Repair Barge",
+            (
+                "Once per turn, just after an enemy unit finishes making its attacks, if one or more friendly NECRON "
+                "WARRIORS units within 3\" of this model lost one or more wounds as a result of those attacks, this model "
+                "can use this ability. If it does, select one of those NECRON WARRIORS units; that unit's Reanimation "
+                "Protocols activate. The same NECRON WARRIORS unit cannot be selected for this ability more than once per turn."
+            ),
+        ),
+        (
             "Self-destruction",
             (
                 "At the start of the Fight phase, if this unit is within Engagement Range of one or more enemy units, you can "

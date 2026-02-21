@@ -3547,6 +3547,10 @@ def _classify_ability_base(
     start_any_phase_damage_set_one_support = _start_any_phase_damage_set_one_support(description)
     start_any_phase_unit_invuln_support = _start_any_phase_unit_invuln_support(description)
     start_any_phase_unit_fnp_support = _start_any_phase_unit_fnp_support(description)
+    reanimation_dice_reroll_support = _reanimation_dice_reroll_support(description)
+    reanimation_additional_d3_aura_support = _reanimation_additional_d3_aura_support(description)
+    reanimation_additional_one_once_per_battle_round_support = _reanimation_additional_one_once_per_battle_round_support(description)
+    repair_barge_reanimation_support = _repair_barge_reanimation_support(description)
     command_phase_end_mortal_table_support = _command_phase_end_enemy_within_range_mortal_table_support(description)
     dark_ritual_support = _dark_ritual_support(description)
     movement_phase_normal_move_weapon_attacks_bonus_support = _movement_phase_once_normal_move_weapon_attacks_bonus_support(description)
@@ -3837,6 +3841,14 @@ def _classify_ability_base(
         return start_any_phase_unit_invuln_support
     if start_any_phase_unit_fnp_support:
         return start_any_phase_unit_fnp_support
+    if reanimation_dice_reroll_support:
+        return reanimation_dice_reroll_support
+    if reanimation_additional_d3_aura_support:
+        return reanimation_additional_d3_aura_support
+    if reanimation_additional_one_once_per_battle_round_support:
+        return reanimation_additional_one_once_per_battle_round_support
+    if repair_barge_reanimation_support:
+        return repair_barge_reanimation_support
     if command_phase_end_mortal_table_support:
         return command_phase_end_mortal_table_support
     if dark_ritual_support:
@@ -7793,6 +7805,86 @@ def _command_phase_end_enemy_within_range_mortal_table_support(description: str)
     return (
         "Supported",
         f"Once per battle (end of Command phase): roll D6 for each enemy within {range_val}\"; 2-5=D3 mortal wounds, 6=D3+3 mortal wounds.",
+    )
+
+
+def _reanimation_dice_reroll_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time this units reanimation protocols activate you can reroll the dice to see how many wounds are reanimated"
+    )
+    if not re.fullmatch(pattern, norm):
+        return None
+    return (
+        "Supported",
+        "Each Reanimation Protocols activation: re-roll the wounds-reanimated dice (auto-applied when strictly better).",
+    )
+
+
+def _reanimation_additional_d3_aura_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"while a friendly necrons unit is within (?P<range>\d+) of this model each time that units reanimation protocols activate "
+        r"that unit reanimates an additional d3 wounds?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    range_val = m.group("range") or "3"
+    return (
+        "Supported",
+        f"Reanimation aura: friendly NECRONS within {range_val}\" gain one additional D3 reanimated wounds per activation.",
+    )
+
+
+def _reanimation_additional_one_once_per_battle_round_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"once per battle round when a friendly necrons unit within (?P<range>\d+) of the bearer activates its reanimation protocols "
+        r"the bearer can use this ability if it does that unit reanimates (?P<bonus>\d+) additional wounds?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    range_val = m.group("range") or "3"
+    bonus = m.group("bonus") or "1"
+    return (
+        "Supported",
+        f"Once per battle round on nearby Reanimation Protocols activation: add +{bonus} reanimated wound within {range_val}\".",
+    )
+
+
+def _repair_barge_reanimation_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"once per turn just after an enemy unit finishes making its attacks if one or more friendly necron warriors units within "
+        r"(?P<range>\d+) of this model lost one or more wounds as a result of those attacks this model can use this ability if it does "
+        r"select one of those necron warriors units that units reanimation protocols activate the same necron warriors unit cannot be "
+        r"selected for this ability more than once per turn"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    range_val = m.group("range") or "3"
+    return (
+        "Supported",
+        f"Post-attack reactive selection: friendly NECRON WARRIORS within {range_val}\" can trigger Reanimation Protocols (D3), once per source model per turn and each target once per turn.",
     )
 
 

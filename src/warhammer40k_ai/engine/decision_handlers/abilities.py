@@ -2043,6 +2043,123 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
                 if not bool(in_range_fn(bearer_model, target_root, range_value=6.0)):
                     return ("Resurrection Orb target must be within 6\" of the bearer.",)
         return ()
+    if ability == "repair_barge":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Repair Barge source unit was not found.",)
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None or not _resurrection_orb_unit_on_battlefield(source_root):
+            return ("Repair Barge source unit must be on the battlefield.",)
+
+        source_model = resolve_model(game, payload.get("model_id") or ctx.get("model_id"))
+        if source_model is None:
+            return ("Repair Barge source model was not found.",)
+        source_model_alive = getattr(source_model, "is_alive", False)
+        if not bool(source_model_alive() if callable(source_model_alive) else source_model_alive):
+            return ("Repair Barge source model is not alive.",)
+        source_model_id = str(get_entity_id(source_model) or "")
+        if not source_model_id:
+            return ("Repair Barge source model id is missing.",)
+
+        source_model_parent = getattr(source_model, "parent_unit", None)
+        source_model_root = (
+            source_model_parent.get_attached_unit_root()
+            if source_model_parent is not None and hasattr(source_model_parent, "get_attached_unit_root")
+            else source_model_parent
+        )
+        if source_model_root is not source_root:
+            return ("Repair Barge source model is not part of the source unit.",)
+
+        current_player = getattr(game, "get_current_player", lambda: None)()
+        turn_owner_id = str(getattr(current_player, "id", "") or "")
+        turn = int(getattr(game, "turn", 0) or 0)
+        if turn <= 0:
+            return ("Repair Barge requires an active turn.",)
+
+        used_this_turn_fn = getattr(game, "_repair_barge_model_used_this_turn", None)
+        if callable(used_this_turn_fn):
+            if bool(
+                used_this_turn_fn(
+                    source_root,
+                    source_model_id,
+                    turn=int(turn),
+                    turn_owner_id=turn_owner_id,
+                )
+            ):
+                return ("Repair Barge has already been used by this model this turn.",)
+
+        if is_skip_choice(request, result):
+            return ()
+
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return ("Repair Barge target unit was not found.",)
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        if target_root is None:
+            return ("Repair Barge target unit was not found.",)
+        if not _resurrection_orb_unit_on_battlefield(target_root):
+            return ("Repair Barge target unit must be on the battlefield.",)
+
+        target_id = str(get_entity_id(target_root) or "")
+        allowed_ids = {str(val) for val in list(ctx.get("allowed_target_unit_ids", []) or []) if str(val)}
+        if allowed_ids and target_id not in allowed_ids:
+            return ("Repair Barge target is not an eligible unit.",)
+
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if source_army is not None and target_army is not None and source_army is not target_army:
+            return ("Repair Barge requires selecting a friendly unit.",)
+
+        is_necron_warriors_fn = getattr(game, "_unit_is_necron_warriors_for_repair_barge", None)
+        if callable(is_necron_warriors_fn):
+            if not bool(is_necron_warriors_fn(target_root)):
+                return ("Repair Barge target must be a friendly NECRON WARRIORS unit.",)
+        else:
+            has_any_keyword = getattr(target_root, "has_any_keyword", None)
+            if callable(has_any_keyword):
+                if not (
+                    bool(has_any_keyword("NECRON WARRIORS"))
+                    or bool(has_any_keyword("NECRONS WARRIORS"))
+                    or ((bool(has_any_keyword("NECRON")) or bool(has_any_keyword("NECRONS"))) and bool(has_any_keyword("WARRIORS")))
+                ):
+                    return ("Repair Barge target must be a friendly NECRON WARRIORS unit.",)
+            else:
+                return ("Repair Barge target keyword resolver is unavailable.",)
+
+        has_rp = getattr(target_root, "attached_unit_has_reanimation_protocols", None)
+        if callable(has_rp) and not bool(has_rp()):
+            return ("Repair Barge target must have Reanimation Protocols.",)
+
+        target_selected_this_turn_fn = getattr(game, "_repair_barge_target_selected_this_turn", None)
+        if callable(target_selected_this_turn_fn):
+            if bool(
+                target_selected_this_turn_fn(
+                    target_root,
+                    turn=int(turn),
+                    turn_owner_id=turn_owner_id,
+                )
+            ):
+                return ("Repair Barge cannot select the same NECRON WARRIORS unit more than once this turn.",)
+
+        try:
+            range_inches = float(payload.get("range") or ctx.get("range") or 3.0)
+        except Exception:
+            range_inches = 3.0
+        in_range_fn = getattr(game, "_unit_within_range_of_model", None)
+        if callable(in_range_fn):
+            if not bool(in_range_fn(source_model, target_root, range_value=float(range_inches))):
+                return ("Repair Barge target must be within 3\" of the source model.",)
+        return ()
     if ability == "voice_of_triarch":
         if is_skip_choice(request, result):
             return ("Voice of the Triarch selection cannot be skipped.",)
@@ -2691,6 +2808,7 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             game_map=game_map,
             is_human=is_human,
             provider=provider,
+            roll_expr="D6",
         )
 
         getattr(source_unit, "mark_unit_once_per_battle_used", lambda _k, **_kw: None)(
@@ -2709,6 +2827,156 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         )
         return {
             "source_unit_id": str(get_entity_id(source_unit) or ""),
+            "target_unit_id": str(get_entity_id(target_root) or ""),
+            "reanimated_wounds": int(reanimated_wounds),
+        }
+    if ability == "repair_barge":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return None
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None or not _resurrection_orb_unit_on_battlefield(source_root):
+            return None
+
+        source_model = resolve_model(game, payload.get("model_id") or ctx.get("model_id"))
+        if source_model is None:
+            return None
+        source_model_alive = getattr(source_model, "is_alive", False)
+        if not bool(source_model_alive() if callable(source_model_alive) else source_model_alive):
+            return None
+        source_model_id = str(get_entity_id(source_model) or "")
+        if not source_model_id:
+            return None
+        source_model_parent = getattr(source_model, "parent_unit", None)
+        source_model_root = (
+            source_model_parent.get_attached_unit_root()
+            if source_model_parent is not None and hasattr(source_model_parent, "get_attached_unit_root")
+            else source_model_parent
+        )
+        if source_model_root is not source_root:
+            return None
+
+        current_player = getattr(game, "get_current_player", lambda: None)()
+        turn_owner_id = str(getattr(current_player, "id", "") or "")
+        turn = int(getattr(game, "turn", 0) or 0)
+        if turn <= 0:
+            return None
+
+        used_this_turn_fn = getattr(game, "_repair_barge_model_used_this_turn", None)
+        if callable(used_this_turn_fn):
+            if bool(
+                used_this_turn_fn(
+                    source_root,
+                    source_model_id,
+                    turn=int(turn),
+                    turn_owner_id=turn_owner_id,
+                )
+            ):
+                return None
+
+        ability_name = str(ctx.get("ability_name", "") or "Repair Barge").strip() or "Repair Barge"
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+            player = getattr(source_army, "player", None) if source_army is not None else None
+
+        if is_skip_choice(request, result):
+            _log_action_for_players(game, player, f"{ability_name}: selected none.")
+            return None
+
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return None
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        if target_root is None or not _resurrection_orb_unit_on_battlefield(target_root):
+            return None
+        target_id = str(get_entity_id(target_root) or "")
+        allowed_ids = {str(val) for val in list(ctx.get("allowed_target_unit_ids", []) or []) if str(val)}
+        if allowed_ids and target_id not in allowed_ids:
+            return None
+
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if source_army is not None and target_army is not None and source_army is not target_army:
+            return None
+
+        is_necron_warriors_fn = getattr(game, "_unit_is_necron_warriors_for_repair_barge", None)
+        if callable(is_necron_warriors_fn):
+            if not bool(is_necron_warriors_fn(target_root)):
+                return None
+
+        has_rp = getattr(target_root, "attached_unit_has_reanimation_protocols", None)
+        if callable(has_rp) and not bool(has_rp()):
+            return None
+
+        target_selected_this_turn_fn = getattr(game, "_repair_barge_target_selected_this_turn", None)
+        if callable(target_selected_this_turn_fn):
+            if bool(
+                target_selected_this_turn_fn(
+                    target_root,
+                    turn=int(turn),
+                    turn_owner_id=turn_owner_id,
+                )
+            ):
+                return None
+
+        try:
+            range_inches = float(payload.get("range") or ctx.get("range") or 3.0)
+        except Exception:
+            range_inches = 3.0
+        in_range_fn = getattr(game, "_unit_within_range_of_model", None)
+        if callable(in_range_fn):
+            if not bool(in_range_fn(source_model, target_root, range_value=float(range_inches))):
+                return None
+
+        from ...utility.dice import get_roll
+
+        reanimated_wounds = max(0, int(get_roll("D3") or 0))
+        game_map = getattr(game, "map", None)
+        provider = getattr(game_map, "reanimation_allocation_provider", None) if game_map is not None else None
+        is_human = bool(getattr(player, "has_control", lambda: False)()) if player is not None else False
+        target_root.apply_reanimation_protocols(
+            int(reanimated_wounds),
+            game_map=game_map,
+            is_human=is_human,
+            provider=provider,
+            roll_expr="D3",
+        )
+
+        mark_model_used_fn = getattr(game, "_mark_repair_barge_model_used_this_turn", None)
+        if callable(mark_model_used_fn):
+            mark_model_used_fn(
+                source_root,
+                source_model_id,
+                turn=int(turn),
+                turn_owner_id=turn_owner_id,
+            )
+        mark_target_fn = getattr(game, "_mark_repair_barge_target_selected_this_turn", None)
+        if callable(mark_target_fn):
+            mark_target_fn(
+                target_root,
+                turn=int(turn),
+                turn_owner_id=turn_owner_id,
+            )
+
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {getattr(target_root, 'name', 'Unit')} activates Reanimation Protocols and reanimates D3 wounds (roll {int(reanimated_wounds)}).",
+        )
+        return {
+            "source_unit_id": str(get_entity_id(source_root) or ""),
+            "model_id": str(source_model_id),
             "target_unit_id": str(get_entity_id(target_root) or ""),
             "reanimated_wounds": int(reanimated_wounds),
         }
