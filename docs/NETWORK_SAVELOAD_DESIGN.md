@@ -193,6 +193,7 @@ Command phase:
 - oath_of_moment_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="oath_of_moment"`, `army_id`)
 - bondsman_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="bondsman"`, `source_unit_id`)
 - necrons_command_phase_dialog: CHOOSE_QUARRY {target_unit_id} (context `necrons_command_phase_enhancement=true`, `source_unit_id`, `ability`, `effect_key`, `effect_value`)
+- resurrection_orb_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="resurrection_orb"`, `source_unit_id`, `bearer_model_id`, `resurrection_orb_variant`, `allowed_target_unit_ids`, `optional=true`)
 - aeldari_lucid_eye_dialog: CHOOSE_QUARRY {die_index + delta | skip} (context `ability="aeldari_lucid_eye_fate_die"`, `source_unit_id`, `model_id`, `optional=true`)
 - aeldari_spirit_stone_heal_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="aeldari_spirit_stone_heal"`, `source_unit_id`, `model_id`, `range`)
 - aeldari_light_of_clarity_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="aeldari_light_of_clarity_target"`, `source_unit_id`, `model_id`, `range`, `infantry_bonus`, `monster_bonus`)

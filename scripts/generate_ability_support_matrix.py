@@ -2057,6 +2057,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Post-shoot: select a hit enemy unit; friendly keyword units re-roll Wound rolls vs that unit until end of turn.",
         ),
+        ("NEC", "Resurrection Orb"): (
+            "Supported",
+            "Once per battle, end of any phase: optional target selection supports both variants (nearby NECRONS INFANTRY/MOUNTED within 6\" and bearer-leading-unit only), activates Reanimation Protocols for D6 wounds, and enforces at most one resurrected unit per turn.",
+        ),
         ("DG", "Blight Bombardment"): (
             "Supported",
             "Start of Shooting: select a visible enemy within 30\"; friendly DEATH GUARD ranged attacks vs that unit re-roll Hit rolls of 1, and BLAST attacks can re-roll Hit rolls.",

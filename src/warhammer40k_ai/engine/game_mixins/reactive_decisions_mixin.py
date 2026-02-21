@@ -1798,6 +1798,107 @@ class GameReactiveDecisionsMixin:
         self.request_decision(request)
         return request
 
+    def _queue_resurrection_orb_decision(
+        self,
+        *,
+        player,
+        source_unit,
+        bearer_model,
+        candidates: list,
+        ability_name: str,
+        phase_label: str,
+        variant: str,
+    ) -> DecisionRequest | None:
+        if player is None or source_unit is None or bearer_model is None:
+            return None
+        if not bool(getattr(self, "is_authoritative", True)):
+            return None
+        if not candidates:
+            return None
+
+        variant_key = str(variant or "").strip().lower()
+        if variant_key not in ("nearby", "leading"):
+            return None
+
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..decisions import DecisionOption, DecisionRequest
+        from ...utility.entity_ids import get_entity_id
+
+        source_unit_id = get_entity_id(source_unit)
+        bearer_model_id = get_entity_id(bearer_model)
+        if not source_unit_id or not bearer_model_id:
+            return None
+
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "resurrection_orb":
+                    continue
+                if str(ctx.get("source_unit_id", "") or "") != str(source_unit_id):
+                    continue
+                return None
+
+        def _cand_sort_key(unit):
+            uid = str(get_entity_id(unit) or "")
+            if uid:
+                return uid
+            return str(getattr(unit, "name", "") or "")
+
+        sorted_candidates = sorted(
+            [unit for unit in list(candidates or []) if unit is not None],
+            key=_cand_sort_key,
+        )
+        options = [DecisionOption.create("None", payload={"action": "skip"})]
+        allowed_target_ids: list[str] = []
+        for cand in sorted_candidates:
+            target_id = str(get_entity_id(cand) or "")
+            if not target_id or target_id in allowed_target_ids:
+                continue
+            allowed_target_ids.append(target_id)
+            options.append(
+                DecisionOption.create(
+                    str(getattr(cand, "name", "Unit") or "Unit"),
+                    payload={"target_unit_id": target_id},
+                )
+            )
+        if len(options) <= 1:
+            return None
+
+        ability_label = str(ability_name or "Resurrection Orb").strip() or "Resurrection Orb"
+        phase_text = str(phase_label or "").strip() or "Phase"
+        context = {
+            "ability": "resurrection_orb",
+            "ability_name": ability_label,
+            "phase": phase_text,
+            "optional": True,
+            "source_unit_id": str(source_unit_id),
+            "unit_id": str(source_unit_id),
+            "source_unit": getattr(source_unit, "name", "") or "",
+            "bearer_model_id": str(bearer_model_id),
+            "bearer_model": getattr(bearer_model, "name", "") or "",
+            "resurrection_orb_variant": variant_key,
+            "allowed_target_unit_ids": list(allowed_target_ids),
+            "allow_skip": True,
+        }
+        if variant_key == "nearby":
+            context["range"] = 6
+            prompt = f"{ability_label}: select one NECRONS INFANTRY or MOUNTED unit within 6\" to resurrect (or None)."
+        else:
+            prompt = f"{ability_label}: resurrect the bearer's led unit (or None)."
+
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            prompt,
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=context,
+        )
+        self.request_decision(request)
+        return request
+
     def _queue_aeldari_spirit_conclave_target(
         self,
         *,

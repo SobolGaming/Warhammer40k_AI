@@ -1899,12 +1899,150 @@ def _apply_choose_pledge(game: object, request: DecisionRequest, result: Decisio
     return int(mgr.set_pledge_target(int(value), battle_round=battle_round, max_value=max_value))
 
 
+def _resurrection_orb_unit_on_battlefield(unit) -> bool:
+    if unit is None:
+        return False
+    is_alive_fn = getattr(unit, "is_alive", None)
+    if callable(is_alive_fn):
+        if not bool(is_alive_fn()):
+            return False
+    elif getattr(unit, "is_alive", True) is False:
+        return False
+    if not bool(getattr(unit, "deployed", True)):
+        return False
+    if str(getattr(unit, "reserve_status", "deployed") or "deployed") != "deployed":
+        return False
+    in_reserves_fn = getattr(unit, "is_in_reserves", None)
+    if callable(in_reserves_fn) and bool(in_reserves_fn()):
+        return False
+    if bool(getattr(unit, "embarked_in", None)) or bool(getattr(unit, "is_embarked", False)):
+        return False
+    return True
+
+
+def _resurrection_orb_army_used_this_turn(army, *, turn: int, turn_owner_id: str) -> bool:
+    if army is None:
+        return False
+    for unit in list(getattr(army, "units", []) or []):
+        if unit is None:
+            continue
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            continue
+        try:
+            used_turn = int(sr.get("resurrection_orb_used_turn", -1))
+        except (TypeError, ValueError):
+            continue
+        if used_turn != int(turn):
+            continue
+        used_owner = str(sr.get("resurrection_orb_used_turn_owner", "") or "")
+        if turn_owner_id and used_owner and used_owner != turn_owner_id:
+            continue
+        return True
+    return False
+
+
+def _mark_resurrection_orb_used_this_turn(source_unit, *, turn: int, turn_owner_id: str) -> None:
+    if source_unit is None:
+        return
+    sr = getattr(source_unit, "special_rules", None)
+    if not isinstance(sr, dict):
+        sr = {}
+    updated = dict(sr)
+    updated["resurrection_orb_used_turn"] = int(turn)
+    updated["resurrection_orb_used_turn_owner"] = str(turn_owner_id or "")
+    source_unit.special_rules = updated
+
+
 def _validate_choose_quarry(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
     errors = list(validate_option_choice(request, result))
     if errors:
         return errors
     ctx = dict(getattr(request, "context", {}) or {})
     ability = str(ctx.get("ability", "") or "")
+    if ability == "resurrection_orb":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Resurrection Orb source unit was not found.",)
+        if bool(getattr(source_unit, "has_used_unit_once_per_battle", lambda _k: False)("resurrection_orb")):
+            return ("Resurrection Orb has already been used by this bearer.",)
+
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None or not _resurrection_orb_unit_on_battlefield(source_root):
+            return ("Resurrection Orb source unit must be on the battlefield.",)
+
+        current_player = getattr(game, "get_current_player", lambda: None)()
+        turn_owner_id = str(getattr(current_player, "id", "") or "")
+        turn = int(getattr(game, "turn", 0) or 0)
+        source_army = source_unit.get_parent_army() if hasattr(source_unit, "get_parent_army") else None
+        if _resurrection_orb_army_used_this_turn(source_army, turn=turn, turn_owner_id=turn_owner_id):
+            return ("Resurrection Orb has already resurrected a unit this turn.",)
+
+        bearer_model = resolve_model(game, payload.get("bearer_model_id") or ctx.get("bearer_model_id"))
+        if bearer_model is None:
+            return ("Resurrection Orb bearer model was not found.",)
+        bearer_alive = getattr(bearer_model, "is_alive", False)
+        if not bool(bearer_alive() if callable(bearer_alive) else bearer_alive):
+            return ("Resurrection Orb bearer model is not alive.",)
+        if getattr(bearer_model, "parent_unit", None) is not source_unit:
+            return ("Resurrection Orb bearer model is not part of the source unit.",)
+
+        variant = str(ctx.get("resurrection_orb_variant", "") or "").strip().lower()
+        if variant not in ("nearby", "leading"):
+            return ("Resurrection Orb context is missing a supported variant.",)
+        if is_skip_choice(request, result):
+            return ()
+
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return ("Resurrection Orb target unit was not found.",)
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        if target_root is None:
+            return ("Resurrection Orb target unit was not found.",)
+        if not _resurrection_orb_unit_on_battlefield(target_root):
+            return ("Resurrection Orb target unit must be on the battlefield.",)
+
+        target_id = str(get_entity_id(target_root) or "")
+        allowed_ids = {str(val) for val in list(ctx.get("allowed_target_unit_ids", []) or []) if str(val)}
+        if allowed_ids and target_id not in allowed_ids:
+            return ("Resurrection Orb target is not an eligible unit.",)
+
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if source_army is not None and target_army is not None and source_army is not target_army:
+            return ("Resurrection Orb requires selecting a friendly unit.",)
+
+        has_rp = getattr(target_root, "attached_unit_has_reanimation_protocols", None)
+        if callable(has_rp) and not bool(has_rp()):
+            return ("Resurrection Orb target must have Reanimation Protocols.",)
+
+        if variant == "leading":
+            if not bool(getattr(source_unit, "is_attached_leader", False)):
+                return ("Resurrection Orb (leading variant) requires the bearer to be leading a unit.",)
+            if target_root is not source_root:
+                return ("Resurrection Orb (leading variant) can only target the bearer's unit.",)
+        else:
+            has_any_keyword = getattr(target_root, "has_any_keyword", None)
+            if not callable(has_any_keyword):
+                return ("Resurrection Orb target keyword resolver is unavailable.",)
+            if not bool(has_any_keyword("NECRONS")):
+                return ("Resurrection Orb target must be a friendly NECRONS unit.",)
+            if not bool(has_any_keyword("INFANTRY") or has_any_keyword("MOUNTED")):
+                return ("Resurrection Orb target must be a friendly NECRONS INFANTRY or MOUNTED unit.",)
+            in_range_fn = getattr(game, "_unit_within_range_of_model", None)
+            if callable(in_range_fn):
+                if not bool(in_range_fn(bearer_model, target_root, range_value=6.0)):
+                    return ("Resurrection Orb target must be within 6\" of the bearer.",)
+        return ()
     if ability == "decoy_targets":
         payload = _option_payload(request, result)
         if is_skip_choice(request, result):
@@ -2422,6 +2560,119 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
 def _apply_choose_quarry(game: object, request: DecisionRequest, result: DecisionResult):
     ctx = dict(getattr(request, "context", {}) or {})
     ability = str(ctx.get("ability", "") or "")
+    if ability == "resurrection_orb":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return None
+        if bool(getattr(source_unit, "has_used_unit_once_per_battle", lambda _k: False)("resurrection_orb")):
+            return None
+
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None or not _resurrection_orb_unit_on_battlefield(source_root):
+            return None
+        source_army = source_unit.get_parent_army() if hasattr(source_unit, "get_parent_army") else None
+        player = _resolve_player(game, request, payload)
+        if player is None and source_army is not None:
+            player = getattr(source_army, "player", None)
+
+        current_player = getattr(game, "get_current_player", lambda: None)()
+        turn_owner_id = str(getattr(current_player, "id", "") or "")
+        turn = int(getattr(game, "turn", 0) or 0)
+        if _resurrection_orb_army_used_this_turn(source_army, turn=turn, turn_owner_id=turn_owner_id):
+            return None
+
+        ability_name = str(ctx.get("ability_name", "") or "Resurrection Orb").strip() or "Resurrection Orb"
+        if is_skip_choice(request, result):
+            _log_action_for_players(game, player, f"{ability_name}: selected none.")
+            return None
+
+        bearer_model = resolve_model(game, payload.get("bearer_model_id") or ctx.get("bearer_model_id"))
+        if bearer_model is None:
+            return None
+        bearer_alive = getattr(bearer_model, "is_alive", False)
+        if not bool(bearer_alive() if callable(bearer_alive) else bearer_alive):
+            return None
+        if getattr(bearer_model, "parent_unit", None) is not source_unit:
+            return None
+
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return None
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        if target_root is None or not _resurrection_orb_unit_on_battlefield(target_root):
+            return None
+        target_id = str(get_entity_id(target_root) or "")
+        allowed_ids = {str(val) for val in list(ctx.get("allowed_target_unit_ids", []) or []) if str(val)}
+        if allowed_ids and target_id not in allowed_ids:
+            return None
+
+        variant = str(ctx.get("resurrection_orb_variant", "") or "").strip().lower()
+        if variant == "leading":
+            if not bool(getattr(source_unit, "is_attached_leader", False)):
+                return None
+            if target_root is not source_root:
+                return None
+        elif variant == "nearby":
+            has_any_keyword = getattr(target_root, "has_any_keyword", None)
+            if not callable(has_any_keyword):
+                return None
+            if not bool(has_any_keyword("NECRONS")):
+                return None
+            if not bool(has_any_keyword("INFANTRY") or has_any_keyword("MOUNTED")):
+                return None
+            in_range_fn = getattr(game, "_unit_within_range_of_model", None)
+            if callable(in_range_fn):
+                if not bool(in_range_fn(bearer_model, target_root, range_value=6.0)):
+                    return None
+        else:
+            return None
+
+        has_rp = getattr(target_root, "attached_unit_has_reanimation_protocols", None)
+        if callable(has_rp) and not bool(has_rp()):
+            return None
+
+        from ...utility.dice import get_roll
+
+        reanimated_wounds = max(0, int(get_roll("D6") or 0))
+        game_map = getattr(game, "map", None)
+        provider = getattr(game_map, "reanimation_allocation_provider", None) if game_map is not None else None
+        is_human = bool(getattr(player, "has_control", lambda: False)()) if player is not None else False
+        target_root.apply_reanimation_protocols(
+            int(reanimated_wounds),
+            game_map=game_map,
+            is_human=is_human,
+            provider=provider,
+        )
+
+        getattr(source_unit, "mark_unit_once_per_battle_used", lambda _k, **_kw: None)(
+            "resurrection_orb",
+            ability_name=ability_name,
+        )
+        _mark_resurrection_orb_used_this_turn(
+            source_unit,
+            turn=int(turn),
+            turn_owner_id=turn_owner_id,
+        )
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {getattr(target_root, 'name', 'Unit')} activates Reanimation Protocols and reanimates D6 wounds (roll {int(reanimated_wounds)}).",
+        )
+        return {
+            "source_unit_id": str(get_entity_id(source_unit) or ""),
+            "target_unit_id": str(get_entity_id(target_root) or ""),
+            "reanimated_wounds": int(reanimated_wounds),
+        }
     if ability == "decoy_targets":
         payload = _option_payload(request, result)
         source_unit = resolve_unit(

@@ -9628,6 +9628,187 @@ class GamePhaseHandlersMixin:
                         spec=spec,
                     )
 
+    def _on_phase_end_resurrection_orb(self, player=None, phase=None, **_kwargs) -> None:
+        """End of any phase: queue Necrons Resurrection Orb decisions for both datasheet variants."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if not pname or pname == "SETUP_PHASE":
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        if getattr(self, "map", None) is None:
+            return
+
+        current_player = self.get_current_player()
+        turn_owner_id = str(getattr(current_player, "id", "") or "")
+        turn = int(getattr(self, "turn", 0) or 0)
+
+        def _normalize_rules_text(text: str) -> str:
+            cleaned = str(text or "").lower().replace("\u2019", "'").replace("\u0192?T", "'")
+            cleaned = re.sub(r"'s\b", "s", cleaned)
+            cleaned = re.sub(r"[^a-z0-9]+", " ", cleaned)
+            return re.sub(r"\s+", " ", cleaned).strip()
+
+        def _resurrection_orb_variant(text: str) -> str:
+            tokens = _normalize_rules_text(text)
+            if "while the bearer is leading a unit" in tokens and "resurrect that unit" in tokens:
+                return "leading"
+            if "select one friendly necrons infantry or necrons mounted unit within 6 of the bearer" in tokens:
+                return "nearby"
+            return ""
+
+        def _unit_on_battlefield(unit) -> bool:
+            if unit is None:
+                return False
+            is_alive_fn = getattr(unit, "is_alive", None)
+            if callable(is_alive_fn):
+                if not bool(is_alive_fn()):
+                    return False
+            elif getattr(unit, "is_alive", True) is False:
+                return False
+            if not bool(getattr(unit, "deployed", True)):
+                return False
+            if str(getattr(unit, "reserve_status", "deployed") or "deployed") != "deployed":
+                return False
+            in_reserves_fn = getattr(unit, "is_in_reserves", None)
+            if callable(in_reserves_fn) and bool(in_reserves_fn()):
+                return False
+            if bool(getattr(unit, "embarked_in", None)) or bool(getattr(unit, "is_embarked", False)):
+                return False
+            return True
+
+        def _model_is_alive(model) -> bool:
+            if model is None:
+                return False
+            alive_attr = getattr(model, "is_alive", False)
+            return bool(alive_attr() if callable(alive_attr) else alive_attr)
+
+        def _army_used_resurrection_orb_this_turn(army) -> bool:
+            if army is None:
+                return False
+            for unit in list(getattr(army, "units", []) or []):
+                if unit is None:
+                    continue
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                try:
+                    used_turn = int(sr.get("resurrection_orb_used_turn", -1))
+                except (TypeError, ValueError):
+                    continue
+                if used_turn != int(turn):
+                    continue
+                used_owner = str(sr.get("resurrection_orb_used_turn_owner", "") or "")
+                if turn_owner_id and used_owner and used_owner != turn_owner_id:
+                    continue
+                return True
+            return False
+
+        for p in list(self.players or []):
+            if p is None:
+                continue
+            army = self._get_player_army(p)
+            if army is None:
+                continue
+            if _army_used_resurrection_orb_this_turn(army):
+                continue
+
+            seen_sources: set[str] = set()
+            for source_unit in list(getattr(army, "units", []) or []):
+                if source_unit is None:
+                    continue
+                source_unit_id = str(get_entity_id(source_unit) or "")
+                if not source_unit_id or source_unit_id in seen_sources:
+                    continue
+                seen_sources.add(source_unit_id)
+                if bool(getattr(source_unit, "has_used_unit_once_per_battle", lambda _k: False)("resurrection_orb")):
+                    continue
+
+                root_fn = getattr(source_unit, "get_attached_unit_root", None)
+                source_root = root_fn() if callable(root_fn) else source_unit
+                if not _unit_on_battlefield(source_root):
+                    continue
+
+                alive_models = [m for m in list(getattr(source_unit, "models", []) or []) if _model_is_alive(m)]
+                if not alive_models:
+                    continue
+                bearer_model = alive_models[0]
+
+                iter_abilities = getattr(source_unit, "_iter_active_possible_abilities", None)
+                if callable(iter_abilities):
+                    abilities = list(iter_abilities() or [])
+                else:
+                    abilities = list(getattr(source_unit, "possible_abilities", []) or [])
+
+                orb_variant = ""
+                ability_name = "Resurrection Orb"
+                for ability in list(abilities or []):
+                    if isinstance(ability, str):
+                        name = str(ability or "")
+                        desc = str(ability or "")
+                    else:
+                        name = str(getattr(ability, "name", "") or "")
+                        desc = str(getattr(ability, "description", "") or "") or name
+                    if _normalize_rules_text(name) != "resurrection orb":
+                        continue
+                    orb_variant = _resurrection_orb_variant(desc)
+                    if not orb_variant:
+                        continue
+                    ability_name = str(name or "Resurrection Orb").strip() or "Resurrection Orb"
+                    break
+                if not orb_variant:
+                    continue
+
+                candidates = []
+                if orb_variant == "leading":
+                    if not bool(getattr(source_unit, "is_attached_leader", False)):
+                        continue
+                    target_root = source_root
+                    if not _unit_on_battlefield(target_root):
+                        continue
+                    has_rp = getattr(target_root, "attached_unit_has_reanimation_protocols", None)
+                    if callable(has_rp) and not bool(has_rp()):
+                        continue
+                    candidates = [target_root]
+                else:
+                    seen_targets: set[str] = set()
+                    for other in list(getattr(army, "units", []) or []):
+                        if other is None:
+                            continue
+                        other_root_fn = getattr(other, "get_attached_unit_root", None)
+                        target_root = other_root_fn() if callable(other_root_fn) else other
+                        target_id = str(get_entity_id(target_root) or "")
+                        if not target_id or target_id in seen_targets:
+                            continue
+                        seen_targets.add(target_id)
+                        if not _unit_on_battlefield(target_root):
+                            continue
+                        has_any_keyword = getattr(target_root, "has_any_keyword", None)
+                        if not callable(has_any_keyword):
+                            continue
+                        if not bool(has_any_keyword("NECRONS")):
+                            continue
+                        if not bool(has_any_keyword("INFANTRY") or has_any_keyword("MOUNTED")):
+                            continue
+                        has_rp = getattr(target_root, "attached_unit_has_reanimation_protocols", None)
+                        if callable(has_rp) and not bool(has_rp()):
+                            continue
+                        if not self._unit_within_range_of_model(bearer_model, target_root, range_value=6.0):
+                            continue
+                        candidates.append(target_root)
+                    candidates.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+                if not candidates:
+                    continue
+
+                self._queue_resurrection_orb_decision(
+                    player=p,
+                    source_unit=source_unit,
+                    bearer_model=bearer_model,
+                    candidates=candidates,
+                    ability_name=ability_name,
+                    phase_label=pname.replace("_", " ").title(),
+                    variant=orb_variant,
+                )
+
     def _on_phase_end_sweeping_advance(self, player=None, phase=None, **_kwargs) -> None:
         """Fight phase end: optional Sweeping Advance move for eligible models."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

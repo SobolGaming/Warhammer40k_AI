@@ -185,6 +185,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("phase_end", "_on_phase_end_fight_phase_mortal_wounds"),
                 ("phase_end", "_on_phase_end_aflame_cleanup"),
                 ("phase_end", "_on_phase_end_transport_end_of_fight_embark"),
+                ("phase_end", "_on_phase_end_resurrection_orb"),
                 ("phase_end", "_on_phase_end_sweeping_advance"),
                 ("phase_end", "_on_phase_end_raid_and_run"),
                 ("phase_end", "_on_phase_end_charge_phase_bodyguard_loss"),
