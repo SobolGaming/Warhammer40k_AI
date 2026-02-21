@@ -1009,13 +1009,22 @@ class Unit(
                         mods.append(Modifier(ModifierOp.ADD, int(daemonic_bonus), source="daemonic_allegiance:move_add"))
             except Exception:
                 pass
-                try:
-                    from ..utility.aura_effects import get_enemy_aura_move_oc_penalties
-                    move_pen, _oc_pen = get_enemy_aura_move_oc_penalties(self, game_map=game_map)
-                    if move_pen:
-                        mods.append(Modifier(ModifierOp.ADD, int(move_pen), source="aura:enemy_move_penalty"))
-                except Exception:
-                    pass
+            try:
+                from ..utility.aura_effects import get_aura_move_characteristic_bonus
+
+                move_bonus, _reasons = get_aura_move_characteristic_bonus(self, game_map=game_map)
+                if move_bonus:
+                    mods.append(Modifier(ModifierOp.ADD, int(move_bonus), source="aura:move_add"))
+            except Exception:
+                pass
+            try:
+                from ..utility.aura_effects import get_enemy_aura_move_oc_penalties
+
+                move_pen, _oc_pen = get_enemy_aura_move_oc_penalties(self, game_map=game_map)
+                if move_pen:
+                    mods.append(Modifier(ModifierOp.ADD, int(move_pen), source="aura:enemy_move_penalty"))
+            except Exception:
+                pass
             try:
                 sr = getattr(self, "special_rules", None)
                 if isinstance(sr, dict) and sr.get("flickerjump_move_set_value"):

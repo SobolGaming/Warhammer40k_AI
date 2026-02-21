@@ -82,6 +82,9 @@ def _norm_name(s: str) -> str:
     return _norm((s or "").replace("\u2019", "'"))
 
 
+_AURA_SOURCE_PATTERN = r"(?:this unit|this model|this fortification|the bearer|this unit(?:'s| s) [a-z0-9 \-]+ model)"
+
+
 def _count_regex_hotspot(name: str) -> None:
     increment_regex_hotspot(f"aura_effects:{str(name or '').strip()}")
 
@@ -282,7 +285,12 @@ def _iter_possible_abilities(unit) -> Iterable[object]:
 
 def _is_aura_ability(ability) -> bool:
     name = str(getattr(ability, "name", "") or "")
-    return "(aura" in _norm(name)
+    if "(aura" in _norm(name):
+        return True
+    desc = _normalize_desc(str(getattr(ability, "description", "") or ""))
+    if not desc:
+        return False
+    return bool(re.search(r"\bwhile an? (?:friendly|enemy)\b.*\bwithin\b", desc, flags=re.IGNORECASE))
 
 
 def _get_map_from_attacker_unit(attacker_unit):
@@ -355,12 +363,51 @@ def _chosen_of_blood_god_aura_range_bonus(source_unit, ability) -> float:
         return 3.0
 
 
+def _aura_anchor_model_for_ability(source_unit, ability):
+    if source_unit is None or ability is None:
+        return None
+    try:
+        desc = _normalize_desc(str(getattr(ability, "description", "") or ""))
+    except Exception:
+        desc = ""
+    if not desc:
+        return None
+    m = re.search(
+        r"of this unit(?:'s| s) (?P<model>[a-z0-9 '\-]+?) model",
+        desc,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None
+    model_phrase = _normalize_keyword_phrase(str(m.group("model") or ""))
+    if not model_phrase:
+        return None
+    for model in list(getattr(source_unit, "models", []) or []):
+        try:
+            if not bool(getattr(model, "is_alive", True)):
+                continue
+        except Exception:
+            continue
+        cand = _normalize_keyword_phrase(str(getattr(model, "name", "") or ""))
+        if not cand:
+            continue
+        if cand == model_phrase or model_phrase in cand or cand in model_phrase:
+            return model
+    return None
+
+
 def _unit_within_aura_range(source_unit, target_unit, base_range: float, *, ability=None) -> bool:
     try:
         rng = float(base_range)
     except Exception:
         return False
     rng += float(_chosen_of_blood_god_aura_range_bonus(source_unit, ability))
+    anchor_model = _aura_anchor_model_for_ability(source_unit, ability)
+    if anchor_model is not None:
+        try:
+            return model_within_range_of_unit(anchor_model, target_unit, float(rng), use_attached_aggregate=True)
+        except Exception:
+            pass
     return unit_within_range_of_unit(source_unit, target_unit, float(rng), use_attached_aggregate=True)
 
 
@@ -549,7 +596,7 @@ def _parse_simple_plus_one_aura(ability) -> Optional[dict]:
 
     # Only consider auras that explicitly specify melee or ranged attacks and +1 to Hit roll.
     m = re.search(
-        r'While a friendly (?P<faction_kw>.+?) unit is within (?P<rng>\d+)" of (?:this unit|this model|the bearer), '
+        rf'While a friendly (?P<faction_kw>.+?) unit is within (?P<rng>\d+)" of {_AURA_SOURCE_PATTERN}, '
         r'each time a model in that unit makes a (?P<atype>melee|ranged) attack.*?add 1 to the Hit roll',
         desc,
         flags=re.IGNORECASE,
@@ -590,7 +637,7 @@ def _parse_reroll_ones_aura(ability) -> Optional[dict]:
         return None
     m = re.search(
         r'While a friendly (?P<faction_kw>.+?) (?:unit|model)(?: \((?P<exclude>[^)]+)\))? is within (?P<rng>\d+)" '
-        r"of (?:this unit|this model|the bearer)",
+        rf"of {_AURA_SOURCE_PATTERN}",
         desc,
         flags=re.IGNORECASE,
     )
@@ -632,7 +679,7 @@ def _parse_full_hit_reroll_aura(ability) -> Optional[dict]:
         return None
     m = re.search(
         r'While a friendly (?P<faction_kw>.+?) (?:unit|model)(?: \((?P<exclude_a>[^)]+)\))? is within (?P<rng>\d+)"(?: \((?P<exclude_b>[^)]+)\))? '
-        r"of (?:this unit|this model|the bearer), each time (?:a model in that unit|that model) makes an attack, "
+        rf"of {_AURA_SOURCE_PATTERN}, each time (?:a model in that unit|that model) makes an attack, "
         r"you can re-?roll (?:a|the) Hit roll",
         desc,
         flags=re.IGNORECASE,
@@ -658,7 +705,7 @@ def _parse_add_oc_aura(ability) -> Optional[dict]:
     if not desc:
         return None
     m = re.search(
-        r'While a friendly (?P<faction_kw>.+?) (?:unit|model)(?: \((?P<exclude_a>[^)]+)\))? is within (?P<rng>\d+)"(?: \((?P<exclude_b>[^)]+)\))? of (?:this unit|this model|the bearer), '
+        rf'While a friendly (?P<faction_kw>.+?) (?:unit|model)(?: \((?P<exclude_a>[^)]+)\))? is within (?P<rng>\d+)"(?: \((?P<exclude_b>[^)]+)\))? of {_AURA_SOURCE_PATTERN}, '
         r'add (?P<amt>\d+) to the Objective Control characteristic of (?:(?:models? in that )?(?:unit|model))',
         desc,
         flags=re.IGNORECASE,
@@ -692,7 +739,7 @@ def _parse_leadership_oc_aura(ability) -> Optional[dict]:
     if not desc:
         return None
     m = re.search(
-        r'While a friendly (?P<faction_kw>.+?) (?:unit|model) is within (?P<rng>\d+)" of this (?:unit|model|the bearer), '
+        rf'While a friendly (?P<faction_kw>.+?) (?:unit|model) is within (?P<rng>\d+)" of {_AURA_SOURCE_PATTERN}, '
         r"improve that .*?Leadership and Objective Control characteristics by (?P<amt>\d+)",
         desc,
         flags=re.IGNORECASE,
@@ -719,8 +766,8 @@ def _parse_leadership_only_aura(ability) -> Optional[dict]:
     if not desc:
         return None
     m = re.search(
-        r'While a friendly (?P<faction_kw>.+?) (?:unit|model) is (?:(?:wholly )?within) (?P<rng>\d+)" '
-        r"of this (?:unit|model|fortification|the bearer), improve that .*? Leadership characteristic by (?P<amt>\d+)",
+        rf'While a friendly (?P<faction_kw>.+?) (?:unit|model) is (?:(?:wholly )?within) (?P<rng>\d+)" '
+        rf"of {_AURA_SOURCE_PATTERN}, improve that .*? Leadership characteristic by (?P<amt>\d+)",
         desc,
         flags=re.IGNORECASE,
     )
@@ -745,8 +792,8 @@ def _parse_battleshock_leadership_test_reroll_aura(ability) -> Optional[dict]:
     if not desc:
         return None
     m = re.search(
-        r'While a friendly (?P<faction_kw>.+?) (?:unit|model)(?: \((?P<exclude_a>[^)]+)\))? is within (?P<rng>\d+)"(?: \((?P<exclude_b>[^)]+)\))? '
-        r"of (?:this unit|this model|the bearer), you can re-?roll (?P<tests>.+?) tests? taken for that unit",
+        rf'While a friendly (?P<faction_kw>.+?) (?:unit|model)(?: \((?P<exclude_a>[^)]+)\))? is within (?P<rng>\d+)"(?: \((?P<exclude_b>[^)]+)\))? '
+        rf"of {_AURA_SOURCE_PATTERN}, you can re-?roll (?P<tests>.+?) tests? taken for that unit",
         desc,
         flags=re.IGNORECASE,
     )
@@ -817,6 +864,95 @@ def _parse_advance_charge_roll_aura(ability) -> Optional[dict]:
     }
 
 
+def _parse_charge_reroll_aura(ability) -> Optional[dict]:
+    _count_regex_hotspot("_parse_charge_reroll_aura")
+    """
+    Strict parser for:
+      "While a friendly X unit is within N\" of this model/unit, you can re-roll Charge rolls made for that unit."
+    """
+    if not _is_aura_ability(ability):
+        return None
+    desc = _normalize_desc(getattr(ability, "description", ""))
+    if not desc:
+        return None
+    m = re.search(
+        rf'While a friendly (?P<faction_kw>.+?) units? is within (?P<rng>\d+)" of {_AURA_SOURCE_PATTERN}, '
+        r"you can re-?roll Charge rolls made for (?:that|the) unit",
+        desc,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None
+    return {
+        "faction_keyword": str(m.group("faction_kw") or "").strip(),
+        "range": float(m.group("rng")),
+        "excluded_keywords": _parse_excluded_keywords(desc),
+    }
+
+
+def _parse_move_characteristic_aura(ability) -> Optional[dict]:
+    _count_regex_hotspot("_parse_move_characteristic_aura")
+    """
+    Strict parser for:
+      "While a friendly X unit is within N\" of this model/unit, add Y\" to the Move characteristic of models in that unit."
+    """
+    if not _is_aura_ability(ability):
+        return None
+    desc = _normalize_desc(getattr(ability, "description", ""))
+    if not desc:
+        return None
+    m = re.search(
+        rf'While a friendly (?P<faction_kw>.+?) units? is within (?P<rng>\d+)" of {_AURA_SOURCE_PATTERN}, '
+        r'add (?P<amt>\d+)"? to the Move characteristic of models in that unit',
+        desc,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None
+    return {
+        "faction_keyword": str(m.group("faction_kw") or "").strip(),
+        "range": float(m.group("rng")),
+        "amount": int(m.group("amt")),
+        "excluded_keywords": _parse_excluded_keywords(desc),
+    }
+
+
+def _parse_fnp_aura(ability) -> Optional[dict]:
+    _count_regex_hotspot("_parse_fnp_aura")
+    """
+    Strict parser for:
+      "While a friendly X unit is within N\" of this model/unit, that unit/models in that unit have Feel No Pain Y+."
+    """
+    if not _is_aura_ability(ability):
+        return None
+    desc = _normalize_desc(getattr(ability, "description", ""))
+    if not desc:
+        return None
+    m = re.search(
+        rf'While a friendly (?P<faction_kw>.+?) (?:unit|model)(?: \((?P<exclude_a>[^)]+)\))? is within (?P<rng>\d+)"(?: \((?P<exclude_b>[^)]+)\))? of {_AURA_SOURCE_PATTERN}, '
+        r'(?:models in that unit|that unit|that model) (?:has|have) (?:the )?Feel No Pain (?P<val>\d+)\+?\s*ability(?: (?P<cond>against .+))?',
+        desc,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        m = re.search(
+            rf'While a friendly (?P<faction_kw>.+?) (?:unit|model)(?: \((?P<exclude_a>[^)]+)\))? is within (?P<rng>\d+)"(?: \((?P<exclude_b>[^)]+)\))? of {_AURA_SOURCE_PATTERN}, '
+            r'(?:models in that unit|that unit|that model) (?:has|have) (?:the )?Feel No Pain (?P<val>\d+)\+?(?: (?P<cond>against .+))?',
+            desc,
+            flags=re.IGNORECASE,
+        )
+    if not m:
+        return None
+    cond = str(m.group("cond") or "").strip().rstrip(".")
+    return {
+        "faction_keyword": str(m.group("faction_kw") or "").strip(),
+        "range": float(m.group("rng")),
+        "value": int(m.group("val")),
+        "condition": cond,
+        "excluded_keywords": _parse_excluded_keywords(desc),
+    }
+
+
 def _parse_strength_aura(ability) -> Optional[dict]:
     _count_regex_hotspot("_parse_strength_aura")
     """
@@ -834,7 +970,7 @@ def _parse_strength_aura(ability) -> Optional[dict]:
     if not text:
         return None
     m = re.search(
-        r'While a friendly (?P<faction_kw>.+?) unit is within (?P<rng>\d+)" of (?:this model|this unit|the bearer), '
+        rf'While a friendly (?P<faction_kw>.+?) unit is within (?P<rng>\d+)" of {_AURA_SOURCE_PATTERN}, '
         r'add (?P<amt>\d+) to the Strength characteristic of (?:(?P<atype>melee|ranged) )?weapons equipped by models in that unit',
         text,
         flags=re.IGNORECASE,
@@ -854,7 +990,8 @@ def _parse_strength_aura(ability) -> Optional[dict]:
             "attack_type": atype,
         }
     m = re.search(
-        r'While a friendly (?P<faction_kw>.+?) unit is within (?P<rng>\d+)" of (?:this model|this unit|the bearer), '
+        rf'While a friendly (?P<faction_kw>.+?) unit is within (?P<rng>\d+)" of {_AURA_SOURCE_PATTERN}, '
+        r'(?:you can re-?roll Charge rolls made for (?:that|the) unit and )?'
         r'each time a model in that unit makes a (?P<atype>melee|ranged) attack, add (?P<amt>\d+) '
         r"to the Strength characteristic of that attack",
         text,
@@ -884,7 +1021,7 @@ def _parse_melee_ap_aura(ability) -> Optional[dict]:
     if not text:
         return None
     m = re.search(
-        r'While a friendly (?P<faction_kw>.+?) unit is within (?P<rng>\d+)" of (?:this model|this unit|the bearer), '
+        rf'While a friendly (?P<faction_kw>.+?) unit is within (?P<rng>\d+)" of {_AURA_SOURCE_PATTERN}, '
         r'(?:(?P<charged>if that unit made a Charge move this turn, )?)'
         r'improve the Armou?r Penetration(?: characteristic)? of melee weapons (?:equipped by models )?in that unit by (?P<amt>\d+)',
         text,
@@ -912,7 +1049,7 @@ def _parse_closest_enemy_ap_aura(ability) -> Optional[dict]:
     if not desc:
         return None
     m = re.search(
-        r'While a friendly (?P<faction_kw>.+?) (?:unit|model) is within (?P<rng>\d+)" of this (?:model|unit|the bearer), '
+        rf'While a friendly (?P<faction_kw>.+?) (?:unit|model) is within (?P<rng>\d+)" of {_AURA_SOURCE_PATTERN}, '
         r"each time that .*?attack that targets the closest enemy unit, improve the Armou?r Penetration "
         r"characteristic of that attack by (?P<amt>\d+)",
         desc,
@@ -947,7 +1084,7 @@ def _parse_toughness_aura(ability) -> Optional[dict]:
     if not text:
         return None
     m = re.search(
-        r'While a friendly (?P<faction_kw>.+?) unit is within (?P<rng>\d+)" of (?:this model|this unit|the bearer), '
+        rf'While a friendly (?P<faction_kw>.+?) unit is within (?P<rng>\d+)" of {_AURA_SOURCE_PATTERN}, '
         r'add (?P<amt>\d+) to the Toughness characteristic of models in that unit',
         text,
         flags=re.IGNORECASE,
@@ -959,7 +1096,7 @@ def _parse_toughness_aura(ability) -> Optional[dict]:
             "amount": int(m.group("amt")),
         }
     m = re.search(
-        r'While a friendly (?P<faction_kw>.+?) unit is within (?P<rng>\d+)" of (?:this model|this unit|the bearer), '
+        rf'While a friendly (?P<faction_kw>.+?) unit is within (?P<rng>\d+)" of {_AURA_SOURCE_PATTERN}, '
         r'improve the Toughness characteristic of models in that unit by (?P<amt>\d+)',
         text,
         flags=re.IGNORECASE,
@@ -1630,6 +1767,144 @@ def get_aura_advance_charge_roll_modifiers(unit, *, game_map=None) -> tuple[list
                 charge_mods.append((1, f"Aura: +1 to Charge rolls from {aura_name}"))
 
     return advance_mods, charge_mods
+
+
+def has_aura_charge_reroll(unit, *, game_map=None) -> bool:
+    _count_regex_hotspot("has_aura_charge_reroll")
+    """
+    Return whether any friendly aura currently grants re-roll Charge rolls for this unit.
+    """
+    if unit is None:
+        return False
+    if game_map is None:
+        game_map = _get_map_from_attacker_unit(unit)
+    if game_map is None:
+        return False
+
+    applied_aura_names: set[str] = set()
+    for source in list(game_map.get_friendly_units(unit)):
+        for ab in _iter_possible_abilities(source):
+            spec = _cached_parse_aura_spec("_parse_charge_reroll_aura", ab, _parse_charge_reroll_aura)
+            if not spec:
+                continue
+            ab_name = str(getattr(ab, "name", "") or "")
+            aura_key = _norm_name(ab_name)
+            if aura_key:
+                if aura_key in applied_aura_names:
+                    continue
+                applied_aura_names.add(aura_key)
+            if spec.get("faction_keyword"):
+                matches = _unit_matches_keyword_phrase(unit, spec["faction_keyword"])
+                if not matches:
+                    has_any_keyword = getattr(unit, "has_any_keyword", None)
+                    if callable(has_any_keyword):
+                        matches = bool(has_any_keyword(spec["faction_keyword"]))
+                if not matches:
+                    continue
+            if spec.get("excluded_keywords") and _excluded_by_unit_keywords(unit, spec.get("excluded_keywords", ())):
+                continue
+            if not _unit_within_aura_range(source, unit, float(spec["range"]), ability=ab):
+                continue
+            return True
+    return False
+
+
+def get_aura_move_characteristic_bonus(unit, *, game_map=None) -> tuple[int, tuple[str, ...]]:
+    _count_regex_hotspot("get_aura_move_characteristic_bonus")
+    """
+    Return (move_bonus, reasons) from friendly movement characteristic auras affecting this unit.
+    """
+    if unit is None:
+        return 0, ()
+    if game_map is None:
+        game_map = _get_map_from_attacker_unit(unit)
+    if game_map is None:
+        return 0, ()
+
+    total = 0
+    reasons: list[str] = []
+    applied_aura_names: set[str] = set()
+    for source in list(game_map.get_friendly_units(unit)):
+        for ab in _iter_possible_abilities(source):
+            spec = _cached_parse_aura_spec("_parse_move_characteristic_aura", ab, _parse_move_characteristic_aura)
+            if not spec:
+                continue
+            ab_name = str(getattr(ab, "name", "") or "")
+            aura_key = _norm_name(ab_name)
+            if aura_key:
+                if aura_key in applied_aura_names:
+                    continue
+                applied_aura_names.add(aura_key)
+            if spec.get("faction_keyword"):
+                matches = _unit_matches_keyword_phrase(unit, spec["faction_keyword"])
+                if not matches:
+                    has_any_keyword = getattr(unit, "has_any_keyword", None)
+                    if callable(has_any_keyword):
+                        matches = bool(has_any_keyword(spec["faction_keyword"]))
+                if not matches:
+                    continue
+            if spec.get("excluded_keywords") and _excluded_by_unit_keywords(unit, spec.get("excluded_keywords", ())):
+                continue
+            if not _unit_within_aura_range(source, unit, float(spec["range"]), ability=ab):
+                continue
+            amt = int(spec.get("amount", 0) or 0)
+            if amt:
+                total += int(amt)
+                reasons.append(f"Aura: +{amt} Move from {ab_name}")
+    return int(total), tuple(reasons)
+
+
+def get_aura_fnp_entries(unit, *, game_map=None) -> list[tuple[int, Optional[str]]]:
+    _count_regex_hotspot("get_aura_fnp_entries")
+    """
+    Return [(fnp_value, condition)] from friendly auras affecting this unit.
+    """
+    if unit is None:
+        return []
+    if game_map is None:
+        game_map = _get_map_from_attacker_unit(unit)
+    if game_map is None:
+        return []
+
+    result: list[tuple[int, Optional[str]]] = []
+    seen_entries: set[tuple[int, str]] = set()
+    applied_aura_names: set[str] = set()
+    for source in list(game_map.get_friendly_units(unit)):
+        for ab in _iter_possible_abilities(source):
+            spec = _cached_parse_aura_spec("_parse_fnp_aura", ab, _parse_fnp_aura)
+            if not spec:
+                continue
+            ab_name = str(getattr(ab, "name", "") or "")
+            aura_key = _norm_name(ab_name)
+            if aura_key:
+                if aura_key in applied_aura_names:
+                    continue
+                applied_aura_names.add(aura_key)
+            if spec.get("faction_keyword"):
+                matches = _unit_matches_keyword_phrase(unit, spec["faction_keyword"])
+                if not matches:
+                    has_any_keyword = getattr(unit, "has_any_keyword", None)
+                    if callable(has_any_keyword):
+                        matches = bool(has_any_keyword(spec["faction_keyword"]))
+                if not matches:
+                    continue
+            if spec.get("excluded_keywords") and _excluded_by_unit_keywords(unit, spec.get("excluded_keywords", ())):
+                continue
+            if not _unit_within_aura_range(source, unit, float(spec["range"]), ability=ab):
+                continue
+            try:
+                value = int(spec.get("value", 0) or 0)
+            except Exception:
+                value = 0
+            if value <= 0:
+                continue
+            cond = str(spec.get("condition", "") or "").strip()
+            key = (int(value), cond.lower())
+            if key in seen_entries:
+                continue
+            seen_entries.add(key)
+            result.append((int(value), cond or None))
+    return result
 
 
 def get_aura_battleshock_test_modifiers(unit, *, game_map=None) -> list[tuple[int, str]]:

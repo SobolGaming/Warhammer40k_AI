@@ -1224,6 +1224,24 @@ class LateGameplayMixin:
                         break
         except Exception:
             pass
+        try:
+            from ...utility.aura_effects import get_aura_fnp_entries
+
+            aura_entries = list(get_aura_fnp_entries(self) or [])
+            if aura_entries:
+                seen = set((int(v), (c or "")) for v, c in result)
+                for val, cond in aura_entries:
+                    try:
+                        val_i = int(val)
+                    except Exception:
+                        continue
+                    key = (val_i, str(cond or ""))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    result.append((val_i, cond))
+        except Exception:
+            pass
         return result
 
     def get_max_weapon_range(self) -> float:

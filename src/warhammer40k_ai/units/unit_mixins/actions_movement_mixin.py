@@ -6083,6 +6083,18 @@ class ActionsMovementMixin:
         except Exception:
             pass
         try:
+            if game_map is None and game is not None:
+                game_map = getattr(game, "map", None)
+        except Exception:
+            pass
+        try:
+            from ...utility.aura_effects import has_aura_charge_reroll
+
+            if has_aura_charge_reroll(self, game_map=game_map):
+                return True
+        except Exception:
+            pass
+        try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("bondsman_reroll_charge"):
                 return True
