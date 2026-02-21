@@ -4,6 +4,7 @@ import html
 import json
 import re
 from functools import lru_cache
+from itertools import combinations
 from pathlib import Path
 
 from .detachment_manager import DetachmentManagerBase
@@ -140,6 +141,24 @@ def _normalize_detachment_name(text: str) -> str:
 
 class SpaceMarinesDetachmentManager(DetachmentManagerBase):
     faction_id = "SM"
+    _ANGELIC_LEGACY_SANGUINARY_GRACE = "SANGUINARY_GRACE"
+    _ANGELIC_LEGACY_CARMINE_WRATH = "CARMINE_WRATH"
+    _ANGELIC_LEGACY_THEIR_APPOINTED_HOUR = "THEIR_APPOINTED_HOUR"
+    _ANGELIC_LEGACY_KEYS = (
+        _ANGELIC_LEGACY_SANGUINARY_GRACE,
+        _ANGELIC_LEGACY_CARMINE_WRATH,
+        _ANGELIC_LEGACY_THEIR_APPOINTED_HOUR,
+    )
+    _ANGELIC_LEGACY_LABELS = {
+        _ANGELIC_LEGACY_SANGUINARY_GRACE: "Sanguinary Grace",
+        _ANGELIC_LEGACY_CARMINE_WRATH: "Carmine Wrath",
+        _ANGELIC_LEGACY_THEIR_APPOINTED_HOUR: "Their Appointed Hour",
+    }
+
+    def __init__(self, army=None):
+        super().__init__(army)
+        self.angelic_legacy_selected_keys: tuple[str, ...] = ()
+        self.angelic_legacy_selected_round: int = 0
 
     def _simple_norm(self, text: str) -> str:
         return _normalize_detachment_name(text)
@@ -172,6 +191,11 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Blade of Ultramar")
+
+    def is_angelic_inheritors(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Angelic Inheritors")
 
     def is_rage_cursed_onslaught(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -224,6 +248,87 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             if self.unit_is_adeptus_astartes(member):
                 return True
         return False
+
+    @classmethod
+    def angelic_legacy_label(cls, key: str) -> str:
+        return cls._ANGELIC_LEGACY_LABELS.get(str(key or "").strip().upper(), str(key or "").strip())
+
+    @classmethod
+    def _normalize_angelic_legacy_key(cls, value: str) -> str:
+        raw = str(value or "").strip().upper().replace("-", "_").replace(" ", "_")
+        if raw in cls._ANGELIC_LEGACY_KEYS:
+            return raw
+        if raw in {"SANGUINARYGRACE", "SANGUINARY"}:
+            return cls._ANGELIC_LEGACY_SANGUINARY_GRACE
+        if raw in {"CARMINEWRATH", "CARMINE"}:
+            return cls._ANGELIC_LEGACY_CARMINE_WRATH
+        if raw in {"THEIRAPPOINTEDHOUR", "APPOINTED_HOUR", "APPOINTEDHOUR"}:
+            return cls._ANGELIC_LEGACY_THEIR_APPOINTED_HOUR
+        return raw
+
+    def can_select_angelic_legacy(self, *, game=None) -> bool:
+        if not self.is_angelic_inheritors():
+            return False
+        if bool(self.angelic_legacy_selected_keys):
+            return False
+        if game is None:
+            return True
+        try:
+            return int(getattr(game, "turn", 0) or 0) == 1
+        except Exception:
+            return False
+
+    def get_angelic_legacy_pair_options(self) -> list[tuple[str, str]]:
+        return list(combinations(self._ANGELIC_LEGACY_KEYS, 2))
+
+    def select_angelic_legacy_options(self, choice_keys, *, battle_round=None) -> bool:
+        if not self.is_angelic_inheritors():
+            return False
+        raw_choices = list(choice_keys or [])
+        if len(raw_choices) != 2:
+            return False
+        normalized = [self._normalize_angelic_legacy_key(v) for v in raw_choices]
+        if len(set(normalized)) != 2:
+            return False
+        if any(v not in self._ANGELIC_LEGACY_KEYS for v in normalized):
+            return False
+        self.angelic_legacy_selected_keys = tuple(sorted(set(normalized)))
+        if battle_round is not None:
+            try:
+                self.angelic_legacy_selected_round = int(battle_round)
+            except Exception:
+                self.angelic_legacy_selected_round = 0
+        return True
+
+    def angelic_legacy_option_active(self, key: str) -> bool:
+        choice = self._normalize_angelic_legacy_key(key)
+        return choice in set(self.angelic_legacy_selected_keys)
+
+    def _legacy_of_the_angel_recipient(self, unit) -> bool:
+        if unit is None:
+            return False
+        if not self.is_angelic_inheritors():
+            return False
+        if not bool(self.angelic_legacy_selected_keys):
+            return False
+        if not self.attached_unit_is_adeptus_astartes(unit):
+            return False
+        return self._attached_unit_has_keyword(unit, "CHARACTER")
+
+    def legacy_of_the_angel_sanguinary_grace_applies(self, unit) -> bool:
+        if not self._legacy_of_the_angel_recipient(unit):
+            return False
+        return self.angelic_legacy_option_active(self._ANGELIC_LEGACY_SANGUINARY_GRACE)
+
+    def legacy_of_the_angel_carmine_wrath_applies(self, unit) -> bool:
+        if not self._legacy_of_the_angel_recipient(unit):
+            return False
+        return self.angelic_legacy_option_active(self._ANGELIC_LEGACY_CARMINE_WRATH)
+
+    def legacy_of_the_angel_their_appointed_hour_applies(self, unit) -> bool:
+        if not self._legacy_of_the_angel_recipient(unit):
+            return False
+        return self.angelic_legacy_option_active(self._ANGELIC_LEGACY_THEIR_APPOINTED_HOUR)
 
     def dutiful_tenacity_wound_roll_penalty(self, target_unit, *, strength=None, target_toughness=None) -> tuple[int, str]:
         if not self.is_wrath_of_the_rock():

@@ -182,6 +182,7 @@ Command phase:
 - shadow_in_the_warp_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="shadow_in_the_warp"`)
 - waaagh_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="waaagh"`)
 - combat_doctrines_dialog: CHOOSE_COMBAT_DOCTRINE {choice_key | skip} (context `army_id`, `battle_round`)
+- angelic_legacy_dialog: CHOOSE_ANGELIC_LEGACY {choice_keys[2]} (context `army_id`, `battle_round`)
 - grand_coven_dialog: CHOOSE_GRAND_COVEN {choice_key | skip} (context `army_id`, `battle_round`)
 - combat_drugs_dialog: CHOOSE_COMBAT_DRUGS {choice_key} (context `army_id`, `battle_round`)
 - warmaster_dialog: CHOOSE_WARMASTER_ABILITY {choice_key} (context `unit_id`, `battle_round`, `player_id`, `expires_round`)
@@ -400,6 +401,7 @@ Faction / Detachment / Ability choices:
 - dark_pacts_dialog: CHOOSE_DARK_PACT {choice_id} (selected option payload may include `empyric_wellspring_choice` for Cabal of Chaos)
 - doctrina_imperatives_dialog: CHOOSE_DOCTRINA {choice_id}
 - combat_doctrines_dialog: CHOOSE_COMBAT_DOCTRINE {choice_id | skip} (Combat Doctrines / Mastered Doctrines; availability validated by engine)
+- angelic_legacy_dialog: CHOOSE_ANGELIC_LEGACY {choice_id} (Angelic Inheritors; payload includes `choice_keys` with exactly two selected legacy abilities)
 - grand_coven_dialog: CHOOSE_GRAND_COVEN {choice_id | skip}
 - combat_drugs_dialog: CHOOSE_COMBAT_DRUGS {choice_id}
 - hyper_adaptations_dialog: CHOOSE_HYPER_ADAPTATION {choice_id}

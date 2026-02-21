@@ -577,6 +577,14 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"if your unit is battle shocked add \d+ to the attacks characteristic of melee weapons equipped by models in that unit instead",
             r"your army can include blood angels units but it cannot include adeptus astartes units drawn from any other chapter",
         ),
+        "Legacy of the Angel": (
+            r"at the start of the first battle round select two of the angelic legacy abilities listed below",
+            r"until the end of the battle those angelic legacy abilities are active and their effects apply to all adeptus astartes character units from your army",
+            r"this unit is eligible to shoot and declare a charge in a turn in which it fell back",
+            r"each time a model in this unit makes an attack reroll a hit roll of \d+ and reroll a wound roll of \d+",
+            r"you can reroll advance and charge rolls made for this unit",
+            r"your army can include blood angels units but it cannot include adeptus astartes units drawn from any other chapter",
+        ),
         "Hyper-adaptations": (
             r"at the start of the first battle round select one of the following hyper adaptations to be active for tyranids units from your army until the end of the battle",
             r"each time a tyranids model with this hyper adaptation makes an attack that targets an infantry or swarm unit that attack has the sustained hits \d+ ability",
@@ -1774,6 +1782,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Mastered Doctrines": (
             "Supported",
             "Blade of Ultramar: up to three Command phase doctrine selections; doctrine reuse requires Marneus Calgar on the battlefield; doctrine effects and Ultramarines-only chapter restriction enforced.",
+        ),
+        "Legacy of the Angel": (
+            "Supported",
+            "Angelic Inheritors: start-of-first-battle-round selection of exactly two Angelic Legacy abilities (Sanguinary Grace, Carmine Wrath, Their Appointed Hour) with Character-unit gating, plus Blood Angels chapter restriction enforcement.",
         ),
         "Dutiful Tenacity": (
             "Supported",

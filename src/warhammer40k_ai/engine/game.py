@@ -1044,6 +1044,68 @@ class Game(
         if hasattr(self, "request_decision"):
             self.request_decision(req)
 
+    def _maybe_prompt_angelic_legacy(self) -> None:
+        player = self.get_current_player()
+        if player is None:
+            raise RuntimeError("Angelic Legacy prompt requires current player.")
+        army = player.get_army()
+        if army is None:
+            raise RuntimeError("Angelic Legacy prompt requires an army.")
+        sm_mgr = getattr(army, "space_marines_detachments", None)
+        if sm_mgr is None:
+            return
+        if not getattr(sm_mgr, "can_select_angelic_legacy", lambda **_k: False)(game=self):
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        options = list(getattr(sm_mgr, "get_angelic_legacy_pair_options", lambda: [])() or [])
+        if not options:
+            return
+        from ..engine.decision_kinds import DECISION_CHOOSE_ANGELIC_LEGACY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.entity_ids import get_entity_id
+
+        army_id = get_entity_id(army)
+        battle_round = int(getattr(self, "turn", 0) or 0)
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_ANGELIC_LEGACY:
+                    continue
+                ctx = getattr(req, "context", {}) or {}
+                if (
+                    str(ctx.get("army_id", "")) == str(army_id)
+                    and int(ctx.get("battle_round", battle_round) or battle_round) == battle_round
+                ):
+                    return
+        req_options = []
+        for pair in list(options or []):
+            keys = [str(v or "").strip().upper() for v in list(pair or []) if str(v or "").strip()]
+            if len(keys) != 2:
+                continue
+            labels = [str(getattr(sm_mgr, "angelic_legacy_label", lambda _k: _k)(key) or key) for key in keys]
+            req_options.append(
+                DecisionOption.create(
+                    " + ".join(labels),
+                    payload={
+                        "choice_keys": list(keys),
+                        "summary": f"{labels[0]} and {labels[1]}",
+                        "army_id": army_id,
+                    },
+                )
+            )
+        if not req_options:
+            return
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_ANGELIC_LEGACY,
+            "Select two Angelic Legacy abilities.",
+            player_id=getattr(player, "id", None),
+            options=req_options,
+            context={"army_id": army_id, "battle_round": battle_round},
+        )
+        if hasattr(self, "request_decision"):
+            self.request_decision(req)
+
     def _maybe_prompt_grand_coven(self) -> None:
         player = self.get_current_player()
         if player is None:
@@ -7128,6 +7190,11 @@ class Game(
         mgr = getattr(army, "combat_doctrines", None)
         if mgr is not None:
             self._maybe_prompt_combat_doctrines()
+
+        # Space Marines: Angelic Legacy selection at the start of the first battle round.
+        sm_mgr = getattr(army, "space_marines_detachments", None)
+        if sm_mgr is not None:
+            self._maybe_prompt_angelic_legacy()
 
         # Thousand Sons: Grand Coven (Kindred Sorcery) selection at the start of your Command phase.
         mgr = getattr(army, "thousand_sons_detachments", None)

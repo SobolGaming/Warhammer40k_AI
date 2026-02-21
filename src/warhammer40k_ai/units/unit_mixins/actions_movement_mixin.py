@@ -3258,6 +3258,17 @@ class ActionsMovementMixin:
             reroll_hit_values.add(1)
             reroll_hit_reasons.append("Dance of Death (Hero's Prowess): re-roll Hit rolls of 1")
 
+        # Angelic Inheritors: Carmine Wrath (character units) re-roll Hit rolls of 1.
+        try:
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if sm_mgr is not None and getattr(sm_mgr, "legacy_of_the_angel_carmine_wrath_applies", None):
+                if sm_mgr.legacy_of_the_angel_carmine_wrath_applies(root):
+                    reroll_hit_values.add(1)
+                    reroll_hit_reasons.append("Carmine Wrath: re-roll Hit rolls of 1")
+        except Exception:
+            pass
+
         # Needgaard Oathband: HUNTR'S MARK grants ranged re-roll Hit rolls of 1.
         try:
             active_fn = getattr(root, "_needgaard_huntrs_mark_active_for_shooting", None)
@@ -3902,6 +3913,17 @@ class ActionsMovementMixin:
         if choice in ("VILLAIN", "ALL"):
             mods["wound"] += 1
             wound_reasons.append("Dance of Death (Villain's Doom): +1 to wound")
+
+        # Angelic Inheritors: Carmine Wrath (character units) re-roll Wound rolls of 1.
+        try:
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if sm_mgr is not None and getattr(sm_mgr, "legacy_of_the_angel_carmine_wrath_applies", None):
+                if sm_mgr.legacy_of_the_angel_carmine_wrath_applies(root):
+                    reroll_wound_values.add(1)
+                    reroll_wound_reasons.append("Carmine Wrath: re-roll Wound rolls of 1")
+        except Exception:
+            pass
 
         # Needgaard Oathband: HUNTR'S MARK grants ranged re-roll Wound rolls of 1.
         try:
@@ -4923,6 +4945,14 @@ class ActionsMovementMixin:
             mgr = getattr(army, "emperors_children", None) if army is not None else None
             if mgr is not None and getattr(mgr, "quicksilver_grace_applies", lambda _u: False)(self):
                 return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "legacy_of_the_angel_their_appointed_hour_applies", None):
+                if mgr.legacy_of_the_angel_their_appointed_hour_applies(self):
+                    return True
         except Exception:
             pass
         try:
@@ -6082,6 +6112,14 @@ class ActionsMovementMixin:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("pain_reroll_charge"):
                 return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "legacy_of_the_angel_their_appointed_hour_applies", None):
+                if mgr.legacy_of_the_angel_their_appointed_hour_applies(self):
+                    return True
         except Exception:
             pass
         try:
@@ -10225,6 +10263,14 @@ class ActionsMovementMixin:
         except Exception:
             pass
         try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "legacy_of_the_angel_sanguinary_grace_applies", None):
+                if mgr.legacy_of_the_angel_sanguinary_grace_applies(self):
+                    return True
+        except Exception:
+            pass
+        try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("vectored_engines_active"):
                 army = self.get_parent_army()
@@ -10482,6 +10528,14 @@ class ActionsMovementMixin:
         """Check if this unit can charge after falling back."""
         if self.has_thrill_seekers():
             return True
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "legacy_of_the_angel_sanguinary_grace_applies", None):
+                if mgr.legacy_of_the_angel_sanguinary_grace_applies(self):
+                    return True
+        except Exception:
+            pass
         try:
             army = self.get_parent_army()
         except Exception:

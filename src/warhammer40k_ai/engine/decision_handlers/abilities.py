@@ -17,6 +17,7 @@ from ..decision_kinds import (
     DECISION_CHOOSE_DARK_PACT,
     DECISION_CHOOSE_DOCTRINA,
     DECISION_CHOOSE_COMBAT_DOCTRINE,
+    DECISION_CHOOSE_ANGELIC_LEGACY,
     DECISION_CHOOSE_GRAND_COVEN,
     DECISION_CHOOSE_COMBAT_DRUGS,
     DECISION_CHOOSE_HYPER_ADAPTATION,
@@ -1320,6 +1321,53 @@ def _apply_choose_combat_doctrine(game: object, request: DecisionRequest, result
         label = _option_label(request, result) or str(choice)
         if label:
             _log_action_for_players(game, player, f"Combat Doctrines: {label} (Battle Round {battle_round})")
+    except Exception:
+        pass
+    return applied
+
+
+def _validate_choose_angelic_legacy(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    payload = _option_payload(request, result)
+    selected = payload.get("choice_keys")
+    if not isinstance(selected, list):
+        return ("Angelic Legacy selection requires choice_keys list.",)
+    if len(selected) != 2:
+        return ("Angelic Legacy requires selecting exactly two abilities.",)
+    army = _resolve_army(game, request, payload)
+    if army is None:
+        return ("Angelic Legacy army not found.",)
+    mgr = getattr(army, "space_marines_detachments", None)
+    if mgr is None:
+        return ("Space Marines detachment manager not found.",)
+    if not bool(getattr(mgr, "can_select_angelic_legacy", lambda **_k: False)(game=game)):
+        return ("Angelic Legacy cannot be selected right now.",)
+    return ()
+
+
+def _apply_choose_angelic_legacy(game: object, request: DecisionRequest, result: DecisionResult):
+    payload = _option_payload(request, result)
+    army = _resolve_army(game, request, payload)
+    if army is None:
+        raise RuntimeError("Angelic Legacy army not found.")
+    mgr = getattr(army, "space_marines_detachments", None)
+    if mgr is None:
+        raise RuntimeError("Space Marines detachment manager not found.")
+    selected = list(payload.get("choice_keys") or [])
+    battle_round = request.context.get("battle_round")
+    applied = bool(mgr.select_angelic_legacy_options(selected, battle_round=battle_round))
+    if not applied:
+        raise RuntimeError("Angelic Legacy selection was rejected.")
+    try:
+        player = getattr(army, "player", None)
+        labels = [str(getattr(mgr, "angelic_legacy_label", lambda _k: _k)(key) or key) for key in selected]
+        _log_action_for_players(
+            game,
+            player,
+            f"Legacy of the Angel: selected {' + '.join(labels)} (Battle Round {battle_round})",
+        )
     except Exception:
         pass
     return applied
@@ -10080,6 +10128,11 @@ register_decision_handler(
     DECISION_CHOOSE_COMBAT_DOCTRINE,
     validate=_validate_choose_combat_doctrine,
     apply=_apply_choose_combat_doctrine,
+)
+register_decision_handler(
+    DECISION_CHOOSE_ANGELIC_LEGACY,
+    validate=_validate_choose_angelic_legacy,
+    apply=_apply_choose_angelic_legacy,
 )
 register_decision_handler(
     DECISION_CHOOSE_GRAND_COVEN,
