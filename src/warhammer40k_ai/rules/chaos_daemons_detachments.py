@@ -66,9 +66,15 @@ class ChaosDaemonsDetachmentManager(DetachmentManagerBase):
     def blood_tainted_applies(self, unit) -> bool:
         return self.murdercall_applies(unit)
 
-    def seductive_gambit_applies(self, unit) -> bool:
+    def beguiling_aura_applies(self, unit) -> bool:
         if not self.is_legion_of_excess_detachment():
             return False
         if unit is None:
             return False
-        return self._attached_unit_has_keyword(unit, "SLAANESH")
+        return bool(
+            self._attached_unit_has_keyword(unit, "LEGIONES DAEMONICA")
+            and self._attached_unit_has_keyword(unit, "SLAANESH")
+        )
+
+    def seductive_gambit_applies(self, unit) -> bool:
+        return self.beguiling_aura_applies(unit)

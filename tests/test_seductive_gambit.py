@@ -14,7 +14,7 @@ class TestSeductiveGambit(unittest.TestCase):
                 self._id = "Daemonettes"
                 self.special_rules = {}
                 self.parent_army = army
-                self.keywords = ["SLAANESH"]
+                self.keywords = ["SLAANESH", "LEGIONES DAEMONICA"]
                 self.deployed = True
                 self.reserve_status = "deployed"
 

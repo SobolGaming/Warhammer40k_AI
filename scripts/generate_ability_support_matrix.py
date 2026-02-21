@@ -338,6 +338,14 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Blood Tainted": (
             r"at the end of a phase in which a legiones daemonica khorne unit from your army destroyed an enemy unit that was within range of an objective marker at the start of the phase if your unit has a higher level of control over that objective marker that objective marker remains under your control until your opponents level of control over that objective marker is greater than yours at the end of a phase",
         ),
+        "Beguiling Aura": (
+            r"legiones daemonica slaanesh units from your army are eligible to declare a charge in a turn in which they fell back",
+        ),
+        "Seductive Gambit": (
+            r"legiones daemonica slaanesh units from your army have the following ability",
+            r"each time this unit ends a charge move you can declare it will perform a seductive gambit",
+            r"if you do until the end of the turn this unit does not have the fights first ability but instead each time a model in this unit makes an attack you can reroll the hit roll and you can reroll a wound roll of 1",
+        ),
         "Fates in Flux": (
             r"you start the battle with three flux tokens we recommend using a dice to track how many flux tokens you have",
             r"you can spend one flux token just after an advance roll hit roll wound roll damage roll saving throw or hazardous test is made for a legiones daemonica tzeentch model or legiones daemonica tzeentch unit from your army to reroll the result of that roll throw or test",
@@ -1781,6 +1789,14 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Blood Tainted": (
             "Supported",
             "Blood Legion: phase-start objective-range snapshots plus kill tracking identify eligible destroyed enemies; at phase end, destroying KHORNE LEGIONES DAEMONICA units apply sticky control on qualifying objectives when their Level of Control is higher.",
+        ),
+        "Beguiling Aura": (
+            "Supported",
+            "Legion of Excess: eligible SLAANESH LEGIONES DAEMONICA units can declare charges in turns in which they Fell Back.",
+        ),
+        "Seductive Gambit": (
+            "Supported",
+            "Legion of Excess: charge-end optional Seductive Gambit decision toggles off Fights First until end of turn while granting melee re-roll Hit and re-roll Wound rolls of 1.",
         ),
         "Fates in Flux": (
             "Supported",

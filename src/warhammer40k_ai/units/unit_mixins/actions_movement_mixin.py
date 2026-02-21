@@ -10479,6 +10479,17 @@ class ActionsMovementMixin:
         if self.has_thrill_seekers():
             return True
         try:
+            army = self.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "chaos_daemons_detachments", None) if army is not None else None
+        if mgr is not None and getattr(mgr, "beguiling_aura_applies", None):
+            try:
+                if bool(mgr.beguiling_aura_applies(self)):
+                    return True
+            except Exception:
+                pass
+        try:
             if self._needgaard_ordered_retreat_active_this_turn():
                 return True
         except Exception:
