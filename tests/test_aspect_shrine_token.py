@@ -49,6 +49,18 @@ class TestAspectShrineToken(unittest.TestCase):
         choice = opts[0].wargear_to[0]
         self.assertEqual(choice[0][1], "aspect shrine token")
 
+    def test_parse_it_can_have_incubi_shrine_token(self):
+        from warhammer40k_ai.units.wargear import parse_alternate_3
+
+        unit = SimpleNamespace(models=[SimpleNamespace(name="Incubi") for _ in range(5)])
+        desc = "For every 5 models in this unit, it can have 1 Incubi Shrine token."
+        opts = parse_alternate_3([desc], unit)
+
+        self.assertEqual(len(opts), 1)
+        self.assertTrue(any("for every 5 models in this unit" in c for c in opts[0].conditionals))
+        choice = opts[0].wargear_to[0]
+        self.assertEqual(choice[0][1], "incubi shrine token")
+
     def test_apply_wargear_option_adds_tokens(self):
         from warhammer40k_ai.units.unit import Unit
         from warhammer40k_ai.units.wargear import WargearOption, WargearOptionType, Quantity
@@ -103,6 +115,34 @@ class TestAspectShrineToken(unittest.TestCase):
 
         u.apply_wargear_options()
         self.assertEqual(u.get_aspect_shrine_token_total(), 0)
+
+    def test_incubi_shrine_token_adds_shared_shrine_tokens_and_is_not_auto_applied(self):
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.units.wargear import WargearOption, WargearOptionType, Quantity
+
+        u = Unit.__new__(Unit)
+        u.models = [SimpleNamespace(name="Incubi", wargear=[], optional_wargear=[])]
+        for m in u.models:
+            m.parent_unit = u
+        u.possible_wargear = []
+        opt = WargearOption(
+            WargearOptionType.ADDITIONAL,
+            wargear_from=[],
+            wargear_to=[[(1, "incubi shrine token")]],
+            model_name="incubi",
+            model_quantity=Quantity(min=1, max=1),
+            item_quantity=Quantity(min=1, max=1),
+            conditionals=[],
+        )
+        u.wargear_options = [opt]
+
+        u.apply_wargear_options()
+        self.assertEqual(u.get_aspect_shrine_token_total(), 0)
+
+        u.apply_wargear_option(opt)
+        self.assertEqual(u.get_aspect_shrine_token_total(), 1)
+        self.assertTrue(u._has_wargear_named("Incubi Shrine Token"))
+
 
     def test_destroyed_aspect_bodyguard_does_not_leave_tokens_on_attached_leader(self):
         bodyguard = _make_unit("Dire Avengers")

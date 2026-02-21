@@ -120,12 +120,35 @@ class AbilitySpecsMixin:
             if str(m.group("subject") or "").strip().lower() != "model":
                 continue
             infantry_only = bool(m.group("infantry"))
+            exclude_raw = str(m.group("exclude_paren") or m.group("exclude") or "").strip().lower()
+            has_vehicle_exclusion = "vehicle" in exclude_raw
+            has_monster_exclusion = "monster" in exclude_raw
+            exclude_mv = bool(exclude_mv or (has_vehicle_exclusion and has_monster_exclusion))
+            exclude_vehicle_only = bool(has_vehicle_exclusion and not has_monster_exclusion)
+            applies_after_fight = bool(
+                " in your shooting phase and the fight phase " in normalized
+                or " has shot or fought " in normalized
+            )
             source = str(name or "Post-shoot Battle-shock").strip() or "Post-shoot Battle-shock"
-            key = (source.lower(), infantry_only, 0, 0, False)
+            key = (
+                source.lower(),
+                infantry_only,
+                bool(exclude_mv),
+                bool(exclude_vehicle_only),
+                bool(applies_after_fight),
+            )
             if key in seen:
                 continue
             seen.add(key)
-            specs.append({"infantry_only": infantry_only, "source": source})
+            specs.append(
+                {
+                    "infantry_only": infantry_only,
+                    "exclude_monster_vehicle": bool(exclude_mv),
+                    "exclude_vehicle_only": bool(exclude_vehicle_only),
+                    "applies_after_fight": bool(applies_after_fight),
+                    "source": source,
+                }
+            )
 
         try:
             root = self.get_attached_unit_root()
@@ -276,8 +299,23 @@ class AbilitySpecsMixin:
                 if str(m.group("subject") or "").strip().lower() != "unit":
                     continue
                 infantry_only = bool(m.group("infantry"))
+                exclude_raw = str(m.group("exclude_paren") or m.group("exclude") or "").strip().lower()
+                has_vehicle_exclusion = "vehicle" in exclude_raw
+                has_monster_exclusion = "monster" in exclude_raw
+                exclude_mv = bool(exclude_mv or (has_vehicle_exclusion and has_monster_exclusion))
+                exclude_vehicle_only = bool(has_vehicle_exclusion and not has_monster_exclusion)
+                applies_after_fight = bool(
+                    " in your shooting phase and the fight phase " in normalized
+                    or " has shot or fought " in normalized
+                )
                 source = str(name or "Post-shoot Battle-shock").strip() or "Post-shoot Battle-shock"
-                key = (source.lower(), infantry_only, 0, 0, False)
+                key = (
+                    source.lower(),
+                    infantry_only,
+                    bool(exclude_mv),
+                    bool(exclude_vehicle_only),
+                    bool(applies_after_fight),
+                )
                 if key in seen:
                     continue
                 seen.add(key)
@@ -285,6 +323,8 @@ class AbilitySpecsMixin:
                     {
                         "infantry_only": infantry_only,
                         "exclude_monster_vehicle": bool(exclude_mv),
+                        "exclude_vehicle_only": bool(exclude_vehicle_only),
+                        "applies_after_fight": bool(applies_after_fight),
                         "source": source,
                     }
                 )
@@ -1247,7 +1287,7 @@ class AbilitySpecsMixin:
             if not m:
                 continue
             try:
-                range_value = int(m.group("range") or 0)
+                range_value = int(m.group("range") or m.group("range_alt") or 0)
             except Exception:
                 range_value = 0
             try:
@@ -1509,55 +1549,72 @@ class AbilitySpecsMixin:
 
         specs: list[dict] = []
         seen: set[tuple] = set()
-        for name, desc in self._iter_model_specific_ability_entries(model):
-            text_src = desc or name or ""
-            if not text_src:
+        for spec in list(self.model_post_shoot_battleshock_specs(model) or []):
+            if not bool(spec.get("applies_after_fight", False)):
                 continue
-            text_src = self._strip_eligibility_prefix(text_src)
-            normalized = self._normalize_rules_text(text_src)
-            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
-            normalized = normalized.lower()
-            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
-            normalized = re.sub(r"\s+", " ", normalized).strip()
-            m = self._POST_SHOOT_OR_FIGHT_BATTLESHOCK_CONDITIONAL_RE.fullmatch(normalized)
-            if not m:
-                continue
-            if str(m.group("subject") or "").strip().lower() != "model":
-                continue
-            try:
-                pen = int(m.group("pen") or 0)
-            except Exception:
-                pen = 0
-            try:
-                rng = int(m.group("range") or 0)
-            except Exception:
-                rng = 0
-            phrase = str(m.group("friendly") or "").strip()
-            if pen <= 0 or rng <= 0:
-                continue
-            source = str(name or "Post-fight Battle-shock").strip() or "Post-fight Battle-shock"
+            source = str(spec.get("source", "") or "Post-fight Battle-shock").strip() or "Post-fight Battle-shock"
             key = (
                 source.lower(),
-                "model_post_fight_battleshock",
-                -int(pen),
-                int(rng),
-                phrase.lower(),
+                bool(spec.get("infantry_only", False)),
+                bool(spec.get("exclude_monster_vehicle", False)),
+                bool(spec.get("exclude_vehicle_only", False)),
+                int(spec.get("test_modifier", 0) or 0),
+                int(spec.get("test_modifier_on_kill", 0) or 0),
+                int(spec.get("test_modifier_if_target_within_range", 0) or 0),
+                int(spec.get("test_modifier_range", 0) or 0),
+                str(spec.get("test_modifier_friendly_keyword_phrase", "") or "").strip().lower(),
             )
             if key in seen:
                 continue
             seen.add(key)
-            specs.append(
-                {
-                    "test_modifier_if_target_within_range": -int(pen),
-                    "test_modifier_range": int(rng),
-                    "test_modifier_friendly_keyword_phrase": phrase,
-                    "source": source,
-                }
-            )
+            entry = dict(spec)
+            entry["source"] = source
+            specs.append(entry)
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
         self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def unit_post_fight_battleshock_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: after this unit has fought, select a hit enemy unit to take a Battle-shock test.
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_post_fight_battleshock_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple] = set()
+        for spec in list(root.unit_post_shoot_battleshock_specs() or []):
+            if not bool(spec.get("applies_after_fight", False)):
+                continue
+            source = str(spec.get("source", "") or "Post-fight Battle-shock").strip() or "Post-fight Battle-shock"
+            key = (
+                source.lower(),
+                bool(spec.get("infantry_only", False)),
+                bool(spec.get("exclude_monster_vehicle", False)),
+                bool(spec.get("exclude_vehicle_only", False)),
+                int(spec.get("test_modifier", 0) or 0),
+                int(spec.get("test_modifier_on_kill", 0) or 0),
+                int(spec.get("test_modifier_if_target_within_range", 0) or 0),
+                int(spec.get("test_modifier_range", 0) or 0),
+                str(spec.get("test_modifier_friendly_keyword_phrase", "") or "").strip().lower(),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            entry = dict(spec)
+            entry["source"] = source
+            specs.append(entry)
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
         return list(specs)
 
     def model_start_any_command_phase_battleshock_specs(
@@ -2475,7 +2532,7 @@ class AbilitySpecsMixin:
             normalized = normalized.lower()
             normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
             normalized = re.sub(r"\s+", " ", normalized).strip()
-            m = self._FIGHT_PHASE_ENGAGEMENT_BATTLESHOCK_RE.fullmatch(normalized)
+            m = self._FIGHT_PHASE_ENGAGEMENT_BATTLESHOCK_RE.search(normalized)
             if not m:
                 continue
             penalty = 0
@@ -5450,7 +5507,7 @@ class AbilitySpecsMixin:
                 normalized = normalized.lower()
                 normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
                 normalized = re.sub(r"\s+", " ", normalized).strip()
-                m = unit._FIGHT_PHASE_ENGAGEMENT_BATTLESHOCK_UNIT_RE.fullmatch(normalized)
+                m = unit._FIGHT_PHASE_ENGAGEMENT_BATTLESHOCK_UNIT_RE.search(normalized)
                 if not m:
                     continue
                 penalty = 0

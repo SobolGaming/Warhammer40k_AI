@@ -23,6 +23,16 @@ GROUP2_DRUKHARI_UTILITY_CASES = [
     ("Mind Like a Steel Trap (Aura)", "Lady Malys"),
 ]
 
+GROUP3_DRUKHARI_BATCH_CASES = [
+    ("Pain Adept", "Haemonculus"),
+    ("Pain Engine (Aura)", "Cronos"),
+    ("Torture Device", "Talos"),
+    ("Fear Incarnate (Aura)", "Haemonculus"),
+    ("Tormentors", "Incubi"),
+    ("Torturer's Craft", "Wracks"),
+    ("Incubi Shrine Token", "Incubi"),
+]
+
 
 def _norm_name(value: str) -> str:
     return str(value or "").replace("\u2019", "'").strip().lower()
@@ -80,6 +90,23 @@ def test_support_matrix_group1_drukhari_harlequin_corsair_abilities_supported(ab
 
 @pytest.mark.parametrize(("ability_name", "unit_name"), GROUP2_DRUKHARI_UTILITY_CASES)
 def test_support_matrix_group2_drukhari_utility_abilities_supported(ability_name: str, unit_name: str):
+    import scripts.generate_ability_support_matrix as gsm
+
+    _seed_maps(gsm)
+    row = _find_drukhari_datasheet_ability_row(gsm, ability_name=ability_name, unit_name=unit_name)
+    status, _notes = gsm._classify_ability(
+        row.get("name", ""),
+        row.get("description", ""),
+        ability_id=row.get("id", ""),
+        faction_id="DRU",
+        datasheet_id=row.get("datasheet_id", ""),
+    )
+
+    assert status == "Supported"
+
+
+@pytest.mark.parametrize(("ability_name", "unit_name"), GROUP3_DRUKHARI_BATCH_CASES)
+def test_support_matrix_group3_drukhari_batch_abilities_supported(ability_name: str, unit_name: str):
     import scripts.generate_ability_support_matrix as gsm
 
     _seed_maps(gsm)

@@ -1642,7 +1642,7 @@ class DatasheetWargearMixin:
                 if wg is None:
                     # Keep as optional note (so UI/printouts can still show it)
                     try:
-                        if _norm(nm) == "aspect shrine token":
+                        if _norm(nm) in ("aspect shrine token", "incubi shrine token"):
                             self.add_aspect_shrine_tokens(int(qty) if qty else 1)
                         model.optional_wargear.append(str(nm))
                     except Exception:
@@ -1757,7 +1757,7 @@ class DatasheetWargearMixin:
                     continue
                 # Only auto-apply if *all* items are unknown wargear (i.e. they will land in optional_wargear)
                 if all(_find_wargear(nm) is None for qty, nm in first if nm):
-                    if any(_norm(nm) == "aspect shrine token" for qty, nm in first if nm):
+                    if any(_norm(nm) in ("aspect shrine token", "incubi shrine token") for qty, nm in first if nm):
                         continue
                     self.apply_wargear_option(opt)
             return

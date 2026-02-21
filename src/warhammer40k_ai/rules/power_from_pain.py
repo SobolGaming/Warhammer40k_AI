@@ -298,6 +298,183 @@ class PowerFromPainManager:
                 return True
         return False
 
+    def _iter_unit_members(self, unit):
+        if unit is None:
+            return []
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return []
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        return list(members or [root])
+
+    def _unit_has_ability_named(self, unit, ability_name: str) -> bool:
+        want = _norm_ability_name(ability_name)
+        if unit is None or not want:
+            return False
+        for member in self._iter_unit_members(unit):
+            try:
+                possible = list(getattr(member, "possible_abilities", []) or [])
+            except Exception:
+                possible = []
+            for ab in possible:
+                try:
+                    name = ab if isinstance(ab, str) else getattr(ab, "name", "")
+                except Exception:
+                    name = ""
+                norm = _norm_ability_name(name)
+                if norm == want:
+                    return True
+            try:
+                models = list(getattr(member, "models", []) or [])
+            except Exception:
+                models = []
+            for model in models:
+                try:
+                    abilities = list(getattr(model, "abilities", []) or [])
+                except Exception:
+                    abilities = []
+                for ab in abilities:
+                    try:
+                        name = ab if isinstance(ab, str) else getattr(ab, "name", "")
+                    except Exception:
+                        name = ""
+                    norm = _norm_ability_name(name)
+                    if norm == want:
+                        return True
+        return False
+
+    def _model_has_wargear_named(self, model, wargear_name: str) -> bool:
+        want = str(wargear_name or "").strip().lower()
+        want = re.sub(r"[^a-z0-9]+", " ", want)
+        want = re.sub(r"\s+", " ", want).strip()
+        if model is None or not want:
+            return False
+        try:
+            wargear = list(getattr(model, "wargear", []) or [])
+        except Exception:
+            wargear = []
+        for wg in wargear:
+            try:
+                name = str(getattr(wg, "name", "") or "").strip().lower()
+            except Exception:
+                name = ""
+            name = re.sub(r"[^a-z0-9]+", " ", name)
+            name = re.sub(r"\s+", " ", name).strip()
+            if name == want:
+                return True
+        try:
+            optional_wargear = list(getattr(model, "optional_wargear", []) or [])
+        except Exception:
+            optional_wargear = []
+        for wg in optional_wargear:
+            name = str(wg or "").strip().lower()
+            name = re.sub(r"[^a-z0-9]+", " ", name)
+            name = re.sub(r"\s+", " ", name).strip()
+            if name == want:
+                return True
+        return False
+
+    def _pain_engine_sources_for_empower(self, empowered_unit, *, game=None) -> list:
+        if empowered_unit is None or game is None:
+            return []
+        game_map = getattr(game, "map", None)
+        if game_map is None:
+            return []
+        try:
+            from ..utility.aura_utils import unit_within_range_of_unit
+        except Exception:
+            return []
+        try:
+            empowered_root = empowered_unit.get_attached_unit_root()
+        except Exception:
+            empowered_root = empowered_unit
+        if empowered_root is None:
+            return []
+
+        results = []
+        seen: set[str] = set()
+        for candidate in list(getattr(self.army, "units", []) or []):
+            if candidate is None:
+                continue
+            try:
+                source = candidate.get_attached_unit_root()
+            except Exception:
+                source = candidate
+            if source is None:
+                continue
+            source_id = str(get_entity_id(source) or "")
+            if not source_id or source_id in seen:
+                continue
+            seen.add(source_id)
+            if not self._unit_is_alive(source):
+                continue
+            if not self._unit_on_battlefield(source):
+                continue
+            if not self._unit_has_ability_named(source, "Pain Engine (Aura)"):
+                continue
+            try:
+                if not unit_within_range_of_unit(source, empowered_root, 9.0, use_attached_aggregate=True):
+                    continue
+            except Exception:
+                continue
+            results.append(source)
+        return results
+
+    def _pain_engine_roll_bonus(self, pain_engine_unit) -> int:
+        if pain_engine_unit is None:
+            return 0
+        try:
+            models = list(getattr(pain_engine_unit, "models", []) or [])
+        except Exception:
+            models = []
+        if not models:
+            return 0
+        for model in models:
+            try:
+                alive = bool(getattr(model, "is_alive", True))
+            except Exception:
+                alive = True
+            if not alive:
+                continue
+            if not self._model_has_wargear_named(model, "spirit vortex"):
+                return 1
+        return 0
+
+    def _apply_pain_engine_refund_on_empower(self, empowered_unit, *, game=None) -> None:
+        if not self._army_has_power_from_pain():
+            return
+        sources = self._pain_engine_sources_for_empower(empowered_unit, game=game)
+        if not sources:
+            return
+        player = getattr(self.army, "player", None)
+        for source in sources:
+            bonus = self._pain_engine_roll_bonus(source)
+            roll = int(get_roll("D6"))
+            total = int(roll + bonus)
+            try:
+                from ..utility.event_bus import append_dice
+
+                if bonus:
+                    append_dice(
+                        player,
+                        f"Pain Engine roll ({getattr(source, 'name', 'Pain Engine')}): {roll}+{bonus}={total}",
+                    )
+                else:
+                    append_dice(
+                        player,
+                        f"Pain Engine roll ({getattr(source, 'name', 'Pain Engine')}): {roll}",
+                    )
+            except Exception:
+                pass
+            if total >= 5:
+                self.gain_tokens(1, reason=f"Pain Engine ({getattr(source, 'name', 'Unit')})")
+
     def _unit_owner(self, unit):
         try:
             army = unit.get_parent_army()
@@ -535,16 +712,7 @@ class PowerFromPainManager:
         return True
 
     def _has_pain_adept(self, unit) -> bool:
-        if unit is None:
-            return False
-        for ab in list(getattr(unit, "possible_abilities", []) or []):
-            try:
-                name = ab if isinstance(ab, str) else getattr(ab, "name", "")
-            except Exception:
-                name = ""
-            if str(name or "").strip().lower() == "pain adept":
-                return True
-        return False
+        return bool(self._unit_has_ability_named(unit, "Pain Adept"))
 
     def gain_tokens(self, amount: int, *, reason: str = "") -> int:
         if not self._army_has_power_from_pain():
@@ -609,7 +777,7 @@ class PowerFromPainManager:
         if roll >= 4:
             self.gain_tokens(1, reason="Pain Adept (4+)")
 
-    def on_enemy_unit_destroyed(self, unit) -> None:
+    def on_enemy_unit_destroyed(self, unit, *, destroyed_by_unit=None) -> None:
         if not self._army_has_power_from_pain():
             return
         if unit is None:
@@ -620,6 +788,22 @@ class PowerFromPainManager:
         except Exception:
             return
         self.gain_tokens(1, reason="Enemy unit destroyed")
+        if destroyed_by_unit is None:
+            return
+        try:
+            source_root = destroyed_by_unit.get_attached_unit_root()
+        except Exception:
+            source_root = destroyed_by_unit
+        if source_root is None:
+            return
+        try:
+            if source_root.get_parent_army() is not self.army:
+                return
+        except Exception:
+            return
+        if not self._unit_has_ability_named(source_root, "Torture Device"):
+            return
+        self.gain_tokens(1, reason="Torture Device")
 
     def on_enemy_battle_shock_failed(self, unit) -> None:
         if not self._army_has_power_from_pain():
@@ -1287,6 +1471,7 @@ class PowerFromPainManager:
                     return False
                 if not self.spend_tokens(1, reason=f"Empower ({trigger})"):
                     return False
+                self._apply_pain_engine_refund_on_empower(root, game=game)
                 pending = {
                     "unit_id": unit_id,
                     "trigger": str(trigger or ""),
@@ -1323,6 +1508,7 @@ class PowerFromPainManager:
             return False
         if not self.spend_tokens(1, reason=f"Empower ({trigger})"):
             return False
+        self._apply_pain_engine_refund_on_empower(root, game=game)
         applied = self._apply_empowerment_effects(
             root,
             spec_keys=[spec.key for spec in specs],

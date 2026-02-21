@@ -2227,7 +2227,10 @@ class Unit(
         re.IGNORECASE,
     )
     _POST_SHOOT_BATTLESHOCK_RE = re.compile(
-        r"in your shooting phase after this (?P<subject>model|unit) has shot select one enemy (?:(?P<infantry>infantry) )?unit "
+        r"in your shooting phase(?: and the fight phase)? after this (?P<subject>model|unit) has shot(?: or fought)? "
+        r"select one enemy (?:(?P<infantry>infantry) )?unit "
+        r"(?:\((?:excluding|except) (?P<exclude_paren>[a-z0-9 ]+)\) )?"
+        r"(?:excluding (?P<exclude>[a-z0-9 ]+) )?"
         r"(?:that was )?hit by one or more of those attacks that (?:enemy )?unit must take a battle shock test",
         re.IGNORECASE,
     )
@@ -2693,9 +2696,12 @@ class Unit(
         re.IGNORECASE,
     )
     _OPPONENT_COMMAND_PHASE_BELOW_STARTING_BATTLESHOCK_RE = re.compile(
-        r"in the battle shock step of your opponent s command phase if an enemy unit that is below its starting strength is within "
-        r"(?P<range>\d+)\s*\"?\s*of this model that enemy unit must take a battle shock test subtracting (?P<pen>\d+) from that test "
-        r"if it is a psyker unit",
+        r"(?:while an enemy unit is within (?P<range_alt>\d+)\s*\"?\s*of this model(?:,)?\s+)?"
+        r"in the battle shock step of your opponent s command phase if "
+        r"(?:an enemy unit that is below its starting strength is within (?P<range>\d+)\s*\"?\s*of this model|"
+        r"such an enemy unit is below its starting strength) "
+        r"(?:that enemy unit|it) must take a battle shock test"
+        r"(?: subtracting (?P<pen>\d+) from that test if it is a psyker unit)?",
         re.IGNORECASE,
     )
     _START_ANY_COMMAND_PHASE_ENEMY_RANGE_BATTLESHOCK_RE = re.compile(

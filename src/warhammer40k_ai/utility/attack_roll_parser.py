@@ -195,6 +195,8 @@ def _parse_condition(text: str) -> Optional[AttackRollCondition]:
 
     if re.fullmatch(r"(?:the )?target (?:of that attack )?is battle-?shocked", t):
         return AttackRollCondition(target_battleshocked=True)
+    if re.fullmatch(r"that target is battle-?shocked", t):
+        return AttackRollCondition(target_battleshocked=True)
     if re.fullmatch(r"that enemy unit is battle-?shocked", t):
         return AttackRollCondition(target_battleshocked=True)
 
@@ -228,6 +230,10 @@ def _parse_condition(text: str) -> Optional[AttackRollCondition]:
     if re.fullmatch(r"that enemy unit is (?:also )?below (?:its )?starting strength", t):
         return AttackRollCondition(target_below_starting_strength=True)
     if re.fullmatch(r"that enemy unit is (?:also )?below half[- ]strength", t):
+        return AttackRollCondition(target_below_half_strength=True)
+    if re.fullmatch(r"that target is (?:also )?below (?:its )?starting strength", t):
+        return AttackRollCondition(target_below_starting_strength=True)
+    if re.fullmatch(r"that target is (?:also )?below half[- ]strength", t):
         return AttackRollCondition(target_below_half_strength=True)
     if re.fullmatch(r"that (?:enemy )?unit is afflicted", t):
         return AttackRollCondition(target_keywords_any=("afflicted",))
@@ -379,6 +385,10 @@ def _parse_target_clause(text: str) -> Optional[AttackRollCondition]:
         return AttackRollCondition(target_keywords_any=("afflicted",))
     if re.fullmatch(r"unit that is afflicted", t):
         return AttackRollCondition(target_keywords_any=("afflicted",))
+    if re.fullmatch(r"battle-?shocked unit", t):
+        return AttackRollCondition(target_battleshocked=True)
+    if re.fullmatch(r"unit that is battle-?shocked", t):
+        return AttackRollCondition(target_battleshocked=True)
     if re.fullmatch(r"character (?:unit|model)", t):
         return AttackRollCondition(target_keywords_any=("character",))
     if re.fullmatch(r"monster or vehicle unit", t):

@@ -282,6 +282,41 @@ class GameShootingFightHandlersMixin:
             except Exception:
                 return False
 
+        def _is_vehicle(unit) -> bool:
+            if unit is None:
+                return False
+            try:
+                return bool(unit.has_keyword("VEHICLE"))
+            except Exception:
+                pass
+            try:
+                return bool(unit.has_any_keyword("VEHICLE"))
+            except Exception:
+                return False
+
+        def _is_infantry(unit) -> bool:
+            if unit is None:
+                return False
+            is_infantry_fn = getattr(unit, "is_infantry", None)
+            if callable(is_infantry_fn):
+                try:
+                    return bool(is_infantry_fn())
+                except Exception:
+                    pass
+            return bool(getattr(unit, "is_infantry", False))
+
+        def _spec_allows_target(spec: dict, target) -> bool:
+            infantry_only = bool(spec.get("infantry_only", False))
+            exclude_mv = bool(spec.get("exclude_monster_vehicle", False))
+            exclude_vehicle_only = bool(spec.get("exclude_vehicle_only", False))
+            if infantry_only and not _is_infantry(target):
+                return False
+            if exclude_mv and _is_monster_or_vehicle(target):
+                return False
+            if exclude_vehicle_only and _is_vehicle(target):
+                return False
+            return True
+
         def _model_killed_target(model, target) -> bool:
             if not isinstance(killing_models_by_target, dict):
                 return False
@@ -345,8 +380,6 @@ class GameShootingFightHandlersMixin:
             if not specs:
                 continue
             for spec in specs:
-                infantry_only = bool(spec.get("infantry_only", False))
-                exclude_mv = bool(spec.get("exclude_monster_vehicle", False))
                 candidates: list[Any] = []
                 for target_unit, hits in (hits_by_target or {}).items():
                     if target_unit is None:
@@ -355,15 +388,7 @@ class GameShootingFightHandlersMixin:
                         continue
                     if not _is_enemy_unit(target_unit):
                         continue
-                    if infantry_only:
-                        is_infantry_fn = getattr(target_unit, "is_infantry", None)
-                        if callable(is_infantry_fn):
-                            is_infantry = bool(is_infantry_fn())
-                        else:
-                            is_infantry = bool(getattr(target_unit, "is_infantry", False))
-                        if not is_infantry:
-                            continue
-                    if exclude_mv and _is_monster_or_vehicle(target_unit):
+                    if not _spec_allows_target(spec, target_unit):
                         continue
                     if not _model_hit_target(model, target_unit):
                         continue
@@ -373,8 +398,6 @@ class GameShootingFightHandlersMixin:
 
         unit_specs = attacker_unit.unit_post_shoot_battleshock_specs() or []
         for spec in unit_specs:
-            infantry_only = bool(spec.get("infantry_only", False))
-            exclude_mv = bool(spec.get("exclude_monster_vehicle", False))
             candidates: list[Any] = []
             for target_unit, hits in (hits_by_target or {}).items():
                 if target_unit is None:
@@ -383,15 +406,7 @@ class GameShootingFightHandlersMixin:
                     continue
                 if not _is_enemy_unit(target_unit):
                     continue
-                if infantry_only:
-                    is_infantry_fn = getattr(target_unit, "is_infantry", None)
-                    if callable(is_infantry_fn):
-                        is_infantry = bool(is_infantry_fn())
-                    else:
-                        is_infantry = bool(getattr(target_unit, "is_infantry", False))
-                    if not is_infantry:
-                        continue
-                if exclude_mv and _is_monster_or_vehicle(target_unit):
+                if not _spec_allows_target(spec, target_unit):
                     continue
                 candidates.append(target_unit)
             if candidates:
@@ -495,6 +510,53 @@ class GameShootingFightHandlersMixin:
                 return False
             return bool(candidate.is_alive())
 
+        def _is_monster_or_vehicle(unit) -> bool:
+            if unit is None:
+                return False
+            try:
+                return bool(unit.has_keyword("MONSTER") or unit.has_keyword("VEHICLE"))
+            except Exception:
+                pass
+            try:
+                return bool(unit.has_any_keyword("MONSTER") or unit.has_any_keyword("VEHICLE"))
+            except Exception:
+                return False
+
+        def _is_vehicle(unit) -> bool:
+            if unit is None:
+                return False
+            try:
+                return bool(unit.has_keyword("VEHICLE"))
+            except Exception:
+                pass
+            try:
+                return bool(unit.has_any_keyword("VEHICLE"))
+            except Exception:
+                return False
+
+        def _is_infantry(unit) -> bool:
+            if unit is None:
+                return False
+            is_infantry_fn = getattr(unit, "is_infantry", None)
+            if callable(is_infantry_fn):
+                try:
+                    return bool(is_infantry_fn())
+                except Exception:
+                    pass
+            return bool(getattr(unit, "is_infantry", False))
+
+        def _spec_allows_target(spec: dict, target) -> bool:
+            infantry_only = bool(spec.get("infantry_only", False))
+            exclude_mv = bool(spec.get("exclude_monster_vehicle", False))
+            exclude_vehicle_only = bool(spec.get("exclude_vehicle_only", False))
+            if infantry_only and not _is_infantry(target):
+                return False
+            if exclude_mv and _is_monster_or_vehicle(target):
+                return False
+            if exclude_vehicle_only and _is_vehicle(target):
+                return False
+            return True
+
         def _model_hit_target(model, candidate) -> bool:
             if not isinstance(hit_models_by_target, dict):
                 return True
@@ -556,6 +618,8 @@ class GameShootingFightHandlersMixin:
                         continue
                     if not _is_enemy_unit(cand):
                         continue
+                    if not _spec_allows_target(spec, cand):
+                        continue
                     if not _model_hit_target(model, cand):
                         continue
                     candidates.append(cand)
@@ -564,7 +628,10 @@ class GameShootingFightHandlersMixin:
                 ability_name = str(spec.get("source", "") or "Post-fight Battle-shock").strip() or "Post-fight Battle-shock"
                 options = []
                 for cand in list(candidates):
-                    modifier = 0
+                    try:
+                        modifier = int(spec.get("test_modifier", 0) or 0)
+                    except Exception:
+                        modifier = 0
                     try:
                         conditional_mod = int(spec.get("test_modifier_if_target_within_range", 0) or 0)
                     except Exception:
@@ -604,6 +671,68 @@ class GameShootingFightHandlersMixin:
                     },
                 )
                 self.request_decision(request)
+
+        unit_specs = attacker_unit.unit_post_fight_battleshock_specs() or []
+        for spec in unit_specs:
+            candidates = []
+            for cand, hits in list((hits_by_target or {}).items()):
+                if cand is None:
+                    continue
+                if int(hits or 0) <= 0:
+                    continue
+                if not _is_enemy_unit(cand):
+                    continue
+                if not _spec_allows_target(spec, cand):
+                    continue
+                candidates.append(cand)
+            if not candidates:
+                continue
+            ability_name = str(spec.get("source", "") or "Post-fight Battle-shock").strip() or "Post-fight Battle-shock"
+            options = []
+            for cand in list(candidates):
+                try:
+                    modifier = int(spec.get("test_modifier", 0) or 0)
+                except Exception:
+                    modifier = 0
+                try:
+                    conditional_mod = int(spec.get("test_modifier_if_target_within_range", 0) or 0)
+                except Exception:
+                    conditional_mod = 0
+                if conditional_mod:
+                    try:
+                        cond_range = float(spec.get("test_modifier_range", 0) or 0.0)
+                    except Exception:
+                        cond_range = 0.0
+                    phrase = str(spec.get("test_modifier_friendly_keyword_phrase", "") or "")
+                    if _target_within_friendly_keyword_phrase_range(
+                        cand,
+                        phrase=phrase,
+                        range_value=cond_range,
+                    ):
+                        modifier += int(conditional_mod)
+                payload = {"unit_id": get_entity_id(cand)}
+                if modifier:
+                    payload["battle_shock_test_modifier"] = int(modifier)
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(cand, "name", "Unit") or "Unit"),
+                        payload=payload,
+                    )
+                )
+            if not options:
+                continue
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
+                f"{ability_name}: select a unit to take a Battle-shock test.",
+                player_id=getattr(attacker_player, "id", None),
+                options=options,
+                context={
+                    "attacker_unit_id": get_entity_id(attacker_unit),
+                    "model_id": None,
+                    "ability_name": ability_name,
+                },
+            )
+            self.request_decision(request)
 
     def _on_unit_shooting_resolved_post_shoot_shoot_again(
         self,

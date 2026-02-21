@@ -2387,6 +2387,34 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Once per turn: first failed saving throw for the bearer's unit sets that attack's Damage to 0.",
         ),
+        ("DRU", "Pain Adept"): (
+            "Supported",
+            "Command phase: if one or more models with this ability are on the battlefield, roll one D6 and gain 1 Pain token on 4+.",
+        ),
+        ("DRU", "Pain Engine (Aura)"): (
+            "Supported",
+            "Each time 1 Pain token is spent to Empower a friendly unit within 9\", roll one D6 (add 1 if one or more models in this unit are not equipped with a spirit vortex); on 5+, gain 1 Pain token.",
+        ),
+        ("DRU", "Torture Device"): (
+            "Supported",
+            "Each time this unit destroys an enemy unit, you gain 1 additional Pain token.",
+        ),
+        ("DRU", "Fear Incarnate (Aura)"): (
+            "Supported",
+            "Opponent Command phase Battle-shock step: enemy units below Starting Strength within range must test; PSYKER units take the specified penalty.",
+        ),
+        ("DRU", "Tormentors"): (
+            "Supported",
+            "Start of Fight phase: enemy units within Engagement Range of units with this ability must take Battle-shock tests; melee attacks gain +1 to hit vs Battle-shocked units.",
+        ),
+        ("DRU", "Torturer's Craft"): (
+            "Supported",
+            "Shooting/Fight phase after this unit has shot or fought: select one hit enemy unit (excluding VEHICLES); it must take a Battle-shock test.",
+        ),
+        ("DRU", "Incubi Shrine Token"): (
+            "Supported",
+            "Per-roll token prompt lets the unit spend shrine tokens to change one Hit or Wound roll to an unmodified 6, consuming a token each time.",
+        ),
         ("AE", "Cloudstrider"): ("Supported", "Leading: optional 6\" Deep Strike placement; no charge that turn."),
         ("AE", "Cry of the Wind"): (
             "Supported",

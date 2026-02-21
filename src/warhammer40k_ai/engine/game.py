@@ -5428,7 +5428,7 @@ class Game(
             candidates.append(unit)
         return candidates
 
-    def _on_unit_destroyed_power_from_pain(self, unit=None, **_kwargs) -> None:
+    def _on_unit_destroyed_power_from_pain(self, unit=None, destroyed_by_unit=None, **_kwargs) -> None:
         if unit is None:
             return
         for p in list(self.players or []):
@@ -5440,7 +5440,7 @@ class Game(
             mgr = getattr(army, "power_from_pain", None)
             if mgr is None:
                 continue
-            mgr.on_enemy_unit_destroyed(unit)
+            mgr.on_enemy_unit_destroyed(unit, destroyed_by_unit=destroyed_by_unit)
 
     def _on_unit_destroyed_martial_leverage(self, unit=None, **_kwargs) -> None:
         if unit is None:

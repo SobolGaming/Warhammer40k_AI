@@ -104,6 +104,54 @@ class TestDrukhariPowerFromPain(unittest.TestCase):
 
         self.assertEqual(mgr.tokens, 2)
 
+    def test_torture_device_grants_additional_token_on_destroy(self):
+        from warhammer40k_ai.rules.power_from_pain import PowerFromPainManager
+
+        army = _ArmyStub()
+        player = _PlayerStub("Drukhari", army)
+        army.player = player
+        talos = _UnitStub(
+            name="Talos",
+            army=army,
+            abilities=[SimpleNamespace(name="Torture Device")],
+        )
+        army.units.append(talos)
+        mgr = PowerFromPainManager(army)
+
+        enemy_army = _ArmyStub(faction_id="SM")
+        enemy_unit = _UnitStub(name="Enemy", army=enemy_army)
+
+        mgr.on_enemy_unit_destroyed(enemy_unit, destroyed_by_unit=talos)
+
+        self.assertEqual(mgr.tokens, 2)
+
+    def test_pain_engine_refunds_token_when_empowering(self):
+        from warhammer40k_ai.rules.power_from_pain import PowerFromPainManager
+
+        army = _ArmyStub()
+        player = _PlayerStub("Drukhari", army)
+        army.player = player
+        empowered = _UnitStub(
+            name="Kabalites",
+            army=army,
+            abilities=[SimpleNamespace(name="Hatred Eternal (Pain)")],
+        )
+        pain_engine = _UnitStub(
+            name="Cronos",
+            army=army,
+            abilities=[SimpleNamespace(name="Pain Engine (Aura)")],
+        )
+        army.units.extend([empowered, pain_engine])
+        mgr = PowerFromPainManager(army)
+        mgr.tokens = 1
+        game = _GameStub(phase_name="SHOOTING_PHASE", current_player=player)
+
+        with patch.object(mgr, "_pain_engine_sources_for_empower", return_value=[pain_engine]):
+            with patch("warhammer40k_ai.rules.power_from_pain.get_roll", return_value=4):
+                self.assertTrue(mgr.empower_unit_for_trigger(empowered, trigger="shooting", game=game))
+
+        self.assertEqual(mgr.tokens, 1)
+
     def test_empower_hatred_eternal_shooting(self):
         from warhammer40k_ai.rules.power_from_pain import PowerFromPainManager
 

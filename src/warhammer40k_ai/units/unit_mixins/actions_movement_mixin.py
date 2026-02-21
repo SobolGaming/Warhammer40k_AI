@@ -809,7 +809,8 @@ class ActionsMovementMixin:
             try:
                 for model in list(getattr(root, "models", []) or []):
                     for ow in list(getattr(model, "optional_wargear", []) or []):
-                        if Unit._norm_wargear_name(str(ow or "")) == "aspect shrine token":
+                        token_name = Unit._norm_wargear_name(str(ow or ""))
+                        if token_name in ("aspect shrine token", "incubi shrine token"):
                             count += 1
             except Exception:
                 count = 0
@@ -897,7 +898,7 @@ class ActionsMovementMixin:
         want = Unit._norm_wargear_name(name)
         if not want:
             return False
-        if want == "aspect shrine token":
+        if want in ("aspect shrine token", "incubi shrine token"):
             try:
                 if self.get_aspect_shrine_token_total() > 0:
                     return True

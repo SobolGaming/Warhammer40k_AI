@@ -6568,7 +6568,7 @@ class KeywordsDetachmentsMixin:
                 seen_names.add(name_key)
             text_src = desc or name or ""
             for rule in self._parse_attack_roll_rules_from_text(text_src):
-                if rule.subject != "this_model":
+                if rule.subject not in ("this_model", "model_in_this_unit"):
                     continue
                 rules.append((rule, ability_name or "Model ability"))
 
