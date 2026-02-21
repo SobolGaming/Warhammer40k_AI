@@ -3969,6 +3969,22 @@ class ActionsMovementMixin:
         except Exception:
             pass
 
+        # The Lost Brethren: A Noble Death in Combat (Death Company melee attacks).
+        try:
+            if atype in ("any", "melee"):
+                army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+                sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                mode_fn = getattr(sm_mgr, "a_noble_death_in_combat_reroll_mode", None) if sm_mgr is not None else None
+                mode = str(mode_fn(root) if callable(mode_fn) else "").strip().lower()
+                if mode == "full":
+                    mods["reroll_wound_full"] = True
+                    reroll_wound_full_reasons.append("A Noble Death in Combat: re-roll Wound roll")
+                elif mode == "ones":
+                    reroll_wound_values.add(1)
+                    reroll_wound_reasons.append("A Noble Death in Combat: re-roll Wound rolls of 1")
+        except Exception:
+            pass
+
         # Needgaard Oathband: HUNTR'S MARK grants ranged re-roll Wound rolls of 1.
         try:
             active_fn = getattr(root, "_needgaard_huntrs_mark_active_for_shooting", None)

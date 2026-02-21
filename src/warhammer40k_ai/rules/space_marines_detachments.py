@@ -262,6 +262,11 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Wrath of the Rock")
 
+    def is_the_lost_brethren(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("The Lost Brethren")
+
     def is_1st_company_task_force(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
             return False
@@ -531,6 +536,31 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         name = str(getattr(root, "name", "") or "").strip().lower()
         return "outrider squad" in name
 
+    def _unit_is_the_lost_brethren_battleline(self, unit) -> bool:
+        if unit is None:
+            return False
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        name = str(getattr(root, "name", "") or "").strip().lower()
+        return name in {
+            "death company marines",
+            "death company marines with bolt rifles",
+        }
+
+    def _unit_is_death_company(self, unit) -> bool:
+        if unit is None:
+            return False
+        if self._attached_unit_has_keyword(unit, "DEATH COMPANY"):
+            return True
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        name = str(getattr(root, "name", "") or "").strip().upper()
+        return "DEATH COMPANY" in name
+
     def apply_company_of_hunters_battleline_keywords(self, unit=None) -> None:
         if not self.is_company_of_hunters() or self.army is None:
             return
@@ -555,6 +585,54 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             if not any(str(k or "").strip().lower() == "battleline" for k in keywords):
                 keywords.append("Battleline")
                 root.keywords = keywords
+
+    def apply_the_lost_brethren_battleline_keywords(self, unit=None) -> None:
+        if not self.is_the_lost_brethren() or self.army is None:
+            return
+        if unit is None:
+            units = list(getattr(self.army, "units", []) or [])
+        else:
+            units = [unit]
+        for entry in units:
+            if entry is None:
+                continue
+            root = entry.get_attached_unit_root() if hasattr(entry, "get_attached_unit_root") else entry
+            if root is None:
+                continue
+            try:
+                if root.get_parent_army() is not self.army:
+                    continue
+            except Exception:
+                continue
+            if not self._unit_is_the_lost_brethren_battleline(root):
+                continue
+            keywords = list(getattr(root, "keywords", []) or [])
+            if not any(str(k or "").strip().lower() == "battleline" for k in keywords):
+                keywords.append("Battleline")
+                root.keywords = keywords
+
+    def a_noble_death_in_combat_reroll_mode(self, unit) -> str:
+        if unit is None:
+            return ""
+        if not self.is_the_lost_brethren():
+            return ""
+        if not self.attached_unit_is_adeptus_astartes(unit):
+            return ""
+        if not self._unit_is_death_company(unit):
+            return ""
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return ""
+        below_half_fn = getattr(root, "is_below_half_strength", None)
+        if callable(below_half_fn) and bool(below_half_fn()):
+            return "full"
+        below_start_fn = getattr(root, "is_below_starting_strength", None)
+        if callable(below_start_fn) and bool(below_start_fn()):
+            return "ones"
+        return ""
 
     def masters_of_manoeuvre_shoot_after_advance_applies(self, unit, weapon_profile=None) -> bool:
         if not self.is_company_of_hunters():

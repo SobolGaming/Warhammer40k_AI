@@ -622,6 +622,12 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time a model in a darnath lysander unit from your army makes an attack that targets your oath of moment target you can reroll the wound roll",
             r"your army can include imperial fists units but it cannot include any adeptus astartes units drawn from any other chapter",
         ),
+        "A Noble Death in Combat": (
+            r"each time a death company model from your army makes a melee attack reroll a wound roll of \d+ if that models unit is below its starting strength",
+            r"if that models unit is below half strength you can reroll the wound roll instead",
+            r"if you select this detachment death company marines and death company marines with bolt rifles units from your army have the battleline keyword",
+            r"your army can include blood angels units but it cannot include any adeptus astartes units drawn from any other chapter",
+        ),
         "Maddened Ferocity": (
             r"each time an adeptus astartes model from your army makes a melee attack reroll a wound roll of \d+",
             r"each time an adeptus astartes unit from your army is selected to fight if that unit made a charge move this turn until the end of the phase add \d+ to the attacks characteristic of melee weapons equipped by models in that unit",
@@ -1885,6 +1891,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Wrath of Dorn": (
             "Supported",
             "Emperor's Shield: attacks by ADEPTUS ASTARTES models against the current Oath of Moment target can re-roll Wound rolls of 1, and Darnath Lysander units can re-roll the Wound roll instead.",
+        ),
+        "A Noble Death in Combat": (
+            "Supported",
+            "The Lost Brethren: Death Company units re-roll Wound rolls of 1 in melee while below Starting Strength and re-roll the Wound roll instead while below Half-strength; Death Company Marines and Death Company Marines with Bolt Rifles units gain Battleline.",
         ),
         "Legacy of the Angel": (
             "Supported",
