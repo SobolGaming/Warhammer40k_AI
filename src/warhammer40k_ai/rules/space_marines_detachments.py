@@ -237,6 +237,11 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Blade of Ultramar")
 
+    def is_hammer_of_avernii(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Hammer of Avernii")
+
     def is_angelic_inheritors(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
             return False

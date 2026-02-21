@@ -8396,6 +8396,21 @@ class GameShootingFightHandlersMixin:
                 model._objective_control = int(current + 6)
                 model._extraction_of_fresh_disease_applied = True
 
+    def _on_unit_destroyed_recalculating(self, unit=None, **_kwargs) -> None:
+        if unit is None or not bool(getattr(self, "is_authoritative", True)):
+            return
+        for player in list(getattr(self, "players", []) or []):
+            if player is None:
+                continue
+            get_army = getattr(player, "get_army", None)
+            army = get_army() if callable(get_army) else getattr(player, "army", None)
+            if army is None:
+                continue
+            mgr = getattr(army, "oath_of_moment", None)
+            trigger_fn = getattr(mgr, "on_oath_target_destroyed", None) if mgr is not None else None
+            if callable(trigger_fn):
+                trigger_fn(unit, game=self, player=player)
+
     def _on_shooting_targets_selected_blood_surge(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:
             return

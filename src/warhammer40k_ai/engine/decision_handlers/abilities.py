@@ -8291,7 +8291,8 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             try:
                 player = getattr(army, "player", None)
                 tname = str(getattr(chosen, "name", "Unit") or "Unit")
-                _log_action_for_players(game, player, f"Oath of Moment: selected {tname} as target.")
+                source_name = str(ctx.get("ability_name", "") or "Oath of Moment").strip() or "Oath of Moment"
+                _log_action_for_players(game, player, f"{source_name}: selected {tname} as target.")
             except Exception:
                 pass
     if ability_key == "bondsman":

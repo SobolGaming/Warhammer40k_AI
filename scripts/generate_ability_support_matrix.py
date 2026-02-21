@@ -610,6 +610,13 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Shadow Masters": (
             r"each time a ranged attack targets an adeptus astartes unit from your army unless the attacking model is within 12 subtract \d+ from the hit roll and the target has the benefit of cover against that attack",
         ),
+        "Calculated Annihilation": (
+            r"each time a model from your army with the oath of moment ability makes an attack that targets your oath of moment target you can reroll a wound roll of \d+",
+        ),
+        "Recalculating": (
+            r"once per battle round after your oath of moment target is destroyed if a caanok var model from your army is on the battlefield select one enemy unit visible to that model",
+            r"that enemy unit becomes your oath of moment target until you select a new one",
+        ),
         "Maddened Ferocity": (
             r"each time an adeptus astartes model from your army makes a melee attack reroll a wound roll of \d+",
             r"each time an adeptus astartes unit from your army is selected to fight if that unit made a charge move this turn until the end of the phase add \d+ to the attacks characteristic of melee weapons equipped by models in that unit",
@@ -1861,6 +1868,14 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Shadow Masters": (
             "Supported",
             "Vanguard Spearhead: ranged attacks targeting ADEPTUS ASTARTES units from more than 12\" away suffer -1 to hit, and those targets gain the Benefit of Cover.",
+        ),
+        "Calculated Annihilation": (
+            "Supported",
+            "Hammer of Avernii: attacks by ADEPTUS ASTARTES models against the current Oath of Moment target can re-roll Wound rolls of 1.",
+        ),
+        "Recalculating": (
+            "Supported",
+            "Hammer of Avernii: once per battle round, after the Oath target is destroyed and while Caanok Var is on the battlefield, queue a visible-enemy selection that becomes the new Oath of Moment target.",
         ),
         "Legacy of the Angel": (
             "Supported",

@@ -3938,6 +3938,21 @@ class ActionsMovementMixin:
         except Exception:
             pass
 
+        # Hammer of Avernii: Calculated Annihilation (vs Oath target) re-roll Wound rolls of 1.
+        try:
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            oath_mgr = getattr(army, "oath_of_moment", None) if army is not None else None
+            apply_fn = (
+                getattr(oath_mgr, "calculated_annihilation_reroll_wound_ones_applies", None)
+                if oath_mgr is not None
+                else None
+            )
+            if callable(apply_fn) and apply_fn(root, target):
+                reroll_wound_values.add(1)
+                reroll_wound_reasons.append("Calculated Annihilation: re-roll Wound rolls of 1")
+        except Exception:
+            pass
+
         # Needgaard Oathband: HUNTR'S MARK grants ranged re-roll Wound rolls of 1.
         try:
             active_fn = getattr(root, "_needgaard_huntrs_mark_active_for_shooting", None)
