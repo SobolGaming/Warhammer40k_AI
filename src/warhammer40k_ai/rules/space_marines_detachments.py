@@ -207,6 +207,11 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Companions of Vehemence")
 
+    def is_spearpoint_task_force(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Spearpoint Task Force")
+
     def is_blade_of_ultramar(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
             return False
@@ -485,6 +490,42 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
 
     def righteous_fervour_reroll_charge_applies(self, unit) -> bool:
         return self.righteous_fervour_reroll_advance_applies(unit)
+
+    def storm_swift_onslaught_charge_after_advance_applies(self, unit) -> bool:
+        if not self.is_spearpoint_task_force():
+            return False
+        if unit is None:
+            return False
+        return self.attached_unit_is_adeptus_astartes(unit)
+
+    def storm_swift_onslaught_charge_after_fall_back_applies(self, unit) -> bool:
+        return self.storm_swift_onslaught_charge_after_advance_applies(unit)
+
+    def wrath_of_the_first_khan_applies(self, unit) -> bool:
+        if not self.is_spearpoint_task_force():
+            return False
+        if unit is None:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(unit):
+            return False
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return False
+        root_name = str(getattr(root, "name", "") or "").strip().upper()
+        if "SUBODEN KHAN" in root_name:
+            return True
+        try:
+            models = list(root.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(root, "models", []) or [])
+        for model in models:
+            model_name = str(getattr(model, "name", "") or "").strip().upper()
+            if "SUBODEN KHAN" in model_name:
+                return True
+        return False
 
     def dutiful_tenacity_wound_roll_penalty(self, target_unit, *, strength=None, target_toughness=None) -> tuple[int, str]:
         if not self.is_wrath_of_the_rock():

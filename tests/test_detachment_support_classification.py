@@ -222,6 +222,30 @@ class TestDetachmentSupportClassification(unittest.TestCase):
         self.assertEqual(status, "Supported")
         self.assertIn("companions of vehemence", notes.lower())
 
+    def test_storm_swift_onslaught_is_supported(self):
+        gsm, detachment_abilities = self._seed_support_maps()
+        row = next(r for r in detachment_abilities if str(r.get("name", "") or "") == "Storm-swift Onslaught")
+        status, notes = gsm._classify_ability(
+            row.get("name", ""),
+            row.get("description", ""),
+            ability_id=row.get("id", ""),
+            faction_id=row.get("faction_id", ""),
+        )
+        self.assertEqual(status, "Supported")
+        self.assertIn("spearpoint task force", notes.lower())
+
+    def test_wrath_of_the_first_khan_is_supported(self):
+        gsm, detachment_abilities = self._seed_support_maps()
+        row = next(r for r in detachment_abilities if str(r.get("name", "") or "") == "Wrath of the First Khan")
+        status, notes = gsm._classify_ability(
+            row.get("name", ""),
+            row.get("description", ""),
+            ability_id=row.get("id", ""),
+            faction_id=row.get("faction_id", ""),
+        )
+        self.assertEqual(status, "Supported")
+        self.assertIn("spearpoint task force", notes.lower())
+
     def test_strength_from_death_is_supported(self):
         gsm, detachment_abilities = self._seed_support_maps()
         row = next(r for r in detachment_abilities if str(r.get("name", "") or "") == "Strength from Death")

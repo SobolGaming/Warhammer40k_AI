@@ -586,6 +586,12 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"you can reroll advance and charge rolls made for adeptus astartes units from your army",
             r"your army can include black templars units but it cannot include any adeptus astartes units drawn from any other chapter",
         ),
+        "Storm-swift Onslaught": (
+            r"adeptus astartes units from your army are eligible to declare a charge in a turn in which they advanced or fell back",
+        ),
+        "Wrath of the First Khan": (
+            r"at the end of the fight phase if a suboden khan unit from your army destroyed one or more enemy units this phase and is not within engagement range of one or more enemy units that unit can make a normal move of up to \d+",
+        ),
         "Maddened Ferocity": (
             r"each time an adeptus astartes model from your army makes a melee attack reroll a wound roll of \d+",
             r"each time an adeptus astartes unit from your army is selected to fight if that unit made a charge move this turn until the end of the phase add \d+ to the attacks characteristic of melee weapons equipped by models in that unit",
@@ -1813,6 +1819,14 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Righteous Fervour": (
             "Supported",
             "Companions of Vehemence: ADEPTUS ASTARTES units can re-roll Advance and Charge rolls; Black Templars-only chapter restriction enforced.",
+        ),
+        "Storm-swift Onslaught": (
+            "Supported",
+            "Spearpoint Task Force: ADEPTUS ASTARTES units can declare charges in turns when they Advanced or Fell Back.",
+        ),
+        "Wrath of the First Khan": (
+            "Supported",
+            "Spearpoint Task Force: at the end of the Fight phase, eligible Suboden Khan units that destroyed enemy units this phase and are no longer engaged can make a Normal move up to 6\".",
         ),
         "Legacy of the Angel": (
             "Supported",

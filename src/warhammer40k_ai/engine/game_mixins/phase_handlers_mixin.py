@@ -10729,6 +10729,73 @@ class GamePhaseHandlersMixin:
                     instance_key=str(unit_id or ""),
                 )
 
+    def _on_phase_end_wrath_of_the_first_khan(self, player=None, phase=None, **_kwargs) -> None:
+        """Fight phase end: tracked Suboden Khan units can make a Normal move up to 6"."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "FIGHT_PHASE":
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+        tracked = set(self._phase_enemy_unit_destroyers.get(pname, set()) or set())
+        if not tracked:
+            return
+
+        seen = set()
+        for p in list(self.players or []):
+            if p is None:
+                continue
+            army = self._get_player_army(p)
+            if army is None:
+                continue
+            sm_mgr = getattr(army, "space_marines_detachments", None)
+            applies_fn = getattr(sm_mgr, "wrath_of_the_first_khan_applies", None) if sm_mgr is not None else None
+            if not callable(applies_fn):
+                continue
+            for unit in list(getattr(army, "units", []) or []):
+                if unit is None:
+                    continue
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                uid = get_entity_id(root)
+                if not uid or uid in seen:
+                    continue
+                seen.add(uid)
+                if uid not in tracked:
+                    continue
+                if not root.is_alive() or not getattr(root, "deployed", True):
+                    continue
+                try:
+                    if root.is_in_reserves() or root.is_embarked:
+                        continue
+                except Exception:
+                    pass
+                if not bool(applies_fn(root)):
+                    continue
+                engaged = False
+                for enemy in list(game_map.get_enemy_units(root) or []):
+                    if not enemy.is_alive() or not getattr(enemy, "deployed", True):
+                        continue
+                    if game_map.is_within_engagement_range(root, enemy):
+                        engaged = True
+                        break
+                if engaged:
+                    continue
+                queue_move = getattr(self, "_queue_reactive_move_movement_decision", None)
+                if not callable(queue_move):
+                    continue
+                queue_move(
+                    player=p,
+                    unit=root,
+                    max_distance=6,
+                    kind="wrath_of_the_first_khan",
+                    movement_type="normal",
+                    source="Wrath of the First Khan",
+                    allow_skip=True,
+                )
+
     def _on_phase_end_plough_through_the_enemy(self, player=None, phase=None, **_kwargs) -> None:
         pname = str(getattr(phase, "name", "") or "").strip().upper()
         if pname != "FIGHT_PHASE":

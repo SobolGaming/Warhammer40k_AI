@@ -193,6 +193,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("phase_end", "_on_phase_end_raid_and_run"),
                 ("phase_end", "_on_phase_end_charge_phase_bodyguard_loss"),
                 ("phase_end", "_on_phase_end_fight_phase_destroyed_strategic_reserves"),
+                ("phase_end", "_on_phase_end_wrath_of_the_first_khan"),
                 ("phase_end", "_on_phase_end_plough_through_the_enemy"),
                 ("phase_end", "_on_phase_end_soul_eater"),
                 ("phase_end", "_on_phase_end_leadership_cp_gain"),
