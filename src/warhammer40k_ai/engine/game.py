@@ -2474,6 +2474,12 @@ class Game(
 
         game_map = getattr(self, "map", None)
         from ..utility.event_bus import append_action, append_dice
+        from ..utility.aura_utils import unit_within_range_of_unit
+
+        moving_is_aircraft = False
+        has_any_keyword = getattr(moving_root, "has_any_keyword", None)
+        if callable(has_any_keyword):
+            moving_is_aircraft = bool(has_any_keyword("AIRCRAFT"))
 
         for reacting_player in list(getattr(self, "players", []) or []):
             if reacting_player is None:
@@ -2481,6 +2487,107 @@ class Game(
             reacting_army = self._get_player_army(reacting_player)
             if reacting_army is None or reacting_army is army:
                 continue
+
+            if action_key in ("move", "advance") and not moving_is_aircraft:
+                cd_mgr = getattr(reacting_army, "chaos_daemons_detachments", None)
+                if cd_mgr is not None and callable(getattr(cd_mgr, "is_blood_legion_detachment", None)):
+                    if bool(cd_mgr.is_blood_legion_detachment()):
+                        mover_id = str(get_entity_id(moving_root) or "")
+                        turn = int(getattr(self, "turn", 0) or 0)
+                        turn_owner = self.get_current_player()
+                        turn_owner_id = str(getattr(turn_owner, "id", "") or "")
+                        should_queue = True
+                        queue = getattr(self, "decision_queue", None)
+                        if queue is not None and hasattr(queue, "list"):
+                            for req in list(queue.list() or []):
+                                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                                    continue
+                                ctx = dict(getattr(req, "context", {}) or {})
+                                if str(ctx.get("ability", "") or "") != "murdercall":
+                                    continue
+                                if str(ctx.get("moving_unit_id", "") or "") != mover_id:
+                                    continue
+                                if int(ctx.get("turn", 0) or 0) != int(turn):
+                                    continue
+                                if str(ctx.get("turn_owner_id", "") or "") != turn_owner_id:
+                                    continue
+                                if str(getattr(req, "player_id", "") or "") != str(getattr(reacting_player, "id", "") or ""):
+                                    continue
+                                should_queue = False
+                                break
+                        if should_queue:
+                            candidates = []
+                            seen: set[str] = set()
+                            for unit_candidate in list(getattr(reacting_army, "units", []) or []):
+                                if unit_candidate is None:
+                                    continue
+                                try:
+                                    root = unit_candidate.get_attached_unit_root()
+                                except Exception:
+                                    root = unit_candidate
+                                if root is None:
+                                    continue
+                                rid = str(get_entity_id(root) or "")
+                                if not rid or rid in seen:
+                                    continue
+                                seen.add(rid)
+                                try:
+                                    if not root.is_alive():
+                                        continue
+                                except Exception:
+                                    continue
+                                if not bool(getattr(root, "deployed", True)):
+                                    continue
+                                try:
+                                    if root.is_in_reserves() or root.is_embarked:
+                                        continue
+                                except Exception:
+                                    pass
+                                applies_fn = getattr(cd_mgr, "murdercall_applies", None)
+                                if not callable(applies_fn) or not bool(applies_fn(root)):
+                                    continue
+                                if bool(self._unit_is_engaged_with_enemy(root)):
+                                    continue
+                                if not bool(
+                                    unit_within_range_of_unit(
+                                        root,
+                                        moving_root,
+                                        6.0,
+                                        use_attached_aggregate=True,
+                                    )
+                                ):
+                                    continue
+                                candidates.append(root)
+                            if candidates:
+                                candidates = sorted(candidates, key=lambda u: str(get_entity_id(u) or ""))
+                                options = [DecisionOption.create("None", payload={"action": "skip"})]
+                                for candidate in candidates:
+                                    options.append(
+                                        DecisionOption.create(
+                                            str(getattr(candidate, "name", "Unit") or "Unit"),
+                                            payload={"target_unit_id": get_entity_id(candidate)},
+                                        )
+                                    )
+                                request = DecisionRequest.create(
+                                    DECISION_CHOOSE_QUARRY,
+                                    f"Murdercall: select a unit to Surge toward {getattr(moving_root, 'name', 'Unit')}.",
+                                    player_id=getattr(reacting_player, "id", None),
+                                    options=options,
+                                    context={
+                                        "ability": "murdercall",
+                                        "ability_name": "Murdercall",
+                                        "phase": "Movement phase",
+                                        "moving_unit_id": mover_id,
+                                        "moving_unit_name": str(getattr(moving_root, "name", "Unit") or "Unit"),
+                                        "trigger_action": str(action_key),
+                                        "range": 6,
+                                        "turn": int(turn),
+                                        "turn_owner_id": turn_owner_id,
+                                        "candidate_unit_ids": [str(get_entity_id(c) or "") for c in candidates],
+                                    },
+                                )
+                                self.request_decision(request)
+
             ae_mgr = getattr(reacting_army, "aeldari_detachments", None)
             if ae_mgr is None:
                 continue
@@ -4657,6 +4764,61 @@ class Game(
             return
         phase = getattr(self, "phase", None)
         pname = str(getattr(phase, "name", "") or "").strip().upper()
+        try:
+            root = destroyed_by_unit.get_attached_unit_root()
+        except Exception:
+            root = destroyed_by_unit
+        if root is None:
+            return
+
+        turn = int(getattr(self, "turn", 0) or 0)
+        turn_owner = self.get_current_player()
+        turn_owner_id = str(getattr(turn_owner, "id", "") or "")
+
+        # Blood Legion: Blood Tainted objective sticky tracking.
+        attacker_army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        cd_mgr = getattr(attacker_army, "chaos_daemons_detachments", None) if attacker_army is not None else None
+        if cd_mgr is not None and callable(getattr(cd_mgr, "blood_tainted_applies", None)):
+            if bool(cd_mgr.blood_tainted_applies(root)):
+                try:
+                    destroyed_root = unit.get_attached_unit_root()
+                except Exception:
+                    destroyed_root = unit
+                destroyed_sr = getattr(destroyed_root, "special_rules", None) if destroyed_root is not None else None
+                if isinstance(destroyed_sr, dict):
+                    snap_phase = str(destroyed_sr.get("blood_tainted_phase_snapshot_phase", "") or "").strip().upper()
+                    try:
+                        snap_turn = int(destroyed_sr.get("blood_tainted_phase_snapshot_turn", 0) or 0)
+                    except Exception:
+                        snap_turn = 0
+                    snap_owner = str(destroyed_sr.get("blood_tainted_phase_snapshot_turn_owner", "") or "")
+                    snap_objective_ids = [
+                        str(value or "")
+                        for value in list(destroyed_sr.get("blood_tainted_phase_snapshot_objective_ids", []) or [])
+                        if str(value or "")
+                    ]
+                    if (
+                        snap_phase
+                        and snap_phase == pname
+                        and snap_turn == turn
+                        and snap_owner == turn_owner_id
+                        and snap_objective_ids
+                    ):
+                        attacker_sr = getattr(root, "special_rules", None)
+                        if not isinstance(attacker_sr, dict):
+                            attacker_sr = {}
+                        pending = dict(attacker_sr.get("blood_tainted_pending", {}) or {})
+                        phase_key = f"{pname}|{int(turn)}|{turn_owner_id}"
+                        existing = {
+                            str(value or "")
+                            for value in list(pending.get(phase_key, []) or [])
+                            if str(value or "")
+                        }
+                        existing.update(snap_objective_ids)
+                        pending[phase_key] = sorted(existing)
+                        attacker_sr["blood_tainted_pending"] = pending
+                        root.special_rules = attacker_sr
+
         if pname not in ("SHOOTING_PHASE", "FIGHT_PHASE"):
             return
         try:
@@ -4665,10 +4827,6 @@ class Game(
             owner = None
         if owner is None:
             return
-        try:
-            root = destroyed_by_unit.get_attached_unit_root()
-        except Exception:
-            root = destroyed_by_unit
         uid = get_entity_id(root)
         if not uid:
             return

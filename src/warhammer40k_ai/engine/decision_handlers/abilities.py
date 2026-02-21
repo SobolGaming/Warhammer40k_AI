@@ -2693,6 +2693,51 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if source_army is not None and target_army is not None and source_army is target_army:
             return ("Void Mine target model must belong to an enemy unit.",)
         return ()
+    if ability == "murdercall":
+        payload = _option_payload(request, result)
+        if is_skip_choice(request, result):
+            return ()
+        selected_unit = resolve_unit(game, payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"))
+        if selected_unit is None:
+            return ("Murdercall selection requires target_unit_id.",)
+        moving_unit = resolve_unit(game, ctx.get("moving_unit_id"))
+        if moving_unit is None:
+            return ("Murdercall trigger unit was not found.",)
+        selected_root = (
+            selected_unit.get_attached_unit_root()
+            if hasattr(selected_unit, "get_attached_unit_root")
+            else selected_unit
+        )
+        moving_root = (
+            moving_unit.get_attached_unit_root()
+            if hasattr(moving_unit, "get_attached_unit_root")
+            else moving_unit
+        )
+        if selected_root is None or moving_root is None:
+            return ("Murdercall units were not found.",)
+        if not _resurrection_orb_unit_on_battlefield(selected_root):
+            return ("Murdercall reacting unit must be on the battlefield.",)
+        if not _resurrection_orb_unit_on_battlefield(moving_root):
+            return ("Murdercall trigger unit must be on the battlefield.",)
+        selected_army = selected_root.get_parent_army() if hasattr(selected_root, "get_parent_army") else None
+        moving_army = moving_root.get_parent_army() if hasattr(moving_root, "get_parent_army") else None
+        if selected_army is not None and moving_army is not None and selected_army is moving_army:
+            return ("Murdercall reacting unit must be different from the trigger unit's army.",)
+        has_any_keyword = getattr(moving_root, "has_any_keyword", None)
+        if callable(has_any_keyword) and bool(has_any_keyword("AIRCRAFT")):
+            return ("Murdercall cannot trigger from AIRCRAFT units.",)
+        candidate_ids = {str(value) for value in list(ctx.get("candidate_unit_ids", []) or []) if str(value)}
+        selected_id = str(get_entity_id(selected_root) or "")
+        if candidate_ids and selected_id not in candidate_ids:
+            return ("Murdercall selected unit is not an eligible candidate.",)
+        unit_engaged_fn = getattr(game, "_unit_is_engaged_with_enemy", None)
+        if callable(unit_engaged_fn) and bool(unit_engaged_fn(selected_root)):
+            return ("Murdercall reacting unit cannot be within Engagement Range of enemies.",)
+        from ...utility.aura_utils import unit_within_range_of_unit
+
+        if not bool(unit_within_range_of_unit(selected_root, moving_root, 6.0, use_attached_aggregate=True)):
+            return ("Murdercall reacting unit must be within 6\" of the trigger unit.",)
+        return ()
     if is_skip_choice(request, result):
         return ()
     if ability not in ("strategic_conqueror", "archons_will_objective"):
@@ -2716,6 +2761,95 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
 def _apply_choose_quarry(game: object, request: DecisionRequest, result: DecisionResult):
     ctx = dict(getattr(request, "context", {}) or {})
     ability = str(ctx.get("ability", "") or "")
+    if ability == "murdercall":
+        payload = _option_payload(request, result)
+        player = _resolve_player(game, request, payload)
+        ability_name = str(ctx.get("ability_name", "") or "Murdercall").strip() or "Murdercall"
+        if is_skip_choice(request, result):
+            _log_action_for_players(game, player, f"{ability_name}: selected none.")
+            return None
+
+        selected_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        moving_unit = resolve_unit(game, ctx.get("moving_unit_id"))
+        if selected_unit is None or moving_unit is None:
+            return None
+        selected_root = (
+            selected_unit.get_attached_unit_root()
+            if hasattr(selected_unit, "get_attached_unit_root")
+            else selected_unit
+        )
+        moving_root = (
+            moving_unit.get_attached_unit_root()
+            if hasattr(moving_unit, "get_attached_unit_root")
+            else moving_unit
+        )
+        if selected_root is None or moving_root is None:
+            return None
+        if not _resurrection_orb_unit_on_battlefield(selected_root):
+            return None
+        if not _resurrection_orb_unit_on_battlefield(moving_root):
+            return None
+        selected_army = selected_root.get_parent_army() if hasattr(selected_root, "get_parent_army") else None
+        moving_army = moving_root.get_parent_army() if hasattr(moving_root, "get_parent_army") else None
+        if selected_army is not None and moving_army is not None and selected_army is moving_army:
+            return None
+        has_any_keyword = getattr(moving_root, "has_any_keyword", None)
+        if callable(has_any_keyword) and bool(has_any_keyword("AIRCRAFT")):
+            return None
+        candidate_ids = {str(value) for value in list(ctx.get("candidate_unit_ids", []) or []) if str(value)}
+        selected_id = str(get_entity_id(selected_root) or "")
+        if candidate_ids and selected_id not in candidate_ids:
+            return None
+        unit_engaged_fn = getattr(game, "_unit_is_engaged_with_enemy", None)
+        if callable(unit_engaged_fn) and bool(unit_engaged_fn(selected_root)):
+            return None
+        from ...utility.aura_utils import unit_within_range_of_unit
+
+        if not bool(unit_within_range_of_unit(selected_root, moving_root, 6.0, use_attached_aggregate=True)):
+            return None
+        roll_blood_surge_distance = getattr(game, "roll_blood_surge_distance", None)
+        if not callable(roll_blood_surge_distance):
+            return None
+        surge_distance = int(roll_blood_surge_distance(selected_root) or 0)
+        if surge_distance <= 0:
+            return None
+
+        queue_move = getattr(game, "_queue_reactive_move_movement_decision", None)
+        if not callable(queue_move):
+            return None
+        queue_move(
+            player=player,
+            unit=selected_root,
+            max_distance=int(surge_distance),
+            kind="murdercall",
+            movement_type="blood_surge",
+            source=ability_name,
+            moving_unit=moving_root,
+            allow_engagement_range=True,
+            allow_skip=False,
+        )
+        from ...utility.event_bus import append_dice
+
+        append_dice(
+            player,
+            f"{ability_name}: {getattr(selected_root, 'name', 'Unit')} Surge roll {int(surge_distance)}.",
+        )
+        _log_action_for_players(
+            game,
+            player,
+            (
+                f"{ability_name}: {getattr(selected_root, 'name', 'Unit')} can Surge up to {int(surge_distance)}\" "
+                f"toward {getattr(moving_root, 'name', 'Unit')}."
+            ),
+        )
+        return {
+            "selected_unit_id": str(get_entity_id(selected_root) or ""),
+            "moving_unit_id": str(get_entity_id(moving_root) or ""),
+            "surge_distance": int(surge_distance),
+        }
     if ability == "resurrection_orb":
         payload = _option_payload(request, result)
         source_unit = resolve_unit(

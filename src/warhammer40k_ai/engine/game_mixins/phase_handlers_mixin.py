@@ -132,6 +132,7 @@ class GamePhaseHandlersMixin:
         self._on_phase_start_paragon_of_sanctity(player=player, phase=phase)
         self._on_phase_start_decoy_targets(player=player, phase=phase)
         self._on_phase_start_vanguard_of_dark_city(player=player, phase=phase)
+        self._on_phase_start_chaos_daemons_detachment_rules(player=player, phase=phase)
         if pname:
             for p in list(getattr(self, "players", []) or []):
                 if p is None:
@@ -7810,6 +7811,259 @@ class GamePhaseHandlersMixin:
             sr["unleash_hell_prompt_phase"] = pname
             unit.special_rules = sr
 
+    def _on_phase_start_chaos_daemons_detachment_rules(self, player=None, phase=None, **_kwargs) -> None:
+        """Phase start: snapshot objective-range state for Blood Legion Blood Tainted tracking."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if not pname:
+            return
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return
+
+        blood_legion_present = False
+        for p in list(getattr(self, "players", []) or []):
+            if p is None:
+                continue
+            army = self._get_player_army(p)
+            if army is None:
+                continue
+            mgr = getattr(army, "chaos_daemons_detachments", None)
+            if mgr is None or not callable(getattr(mgr, "is_blood_legion_detachment", None)):
+                continue
+            if bool(mgr.is_blood_legion_detachment()):
+                blood_legion_present = True
+                break
+        if not blood_legion_present:
+            return
+
+        turn = int(getattr(self, "turn", 0) or 0)
+        turn_owner = self.get_current_player()
+        turn_owner_id = str(getattr(turn_owner, "id", "") or "")
+        objectives = list(getattr(game_map, "objectives", []) or [])
+
+        def _unit_sort_key(unit_obj):
+            try:
+                return str(get_entity_id(unit_obj))
+            except Exception:
+                return str(getattr(unit_obj, "name", "") or "")
+
+        for p in list(getattr(self, "players", []) or []):
+            if p is None:
+                continue
+            army = self._get_player_army(p)
+            if army is None:
+                continue
+            seen: set[str] = set()
+            for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+                if unit is None:
+                    continue
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None:
+                    continue
+                root_id = str(get_entity_id(root) or "")
+                if not root_id or root_id in seen:
+                    continue
+                seen.add(root_id)
+
+                objective_ids: list[str] = []
+                root_active = bool(getattr(root, "is_alive", lambda: False)()) and bool(getattr(root, "deployed", True))
+                if root_active:
+                    try:
+                        if root.is_in_reserves() or root.is_embarked:
+                            root_active = False
+                    except Exception:
+                        pass
+                if root_active:
+                    for objective in objectives:
+                        location = getattr(objective, "location", None) or objective
+                        if location is None or bool(getattr(location, "removed", False)):
+                            continue
+                        try:
+                            in_range = bool(root.is_within_objective_range(location))
+                        except Exception:
+                            in_range = False
+                        if not in_range:
+                            continue
+                        objective_id = str(get_entity_id(objective) or "")
+                        if objective_id:
+                            objective_ids.append(objective_id)
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["blood_tainted_phase_snapshot_phase"] = pname
+                sr["blood_tainted_phase_snapshot_turn"] = int(turn)
+                sr["blood_tainted_phase_snapshot_turn_owner"] = turn_owner_id
+                sr["blood_tainted_phase_snapshot_objective_ids"] = sorted(set(objective_ids))
+                root.special_rules = sr
+
+    def _on_phase_end_blood_legion_detachment_rules(self, player=None, phase=None, **_kwargs) -> None:
+        """Phase end: resolve Blood Legion Blood Tainted sticky objective control."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if not pname:
+            return
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return
+        turn = int(getattr(self, "turn", 0) or 0)
+        turn_owner = self.get_current_player()
+        turn_owner_id = str(getattr(turn_owner, "id", "") or "")
+        phase_key = f"{pname}|{int(turn)}|{turn_owner_id}"
+
+        objectives_by_id: dict[str, object] = {}
+        for objective in list(getattr(game_map, "objectives", []) or []):
+            objective_id = str(get_entity_id(objective) or "")
+            if objective_id:
+                objectives_by_id[objective_id] = objective
+
+        from ...utility.event_bus import append_action
+
+        def _unit_sort_key(unit_obj):
+            try:
+                return str(get_entity_id(unit_obj))
+            except Exception:
+                return str(getattr(unit_obj, "name", "") or "")
+
+        def _unit_level_of_control(unit_obj, objective_location) -> int:
+            if unit_obj is None or objective_location is None:
+                return 0
+            try:
+                if not unit_obj.is_alive() or not bool(getattr(unit_obj, "deployed", True)):
+                    return 0
+            except Exception:
+                return 0
+            try:
+                if unit_obj.is_in_reserves() or unit_obj.is_embarked:
+                    return 0
+            except Exception:
+                pass
+            get_models = getattr(unit_obj, "get_models_for_collision", None)
+            if callable(get_models):
+                models = list(get_models() or [])
+            else:
+                models = list(getattr(unit_obj, "models", []) or [])
+            total = 0
+            for model in models:
+                alive_value = getattr(model, "is_alive", True)
+                alive = bool(alive_value() if callable(alive_value) else alive_value)
+                if not alive:
+                    continue
+                if not self._model_within_objective_marker(model, objective_location):
+                    continue
+                try:
+                    total += int(getattr(model, "objective_control", 0) or 0)
+                except Exception:
+                    continue
+            return int(total)
+
+        for p in list(getattr(self, "players", []) or []):
+            if p is None:
+                continue
+            army = self._get_player_army(p)
+            if army is None:
+                continue
+            mgr = getattr(army, "chaos_daemons_detachments", None)
+            if mgr is None or not callable(getattr(mgr, "is_blood_legion_detachment", None)):
+                continue
+            if not bool(mgr.is_blood_legion_detachment()):
+                continue
+
+            sticky_applied = 0
+            seen: set[str] = set()
+            for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+                if unit is None:
+                    continue
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None:
+                    continue
+                root_id = str(get_entity_id(root) or "")
+                if not root_id or root_id in seen:
+                    continue
+                seen.add(root_id)
+
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                pending_raw = sr.get("blood_tainted_pending", None)
+                if not isinstance(pending_raw, dict):
+                    continue
+                pending = dict(pending_raw)
+                objective_ids = [
+                    str(value or "")
+                    for value in list(pending.pop(phase_key, []) or [])
+                    if str(value or "")
+                ]
+                if pending:
+                    sr["blood_tainted_pending"] = pending
+                else:
+                    sr.pop("blood_tainted_pending", None)
+                root.special_rules = sr
+                if not objective_ids:
+                    continue
+                try:
+                    if not root.is_alive() or not bool(getattr(root, "deployed", True)):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    if root.is_in_reserves() or root.is_embarked:
+                        continue
+                except Exception:
+                    pass
+
+                for objective_id in sorted(set(objective_ids)):
+                    objective = objectives_by_id.get(objective_id)
+                    if objective is None:
+                        continue
+                    location = getattr(objective, "location", None) or objective
+                    if location is None or bool(getattr(location, "removed", False)):
+                        continue
+                    try:
+                        if not bool(root.is_within_objective_range(location)):
+                            continue
+                    except Exception:
+                        continue
+
+                    owner_level = _unit_level_of_control(root, location)
+                    if owner_level <= 0:
+                        continue
+                    opponent_level = 0
+                    for enemy in list(game_map.get_enemy_units(root) or []):
+                        if enemy is None:
+                            continue
+                        try:
+                            enemy_root = enemy.get_attached_unit_root()
+                        except Exception:
+                            enemy_root = enemy
+                        if enemy_root is None:
+                            continue
+                        opponent_level += int(_unit_level_of_control(enemy_root, location) or 0)
+                    if int(owner_level) <= int(opponent_level):
+                        continue
+
+                    update_control = getattr(location, "update_control", None)
+                    if callable(update_control):
+                        update_control(self)
+                    set_sticky = getattr(location, "set_sticky_control", None)
+                    if callable(set_sticky):
+                        set_sticky(p, source="blood_tainted")
+                    else:
+                        location.sticky_controller = p
+                        location.sticky_source = "blood_tainted"
+                        location.controlling_player = p
+                    sticky_applied += 1
+
+            if sticky_applied > 0:
+                append_action(
+                    p,
+                    f"Blood Tainted: {int(sticky_applied)} objective marker(s) remain under your control.",
+                )
+
     def _on_phase_start_chaos_daemons_enhancements(self, player=None, phase=None, **_kwargs) -> None:
         """Chaos Daemons Plague Legion enhancements that trigger at the start of the Shooting phase."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
@@ -8672,6 +8926,9 @@ class GamePhaseHandlersMixin:
                     if str(sr.get("ere_we_go_turn_owner", "") or "") == owner_id:
                         for k in ("ere_we_go_active", "ere_we_go_turn_owner", "ere_we_go_turn", "ere_we_go_source"):
                             sr.pop(k, None)
+
+        # Blood Legion: Blood Tainted sticky objective checks at phase end.
+        self._on_phase_end_blood_legion_detachment_rules(player=player, phase=phase)
 
         # Snapshot objective control at end of each phase for "previous phase" rules.
         game_map = self.map

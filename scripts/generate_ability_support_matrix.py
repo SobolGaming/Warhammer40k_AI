@@ -328,6 +328,16 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Warp Rifts": (
             r"each time a legiones daemonica unit from your army is set up on the battlefield using the deep strike ability .* it can be set up anywhere that is more than 6 horizontally away from all enemy models instead of more than 9",
         ),
+        "Murdercall": (
+            r"each time an enemy unit excluding aircraft ends a normal or advance move within 6 of one or more legiones daemonica khorne units from your army one of those legiones daemonica khorne units can make a surge move towards that enemy unit",
+            r"to do so roll one d6",
+            r"models in your unit move a number of inches up to this result but your unit must end that move as close as possible to that enemy unit",
+            r"when doing so those models can be moved within engagement range of that enemy unit",
+            r"a unit cannot make a surge move while it is within engagement range of one or more enemy units",
+        ),
+        "Blood Tainted": (
+            r"at the end of a phase in which a legiones daemonica khorne unit from your army destroyed an enemy unit that was within range of an objective marker at the start of the phase if your unit has a higher level of control over that objective marker that objective marker remains under your control until your opponents level of control over that objective marker is greater than yours at the end of a phase",
+        ),
         "Fates in Flux": (
             r"you start the battle with three flux tokens we recommend using a dice to track how many flux tokens you have",
             r"you can spend one flux token just after an advance roll hit roll wound roll damage roll saving throw or hazardous test is made for a legiones daemonica tzeentch model or legiones daemonica tzeentch unit from your army to reroll the result of that roll throw or test",
@@ -1763,6 +1773,14 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Warp Rifts": (
             "Supported",
             "Daemonic Incursion: Deep Strike min distance reduced to 6\" when wholly within Shadow of Chaos zones or within 6\" of a matching Greater Daemon/Dark Master aura; cannot bootstrap off the arriving unit.",
+        ),
+        "Murdercall": (
+            "Supported",
+            "Blood Legion: enemy Normal/Advance move endings within 6\" of eligible KHORNE LEGIONES DAEMONICA units queue a reactive unit selection; selected unit rolls D6 and makes a Surge move (as close as possible to the trigger unit), and may move into Engagement Range while not already engaged.",
+        ),
+        "Blood Tainted": (
+            "Supported",
+            "Blood Legion: phase-start objective-range snapshots plus kill tracking identify eligible destroyed enemies; at phase end, destroying KHORNE LEGIONES DAEMONICA units apply sticky control on qualifying objectives when their Level of Control is higher.",
         ),
         "Fates in Flux": (
             "Supported",
