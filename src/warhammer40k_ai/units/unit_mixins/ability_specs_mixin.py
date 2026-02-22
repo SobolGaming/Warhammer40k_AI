@@ -6759,6 +6759,120 @@ class AbilitySpecsMixin:
         root._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def unit_floating_death_specs(self) -> List[dict]:
+        """
+        Unit-level rule: after this unit or an enemy unit ends a move, each model within range
+        self-destructs and inflicts mortal wounds to a selected enemy unit.
+
+        Returns specs with keys:
+            - source: ability name
+            - range: int
+            - on_mid_flat: int
+            - on_mid_die: str
+            - on_high_die: str
+        """
+        get_root = getattr(self, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else self
+        if root is None:
+            root = self
+        cache_key = "unit_floating_death_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple] = set()
+
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text_src = unit._strip_eligibility_prefix(text_src)
+                normalized = unit._normalize_rules_text(text_src)
+                if not normalized:
+                    continue
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+
+                required_phrases = (
+                    "each time this unit or an enemy unit ends a move",
+                    "for each model in this unit that is within",
+                    "one or more enemy units",
+                    "that model in this unit is destroyed",
+                    "on a 2 5",
+                    "on a 6",
+                    "mortal wound",
+                )
+                if not all(phrase in normalized for phrase in required_phrases):
+                    continue
+
+                range_match = re.search(
+                    r"for each model in this unit that is within (?P<range>\d+) of one or more enemy units",
+                    normalized,
+                )
+                if range_match is None:
+                    continue
+                try:
+                    range_value = int(range_match.group("range") or 0)
+                except (TypeError, ValueError):
+                    range_value = 0
+                if range_value <= 0:
+                    continue
+
+                on_mid_flat = 0
+                on_mid_die = ""
+                on_high_die = ""
+
+                if (
+                    "on a 2 5 that enemy unit suffers 1 mortal wound" in normalized
+                    and "on a 6 that enemy unit suffers d3 mortal wounds" in normalized
+                ):
+                    on_mid_flat = 1
+                    on_mid_die = ""
+                    on_high_die = "D3"
+                elif (
+                    "on a 2 5 that enemy unit suffers d3 mortal wounds" in normalized
+                    and "on a 6 that enemy unit suffers d6 mortal wounds" in normalized
+                ):
+                    on_mid_flat = 0
+                    on_mid_die = "D3"
+                    on_high_die = "D6"
+                else:
+                    continue
+
+                source = str(name or "Floating Death").strip() or "Floating Death"
+                key = (
+                    source.lower(),
+                    int(range_value),
+                    int(on_mid_flat),
+                    str(on_mid_die),
+                    str(on_high_die),
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "range": int(range_value),
+                        "on_mid_flat": int(on_mid_flat),
+                        "on_mid_die": str(on_mid_die),
+                        "on_high_die": str(on_high_die),
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def move_over_mortal_wounds_reroll_count(self) -> int:
         """Count models that can re-roll their move-over mortal wound die (e.g., Cluster Caltrops)."""
         try:

@@ -4041,6 +4041,7 @@ def _classify_ability_base(
     move_over_low_terrain_support = _move_over_low_terrain_support(description)
     titanic_move_through_support = _titanic_move_through_support(description)
     move_over_mortal_support = _move_over_mortal_wounds_support(description)
+    floating_death_support = _floating_death_support(description)
     hazardous_test_modifier_support = _hazardous_test_modifier_support(description)
     common_support = _bearer_unit_common_support(description)
     leading_support = _leading_unit_common_support(description)
@@ -4187,6 +4188,8 @@ def _classify_ability_base(
         return titanic_move_through_support
     if move_over_mortal_support:
         return move_over_mortal_support
+    if floating_death_support:
+        return floating_death_support
     if hazardous_test_modifier_support:
         return hazardous_test_modifier_support
     if ranged_ignore_bs_hit_support:
@@ -9377,6 +9380,41 @@ def _move_over_mortal_wounds_support(description: str) -> Optional[Tuple[str, st
         "Supported",
         f"{type_label}: select a moved-over enemy; roll {dice_count}D6{fly_note}, each {threshold}+ inflicts {mortal_text} mortal wounds.",
     )
+
+
+def _floating_death_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    required_phrases = (
+        "each time this unit or an enemy unit ends a move",
+        "for each model in this unit that is within 3 of one or more enemy units",
+        "that model in this unit is destroyed then roll one d6",
+        "on a 2 5",
+        "on a 6",
+        "mortal wound",
+    )
+    if not all(phrase in norm for phrase in required_phrases):
+        return None
+    if (
+        "on a 2 5 that enemy unit suffers 1 mortal wound" in norm
+        and "on a 6 that enemy unit suffers d3 mortal wounds" in norm
+    ):
+        return (
+            "Supported",
+            "Move end (self or enemy): each model within 3\" selects an enemy unit within 3\", is destroyed, then deals 1 mortal wound on 2-5 or D3 on 6.",
+        )
+    if (
+        "on a 2 5 that enemy unit suffers d3 mortal wounds" in norm
+        and "on a 6 that enemy unit suffers d6 mortal wounds" in norm
+    ):
+        return (
+            "Supported",
+            "Move end (self or enemy): each model within 3\" selects an enemy unit within 3\", is destroyed, then deals D3 mortal wounds on 2-5 or D6 on 6.",
+        )
+    return None
 
 
 def _hazardous_test_modifier_support(description: str) -> Optional[Tuple[str, str]]:

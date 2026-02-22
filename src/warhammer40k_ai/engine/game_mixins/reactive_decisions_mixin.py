@@ -2274,7 +2274,7 @@ class GameReactiveDecisionsMixin:
         if not candidates:
             return None
         kind_key = str(kind or "").strip().lower()
-        if kind_key not in ("charge_end", "move_over", "fight_phase_end", "bomb_squigs", "plunder"):
+        if kind_key not in ("charge_end", "move_over", "fight_phase_end", "bomb_squigs", "plunder", "floating_death"):
             return None
         unit_id = maybe_entity_id(unit)
         if not unit_id:
@@ -6118,7 +6118,7 @@ class GameReactiveDecisionsMixin:
         if not bool(ctx.get("engine_flow", False)):
             return
         kind = str(ctx.get("mortal_wounds_kind", "") or "").strip().lower()
-        if kind not in ("charge_end", "move_over", "fight_phase_end", "bomb_squigs", "plunder"):
+        if kind not in ("charge_end", "move_over", "fight_phase_end", "bomb_squigs", "plunder", "floating_death"):
             return
         if self._decision_is_skip(request, result):
             return
@@ -6191,6 +6191,10 @@ class GameReactiveDecisionsMixin:
                 mark_used = getattr(root, "mark_unit_once_per_battle_used", None)
                 if callable(mark_used):
                     mark_used("bomb_squigs", ability_name=ability_name)
+            return
+        if kind == "floating_death":
+            self.resolve_floating_death_mortal_wounds(unit, model, target_unit, spec)
+            self._continue_floating_death_pending(unit)
             return
         if model is None:
             return

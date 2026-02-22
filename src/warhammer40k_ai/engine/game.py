@@ -2189,6 +2189,184 @@ class Game(
             enemy_roots.append(root)
         return enemy_roots
 
+    def _get_floating_death_pending_state(self, unit) -> Optional[dict]:
+        if unit is None:
+            return None
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return None
+        pending = sr.get("floating_death_pending", None)
+        if not isinstance(pending, dict):
+            return None
+        return dict(pending)
+
+    def _set_floating_death_pending_state(self, unit, pending: Optional[dict]) -> None:
+        if unit is None:
+            return
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        if pending is None:
+            sr.pop("floating_death_pending", None)
+        else:
+            sr["floating_death_pending"] = dict(pending)
+        unit.special_rules = sr
+
+    def _run_floating_death_sequence(
+        self,
+        *,
+        unit,
+        spec: dict,
+        model_ids: Optional[list[str]] = None,
+    ) -> None:
+        if unit is None or not isinstance(spec, dict):
+            return
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else unit
+        if root is None:
+            return
+        is_alive = getattr(root, "is_alive", None)
+        root_alive = bool(is_alive()) if callable(is_alive) else bool(is_alive)
+        if not root_alive:
+            self._set_floating_death_pending_state(root, None)
+            return
+        if not bool(getattr(root, "deployed", True)):
+            self._set_floating_death_pending_state(root, None)
+            return
+        is_in_reserves = getattr(root, "is_in_reserves", None)
+        in_reserves = bool(is_in_reserves()) if callable(is_in_reserves) else False
+        if in_reserves or bool(getattr(root, "is_embarked", False)):
+            self._set_floating_death_pending_state(root, None)
+            return
+        parent_army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        player = getattr(parent_army, "player", None)
+        if player is None:
+            self._set_floating_death_pending_state(root, None)
+            return
+
+        try:
+            range_value = int(spec.get("range", 0) or 0)
+        except (TypeError, ValueError):
+            range_value = 0
+        if range_value <= 0:
+            range_value = 3
+
+        enemy_roots = self._collect_enemy_unit_roots(player)
+        if not enemy_roots:
+            self._set_floating_death_pending_state(root, None)
+            return
+
+        get_models = getattr(root, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+        alive_models = [m for m in list(models or []) if getattr(m, "is_alive", True)]
+        if not alive_models:
+            self._set_floating_death_pending_state(root, None)
+            return
+
+        model_by_id = {}
+        for model in alive_models:
+            mid = str(get_entity_id(model) or "")
+            if mid:
+                model_by_id[mid] = model
+
+        if model_ids is None:
+            ordered_model_ids = sorted(list(model_by_id.keys()))
+        else:
+            seen_ids = set()
+            ordered_model_ids = []
+            for model_id in list(model_ids or []):
+                mid = str(model_id or "")
+                if not mid or mid in seen_ids:
+                    continue
+                seen_ids.add(mid)
+                if mid in model_by_id:
+                    ordered_model_ids.append(mid)
+
+        if not ordered_model_ids:
+            self._set_floating_death_pending_state(root, None)
+            return
+
+        for index, model_id in enumerate(ordered_model_ids):
+            model = model_by_id.get(str(model_id))
+            if model is None or not getattr(model, "is_alive", True):
+                continue
+            candidates = self._enemy_candidates_within_range_of_model(
+                model=model,
+                enemy_roots=enemy_roots,
+                range_value=float(range_value),
+            )
+            if not candidates:
+                continue
+            ordered_candidates = sorted(
+                [candidate for candidate in list(candidates or []) if candidate is not None],
+                key=lambda candidate: str(get_entity_id(candidate) or ""),
+            )
+            if not ordered_candidates:
+                continue
+            if len(ordered_candidates) == 1:
+                self.resolve_floating_death_mortal_wounds(root, model, ordered_candidates[0], spec)
+                enemy_roots = self._collect_enemy_unit_roots(player)
+                if not enemy_roots:
+                    break
+                continue
+
+            remaining_model_ids = [
+                str(mid)
+                for mid in list(ordered_model_ids[index + 1:] or [])
+                if str(mid or "")
+            ]
+            self._set_floating_death_pending_state(
+                root,
+                {
+                    "spec": dict(spec),
+                    "remaining_model_ids": list(remaining_model_ids),
+                },
+            )
+            request = self._queue_mortal_wounds_target_decision(
+                player=player,
+                unit=root,
+                model=model,
+                candidates=list(ordered_candidates),
+                spec=dict(spec),
+                kind="floating_death",
+                allow_skip=False,
+                phase="Movement phase",
+            )
+            if request is None:
+                self._set_floating_death_pending_state(root, None)
+            return
+
+        self._set_floating_death_pending_state(root, None)
+
+    def _continue_floating_death_pending(self, unit=None) -> None:
+        if unit is None:
+            return
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else unit
+        if root is None:
+            return
+        pending = self._get_floating_death_pending_state(root)
+        if not pending:
+            return
+        spec = dict(pending.get("spec", {}) or {})
+        remaining_model_ids = [
+            str(model_id or "")
+            for model_id in list(pending.get("remaining_model_ids", []) or [])
+            if str(model_id or "")
+        ]
+        self._set_floating_death_pending_state(root, None)
+        if not spec:
+            get_specs = getattr(root, "unit_floating_death_specs", None)
+            specs = list(get_specs() or []) if callable(get_specs) else []
+            if not specs:
+                return
+            spec = dict(specs[0] or {})
+        self._run_floating_death_sequence(
+            unit=root,
+            spec=spec,
+            model_ids=list(remaining_model_ids),
+        )
+
     def _collect_grenade_pack_flyover_candidates(self, unit, spec: dict, game_map) -> list:
         if unit is None or game_map is None:
             return []
@@ -2383,6 +2561,65 @@ class Game(
                 )
                 if request is None:
                     continue
+
+    def _on_unit_move_ended_floating_death(self, unit=None, action: str | None = None, **_kwargs) -> None:
+        if unit is None:
+            return
+        action_key = str(action or "").strip().lower()
+        if action_key not in ("move", "advance", "fall_back", "charge"):
+            return
+
+        get_moving_root = getattr(unit, "get_attached_unit_root", None)
+        moving_root = get_moving_root() if callable(get_moving_root) else unit
+        if moving_root is None:
+            return
+        moving_army = moving_root.get_parent_army() if hasattr(moving_root, "get_parent_army") else None
+
+        for player in list(self.players or []):
+            if player is None:
+                continue
+            get_army = getattr(player, "get_army", None)
+            army = get_army() if callable(get_army) else getattr(player, "army", None)
+            if army is None:
+                continue
+            seen: set[str] = set()
+            for candidate in list(getattr(army, "units", []) or []):
+                if candidate is None:
+                    continue
+                get_root = getattr(candidate, "get_attached_unit_root", None)
+                root = get_root() if callable(get_root) else candidate
+                if root is None:
+                    continue
+                root_id = str(maybe_entity_id(root) or "")
+                if not root_id or root_id in seen:
+                    continue
+                seen.add(root_id)
+                if not bool(getattr(root, "deployed", True)):
+                    continue
+                is_alive = getattr(root, "is_alive", None)
+                root_alive = bool(is_alive()) if callable(is_alive) else bool(is_alive)
+                if not root_alive:
+                    continue
+                is_in_reserves = getattr(root, "is_in_reserves", None)
+                in_reserves = bool(is_in_reserves()) if callable(is_in_reserves) else False
+                if in_reserves or bool(getattr(root, "is_embarked", False)):
+                    continue
+                if self._get_floating_death_pending_state(root):
+                    continue
+                get_specs = getattr(root, "unit_floating_death_specs", None)
+                if not callable(get_specs):
+                    continue
+                specs = list(get_specs() or [])
+                if not specs:
+                    continue
+
+                source_army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+                if moving_root is not root and source_army is moving_army:
+                    # Floating Death triggers from this unit moving, or enemy units moving.
+                    continue
+
+                spec = dict(specs[0] or {})
+                self._run_floating_death_sequence(unit=root, spec=spec)
 
     def _maybe_trigger_daemonic_poisons(
         self,
@@ -3032,6 +3269,60 @@ class Game(
             append_action(
                 player,
                 f"{ability_name}: {getattr(unit, 'name', 'Unit')} dealt {int(total_mw)} mortal wounds to {getattr(target_unit, 'name', 'Target')}.",
+            )
+
+    def resolve_floating_death_mortal_wounds(self, unit, model, target_unit, spec) -> None:
+        if unit is None or model is None or target_unit is None or not isinstance(spec, dict):
+            return
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else unit
+        if root is None:
+            return
+        model_is_alive = getattr(model, "is_alive", False)
+        model_alive = bool(model_is_alive()) if callable(model_is_alive) else bool(model_is_alive)
+        if not model_alive:
+            return
+        if getattr(model, "parent_unit", None) is not root:
+            return
+
+        ability_name = str(spec.get("source", "") or "Floating Death").strip() or "Floating Death"
+        source_name = str(getattr(model, "name", "") or "Model")
+
+        model.die(game_map=getattr(self, "map", None))
+
+        from ..utility.dice import get_roll
+        roll = int(get_roll("D6") or 0)
+        mortal_wounds = 0
+        if 2 <= roll <= 5:
+            mid_die = str(spec.get("on_mid_die", "") or "").strip().upper()
+            if mid_die:
+                mortal_wounds = int(get_roll(mid_die) or 0)
+            else:
+                try:
+                    mortal_wounds = int(spec.get("on_mid_flat", 0) or 0)
+                except (TypeError, ValueError):
+                    mortal_wounds = 0
+        elif roll >= 6:
+            high_die = str(spec.get("on_high_die", "") or "").strip().upper()
+            if high_die:
+                mortal_wounds = int(get_roll(high_die) or 0)
+
+        target_is_alive = getattr(target_unit, "is_alive", False)
+        target_alive = bool(target_is_alive()) if callable(target_is_alive) else bool(target_is_alive)
+        if mortal_wounds > 0 and target_alive:
+            root._apply_mortal_wounds_to_unit(target_unit, int(mortal_wounds), game_map=getattr(self, "map", None))
+
+        from ..utility.event_bus import append_action, append_dice
+        parent_army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        player = getattr(parent_army, "player", None)
+        if player is not None:
+            append_dice(
+                player,
+                f"{ability_name}: {source_name} roll={int(roll)} -> {int(mortal_wounds)} mortal wounds to {getattr(target_unit, 'name', 'Target')}.",
+            )
+            append_action(
+                player,
+                f"{ability_name}: {source_name} was destroyed and dealt {int(mortal_wounds)} mortal wounds to {getattr(target_unit, 'name', 'Target')}.",
             )
 
     def _on_unit_move_ended_charge_mortal_wounds(self, unit=None, action: str | None = None, **_kwargs) -> None:

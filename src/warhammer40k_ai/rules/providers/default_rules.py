@@ -76,6 +76,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("unit_set_up", "_on_unit_set_up_setup_reactive_shoot_or_charge"),
                 ("unit_disembarked", "_on_unit_disembarked_setup_reactive_shoot_or_charge"),
                 ("unit_move_ended", "_on_unit_move_ended_loping_speed"),
+                ("unit_move_ended", "_on_unit_move_ended_floating_death"),
                 ("unit_move_started", "_on_unit_move_started_spirit_mark"),
                 ("unit_move_ended", "_on_unit_move_ended_spirit_mark"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_battleshock"),
