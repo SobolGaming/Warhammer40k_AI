@@ -633,6 +633,9 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time a model in a darnath lysander unit from your army makes an attack that targets your oath of moment target you can reroll the wound roll",
             r"your army can include imperial fists units but it cannot include any adeptus astartes units drawn from any other chapter",
         ),
+        "Armoured Wrath": (
+            r"once per phase for each adeptus astartes unit in your army you can reroll one hit roll one wound roll or one damage roll made for a model in that unit",
+        ),
         "A Noble Death in Combat": (
             r"each time a death company model from your army makes a melee attack reroll a wound roll of \d+ if that models unit is below its starting strength",
             r"if that models unit is below half strength you can reroll the wound roll instead",
@@ -1953,6 +1956,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Wrath of Dorn": (
             "Supported",
             "Emperor's Shield: attacks by ADEPTUS ASTARTES models against the current Oath of Moment target can re-roll Wound rolls of 1, and Darnath Lysander units can re-roll the Wound roll instead.",
+        ),
+        "Armoured Wrath": (
+            "Supported",
+            "Ironstorm Spearhead: once per phase, each ADEPTUS ASTARTES unit can re-roll one Hit roll, one Wound roll, or one Damage roll.",
         ),
         "A Noble Death in Combat": (
             "Supported",

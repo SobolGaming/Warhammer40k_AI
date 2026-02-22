@@ -9401,6 +9401,55 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Space Marines (Ironstorm Spearhead): Armoured Wrath
+        # once per phase per ADEPTUS ASTARTES unit, re-roll one Hit/Wound/Damage roll.
+        try:
+            if rerolls_allowed and "reroll" not in hit_result:
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                can_use = getattr(sm_mgr, "armoured_wrath_reroll_is_available", None) if sm_mgr is not None else None
+                consume = getattr(sm_mgr, "consume_armoured_wrath_reroll", None) if sm_mgr is not None else None
+                game_local = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if callable(can_use) and callable(consume) and bool(can_use(unit, "hit", game=game_local)):
+                    try:
+                        success = (dice_roll != 1) and (self.skill > 0) and (dice_roll >= final_needed)
+                    except Exception:
+                        success = False
+                    do_reroll = False
+                    try:
+                        player = getattr(army, "player", None) if army is not None else None
+                        is_human = bool(getattr(player, "has_control", lambda: False)())
+                        provider = getattr(getattr(game_local, "map", None), "roll_reroll_provider", None)
+                    except Exception:
+                        is_human = False
+                        provider = None
+                        player = None
+                    if is_human and callable(provider):
+                        try:
+                            do_reroll = bool(provider(
+                                player=player,
+                                unit=unit,
+                                roll_type="hit",
+                                value=dice_roll,
+                                dice=None,
+                                needed=final_needed,
+                                success=success,
+                                reason="Armoured Wrath",
+                            ))
+                        except Exception:
+                            do_reroll = False
+                    else:
+                        do_reroll = (not success)
+                    if do_reroll and bool(consume(unit, "hit", game=game_local)):
+                        rr = _reroll_hit()
+                        hit_result.setdefault("special_effects", []).append("Armoured Wrath: re-roll Hit roll")
+                        hit_result["reroll"] = rr
+                        dice_roll = rr
+                        reroll_used = True
+        except Exception:
+            pass
+
         # Drukhari: Power from Pain (Hatred Eternal) re-roll Hit rolls (optional).
         try:
             if rerolls_allowed and "reroll" not in hit_result:
@@ -13664,6 +13713,77 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Space Marines (Ironstorm Spearhead): Armoured Wrath
+        # once per phase per ADEPTUS ASTARTES unit, re-roll one Hit/Wound/Damage roll.
+        try:
+            if rerolls_allowed and "reroll" not in wound_result:
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                can_use = getattr(sm_mgr, "armoured_wrath_reroll_is_available", None) if sm_mgr is not None else None
+                consume = getattr(sm_mgr, "consume_armoured_wrath_reroll", None) if sm_mgr is not None else None
+                game_local = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if callable(can_use) and callable(consume) and bool(can_use(unit, "wound", game=game_local)):
+                    needed = 0
+                    try:
+                        s_val = strength
+                        t_val = target_toughness
+                        if isinstance(s_val, int) and isinstance(t_val, int):
+                            if s_val >= 2 * t_val:
+                                needed = 2
+                            elif s_val > t_val:
+                                needed = 3
+                            elif s_val == t_val:
+                                needed = 4
+                            elif s_val * 2 <= t_val:
+                                needed = 6
+                            else:
+                                needed = 5
+                    except Exception:
+                        needed = 0
+                    final_needed = needed
+                    try:
+                        final_needed = int(min(max(int(final_needed) - int(dice_modifier), 2), 6))
+                    except Exception:
+                        pass
+                    try:
+                        success = (dice_roll != 1) and (bool(final_needed) and dice_roll >= int(final_needed))
+                    except Exception:
+                        success = False
+                    do_reroll = False
+                    try:
+                        player = getattr(army, "player", None) if army is not None else None
+                        is_human = bool(getattr(player, "has_control", lambda: False)())
+                        provider = getattr(getattr(game_local, "map", None), "roll_reroll_provider", None)
+                    except Exception:
+                        is_human = False
+                        provider = None
+                        player = None
+                    if is_human and callable(provider):
+                        try:
+                            do_reroll = bool(provider(
+                                player=player,
+                                unit=unit,
+                                roll_type="wound",
+                                value=dice_roll,
+                                dice=None,
+                                needed=final_needed,
+                                success=success,
+                                reason="Armoured Wrath",
+                            ))
+                        except Exception:
+                            do_reroll = False
+                    else:
+                        do_reroll = (not success)
+                    if do_reroll and bool(consume(unit, "wound", game=game_local)):
+                        rr = _reroll_wound()
+                        wound_result.setdefault("special_effects", []).append("Armoured Wrath: re-roll Wound roll")
+                        wound_result["reroll"] = rr
+                        dice_roll = rr
+                        reroll_used = True
+        except Exception:
+            pass
+
         # MONARCH OF THE HUNT (Shalaxi): melee vs quarry => optional re-roll of the Wound roll (even if successful),
         # to allow "fishing" for 6s.
         # Note: cannot re-roll a dice more than once, so skip if already rerolled.
@@ -15368,6 +15488,56 @@ class WargearProfile:
                         damage_result['damage_rolled'] = new_val
                         damage_result.setdefault('special_effects', []).append(
                             f"{label}: re-roll Damage roll"
+                        )
+                        damage_result['reroll'] = new_val
+        except Exception:
+            pass
+
+        # Space Marines (Ironstorm Spearhead): Armoured Wrath
+        # once per phase per ADEPTUS ASTARTES unit, re-roll one Hit/Wound/Damage roll.
+        try:
+            if rerolls_allowed and isinstance(self.damage, DiceCollection) and "reroll" not in damage_result:
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                can_use = getattr(sm_mgr, "armoured_wrath_reroll_is_available", None) if sm_mgr is not None else None
+                consume = getattr(sm_mgr, "consume_armoured_wrath_reroll", None) if sm_mgr is not None else None
+                game_local = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if callable(can_use) and callable(consume) and bool(can_use(unit, "damage", game=game_local)):
+                    do_reroll = False
+                    try:
+                        player = getattr(army, "player", None) if army is not None else None
+                        is_human = bool(getattr(player, "has_control", lambda: False)())
+                        provider = getattr(getattr(game_local, "map", None), "roll_reroll_provider", None)
+                    except Exception:
+                        is_human = False
+                        provider = None
+                        player = None
+                    if is_human and callable(provider):
+                        try:
+                            do_reroll = bool(provider(
+                                player=player,
+                                unit=unit,
+                                roll_type="damage",
+                                value=damage_value,
+                                dice=damage_result.get("damage_dice_rolls", None),
+                                reason="Armoured Wrath",
+                            ))
+                        except Exception:
+                            do_reroll = False
+                    else:
+                        try:
+                            avg = float(self.damage.stat_average())
+                            do_reroll = float(damage_value) < avg
+                        except Exception:
+                            do_reroll = False
+                    if do_reroll and bool(consume(unit, "damage", game=game_local)):
+                        new_val, new_rolls = _reroll_damage()
+                        damage_value = new_val
+                        damage_result['damage_dice_rolls'] = new_rolls
+                        damage_result['damage_rolled'] = new_val
+                        damage_result.setdefault('special_effects', []).append(
+                            "Armoured Wrath: re-roll Damage roll"
                         )
                         damage_result['reroll'] = new_val
         except Exception:

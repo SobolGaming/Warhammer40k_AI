@@ -181,6 +181,7 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         self.grim_resolve_selected_unit_id: str = ""
         self.grim_resolve_selected_round: int = 0
         self.grim_resolve_selected_player_id: str = ""
+        self.armoured_wrath_used_phase_key_by_unit_id: dict[str, str] = {}
         self.vowed_target_mode: str = ""
         self.vowed_objective_ids: tuple[str, ...] = ()
         self.vowed_target_selected_round: int = 0
@@ -217,6 +218,11 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Anvil Siege Force")
+
+    def is_ironstorm_spearhead(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Ironstorm Spearhead")
 
     def is_bastion_task_force(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -814,6 +820,60 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         except Exception:
             return False
         return started_turn > 0 and started_turn == battle_round
+
+    def _armoured_wrath_phase_key(self, *, game=None, unit=None) -> str:
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is None and unit is not None:
+            try:
+                game_obj = getattr(getattr(unit.get_parent_army(), "player", None), "game", None)
+            except Exception:
+                game_obj = None
+        if game_obj is None:
+            return ""
+        try:
+            battle_round = int(getattr(game_obj, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            battle_round = 0
+        phase_name = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+        current_player = getattr(game_obj, "get_current_player", lambda: None)()
+        if current_player is None:
+            current_player = getattr(self.army, "player", None) if self.army is not None else None
+        owner_id = str(getattr(current_player, "id", "") or "")
+        return f"{battle_round}:{phase_name}:{owner_id}"
+
+    def armoured_wrath_reroll_is_available(self, unit, kind: str, *, game=None) -> bool:
+        if not self.is_ironstorm_spearhead():
+            return False
+        kind_key = str(kind or "").strip().lower()
+        if kind_key not in {"hit", "wound", "damage"}:
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        phase_key = self._armoured_wrath_phase_key(game=game, unit=root)
+        if not phase_key:
+            return False
+        unit_id = str(get_entity_id(root) or "")
+        if not unit_id:
+            return False
+        return str(self.armoured_wrath_used_phase_key_by_unit_id.get(unit_id, "") or "") != phase_key
+
+    def consume_armoured_wrath_reroll(self, unit, kind: str, *, game=None) -> bool:
+        if not self.armoured_wrath_reroll_is_available(unit, kind, game=game):
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        unit_id = str(get_entity_id(root) or "")
+        if not unit_id:
+            return False
+        phase_key = self._armoured_wrath_phase_key(game=game, unit=root)
+        if not phase_key:
+            return False
+        self.armoured_wrath_used_phase_key_by_unit_id[unit_id] = phase_key
+        return True
 
     def clear_vowed_target_selection(self) -> None:
         self.vowed_target_mode = ""
