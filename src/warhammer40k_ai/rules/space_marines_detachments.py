@@ -319,6 +319,11 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Forgefather's Seekers")
 
+    def is_godhammer_assault_force(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Godhammer Assault Force")
+
     def _attached_unit_root(self, unit):
         if unit is None:
             return None
@@ -513,6 +518,18 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not target:
             return False
         return target in unit_name
+
+    def _attached_unit_disembarked_from_transport_this_round(self, unit) -> bool:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        round_state = getattr(root, "round_state", None)
+        if round_state is None:
+            return False
+        if not bool(getattr(round_state, "disembarked_this_round", False)):
+            return False
+        transport_id = str(getattr(round_state, "disembarked_from_transport_id", "") or "").strip()
+        return bool(transport_id)
 
     def _attached_unit_is_terminator(self, unit) -> bool:
         if unit is None:
@@ -788,6 +805,75 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         except Exception:
             return False
         return started_turn > 0 and started_turn == battle_round
+
+    def shock_and_awe_reacting_unit_is_eligible(self, unit, *, game=None) -> bool:
+        if not self.is_godhammer_assault_force():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        try:
+            if root.get_parent_army() is not self.army:
+                return False
+        except Exception:
+            return False
+        if not self._unit_is_on_battlefield(root):
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        return self._attached_unit_disembarked_from_transport_this_round(root)
+
+    def shock_and_awe_charge_target_is_eligible(self, charging_unit, target_unit, *, game=None) -> bool:
+        if not self.shock_and_awe_reacting_unit_is_eligible(charging_unit, game=game):
+            return False
+        charging_root = self._attached_unit_root(charging_unit)
+        target_root = self._attached_unit_root(target_unit)
+        if charging_root is None or target_root is None:
+            return False
+        if not self._unit_is_on_battlefield(target_root):
+            return False
+        try:
+            if target_root.get_parent_army() is self.army:
+                return False
+        except Exception:
+            return False
+        return True
+
+    def shock_and_awe_charge_target_units(self, charging_unit, declared_targets=None, *, game=None) -> list:
+        if not self.shock_and_awe_reacting_unit_is_eligible(charging_unit, game=game):
+            return []
+        targets = []
+        seen_ids: set[str] = set()
+        for target in list(declared_targets or []):
+            target_root = self._attached_unit_root(target)
+            if target_root is None:
+                continue
+            target_id = str(get_entity_id(target_root) or "")
+            if target_id and target_id in seen_ids:
+                continue
+            if not self.shock_and_awe_charge_target_is_eligible(charging_unit, target_root, game=game):
+                continue
+            if target_id:
+                seen_ids.add(target_id)
+            targets.append(target_root)
+        targets.sort(key=lambda u: (str(getattr(u, "name", "") or ""), str(get_entity_id(u) or "")))
+        return targets
+
+    def shock_and_awe_melee_hit_bonus(self, attacker_model, weapon_profile=None) -> tuple[int, str]:
+        if not self.is_godhammer_assault_force():
+            return 0, ""
+        if attacker_model is None:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        if attacker_unit is None:
+            return 0, ""
+        if not self.shock_and_awe_reacting_unit_is_eligible(attacker_unit):
+            return 0, ""
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            if parent is not None and not bool(getattr(parent, "is_melee", lambda: False)()):
+                return 0, ""
+        return 1, "Shock and Awe"
 
     def _attached_unit_has_keyword(self, unit, keyword: str) -> bool:
         if unit is None:

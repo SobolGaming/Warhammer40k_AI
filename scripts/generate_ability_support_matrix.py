@@ -658,6 +658,12 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"shoot in a turn in which it started to perform an action",
             r"your army can include salamanders units but it cannot include any adeptus astartes units drawn from any other chapter",
         ),
+        "Shock and Awe": (
+            r"each time an adeptus astartes unit from your army declares a charge if it disembarked from a transport this turn after selecting the targets of that charge select one of those targets",
+            r"that enemy unit must take a battle shock test",
+            r"each time a model in an adeptus astartes unit from your army makes a melee attack if it disembarked from a transport this turn add \d+ to the hit roll",
+            r"your army can include black templars units but it cannot include any adeptus astartes units drawn from any other chapter",
+        ),
         "Mission Tactics": (
             r"at the start of your command phase you can select one of the mission tactics listed below",
             r"until the start of your next command phase that mission tactic is active and its effects apply to all units from your army with this ability",
@@ -1953,6 +1959,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Vulkan's Quest": (
             "Supported",
             "Forgefather's Seekers: ranged weapons for ADEPTUS ASTARTES units count as [ASSAULT], gain +1 Strength within 12\", and while Vulkan He'stan is on the battlefield Infernus Squad units can start Actions after Advancing and can shoot in turns they started an Action; Salamanders-only chapter restriction enforced.",
+        ),
+        "Shock and Awe": (
+            "Supported",
+            "Godhammer Assault Force: when an eligible ADEPTUS ASTARTES unit that disembarked from a TRANSPORT declares a charge, select one declared charge target to take a Battle-shock test, and that charging unit's melee attacks gain +1 to hit this turn; Black Templars-only chapter restriction enforced.",
         ),
         "Mission Tactics": (
             "Supported",

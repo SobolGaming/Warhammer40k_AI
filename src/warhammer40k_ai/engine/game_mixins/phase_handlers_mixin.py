@@ -10546,6 +10546,112 @@ class GamePhaseHandlersMixin:
                 )
                 self.request_decision(request)
 
+    def _on_charge_declared_shock_and_awe(self, unit=None, target_units=None, **_kwargs) -> None:
+        """Godhammer Assault Force: charge target selection for Shock and Awe Battle-shock."""
+        if unit is None:
+            return
+        charging_root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+        if charging_root is None:
+            return
+        charging_army = charging_root.get_parent_army() if hasattr(charging_root, "get_parent_army") else None
+        if charging_army is None:
+            return
+        sm_mgr = getattr(charging_army, "space_marines_detachments", None)
+        if sm_mgr is None:
+            return
+        is_eligible = getattr(sm_mgr, "shock_and_awe_reacting_unit_is_eligible", None)
+        if not callable(is_eligible) or not bool(is_eligible(charging_root, game=self)):
+            return
+        get_targets = getattr(sm_mgr, "shock_and_awe_charge_target_units", None)
+        if not callable(get_targets):
+            return
+        candidates = list(get_targets(charging_root, declared_targets=target_units, game=self) or [])
+        if not candidates:
+            return
+
+        charging_unit_id = str(get_entity_id(charging_root) or "")
+        if not charging_unit_id:
+            return
+        acting_player = getattr(charging_army, "player", None)
+        if acting_player is None:
+            return
+        try:
+            battle_round = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            battle_round = 0
+
+        candidate_ids: list[str] = []
+        for target in list(candidates):
+            target_id = str(get_entity_id(target) or "")
+            if target_id and target_id not in candidate_ids:
+                candidate_ids.append(target_id)
+        if not candidate_ids:
+            return
+
+        if len(candidate_ids) == 1:
+            target = candidates[0]
+            if target is None:
+                return
+            take_test = getattr(target, "take_battle_shock_test", None)
+            if callable(take_test):
+                take_test(current_turn=battle_round or 1)
+            return
+
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "shock_and_awe_battleshock":
+                    continue
+                if str(ctx.get("unit_id", "") or "") != charging_unit_id:
+                    continue
+                if int(ctx.get("battle_round", battle_round) or battle_round) != battle_round:
+                    continue
+                return
+
+        options = []
+        used_labels: set[str] = set()
+        for target in list(candidates):
+            target_id = str(get_entity_id(target) or "")
+            if not target_id:
+                continue
+            label = str(getattr(target, "name", "") or "Enemy unit")
+            base = label
+            idx = 2
+            while label in used_labels:
+                label = f"{base} ({idx})"
+                idx += 1
+            used_labels.add(label)
+            options.append(
+                DecisionOption.create(
+                    label,
+                    payload={
+                        "unit_id": charging_unit_id,
+                        "target_unit_id": target_id,
+                    },
+                )
+            )
+        if not options:
+            return
+
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"Shock and Awe: Select one charge target for {getattr(charging_root, 'name', 'Unit')} to take a Battle-shock test.",
+            player_id=getattr(acting_player, "id", None),
+            options=options,
+            context={
+                "ability": "shock_and_awe_battleshock",
+                "ability_name": "Shock and Awe",
+                "unit_id": charging_unit_id,
+                "army_id": str(get_entity_id(charging_army) or ""),
+                "battle_round": int(battle_round or 0),
+                "candidate_unit_ids": list(candidate_ids),
+            },
+        )
+        self.request_decision(request)
+
     def _on_phase_end_flickerjump_mortal_wounds(self, player=None, phase=None, **_kwargs) -> None:
         """Movement phase end: Flickerjump mortal wound rolls for units that used the ability."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

@@ -2129,6 +2129,51 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
             if not bool(can_target(source_root, target_root, game=game)):
                 return ("The Great Wolf Watches target does not satisfy charge requirements.",)
         return ()
+    if ability == "shock_and_awe_battleshock":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, payload.get("unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Shock and Awe source unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return ("Shock and Awe source unit was not found.",)
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        if source_army is None:
+            return ("Shock and Awe source army was not found.",)
+        sm_mgr = getattr(source_army, "space_marines_detachments", None)
+        if sm_mgr is None or not bool(getattr(sm_mgr, "is_godhammer_assault_force", lambda: False)()):
+            return ("Shock and Awe requires Godhammer Assault Force.",)
+        is_eligible = getattr(sm_mgr, "shock_and_awe_reacting_unit_is_eligible", None)
+        if not callable(is_eligible) or not bool(is_eligible(source_root, game=game)):
+            return ("The selected unit is not eligible for Shock and Awe.",)
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return ("Shock and Awe target unit was not found.",)
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return ("Shock and Awe target unit was not found.",)
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if target_army is source_army:
+            return ("Shock and Awe target must be an enemy unit.",)
+        target_id = str(get_entity_id(target_root) or "")
+        candidate_ids = {str(v) for v in list(ctx.get("candidate_unit_ids", []) or []) if str(v)}
+        if candidate_ids and target_id not in candidate_ids:
+            return ("Shock and Awe target is not an eligible candidate.",)
+        can_target = getattr(sm_mgr, "shock_and_awe_charge_target_is_eligible", None)
+        if callable(can_target) and not bool(can_target(source_root, target_root, game=game)):
+            return ("Shock and Awe target is not eligible.",)
+        return ()
     if ability == "resurrection_orb":
         payload = _option_payload(request, result)
         source_unit = resolve_unit(
@@ -3073,6 +3118,64 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             "unit_id": str(get_entity_id(source_root) or ""),
             "target_unit_id": target_id,
             "success": bool(success),
+        }
+    if ability == "shock_and_awe_battleshock":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, payload.get("unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return None
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        player = _resolve_player(game, request, payload)
+        if player is None and source_army is not None:
+            player = getattr(source_army, "player", None)
+        ability_name = str(ctx.get("ability_name", "") or "Shock and Awe").strip() or "Shock and Awe"
+
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return None
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return None
+        target_id = str(get_entity_id(target_root) or "")
+        candidate_ids = {str(v) for v in list(ctx.get("candidate_unit_ids", []) or []) if str(v)}
+        if candidate_ids and target_id not in candidate_ids:
+            return None
+        take_test = getattr(target_root, "take_battle_shock_test", None)
+        if not callable(take_test):
+            return None
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        take_test(current_turn=current_turn or 1)
+        is_battle_shocked_fn = getattr(target_root, "is_battle_shocked", None)
+        battle_shocked = bool(is_battle_shocked_fn()) if callable(is_battle_shocked_fn) else False
+        _log_action_for_players(
+            game,
+            player,
+            (
+                f"{ability_name}: {getattr(target_root, 'name', 'Unit')} took a Battle-shock test "
+                f"after being selected as a charge target."
+            ),
+        )
+        return {
+            "unit_id": str(get_entity_id(source_root) or ""),
+            "target_unit_id": target_id,
+            "battle_shocked": bool(battle_shocked),
         }
     if ability == "murdercall":
         payload = _option_payload(request, result)

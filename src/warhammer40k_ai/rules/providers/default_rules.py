@@ -156,6 +156,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("phase_start", "_on_phase_start_dark_ritual"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_tracking"),
                 ("charge_declared", "_on_charge_declared_tracking"),
+                ("charge_declared", "_on_charge_declared_shock_and_awe"),
                 ("phase_start", "_on_phase_start_post_shoot_leadership_debuff_cleanup"),
                 ("phase_start", "_on_phase_start_post_shoot_duration_cleanup"),
                 ("phase_start", "_on_phase_start_shooting_phase_visible_battleshock"),

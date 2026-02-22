@@ -7528,6 +7528,20 @@ class WargearProfile:
             else:
                 _add_hit_mod(1, "+1 from Heavy (stationary)")
 
+        # Space Marines: Godhammer Assault Force (Shock and Awe) melee +1 to hit
+        # for units that disembarked from a Transport this round.
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if sm_mgr is not None and callable(getattr(sm_mgr, "shock_and_awe_melee_hit_bonus", None)):
+                melee_hit_bonus, melee_source = sm_mgr.shock_and_awe_melee_hit_bonus(attacker, weapon_profile=self)
+                if melee_hit_bonus:
+                    source_name = str(melee_source or "Shock and Awe").strip() or "Shock and Awe"
+                    _add_hit_mod(int(melee_hit_bonus), f"+{int(melee_hit_bonus)} from {source_name}")
+        except Exception:
+            pass
+
         # Master of Mechanisms: selected friendly VEHICLE gets +1 to hit until next Command phase.
         sr = getattr(getattr(attacker, "parent_unit", None), "special_rules", None)
         if isinstance(sr, dict) and sr.get("master_of_mechanisms_hit_bonus_active"):
