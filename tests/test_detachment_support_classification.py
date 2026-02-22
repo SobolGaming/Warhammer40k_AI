@@ -414,6 +414,22 @@ class TestDetachmentSupportClassification(unittest.TestCase):
         self.assertEqual(status, "Supported")
         self.assertIn("ironstorm spearhead", notes.lower())
 
+    def test_in_the_lions_claws_is_supported(self):
+        gsm, detachment_abilities = self._seed_support_maps()
+        row = next(
+            r
+            for r in detachment_abilities
+            if str(r.get("name", "") or "").replace("\u2019", "'") == "In The Lion's Claws"
+        )
+        status, notes = gsm._classify_ability(
+            row.get("name", ""),
+            row.get("description", ""),
+            ability_id=row.get("id", ""),
+            faction_id=row.get("faction_id", ""),
+        )
+        self.assertEqual(status, "Supported")
+        self.assertIn("lion's blade task force", notes.lower())
+
     def test_a_noble_death_in_combat_is_supported(self):
         gsm, detachment_abilities = self._seed_support_maps()
         row = next(r for r in detachment_abilities if str(r.get("name", "") or "") == "A Noble Death in Combat")

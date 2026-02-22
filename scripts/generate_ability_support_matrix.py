@@ -636,6 +636,11 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Armoured Wrath": (
             r"once per phase for each adeptus astartes unit in your army you can reroll one hit roll one wound roll or one damage roll made for a model in that unit",
         ),
+        "In The Lion's Claws": (
+            r"each time an enemy unit excluding monsters and vehicles within engagement range of one or more ravenwing units from your army falls back all models in that enemy unit must take a desperate escape test",
+            r"each time a deathwing unit from your army declares a charge if one or more targets of that charge are within engagement range of one or more ravenwing units from your army add 2 to the charge roll",
+            r"your army can include dark angels units but it cannot include any adeptus astartes units drawn from any other chapter",
+        ),
         "A Noble Death in Combat": (
             r"each time a death company model from your army makes a melee attack reroll a wound roll of \d+ if that models unit is below its starting strength",
             r"if that models unit is below half strength you can reroll the wound roll instead",
@@ -1960,6 +1965,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Armoured Wrath": (
             "Supported",
             "Ironstorm Spearhead: once per phase, each ADEPTUS ASTARTES unit can re-roll one Hit roll, one Wound roll, or one Damage roll.",
+        ),
+        "In The Lion's Claws": (
+            "Supported",
+            "Lion's Blade Task Force: enemy non-MONSTER/non-VEHICLE units Falling Back while within Engagement Range of your RAVENWING units are forced to take Desperate Escape tests with an additional -1 when Battle-shocked, and DEATHWING units gain +2 to Charge rolls when charging targets within Engagement Range of one or more friendly RAVENWING units; Dark Angels-only chapter restriction enforced.",
         ),
         "A Noble Death in Combat": (
             "Supported",

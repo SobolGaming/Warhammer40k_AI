@@ -6411,8 +6411,6 @@ class ActionsMovementMixin:
 
     def get_charge_roll_target_strength_modifiers(self, target_units=None) -> list[tuple[int, str]]:
         specs = self._charge_roll_target_strength_specs()
-        if not specs:
-            return []
         if target_units is None:
             return []
         targets = list(target_units) if isinstance(target_units, (list, tuple, set)) else [target_units]
@@ -6441,15 +6439,34 @@ class ActionsMovementMixin:
             except Exception:
                 pass
 
-        if not has_below_half and not has_below_start:
-            return []
-
         modifiers: list[tuple[int, str]] = []
-        for spec in specs:
-            if has_below_half and int(spec.get("half_bonus", 0) or 0):
-                modifiers.append((int(spec.get("half_bonus", 0) or 0), spec.get("source", "Charge roll bonus")))
-            elif has_below_start and int(spec.get("base_bonus", 0) or 0):
-                modifiers.append((int(spec.get("base_bonus", 0) or 0), spec.get("source", "Charge roll bonus")))
+        if has_below_half or has_below_start:
+            for spec in specs:
+                if has_below_half and int(spec.get("half_bonus", 0) or 0):
+                    modifiers.append((int(spec.get("half_bonus", 0) or 0), spec.get("source", "Charge roll bonus")))
+                elif has_below_start and int(spec.get("base_bonus", 0) or 0):
+                    modifiers.append((int(spec.get("base_bonus", 0) or 0), spec.get("source", "Charge roll bonus")))
+
+        # Space Marines (Lion's Blade Task Force): In The Lion's Claws +2 to charge
+        # when a DEATHWING unit charges a target within Engagement Range of friendly RAVENWING.
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            army = root.get_parent_army() if root is not None and hasattr(root, "get_parent_army") else None
+        except Exception:
+            army = None
+        sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+        bonus_fn = getattr(sm_mgr, "in_the_lions_claws_charge_roll_bonus", None) if sm_mgr is not None else None
+        if callable(bonus_fn):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            try:
+                bonus, source = bonus_fn(root, targets, game=game)
+            except Exception:
+                bonus, source = 0, ""
+            if int(bonus or 0):
+                modifiers.append((int(bonus or 0), str(source or "In The Lion's Claws")))
         return modifiers
 
     def _defensive_charge_roll_penalty_specs(self) -> list[dict]:
@@ -9452,7 +9469,7 @@ class ActionsMovementMixin:
                 for source_unit in members:
                     source_sr = getattr(source_unit, "special_rules", None)
                     if not isinstance(source_sr, dict):
-                        continue
+                        source_sr = {}
                     if source_sr.get("enemy_fallback_desperate_escape"):
                         source_desperate = True
                         if source_sr.get("enemy_fallback_desperate_escape_exclude_monster_vehicle"):
@@ -9474,6 +9491,18 @@ class ActionsMovementMixin:
                             )
                         except Exception:
                             pass
+                    try:
+                        source_army = source_unit.get_parent_army() if hasattr(source_unit, "get_parent_army") else None
+                    except Exception:
+                        source_army = None
+                    sm_mgr = getattr(source_army, "space_marines_detachments", None) if source_army is not None else None
+                    apply_fn = getattr(sm_mgr, "in_the_lions_claws_ravenwing_source_applies", None) if sm_mgr is not None else None
+                    if callable(apply_fn):
+                        game_obj = getattr(getattr(source_army, "player", None), "game", None) if source_army is not None else None
+                        if bool(apply_fn(source_unit, self, game=game_obj)):
+                            source_desperate = True
+                            source_exclude_mv = True
+                            source_bs_penalty = max(source_bs_penalty, 1)
 
                 if source_target_enemy_id and str(source_target_enemy_id) != str(enemy_root_id):
                     continue

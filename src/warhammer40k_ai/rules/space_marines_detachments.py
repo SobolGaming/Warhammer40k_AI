@@ -229,6 +229,11 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Bastion Task Force")
 
+    def is_lions_blade_task_force(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Lion's Blade Task Force")
+
     def is_stormlance_task_force(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
             return False
@@ -874,6 +879,102 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False
         self.armoured_wrath_used_phase_key_by_unit_id[unit_id] = phase_key
         return True
+
+    def in_the_lions_claws_ravenwing_source_applies(self, source_unit, enemy_unit=None, *, game=None) -> bool:
+        if not self.is_lions_blade_task_force():
+            return False
+        source_root = self._attached_unit_root(source_unit)
+        if source_root is None:
+            return False
+        try:
+            if source_root.get_parent_army() is not self.army:
+                return False
+        except Exception:
+            return False
+        if not self._unit_is_on_battlefield(source_root):
+            return False
+        if not self.attached_unit_is_adeptus_astartes(source_root):
+            return False
+        if not self._attached_unit_has_keyword(source_root, "RAVENWING"):
+            return False
+        if enemy_unit is not None:
+            enemy_root = self._attached_unit_root(enemy_unit)
+            if enemy_root is None:
+                return False
+            try:
+                if enemy_root.get_parent_army() is self.army:
+                    return False
+            except Exception:
+                return False
+        return True
+
+    def in_the_lions_claws_charge_roll_bonus(self, charging_unit, target_units=None, *, game=None) -> tuple[int, str]:
+        if not self.is_lions_blade_task_force():
+            return 0, ""
+        charging_root = self._attached_unit_root(charging_unit)
+        if charging_root is None:
+            return 0, ""
+        try:
+            if charging_root.get_parent_army() is not self.army:
+                return 0, ""
+        except Exception:
+            return 0, ""
+        if not self._unit_is_on_battlefield(charging_root):
+            return 0, ""
+        if not self.attached_unit_is_adeptus_astartes(charging_root):
+            return 0, ""
+        if not self._attached_unit_has_keyword(charging_root, "DEATHWING"):
+            return 0, ""
+        if target_units is None:
+            return 0, ""
+        targets = list(target_units) if isinstance(target_units, (list, tuple, set)) else [target_units]
+        targets = [t for t in targets if t is not None]
+        if not targets:
+            return 0, ""
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is None:
+            return 0, ""
+        game_map = getattr(game_obj, "map", None)
+        if game_map is None or not hasattr(game_map, "is_within_engagement_range"):
+            return 0, ""
+        ravenwing_sources = []
+        seen_source_ids: set[str] = set()
+        for candidate in list(getattr(self.army, "units", []) or []):
+            candidate_root = self._attached_unit_root(candidate)
+            if candidate_root is None:
+                continue
+            candidate_id = str(get_entity_id(candidate_root) or "")
+            if candidate_id and candidate_id in seen_source_ids:
+                continue
+            if candidate_id:
+                seen_source_ids.add(candidate_id)
+            if not self._unit_is_on_battlefield(candidate_root):
+                continue
+            if not self.attached_unit_is_adeptus_astartes(candidate_root):
+                continue
+            if not self._attached_unit_has_keyword(candidate_root, "RAVENWING"):
+                continue
+            ravenwing_sources.append(candidate_root)
+        if not ravenwing_sources:
+            return 0, ""
+        for target in targets:
+            target_root = self._attached_unit_root(target)
+            if target_root is None:
+                continue
+            if not self._unit_is_on_battlefield(target_root):
+                continue
+            try:
+                if target_root.get_parent_army() is self.army:
+                    continue
+            except Exception:
+                continue
+            for source_root in list(ravenwing_sources or []):
+                try:
+                    if bool(game_map.is_within_engagement_range(target_root, source_root)):
+                        return 2, "In The Lion's Claws"
+                except Exception:
+                    continue
+        return 0, ""
 
     def clear_vowed_target_selection(self) -> None:
         self.vowed_target_mode = ""
