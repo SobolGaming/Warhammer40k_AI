@@ -210,6 +210,8 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         self.vowed_target_selected_player_id: str = ""
         self.rapid_drop_selected_unit_ids: tuple[str, ...] = ()
         self.rapid_drop_selected_player_id: str = ""
+        self.reclamation_phase_key: str = ""
+        self.reclamation_controlled_objective_ids: tuple[str, ...] = ()
 
     def _simple_norm(self, text: str) -> str:
         return _normalize_detachment_name(text)
@@ -267,6 +269,11 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Orbital Assault Force")
+
+    def is_reclamation_force(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Reclamation Force")
 
     def is_stormlance_task_force(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -1128,6 +1135,153 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         ):
             return False, ""
         return True, "Rapid-drop Deployment"
+
+    def on_phase_start_capture_reclamation_objective_control(self, *, phase=None, game=None) -> None:
+        if not self.is_reclamation_force():
+            self.reclamation_phase_key = ""
+            self.reclamation_controlled_objective_ids = ()
+            return
+        game_obj = self._resolve_game_context(game=game)
+        phase_key = self._armoured_wrath_phase_key(game=game_obj)
+        if not phase_key:
+            self.reclamation_phase_key = ""
+            self.reclamation_controlled_objective_ids = ()
+            return
+        game_map = getattr(game_obj, "map", None) if game_obj is not None else None
+        objectives = list(getattr(game_map, "objectives", []) or []) if game_map is not None else []
+        player = getattr(self.army, "player", None) if self.army is not None else None
+        controlled_ids: list[str] = []
+        for objective in objectives:
+            location = getattr(objective, "location", None) or objective
+            controller = getattr(location, "controlling_player", None)
+            if controller is None:
+                controller = getattr(objective, "controlling_player", None)
+            if controller is not player:
+                continue
+            objective_id = str(
+                getattr(objective, "id", None)
+                or get_entity_id(objective)
+                or getattr(location, "id", None)
+                or get_entity_id(location)
+                or ""
+            ).strip()
+            if not objective_id:
+                continue
+            controlled_ids.append(objective_id)
+        self.reclamation_phase_key = phase_key
+        self.reclamation_controlled_objective_ids = tuple(sorted(set(controlled_ids)))
+
+    def _reclamation_objective_ids_at_phase_start(self, *, game=None) -> set[str]:
+        if not self.is_reclamation_force():
+            return set()
+        phase_key = self._armoured_wrath_phase_key(game=game)
+        stored_key = str(getattr(self, "reclamation_phase_key", "") or "")
+        if not phase_key or phase_key != stored_key:
+            return set()
+        return {
+            str(objective_id or "").strip()
+            for objective_id in list(getattr(self, "reclamation_controlled_objective_ids", ()) or ())
+            if str(objective_id or "").strip()
+        }
+
+    def _unit_within_objective_ids(self, unit, objective_ids: set[str], *, game=None) -> bool:
+        if not objective_ids:
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        checker = getattr(root, "is_within_objective_range", None)
+        if not callable(checker):
+            return False
+        game_obj = self._resolve_game_context(game=game)
+        game_map = getattr(game_obj, "map", None) if game_obj is not None else None
+        objectives = list(getattr(game_map, "objectives", []) or []) if game_map is not None else []
+        for objective in objectives:
+            location = getattr(objective, "location", None) or objective
+            objective_id = str(
+                getattr(objective, "id", None)
+                or get_entity_id(objective)
+                or getattr(location, "id", None)
+                or get_entity_id(location)
+                or ""
+            ).strip()
+            if objective_id not in objective_ids:
+                continue
+            try:
+                if bool(checker(location)):
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def oath_of_reclamation_melee_ap_bonus(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if not self.is_reclamation_force():
+            return 0, ""
+        if attacker_model is None or target_unit is None:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        if attacker_unit is None:
+            return 0, ""
+        if not self.attached_unit_is_adeptus_astartes(attacker_unit):
+            return 0, ""
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            if parent is None or not bool(getattr(parent, "is_melee", lambda: False)()):
+                return 0, ""
+        target_root = self._attached_unit_root(target_unit)
+        if target_root is None:
+            return 0, ""
+        game_obj = self._resolve_game_context(game=game)
+        game_map = getattr(game_obj, "map", None) if game_obj is not None else None
+        is_within_objective = getattr(target_root, "is_within_any_objective_range", None)
+        if not callable(is_within_objective):
+            return 0, ""
+        try:
+            if not bool(is_within_objective(game_map=game_map)):
+                return 0, ""
+        except Exception:
+            return 0, ""
+        return 1, "Oath of Reclamation"
+
+    def oath_of_reclamation_wound_roll_penalty(
+        self,
+        target_unit,
+        strength: int,
+        *,
+        game=None,
+    ) -> tuple[int, str]:
+        if not self.is_reclamation_force():
+            return 0, ""
+        target_root = self._attached_unit_root(target_unit)
+        if target_root is None:
+            return 0, ""
+        if not self.attached_unit_is_adeptus_astartes(target_root):
+            return 0, ""
+        objective_ids = self._reclamation_objective_ids_at_phase_start(game=game)
+        if not self._unit_within_objective_ids(target_root, objective_ids, game=game):
+            return 0, ""
+        toughness = None
+        try:
+            toughness = int(getattr(target_root, "toughness", 0) or 0)
+        except Exception:
+            toughness = None
+        strength_gt_toughness = bool(
+            isinstance(strength, int)
+            and isinstance(toughness, int)
+            and toughness > 0
+            and strength > toughness
+        )
+        has_titus_keyword = self._attached_unit_has_keyword(target_root, "TITUS")
+        if not (strength_gt_toughness or has_titus_keyword):
+            return 0, ""
+        return 1, "Oath of Reclamation"
 
     def _attached_unit_is_terminator(self, unit) -> bool:
         if unit is None:

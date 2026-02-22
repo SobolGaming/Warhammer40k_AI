@@ -577,6 +577,11 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time an adeptus astartes model from your army makes an attack if it was set up on the battlefield this turn reroll a wound roll of \d+",
             r"if it disembarked from a drop pod this turn reroll a hit roll of \d+ as well",
         ),
+        "Oath of Reclamation": (
+            r"each time an adeptus astartes model from your army makes a melee attack that targets a unit within range of an objective marker improve the armour penetration characteristic of that attack by \d+",
+            r"each time an attack targets an adeptus astartes unit from your army if your unit is within range of an objective marker that you controlled at the start of the phase and if the strength characteristic of that attack is greater than the toughness characteristic of your unit or your unit has the titus keyword subtract \d+ from the wound roll",
+            r"your army can include ultramarines units but it cannot include any adeptus astartes units drawn from any other chapter",
+        ),
         "Interlocking Tactics": (
             r"adeptus astartes battleline units from your army are eligible to shoot and declare a charge in a turn in which they advanced or fell back",
             r"are eligible to shoot and declare a charge in a turn in which they advanced or fell back",
@@ -1924,6 +1929,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Rapid-drop Deployment": (
             "Supported",
             "Orbital Assault Force: at Declare Battle Formations select battle-size-scaled non-TITANIC ADEPTUS ASTARTES units to gain Deep Strike, and ADEPTUS ASTARTES attacks re-roll Wound rolls of 1 if set up this turn plus re-roll Hit rolls of 1 if disembarked from a Drop Pod this turn.",
+        ),
+        "Oath of Reclamation": (
+            "Supported",
+            "Reclamation Force: ADEPTUS ASTARTES melee attacks improve AP by 1 against targets within objective range, and attacks targeting your ADEPTUS ASTARTES units suffer -1 to wound when those units are within objective range of markers controlled at phase start and either Strength exceeds Toughness or the unit has TITUS; Ultramarines-only chapter restriction enforced.",
         ),
         "Interlocking Tactics": (
             "Supported",

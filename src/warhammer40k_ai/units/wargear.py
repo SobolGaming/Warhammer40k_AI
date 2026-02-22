@@ -2658,6 +2658,23 @@ class WargearProfile:
         except Exception:
             pass
         try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                if sm_mgr is not None and callable(getattr(sm_mgr, "oath_of_reclamation_melee_ap_bonus", None)):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    bonus, _source = sm_mgr.oath_of_reclamation_melee_ap_bonus(
+                        attacker,
+                        target,
+                        weapon_profile=self,
+                        game=game,
+                    )
+                    if bonus:
+                        ap_val -= int(bonus)
+        except Exception:
+            pass
+        try:
             _s_bonus, ap_bonus, _source = self._court_close_quarters_excruciation_bonus(attacker, target)
             if ap_bonus:
                 ap_val -= int(ap_bonus)
@@ -11900,6 +11917,23 @@ class WargearProfile:
                     dice_modifier += int(delta)
                     if reason:
                         wound_result['modifiers'].append(reason)
+        except Exception:
+            pass
+        # Space Marines: Reclamation Force (Oath of Reclamation) defensive wound penalty.
+        try:
+            target_army = target.get_parent_army()
+            sm_mgr = getattr(target_army, "space_marines_detachments", None) if target_army is not None else None
+            if sm_mgr is not None and callable(getattr(sm_mgr, "oath_of_reclamation_wound_roll_penalty", None)):
+                game = getattr(getattr(target_army, "player", None), "game", None) if target_army is not None else None
+                penalty, source = sm_mgr.oath_of_reclamation_wound_roll_penalty(
+                    target,
+                    strength=strength,
+                    game=game,
+                )
+                if penalty:
+                    dice_modifier -= int(penalty)
+                    source_name = str(source or "Oath of Reclamation").strip() or "Oath of Reclamation"
+                    wound_result["modifiers"].append(f"-{int(penalty)} to wound from {source_name}")
         except Exception:
             pass
         # Necrons: Merciless Reclamation (+1 to wound vs targets within objective range).

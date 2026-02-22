@@ -119,6 +119,23 @@ class GamePhaseHandlersMixin:
                 continue
             resolve_fn(game=self, opponent_player=player)
 
+    def _on_phase_start_space_marines_detachment_rules(self, player=None, phase=None, **_kwargs) -> None:
+        """Capture Space Marines start-of-phase detachment state."""
+        for p in list(getattr(self, "players", []) or []):
+            if p is None:
+                continue
+            army = p.get_army()
+            if army is None:
+                continue
+            sm_mgr = getattr(army, "space_marines_detachments", None)
+            capture = (
+                getattr(sm_mgr, "on_phase_start_capture_reclamation_objective_control", None)
+                if sm_mgr is not None
+                else None
+            )
+            if callable(capture):
+                capture(phase=phase, game=self)
+
     def _on_phase_start_optional_abilities(self, player=None, phase=None, **_kwargs) -> None:
         """
         Hook point for optional, player-decided abilities that trigger at specific timing windows.
@@ -133,6 +150,7 @@ class GamePhaseHandlersMixin:
         self._on_phase_start_decoy_targets(player=player, phase=phase)
         self._on_phase_start_vanguard_of_dark_city(player=player, phase=phase)
         self._on_phase_start_chaos_daemons_detachment_rules(player=player, phase=phase)
+        self._on_phase_start_space_marines_detachment_rules(player=player, phase=phase)
         self._on_phase_start_vowed_target(player=player, phase=phase)
         if pname:
             for p in list(getattr(self, "players", []) or []):
