@@ -645,6 +645,14 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"until the start of your next command phase add \d+ to the objective control characteristic of models in that unit",
             r"your army can include dark angels units but it cannot include any adeptus astartes units drawn from any other chapter",
         ),
+        "Mission Tactics": (
+            r"at the start of your command phase you can select one of the mission tactics listed below",
+            r"until the start of your next command phase that mission tactic is active and its effects apply to all units from your army with this ability",
+            r"each mission tactic can only be selected once per battle",
+            r"while this mission tactic is active weapons equipped by adeptus astartes units from your army have the sustained hits \d+ ability",
+            r"while this mission tactic is active weapons equipped by adeptus astartes units from your army have the lethal hits ability",
+            r"while this mission tactic is active each time an adeptus astartes unit from your army makes an attack if a critical hit is scored that attack has the precision ability",
+        ),
         "Maddened Ferocity": (
             r"each time an adeptus astartes model from your army makes a melee attack reroll a wound roll of \d+",
             r"each time an adeptus astartes unit from your army is selected to fight if that unit made a charge move this turn until the end of the phase add \d+ to the attacks characteristic of melee weapons equipped by models in that unit",
@@ -1924,6 +1932,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Grim Resolve": (
             "Supported",
             "Unforgiven Task Force: while Battle-shocked, ADEPTUS ASTARTES units have Objective Control 1 instead of 0, and in each Command phase you select one ADEPTUS ASTARTES unit to gain +1 Objective Control until your next Command phase.",
+        ),
+        "Mission Tactics": (
+            "Supported",
+            "Black Spear Task Force: in each Command phase you can select one unchosen Mission Tactic for the battle round; Furor grants Sustained Hits 1, Malleus grants Lethal Hits, and Purgatus grants Precision on critical hits for ADEPTUS ASTARTES units until your next Command phase.",
         ),
         "Legacy of the Angel": (
             "Supported",

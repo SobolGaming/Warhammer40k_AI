@@ -155,12 +155,29 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         _ANGELIC_LEGACY_CARMINE_WRATH: "Carmine Wrath",
         _ANGELIC_LEGACY_THEIR_APPOINTED_HOUR: "Their Appointed Hour",
     }
+    _MISSION_TACTIC_FUROR = "FUROR_TACTICS"
+    _MISSION_TACTIC_MALLEUS = "MALLEUS_TACTICS"
+    _MISSION_TACTIC_PURGATUS = "PURGATUS_TACTICS"
+    _MISSION_TACTIC_KEYS = (
+        _MISSION_TACTIC_FUROR,
+        _MISSION_TACTIC_MALLEUS,
+        _MISSION_TACTIC_PURGATUS,
+    )
+    _MISSION_TACTIC_LABELS = {
+        _MISSION_TACTIC_FUROR: "Furor Tactics",
+        _MISSION_TACTIC_MALLEUS: "Malleus Tactics",
+        _MISSION_TACTIC_PURGATUS: "Purgatus Tactics",
+    }
 
     def __init__(self, army=None):
         super().__init__(army)
         self.angelic_legacy_selected_keys: tuple[str, ...] = ()
         self.angelic_legacy_selected_round: int = 0
         self.unparalleled_tactician_used_round: int = 0
+        self.mission_tactics_selected_keys: tuple[str, ...] = ()
+        self.mission_tactics_active_key: str = ""
+        self.mission_tactics_active_round: int = 0
+        self.mission_tactics_last_selection_round: int = 0
         self.grim_resolve_selected_unit_id: str = ""
         self.grim_resolve_selected_round: int = 0
         self.grim_resolve_selected_player_id: str = ""
@@ -231,6 +248,11 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Vanguard Spearhead")
+
+    def is_black_spear_task_force(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Black Spear Task Force")
 
     def is_shadowmark_talon(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -523,6 +545,127 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
     def angelic_legacy_option_active(self, key: str) -> bool:
         choice = self._normalize_angelic_legacy_key(key)
         return choice in set(self.angelic_legacy_selected_keys)
+
+    @classmethod
+    def mission_tactic_label(cls, key: str) -> str:
+        return cls._MISSION_TACTIC_LABELS.get(str(key or "").strip().upper(), str(key or "").strip())
+
+    @classmethod
+    def _normalize_mission_tactic_key(cls, value: str) -> str:
+        raw = str(value or "").strip().upper().replace("-", "_").replace(" ", "_")
+        if raw in cls._MISSION_TACTIC_KEYS:
+            return raw
+        if raw in {"FUROR", "FURORTACTICS", "FUROR_TACTIC"}:
+            return cls._MISSION_TACTIC_FUROR
+        if raw in {"MALLEUS", "MALLEUSTACTICS", "MALLEUS_TACTIC"}:
+            return cls._MISSION_TACTIC_MALLEUS
+        if raw in {"PURGATUS", "PURGATUSTACTICS", "PURGATUS_TACTIC"}:
+            return cls._MISSION_TACTIC_PURGATUS
+        return raw
+
+    def clear_active_mission_tactic(self, *, game=None) -> None:
+        if not self.is_black_spear_task_force():
+            self.mission_tactics_active_key = ""
+            self.mission_tactics_active_round = 0
+            return
+        if game is None:
+            self.mission_tactics_active_key = ""
+            self.mission_tactics_active_round = 0
+            return
+        try:
+            round_now = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            round_now = 0
+        if int(self.mission_tactics_active_round or 0) < int(round_now or 0):
+            self.mission_tactics_active_key = ""
+            self.mission_tactics_active_round = 0
+
+    def mark_mission_tactics_skipped_for_round(self, *, battle_round=None) -> None:
+        if battle_round is None:
+            return
+        try:
+            self.mission_tactics_last_selection_round = int(battle_round)
+        except Exception:
+            self.mission_tactics_last_selection_round = 0
+
+    def get_available_mission_tactics(self) -> list[str]:
+        selected = {str(v or "").strip().upper() for v in list(self.mission_tactics_selected_keys or ())}
+        return [key for key in self._MISSION_TACTIC_KEYS if key not in selected]
+
+    def can_select_mission_tactic(self, *, game=None) -> bool:
+        if not self.is_black_spear_task_force():
+            return False
+        if not self.get_available_mission_tactics():
+            return False
+        if game is None:
+            return True
+        try:
+            round_now = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            return False
+        if round_now <= 0:
+            return False
+        return int(getattr(self, "mission_tactics_last_selection_round", 0) or 0) != round_now
+
+    def select_mission_tactic(self, choice_key: str, *, battle_round=None) -> bool:
+        if not self.is_black_spear_task_force():
+            return False
+        round_now = 0
+        if battle_round is not None:
+            try:
+                round_now = int(battle_round)
+            except Exception:
+                round_now = 0
+        if round_now > 0 and int(getattr(self, "mission_tactics_last_selection_round", 0) or 0) == round_now:
+            return False
+        key = self._normalize_mission_tactic_key(choice_key)
+        if key not in self._MISSION_TACTIC_KEYS:
+            return False
+        selected = list(self.mission_tactics_selected_keys or ())
+        if key in selected:
+            return False
+        selected.append(key)
+        self.mission_tactics_selected_keys = tuple(selected)
+        self.mission_tactics_active_key = key
+        if battle_round is not None:
+            self.mission_tactics_active_round = int(round_now or 0)
+            self.mission_tactics_last_selection_round = int(round_now or 0)
+        return True
+
+    def _mission_tactics_recipient(self, unit) -> bool:
+        if unit is None:
+            return False
+        if not self.is_black_spear_task_force():
+            return False
+        if not str(getattr(self, "mission_tactics_active_key", "") or "").strip():
+            return False
+        if not self.attached_unit_is_adeptus_astartes(unit):
+            return False
+        return True
+
+    def mission_tactics_lethal_hits(self, attacker_model) -> tuple[bool, str]:
+        if str(self.mission_tactics_active_key or "").strip().upper() != self._MISSION_TACTIC_MALLEUS:
+            return False, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None) if attacker_model is not None else None
+        if not self._mission_tactics_recipient(attacker_unit):
+            return False, ""
+        return True, self.mission_tactic_label(self._MISSION_TACTIC_MALLEUS)
+
+    def mission_tactics_sustained_hits(self, attacker_model) -> tuple[int, str]:
+        if str(self.mission_tactics_active_key or "").strip().upper() != self._MISSION_TACTIC_FUROR:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None) if attacker_model is not None else None
+        if not self._mission_tactics_recipient(attacker_unit):
+            return 0, ""
+        return 1, self.mission_tactic_label(self._MISSION_TACTIC_FUROR)
+
+    def mission_tactics_precision_on_crit(self, attacker_model) -> tuple[bool, str]:
+        if str(self.mission_tactics_active_key or "").strip().upper() != self._MISSION_TACTIC_PURGATUS:
+            return False, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None) if attacker_model is not None else None
+        if not self._mission_tactics_recipient(attacker_unit):
+            return False, ""
+        return True, self.mission_tactic_label(self._MISSION_TACTIC_PURGATUS)
 
     def _legacy_of_the_angel_recipient(self, unit) -> bool:
         if unit is None:

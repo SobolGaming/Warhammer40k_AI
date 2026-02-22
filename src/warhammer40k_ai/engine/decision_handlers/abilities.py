@@ -17,6 +17,7 @@ from ..decision_kinds import (
     DECISION_CHOOSE_DARK_PACT,
     DECISION_CHOOSE_DOCTRINA,
     DECISION_CHOOSE_COMBAT_DOCTRINE,
+    DECISION_CHOOSE_MISSION_TACTIC,
     DECISION_CHOOSE_ANGELIC_LEGACY,
     DECISION_CHOOSE_GRAND_COVEN,
     DECISION_CHOOSE_COMBAT_DRUGS,
@@ -1321,6 +1322,57 @@ def _apply_choose_combat_doctrine(game: object, request: DecisionRequest, result
         label = _option_label(request, result) or str(choice)
         if label:
             _log_action_for_players(game, player, f"Combat Doctrines: {label} (Battle Round {battle_round})")
+    except Exception:
+        pass
+    return applied
+
+
+def _validate_choose_mission_tactic(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    payload = _option_payload(request, result)
+    army = _resolve_army(game, request, payload)
+    if army is None:
+        return ("Mission Tactics army not found.",)
+    mgr = getattr(army, "space_marines_detachments", None)
+    if mgr is None:
+        return ("Space Marines detachment manager not found.",)
+    if not bool(getattr(mgr, "can_select_mission_tactic", lambda **_k: False)(game=game)):
+        return ("Mission Tactics cannot be selected right now.",)
+    if is_skip_choice(request, result):
+        return ()
+    choice = payload.get("choice_key") or payload.get("key")
+    if choice is None:
+        return ("Mission Tactics selection requires choice_key.",)
+    available = {str(v or "").strip().upper() for v in list(getattr(mgr, "get_available_mission_tactics", lambda: [])() or [])}
+    choice_key = str(choice or "").strip().upper()
+    if available and choice_key not in available:
+        return (f"Mission Tactic '{choice}' is not currently available.",)
+    return ()
+
+
+def _apply_choose_mission_tactic(game: object, request: DecisionRequest, result: DecisionResult):
+    payload = _option_payload(request, result)
+    army = _resolve_army(game, request, payload)
+    if army is None:
+        raise RuntimeError("Mission Tactics army not found.")
+    mgr = getattr(army, "space_marines_detachments", None)
+    if mgr is None:
+        raise RuntimeError("Space Marines detachment manager not found.")
+    battle_round = request.context.get("battle_round")
+    if is_skip_choice(request, result):
+        mark_skip = getattr(mgr, "mark_mission_tactics_skipped_for_round", None)
+        if callable(mark_skip):
+            mark_skip(battle_round=battle_round)
+        return None
+    choice = payload.get("choice_key") or payload.get("key")
+    applied = bool(mgr.select_mission_tactic(choice, battle_round=battle_round))
+    try:
+        player = getattr(army, "player", None)
+        label = _option_label(request, result) or str(choice)
+        if label:
+            _log_action_for_players(game, player, f"Mission Tactics: {label} (Battle Round {battle_round})")
     except Exception:
         pass
     return applied
@@ -10225,6 +10277,11 @@ register_decision_handler(
     DECISION_CHOOSE_COMBAT_DOCTRINE,
     validate=_validate_choose_combat_doctrine,
     apply=_apply_choose_combat_doctrine,
+)
+register_decision_handler(
+    DECISION_CHOOSE_MISSION_TACTIC,
+    validate=_validate_choose_mission_tactic,
+    apply=_apply_choose_mission_tactic,
 )
 register_decision_handler(
     DECISION_CHOOSE_ANGELIC_LEGACY,

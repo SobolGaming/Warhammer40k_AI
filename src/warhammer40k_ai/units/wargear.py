@@ -7025,6 +7025,29 @@ class WargearProfile:
             attack_is_ranged = bool(getattr(self.parent_wargear, "is_ranged", lambda: False)())
         except Exception:
             attack_is_ranged = False
+
+        # Space Marines (Black Spear Task Force): Mission Tactics
+        # - Furor: Sustained Hits 1
+        # - Malleus: Lethal Hits
+        # - Purgatus: Precision on critical hit
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if sm_mgr is not None:
+                mission_lethal, _source = sm_mgr.mission_tactics_lethal_hits(attacker)
+                if mission_lethal:
+                    bonus_lethal = True
+                mission_sustained, source = sm_mgr.mission_tactics_sustained_hits(attacker)
+                mission_sustained_value = int(mission_sustained or 0)
+                if mission_sustained_value > 0:
+                    _set_bonus_sustained(mission_sustained_value, str(source or "Mission Tactics"))
+                mission_precision_on_crit, _source = sm_mgr.mission_tactics_precision_on_crit(attacker)
+                if mission_precision_on_crit:
+                    bonus_precision_on_crit = True
+        except Exception:
+            pass
+
         def _merge_anti_specs(existing, incoming):
             merged = list(existing or ())
             for spec in list(incoming or ()):

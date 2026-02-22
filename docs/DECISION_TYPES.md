@@ -95,6 +95,7 @@ For UI mapping, see `docs/NETWORK_SAVELOAD_DESIGN.md`.
 - `CHOOSE_DARK_PACT` — Choose Dark Pact (Cabal of Chaos options include `empyric_wellspring_choice`).
 - `CHOOSE_DOCTRINA` — Choose Doctrina Imperative.
 - `CHOOSE_COMBAT_DOCTRINE` — Choose Combat Doctrine.
+- `CHOOSE_MISSION_TACTIC` — Choose Mission Tactic (Black Spear Task Force).
 - `CHOOSE_ANGELIC_LEGACY` — Choose two Angelic Legacy abilities (Angelic Inheritors).
 - `CHOOSE_GRAND_COVEN` — Choose Grand Coven option.
 - `CHOOSE_COMBAT_DRUGS` — Choose Combat Drugs.

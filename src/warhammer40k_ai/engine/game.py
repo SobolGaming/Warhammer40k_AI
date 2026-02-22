@@ -31,6 +31,7 @@ from .decision_kinds import (
     DECISION_DECLARE_SHOTS,
     DECISION_CHOOSE_SETUP_REACTIVE_ACTION,
     DECISION_CHOOSE_QUARRY,
+    DECISION_CHOOSE_MISSION_TACTIC,
     DECISION_CHOOSE_CHIVALRIC_OATH,
     DECISION_CHOOSE_START_OF_BATTLE_KEYWORD,
     DECISION_MOVE_UNIT,
@@ -1037,6 +1038,65 @@ class Game(
         req = DecisionRequest.create(
             DECISION_CHOOSE_COMBAT_DOCTRINE,
             "Select Combat Doctrine.",
+            player_id=getattr(player, "id", None),
+            options=req_options,
+            context={"army_id": army_id, "battle_round": battle_round},
+        )
+        if hasattr(self, "request_decision"):
+            self.request_decision(req)
+
+    def _maybe_prompt_mission_tactics(self) -> None:
+        player = self.get_current_player()
+        if player is None:
+            raise RuntimeError("Mission Tactics prompt requires current player.")
+        army = player.get_army()
+        if army is None:
+            raise RuntimeError("Mission Tactics prompt requires an army.")
+        sm_mgr = getattr(army, "space_marines_detachments", None)
+        if sm_mgr is None:
+            return
+        can_select = getattr(sm_mgr, "can_select_mission_tactic", None)
+        if not callable(can_select) or not bool(can_select(game=self)):
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        options = list(getattr(sm_mgr, "get_available_mission_tactics", lambda: [])() or [])
+        if not options:
+            return
+
+        army_id = str(get_entity_id(army) or "")
+        battle_round = int(getattr(self, "turn", 0) or 0)
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_MISSION_TACTIC:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("army_id", "")) == army_id and int(ctx.get("battle_round", battle_round) or battle_round) == battle_round:
+                    return
+
+        req_options = [
+            DecisionOption.create(
+                "None",
+                payload={"skip": True, "summary": "Do not select a Mission Tactic this Command phase.", "army_id": army_id},
+            )
+        ]
+        for opt in options:
+            key = str(opt or "").strip()
+            if not key:
+                continue
+            label = str(getattr(sm_mgr, "mission_tactic_label", lambda _k: _k)(key) or key)
+            req_options.append(
+                DecisionOption.create(
+                    label,
+                    payload={"choice_key": key, "summary": label, "army_id": army_id},
+                )
+            )
+        if not req_options:
+            return
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_MISSION_TACTIC,
+            "Select Mission Tactic.",
             player_id=getattr(player, "id", None),
             options=req_options,
             context={"army_id": army_id, "battle_round": battle_round},
@@ -7263,9 +7323,13 @@ class Game(
         # Space Marines: Angelic Legacy selection at the start of the first battle round.
         sm_mgr = getattr(army, "space_marines_detachments", None)
         if sm_mgr is not None:
+            clear_mission_tactic = getattr(sm_mgr, "clear_active_mission_tactic", None)
+            if callable(clear_mission_tactic):
+                clear_mission_tactic(game=self)
             clear_grim_resolve = getattr(sm_mgr, "clear_grim_resolve_bonus", None)
             if callable(clear_grim_resolve):
                 clear_grim_resolve(game=self)
+            self._maybe_prompt_mission_tactics()
             self._maybe_prompt_angelic_legacy()
             self._maybe_prompt_grim_resolve()
 
