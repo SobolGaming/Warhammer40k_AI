@@ -332,6 +332,10 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "KEYWORDS": (
             r"(?:if you select this detachment )?.+ units from your army (?:have|gain) the battleline keyword",
         ),
+        "Bonded Heroes": (
+            r"each time a t au empire battlesuit model from your army makes a ranged attack that targets a unit within 12 improve the strength characteristic of that attack by 1",
+            r"if that attack targets a unit within 9 improve the armour penetration characteristic of that attack by 1 as well",
+        ),
         "Ruthless Discipline": (
             r"add \d+ to the number of orders each astra militarum officer model from your army can issue as stated on their datasheet",
             r"while an astra militarum unit from your army is affected by an order each time a model in that unit makes an attack reroll a hit roll of \d+",
@@ -1939,6 +1943,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Skirmish Fighters": (
             "Supported",
             "Kroot Hunting Pack: KROOT models gain a 6+ invulnerable save against melee attacks and a 5+ invulnerable save against ranged attacks.",
+        ),
+        "Bonded Heroes": (
+            "Supported",
+            "Retaliation Cadre: T'AU EMPIRE BATTLESUIT models gain +1 Strength on ranged attacks against targets within 12\", and those attacks also gain +1 AP against targets within 9\".",
         ),
         "Path of the Warrior": (
             "Supported",

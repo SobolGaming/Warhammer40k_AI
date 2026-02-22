@@ -874,6 +874,111 @@ def test_kroot_hunting_pack_keywords_do_not_apply_to_non_carnivore_units():
     assert unit.is_battleline is False
 
 
+def test_bonded_heroes_grants_strength_bonus_within_twelve_inches(monkeypatch):
+    army = _build_tau_army("Retaliation Cadre")
+    attacker_unit = create_unit(
+        "Crisis Battlesuits",
+        keywords=["INFANTRY", "BATTLESUIT"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    target_unit = create_unit(
+        "Enemy Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    army.add_unit(attacker_unit)
+
+    monkeypatch.setattr(
+        "warhammer40k_ai.utility.aura_utils.model_within_range_of_unit",
+        lambda _model, _unit, dist, **_kwargs: float(dist) >= 12.0,
+    )
+
+    attack_profile = make_profile(range_val="24", is_ranged=True)
+    attacker_model = attacker_unit.models[0]
+    wound_result = attack_profile._wound_target_with_tracking(
+        target_unit,
+        attacker_model,
+        {"_aura_attack_mods": _aura_stub()},
+        roll_value=3,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+
+    assert attack_profile.get_effective_ap(attacker_model, target_unit) == 0
+    assert wound_result["wound"] is True
+    assert any("Bonded Heroes" in str(entry) for entry in wound_result.get("modifiers", []))
+
+
+def test_bonded_heroes_grants_ap_bonus_within_nine_inches(monkeypatch):
+    army = _build_tau_army("Retaliation Cadre")
+    attacker_unit = create_unit(
+        "Crisis Battlesuits",
+        keywords=["INFANTRY", "BATTLESUIT"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    target_unit = create_unit(
+        "Enemy Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    army.add_unit(attacker_unit)
+
+    monkeypatch.setattr(
+        "warhammer40k_ai.utility.aura_utils.model_within_range_of_unit",
+        lambda *_args, **_kwargs: True,
+    )
+
+    attack_profile = make_profile(range_val="24", is_ranged=True)
+    attacker_model = attacker_unit.models[0]
+    wound_result = attack_profile._wound_target_with_tracking(
+        target_unit,
+        attacker_model,
+        {"_aura_attack_mods": _aura_stub()},
+        roll_value=3,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+
+    assert attack_profile.get_effective_ap(attacker_model, target_unit) == -1
+    assert wound_result["wound"] is True
+    assert any("Bonded Heroes" in str(entry) for entry in wound_result.get("modifiers", []))
+
+
+def test_bonded_heroes_requires_battlesuit_attacker_models(monkeypatch):
+    army = _build_tau_army("Retaliation Cadre")
+    attacker_unit = create_unit(
+        "Strike Team",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    target_unit = create_unit(
+        "Enemy Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    army.add_unit(attacker_unit)
+
+    monkeypatch.setattr(
+        "warhammer40k_ai.utility.aura_utils.model_within_range_of_unit",
+        lambda *_args, **_kwargs: True,
+    )
+
+    attack_profile = make_profile(range_val="24", is_ranged=True)
+    attacker_model = attacker_unit.models[0]
+    wound_result = attack_profile._wound_target_with_tracking(
+        target_unit,
+        attacker_model,
+        {"_aura_attack_mods": _aura_stub()},
+        roll_value=3,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+
+    assert attack_profile.get_effective_ap(attacker_model, target_unit) == 0
+    assert wound_result["wound"] is False
+    assert not any("Bonded Heroes" in str(entry) for entry in wound_result.get("modifiers", []))
+
+
 def test_killing_blow_grants_assault_for_first_three_rounds():
     army = _build_tau_army("Mont'ka")
     army.player.game.turn = 2

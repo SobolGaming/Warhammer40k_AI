@@ -42,6 +42,11 @@ class TauEmpireDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Kroot Hunting Pack")
 
+    def is_retaliation_cadre(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Retaliation Cadre")
+
     def _model_in_army(self, model) -> bool:
         if model is None or self.army is None:
             return False
@@ -367,6 +372,39 @@ class TauEmpireDetachmentManager(DetachmentManagerBase):
             if not any(str(k or "").strip().lower() == "battleline" for k in keywords):
                 keywords.append("Battleline")
                 root.keywords = keywords
+
+    def bonded_heroes_strength_ap_bonus(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        weapon_profile=None,
+        attack_instance=None,
+    ) -> tuple[int, int, str]:
+        del attack_instance
+        if not self.is_retaliation_cadre():
+            return 0, 0, ""
+        if attacker_model is None or target_unit is None:
+            return 0, 0, ""
+        if not self._model_in_army(attacker_model):
+            return 0, 0, ""
+        if not self._model_is_tau_empire(attacker_model):
+            return 0, 0, ""
+        if not self._model_has_keyword(attacker_model, "BATTLESUIT"):
+            return 0, 0, ""
+        if not self._weapon_is_ranged(weapon_profile):
+            return 0, 0, ""
+        target_root = self._attached_root(target_unit)
+        if target_root is None:
+            return 0, 0, ""
+
+        from ..utility.aura_utils import model_within_range_of_unit
+
+        if model_within_range_of_unit(attacker_model, target_root, 9.0, use_attached_aggregate=True):
+            return 1, 1, "Bonded Heroes"
+        if model_within_range_of_unit(attacker_model, target_root, 12.0, use_attached_aggregate=True):
+            return 1, 0, "Bonded Heroes"
+        return 0, 0, ""
 
     @staticmethod
     def _battle_round_from_game(game) -> int:

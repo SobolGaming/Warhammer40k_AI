@@ -2349,6 +2349,14 @@ class WargearProfile:
                 )
                 if ap_bonus:
                     ap_val -= int(ap_bonus)
+            if mgr is not None and callable(getattr(mgr, "bonded_heroes_strength_ap_bonus", None)):
+                _s_bonus, bonded_ap_bonus, _bonded_source = mgr.bonded_heroes_strength_ap_bonus(
+                    attacker,
+                    target,
+                    weapon_profile=self,
+                )
+                if int(bonded_ap_bonus or 0) > 0:
+                    ap_val -= int(bonded_ap_bonus)
         try:
             if self.parent_wargear and self.parent_wargear.is_ranged():
                 outcast_source = self._aeldari_outcast_ambush_source(attacker)
@@ -11164,6 +11172,24 @@ class WargearProfile:
                     strength = strength + int(tau_s_bonus)
                     wound_result.setdefault("modifiers", []).append(f"+{int(tau_s_bonus)}S from {tau_source}")
         except (AttributeError, TypeError, ValueError):
+            pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_ranged() and isinstance(strength, int):
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                tau_mgr = getattr(army, "tau_empire_detachments", None) if army is not None else None
+                if tau_mgr is not None and callable(getattr(tau_mgr, "bonded_heroes_strength_ap_bonus", None)):
+                    bonded_s_bonus, _bonded_ap_bonus, bonded_source = tau_mgr.bonded_heroes_strength_ap_bonus(
+                        attacker,
+                        target,
+                        weapon_profile=self,
+                        attack_instance=attack_instance,
+                    )
+                    if bonded_s_bonus:
+                        strength = strength + int(bonded_s_bonus)
+                        source_name = str(bonded_source or "Bonded Heroes").strip() or "Bonded Heroes"
+                        wound_result.setdefault("modifiers", []).append(f"+{int(bonded_s_bonus)}S from {source_name}")
+        except Exception:
             pass
         try:
             if self.parent_wargear and self.parent_wargear.is_ranged() and isinstance(strength, int):
