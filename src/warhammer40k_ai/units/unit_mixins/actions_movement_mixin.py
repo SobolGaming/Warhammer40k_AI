@@ -5024,6 +5024,14 @@ class ActionsMovementMixin:
         except Exception:
             pass
         try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "master_of_wolves_reroll_advance_applies", None):
+                if mgr.master_of_wolves_reroll_advance_applies(self):
+                    return True
+        except Exception:
+            pass
+        try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("pain_reroll_advance"):
                 return True
@@ -6195,6 +6203,14 @@ class ActionsMovementMixin:
             mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
             if mgr is not None and getattr(mgr, "righteous_fervour_reroll_charge_applies", None):
                 if mgr.righteous_fervour_reroll_charge_applies(self):
+                    return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "master_of_wolves_reroll_charge_applies", None):
+                if mgr.master_of_wolves_reroll_charge_applies(self):
                     return True
         except Exception:
             pass

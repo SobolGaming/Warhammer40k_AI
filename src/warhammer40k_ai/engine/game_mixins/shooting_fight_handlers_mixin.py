@@ -6173,6 +6173,96 @@ class GameShootingFightHandlersMixin:
         if callable(start_selection):
             start_selection(root, action="fight", game=self)
 
+    def _on_fight_unit_selected_master_of_wolves_ferocious_strike(self, unit=None, selecting_player=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        if str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper() != "FIGHT_PHASE":
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        if not root.is_alive() or not getattr(root, "deployed", True):
+            return
+        if root.is_in_reserves() or root.is_embarked:
+            return
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        owner = getattr(army, "player", None) if army is not None else None
+        if owner is None:
+            return
+        if selecting_player is not None and selecting_player is not owner:
+            return
+        sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+        if sm_mgr is None:
+            return
+        applies_fn = getattr(sm_mgr, "master_of_wolves_ferocious_strike_applies", None)
+        if not callable(applies_fn) or not bool(applies_fn(root, game=self)):
+            return
+        clear_choice = getattr(sm_mgr, "clear_master_of_wolves_ferocious_strike_choice", None)
+        if callable(clear_choice):
+            clear_choice(root)
+
+        unit_id = str(get_entity_id(root) or "")
+        owner_id = str(getattr(owner, "id", "") or "")
+        try:
+            battle_round = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            battle_round = 0
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "master_of_wolves_ferocious_strike":
+                    continue
+                if str(ctx.get("unit_id", "") or "") != unit_id:
+                    continue
+                if str(ctx.get("turn_owner_id", "") or "") != owner_id:
+                    continue
+                if int(ctx.get("battle_round", battle_round) or battle_round) != battle_round:
+                    continue
+                return
+
+        options = [
+            DecisionOption.create(
+                "Lethal Hits",
+                payload={
+                    "unit_id": unit_id,
+                    "choice": "LETHAL_HITS",
+                    "summary": "Melee weapons gain [LETHAL HITS] until end of phase.",
+                },
+            ),
+            DecisionOption.create(
+                "Sustained Hits 1",
+                payload={
+                    "unit_id": unit_id,
+                    "choice": "SUSTAINED_HITS_1",
+                    "summary": "Melee weapons gain [SUSTAINED HITS 1] until end of phase.",
+                },
+            ),
+        ]
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"Ferocious Strike: select weapon ability for {getattr(root, 'name', 'Unit')}.",
+            player_id=getattr(owner, "id", None),
+            options=options,
+            context={
+                "ability": "master_of_wolves_ferocious_strike",
+                "ability_name": "Ferocious Strike",
+                "phase": "Fight phase",
+                "unit_id": unit_id,
+                "battle_round": int(battle_round or 0),
+                "turn_owner_id": owner_id,
+                "candidate_choices": ["LETHAL_HITS", "SUSTAINED_HITS_1"],
+            },
+        )
+        self.request_decision(request)
+
     def _on_unit_shooting_resolved_heroes_all(self, attacker_unit=None, **_kwargs) -> None:
         if attacker_unit is None:
             return

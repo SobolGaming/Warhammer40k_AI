@@ -2110,6 +2110,68 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not callable(is_valid) or not bool(is_valid(mode, objective_ids, game=game)):
             return ("Vowed Target choice is not legal for the selected mode/objectives.",)
         return ()
+    if ability == "master_of_wolves_selection":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Master of Wolves army not found.",)
+        sm_mgr = getattr(army, "space_marines_detachments", None)
+        if sm_mgr is None or not bool(getattr(sm_mgr, "is_saga_of_the_great_wolf", lambda: False)()):
+            return ("Master of Wolves requires Saga of the Great Wolf.",)
+        can_select = getattr(sm_mgr, "can_select_master_of_wolves_pack", None)
+        if not callable(can_select) or not bool(can_select(game=game)):
+            return ("Master of Wolves cannot be selected right now.",)
+        if is_skip_choice(request, result):
+            return ()
+        pack_key = str(payload.get("pack_key", "") or "").strip().upper()
+        if not pack_key:
+            return ("Master of Wolves choice is missing pack_key.",)
+        candidate_pack_keys = {
+            str(v or "").strip().upper()
+            for v in list(ctx.get("candidate_pack_keys", []) or [])
+            if str(v or "").strip()
+        }
+        if candidate_pack_keys and pack_key not in candidate_pack_keys:
+            return ("Master of Wolves choice is not an eligible Hunting Pack.",)
+        is_valid = getattr(sm_mgr, "master_of_wolves_pack_choice_is_valid", None)
+        if not callable(is_valid) or not bool(is_valid(pack_key, game=game)):
+            return ("Master of Wolves choice is not legal right now.",)
+        return ()
+    if ability == "master_of_wolves_ferocious_strike":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, payload.get("unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Ferocious Strike source unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return ("Ferocious Strike source unit was not found.",)
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        if source_army is None:
+            return ("Ferocious Strike source army was not found.",)
+        sm_mgr = getattr(source_army, "space_marines_detachments", None)
+        if sm_mgr is None or not bool(getattr(sm_mgr, "is_saga_of_the_great_wolf", lambda: False)()):
+            return ("Ferocious Strike requires Saga of the Great Wolf.",)
+        applies_fn = getattr(sm_mgr, "master_of_wolves_ferocious_strike_applies", None)
+        if not callable(applies_fn) or not bool(applies_fn(source_root, game=game)):
+            return ("The selected unit is not eligible for Ferocious Strike.",)
+        choice = str(payload.get("choice") or payload.get("choice_key") or payload.get("key") or "").strip().upper()
+        normalize_fn = getattr(sm_mgr, "_normalize_master_of_wolves_ferocious_choice", None)
+        if callable(normalize_fn):
+            choice = str(normalize_fn(choice) or "").strip().upper()
+        if choice not in {"LETHAL_HITS", "SUSTAINED_HITS_1"}:
+            return ("Ferocious Strike choice must be Lethal Hits or Sustained Hits 1.",)
+        candidate_choices = {
+            str(v or "").strip().upper()
+            for v in list(ctx.get("candidate_choices", []) or [])
+            if str(v or "").strip()
+        }
+        if candidate_choices and choice not in candidate_choices:
+            return ("Ferocious Strike choice is not an eligible candidate.",)
+        return ()
     if ability == "great_wolf_watches_charge":
         payload = _option_payload(request, result)
         source_unit = resolve_unit(game, payload.get("unit_id") or ctx.get("unit_id"))
@@ -3192,6 +3254,114 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         return {
             "mode": mode,
             "objective_ids": list(objective_ids),
+            "source": ability_name,
+        }
+    if ability == "master_of_wolves_selection":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        sm_mgr = getattr(army, "space_marines_detachments", None)
+        if sm_mgr is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        ability_name = str(ctx.get("ability_name", "") or "Master of Wolves").strip() or "Master of Wolves"
+        try:
+            battle_round = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            battle_round = 0
+        if is_skip_choice(request, result):
+            mark_skip = getattr(sm_mgr, "mark_master_of_wolves_skipped_for_round", None)
+            if callable(mark_skip):
+                mark_skip(battle_round=battle_round)
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: selected none.",
+            )
+            return {
+                "pack_key": "",
+                "skipped": True,
+            }
+        pack_key = str(payload.get("pack_key", "") or "").strip().upper()
+        if not pack_key:
+            return None
+        apply_choice = getattr(sm_mgr, "select_master_of_wolves_pack", None)
+        if not callable(apply_choice):
+            return None
+        applied = bool(
+            apply_choice(
+                pack_key,
+                battle_round=battle_round,
+                player_id=str(getattr(player, "id", "") or ""),
+                game=game,
+            )
+        )
+        if not applied:
+            return None
+        label_fn = getattr(sm_mgr, "master_of_wolves_pack_label", None)
+        label = str(label_fn(pack_key) if callable(label_fn) else pack_key).strip() or pack_key
+        reused = bool(payload.get("reuse"))
+        if reused:
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: selected {label} using Howling Onslaught.",
+            )
+        else:
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: selected {label}.",
+            )
+        return {
+            "pack_key": pack_key,
+            "pack_name": label,
+            "reused": bool(reused),
+            "source": ability_name,
+        }
+    if ability == "master_of_wolves_ferocious_strike":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, payload.get("unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return None
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        sm_mgr = getattr(source_army, "space_marines_detachments", None) if source_army is not None else None
+        if sm_mgr is None:
+            return None
+        choice = str(payload.get("choice") or payload.get("choice_key") or payload.get("key") or "").strip().upper()
+        normalize_fn = getattr(sm_mgr, "_normalize_master_of_wolves_ferocious_choice", None)
+        if callable(normalize_fn):
+            choice = str(normalize_fn(choice) or "").strip().upper()
+        if choice not in {"LETHAL_HITS", "SUSTAINED_HITS_1"}:
+            return None
+        apply_choice = getattr(sm_mgr, "set_master_of_wolves_ferocious_strike_choice", None)
+        if not callable(apply_choice):
+            return None
+        if not bool(apply_choice(source_root, choice, game=game)):
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None and source_army is not None:
+            player = getattr(source_army, "player", None)
+        ability_name = str(ctx.get("ability_name", "") or "Ferocious Strike").strip() or "Ferocious Strike"
+        label = "Lethal Hits" if choice == "LETHAL_HITS" else "Sustained Hits 1"
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {getattr(source_root, 'name', 'Unit')} selected {label}.",
+        )
+        return {
+            "unit_id": str(get_entity_id(source_root) or ""),
+            "choice": choice,
             "source": ability_name,
         }
     if ability == "great_wolf_watches_charge":

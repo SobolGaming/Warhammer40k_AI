@@ -628,9 +628,7 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"once per battle round if an aethon shaan model from your army is on the battlefield you can use the into darkness stratagem for 0cp",
         ),
         "Restrictions": (
-            r"your army can include raven guard units but it cannot include any adeptus astartes units drawn from any other chapter",
-            r"your army can include iron hands units but it cannot include any adeptus astartes units drawn from any other chapter",
-            r"your army can include white scars units but it cannot include any adeptus astartes units drawn from any other chapter",
+            r"your army can include [a-z0-9 ']+ units but it cannot include(?: any)? adeptus astartes units drawn from any other chapter",
         ),
         "Calculated Annihilation": (
             r"each time a model from your army with the oath of moment ability makes an attack that targets your oath of moment target you can reroll a wound roll of \d+",
@@ -657,6 +655,18 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"that unit destroys your oath of moment target and that is the second oath of moment target destroyed by that unit in this battle",
             r"at the end of either players turn that unit is wholly within your opponents deployment zone",
             r"from the second battle round onwards at the end of your command phase that unit is within range of an objective marker you control that is not within your deployment zone",
+        ),
+        "Master of Wolves": (
+            r"at the start of your command phase you can select one of the hunting packs listed below",
+            r"until the start of your next command phase that hunting pack is active and its effects apply to all adeptus astartes units from your army",
+            r"you can only select each hunting pack once per battle",
+            r"this unit can reroll advance rolls and charge rolls",
+            r"each time a model in this unit makes a ranged attack add 1 to the hit roll",
+            r"each time this unit is selected to fight select either the lethal hits or sustained hits 1 ability",
+            r"until the end of the phase weapons equipped by models in this unit have the selected ability",
+        ),
+        "Howling Onslaught": (
+            r"once per battle when selecting a hunting pack for the master of wolves detachment rule if a logan grimnar model from your army is on the battlefield you can select a hunting pack you have already selected this battle",
         ),
         "In The Lion's Claws": (
             r"each time an enemy unit excluding monsters and vehicles within engagement range of one or more ravenwing units from your army falls back all models in that enemy unit must take a desperate escape test",
@@ -2013,6 +2023,14 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Heroes All": (
             "Supported",
             "Saga of the Bold: pre-Saga Space Wolves CHARACTER units gain one selected-to-shoot/fight re-roll choice (Hit, Wound, or Damage), and once three Boasts are achieved the Saga is complete so selected ADEPTUS ASTARTES units gain one Hit, one Wound, and one Damage re-roll; Boast tracking covers Oath target kills (including second kill by the same unit), end-of-turn wholly-in-opponent-deployment-zone checks, and end-of-own-Command-phase controlled non-home objective checks.",
+        ),
+        "Master of Wolves": (
+            "Supported",
+            "Saga of the Great Wolf: Command-phase Hunting Pack selection with once-per-pack tracking, Encircling Jaws (Advance/Charge re-rolls), Hunter's Eye (+1 ranged hit), and Ferocious Strike fight-time choice between Lethal Hits and Sustained Hits 1.",
+        ),
+        "Howling Onslaught": (
+            "Supported",
+            "Saga of the Great Wolf: once per battle, when Logan Grimnar is on the battlefield, a previously selected Hunting Pack can be selected again.",
         ),
         "In The Lion's Claws": (
             "Supported",
@@ -4378,7 +4396,7 @@ def _space_marine_chapter_restriction_support(description: str) -> Optional[Tupl
     pattern = (
         r"your army can include .+ units? but it cannot include (?:any )?adeptus astartes units drawn from any other chapter"
     )
-    if re.fullmatch(pattern, norm):
+    if re.search(pattern, norm):
         return ("Supported", "Space Marine chapter restriction enforced during army validation.")
     return None
 

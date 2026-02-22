@@ -197,6 +197,19 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         _MISSION_TACTIC_MALLEUS: "Malleus Tactics",
         _MISSION_TACTIC_PURGATUS: "Purgatus Tactics",
     }
+    _MASTER_OF_WOLVES_PACK_ENCIRCLING_JAWS = "ENCIRCLING_JAWS"
+    _MASTER_OF_WOLVES_PACK_HUNTERS_EYE = "HUNTERS_EYE"
+    _MASTER_OF_WOLVES_PACK_FEROCIOUS_STRIKE = "FEROCIOUS_STRIKE"
+    _MASTER_OF_WOLVES_PACK_KEYS = (
+        _MASTER_OF_WOLVES_PACK_ENCIRCLING_JAWS,
+        _MASTER_OF_WOLVES_PACK_HUNTERS_EYE,
+        _MASTER_OF_WOLVES_PACK_FEROCIOUS_STRIKE,
+    )
+    _MASTER_OF_WOLVES_PACK_LABELS = {
+        _MASTER_OF_WOLVES_PACK_ENCIRCLING_JAWS: "Encircling Jaws",
+        _MASTER_OF_WOLVES_PACK_HUNTERS_EYE: "Hunter's Eye",
+        _MASTER_OF_WOLVES_PACK_FEROCIOUS_STRIKE: "Ferocious Strike",
+    }
 
     def __init__(self, army=None):
         super().__init__(army)
@@ -210,6 +223,12 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         self.mission_tactics_active_key: str = ""
         self.mission_tactics_active_round: int = 0
         self.mission_tactics_last_selection_round: int = 0
+        self.master_of_wolves_selected_pack_keys: tuple[str, ...] = ()
+        self.master_of_wolves_active_pack_key: str = ""
+        self.master_of_wolves_active_round: int = 0
+        self.master_of_wolves_active_player_id: str = ""
+        self.master_of_wolves_last_selection_round: int = 0
+        self.master_of_wolves_howling_onslaught_used: bool = False
         self.grim_resolve_selected_unit_id: str = ""
         self.grim_resolve_selected_round: int = 0
         self.grim_resolve_selected_player_id: str = ""
@@ -301,6 +320,11 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Saga of the Beastslayer")
+
+    def is_saga_of_the_great_wolf(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Saga of the Great Wolf")
 
     def is_stormlance_task_force(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -2802,6 +2826,330 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             self.mission_tactics_active_round = int(round_now or 0)
             self.mission_tactics_last_selection_round = int(round_now or 0)
         return True
+
+    @classmethod
+    def master_of_wolves_pack_label(cls, key: str) -> str:
+        return cls._MASTER_OF_WOLVES_PACK_LABELS.get(str(key or "").strip().upper(), str(key or "").strip())
+
+    @classmethod
+    def _normalize_master_of_wolves_pack_key(cls, value: str) -> str:
+        raw = str(value or "").strip().upper().replace("-", "_").replace(" ", "_")
+        if raw in cls._MASTER_OF_WOLVES_PACK_KEYS:
+            return raw
+        if raw in {"ENCIRCLING", "ENCIRCLINGJAWS", "JAWS"}:
+            return cls._MASTER_OF_WOLVES_PACK_ENCIRCLING_JAWS
+        if raw in {"HUNTERS_EYE", "HUNTERSEYE", "HUNTERS", "HUNTER"}:
+            return cls._MASTER_OF_WOLVES_PACK_HUNTERS_EYE
+        if raw in {"FEROCIOUS", "FEROCIOUSSTRIKE", "FEROCIOUS_STRIKE"}:
+            return cls._MASTER_OF_WOLVES_PACK_FEROCIOUS_STRIKE
+        return raw
+
+    @staticmethod
+    def _normalize_master_of_wolves_ferocious_choice(choice: str) -> str:
+        raw = str(choice or "").strip().upper().replace("-", "_").replace(" ", "_")
+        if raw in {"LETHAL", "LETHAL_HITS", "LETHALHITS"}:
+            return "LETHAL_HITS"
+        if raw in {"SUSTAINED", "SUSTAINED_HITS", "SUSTAINED_HITS_1", "SUSTAINEDHITS1"}:
+            return "SUSTAINED_HITS_1"
+        return raw
+
+    def master_of_wolves_begin_command_phase(self, *, battle_round=None) -> None:
+        if not self.is_saga_of_the_great_wolf():
+            self.master_of_wolves_active_pack_key = ""
+            self.master_of_wolves_active_round = 0
+            self.master_of_wolves_active_player_id = ""
+            return
+        self.master_of_wolves_active_pack_key = ""
+        self.master_of_wolves_active_round = 0
+        self.master_of_wolves_active_player_id = ""
+        if battle_round is not None:
+            try:
+                self.master_of_wolves_last_selection_round = int(self.master_of_wolves_last_selection_round or 0)
+            except Exception:
+                self.master_of_wolves_last_selection_round = 0
+
+    def _master_of_wolves_logan_grimnar_on_battlefield(self) -> bool:
+        if self.army is None:
+            return False
+        for root in self._iter_unique_army_roots():
+            if not self._unit_is_on_battlefield(root):
+                continue
+            if self._attached_unit_name_contains(root, "Logan Grimnar"):
+                return True
+        return False
+
+    def master_of_wolves_howling_onslaught_available(self, *, game=None) -> bool:
+        _ = game
+        if not self.is_saga_of_the_great_wolf():
+            return False
+        if bool(self.master_of_wolves_howling_onslaught_used):
+            return False
+        return self._master_of_wolves_logan_grimnar_on_battlefield()
+
+    def get_available_master_of_wolves_packs(self, *, game=None) -> list[str]:
+        if not self.is_saga_of_the_great_wolf():
+            return []
+        selected = {str(v or "").strip().upper() for v in list(self.master_of_wolves_selected_pack_keys or ())}
+        if self.master_of_wolves_howling_onslaught_available(game=game):
+            return list(self._MASTER_OF_WOLVES_PACK_KEYS)
+        return [key for key in self._MASTER_OF_WOLVES_PACK_KEYS if key not in selected]
+
+    def can_select_master_of_wolves_pack(self, *, game=None) -> bool:
+        if not self.is_saga_of_the_great_wolf():
+            return False
+        if not self.get_available_master_of_wolves_packs(game=game):
+            return False
+        if game is None:
+            return True
+        try:
+            round_now = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            return False
+        if round_now <= 0:
+            return False
+        return int(getattr(self, "master_of_wolves_last_selection_round", 0) or 0) != round_now
+
+    def mark_master_of_wolves_skipped_for_round(self, *, battle_round=None) -> None:
+        if battle_round is None:
+            return
+        try:
+            self.master_of_wolves_last_selection_round = int(battle_round)
+        except Exception:
+            self.master_of_wolves_last_selection_round = 0
+
+    def master_of_wolves_pack_choice_is_valid(self, choice_key: str, *, game=None) -> bool:
+        key = self._normalize_master_of_wolves_pack_key(choice_key)
+        if key not in self._MASTER_OF_WOLVES_PACK_KEYS:
+            return False
+        return key in set(self.get_available_master_of_wolves_packs(game=game))
+
+    def get_master_of_wolves_pack_options(self, *, game=None) -> list[dict[str, object]]:
+        available = list(self.get_available_master_of_wolves_packs(game=game) or [])
+        if not available:
+            return []
+        selected = {str(v or "").strip().upper() for v in list(self.master_of_wolves_selected_pack_keys or ())}
+        summaries = {
+            self._MASTER_OF_WOLVES_PACK_ENCIRCLING_JAWS: "Re-roll Advance and Charge rolls.",
+            self._MASTER_OF_WOLVES_PACK_HUNTERS_EYE: "Add 1 to ranged Hit rolls.",
+            self._MASTER_OF_WOLVES_PACK_FEROCIOUS_STRIKE: "When selected to fight, choose Lethal Hits or Sustained Hits 1 until end of phase.",
+        }
+        out: list[dict[str, object]] = []
+        for key in available:
+            pack_key = self._normalize_master_of_wolves_pack_key(key)
+            if pack_key not in self._MASTER_OF_WOLVES_PACK_KEYS:
+                continue
+            reused = bool(pack_key in selected)
+            label = self.master_of_wolves_pack_label(pack_key)
+            payload = {
+                "pack_key": pack_key,
+                "pack_name": label,
+                "reuse": bool(reused),
+                "summary": str(summaries.get(pack_key, label) or label),
+            }
+            if reused:
+                label = f"{label} (Howling Onslaught)"
+            out.append(
+                {
+                    "label": label,
+                    "summary": payload["summary"],
+                    "payload": payload,
+                }
+            )
+        return out
+
+    def select_master_of_wolves_pack(
+        self,
+        choice_key: str,
+        *,
+        battle_round=None,
+        player_id: str = "",
+        game=None,
+    ) -> bool:
+        if not self.is_saga_of_the_great_wolf():
+            return False
+        key = self._normalize_master_of_wolves_pack_key(choice_key)
+        if key not in self._MASTER_OF_WOLVES_PACK_KEYS:
+            return False
+        round_now = 0
+        if battle_round is not None:
+            try:
+                round_now = int(battle_round)
+            except Exception:
+                round_now = 0
+        elif game is not None:
+            try:
+                round_now = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                round_now = 0
+        if round_now > 0 and int(getattr(self, "master_of_wolves_last_selection_round", 0) or 0) == round_now:
+            return False
+
+        selected = {str(v or "").strip().upper() for v in list(self.master_of_wolves_selected_pack_keys or ())}
+        reused = key in selected
+        if reused and not self.master_of_wolves_howling_onslaught_available(game=game):
+            return False
+        if not reused:
+            selected.add(key)
+        else:
+            self.master_of_wolves_howling_onslaught_used = True
+
+        self.master_of_wolves_selected_pack_keys = tuple(
+            pack_key for pack_key in self._MASTER_OF_WOLVES_PACK_KEYS if pack_key in selected
+        )
+        self.master_of_wolves_active_pack_key = key
+        self.master_of_wolves_active_round = int(round_now or 0)
+        owner_id = str(player_id or "").strip()
+        if not owner_id:
+            owner_id = str(getattr(getattr(self.army, "player", None), "id", "") or "")
+        self.master_of_wolves_active_player_id = owner_id
+        if round_now > 0:
+            self.master_of_wolves_last_selection_round = int(round_now)
+        return True
+
+    def _master_of_wolves_unit_is_eligible(self, unit) -> bool:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        try:
+            if root.get_parent_army() is not self.army:
+                return False
+        except Exception:
+            return False
+        return self.attached_unit_is_adeptus_astartes(root)
+
+    def _master_of_wolves_recipient(self, unit) -> bool:
+        if not self.is_saga_of_the_great_wolf():
+            return False
+        if str(getattr(self, "master_of_wolves_active_pack_key", "") or "").strip().upper() not in self._MASTER_OF_WOLVES_PACK_KEYS:
+            return False
+        return self._master_of_wolves_unit_is_eligible(unit)
+
+    def master_of_wolves_reroll_advance_applies(self, unit) -> bool:
+        if not self._master_of_wolves_recipient(unit):
+            return False
+        return str(self.master_of_wolves_active_pack_key or "").strip().upper() == self._MASTER_OF_WOLVES_PACK_ENCIRCLING_JAWS
+
+    def master_of_wolves_reroll_charge_applies(self, unit) -> bool:
+        return self.master_of_wolves_reroll_advance_applies(unit)
+
+    def master_of_wolves_hunters_eye_hit_bonus(self, attacker_model, *, weapon_profile=None) -> tuple[int, str]:
+        if str(self.master_of_wolves_active_pack_key or "").strip().upper() != self._MASTER_OF_WOLVES_PACK_HUNTERS_EYE:
+            return 0, ""
+        if attacker_model is None:
+            return 0, ""
+        unit = getattr(attacker_model, "parent_unit", None)
+        if not self._master_of_wolves_recipient(unit):
+            return 0, ""
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            if parent is None or not bool(getattr(parent, "is_ranged", lambda: False)()):
+                return 0, ""
+        return 1, "Hunter's Eye"
+
+    def master_of_wolves_ferocious_strike_applies(self, unit, *, game=None) -> bool:
+        _ = game
+        if str(self.master_of_wolves_active_pack_key or "").strip().upper() != self._MASTER_OF_WOLVES_PACK_FEROCIOUS_STRIKE:
+            return False
+        return self._master_of_wolves_recipient(unit)
+
+    def clear_master_of_wolves_ferocious_strike_choice(self, unit) -> None:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in (
+            "master_of_wolves_ferocious_choice",
+            "master_of_wolves_ferocious_expires_phase",
+            "master_of_wolves_ferocious_turn",
+            "master_of_wolves_ferocious_turn_owner",
+            "master_of_wolves_ferocious_source",
+        ):
+            sr.pop(key, None)
+        root.special_rules = sr
+
+    def set_master_of_wolves_ferocious_strike_choice(self, unit, choice: str, *, game=None) -> bool:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        if not self.master_of_wolves_ferocious_strike_applies(root, game=game):
+            return False
+        choice_key = self._normalize_master_of_wolves_ferocious_choice(choice)
+        if choice_key not in {"LETHAL_HITS", "SUSTAINED_HITS_1"}:
+            return False
+        game_obj = self._resolve_game_context(game=game)
+        try:
+            turn_now = int(getattr(game_obj, "turn", 0) or 0) if game_obj is not None else 0
+        except Exception:
+            turn_now = 0
+        current_player = getattr(game_obj, "get_current_player", lambda: None)() if game_obj is not None else None
+        owner_id = str(getattr(current_player, "id", "") or "")
+        if not owner_id:
+            owner_id = str(getattr(getattr(self.army, "player", None), "id", "") or "")
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["master_of_wolves_ferocious_choice"] = choice_key
+        sr["master_of_wolves_ferocious_expires_phase"] = "FIGHT_PHASE"
+        sr["master_of_wolves_ferocious_turn"] = int(turn_now or 0)
+        sr["master_of_wolves_ferocious_turn_owner"] = owner_id
+        sr["master_of_wolves_ferocious_source"] = "Ferocious Strike"
+        root.special_rules = sr
+        return True
+
+    def master_of_wolves_ferocious_strike_bonus(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[bool, int, str]:
+        if attacker_model is None:
+            return False, 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        root = self._attached_unit_root(attacker_unit)
+        if root is None:
+            return False, 0, ""
+        if not self.master_of_wolves_ferocious_strike_applies(root, game=game):
+            return False, 0, ""
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            if parent is None or not bool(getattr(parent, "is_melee", lambda: False)()):
+                return False, 0, ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False, 0, ""
+        choice_key = self._normalize_master_of_wolves_ferocious_choice(str(sr.get("master_of_wolves_ferocious_choice", "") or ""))
+        if choice_key not in {"LETHAL_HITS", "SUSTAINED_HITS_1"}:
+            return False, 0, ""
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is not None:
+            exp = str(sr.get("master_of_wolves_ferocious_expires_phase", "") or "").strip().upper()
+            if exp:
+                current_phase = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+                if current_phase and current_phase != exp:
+                    return False, 0, ""
+            owner_id = str(sr.get("master_of_wolves_ferocious_turn_owner", "") or "")
+            if owner_id:
+                current_player = getattr(game_obj, "get_current_player", lambda: None)()
+                current_owner = str(getattr(current_player, "id", "") or "")
+                if current_owner and current_owner != owner_id:
+                    return False, 0, ""
+            try:
+                marked_turn = int(sr.get("master_of_wolves_ferocious_turn", 0) or 0)
+            except Exception:
+                marked_turn = 0
+            try:
+                current_turn = int(getattr(game_obj, "turn", 0) or 0)
+            except Exception:
+                current_turn = 0
+            if marked_turn and current_turn and marked_turn != current_turn:
+                return False, 0, ""
+        source = str(sr.get("master_of_wolves_ferocious_source", "") or "Ferocious Strike").strip() or "Ferocious Strike"
+        if choice_key == "LETHAL_HITS":
+            return True, 0, source
+        return False, 1, source
 
     def _mission_tactics_recipient(self, unit) -> bool:
         if unit is None:

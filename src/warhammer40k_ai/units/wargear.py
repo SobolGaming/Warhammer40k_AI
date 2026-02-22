@@ -7101,6 +7101,20 @@ class WargearProfile:
                     legendary_lethal, _source = legendary_fn(attacker, target_unit=target)
                     if legendary_lethal:
                         bonus_lethal = True
+                ferocious_fn = getattr(sm_mgr, "master_of_wolves_ferocious_strike_bonus", None)
+                if callable(ferocious_fn):
+                    ferocious_lethal, ferocious_sustained, ferocious_source = ferocious_fn(
+                        attacker,
+                        weapon_profile=self,
+                        game=None,
+                    )
+                    if ferocious_lethal:
+                        bonus_lethal = True
+                    if int(ferocious_sustained or 0) > 0:
+                        _set_bonus_sustained(
+                            int(ferocious_sustained or 0),
+                            str(ferocious_source or "Ferocious Strike"),
+                        )
         except Exception:
             pass
 
@@ -7595,6 +7609,18 @@ class WargearProfile:
                 if melee_hit_bonus:
                     source_name = str(melee_source or "Shock and Awe").strip() or "Shock and Awe"
                     _add_hit_mod(int(melee_hit_bonus), f"+{int(melee_hit_bonus)} from {source_name}")
+        except Exception:
+            pass
+        # Space Marines: Saga of the Great Wolf (Hunter's Eye) +1 to hit for ranged attacks.
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if sm_mgr is not None and callable(getattr(sm_mgr, "master_of_wolves_hunters_eye_hit_bonus", None)):
+                hunter_bonus, hunter_source = sm_mgr.master_of_wolves_hunters_eye_hit_bonus(attacker, weapon_profile=self)
+                if hunter_bonus:
+                    source_name = str(hunter_source or "Hunter's Eye").strip() or "Hunter's Eye"
+                    _add_hit_mod(int(hunter_bonus), f"+{int(hunter_bonus)} from {source_name}")
         except Exception:
             pass
 

@@ -321,6 +321,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                     "is_hammer_of_avernii",
                     "is_saga_of_the_bold",
                     "is_saga_of_the_beastslayer",
+                    "is_saga_of_the_great_wolf",
                 ),
             ),
             subscriptions=[
@@ -328,6 +329,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("fight_unit_selected", "_on_fight_unit_selected_red_thirst"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_heroes_all"),
                 ("fight_unit_selected", "_on_fight_unit_selected_heroes_all"),
+                ("fight_unit_selected", "_on_fight_unit_selected_master_of_wolves_ferocious_strike"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_interlocking_tactics"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_legendary_slayers"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_heroes_all"),

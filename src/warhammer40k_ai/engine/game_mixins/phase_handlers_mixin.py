@@ -152,6 +152,7 @@ class GamePhaseHandlersMixin:
         self._on_phase_start_chaos_daemons_detachment_rules(player=player, phase=phase)
         self._on_phase_start_space_marines_detachment_rules(player=player, phase=phase)
         self._on_phase_start_vowed_target(player=player, phase=phase)
+        self._on_phase_start_master_of_wolves(player=player, phase=phase)
         if pname:
             for p in list(getattr(self, "players", []) or []):
                 if p is None:
@@ -7918,6 +7919,99 @@ class GamePhaseHandlersMixin:
                 sr["blood_tainted_phase_snapshot_turn_owner"] = turn_owner_id
                 sr["blood_tainted_phase_snapshot_objective_ids"] = sorted(set(objective_ids))
                 root.special_rules = sr
+
+    def _on_phase_start_master_of_wolves(self, player=None, phase=None, **_kwargs) -> None:
+        """Command phase start: Saga of the Great Wolf Hunting Pack selection."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        sm_mgr = getattr(army, "space_marines_detachments", None)
+        if sm_mgr is None or not bool(getattr(sm_mgr, "is_saga_of_the_great_wolf", lambda: False)()):
+            return
+        try:
+            battle_round = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            battle_round = 0
+        begin_phase = getattr(sm_mgr, "master_of_wolves_begin_command_phase", None)
+        if callable(begin_phase):
+            begin_phase(battle_round=battle_round)
+
+        can_select = getattr(sm_mgr, "can_select_master_of_wolves_pack", None)
+        if not callable(can_select) or not bool(can_select(game=self)):
+            return
+        option_builder = getattr(sm_mgr, "get_master_of_wolves_pack_options", None)
+        if not callable(option_builder):
+            return
+        option_data = list(option_builder(game=self) or [])
+        if not option_data:
+            return
+
+        army_id = str(get_entity_id(army) or "")
+        player_id = str(getattr(player, "id", "") or "")
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "master_of_wolves_selection":
+                    continue
+                if str(ctx.get("army_id", "") or "") != army_id:
+                    continue
+                if str(ctx.get("player_id", "") or "") != player_id:
+                    continue
+                if int(ctx.get("battle_round", battle_round) or battle_round) != battle_round:
+                    continue
+                return
+
+        options = [
+            DecisionOption.create(
+                "None",
+                payload={
+                    "action": "skip",
+                    "army_id": army_id,
+                    "summary": "Do not select a Hunting Pack this Command phase.",
+                },
+            )
+        ]
+        candidate_pack_keys: list[str] = []
+        for entry in list(option_data or []):
+            payload = dict(entry.get("payload", {}) or {})
+            pack_key = str(payload.get("pack_key", "") or "").strip().upper()
+            if not pack_key:
+                continue
+            payload["pack_key"] = pack_key
+            payload["army_id"] = army_id
+            payload.setdefault("summary", str(entry.get("summary", "") or "").strip())
+            label = str(entry.get("label", "") or "").strip() or "Hunting Pack"
+            options.append(DecisionOption.create(label, payload=payload))
+            candidate_pack_keys.append(pack_key)
+        if len(options) <= 1:
+            return
+
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Master of Wolves: select one Hunting Pack (or None).",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={
+                "ability": "master_of_wolves_selection",
+                "ability_name": "Master of Wolves",
+                "phase": "Command phase",
+                "army_id": army_id,
+                "player_id": player_id,
+                "battle_round": int(battle_round or 0),
+                "candidate_pack_keys": list(sorted(set(candidate_pack_keys))),
+            },
+        )
+        self.request_decision(request)
 
     def _on_phase_start_vowed_target(self, player=None, phase=None, **_kwargs) -> None:
         """Movement phase start: Inner Circle Task Force Vowed Target selection."""
