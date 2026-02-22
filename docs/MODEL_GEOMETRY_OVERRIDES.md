@@ -11,6 +11,7 @@ Some datasheets use `Use model` or otherwise need manual hull footprints.
 - compound/multi-part footprints for single-model units
 - explicit model height and optional `z_offset`
 - Base Size Guide classifications that require manual geometry (`hull` / `unique`)
+- default flying-base `z_offset` when no explicit override is provided
 
 ## Resolution order
 
@@ -23,6 +24,10 @@ Geometry is resolved in `src/warhammer40k_ai/utility/model_geometry.py` via `res
    - explicit override (`height_mm` or per-part max for compound)
    - keyword heuristic
    - fallback: base minor-axis diameter (legacy behavior)
+5. Resolve `z_offset` in this order:
+   - explicit `z_offset_mm` override
+   - flying-base size mapping (for bases parsed as `* flying base`)
+   - fallback: `0`
 
 If Base Size Guide marks a unit as `hull` or `unique` and `requires_manual_geometry=true`, missing override data raises a `ValueError`.
 
@@ -35,7 +40,7 @@ Compound models are stored as multiple local parts and treated as one model foot
 - pathing/LoS/collision use the true union geometry
 
 Important: connectivity metadata is descriptive only.  
-The engine currently does not auto-enforce section connectivity constraints during placement.
+For Aegis Defence Line (`DEPLOYMENT` ability), section composition and connectivity are enforced during deployment validation.
 
 ## Current seeded entries
 
@@ -54,3 +59,14 @@ Snapshot model base serialization includes:
 - `base.compound_parts`
 
 So save/load preserves resolved compound geometry.
+
+## Flying-base z-offset defaults
+
+If a model is parsed from a clear flying base and has no explicit `z_offset_mm` override,
+the engine applies a default offset by base minor diameter:
+
+- <=35mm: 20mm offset
+- <=65mm: 32mm offset
+- <=100mm: 45mm offset
+- <=120mm: 55mm offset
+- >120mm: 65mm offset

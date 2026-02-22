@@ -9,6 +9,7 @@ Related docs:
 - [Charge roll modifiers](docs/CHARGE_ROLL_MODIFIERS.md): charge roll math and modifiers.
 - [Pile-in and consolidate implementation](docs/PILE_IN_AND_CONSOLIDATE_IMPLEMENTATION.md): fight-phase move intent and UI flow.
 - [Ruins terrain system](docs/RUINS_TERRAIN_SYSTEM.md): ruins geometry and floor rules.
+- [Model geometry overrides](docs/MODEL_GEOMETRY_OVERRIDES.md): compound footprints and z-offset geometry inputs used by distance/pathing.
 
 Potential future split-outs (if this grows):
 - Charge movement

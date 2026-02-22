@@ -214,3 +214,4 @@ The codebase has extensive focused tests for rules interactions, timing, and dec
 
 - `docs/NETWORK_SAVELOAD_DESIGN.md`: decision/command/event model, determinism rules, dialog mapping.
 - `docs/DEPLOYMENT_ARCHITECTURE.md`, `docs/MOVEMENT_SYSTEM.md`, `docs/RUINS_TERRAIN_SYSTEM.md`: deeper subsystem designs.
+- `docs/MODEL_GEOMETRY_OVERRIDES.md`: model footprint/height/z-offset resolution, including compound fortification geometry.

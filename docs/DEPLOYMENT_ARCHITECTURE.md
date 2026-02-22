@@ -30,9 +30,13 @@ Key goals:
 - `Game.is_valid_deployment_position` enforces:
   - normal units wholly within their zone,
   - Infiltrate restrictions vs enemy zone and 9" buffer,
+  - datasheet deployment special rules (e.g. Convergence Of Dominion and Aegis Defence Line section legality),
   - RUINS placement rules for per-model deployment.
 - `Game.get_boundary_repulsors(context="deployment")` keeps model placement inside zone boundaries
   during formation placement.
+
+Compound fortification section geometry and footprint resolution are documented in
+`docs/MODEL_GEOMETRY_OVERRIDES.md`.
 
 ## File locations
 - `src/warhammer40k_ai/engine/deployment.py`

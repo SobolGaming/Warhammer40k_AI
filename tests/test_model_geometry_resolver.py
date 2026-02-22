@@ -57,6 +57,32 @@ def test_resolve_uses_keyword_height_heuristic_when_no_override():
     assert resolved.height_source == "keyword:infantry_or_character"
 
 
+@pytest.mark.parametrize(
+    "radius_mm, expected_z_offset_mm",
+    [
+        ((32.0 / 2.0, 32.0 / 2.0), 20.0),
+        ((60.0 / 2.0, 60.0 / 2.0), 32.0),
+        ((120.0 / 2.0, 92.0 / 2.0), 45.0),
+        ((170.0 / 2.0, 109.0 / 2.0), 55.0),
+    ],
+)
+def test_resolve_applies_flying_base_size_z_offset(radius_mm, expected_z_offset_mm):
+    parsed_radius = (
+        convert_mm_to_inches(float(radius_mm[0])),
+        convert_mm_to_inches(float(radius_mm[1])),
+    )
+    resolved = resolve_model_geometry(
+        datasheet_id="test_flying_base",
+        datasheet_name="Test Flying Base",
+        model_name="Test Flying Base",
+        unit_keywords=["Vehicle"],
+        parsed_base_type=BaseType.ELLIPTICAL,
+        parsed_radius=parsed_radius,
+        parsed_is_flying_base=True,
+    )
+    assert resolved.z_offset == pytest.approx(convert_mm_to_inches(expected_z_offset_mm), abs=1e-4)
+
+
 def test_clone_base_preserves_compound_geometry():
     compound = Base(BaseType.HULL, (0.5, 0.5))
     compound.set_compound_parts(
@@ -140,3 +166,36 @@ def test_unit_model_build_uses_geometry_override_for_lord_of_skulls():
     assert model.model_base.radius[0] == pytest.approx(convert_mm_to_inches(190.5) / 2.0, abs=1e-4)
     assert model.model_base.radius[1] == pytest.approx(convert_mm_to_inches(127.0) / 2.0, abs=1e-4)
     assert model.model_base.model_height == pytest.approx(convert_mm_to_inches(178.0), abs=1e-4)
+
+
+def test_unit_model_build_applies_z_offset_for_flying_base():
+    from warhammer40k_ai.units.unit import Unit
+
+    unit = Unit.__new__(Unit)
+    unit.name = "Test Skimmer"
+    unit.keywords = ["Vehicle"]
+    unit.faction_keywords = []
+
+    profile = {
+        "name": "Test Skimmer",
+        "M": '14"',
+        "T": "8",
+        "Sv": "3+",
+        "inv_sv": "-",
+        "inv_sv_descr": "",
+        "W": "10",
+        "Ld": "6+",
+        "OC": "3",
+        "base_size": "60mm flying base",
+        "base_size_descr": "",
+    }
+    datasheet = SimpleNamespace(
+        id="test_skimmer_datasheet",
+        name="Test Skimmer",
+        datasheets_models=[profile],
+        keywords=["Vehicle"],
+        faction_keywords=[],
+    )
+
+    model = unit._build_model_from_profile(datasheet, "Test Skimmer", profile)
+    assert model.model_base.z_offset == pytest.approx(convert_mm_to_inches(32.0), abs=1e-4)

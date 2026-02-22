@@ -153,6 +153,7 @@ For a high-level overview of the codebase structure and data flow, see [docs/ARC
   - [Damaged Profile Support Matrix](docs/DAMAGED_PROFILE_SUPPORT_MATRIX.md): damaged profile handling coverage.
 - **Rules and mechanics**
   - [Movement system](docs/MOVEMENT_SYSTEM.md): pathing, coherency, and movement types.
+  - [Model geometry overrides](docs/MODEL_GEOMETRY_OVERRIDES.md): hull/compound footprints, model height, and flying-base z-offset resolution.
   - [Mortal wounds](docs/MORTAL_WOUNDS.md): mortal wound timing and spillover handling.
   - [Melee target allocation](docs/MELEE_TARGET_ALLOCATION.md): multi-target melee allocation flow.
   - [Ruins terrain system](docs/RUINS_TERRAIN_SYSTEM.md): terrain, floors, and line-of-sight behavior in ruins.

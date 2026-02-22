@@ -26,6 +26,13 @@ _HEIGHT_BEAST_OR_CAVALRY = 1.1
 _HEIGHT_MONSTER_OR_WALKER = 1.55
 _HEIGHT_VEHICLE = 0.8
 _HEIGHT_AIRCRAFT = 0.6
+_FLYING_BASE_Z_OFFSET_BY_MINOR_MM: tuple[tuple[float, float], ...] = (
+    (35.0, 20.0),
+    (65.0, 32.0),
+    (100.0, 45.0),
+    (120.0, 55.0),
+    (math.inf, 65.0),
+)
 
 
 @dataclass(frozen=True)
@@ -374,6 +381,17 @@ def _estimate_height_from_keywords(
     return None, "none"
 
 
+def _estimate_flying_base_z_offset(parsed_radius: tuple[float, float]) -> float:
+    minor_diameter_in = 2.0 * float(min(parsed_radius))
+    if minor_diameter_in <= 0.0:
+        return 0.0
+    minor_diameter_mm = minor_diameter_in * 25.4
+    for max_minor_mm, z_offset_mm in _FLYING_BASE_Z_OFFSET_BY_MINOR_MM:
+        if minor_diameter_mm <= float(max_minor_mm) + 1e-6:
+            return float(convert_mm_to_inches(float(z_offset_mm)))
+    return 0.0
+
+
 def resolve_model_geometry(
     *,
     datasheet_id: Optional[str],
@@ -382,6 +400,7 @@ def resolve_model_geometry(
     unit_keywords: Iterable[str],
     parsed_base_type: BaseType,
     parsed_radius: tuple[float, float],
+    parsed_is_flying_base: bool = False,
     catalog_path: Optional[str] = None,
 ) -> ResolvedModelGeometry:
     catalog = load_model_geometry_catalog(catalog_path)
@@ -418,6 +437,7 @@ def resolve_model_geometry(
     compound_parts: tuple[dict, ...] = tuple()
     override_height: Optional[float] = None
     z_offset = 0.0
+    entry_has_z_offset = False
     geometry_source = "parsed_base"
 
     if guide_classification == "hull" and base_type != BaseType.HULL and not entry:
@@ -427,6 +447,7 @@ def resolve_model_geometry(
     if entry:
         context = f"model_geometry_overrides.units.{unit_key}"
         base_type, radius, compound_parts, override_height, z_offset = _resolve_entry_geometry(entry, context=context)
+        entry_has_z_offset = "z_offset_mm" in entry
         geometry_source = f"geometry_override:{unit_key}"
 
     base_minor_diameter = 2.0 * float(min(radius))
@@ -451,6 +472,9 @@ def resolve_model_geometry(
                 datasheet_id or "no id",
                 resolved_height,
             )
+
+    if bool(parsed_is_flying_base) and not entry_has_z_offset and z_offset <= 0.0:
+        z_offset = _estimate_flying_base_z_offset(radius)
 
     return ResolvedModelGeometry(
         base_type=base_type,

@@ -137,6 +137,7 @@ class DatasheetWargearMixin:
             unit_keywords=unit_keywords,
             parsed_base_type=model.model_base.base_type,
             parsed_radius=model.model_base.radius,
+            parsed_is_flying_base=bool(getattr(model.model_base, "is_flying_base", False)),
         )
 
         old_base = model.model_base

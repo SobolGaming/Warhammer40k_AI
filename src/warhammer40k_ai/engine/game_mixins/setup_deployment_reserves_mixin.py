@@ -535,6 +535,38 @@ class GameSetupDeploymentReservesMixin:
         if unit.reserve_status in ['reserves', 'strategic_reserves']:
             return True
 
+        from ...utility.deployment_special_rules import (
+            is_aegis_defence_line_deployment_unit,
+            validate_aegis_defence_line_deployment,
+        )
+
+        def _validate_datasheet_deployment_rules(model_positions: list[tuple]) -> bool:
+            if not is_aegis_defence_line_deployment_unit(unit):
+                return True
+            base_entries: list[tuple[str, object]] = []
+            create_potential_base = getattr(unit, "_create_potential_base", None)
+            for idx, (model, position) in enumerate(zip(unit.models, model_positions)):
+                model_x = float(position[0])
+                model_y = float(position[1])
+                model_z = float(position[2]) if len(position) > 2 else 0.0
+                model_facing = float(position[3]) if len(position) > 3 else float(getattr(model.model_base, "facing", 0.0))
+                candidate_base = model.model_base
+                if callable(create_potential_base):
+                    maybe_base = create_potential_base(model_x, model_y, model_z, model_facing, model=model)
+                    if maybe_base is not None:
+                        candidate_base = maybe_base
+                model_name = str(getattr(model, "name", "") or f"Model #{idx + 1}")
+                base_entries.append((model_name, candidate_base))
+
+            valid, reason = validate_aegis_defence_line_deployment(base_entries)
+            if not valid:
+                logger.debug(
+                    "DEBUG: Datasheet deployment validation failed for %s: %s",
+                    unit.name,
+                    reason,
+                )
+            return bool(valid)
+
         # Check if unit has Infiltrate ability
         if unit.has_infiltrate():
             # Infiltrate units can deploy anywhere except:
@@ -553,6 +585,9 @@ class GameSetupDeploymentReservesMixin:
             )
 
             if not model_positions:
+                return False
+
+            if not _validate_datasheet_deployment_rules(model_positions):
                 return False
 
             from ...battlefield.map import validate_ruins_placement
@@ -610,6 +645,9 @@ class GameSetupDeploymentReservesMixin:
             if not model_positions:
                 return False
 
+            if not _validate_datasheet_deployment_rules(model_positions):
+                return False
+
             from ...battlefield.map import validate_ruins_placement
             for model, position in zip(unit.models, model_positions):
                 model_x, model_y, model_z = position[0], position[1], position[2]
@@ -662,6 +700,22 @@ class GameSetupDeploymentReservesMixin:
             # Normal deployment: wholly within own zone
             if not self.is_position_wholly_in_deployment_zone(x, y, model.model_base, player_id):
                 return {'valid': False, 'reason': 'Model base not wholly within deployment zone'}
+
+        from ...utility.deployment_special_rules import (
+            is_aegis_defence_line_deployment_unit,
+            validate_aegis_defence_line_deployment_base,
+        )
+        if is_aegis_defence_line_deployment_unit(unit):
+            candidate_base = model.model_base
+            create_potential_base = getattr(unit, "_create_potential_base", None)
+            if callable(create_potential_base):
+                facing = float(getattr(model.model_base, "facing", 0.0))
+                maybe_base = create_potential_base(x, y, z, facing, model=model)
+                if maybe_base is not None:
+                    candidate_base = maybe_base
+            aegis_valid, aegis_reason = validate_aegis_defence_line_deployment_base(candidate_base)
+            if not aegis_valid:
+                return {'valid': False, 'reason': aegis_reason}
 
         # RUINS placement validation for this single model
         from ...battlefield.map import validate_ruins_placement
