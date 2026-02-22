@@ -2081,6 +2081,54 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if callable(is_eligible) and not bool(is_eligible(target_unit, game=game)):
             return ("Grim Resolve target must be a friendly ADEPTUS ASTARTES unit.",)
         return ()
+    if ability == "great_wolf_watches_charge":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, payload.get("unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("The Great Wolf Watches source unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return ("The Great Wolf Watches source unit was not found.",)
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        if source_army is None:
+            return ("The Great Wolf Watches source army was not found.",)
+        sm_mgr = getattr(source_army, "space_marines_detachments", None)
+        if sm_mgr is None or not bool(getattr(sm_mgr, "is_champions_of_fenris", lambda: False)()):
+            return ("The Great Wolf Watches requires Champions of Fenris.",)
+        is_eligible = getattr(sm_mgr, "great_wolf_watches_reacting_unit_is_eligible", None)
+        if not callable(is_eligible) or not bool(is_eligible(source_root, game=game)):
+            return ("The selected unit is not eligible for The Great Wolf Watches.",)
+        if is_skip_choice(request, result):
+            return ()
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return ("The Great Wolf Watches target unit was not found.",)
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return ("The Great Wolf Watches target unit was not found.",)
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if target_army is source_army:
+            return ("The Great Wolf Watches target must be an enemy unit.",)
+        target_id = str(get_entity_id(target_root) or "")
+        candidate_ids = {str(v) for v in list(ctx.get("candidate_unit_ids", []) or []) if str(v)}
+        if candidate_ids and target_id not in candidate_ids:
+            return ("The Great Wolf Watches target is not an eligible candidate.",)
+        can_target = getattr(sm_mgr, "great_wolf_watches_charge_target_is_eligible", None)
+        if callable(can_target):
+            if not bool(can_target(source_root, target_root, game=game)):
+                return ("The Great Wolf Watches target does not satisfy charge requirements.",)
+        return ()
     if ability == "resurrection_orb":
         payload = _option_payload(request, result)
         source_unit = resolve_unit(
@@ -2950,6 +2998,81 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         return {
             "target_unit_id": str(get_entity_id(target_root) or ""),
             "source": ability_name,
+        }
+    if ability == "great_wolf_watches_charge":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, payload.get("unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return None
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        player = _resolve_player(game, request, payload)
+        if player is None and source_army is not None:
+            player = getattr(source_army, "player", None)
+        ability_name = str(ctx.get("ability_name", "") or "The Great Wolf Watches").strip() or "The Great Wolf Watches"
+        if is_skip_choice(request, result):
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {getattr(source_root, 'name', 'Unit')} selected none.",
+            )
+            return None
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return None
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return None
+        target_id = str(get_entity_id(target_root) or "")
+        candidate_ids = {str(v) for v in list(ctx.get("candidate_unit_ids", []) or []) if str(v)}
+        if candidate_ids and target_id not in candidate_ids:
+            return None
+        attempt_charge = getattr(game, "attempt_charge", None)
+        if not callable(attempt_charge):
+            return None
+        success = bool(
+            attempt_charge(
+                source_root,
+                target_root,
+                out_of_turn=True,
+                count_as_charged=False,
+            )
+        )
+        if success:
+            _log_action_for_players(
+                game,
+                player,
+                (
+                    f"{ability_name}: {getattr(source_root, 'name', 'Unit')} declared an out-of-turn charge "
+                    f"against {getattr(target_root, 'name', 'Unit')} (no Charge bonus this turn)."
+                ),
+            )
+        else:
+            _log_action_for_players(
+                game,
+                player,
+                (
+                    f"{ability_name}: {getattr(source_root, 'name', 'Unit')} failed the out-of-turn charge "
+                    f"against {getattr(target_root, 'name', 'Unit')}."
+                ),
+            )
+        return {
+            "unit_id": str(get_entity_id(source_root) or ""),
+            "target_unit_id": target_id,
+            "success": bool(success),
         }
     if ability == "murdercall":
         payload = _option_payload(request, result)

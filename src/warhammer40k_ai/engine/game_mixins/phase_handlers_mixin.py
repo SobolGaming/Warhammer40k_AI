@@ -10428,6 +10428,124 @@ class GamePhaseHandlersMixin:
                 player=player,
             )
 
+    def _on_phase_end_the_great_wolf_watches(self, player=None, phase=None, **_kwargs) -> None:
+        """Charge phase end: Champions of Fenris units can declare out-of-turn charges."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "CHARGE_PHASE":
+            return
+        current_player = self.get_current_player()
+        if player is None or player is not current_player:
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+
+        try:
+            battle_round = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            battle_round = 0
+        trigger_player_id = str(getattr(current_player, "id", "") or "")
+        queue = getattr(self, "decision_queue", None)
+
+        for reacting_player in list(getattr(self, "players", []) or []):
+            if reacting_player is None or reacting_player is current_player:
+                continue
+            reacting_army = self._get_player_army(reacting_player)
+            if reacting_army is None:
+                continue
+            sm_mgr = getattr(reacting_army, "space_marines_detachments", None)
+            get_options = getattr(sm_mgr, "get_great_wolf_watches_charge_options", None)
+            if not callable(get_options):
+                continue
+            unit_options = list(get_options(game=self) or [])
+            for entry in list(unit_options or []):
+                if not isinstance(entry, tuple) and not isinstance(entry, list):
+                    continue
+                if len(entry) != 2:
+                    continue
+                reacting_unit, candidates = entry
+                if reacting_unit is None:
+                    continue
+                candidate_units = [u for u in list(candidates or []) if u is not None]
+                if not candidate_units:
+                    continue
+                reacting_unit_id = str(get_entity_id(reacting_unit) or "")
+                if not reacting_unit_id:
+                    continue
+
+                already_pending = False
+                if queue is not None and hasattr(queue, "list"):
+                    for req in list(queue.list() or []):
+                        if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                            continue
+                        ctx = dict(getattr(req, "context", {}) or {})
+                        if str(ctx.get("ability", "") or "") != "great_wolf_watches_charge":
+                            continue
+                        if str(ctx.get("unit_id", "") or "") != reacting_unit_id:
+                            continue
+                        if int(ctx.get("battle_round", battle_round) or battle_round) != battle_round:
+                            continue
+                        if str(ctx.get("trigger_player_id", "") or "") != trigger_player_id:
+                            continue
+                        already_pending = True
+                        break
+                if already_pending:
+                    continue
+
+                req_options = [
+                    DecisionOption.create(
+                        "None",
+                        payload={
+                            "action": "skip",
+                            "unit_id": reacting_unit_id,
+                        },
+                    )
+                ]
+                candidate_ids: list[str] = []
+                used_labels: set[str] = set()
+                for target_unit in list(candidate_units):
+                    target_id = str(get_entity_id(target_unit) or "")
+                    if not target_id:
+                        continue
+                    if target_id in candidate_ids:
+                        continue
+                    candidate_ids.append(target_id)
+                    label = str(getattr(target_unit, "name", "") or "Enemy unit")
+                    base = label
+                    idx = 2
+                    while label in used_labels:
+                        label = f"{base} ({idx})"
+                        idx += 1
+                    used_labels.add(label)
+                    req_options.append(
+                        DecisionOption.create(
+                            label,
+                            payload={
+                                "target_unit_id": target_id,
+                                "unit_id": reacting_unit_id,
+                            },
+                        )
+                    )
+                if len(req_options) <= 1:
+                    continue
+
+                request = DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    f"The Great Wolf Watches: Select charge target for {getattr(reacting_unit, 'name', 'Unit')} (or None).",
+                    player_id=getattr(reacting_player, "id", None),
+                    options=req_options,
+                    context={
+                        "ability": "great_wolf_watches_charge",
+                        "ability_name": "The Great Wolf Watches",
+                        "phase": "Charge phase",
+                        "unit_id": reacting_unit_id,
+                        "army_id": str(get_entity_id(reacting_army) or ""),
+                        "battle_round": int(battle_round or 0),
+                        "trigger_player_id": trigger_player_id,
+                        "candidate_unit_ids": list(candidate_ids),
+                    },
+                )
+                self.request_decision(request)
+
     def _on_phase_end_flickerjump_mortal_wounds(self, player=None, phase=None, **_kwargs) -> None:
         """Movement phase end: Flickerjump mortal wound rolls for units that used the ability."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

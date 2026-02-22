@@ -309,6 +309,11 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Unforgiven Task Force")
 
+    def is_champions_of_fenris(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Champions of Fenris")
+
     def _attached_unit_root(self, unit):
         if unit is None:
             return None
@@ -453,6 +458,178 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not self.attached_unit_is_adeptus_astartes(root):
             return 0, ""
         return 1, "Grim Resolve (Command phase)"
+
+    def _unit_is_on_battlefield(self, unit) -> bool:
+        if unit is None:
+            return False
+        if not self._unit_has_models_or_is_alive(unit):
+            return False
+        if not bool(getattr(unit, "deployed", True)):
+            return False
+        in_reserves_fn = getattr(unit, "is_in_reserves", None)
+        if callable(in_reserves_fn):
+            try:
+                if bool(in_reserves_fn()):
+                    return False
+            except Exception:
+                return False
+        if bool(getattr(unit, "is_embarked", False)):
+            return False
+        return True
+
+    def _attached_unit_is_terminator(self, unit) -> bool:
+        if unit is None:
+            return False
+        if self._attached_unit_has_keyword(unit, "TERMINATOR"):
+            return True
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        name = str(getattr(root, "name", "") or "").strip().lower()
+        return "terminator" in name
+
+    def great_wolf_watches_reacting_unit_is_eligible(self, unit, *, game=None) -> bool:
+        if not self.is_champions_of_fenris():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        try:
+            if root.get_parent_army() is not self.army:
+                return False
+        except Exception:
+            return False
+        if not self._unit_is_on_battlefield(root):
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        has_infantry = self._attached_unit_has_keyword(root, "INFANTRY")
+        has_walker = self._attached_unit_has_keyword(root, "WALKER")
+        if not (has_infantry or has_walker):
+            return False
+        if game is not None:
+            can_charge = getattr(root, "can_declare_charge", None)
+            if callable(can_charge):
+                try:
+                    if not bool(can_charge(game, out_of_turn=True)):
+                        return False
+                except Exception:
+                    return False
+        return True
+
+    def great_wolf_watches_charge_target_is_eligible(
+        self,
+        reacting_unit,
+        target_unit,
+        *,
+        game=None,
+        range_inches: float = 3.0,
+    ) -> bool:
+        if game is None:
+            return False
+        if not self.great_wolf_watches_reacting_unit_is_eligible(reacting_unit, game=game):
+            return False
+        game_map = getattr(game, "map", None)
+        if game_map is None:
+            return False
+        reacting_root = self._attached_unit_root(reacting_unit)
+        target_root = self._attached_unit_root(target_unit)
+        if reacting_root is None or target_root is None:
+            return False
+        if not self._unit_is_on_battlefield(target_root):
+            return False
+        try:
+            if target_root.get_parent_army() is self.army:
+                return False
+        except Exception:
+            return False
+        try:
+            distance = float(game_map.get_distance_between_units(reacting_root, target_root))
+        except Exception:
+            return False
+        if distance > float(range_inches) + 1e-6:
+            return False
+        can_target = getattr(reacting_root, "can_declare_charge_against", None)
+        if not callable(can_target):
+            return False
+        try:
+            return bool(can_target(target_root, game, out_of_turn=True))
+        except Exception:
+            return False
+
+    def great_wolf_watches_charge_target_units(self, unit, *, game=None) -> list:
+        if game is None:
+            return []
+        if not self.great_wolf_watches_reacting_unit_is_eligible(unit, game=game):
+            return []
+        reacting_root = self._attached_unit_root(unit)
+        if reacting_root is None:
+            return []
+        game_map = getattr(game, "map", None)
+        if game_map is None:
+            return []
+        try:
+            enemies = list(game_map.get_enemy_units(reacting_root) or [])
+        except Exception:
+            enemies = []
+        targets = []
+        seen: set[str] = set()
+        for enemy in list(enemies or []):
+            enemy_root = self._attached_unit_root(enemy)
+            if enemy_root is None:
+                continue
+            target_id = str(get_entity_id(enemy_root) or "")
+            if target_id and target_id in seen:
+                continue
+            if not self.great_wolf_watches_charge_target_is_eligible(
+                reacting_root,
+                enemy_root,
+                game=game,
+            ):
+                continue
+            if target_id:
+                seen.add(target_id)
+            targets.append(enemy_root)
+        targets.sort(key=lambda u: (str(getattr(u, "name", "") or ""), str(get_entity_id(u) or "")))
+        return targets
+
+    def get_great_wolf_watches_charge_options(self, *, game=None) -> list[tuple]:
+        if not self.is_champions_of_fenris():
+            return []
+        options = []
+        for root in self._iter_unique_army_roots():
+            if not self.great_wolf_watches_reacting_unit_is_eligible(root, game=game):
+                continue
+            targets = self.great_wolf_watches_charge_target_units(root, game=game)
+            if not targets:
+                continue
+            options.append((root, targets))
+        options.sort(
+            key=lambda entry: (
+                str(getattr(entry[0], "name", "") or ""),
+                str(get_entity_id(entry[0]) or ""),
+            )
+        )
+        return options
+
+    def great_wolf_watches_terminator_oc_bonus(self, unit) -> tuple[int, str]:
+        if not self.is_champions_of_fenris():
+            return 0, ""
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return 0, ""
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return 0, ""
+        if not self._attached_unit_is_terminator(root):
+            return 0, ""
+        is_bs_fn = getattr(root, "is_battle_shocked", None)
+        if callable(is_bs_fn):
+            try:
+                if bool(is_bs_fn()):
+                    return 0, ""
+            except Exception:
+                return 0, ""
+        return 1, "The Great Wolf Watches"
 
     def _attached_unit_has_keyword(self, unit, keyword: str) -> bool:
         if unit is None:

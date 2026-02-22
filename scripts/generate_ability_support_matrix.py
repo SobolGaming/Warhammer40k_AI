@@ -645,6 +645,12 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"until the start of your next command phase add \d+ to the objective control characteristic of models in that unit",
             r"your army can include dark angels units but it cannot include any adeptus astartes units drawn from any other chapter",
         ),
+        "The Great Wolf Watches": (
+            r"at the end of your opponents charge phase each adeptus astartes infantry and adeptus astartes walker unit from your army that is within 3 of one or more enemy units and would be eligible to declare a charge against one or more of those units can declare a charge against one or more of those units and you resolve that charge as if it were your charge phase",
+            r"if that charge is successful your unit does not receive any charge bonus this turn",
+            r"while adeptus astartes terminator units from your army are not battle shocked add 1 to the objective control characteristic of models in those units",
+            r"your army can include space wolves units but it cannot include any adeptus astartes units drawn from any other chapter",
+        ),
         "Mission Tactics": (
             r"at the start of your command phase you can select one of the mission tactics listed below",
             r"until the start of your next command phase that mission tactic is active and its effects apply to all units from your army with this ability",
@@ -1932,6 +1938,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Grim Resolve": (
             "Supported",
             "Unforgiven Task Force: while Battle-shocked, ADEPTUS ASTARTES units have Objective Control 1 instead of 0, and in each Command phase you select one ADEPTUS ASTARTES unit to gain +1 Objective Control until your next Command phase.",
+        ),
+        "The Great Wolf Watches": (
+            "Supported",
+            "Champions of Fenris: at the end of the opponent Charge phase, eligible ADEPTUS ASTARTES INFANTRY/WALKER units within 3\" of enemy units can declare out-of-turn charges that do not receive the Charge bonus, and ADEPTUS ASTARTES TERMINATOR units gain +1 Objective Control while not Battle-shocked; Space Wolves-only chapter restriction enforced.",
         ),
         "Mission Tactics": (
             "Supported",

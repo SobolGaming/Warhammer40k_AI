@@ -538,6 +538,13 @@ class Unit(
                 if int(cmd_bonus or 0) > 0:
                     source = str(cmd_source or "Grim Resolve (Command phase)").strip() or "Grim Resolve (Command phase)"
                     mods.append(Modifier(ModifierOp.ADD, int(cmd_bonus), source=f"detachment:{source}"))
+                try:
+                    fenris_bonus, fenris_source = sm_mgr.great_wolf_watches_terminator_oc_bonus(self)
+                except Exception:
+                    fenris_bonus, fenris_source = 0, ""
+                if int(fenris_bonus or 0) > 0:
+                    source = str(fenris_source or "The Great Wolf Watches").strip() or "The Great Wolf Watches"
+                    mods.append(Modifier(ModifierOp.ADD, int(fenris_bonus), source=f"detachment:{source}"))
 
             # Inspiring Commander: while included in your army, named units gain
             # a fixed Objective Control value for non-CHARACTER models while not Battle-shocked.
