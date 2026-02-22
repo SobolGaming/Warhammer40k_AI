@@ -314,6 +314,11 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Champions of Fenris")
 
+    def is_forgefathers_seekers(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Forgefather's Seekers")
+
     def _attached_unit_root(self, unit):
         if unit is None:
             return None
@@ -477,6 +482,38 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False
         return True
 
+    def _resolve_game_context(self, game=None):
+        if game is not None:
+            return game
+        try:
+            return getattr(getattr(self.army, "player", None), "game", None)
+        except Exception:
+            return None
+
+    def _is_army_turn(self, *, game=None) -> bool:
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is None:
+            return False
+        owner_id = str(getattr(getattr(self.army, "player", None), "id", "") or "").strip()
+        if not owner_id:
+            return False
+        try:
+            current = game_obj.get_current_player()
+        except Exception:
+            current = None
+        current_id = str(getattr(current, "id", "") or "").strip()
+        return bool(current_id) and current_id == owner_id
+
+    def _attached_unit_name_contains(self, unit, name_fragment: str) -> bool:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        unit_name = _normalize_detachment_name(getattr(root, "name", ""))
+        target = _normalize_detachment_name(name_fragment)
+        if not target:
+            return False
+        return target in unit_name
+
     def _attached_unit_is_terminator(self, unit) -> bool:
         if unit is None:
             return False
@@ -630,6 +667,127 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             except Exception:
                 return 0, ""
         return 1, "The Great Wolf Watches"
+
+    def has_vulkan_hestan_on_battlefield(self) -> bool:
+        if self.army is None:
+            return False
+        for root in self._iter_unique_army_roots():
+            if not self._unit_is_on_battlefield(root):
+                continue
+            if self._attached_unit_name_contains(root, "Vulkan He'Stan"):
+                return True
+        return False
+
+    def _attached_unit_is_infernus_squad(self, unit) -> bool:
+        return self._attached_unit_name_contains(unit, "Infernus Squad")
+
+    def vulkans_quest_assault_applies(self, unit, weapon_profile=None) -> bool:
+        if not self.is_forgefathers_seekers():
+            return False
+        if unit is None:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(unit):
+            return False
+        if weapon_profile is None:
+            return True
+        parent = getattr(weapon_profile, "parent_wargear", None)
+        if parent is None:
+            return False
+        return bool(getattr(parent, "is_ranged", lambda: False)())
+
+    def vulkans_quest_strength_bonus(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        weapon_profile=None,
+        attack_instance=None,
+    ) -> tuple[int, str]:
+        if not self.is_forgefathers_seekers():
+            return 0, ""
+        if attacker_model is None:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        if attacker_unit is None:
+            return 0, ""
+        if not self.vulkans_quest_assault_applies(attacker_unit, weapon_profile):
+            return 0, ""
+
+        try:
+            distance = float((attack_instance or {}).get("distance_to_target", 0.0) or 0.0)
+        except Exception:
+            distance = 0.0
+        if distance <= 0.0 and target_unit is not None:
+            game_map = None
+            try:
+                game_map = getattr(getattr(attacker_unit.get_parent_army(), "player", None), "game", None).map
+            except Exception:
+                game_map = None
+            if game_map is not None:
+                try:
+                    distance = float(game_map.get_distance_between_units(attacker_unit, target_unit))
+                except Exception:
+                    distance = 0.0
+        if distance <= 0.0 or distance > 12.0 + 1e-6:
+            return 0, ""
+        return 1, "Vulkan's Quest"
+
+    def seekers_companions_active_for_unit(self, unit, *, game=None) -> bool:
+        if not self.is_forgefathers_seekers():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        if not self._unit_is_on_battlefield(root):
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        if not self._attached_unit_is_infernus_squad(root):
+            return False
+        if not self.has_vulkan_hestan_on_battlefield():
+            return False
+        return self._is_army_turn(game=game)
+
+    def seekers_companions_allow_action_after_advance(self, unit, game) -> bool:
+        if game is None:
+            return False
+        if not self.seekers_companions_active_for_unit(unit, game=game):
+            return False
+        for flag in ("actions_enabled", "mission_actions_enabled", "mission_has_actions"):
+            try:
+                enabled = getattr(game, flag)
+            except Exception:
+                continue
+            if enabled is False:
+                return False
+        return True
+
+    def seekers_companions_allow_shoot_while_action(self, unit, *, game=None, weapon_profile=None) -> bool:
+        if not self.seekers_companions_active_for_unit(unit, game=game):
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            if parent is not None and not bool(getattr(parent, "is_ranged", lambda: False)()):
+                return False
+        round_state = getattr(root, "round_state", None)
+        if round_state is None:
+            return False
+        if not bool(getattr(round_state, "action_locked_until_turn_end", False)):
+            return False
+        if not bool(getattr(round_state, "performing_action_name", None)):
+            return False
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is None:
+            return False
+        try:
+            started_turn = int(getattr(round_state, "action_started_turn", 0) or 0)
+            battle_round = int(getattr(game_obj, "turn", 0) or 0)
+        except Exception:
+            return False
+        return started_turn > 0 and started_turn == battle_round
 
     def _attached_unit_has_keyword(self, unit, keyword: str) -> bool:
         if unit is None:

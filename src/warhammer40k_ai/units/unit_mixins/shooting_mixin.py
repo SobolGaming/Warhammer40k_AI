@@ -28,8 +28,24 @@ class ShootingMixin:
         # Check if unit can shoot
         # Mission Actions: a unit performing an Action is not eligible to shoot until that Action completes or end of turn
         if getattr(self.round_state, 'action_locked_until_turn_end', False):
-            logger.info(f"{self.name} is performing an Action and cannot shoot this turn")
-            return False
+            allow_shoot_while_action = False
+            try:
+                army = self.get_parent_army()
+                sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                if sm_mgr is not None and getattr(sm_mgr, "seekers_companions_allow_shoot_while_action", None):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    allow_shoot_while_action = bool(
+                        sm_mgr.seekers_companions_allow_shoot_while_action(
+                            self,
+                            game=game,
+                        )
+                    )
+            except Exception:
+                allow_shoot_while_action = False
+            if not allow_shoot_while_action:
+                logger.info(f"{self.name} is performing an Action and cannot shoot this turn")
+                return False
+            logger.info(f"{self.name} is performing an Action but can shoot due to Seeker's Companions")
         if (not out_of_phase) and self.round_state.shot_this_round:
             logger.info(f"{self.name} has already shot this round")
             return False

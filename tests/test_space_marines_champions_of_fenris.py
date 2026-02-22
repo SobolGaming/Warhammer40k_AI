@@ -1,5 +1,4 @@
 import unittest
-from unittest.mock import patch
 
 
 class _MockDatasheet:
@@ -76,6 +75,8 @@ def _build_game(detachment_type: str = "Champions of Fenris"):
 
 class TestSpaceMarinesChampionsOfFenris(unittest.TestCase):
     def test_terminator_units_gain_oc_while_not_battle_shocked(self):
+        from warhammer40k_ai.units.status_effects import BattleShockEffect
+
         game, _enemy_player, _sm_player, sm_army, _enemy_army = _build_game("Champions of Fenris")
         terminator_unit = _make_unit(
             "Wolf Guard Terminators",
@@ -95,8 +96,7 @@ class TestSpaceMarinesChampionsOfFenris(unittest.TestCase):
         self.assertEqual(int(terminator_unit.objective_control), 2)
         self.assertEqual(int(infantry_unit.objective_control), 1)
 
-        with patch.object(terminator_unit, "pass_leadership_check", return_value=False):
-            terminator_unit.take_battle_shock_test(current_turn=game.turn)
+        terminator_unit.apply_status_effect(BattleShockEffect(current_turn=game.turn))
         self.assertTrue(terminator_unit.is_battle_shocked())
         self.assertEqual(int(terminator_unit.objective_control), 0)
 

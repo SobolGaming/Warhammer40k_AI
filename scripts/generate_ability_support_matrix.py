@@ -651,6 +651,13 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"while adeptus astartes terminator units from your army are not battle shocked add 1 to the objective control characteristic of models in those units",
             r"your army can include space wolves units but it cannot include any adeptus astartes units drawn from any other chapter",
         ),
+        "Vulkan's Quest": (
+            r"ranged weapons equipped by adeptus astartes models from your army have the assault ability and each time an attack made with such a weapon targets a unit within 12 add \d+ to the strength characteristic of that attack",
+            r"if your army includes vulkan he\s*stan during your turn each infernus squad unit from your army is eligible to do one of the following",
+            r"start to perform an action in a turn in which it advanced",
+            r"shoot in a turn in which it started to perform an action",
+            r"your army can include salamanders units but it cannot include any adeptus astartes units drawn from any other chapter",
+        ),
         "Mission Tactics": (
             r"at the start of your command phase you can select one of the mission tactics listed below",
             r"until the start of your next command phase that mission tactic is active and its effects apply to all units from your army with this ability",
@@ -1942,6 +1949,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "The Great Wolf Watches": (
             "Supported",
             "Champions of Fenris: at the end of the opponent Charge phase, eligible ADEPTUS ASTARTES INFANTRY/WALKER units within 3\" of enemy units can declare out-of-turn charges that do not receive the Charge bonus, and ADEPTUS ASTARTES TERMINATOR units gain +1 Objective Control while not Battle-shocked; Space Wolves-only chapter restriction enforced.",
+        ),
+        "Vulkan's Quest": (
+            "Supported",
+            "Forgefather's Seekers: ranged weapons for ADEPTUS ASTARTES units count as [ASSAULT], gain +1 Strength within 12\", and while Vulkan He'stan is on the battlefield Infernus Squad units can start Actions after Advancing and can shoot in turns they started an Action; Salamanders-only chapter restriction enforced.",
         ),
         "Mission Tactics": (
             "Supported",

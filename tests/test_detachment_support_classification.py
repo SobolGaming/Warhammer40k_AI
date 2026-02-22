@@ -438,6 +438,22 @@ class TestDetachmentSupportClassification(unittest.TestCase):
         self.assertEqual(status, "Supported")
         self.assertIn("champions of fenris", notes.lower())
 
+    def test_vulkans_quest_is_supported(self):
+        gsm, detachment_abilities = self._seed_support_maps()
+        row = next(
+            r
+            for r in detachment_abilities
+            if str(r.get("name", "") or "").replace("\u2019", "'") == "Vulkan's Quest"
+        )
+        status, notes = gsm._classify_ability(
+            row.get("name", ""),
+            row.get("description", ""),
+            ability_id=row.get("id", ""),
+            faction_id=row.get("faction_id", ""),
+        )
+        self.assertEqual(status, "Supported")
+        self.assertIn("forgefather", notes.lower())
+
     def test_mission_tactics_is_supported(self):
         gsm, detachment_abilities = self._seed_support_maps()
         row = next(r for r in detachment_abilities if str(r.get("name", "") or "") == "Mission Tactics")

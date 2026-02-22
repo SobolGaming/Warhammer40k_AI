@@ -10860,6 +10860,24 @@ class WargearProfile:
         except Exception:
             pass
         try:
+            if self.parent_wargear and self.parent_wargear.is_ranged() and isinstance(strength, int):
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                if sm_mgr is not None and callable(getattr(sm_mgr, "vulkans_quest_strength_bonus", None)):
+                    s_bonus, source = sm_mgr.vulkans_quest_strength_bonus(
+                        attacker,
+                        target,
+                        weapon_profile=self,
+                        attack_instance=attack_instance,
+                    )
+                    if s_bonus:
+                        strength = strength + int(s_bonus)
+                        source_name = str(source or "Vulkan's Quest").strip() or "Vulkan's Quest"
+                        wound_result.setdefault("modifiers", []).append(f"+{int(s_bonus)}S from {source_name}")
+        except Exception:
+            pass
+        try:
             if self._thousand_sons_infernal_fusillade_weapon_matches(attacker) and isinstance(strength, int):
                 strength = 5
                 wound_result.setdefault("modifiers", []).append("Set Strength 5 from INFERNAL FUSILLADE")
