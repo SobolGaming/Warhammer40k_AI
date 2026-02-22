@@ -2641,6 +2641,23 @@ class WargearProfile:
         except Exception:
             pass
         try:
+            if self.parent_wargear and self.parent_wargear.is_ranged():
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                if sm_mgr is not None and callable(getattr(sm_mgr, "librarius_pyromancy_ap_bonus", None)):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    bonus, _source = sm_mgr.librarius_pyromancy_ap_bonus(
+                        attacker,
+                        target,
+                        weapon_profile=self,
+                        game=game,
+                    )
+                    if bonus:
+                        ap_val -= int(bonus)
+        except Exception:
+            pass
+        try:
             _s_bonus, ap_bonus, _source = self._court_close_quarters_excruciation_bonus(attacker, target)
             if ap_bonus:
                 ap_val -= int(ap_bonus)
@@ -6609,6 +6626,23 @@ class WargearProfile:
                 "skill_kinds": {"ballistic", "weapon"},
                 "allow_hit": True,
             }
+        try:
+            army = root.get_parent_army() if root is not None else None
+        except Exception:
+            army = None
+        sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+        telepathy_rule_fn = (
+            getattr(sm_mgr, "librarius_telepathy_ignore_hit_modifiers_rule", None)
+            if sm_mgr is not None
+            else None
+        )
+        if callable(telepathy_rule_fn):
+            try:
+                telepathy_rule = telepathy_rule_fn(attacker)
+            except Exception:
+                telepathy_rule = None
+            if isinstance(telepathy_rule, dict) and telepathy_rule:
+                return telepathy_rule
 
         try:
             is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
@@ -8738,6 +8772,23 @@ class WargearProfile:
                 reroll_value_reasons.extend(list(mods.get("reroll_reasons", ()) or ()))
                 if bool(mods.get("reroll_full")):
                     reroll_full_reasons.extend(list(mods.get("reroll_full_reasons", ()) or ()))
+        # Space Marines: Librarius Conclave (Psychic Disciplines - Divination).
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if sm_mgr is not None and callable(getattr(sm_mgr, "librarius_divination_reroll_hit_wound_ones", None)):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                reroll_hit_ones, _reroll_wound_ones, source = sm_mgr.librarius_divination_reroll_hit_wound_ones(
+                    attacker,
+                    game=game,
+                )
+                if bool(reroll_hit_ones):
+                    reroll_hit_values.add(1)
+                    source_name = str(source or "Psychic Disciplines (Divination)").strip() or "Psychic Disciplines (Divination)"
+                    reroll_value_reasons.append(f"{source_name}: re-roll Hit roll of 1")
+        except Exception:
+            pass
 
         hit_result["reroll_values"] = list(sorted(reroll_hit_values))
         hit_result["reroll_value_reasons"] = list(reroll_value_reasons)
@@ -10941,6 +10992,26 @@ class WargearProfile:
         except Exception:
             pass
         try:
+            if self.parent_wargear and self.parent_wargear.is_ranged() and isinstance(strength, int):
+                target_army = target.get_parent_army() if target is not None and hasattr(target, "get_parent_army") else None
+                sm_mgr = getattr(target_army, "space_marines_detachments", None) if target_army is not None else None
+                if sm_mgr is not None and callable(getattr(sm_mgr, "librarius_telekinesis_strength_penalty", None)):
+                    game = getattr(getattr(target_army, "player", None), "game", None) if target_army is not None else None
+                    penalty, source = sm_mgr.librarius_telekinesis_strength_penalty(
+                        target,
+                        attacker_model=attacker,
+                        weapon_profile=self,
+                        game=game,
+                    )
+                    if penalty:
+                        strength = max(1, int(strength) - int(penalty))
+                        source_name = str(source or "Psychic Disciplines (Telekinesis)").strip() or "Psychic Disciplines (Telekinesis)"
+                        wound_result.setdefault("modifiers", []).append(
+                            f"-{int(penalty)}S from {source_name}"
+                        )
+        except Exception:
+            pass
+        try:
             if self._thousand_sons_infernal_fusillade_weapon_matches(attacker) and isinstance(strength, int):
                 strength = 5
                 wound_result.setdefault("modifiers", []).append("Set Strength 5 from INFERNAL FUSILLADE")
@@ -12327,6 +12398,23 @@ class WargearProfile:
                 if mgr.methodical_annihilation_reroll_wound_ones(attacker, self, target, game_map=game_map):
                     reroll_wound_values.add(1)
                     reroll_value_reasons.append("Methodical Annihilation: re-roll Wound roll of 1")
+        except Exception:
+            pass
+        # Space Marines: Librarius Conclave (Psychic Disciplines - Divination).
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if sm_mgr is not None and callable(getattr(sm_mgr, "librarius_divination_reroll_hit_wound_ones", None)):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                _reroll_hit_ones, reroll_wound_ones, source = sm_mgr.librarius_divination_reroll_hit_wound_ones(
+                    attacker,
+                    game=game,
+                )
+                if bool(reroll_wound_ones):
+                    reroll_wound_values.add(1)
+                    source_name = str(source or "Psychic Disciplines (Divination)").strip() or "Psychic Disciplines (Divination)"
+                    reroll_value_reasons.append(f"{source_name}: re-roll Wound roll of 1")
         except Exception:
             pass
         # Leagues of Votann: Geomantic Hunters (optional activation, up to twice per battle).

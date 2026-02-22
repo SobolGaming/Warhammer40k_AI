@@ -142,6 +142,25 @@ def _normalize_detachment_name(text: str) -> str:
 
 class SpaceMarinesDetachmentManager(DetachmentManagerBase):
     faction_id = "SM"
+    _LIBRARIUS_DISCIPLINE_BIOMANCY = "BIOMANCY"
+    _LIBRARIUS_DISCIPLINE_DIVINATION = "DIVINATION"
+    _LIBRARIUS_DISCIPLINE_PYROMANCY = "PYROMANCY"
+    _LIBRARIUS_DISCIPLINE_TELEKINESIS = "TELEKINESIS"
+    _LIBRARIUS_DISCIPLINE_TELEPATHY = "TELEPATHY"
+    _LIBRARIUS_DISCIPLINE_KEYS = (
+        _LIBRARIUS_DISCIPLINE_BIOMANCY,
+        _LIBRARIUS_DISCIPLINE_DIVINATION,
+        _LIBRARIUS_DISCIPLINE_PYROMANCY,
+        _LIBRARIUS_DISCIPLINE_TELEKINESIS,
+        _LIBRARIUS_DISCIPLINE_TELEPATHY,
+    )
+    _LIBRARIUS_DISCIPLINE_LABELS = {
+        _LIBRARIUS_DISCIPLINE_BIOMANCY: "Biomancy Discipline",
+        _LIBRARIUS_DISCIPLINE_DIVINATION: "Divination Discipline",
+        _LIBRARIUS_DISCIPLINE_PYROMANCY: "Pyromancy Discipline",
+        _LIBRARIUS_DISCIPLINE_TELEKINESIS: "Telekinesis Discipline",
+        _LIBRARIUS_DISCIPLINE_TELEPATHY: "Telepathy Discipline",
+    }
     _ANGELIC_LEGACY_SANGUINARY_GRACE = "SANGUINARY_GRACE"
     _ANGELIC_LEGACY_CARMINE_WRATH = "CARMINE_WRATH"
     _ANGELIC_LEGACY_THEIR_APPOINTED_HOUR = "THEIR_APPOINTED_HOUR"
@@ -171,6 +190,9 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
 
     def __init__(self, army=None):
         super().__init__(army)
+        self.librarius_psychic_discipline_key: str = ""
+        self.librarius_psychic_discipline_round: int = 0
+        self.librarius_psychic_discipline_player_id: str = ""
         self.angelic_legacy_selected_keys: tuple[str, ...] = ()
         self.angelic_legacy_selected_round: int = 0
         self.unparalleled_tactician_used_round: int = 0
@@ -213,6 +235,11 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Gladius Task Force")
+
+    def is_librarius_conclave(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Librarius Conclave")
 
     def is_anvil_siege_force(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -528,6 +555,332 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             current = None
         current_id = str(getattr(current, "id", "") or "").strip()
         return bool(current_id) and current_id == owner_id
+
+    @classmethod
+    def librarius_psychic_discipline_label(cls, key: str) -> str:
+        norm = str(key or "").strip().upper()
+        return cls._LIBRARIUS_DISCIPLINE_LABELS.get(norm, str(key or "").strip())
+
+    @classmethod
+    def _normalize_librarius_psychic_discipline_key(cls, value: str) -> str:
+        raw = str(value or "").strip().upper().replace("-", "_").replace(" ", "_")
+        if raw in cls._LIBRARIUS_DISCIPLINE_KEYS:
+            return raw
+        if raw in {"BIOMANCY_DISCIPLINE", "BIOMANCYDISCIPLINE"}:
+            return cls._LIBRARIUS_DISCIPLINE_BIOMANCY
+        if raw in {"DIVINATION_DISCIPLINE", "DIVINATIONDISCIPLINE"}:
+            return cls._LIBRARIUS_DISCIPLINE_DIVINATION
+        if raw in {"PYROMANCY_DISCIPLINE", "PYROMANCYDISCIPLINE"}:
+            return cls._LIBRARIUS_DISCIPLINE_PYROMANCY
+        if raw in {"TELEKINESIS_DISCIPLINE", "TELEKINESISDISCIPLINE"}:
+            return cls._LIBRARIUS_DISCIPLINE_TELEKINESIS
+        if raw in {"TELEPATHY_DISCIPLINE", "TELEPATHYDISCIPLINE"}:
+            return cls._LIBRARIUS_DISCIPLINE_TELEPATHY
+        return raw
+
+    def _librarius_unit_is_eligible_psyker(self, unit) -> bool:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        try:
+            if root.get_parent_army() is not self.army:
+                return False
+        except Exception:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        return bool(self._attached_unit_has_keyword(root, "PSYKER"))
+
+    def _librarius_model_is_eligible_psyker(self, model) -> bool:
+        if model is None:
+            return False
+        unit = getattr(model, "parent_unit", None)
+        if unit is None:
+            return False
+        return self._librarius_unit_is_eligible_psyker(unit)
+
+    def _clear_librarius_biomancy_temporary_effects(self) -> None:
+        if self.army is None:
+            return
+        for root in self._iter_unique_army_roots():
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = [root]
+            if not members:
+                members = [root]
+            for member in members:
+                for model in list(getattr(member, "models", []) or []):
+                    effects = getattr(model, "_temporary_effects", None)
+                    if not isinstance(effects, dict):
+                        continue
+                    effects.pop("librarius_psychic_disciplines_biomancy", None)
+                    model._temporary_effects = effects
+
+    def _apply_librarius_biomancy_temporary_effects(self) -> None:
+        if self.army is None:
+            return
+        for root in self._iter_unique_army_roots():
+            if not self._librarius_unit_is_eligible_psyker(root):
+                continue
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = [root]
+            if not members:
+                members = [root]
+            for member in members:
+                for model in list(getattr(member, "models", []) or []):
+                    effects = getattr(model, "_temporary_effects", None)
+                    if not isinstance(effects, dict):
+                        effects = {}
+                    effects["librarius_psychic_disciplines_biomancy"] = {
+                        "movement_bonus": 2,
+                        "movement_bonus_source": "Psychic Disciplines (Biomancy)",
+                    }
+                    model._temporary_effects = effects
+
+    def clear_librarius_psychic_discipline(self) -> None:
+        self.librarius_psychic_discipline_key = ""
+        self.librarius_psychic_discipline_round = 0
+        self.librarius_psychic_discipline_player_id = ""
+        self._clear_librarius_biomancy_temporary_effects()
+
+    def get_available_librarius_psychic_disciplines(self) -> list[str]:
+        return list(self._LIBRARIUS_DISCIPLINE_KEYS)
+
+    def can_select_librarius_psychic_discipline(self, *, game=None) -> bool:
+        if not self.is_librarius_conclave():
+            return False
+        if game is None:
+            return True
+        try:
+            round_now = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            return False
+        if round_now <= 0:
+            return False
+        owner_id = str(getattr(getattr(self.army, "player", None), "id", "") or "")
+        if (
+            int(getattr(self, "librarius_psychic_discipline_round", 0) or 0) == round_now
+            and str(getattr(self, "librarius_psychic_discipline_player_id", "") or "") == owner_id
+            and str(getattr(self, "librarius_psychic_discipline_key", "") or "").strip().upper() in self._LIBRARIUS_DISCIPLINE_KEYS
+        ):
+            return False
+        return True
+
+    def librarius_psychic_discipline_is_active(self, key: str, *, game=None, battle_round=None) -> bool:
+        choice_key = self._normalize_librarius_psychic_discipline_key(key)
+        active_key = str(getattr(self, "librarius_psychic_discipline_key", "") or "").strip().upper()
+        if active_key != choice_key:
+            return False
+        try:
+            selected_round = int(getattr(self, "librarius_psychic_discipline_round", 0) or 0)
+        except Exception:
+            return False
+        if selected_round <= 0:
+            return False
+        if battle_round is None:
+            game_obj = self._resolve_game_context(game=game)
+            if game_obj is not None:
+                try:
+                    battle_round = int(getattr(game_obj, "turn", 0) or 0)
+                except Exception:
+                    battle_round = None
+        if battle_round is None:
+            return True
+        try:
+            return int(selected_round) == int(battle_round or 0)
+        except Exception:
+            return False
+
+    def select_librarius_psychic_discipline(self, choice_key: str, *, battle_round=None, player_id: str = "") -> bool:
+        if not self.is_librarius_conclave():
+            return False
+        key = self._normalize_librarius_psychic_discipline_key(choice_key)
+        if key not in self._LIBRARIUS_DISCIPLINE_KEYS:
+            return False
+        self._clear_librarius_biomancy_temporary_effects()
+        self.librarius_psychic_discipline_key = key
+        if battle_round is not None:
+            try:
+                self.librarius_psychic_discipline_round = int(battle_round or 0)
+            except Exception:
+                self.librarius_psychic_discipline_round = 0
+        self.librarius_psychic_discipline_player_id = str(player_id or "")
+        if key == self._LIBRARIUS_DISCIPLINE_BIOMANCY:
+            self._apply_librarius_biomancy_temporary_effects()
+        return True
+
+    def on_battle_round_start(self, battle_round: int, *, game=None) -> None:
+        if not self.is_librarius_conclave():
+            self.clear_librarius_psychic_discipline()
+            return
+        self.clear_librarius_psychic_discipline()
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is None or not bool(getattr(game_obj, "is_authoritative", True)):
+            return
+        try:
+            round_now = int(battle_round or getattr(game_obj, "turn", 0) or 0)
+        except Exception:
+            round_now = int(getattr(game_obj, "turn", 0) or 0)
+        if round_now <= 0:
+            return
+        if not self.can_select_librarius_psychic_discipline(game=game_obj):
+            return
+        player = getattr(self.army, "player", None) if self.army is not None else None
+        if player is None:
+            return
+        try:
+            from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+            from ..engine.decisions import DecisionOption, DecisionRequest
+        except Exception:
+            return
+        army_id = str(get_entity_id(self.army) or "")
+        player_id = str(getattr(player, "id", "") or "")
+        queue = getattr(game_obj, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            stale_ids: list[str] = []
+            has_pending = False
+            for request in list(queue.list() or []):
+                if str(getattr(request, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                context = dict(getattr(request, "context", {}) or {})
+                if str(context.get("ability", "") or "") != "librarius_psychic_disciplines":
+                    continue
+                if str(context.get("army_id", "") or "") != army_id:
+                    continue
+                request_round = int(context.get("battle_round", 0) or 0)
+                if request_round == round_now:
+                    has_pending = True
+                    break
+                stale_ids.append(str(getattr(request, "decision_id", "") or ""))
+            for decision_id in stale_ids:
+                if decision_id:
+                    queue.pop(decision_id)
+            if has_pending:
+                return
+        summaries = {
+            self._LIBRARIUS_DISCIPLINE_BIOMANCY: 'Add 2" to Move for ADEPTUS ASTARTES PSYKER units.',
+            self._LIBRARIUS_DISCIPLINE_DIVINATION: "Re-roll Hit roll of 1 and Wound roll of 1 for ADEPTUS ASTARTES PSYKER units.",
+            self._LIBRARIUS_DISCIPLINE_PYROMANCY: 'Ranged attacks by ADEPTUS ASTARTES PSYKER units improve AP by 1 within 12".',
+            self._LIBRARIUS_DISCIPLINE_TELEKINESIS: "Ranged attacks targeting ADEPTUS ASTARTES PSYKER units suffer -1 Strength.",
+            self._LIBRARIUS_DISCIPLINE_TELEPATHY: "ADEPTUS ASTARTES PSYKER units can ignore Hit roll and WS/BS modifiers.",
+        }
+        options = []
+        for key in self.get_available_librarius_psychic_disciplines():
+            label = self.librarius_psychic_discipline_label(key)
+            options.append(
+                DecisionOption.create(
+                    label,
+                    payload={
+                        "choice_key": key,
+                        "choice_name": label,
+                        "summary": str(summaries.get(key, label) or label),
+                        "army_id": army_id,
+                    },
+                )
+            )
+        if not options:
+            return
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Psychic Disciplines: select one discipline for this battle round.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={
+                "ability": "librarius_psychic_disciplines",
+                "ability_name": "Psychic Disciplines",
+                "army_id": army_id,
+                "player_id": player_id,
+                "battle_round": int(round_now),
+                "allowed_choice_keys": list(self._LIBRARIUS_DISCIPLINE_KEYS),
+            },
+        )
+        if hasattr(game_obj, "request_decision"):
+            game_obj.request_decision(request)
+
+    def librarius_divination_reroll_hit_wound_ones(self, attacker_model, *, game=None) -> tuple[bool, bool, str]:
+        if not self.librarius_psychic_discipline_is_active(self._LIBRARIUS_DISCIPLINE_DIVINATION, game=game):
+            return False, False, ""
+        if not self._librarius_model_is_eligible_psyker(attacker_model):
+            return False, False, ""
+        return True, True, "Psychic Disciplines (Divination)"
+
+    def librarius_pyromancy_ap_bonus(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        weapon_profile=None,
+        attack_instance=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if not self.librarius_psychic_discipline_is_active(self._LIBRARIUS_DISCIPLINE_PYROMANCY, game=game):
+            return 0, ""
+        if not self._librarius_model_is_eligible_psyker(attacker_model):
+            return 0, ""
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            if parent is None or not bool(getattr(parent, "is_ranged", lambda: False)()):
+                return 0, ""
+        distance = 0.0
+        try:
+            distance = float((attack_instance or {}).get("distance_to_target", 0.0) or 0.0)
+        except Exception:
+            distance = 0.0
+        if distance <= 0.0 and attacker_model is not None and target_unit is not None:
+            attacker_unit = getattr(attacker_model, "parent_unit", None)
+            if attacker_unit is not None:
+                try:
+                    attacker_root = attacker_unit.get_attached_unit_root()
+                except Exception:
+                    attacker_root = attacker_unit
+                try:
+                    target_root = target_unit.get_attached_unit_root()
+                except Exception:
+                    target_root = target_unit
+                game_obj = self._resolve_game_context(game=game)
+                game_map = getattr(game_obj, "map", None) if game_obj is not None else None
+                if game_map is not None and attacker_root is not None and target_root is not None:
+                    try:
+                        distance = float(game_map.get_distance_between_units(attacker_root, target_root))
+                    except Exception:
+                        distance = 0.0
+        if distance <= 0.0 or distance > 12.0 + 1e-6:
+            return 0, ""
+        return 1, "Psychic Disciplines (Pyromancy)"
+
+    def librarius_telekinesis_strength_penalty(
+        self,
+        target_unit,
+        *,
+        attacker_model=None,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if not self.librarius_psychic_discipline_is_active(self._LIBRARIUS_DISCIPLINE_TELEKINESIS, game=game):
+            return 0, ""
+        if not self._librarius_unit_is_eligible_psyker(target_unit):
+            return 0, ""
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            if parent is None or not bool(getattr(parent, "is_ranged", lambda: False)()):
+                return 0, ""
+        return 1, "Psychic Disciplines (Telekinesis)"
+
+    def librarius_telepathy_ignore_hit_modifiers_rule(self, attacker_model, *, game=None) -> dict | None:
+        if not self.librarius_psychic_discipline_is_active(self._LIBRARIUS_DISCIPLINE_TELEPATHY, game=game):
+            return None
+        if not self._librarius_model_is_eligible_psyker(attacker_model):
+            return None
+        return {
+            "name": "Psychic Disciplines (Telepathy)",
+            "attack_type": "any",
+            "skill_kinds": {"ballistic", "weapon"},
+            "allow_hit": True,
+            "default_choice": "ignore_negative",
+        }
 
     def _attached_unit_name_contains(self, unit, name_fragment: str) -> bool:
         root = self._attached_unit_root(unit)

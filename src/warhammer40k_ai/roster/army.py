@@ -2448,6 +2448,9 @@ class Army:
         mgr = getattr(self, "code_chivalric", None)
         if mgr is not None:
             mgr.on_battle_round_start(int(battle_round))
+        mgr = getattr(self, "space_marines_detachments", None)
+        if mgr is not None and hasattr(mgr, "on_battle_round_start"):
+            mgr.on_battle_round_start(int(battle_round), game=game)
         mgr = getattr(self, "voice_of_command", None)
         if mgr is not None:
             # Orders per officer are tracked by battle round.

@@ -690,6 +690,15 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"while this mission tactic is active weapons equipped by adeptus astartes units from your army have the lethal hits ability",
             r"while this mission tactic is active each time an adeptus astartes unit from your army makes an attack if a critical hit is scored that attack has the precision ability",
         ),
+        "Psychic Disciplines": (
+            r"at the start of the battle round select one of the following psychic disciplines",
+            r"until the end of the battle round that psychic discipline is active and its effects apply to all adeptus astartes psyker units from your army",
+            r"add 2 to the move characteristic of models in this unit",
+            r"each time a model in this unit makes an attack reroll a hit roll of 1 and reroll a wound roll of 1",
+            r"each time a ranged attack made by a model in this unit targets an enemy unit within 12 improve the armour penetration characteristic of that attack by 1",
+            r"each time a ranged attack targets this unit subtract 1 from the strength characteristic of that attack",
+            r"each time a model in this unit makes an attack you can ignore any or all modifiers to that attacks? weapon skill or ballistic skill characteristics and or any or all modifiers to the hit roll",
+        ),
         "Maddened Ferocity": (
             r"each time an adeptus astartes model from your army makes a melee attack reroll a wound roll of \d+",
             r"each time an adeptus astartes unit from your army is selected to fight if that unit made a charge move this turn until the end of the phase add \d+ to the attacks characteristic of melee weapons equipped by models in that unit",
@@ -1997,6 +2006,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Mission Tactics": (
             "Supported",
             "Black Spear Task Force: in each Command phase you can select one unchosen Mission Tactic for the battle round; Furor grants Sustained Hits 1, Malleus grants Lethal Hits, and Purgatus grants Precision on critical hits for ADEPTUS ASTARTES units until your next Command phase.",
+        ),
+        "Psychic Disciplines": (
+            "Supported",
+            "Librarius Conclave: start-of-battle-round discipline selection (Biomancy, Divination, Pyromancy, Telekinesis, Telepathy) with ADEPTUS ASTARTES PSYKER gating, including +2 Move, re-roll Hit/Wound rolls of 1, AP improvement within 12\", incoming ranged Strength reduction by 1, and optional ignore-negative WS/BS/Hit modifiers handling.",
         ),
         "Legacy of the Angel": (
             "Supported",
