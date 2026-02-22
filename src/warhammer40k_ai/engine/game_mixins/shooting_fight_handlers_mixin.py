@@ -6136,6 +6136,73 @@ class GameShootingFightHandlersMixin:
         except Exception:
             return
 
+    def _on_shooting_targets_selected_heroes_all(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None:
+            return
+        try:
+            root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            root = attacking_unit
+        if root is None:
+            return
+        army = root.get_parent_army()
+        if army is None:
+            return
+        mgr = getattr(army, "space_marines_detachments", None)
+        start_selection = getattr(mgr, "heroes_all_start_selection", None) if mgr is not None else None
+        if callable(start_selection):
+            start_selection(root, action="shoot", game=self)
+
+    def _on_fight_unit_selected_heroes_all(self, unit=None, selecting_player=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        army = root.get_parent_army()
+        owner = getattr(army, "player", None) if army is not None else None
+        if owner is None:
+            return
+        if selecting_player is not None and selecting_player is not owner:
+            return
+        mgr = getattr(army, "space_marines_detachments", None)
+        start_selection = getattr(mgr, "heroes_all_start_selection", None) if mgr is not None else None
+        if callable(start_selection):
+            start_selection(root, action="fight", game=self)
+
+    def _on_unit_shooting_resolved_heroes_all(self, attacker_unit=None, **_kwargs) -> None:
+        if attacker_unit is None:
+            return
+        try:
+            root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            root = attacker_unit
+        if root is None:
+            return
+        army = root.get_parent_army()
+        mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+        end_selection = getattr(mgr, "heroes_all_end_selection", None) if mgr is not None else None
+        if callable(end_selection):
+            end_selection(root, action="shoot")
+
+    def _on_fight_sequence_complete_heroes_all(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        army = root.get_parent_army()
+        mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+        end_selection = getattr(mgr, "heroes_all_end_selection", None) if mgr is not None else None
+        if callable(end_selection):
+            end_selection(root, action="fight")
+
     def _queue_oathbound_speculator_confirmation(self, root, *, player, trigger: str) -> None:
         if root is None or player is None:
             return
@@ -8444,7 +8511,7 @@ class GameShootingFightHandlersMixin:
                 model._objective_control = int(current + 6)
                 model._extraction_of_fresh_disease_applied = True
 
-    def _on_unit_destroyed_recalculating(self, unit=None, **_kwargs) -> None:
+    def _on_unit_destroyed_recalculating(self, unit=None, destroyed_by_unit=None, **_kwargs) -> None:
         if unit is None or not bool(getattr(self, "is_authoritative", True)):
             return
         for player in list(getattr(self, "players", []) or []):
@@ -8458,6 +8525,10 @@ class GameShootingFightHandlersMixin:
             trigger_fn = getattr(mgr, "on_oath_target_destroyed", None) if mgr is not None else None
             if callable(trigger_fn):
                 trigger_fn(unit, game=self, player=player)
+            sm_mgr = getattr(army, "space_marines_detachments", None)
+            boast_fn = getattr(sm_mgr, "heroes_all_on_unit_destroyed", None) if sm_mgr is not None else None
+            if callable(boast_fn):
+                boast_fn(unit, destroyed_by_unit=destroyed_by_unit, game=self)
 
     def _on_shooting_targets_selected_blood_surge(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:

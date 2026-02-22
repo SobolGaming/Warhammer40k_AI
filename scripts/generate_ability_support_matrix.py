@@ -647,6 +647,17 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Armoured Wrath": (
             r"once per phase for each adeptus astartes unit in your army you can reroll one hit roll one wound roll or one damage roll made for a model in that unit",
         ),
+        "Heroes All": (
+            r"each time an adeptus astartes unit from your army is selected to shoot or fight apply one of the following when resolving those attacks",
+            r"if your saga is completed see below you can reroll one hit roll one wound roll and one damage roll",
+            r"otherwise if that unit is a space wolves character unit you can reroll one hit roll one wound roll or one damage roll",
+            r"each time a space wolves character unit from your army does one of the following that unit achieves that boast",
+            r"once three or more different boasts have been achieved by units from your army your saga is completed",
+            r"that unit destroys your oath of moment target",
+            r"that unit destroys your oath of moment target and that is the second oath of moment target destroyed by that unit in this battle",
+            r"at the end of either players turn that unit is wholly within your opponents deployment zone",
+            r"from the second battle round onwards at the end of your command phase that unit is within range of an objective marker you control that is not within your deployment zone",
+        ),
         "In The Lion's Claws": (
             r"each time an enemy unit excluding monsters and vehicles within engagement range of one or more ravenwing units from your army falls back all models in that enemy unit must take a desperate escape test",
             r"each time a deathwing unit from your army declares a charge if one or more targets of that charge are within engagement range of one or more ravenwing units from your army add 2 to the charge roll",
@@ -1998,6 +2009,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Armoured Wrath": (
             "Supported",
             "Ironstorm Spearhead: once per phase, each ADEPTUS ASTARTES unit can re-roll one Hit roll, one Wound roll, or one Damage roll.",
+        ),
+        "Heroes All": (
+            "Supported",
+            "Saga of the Bold: pre-Saga Space Wolves CHARACTER units gain one selected-to-shoot/fight re-roll choice (Hit, Wound, or Damage), and once three Boasts are achieved the Saga is complete so selected ADEPTUS ASTARTES units gain one Hit, one Wound, and one Damage re-roll; Boast tracking covers Oath target kills (including second kill by the same unit), end-of-turn wholly-in-opponent-deployment-zone checks, and end-of-own-Command-phase controlled non-home objective checks.",
         ),
         "In The Lion's Claws": (
             "Supported",

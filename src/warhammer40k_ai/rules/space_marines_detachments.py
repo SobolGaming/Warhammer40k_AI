@@ -142,6 +142,16 @@ def _normalize_detachment_name(text: str) -> str:
 
 class SpaceMarinesDetachmentManager(DetachmentManagerBase):
     faction_id = "SM"
+    _HEROES_ALL_BOAST_HIDE_AS_TROPHY = "HIDE_AS_TROPHY"
+    _HEROES_ALL_BOAST_SLAY_THEM_ALL = "SLAY_THEM_ALL"
+    _HEROES_ALL_BOAST_OVERRUN_THEIR_POSITION = "OVERRUN_THEIR_POSITION"
+    _HEROES_ALL_BOAST_HOLD_THE_LINE = "HOLD_THE_LINE"
+    _HEROES_ALL_BOAST_KEYS = (
+        _HEROES_ALL_BOAST_HIDE_AS_TROPHY,
+        _HEROES_ALL_BOAST_SLAY_THEM_ALL,
+        _HEROES_ALL_BOAST_OVERRUN_THEIR_POSITION,
+        _HEROES_ALL_BOAST_HOLD_THE_LINE,
+    )
     _LIBRARIUS_DISCIPLINE_BIOMANCY = "BIOMANCY"
     _LIBRARIUS_DISCIPLINE_DIVINATION = "DIVINATION"
     _LIBRARIUS_DISCIPLINE_PYROMANCY = "PYROMANCY"
@@ -216,6 +226,9 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         self.beastslayer_target: int = 0
         self.beastslayer_completed: bool = False
         self.beastslayer_initialized: bool = False
+        self.heroes_all_achieved_boast_keys: tuple[str, ...] = ()
+        self.heroes_all_oath_target_destroyed_count_by_unit_id: dict[str, int] = {}
+        self.heroes_all_selection_state_by_key: dict[str, dict[str, object]] = {}
 
     def _simple_norm(self, text: str) -> str:
         return _normalize_detachment_name(text)
@@ -278,6 +291,11 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Reclamation Force")
+
+    def is_saga_of_the_bold(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Saga of the Bold")
 
     def is_saga_of_the_beastslayer(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -1133,6 +1151,9 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         self._on_battle_round_start_legendary_slayers(battle_round, game=game)
         self._on_battle_round_start_librarius(battle_round, game=game)
 
+    def on_phase_end(self, phase, active_player=None, *, game=None) -> None:
+        self.heroes_all_handle_phase_end(phase=phase, active_player=active_player, game=game)
+
     def librarius_divination_reroll_hit_wound_ones(self, attacker_model, *, game=None) -> tuple[bool, bool, str]:
         if not self.librarius_psychic_discipline_is_active(self._LIBRARIUS_DISCIPLINE_DIVINATION, game=game):
             return False, False, ""
@@ -1876,6 +1897,296 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         except Exception:
             return False
         return started_turn > 0 and started_turn == battle_round
+
+    def heroes_all_achieved_boasts(self) -> tuple[str, ...]:
+        if not self.is_saga_of_the_bold():
+            return ()
+        return tuple(self.heroes_all_achieved_boast_keys or ())
+
+    def heroes_all_saga_completed(self) -> bool:
+        return len(self.heroes_all_achieved_boasts()) >= 3
+
+    def _heroes_all_mark_boast(self, key: str) -> bool:
+        if not self.is_saga_of_the_bold():
+            return False
+        boast_key = str(key or "").strip().upper()
+        if boast_key not in set(self._HEROES_ALL_BOAST_KEYS):
+            return False
+        existing = set(self.heroes_all_achieved_boast_keys or ())
+        if boast_key in existing:
+            return False
+        existing.add(boast_key)
+        self.heroes_all_achieved_boast_keys = tuple(
+            key_name for key_name in self._HEROES_ALL_BOAST_KEYS if key_name in existing
+        )
+        return True
+
+    def _heroes_all_unit_is_space_wolves_character(self, unit) -> bool:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        if not self._attached_unit_has_keyword(root, "CHARACTER"):
+            return False
+        if self._attached_unit_has_keyword(root, "SPACE WOLVES"):
+            return True
+        return str(self.get_committed_chapter_keyword() or "").strip().upper() == "SPACE WOLVES"
+
+    def _heroes_all_selection_key(self, unit, action: str) -> str:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return ""
+        unit_id = str(get_entity_id(root) or "")
+        action_key = str(action or "").strip().lower()
+        if not unit_id or action_key not in {"shoot", "fight"}:
+            return ""
+        return f"{unit_id}:{action_key}"
+
+    def heroes_all_start_selection(self, unit, *, action: str, game=None) -> bool:
+        if not self.is_saga_of_the_bold():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        try:
+            if root.get_parent_army() is not self.army:
+                return False
+        except Exception:
+            return False
+        if not self._unit_is_on_battlefield(root):
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        selection_key = self._heroes_all_selection_key(root, action)
+        if not selection_key:
+            return False
+
+        completed = self.heroes_all_saga_completed()
+        is_character = self._heroes_all_unit_is_space_wolves_character(root)
+        if not completed and not is_character:
+            self.heroes_all_selection_state_by_key.pop(selection_key, None)
+            return False
+
+        if completed:
+            state = {
+                "mode": "one_each",
+                "allow_hit": True,
+                "allow_wound": True,
+                "allow_damage": True,
+                "hit_remaining": 1,
+                "wound_remaining": 1,
+                "damage_remaining": 1,
+            }
+        else:
+            state = {
+                "mode": "choice",
+                "allow_hit": True,
+                "allow_wound": True,
+                "allow_damage": True,
+                "remaining": 1,
+            }
+        self.heroes_all_selection_state_by_key[selection_key] = state
+        return True
+
+    def heroes_all_end_selection(self, unit, *, action: str) -> None:
+        selection_key = self._heroes_all_selection_key(unit, action)
+        if not selection_key:
+            return
+        self.heroes_all_selection_state_by_key.pop(selection_key, None)
+
+    def heroes_all_reroll_is_available(self, unit, kind: str, *, action: str) -> bool:
+        if not self.is_saga_of_the_bold():
+            return False
+        kind_key = str(kind or "").strip().lower()
+        if kind_key not in {"hit", "wound", "damage"}:
+            return False
+        selection_key = self._heroes_all_selection_key(unit, action)
+        if not selection_key:
+            return False
+        state = self.heroes_all_selection_state_by_key.get(selection_key)
+        if not isinstance(state, dict):
+            return False
+        if not bool(state.get(f"allow_{kind_key}", False)):
+            return False
+        mode_key = str(state.get("mode", "choice") or "choice").strip().lower()
+        if mode_key == "one_each":
+            try:
+                return int(state.get(f"{kind_key}_remaining", 0) or 0) > 0
+            except (TypeError, ValueError):
+                return False
+        try:
+            return int(state.get("remaining", 0) or 0) > 0
+        except (TypeError, ValueError):
+            return False
+
+    def consume_heroes_all_reroll(self, unit, kind: str, *, action: str) -> bool:
+        if not self.heroes_all_reroll_is_available(unit, kind, action=action):
+            return False
+        kind_key = str(kind or "").strip().lower()
+        selection_key = self._heroes_all_selection_key(unit, action)
+        if not selection_key:
+            return False
+        state = self.heroes_all_selection_state_by_key.get(selection_key)
+        if not isinstance(state, dict):
+            return False
+        mode_key = str(state.get("mode", "choice") or "choice").strip().lower()
+        if mode_key == "one_each":
+            field = f"{kind_key}_remaining"
+            state[field] = int(state.get(field, 0) or 0) - 1
+        else:
+            state["remaining"] = int(state.get("remaining", 0) or 0) - 1
+        self.heroes_all_selection_state_by_key[selection_key] = state
+        return True
+
+    def heroes_all_on_unit_destroyed(self, destroyed_unit, *, destroyed_by_unit=None, game=None) -> bool:
+        if not self.is_saga_of_the_bold():
+            return False
+        if destroyed_unit is None or destroyed_by_unit is None:
+            return False
+        destroyed_root = self._attached_unit_root(destroyed_unit)
+        attacker_root = self._attached_unit_root(destroyed_by_unit)
+        if destroyed_root is None or attacker_root is None:
+            return False
+        try:
+            if attacker_root.get_parent_army() is not self.army:
+                return False
+        except Exception:
+            return False
+        try:
+            if destroyed_root.get_parent_army() is self.army:
+                return False
+        except Exception:
+            return False
+        if not self._heroes_all_unit_is_space_wolves_character(attacker_root):
+            return False
+        oath_mgr = getattr(self.army, "oath_of_moment", None)
+        is_oath_target = getattr(oath_mgr, "is_oath_target", None) if oath_mgr is not None else None
+        if not callable(is_oath_target) or not bool(is_oath_target(destroyed_root)):
+            return False
+        attacker_id = str(get_entity_id(attacker_root) or "")
+        if not attacker_id:
+            return False
+        current = int(self.heroes_all_oath_target_destroyed_count_by_unit_id.get(attacker_id, 0) or 0)
+        new_count = current + 1
+        self.heroes_all_oath_target_destroyed_count_by_unit_id[attacker_id] = new_count
+
+        changed = self._heroes_all_mark_boast(self._HEROES_ALL_BOAST_HIDE_AS_TROPHY)
+        if new_count >= 2:
+            changed = self._heroes_all_mark_boast(self._HEROES_ALL_BOAST_SLAY_THEM_ALL) or changed
+        return changed
+
+    def _heroes_all_unit_wholly_in_opponent_deployment_zone(self, unit, *, game=None) -> bool:
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is None:
+            return False
+        owner = getattr(self.army, "player", None)
+        if owner is None:
+            return False
+        opponent = None
+        for player in list(getattr(game_obj, "players", []) or []):
+            if player is None or player is owner:
+                continue
+            opponent = player
+            break
+        if opponent is None:
+            return False
+        opponent_id = str(getattr(opponent, "id", "") or "")
+        if not opponent_id:
+            return False
+        if opponent_id not in dict(getattr(game_obj, "deployment_zones", {}) or {}):
+            return False
+        is_wholly = getattr(game_obj, "is_model_wholly_in_deployment_zone", None)
+        if not callable(is_wholly):
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        get_models = getattr(root, "get_models_for_collision", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+        alive_models = [model for model in models if model is not None and bool(getattr(model, "is_alive", True))]
+        if not alive_models:
+            return False
+        for model in alive_models:
+            if not bool(is_wholly(model, opponent_id)):
+                return False
+        return True
+
+    def _heroes_all_unit_holds_non_home_objective(self, unit, *, game=None, owner_player=None) -> bool:
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is None:
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        is_within = getattr(root, "is_within_objective_range", None)
+        if not callable(is_within):
+            return False
+        game_map = getattr(game_obj, "map", None)
+        objectives = list(getattr(game_map, "objectives", []) or []) if game_map is not None else []
+        if not objectives:
+            return False
+        owner = owner_player if owner_player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return False
+        owner_id = str(getattr(owner, "id", "") or "")
+        if not owner_id:
+            return False
+        in_home_zone = getattr(game_obj, "is_position_in_deployment_zone", None)
+        for objective in objectives:
+            location = getattr(objective, "location", None)
+            if location is None or bool(getattr(location, "removed", False)):
+                continue
+            update_control = getattr(location, "update_control", None)
+            if callable(update_control):
+                update_control(game_obj)
+            if getattr(location, "controlling_player", None) is not owner:
+                continue
+            if callable(in_home_zone) and bool(in_home_zone(float(location.x), float(location.y), owner_id)):
+                continue
+            if bool(is_within(location)):
+                return True
+        return False
+
+    def heroes_all_handle_phase_end(self, phase, *, active_player=None, game=None) -> bool:
+        if not self.is_saga_of_the_bold():
+            return False
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is None:
+            return False
+        phase_name = str(getattr(phase, "name", "") or phase or "").strip().upper()
+        if not phase_name:
+            return False
+        changed = False
+        if phase_name == "FIGHT_PHASE":
+            for root in self._iter_unique_army_roots():
+                if not self._unit_is_on_battlefield(root):
+                    continue
+                if not self._heroes_all_unit_is_space_wolves_character(root):
+                    continue
+                if not self._heroes_all_unit_wholly_in_opponent_deployment_zone(root, game=game_obj):
+                    continue
+                changed = self._heroes_all_mark_boast(self._HEROES_ALL_BOAST_OVERRUN_THEIR_POSITION) or changed
+                if changed:
+                    break
+        if phase_name == "COMMAND_PHASE":
+            owner = getattr(self.army, "player", None)
+            if owner is None or owner is not active_player:
+                return changed
+            battle_round = int(getattr(game_obj, "turn", 0) or 0)
+            if battle_round < 2:
+                return changed
+            for root in self._iter_unique_army_roots():
+                if not self._unit_is_on_battlefield(root):
+                    continue
+                if not self._heroes_all_unit_is_space_wolves_character(root):
+                    continue
+                if not self._heroes_all_unit_holds_non_home_objective(root, game=game_obj, owner_player=owner):
+                    continue
+                changed = self._heroes_all_mark_boast(self._HEROES_ALL_BOAST_HOLD_THE_LINE) or changed
+                if changed:
+                    break
+        return changed
 
     def _armoured_wrath_phase_key(self, *, game=None, unit=None) -> str:
         game_obj = self._resolve_game_context(game=game)

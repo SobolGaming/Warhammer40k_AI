@@ -8944,6 +8944,9 @@ class GamePhaseHandlersMixin:
             gsc_mgr = getattr(army, "genestealer_cults_detachments", None)
             if gsc_mgr is not None and hasattr(gsc_mgr, "cleanup_on_phase_end"):
                 gsc_mgr.cleanup_on_phase_end(phase, player)
+            sm_mgr = getattr(army, "space_marines_detachments", None)
+            if sm_mgr is not None and hasattr(sm_mgr, "on_phase_end"):
+                sm_mgr.on_phase_end(phase, player, game=self)
 
         # Templar Vows: Uphold the Honour of the Emperor sticky objectives at end of your Command phase.
         if pname == "COMMAND_PHASE":
