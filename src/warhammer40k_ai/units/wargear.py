@@ -2326,6 +2326,29 @@ class WargearProfile:
                             ap_val -= int(ff_bonus)
         except Exception:
             pass
+        tau_integrated_is_ranged = bool(
+            self.parent_wargear is not None
+            and callable(getattr(self.parent_wargear, "is_ranged", None))
+            and self.parent_wargear.is_ranged()
+        )
+        if tau_integrated_is_ranged:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            get_parent_army = getattr(attacker_unit, "get_parent_army", None) if attacker_unit is not None else None
+            army = get_parent_army() if callable(get_parent_army) else None
+            mgr = getattr(army, "tau_empire_detachments", None) if army is not None else None
+            if mgr is not None and callable(getattr(mgr, "integrated_command_structure_ap_bonus", None)):
+                game_map = self._get_game_map_from_model(attacker)
+                ap_bonus = int(
+                    mgr.integrated_command_structure_ap_bonus(
+                        attacker,
+                        target_unit=target,
+                        weapon_profile=self,
+                        game_map=game_map,
+                    )
+                    or 0
+                )
+                if ap_bonus:
+                    ap_val -= int(ap_bonus)
         try:
             if self.parent_wargear and self.parent_wargear.is_ranged():
                 outcast_source = self._aeldari_outcast_ambush_source(attacker)

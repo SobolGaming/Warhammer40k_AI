@@ -313,6 +313,12 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"during the first second and third battle rounds ranged weapons equipped by t au empire models from your army have the assault ability",
             r"during the first second and third battle rounds while a unit is a guided unit its ranged weapons have the lethal hits ability",
         ),
+        "Integrated Command Structure": (
+            r"kroot and vespid stingwings units from your army have the following ability",
+            r"while an enemy unit is within 9 of and visible to this unit each time a ranged attack made by a friendly t au empire model excluding kroot vespid stingwings and titanic models targets that enemy unit improve the armour penetration characteristic of that attack by 1",
+            r"t au empire units excluding kroot and vespid stingwings units from your army have the following ability",
+            r"while a friendly kroot or vespid stingwings unit is wholly within 6 of and visible to this unit that kroot or vespid stingwings unit can only be selected as the target of a ranged attack if the attacking model is within 18",
+        ),
         "Ruthless Discipline": (
             r"add \d+ to the number of orders each astra militarum officer model from your army can issue as stated on their datasheet",
             r"while an astra militarum unit from your army is affected by an order each time a model in that unit makes an attack reroll a hit roll of \d+",
@@ -1904,6 +1910,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Killing Blow": (
             "Supported",
             "Mont'ka: during battle rounds 1-3, ranged weapons of T'AU EMPIRE models count as [ASSAULT], and while a unit is Guided its ranged weapons gain [LETHAL HITS].",
+        ),
+        "Integrated Command Structure": (
+            "Supported",
+            "Auxiliary Cadre: KROOT/VESPID spotters grant +1 AP to eligible friendly T'AU EMPIRE ranged attacks against visible enemies within 9\", and KROOT/VESPID units wholly within 6\" and visible to eligible friendly T'AU EMPIRE sources can only be targeted by ranged attacks from within 18\".",
         ),
         "Path of the Warrior": (
             "Supported",

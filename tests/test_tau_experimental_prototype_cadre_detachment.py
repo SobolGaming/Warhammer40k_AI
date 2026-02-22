@@ -319,6 +319,153 @@ def test_superior_craftsmanship_requires_tau_empire_model_keyword():
     assert profile._effective_range_max(attacker) == 24
 
 
+def test_integrated_command_structure_targeting_triangulation_improves_ap(monkeypatch):
+    army = _build_tau_army("Auxiliary Cadre")
+    shooter = create_unit(
+        "Strike Team",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    spotter = create_unit(
+        "Kroot Carnivores",
+        keywords=["INFANTRY", "KROOT"],
+        faction_keywords=["T'AU EMPIRE", "KROOT"],
+    )
+    target = create_unit(
+        "Enemy Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    army.add_unit(shooter)
+    army.add_unit(spotter)
+
+    monkeypatch.setattr(
+        "warhammer40k_ai.utility.aura_utils.unit_within_range_of_unit",
+        lambda *_args, **_kwargs: True,
+    )
+
+    profile = make_profile(range_val="24", is_ranged=True)
+    attacker = shooter.models[0]
+
+    assert profile.get_effective_ap(attacker, target) == -1
+
+
+def test_integrated_command_structure_targeting_triangulation_excludes_kroot_models(monkeypatch):
+    army = _build_tau_army("Auxiliary Cadre")
+    kroot_attacker = create_unit(
+        "Kroot Carnivores",
+        keywords=["INFANTRY", "KROOT"],
+        faction_keywords=["T'AU EMPIRE", "KROOT"],
+    )
+    spotter = create_unit(
+        "Vespid Stingwings",
+        keywords=["INFANTRY", "FLY", "VESPID STINGWINGS"],
+        faction_keywords=["T'AU EMPIRE", "VESPID STINGWINGS"],
+    )
+    target = create_unit(
+        "Enemy Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    army.add_unit(kroot_attacker)
+    army.add_unit(spotter)
+
+    monkeypatch.setattr(
+        "warhammer40k_ai.utility.aura_utils.unit_within_range_of_unit",
+        lambda *_args, **_kwargs: True,
+    )
+
+    profile = make_profile(range_val="24", is_ranged=True)
+    attacker = kroot_attacker.models[0]
+
+    assert profile.get_effective_ap(attacker, target) == 0
+
+
+def test_integrated_command_structure_targeting_triangulation_requires_visibility(monkeypatch):
+    army = _build_tau_army("Auxiliary Cadre")
+    army.player.game.map = SimpleNamespace(can_model_see_model=lambda *_args, **_kwargs: False)
+    shooter = create_unit(
+        "Strike Team",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    spotter = create_unit(
+        "Kroot Carnivores",
+        keywords=["INFANTRY", "KROOT"],
+        faction_keywords=["T'AU EMPIRE", "KROOT"],
+    )
+    target = create_unit(
+        "Enemy Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    army.add_unit(shooter)
+    army.add_unit(spotter)
+
+    monkeypatch.setattr(
+        "warhammer40k_ai.utility.aura_utils.unit_within_range_of_unit",
+        lambda *_args, **_kwargs: True,
+    )
+
+    profile = make_profile(range_val="24", is_ranged=True)
+    attacker = shooter.models[0]
+
+    assert profile.get_effective_ap(attacker, target) == 0
+
+
+def test_integrated_command_structure_localised_stealth_projectors_limit_ranged_targeting(monkeypatch):
+    army = _build_tau_army("Auxiliary Cadre")
+    projector = create_unit(
+        "Strike Team",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    protected = create_unit(
+        "Kroot Carnivores",
+        keywords=["INFANTRY", "KROOT"],
+        faction_keywords=["T'AU EMPIRE", "KROOT"],
+    )
+    army.add_unit(projector)
+    army.add_unit(protected)
+
+    monkeypatch.setattr(
+        "warhammer40k_ai.utility.aura_utils.unit_wholly_within_range_of_unit",
+        lambda *_args, **_kwargs: True,
+    )
+
+    distance, sources = protected.get_ranged_targeting_restriction()
+
+    assert distance == 18.0
+    assert any("Integrated Command Structure" in str(src) for src in sources)
+
+
+def test_integrated_command_structure_localised_stealth_projectors_require_visibility(monkeypatch):
+    army = _build_tau_army("Auxiliary Cadre")
+    army.player.game.map = SimpleNamespace(can_model_see_model=lambda *_args, **_kwargs: False)
+    projector = create_unit(
+        "Strike Team",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    protected = create_unit(
+        "Kroot Carnivores",
+        keywords=["INFANTRY", "KROOT"],
+        faction_keywords=["T'AU EMPIRE", "KROOT"],
+    )
+    army.add_unit(projector)
+    army.add_unit(protected)
+
+    monkeypatch.setattr(
+        "warhammer40k_ai.utility.aura_utils.unit_wholly_within_range_of_unit",
+        lambda *_args, **_kwargs: True,
+    )
+
+    distance, sources = protected.get_ranged_targeting_restriction()
+
+    assert distance is None
+    assert sources == []
+
+
 def test_killing_blow_grants_assault_for_first_three_rounds():
     army = _build_tau_army("Mont'ka")
     army.player.game.turn = 2

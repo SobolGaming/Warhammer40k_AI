@@ -2693,6 +2693,19 @@ class LateGameplayMixin:
                 dist = 0.0
             _consider(dist, spec.get("source", "Ranged targeting restriction"))
 
+        get_parent_army = getattr(root, "get_parent_army", None)
+        army = get_parent_army() if callable(get_parent_army) else None
+        tau_mgr = getattr(army, "tau_empire_detachments", None) if army is not None else None
+        localised_limit_fn = (
+            getattr(tau_mgr, "auxiliary_cadre_localised_stealth_projectors_range_limit", None)
+            if tau_mgr is not None
+            else None
+        )
+        if callable(localised_limit_fn):
+            dist, source = localised_limit_fn(root, game_map=game_map)
+            if float(dist or 0.0) > 0.0:
+                _consider(float(dist), source or "Integrated Command Structure")
+
         try:
             sr = getattr(root, "special_rules", None)
             if isinstance(sr, dict) and sr.get("tau_neuroweb_system_jammer_active"):

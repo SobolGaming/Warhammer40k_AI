@@ -27,6 +27,11 @@ class TauEmpireDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Experimental Prototype Cadre")
 
+    def is_auxiliary_cadre(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Auxiliary Cadre")
+
     def _model_in_army(self, model) -> bool:
         if model is None or self.army is None:
             return False
@@ -51,6 +56,17 @@ class TauEmpireDetachmentManager(DetachmentManagerBase):
             or self._unit_has_keyword_or_faction(unit, "TAU EMPIRE", faction_id=self.faction_id)
         )
 
+    def _unit_is_kroot(self, unit) -> bool:
+        return bool(unit is not None and self._unit_has_keyword_or_faction(unit, "KROOT", faction_id=self.faction_id))
+
+    def _unit_is_vespid_stingwings(self, unit) -> bool:
+        if unit is None:
+            return False
+        return self._unit_has_keyword_or_faction(unit, "VESPID STINGWINGS", faction_id=self.faction_id)
+
+    def _unit_is_kroot_or_vespid(self, unit) -> bool:
+        return bool(self._unit_is_kroot(unit) or self._unit_is_vespid_stingwings(unit))
+
     def _model_is_tau_empire(self, model) -> bool:
         if model is None:
             return False
@@ -65,11 +81,179 @@ class TauEmpireDetachmentManager(DetachmentManagerBase):
             return False
         return self._unit_is_tau_empire(unit)
 
+    def _model_has_keyword(self, model, keyword: str) -> bool:
+        if model is None:
+            return False
+        kw = str(keyword or "").strip()
+        if not kw:
+            return False
+        has_any = getattr(model, "has_any_keyword", None)
+        if callable(has_any):
+            if has_any(kw):
+                return True
+        unit = getattr(model, "parent_unit", None)
+        if unit is None:
+            return False
+        return self._unit_has_keyword_or_faction(unit, kw, faction_id=self.faction_id)
+
+    def _model_is_kroot_or_vespid(self, model) -> bool:
+        if model is None:
+            return False
+        if self._model_has_keyword(model, "KROOT"):
+            return True
+        return self._model_has_keyword(model, "VESPID STINGWINGS")
+
+    def _model_is_titanic(self, model) -> bool:
+        return bool(self._model_has_keyword(model, "TITANIC"))
+
     def _weapon_is_ranged(self, weapon_profile) -> bool:
         if weapon_profile is None:
             return False
         parent = getattr(weapon_profile, "parent_wargear", None)
         return bool(parent is not None and callable(getattr(parent, "is_ranged", None)) and parent.is_ranged())
+
+    def _resolve_game_map_for_unit(self, unit, *, game_map=None):
+        if game_map is not None:
+            return game_map
+        if unit is None:
+            return None
+        get_parent_army = getattr(unit, "get_parent_army", None)
+        if not callable(get_parent_army):
+            return None
+        army = get_parent_army()
+        player = getattr(army, "player", None) if army is not None else None
+        game = getattr(player, "game", None) if player is not None else None
+        return getattr(game, "map", None) if game is not None else None
+
+    @staticmethod
+    def _alive_models_for_unit(unit) -> list:
+        if unit is None:
+            return []
+        get_models = getattr(unit, "get_attached_unit_models", None)
+        if callable(get_models):
+            models = list(get_models() or [])
+        else:
+            models = list(getattr(unit, "models", []) or [])
+        out = []
+        for model in models:
+            alive_attr = getattr(model, "is_alive", True)
+            alive = alive_attr() if callable(alive_attr) else bool(alive_attr)
+            if alive:
+                out.append(model)
+        return out
+
+    def _unit_visible_to_unit(self, source_unit, target_unit, *, game_map=None) -> bool:
+        if source_unit is None or target_unit is None:
+            return False
+        game_map = self._resolve_game_map_for_unit(source_unit, game_map=game_map)
+        if game_map is None:
+            return True
+        can_see = getattr(game_map, "can_model_see_model", None)
+        if not callable(can_see):
+            return True
+
+        source_models = self._alive_models_for_unit(source_unit)
+        target_models = self._alive_models_for_unit(target_unit)
+        if not source_models or not target_models:
+            return False
+
+        for source_model in source_models:
+            for target_model in target_models:
+                if can_see(source_model, target_model):
+                    return True
+        return False
+
+    def _iter_unique_army_roots(self) -> list:
+        army = self.army
+        if army is None:
+            return []
+        unique_by_id = {}
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._attached_root(unit)
+            if root is None:
+                continue
+            root_id = self._entity_id(root)
+            if not root_id or root_id in unique_by_id:
+                continue
+            unique_by_id[root_id] = root
+        return [unique_by_id[k] for k in sorted(unique_by_id.keys())]
+
+    def integrated_command_structure_ap_bonus(
+        self,
+        attacker_model,
+        *,
+        target_unit=None,
+        weapon_profile=None,
+        game_map=None,
+    ) -> int:
+        if not self.is_auxiliary_cadre():
+            return 0
+        if attacker_model is None or target_unit is None:
+            return 0
+        if not self._weapon_is_ranged(weapon_profile):
+            return 0
+        if not self._model_in_army(attacker_model):
+            return 0
+        if not self._model_is_tau_empire(attacker_model):
+            return 0
+        if self._model_is_kroot_or_vespid(attacker_model):
+            return 0
+        if self._model_is_titanic(attacker_model):
+            return 0
+
+        from ..utility.aura_utils import unit_within_range_of_unit
+
+        target_root = self._attached_root(target_unit)
+        if target_root is None:
+            return 0
+
+        for source in self._iter_unique_army_roots():
+            if not self._unit_is_on_battlefield(source):
+                continue
+            if not self._unit_is_kroot_or_vespid(source):
+                continue
+            if not unit_within_range_of_unit(source, target_root, 9.0, use_attached_aggregate=True):
+                continue
+            if not self._unit_visible_to_unit(source, target_root, game_map=game_map):
+                continue
+            return 1
+        return 0
+
+    def auxiliary_cadre_localised_stealth_projectors_range_limit(
+        self,
+        target_unit,
+        *,
+        game_map=None,
+    ) -> tuple[float, str]:
+        if not self.is_auxiliary_cadre():
+            return 0.0, ""
+        if target_unit is None:
+            return 0.0, ""
+        target_root = self._attached_root(target_unit)
+        if target_root is None:
+            return 0.0, ""
+        if not self._unit_in_army(target_root):
+            return 0.0, ""
+        if not self._unit_is_on_battlefield(target_root):
+            return 0.0, ""
+        if not self._unit_is_kroot_or_vespid(target_root):
+            return 0.0, ""
+
+        from ..utility.aura_utils import unit_wholly_within_range_of_unit
+
+        for source in self._iter_unique_army_roots():
+            if not self._unit_is_on_battlefield(source):
+                continue
+            if not self._unit_is_tau_empire(source):
+                continue
+            if self._unit_is_kroot_or_vespid(source):
+                continue
+            if not unit_wholly_within_range_of_unit(source, target_root, 6.0, use_attached_aggregate=True):
+                continue
+            if not self._unit_visible_to_unit(source, target_root, game_map=game_map):
+                continue
+            return 18.0, "Integrated Command Structure: Localised Stealth Projectors"
+        return 0.0, ""
 
     @staticmethod
     def _battle_round_from_game(game) -> int:
