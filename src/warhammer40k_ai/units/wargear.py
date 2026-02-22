@@ -7096,6 +7096,11 @@ class WargearProfile:
                 mission_precision_on_crit, _source = sm_mgr.mission_tactics_precision_on_crit(attacker)
                 if mission_precision_on_crit:
                     bonus_precision_on_crit = True
+                legendary_fn = getattr(sm_mgr, "legendary_slayers_lethal_hits", None)
+                if callable(legendary_fn):
+                    legendary_lethal, _source = legendary_fn(attacker, target_unit=target)
+                    if legendary_lethal:
+                        bonus_lethal = True
         except Exception:
             pass
 

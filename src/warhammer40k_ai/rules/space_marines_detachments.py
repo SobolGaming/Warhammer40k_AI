@@ -212,6 +212,10 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         self.rapid_drop_selected_player_id: str = ""
         self.reclamation_phase_key: str = ""
         self.reclamation_controlled_objective_ids: tuple[str, ...] = ()
+        self.beastslayer_tally: int = 0
+        self.beastslayer_target: int = 0
+        self.beastslayer_completed: bool = False
+        self.beastslayer_initialized: bool = False
 
     def _simple_norm(self, text: str) -> str:
         return _normalize_detachment_name(text)
@@ -274,6 +278,11 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Reclamation Force")
+
+    def is_saga_of_the_beastslayer(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Saga of the Beastslayer")
 
     def is_stormlance_task_force(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -726,7 +735,313 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             self._apply_librarius_biomancy_temporary_effects()
         return True
 
-    def on_battle_round_start(self, battle_round: int, *, game=None) -> None:
+    def clear_legendary_slayers_state(self) -> None:
+        self.beastslayer_tally = 0
+        self.beastslayer_target = 0
+        self.beastslayer_completed = False
+        self.beastslayer_initialized = False
+
+    def _legendary_slayers_target_has_required_keyword(self, unit) -> bool:
+        if unit is None:
+            return False
+        return any(
+            self._attached_unit_has_keyword(unit, keyword)
+            for keyword in ("CHARACTER", "MONSTER", "VEHICLE")
+        )
+
+    def _legendary_slayers_attacker_is_eligible(self, attacker_unit) -> bool:
+        attacker_root = self._attached_unit_root(attacker_unit)
+        if attacker_root is None:
+            return False
+        try:
+            if attacker_root.get_parent_army() is not self.army:
+                return False
+        except Exception:
+            return False
+        return self.attached_unit_is_adeptus_astartes(attacker_root)
+
+    def _legendary_slayers_enemy_keyword_units(self, *, game=None) -> list:
+        if self.army is None:
+            return []
+        game_obj = self._resolve_game_context(game=game)
+        owner_player = getattr(self.army, "player", None)
+        owners = []
+        if game_obj is not None:
+            owners = list(getattr(game_obj, "players", []) or [])
+        elif owner_player is not None:
+            owners = [owner_player]
+
+        out = []
+        seen_ids: set[str] = set()
+        for player in owners:
+            if player is owner_player:
+                continue
+            get_army = getattr(player, "get_army", None)
+            enemy_army = get_army() if callable(get_army) else getattr(player, "army", None)
+            if enemy_army is None:
+                continue
+            for unit in list(getattr(enemy_army, "units", []) or []):
+                root = self._attached_unit_root(unit)
+                if root is None:
+                    continue
+                unit_id = str(get_entity_id(root) or "")
+                if not unit_id or unit_id in seen_ids:
+                    continue
+                if not self._unit_has_models_or_is_alive(root):
+                    continue
+                if not self._legendary_slayers_target_has_required_keyword(root):
+                    continue
+                seen_ids.add(unit_id)
+                out.append(root)
+        out.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+        return out
+
+    def _legendary_slayers_update_completion(self) -> None:
+        if not self.is_saga_of_the_beastslayer():
+            self.beastslayer_completed = False
+            return
+        if not bool(self.beastslayer_initialized):
+            self.beastslayer_completed = False
+            return
+        target = max(0, int(self.beastslayer_target or 0))
+        tally = max(0, int(self.beastslayer_tally or 0))
+        self.beastslayer_completed = bool(tally >= target)
+
+    def _on_battle_round_start_legendary_slayers(self, battle_round: int, *, game=None) -> None:
+        if not self.is_saga_of_the_beastslayer():
+            self.clear_legendary_slayers_state()
+            return
+        try:
+            round_now = int(battle_round or 0)
+        except Exception:
+            round_now = 0
+        if round_now != 1:
+            return
+        self.beastslayer_tally = 0
+        self.beastslayer_initialized = True
+        enemy_units = self._legendary_slayers_enemy_keyword_units(game=game)
+        self.beastslayer_target = (len(enemy_units) + 1) // 2
+        self._legendary_slayers_update_completion()
+
+    def legendary_slayers_saga_completed(self) -> bool:
+        self._legendary_slayers_update_completion()
+        return bool(self.beastslayer_completed)
+
+    def _legendary_slayers_add_tally(self, value: int) -> int:
+        if not self.is_saga_of_the_beastslayer():
+            return 0
+        try:
+            amount = int(value or 0)
+        except Exception:
+            amount = 0
+        if amount <= 0:
+            return 0
+        self.beastslayer_tally = int(self.beastslayer_tally or 0) + amount
+        self._legendary_slayers_update_completion()
+        return amount
+
+    def _legendary_slayers_destroyed_keyword_targets_from_hits(self, attacker_unit, hits_by_target) -> list:
+        if not self.is_saga_of_the_beastslayer():
+            return []
+        if not self._legendary_slayers_attacker_is_eligible(attacker_unit):
+            return []
+        if not isinstance(hits_by_target, dict):
+            return []
+        out = []
+        seen_ids: set[str] = set()
+        for target_unit, hits in list((hits_by_target or {}).items()):
+            if target_unit is None:
+                continue
+            if int(hits or 0) <= 0:
+                continue
+            target_root = self._attached_unit_root(target_unit)
+            if target_root is None:
+                continue
+            try:
+                if target_root.get_parent_army() is self.army:
+                    continue
+            except Exception:
+                continue
+            if not self._legendary_slayers_target_has_required_keyword(target_root):
+                continue
+            if self._unit_has_models_or_is_alive(target_root):
+                continue
+            target_id = str(get_entity_id(target_root) or "")
+            if not target_id or target_id in seen_ids:
+                continue
+            seen_ids.add(target_id)
+            out.append(target_root)
+        out.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+        return out
+
+    def legendary_slayers_register_shooting_resolved(self, attacker_unit=None, hits_by_target=None, *, game=None) -> int:
+        _ = game
+        destroyed = self._legendary_slayers_destroyed_keyword_targets_from_hits(attacker_unit, hits_by_target)
+        if not destroyed:
+            return 0
+        return self._legendary_slayers_add_tally(len(destroyed))
+
+    def legendary_slayers_mark_fight_hit_targets(self, attacker_unit=None, hits_by_target=None, *, game=None) -> None:
+        if not self.is_saga_of_the_beastslayer():
+            return
+        if not self._legendary_slayers_attacker_is_eligible(attacker_unit):
+            return
+        if not isinstance(hits_by_target, dict):
+            return
+        attacker_root = self._attached_unit_root(attacker_unit)
+        if attacker_root is None:
+            return
+        pending_ids = []
+        for target_unit, hits in list((hits_by_target or {}).items()):
+            if target_unit is None:
+                continue
+            if int(hits or 0) <= 0:
+                continue
+            target_root = self._attached_unit_root(target_unit)
+            if target_root is None:
+                continue
+            try:
+                if target_root.get_parent_army() is self.army:
+                    continue
+            except Exception:
+                continue
+            if not self._legendary_slayers_target_has_required_keyword(target_root):
+                continue
+            target_id = str(get_entity_id(target_root) or "")
+            if target_id:
+                pending_ids.append(target_id)
+        pending_ids = sorted(set(pending_ids))
+        if not pending_ids:
+            return
+
+        game_obj = self._resolve_game_context(game=game)
+        current_player = getattr(game_obj, "get_current_player", lambda: None)() if game_obj is not None else None
+        owner_id = str(getattr(current_player, "id", "") or "")
+        if not owner_id:
+            owner_id = str(getattr(getattr(self.army, "player", None), "id", "") or "")
+        try:
+            turn_now = int(getattr(game_obj, "turn", 0) or 0) if game_obj is not None else 0
+        except Exception:
+            turn_now = 0
+
+        sr = getattr(attacker_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        try:
+            pending_turn = int(sr.get("legendary_slayers_pending_turn", 0) or 0)
+        except Exception:
+            pending_turn = 0
+        pending_owner = str(sr.get("legendary_slayers_pending_owner", "") or "")
+        if pending_turn != turn_now or pending_owner != owner_id:
+            merged = set(pending_ids)
+        else:
+            merged = {
+                str(value or "")
+                for value in list(sr.get("legendary_slayers_pending_target_ids", []) or [])
+                if str(value or "")
+            }
+            merged.update(pending_ids)
+        sr["legendary_slayers_pending_turn"] = int(turn_now or 0)
+        sr["legendary_slayers_pending_owner"] = owner_id
+        sr["legendary_slayers_pending_target_ids"] = sorted(merged)
+        attacker_root.special_rules = sr
+
+    def _legendary_slayers_resolve_unit_by_id(self, unit_id: str, *, game=None):
+        target = None
+        game_obj = self._resolve_game_context(game=game)
+        registry = getattr(game_obj, "entity_registry", None) if game_obj is not None else None
+        if registry is not None and callable(getattr(registry, "get", None)):
+            target = registry.get(unit_id, kind="unit")
+        if target is not None:
+            return target
+        owner_player = getattr(self.army, "player", None)
+        players = list(getattr(game_obj, "players", []) or []) if game_obj is not None else []
+        for player in players:
+            if player is owner_player:
+                continue
+            get_army = getattr(player, "get_army", None)
+            enemy_army = get_army() if callable(get_army) else getattr(player, "army", None)
+            if enemy_army is None:
+                continue
+            for unit in list(getattr(enemy_army, "units", []) or []):
+                root = self._attached_unit_root(unit)
+                if root is None:
+                    continue
+                if str(get_entity_id(root) or "") == str(unit_id or ""):
+                    return root
+        return None
+
+    def legendary_slayers_resolve_fight_sequence(self, attacker_unit=None, *, game=None) -> int:
+        if not self.is_saga_of_the_beastslayer():
+            return 0
+        if not self._legendary_slayers_attacker_is_eligible(attacker_unit):
+            return 0
+        attacker_root = self._attached_unit_root(attacker_unit)
+        if attacker_root is None:
+            return 0
+        sr = getattr(attacker_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return 0
+        pending_ids = [
+            str(value or "")
+            for value in list(sr.get("legendary_slayers_pending_target_ids", []) or [])
+            if str(value or "")
+        ]
+        for key in (
+            "legendary_slayers_pending_turn",
+            "legendary_slayers_pending_owner",
+            "legendary_slayers_pending_target_ids",
+        ):
+            sr.pop(key, None)
+        attacker_root.special_rules = sr
+        if not pending_ids:
+            return 0
+
+        destroyed_ids: set[str] = set()
+        for target_id in pending_ids:
+            target = self._legendary_slayers_resolve_unit_by_id(target_id, game=game)
+            target_root = self._attached_unit_root(target)
+            if target_root is None:
+                continue
+            try:
+                if target_root.get_parent_army() is self.army:
+                    continue
+            except Exception:
+                continue
+            if not self._legendary_slayers_target_has_required_keyword(target_root):
+                continue
+            if self._unit_has_models_or_is_alive(target_root):
+                continue
+            resolved_id = str(get_entity_id(target_root) or "")
+            if resolved_id:
+                destroyed_ids.add(resolved_id)
+        return self._legendary_slayers_add_tally(len(destroyed_ids))
+
+    def legendary_slayers_lethal_hits(self, attacker_model, *, target_unit=None) -> tuple[bool, str]:
+        if not self.is_saga_of_the_beastslayer():
+            return False, ""
+        if attacker_model is None:
+            return False, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        if not self._legendary_slayers_attacker_is_eligible(attacker_unit):
+            return False, ""
+        if self.legendary_slayers_saga_completed():
+            return True, "Legendary Slayers"
+        if target_unit is None:
+            return False, ""
+        target_root = self._attached_unit_root(target_unit)
+        if target_root is None:
+            return False, ""
+        try:
+            if target_root.get_parent_army() is self.army:
+                return False, ""
+        except Exception:
+            return False, ""
+        if not self._legendary_slayers_target_has_required_keyword(target_root):
+            return False, ""
+        return True, "Legendary Slayers"
+
+    def _on_battle_round_start_librarius(self, battle_round: int, *, game=None) -> None:
         if not self.is_librarius_conclave():
             self.clear_librarius_psychic_discipline()
             return
@@ -813,6 +1128,10 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         )
         if hasattr(game_obj, "request_decision"):
             game_obj.request_decision(request)
+
+    def on_battle_round_start(self, battle_round: int, *, game=None) -> None:
+        self._on_battle_round_start_legendary_slayers(battle_round, game=game)
+        self._on_battle_round_start_librarius(battle_round, game=game)
 
     def librarius_divination_reroll_hit_wound_ones(self, attacker_model, *, game=None) -> tuple[bool, bool, str]:
         if not self.librarius_psychic_discipline_is_active(self._LIBRARIUS_DISCIPLINE_DIVINATION, game=game):

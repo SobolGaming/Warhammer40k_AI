@@ -701,6 +701,11 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"while this mission tactic is active weapons equipped by adeptus astartes units from your army have the lethal hits ability",
             r"while this mission tactic is active each time an adeptus astartes unit from your army makes an attack if a critical hit is scored that attack has the precision ability",
         ),
+        "Legendary Slayers": (
+            r"each time an adeptus astartes model from your army makes an attack if that attack targets a character monster or vehicle unit or if your saga is completed see below that attack has the lethal hits ability",
+            r"at the start of the first battle round your beastslayer tally is 0 and you determine your beastslayer target by halving the number of units from your opponents army including those embarked within transports that have one or more of the following keywords rounding up",
+            r"each time an adeptus astartes unit from your army shoots or fights after all of those attacks have been resolved add 1 to your beastslayer tally for each enemy unit with one or more of the following keywords destroyed by those attacks",
+        ),
         "Psychic Disciplines": (
             r"at the start of the battle round select one of the following psychic disciplines",
             r"until the end of the battle round that psychic discipline is active and its effects apply to all adeptus astartes psyker units from your army",
@@ -2025,6 +2030,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Mission Tactics": (
             "Supported",
             "Black Spear Task Force: in each Command phase you can select one unchosen Mission Tactic for the battle round; Furor grants Sustained Hits 1, Malleus grants Lethal Hits, and Purgatus grants Precision on critical hits for ADEPTUS ASTARTES units until your next Command phase.",
+        ),
+        "Legendary Slayers": (
+            "Supported",
+            "Saga of the Beastslayer: BR1 Beastslayer target tally setup (including embarked CHARACTER/MONSTER/VEHICLE enemy units), post-shoot/fight kill tally tracking, Saga completion state, and conditional Lethal Hits are implemented.",
         ),
         "Psychic Disciplines": (
             "Supported",

@@ -542,6 +542,18 @@ class TestDetachmentSupportClassification(unittest.TestCase):
         self.assertEqual(status, "Supported")
         self.assertIn("black spear task force", notes.lower())
 
+    def test_legendary_slayers_is_supported(self):
+        gsm, detachment_abilities = self._seed_support_maps()
+        row = next(r for r in detachment_abilities if str(r.get("name", "") or "") == "Legendary Slayers")
+        status, notes = gsm._classify_ability(
+            row.get("name", ""),
+            row.get("description", ""),
+            ability_id=row.get("id", ""),
+            faction_id=row.get("faction_id", ""),
+        )
+        self.assertEqual(status, "Supported")
+        self.assertIn("beastslayer", notes.lower())
+
     def test_psychic_disciplines_is_supported(self):
         gsm, detachment_abilities = self._seed_support_maps()
         row = next(r for r in detachment_abilities if str(r.get("name", "") or "") == "Psychic Disciplines")

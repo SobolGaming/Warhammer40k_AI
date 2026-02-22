@@ -319,14 +319,18 @@ def build_default_rule_providers() -> List[RuleProvider]:
                     "is_bastion_task_force",
                     "is_liberator_assault_group",
                     "is_hammer_of_avernii",
+                    "is_saga_of_the_beastslayer",
                 ),
             ),
             subscriptions=[
                 ("fight_unit_selected", "_on_fight_unit_selected_maddened_ferocity"),
                 ("fight_unit_selected", "_on_fight_unit_selected_red_thirst"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_interlocking_tactics"),
+                ("unit_shooting_resolved", "_on_unit_shooting_resolved_legendary_slayers"),
                 ("fight_attacks_resolved", "_on_fight_attacks_resolved_interlocking_tactics"),
+                ("fight_attacks_resolved", "_on_fight_attacks_resolved_legendary_slayers"),
                 ("fight_sequence_complete", "_on_fight_sequence_complete_interlocking_tactics"),
+                ("fight_sequence_complete", "_on_fight_sequence_complete_legendary_slayers"),
                 ("unit_destroyed", "_on_unit_destroyed_recalculating"),
             ],
         )
