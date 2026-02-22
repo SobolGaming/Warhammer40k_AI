@@ -181,6 +181,10 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         self.grim_resolve_selected_unit_id: str = ""
         self.grim_resolve_selected_round: int = 0
         self.grim_resolve_selected_player_id: str = ""
+        self.vowed_target_mode: str = ""
+        self.vowed_objective_ids: tuple[str, ...] = ()
+        self.vowed_target_selected_round: int = 0
+        self.vowed_target_selected_player_id: str = ""
 
     def _simple_norm(self, text: str) -> str:
         return _normalize_detachment_name(text)
@@ -323,6 +327,11 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Godhammer Assault Force")
+
+    def is_inner_circle_task_force(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Inner Circle Task Force")
 
     def _attached_unit_root(self, unit):
         if unit is None:
@@ -805,6 +814,224 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         except Exception:
             return False
         return started_turn > 0 and started_turn == battle_round
+
+    def clear_vowed_target_selection(self) -> None:
+        self.vowed_target_mode = ""
+        self.vowed_objective_ids = ()
+        self.vowed_target_selected_round = 0
+        self.vowed_target_selected_player_id = ""
+
+    def _vowed_target_objective_records(self, *, game=None) -> list[tuple[str, str, object, bool]]:
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is None:
+            return []
+        game_map = getattr(game_obj, "map", None)
+        if game_map is None:
+            return []
+        owner = getattr(self.army, "player", None) if self.army is not None else None
+        records = []
+        seen_ids: set[str] = set()
+        for objective in list(getattr(game_map, "objectives", []) or []):
+            location = getattr(objective, "location", None) or objective
+            if location is None or bool(getattr(location, "removed", False)):
+                continue
+            objective_id = str(get_entity_id(objective) or get_entity_id(location) or "").strip()
+            if not objective_id or objective_id in seen_ids:
+                continue
+            seen_ids.add(objective_id)
+            update_control = getattr(location, "update_control", None)
+            if callable(update_control):
+                update_control(game_obj)
+            controlled = bool(owner is not None and getattr(location, "controlling_player", None) is owner)
+            name = str(getattr(objective, "name", "") or getattr(location, "name", "")).strip()
+            if not name:
+                name = f"Objective {len(records) + 1}"
+            records.append((objective_id, name, location, controlled))
+        records.sort(key=lambda row: (str(row[1] or ""), str(row[0] or "")))
+        return records
+
+    def can_select_vowed_target(self, *, game=None) -> bool:
+        if not self.is_inner_circle_task_force():
+            return False
+        if game is None:
+            return True
+        if not self._is_army_turn(game=game):
+            return False
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_name and phase_name != "MOVEMENT_PHASE":
+            return False
+        try:
+            battle_round = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            battle_round = 0
+        if battle_round <= 0:
+            return False
+        player_id = str(getattr(getattr(self.army, "player", None), "id", "") or "")
+        if (
+            int(self.vowed_target_selected_round or 0) == int(battle_round)
+            and str(self.vowed_target_selected_player_id or "") == player_id
+            and bool(self.vowed_objective_ids)
+        ):
+            return False
+        return bool(self._vowed_target_objective_records(game=game))
+
+    def get_vowed_target_options(self, *, game=None) -> list[dict[str, object]]:
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is None:
+            return []
+        records = list(self._vowed_target_objective_records(game=game_obj) or [])
+        if not records:
+            return []
+        controlled = [(oid, name) for oid, name, _loc, is_controlled in records if is_controlled]
+        not_controlled = [(oid, name) for oid, name, _loc, is_controlled in records if not is_controlled]
+        options: list[dict[str, object]] = []
+        for objective_id, name in controlled:
+            payload = {
+                "mode": "defensive_footing",
+                "objective_ids": [str(objective_id)],
+            }
+            payload["signature"] = f"{payload['mode']}:{objective_id}"
+            options.append(
+                {
+                    "label": f"Defensive Footing: {name}",
+                    "summary": f"Select {name} as your Vowed objective marker.",
+                    "payload": payload,
+                    "mode_sort": 0,
+                    "count_sort": 1,
+                }
+            )
+        sorted_uncontrolled = list(not_controlled)
+        sorted_uncontrolled.sort(key=lambda row: (str(row[1] or ""), str(row[0] or "")))
+        for count in range(1, len(sorted_uncontrolled) + 1):
+            for combo in combinations(sorted_uncontrolled, count):
+                objective_ids = [str(entry[0]) for entry in combo]
+                names = [str(entry[1]) for entry in combo]
+                joined_names = ", ".join(names)
+                payload = {
+                    "mode": "aggressive_push",
+                    "objective_ids": list(objective_ids),
+                }
+                payload["signature"] = f"{payload['mode']}:{'|'.join(objective_ids)}"
+                options.append(
+                    {
+                        "label": f"Aggressive Push: {joined_names}",
+                        "summary": f"Select {joined_names} as your Vowed objective markers.",
+                        "payload": payload,
+                        "mode_sort": 1,
+                        "count_sort": int(len(objective_ids)),
+                    }
+                )
+        options.sort(
+            key=lambda entry: (
+                int(entry.get("mode_sort", 99) or 99),
+                int(entry.get("count_sort", 99) or 99),
+                str(entry.get("label", "") or ""),
+                str((entry.get("payload", {}) or {}).get("signature", "") or ""),
+            )
+        )
+        for entry in options:
+            entry.pop("mode_sort", None)
+            entry.pop("count_sort", None)
+        return options
+
+    def vowed_target_option_is_valid(self, mode: str, objective_ids, *, game=None) -> bool:
+        normalized_mode = str(mode or "").strip().lower()
+        if normalized_mode not in {"defensive_footing", "aggressive_push"}:
+            return False
+        objective_id_list = [str(v or "").strip() for v in list(objective_ids or []) if str(v or "").strip()]
+        objective_id_list = list(dict.fromkeys(objective_id_list))
+        if normalized_mode == "defensive_footing":
+            if len(objective_id_list) != 1:
+                return False
+        else:
+            if len(objective_id_list) <= 0:
+                return False
+        records = {str(oid): bool(controlled) for oid, _name, _loc, controlled in self._vowed_target_objective_records(game=game)}
+        if not records:
+            return False
+        for objective_id in objective_id_list:
+            if objective_id not in records:
+                return False
+            controlled = bool(records.get(objective_id))
+            if normalized_mode == "defensive_footing" and not controlled:
+                return False
+            if normalized_mode == "aggressive_push" and controlled:
+                return False
+        return True
+
+    def select_vowed_target(self, mode: str, objective_ids, *, game=None) -> bool:
+        if not self.is_inner_circle_task_force():
+            return False
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is not None and not self.can_select_vowed_target(game=game_obj):
+            return False
+        if not self.vowed_target_option_is_valid(mode, objective_ids, game=game_obj):
+            return False
+        normalized_mode = str(mode or "").strip().lower()
+        objective_id_list = [str(v or "").strip() for v in list(objective_ids or []) if str(v or "").strip()]
+        objective_id_list = list(dict.fromkeys(objective_id_list))
+        objective_id_list.sort()
+        self.vowed_target_mode = normalized_mode
+        self.vowed_objective_ids = tuple(objective_id_list)
+        if game_obj is not None:
+            try:
+                self.vowed_target_selected_round = int(getattr(game_obj, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                self.vowed_target_selected_round = 0
+        self.vowed_target_selected_player_id = str(getattr(getattr(self.army, "player", None), "id", "") or "")
+        return True
+
+    def vowed_target_objective_locations(self, *, game=None) -> list:
+        selected_ids = {str(v or "").strip() for v in list(self.vowed_objective_ids or ()) if str(v or "").strip()}
+        if not selected_ids:
+            return []
+        records = self._vowed_target_objective_records(game=game)
+        out = []
+        for objective_id, _name, location, _controlled in records:
+            if str(objective_id or "").strip() not in selected_ids:
+                continue
+            out.append(location)
+        return out
+
+    def vowed_target_wound_bonus(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        weapon_profile=None,
+        attack_instance=None,
+    ) -> tuple[int, str]:
+        if not self.is_inner_circle_task_force():
+            return 0, ""
+        if attacker_model is None or target_unit is None:
+            return 0, ""
+        if not self.vowed_objective_ids:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        if attacker_unit is None:
+            return 0, ""
+        if not self.attached_unit_is_adeptus_astartes(attacker_unit):
+            return 0, ""
+        if not self._attached_unit_has_keyword(attacker_unit, "DEATHWING"):
+            return 0, ""
+        if not self._attached_unit_has_keyword(attacker_unit, "INFANTRY"):
+            return 0, ""
+        target_root = self._attached_unit_root(target_unit)
+        if target_root is None:
+            return 0, ""
+        within_objective = getattr(target_root, "is_within_objective_range", None)
+        if not callable(within_objective):
+            return 0, ""
+        objective_locations = self.vowed_target_objective_locations()
+        for location in list(objective_locations or []):
+            if location is None:
+                continue
+            try:
+                if bool(within_objective(location)):
+                    return 1, "Vowed Target"
+            except (AttributeError, TypeError, ValueError):
+                continue
+        return 0, ""
 
     def shock_and_awe_reacting_unit_is_eligible(self, unit, *, game=None) -> bool:
         if not self.is_godhammer_assault_force():

@@ -645,6 +645,16 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"until the start of your next command phase add \d+ to the objective control characteristic of models in that unit",
             r"your army can include dark angels units but it cannot include any adeptus astartes units drawn from any other chapter",
         ),
+        "Vowed Target": (
+            r"at the start of your movement phase select one of the following",
+            r"select one objective marker you control",
+            r"until the start of your next movement phase that objective marker is your vowed objective marker",
+            r"select one or more objective markers you do not control",
+            r"until the start of your next movement phase each of those objective markers is one of your vowed objective markers",
+            r"if a rule refers to a unit or model being within range of your vowed objective marker that rule takes effect if that unit or model is within range of one or more of your vowed objective markers",
+            r"each time a deathwing infantry unit from your army makes an attack that targets a unit within range of one or more of your vowed objective markers add 1 to the wound roll",
+            r"your army can include dark angels units but it cannot include any adeptus astartes units drawn from any other chapter",
+        ),
         "The Great Wolf Watches": (
             r"at the end of your opponents charge phase each adeptus astartes infantry and adeptus astartes walker unit from your army that is within 3 of one or more enemy units and would be eligible to declare a charge against one or more of those units can declare a charge against one or more of those units and you resolve that charge as if it were your charge phase",
             r"if that charge is successful your unit does not receive any charge bonus this turn",
@@ -1951,6 +1961,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Grim Resolve": (
             "Supported",
             "Unforgiven Task Force: while Battle-shocked, ADEPTUS ASTARTES units have Objective Control 1 instead of 0, and in each Command phase you select one ADEPTUS ASTARTES unit to gain +1 Objective Control until your next Command phase.",
+        ),
+        "Vowed Target": (
+            "Supported",
+            "Inner Circle Task Force: at the start of your Movement phase, select Defensive Footing (one controlled objective marker) or Aggressive Push (one or more uncontrolled objective markers), track selected Vowed objective marker(s) until your next Movement phase, and grant +1 to wound for DEATHWING INFANTRY attacks that target units within range of one or more Vowed objective markers; Dark Angels-only chapter restriction enforced.",
         ),
         "The Great Wolf Watches": (
             "Supported",

@@ -11958,6 +11958,28 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Space Marines: Inner Circle Task Force (Vowed Target) +1 to wound
+        # for DEATHWING INFANTRY attacks against units within your Vowed objective marker(s).
+        try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            attacker_army = attacker_unit.get_parent_army() if attacker_unit is not None else None
+            sm_mgr = getattr(attacker_army, "space_marines_detachments", None) if attacker_army is not None else None
+            if sm_mgr is not None and callable(getattr(sm_mgr, "vowed_target_wound_bonus", None)):
+                wound_bonus, source = sm_mgr.vowed_target_wound_bonus(
+                    attacker,
+                    target,
+                    weapon_profile=self,
+                    attack_instance=attack_instance,
+                )
+                if wound_bonus:
+                    dice_modifier += int(wound_bonus)
+                    source_name = str(source or "Vowed Target").strip() or "Vowed Target"
+                    wound_result["modifiers"].append(
+                        f"+{int(wound_bonus)} to wound from {source_name}"
+                    )
+        except Exception:
+            pass
+
         # First Prince of Chaos (Shadow Legion Nurgle): -1 to wound if Strength > Toughness.
         try:
             if hasattr(target, "has_first_prince_nurgle_defense") and target.has_first_prince_nurgle_defense():

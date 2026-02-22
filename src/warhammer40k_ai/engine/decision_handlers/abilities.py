@@ -2081,6 +2081,35 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if callable(is_eligible) and not bool(is_eligible(target_unit, game=game)):
             return ("Grim Resolve target must be a friendly ADEPTUS ASTARTES unit.",)
         return ()
+    if ability == "vowed_target_selection":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Vowed Target army not found.",)
+        sm_mgr = getattr(army, "space_marines_detachments", None)
+        if sm_mgr is None:
+            return ("Space Marines detachment manager not found.",)
+        can_select = getattr(sm_mgr, "can_select_vowed_target", None)
+        if not callable(can_select) or not bool(can_select(game=game)):
+            return ("Vowed Target cannot be selected right now.",)
+        mode = str(payload.get("mode", "") or "").strip().lower()
+        objective_ids = [str(v or "").strip() for v in list(payload.get("objective_ids", []) or []) if str(v or "").strip()]
+        if not objective_ids:
+            single_id = str(payload.get("objective_id", "") or "").strip()
+            if single_id:
+                objective_ids = [single_id]
+        if not mode:
+            return ("Vowed Target choice is missing mode.",)
+        if not objective_ids:
+            return ("Vowed Target choice requires objective marker selection.",)
+        signature = str(payload.get("signature", "") or "").strip()
+        candidate_signatures = {str(v or "").strip() for v in list(ctx.get("candidate_signatures", []) or []) if str(v or "").strip()}
+        if signature and candidate_signatures and signature not in candidate_signatures:
+            return ("Vowed Target choice is not an eligible option.",)
+        is_valid = getattr(sm_mgr, "vowed_target_option_is_valid", None)
+        if not callable(is_valid) or not bool(is_valid(mode, objective_ids, game=game)):
+            return ("Vowed Target choice is not legal for the selected mode/objectives.",)
+        return ()
     if ability == "great_wolf_watches_charge":
         payload = _option_payload(request, result)
         source_unit = resolve_unit(game, payload.get("unit_id") or ctx.get("unit_id"))
@@ -3042,6 +3071,52 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         )
         return {
             "target_unit_id": str(get_entity_id(target_root) or ""),
+            "source": ability_name,
+        }
+    if ability == "vowed_target_selection":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        sm_mgr = getattr(army, "space_marines_detachments", None)
+        if sm_mgr is None:
+            return None
+        mode = str(payload.get("mode", "") or "").strip().lower()
+        objective_ids = [str(v or "").strip() for v in list(payload.get("objective_ids", []) or []) if str(v or "").strip()]
+        if not objective_ids:
+            single_id = str(payload.get("objective_id", "") or "").strip()
+            if single_id:
+                objective_ids = [single_id]
+        if not mode or not objective_ids:
+            return None
+        apply_choice = getattr(sm_mgr, "select_vowed_target", None)
+        if not callable(apply_choice) or not bool(apply_choice(mode, objective_ids, game=game)):
+            return None
+        objective_names = []
+        for objective_id in list(objective_ids or []):
+            objective = get_objective(game, str(objective_id or ""))
+            name = str(getattr(objective, "name", "") or getattr(getattr(objective, "location", None), "name", "")).strip()
+            if not name:
+                name = f"objective {objective_id}"
+            objective_names.append(name)
+        objective_text = ", ".join(objective_names) if objective_names else ", ".join(objective_ids)
+        ability_name = str(ctx.get("ability_name", "") or "Vowed Target").strip() or "Vowed Target"
+        player = _resolve_player(game, request, payload)
+        if mode == "defensive_footing":
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: selected Defensive Footing on {objective_text}.",
+            )
+        else:
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: selected Aggressive Push on {objective_text}.",
+            )
+        return {
+            "mode": mode,
+            "objective_ids": list(objective_ids),
             "source": ability_name,
         }
     if ability == "great_wolf_watches_charge":

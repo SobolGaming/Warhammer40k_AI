@@ -133,6 +133,7 @@ class GamePhaseHandlersMixin:
         self._on_phase_start_decoy_targets(player=player, phase=phase)
         self._on_phase_start_vanguard_of_dark_city(player=player, phase=phase)
         self._on_phase_start_chaos_daemons_detachment_rules(player=player, phase=phase)
+        self._on_phase_start_vowed_target(player=player, phase=phase)
         if pname:
             for p in list(getattr(self, "players", []) or []):
                 if p is None:
@@ -7899,6 +7900,94 @@ class GamePhaseHandlersMixin:
                 sr["blood_tainted_phase_snapshot_turn_owner"] = turn_owner_id
                 sr["blood_tainted_phase_snapshot_objective_ids"] = sorted(set(objective_ids))
                 root.special_rules = sr
+
+    def _on_phase_start_vowed_target(self, player=None, phase=None, **_kwargs) -> None:
+        """Movement phase start: Inner Circle Task Force Vowed Target selection."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "MOVEMENT_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        sm_mgr = getattr(army, "space_marines_detachments", None)
+        if sm_mgr is None or not bool(getattr(sm_mgr, "is_inner_circle_task_force", lambda: False)()):
+            return
+
+        clear_selection = getattr(sm_mgr, "clear_vowed_target_selection", None)
+        if callable(clear_selection):
+            clear_selection()
+
+        can_select = getattr(sm_mgr, "can_select_vowed_target", None)
+        if not callable(can_select) or not bool(can_select(game=self)):
+            return
+        option_builder = getattr(sm_mgr, "get_vowed_target_options", None)
+        if not callable(option_builder):
+            return
+        option_data = list(option_builder(game=self) or [])
+        if not option_data:
+            return
+
+        army_id = str(get_entity_id(army) or "")
+        player_id = str(getattr(player, "id", "") or "")
+        battle_round = int(getattr(self, "turn", 0) or 0)
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "vowed_target_selection":
+                    continue
+                if str(ctx.get("army_id", "") or "") != army_id:
+                    continue
+                if str(ctx.get("player_id", "") or "") != player_id:
+                    continue
+                if int(ctx.get("battle_round", battle_round) or battle_round) != battle_round:
+                    continue
+                return
+
+        options = []
+        candidate_signatures = []
+        for entry in list(option_data or []):
+            payload = dict(entry.get("payload", {}) or {})
+            mode = str(payload.get("mode", "") or "").strip().lower()
+            objective_ids = [str(v or "").strip() for v in list(payload.get("objective_ids", []) or []) if str(v or "").strip()]
+            if not mode or not objective_ids:
+                continue
+            payload["mode"] = mode
+            payload["objective_ids"] = list(objective_ids)
+            payload["army_id"] = army_id
+            payload.setdefault("summary", str(entry.get("summary", "") or "").strip())
+            signature = str(payload.get("signature", "") or "").strip()
+            if not signature:
+                signature = f"{mode}:{'|'.join(objective_ids)}"
+                payload["signature"] = signature
+            candidate_signatures.append(signature)
+            label = str(entry.get("label", "") or "").strip() or "Vowed Target option"
+            options.append(DecisionOption.create(label, payload=payload))
+        if not options:
+            return
+
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Vowed Target: select Defensive Footing or Aggressive Push objective marker(s).",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={
+                "ability": "vowed_target_selection",
+                "ability_name": "Vowed Target",
+                "phase": "Movement phase",
+                "army_id": army_id,
+                "player_id": player_id,
+                "battle_round": battle_round,
+                "candidate_signatures": list(sorted(set(candidate_signatures))),
+            },
+        )
+        self.request_decision(request)
 
     def _on_phase_start_plague_legion_miasma(self, player=None, phase=None, **_kwargs) -> None:
         """Command phase start: Plague Legion selects one enemy unit in Shadow of Chaos for a Battle-shock test."""
