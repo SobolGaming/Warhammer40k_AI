@@ -259,6 +259,15 @@ def _configure_tau_round_start_game(army: Army, *, objectives: list, battle_roun
     return game, player
 
 
+def _set_unit_strength_counts(unit: Unit, *, starting_models: int, current_models: int) -> None:
+    current_models = max(0, int(current_models))
+    starting_models = max(current_models, int(starting_models))
+    model = unit.models[0]
+    unit.starting_model_count = int(starting_models)
+    unit.starting_total_wounds = int(starting_models) * int(getattr(model, "_base_wounds", getattr(model, "wounds", 1)) or 1)
+    unit.models = [model for _ in range(current_models)]
+
+
 def test_superior_craftsmanship_adds_six_inches_to_ranged_weapons():
     army = _build_tau_army("Experimental Prototype Cadre")
     unit = create_unit(
@@ -625,6 +634,99 @@ def test_patient_hunter_ignore_modifiers_requires_guided_attack():
         )
     finally:
         wargear_mod.get_roll = old_get_roll
+
+    assert hit_result["hit"] is False
+
+
+def test_hunters_instincts_adds_hit_bonus_against_targets_below_starting_strength():
+    army = _build_tau_army("Kroot Hunting Pack")
+    _configure_tau_shooting_game(army, battle_round=1)
+    attacker_unit = create_unit(
+        "Kroot Carnivores",
+        keywords=["INFANTRY", "KROOT"],
+        faction_keywords=["T'AU EMPIRE", "KROOT"],
+    )
+    target_unit = create_unit(
+        "Enemy Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    _set_unit_strength_counts(target_unit, starting_models=3, current_models=2)
+    army.add_unit(attacker_unit)
+
+    attack_profile = make_profile(range_val="24", is_ranged=True)
+    attacker_model = attacker_unit.models[0]
+    attack_instance = {"_aura_attack_mods": _aura_stub()}
+    hit_result = attack_profile._hit_target_with_tracking(
+        target_unit,
+        attacker_model,
+        attack_instance,
+        roll_value=3,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+
+    assert hit_result["hit"] is True
+    assert any("Hunter's Instincts" in str(entry) for entry in hit_result.get("modifiers", []))
+
+
+def test_hunters_instincts_adds_wound_bonus_against_targets_below_half_strength():
+    army = _build_tau_army("Kroot Hunting Pack")
+    _configure_tau_shooting_game(army, battle_round=1)
+    attacker_unit = create_unit(
+        "Kroot Carnivores",
+        keywords=["INFANTRY", "KROOT"],
+        faction_keywords=["T'AU EMPIRE", "KROOT"],
+    )
+    target_unit = create_unit(
+        "Enemy Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    _set_unit_strength_counts(target_unit, starting_models=4, current_models=1)
+    army.add_unit(attacker_unit)
+
+    attack_profile = make_profile(range_val="24", is_ranged=True)
+    attacker_model = attacker_unit.models[0]
+    wound_result = attack_profile._wound_target_with_tracking(
+        target_unit,
+        attacker_model,
+        {"_aura_attack_mods": _aura_stub()},
+        roll_value=3,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+
+    assert wound_result["wound"] is True
+    assert any("Hunter's Instincts" in str(entry) for entry in wound_result.get("modifiers", []))
+
+
+def test_hunters_instincts_requires_kroot_attacker_models():
+    army = _build_tau_army("Kroot Hunting Pack")
+    _configure_tau_shooting_game(army, battle_round=1)
+    attacker_unit = create_unit(
+        "Strike Team",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    target_unit = create_unit(
+        "Enemy Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    _set_unit_strength_counts(target_unit, starting_models=3, current_models=2)
+    army.add_unit(attacker_unit)
+
+    attack_profile = make_profile(range_val="24", is_ranged=True)
+    attacker_model = attacker_unit.models[0]
+    hit_result = attack_profile._hit_target_with_tracking(
+        target_unit,
+        attacker_model,
+        {"_aura_attack_mods": _aura_stub()},
+        roll_value=3,
+        allow_rerolls=False,
+        log_roll=False,
+    )
 
     assert hit_result["hit"] is False
 

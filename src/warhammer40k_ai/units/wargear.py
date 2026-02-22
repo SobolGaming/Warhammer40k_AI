@@ -7685,6 +7685,23 @@ class WargearProfile:
                     _add_hit_mod(int(pack_bonus), f"+{int(pack_bonus)} from {source_name}")
         except Exception:
             pass
+        # Tau Empire: Kroot Hunting Pack (Hunter's Instincts) +1 to hit vs targets below starting strength.
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            tau_mgr = getattr(army, "tau_empire_detachments", None) if army is not None else None
+            if tau_mgr is not None and callable(getattr(tau_mgr, "hunters_instincts_hit_bonus", None)):
+                bonus, source = tau_mgr.hunters_instincts_hit_bonus(
+                    attacker,
+                    target,
+                    weapon_profile=self,
+                    attack_instance=attack_instance,
+                )
+                if bonus:
+                    source_name = str(source or "Hunter's Instincts").strip() or "Hunter's Instincts"
+                    _add_hit_mod(int(bonus), f"+{int(bonus)} from {source_name}")
+        except Exception:
+            pass
 
         # Master of Mechanisms: selected friendly VEHICLE gets +1 to hit until next Command phase.
         sr = getattr(getattr(attacker, "parent_unit", None), "special_rules", None)
@@ -12343,6 +12360,26 @@ class WargearProfile:
                 if wound_bonus:
                     dice_modifier += int(wound_bonus)
                     source_name = str(source or "Pack's Quarry").strip() or "Pack's Quarry"
+                    wound_result["modifiers"].append(
+                        f"+{int(wound_bonus)} to wound from {source_name}"
+                    )
+        except Exception:
+            pass
+        # Tau Empire: Kroot Hunting Pack (Hunter's Instincts) +1 to wound vs targets below half-strength.
+        try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            attacker_army = attacker_unit.get_parent_army() if attacker_unit is not None else None
+            tau_mgr = getattr(attacker_army, "tau_empire_detachments", None) if attacker_army is not None else None
+            if tau_mgr is not None and callable(getattr(tau_mgr, "hunters_instincts_wound_bonus", None)):
+                wound_bonus, source = tau_mgr.hunters_instincts_wound_bonus(
+                    attacker,
+                    target,
+                    weapon_profile=self,
+                    attack_instance=attack_instance,
+                )
+                if wound_bonus:
+                    source_name = str(source or "Hunter's Instincts").strip() or "Hunter's Instincts"
+                    dice_modifier += int(wound_bonus)
                     wound_result["modifiers"].append(
                         f"+{int(wound_bonus)} to wound from {source_name}"
                     )

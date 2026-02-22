@@ -323,6 +323,9 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"during the third fourth and fifth battle rounds ranged weapons equipped by t au empire models from your army have the sustained hits 1 ability",
             r"during the third fourth and fifth battle rounds while a unit is a guided unit see for the greater good each time a ranged attack is made by a model in that unit that targets a spotted unit you can ignore any or all modifiers to that attacks ballistic skill characteristics and or all modifiers to the hit roll",
         ),
+        "Hunter's Instincts": (
+            r"each time a kroot model from your army makes an attack add 1 to the hit roll if the target of that attack is below its starting strength and add 1 to the wound roll as well if the target of that attack is below half strength",
+        ),
         "Ruthless Discipline": (
             r"add \d+ to the number of orders each astra militarum officer model from your army can issue as stated on their datasheet",
             r"while an astra militarum unit from your army is affected by an order each time a model in that unit makes an attack reroll a hit roll of \d+",
@@ -1922,6 +1925,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Patient Hunter": (
             "Supported",
             "Kauyon: battle rounds 3-5 grant [SUSTAINED HITS 1] to ranged weapons of T'AU EMPIRE models; guided attacks targeting spotted units can ignore any/all Ballistic Skill modifiers and/or any/all Hit roll modifiers.",
+        ),
+        "Hunter's Instincts": (
+            "Supported",
+            "Kroot Hunting Pack: KROOT models gain +1 to hit against targets below starting strength and gain +1 to wound as well against targets below half-strength.",
         ),
         "Path of the Warrior": (
             "Supported",

@@ -37,6 +37,11 @@ class TauEmpireDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Kauyon")
 
+    def is_kroot_hunting_pack(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Kroot Hunting Pack")
+
     def _model_in_army(self, model) -> bool:
         if model is None or self.army is None:
             return False
@@ -107,6 +112,9 @@ class TauEmpireDetachmentManager(DetachmentManagerBase):
         if self._model_has_keyword(model, "KROOT"):
             return True
         return self._model_has_keyword(model, "VESPID STINGWINGS")
+
+    def _model_is_kroot(self, model) -> bool:
+        return bool(self._model_has_keyword(model, "KROOT"))
 
     def _model_is_titanic(self, model) -> bool:
         return bool(self._model_has_keyword(model, "TITANIC"))
@@ -259,6 +267,56 @@ class TauEmpireDetachmentManager(DetachmentManagerBase):
                 continue
             return 18.0, "Integrated Command Structure: Localised Stealth Projectors"
         return 0.0, ""
+
+    def hunters_instincts_hit_bonus(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        weapon_profile=None,
+        attack_instance=None,
+    ) -> tuple[int, str]:
+        del weapon_profile, attack_instance
+        if not self.is_kroot_hunting_pack():
+            return 0, ""
+        if attacker_model is None or target_unit is None:
+            return 0, ""
+        if not self._model_in_army(attacker_model):
+            return 0, ""
+        if not self._model_is_kroot(attacker_model):
+            return 0, ""
+        target_root = self._attached_root(target_unit)
+        if target_root is None:
+            return 0, ""
+        below_starting = getattr(target_root, "is_below_starting_strength", None)
+        if not callable(below_starting) or not bool(below_starting()):
+            return 0, ""
+        return 1, "Hunter's Instincts"
+
+    def hunters_instincts_wound_bonus(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        weapon_profile=None,
+        attack_instance=None,
+    ) -> tuple[int, str]:
+        del weapon_profile, attack_instance
+        if not self.is_kroot_hunting_pack():
+            return 0, ""
+        if attacker_model is None or target_unit is None:
+            return 0, ""
+        if not self._model_in_army(attacker_model):
+            return 0, ""
+        if not self._model_is_kroot(attacker_model):
+            return 0, ""
+        target_root = self._attached_root(target_unit)
+        if target_root is None:
+            return 0, ""
+        below_half = getattr(target_root, "is_below_half_strength", None)
+        if not callable(below_half) or not bool(below_half()):
+            return 0, ""
+        return 1, "Hunter's Instincts"
 
     @staticmethod
     def _battle_round_from_game(game) -> int:
