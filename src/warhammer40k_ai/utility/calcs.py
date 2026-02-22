@@ -1376,6 +1376,15 @@ def get_validation_rules(
             reason = "Brazen Fury"
         else:
             reason = "Horde Move"
+            has_righteous_zeal = False
+            has_righteous_zeal_fn = getattr(moving_unit, "has_righteous_zeal", None) if moving_unit is not None else None
+            if callable(has_righteous_zeal_fn):
+                try:
+                    has_righteous_zeal = bool(has_righteous_zeal_fn())
+                except Exception:
+                    has_righteous_zeal = False
+            if has_righteous_zeal:
+                reason = "Righteous Zeal"
         base_rules.update({
             'allow_engagement_range_movement': True,
             'must_end_as_close_as_possible_to_closest_enemy_unit': True,
@@ -1384,6 +1393,25 @@ def get_validation_rules(
             # Pathfinding discretization can drift a touch; allow a tiny epsilon.
             'distance_tolerance': 0.05,
         })
+        if movement_type == MovementType.HORDE_MOVE and moving_unit is not None:
+            sm_mgr = None
+            try:
+                army = moving_unit.get_parent_army()
+                sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            except Exception:
+                sm_mgr = None
+            objective_override_fn = (
+                getattr(sm_mgr, "purge_and_sanctify_righteous_zeal_objective_override_applies", None)
+                if sm_mgr is not None
+                else None
+            )
+            if callable(objective_override_fn):
+                try:
+                    if bool(objective_override_fn(moving_unit)):
+                        base_rules["allow_closest_objective_marker_instead_of_closest_enemy_unit"] = True
+                        base_rules["closest_objective_marker_reason"] = "Purge and Sanctify"
+                except Exception:
+                    pass
 
     elif movement_type == MovementType.CAREEN:
         base_rules.update({
@@ -3150,6 +3178,67 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
             exclude_keywords = set(validation_rules.get('closest_enemy_unit_exclude_keywords', []) or [])
         except Exception:
             exclude_keywords = set()
+        allow_objective_override = bool(
+            validation_rules.get("allow_closest_objective_marker_instead_of_closest_enemy_unit", False)
+        )
+        objective_reason_label = str(
+            validation_rules.get("closest_objective_marker_reason", "") or "closest objective marker"
+        )
+
+        def _objective_override_ok() -> bool:
+            if not allow_objective_override:
+                return False
+            objectives = []
+            for objective in list(getattr(game_map, "objectives", []) or []):
+                location = getattr(objective, "location", None) or objective
+                if location is None or bool(getattr(location, "removed", False)):
+                    continue
+                objectives.append(location)
+            if not objectives:
+                return False
+
+            closest_objective = None
+            closest_distance = None
+            for location in objectives:
+                try:
+                    ox = float(getattr(location, "x", 0.0))
+                    oy = float(getattr(location, "y", 0.0))
+                except Exception:
+                    continue
+                dx = current_base.x - ox
+                dy = current_base.y - oy
+                current_distance = sqrt((dx * dx) + (dy * dy))
+                if closest_distance is None or current_distance < closest_distance:
+                    closest_distance = current_distance
+                    closest_objective = location
+            if closest_objective is None or closest_distance is None:
+                return False
+
+            try:
+                max_dist = float(validation_rules.get('blood_surge_max_distance', 0) or 0)
+            except Exception:
+                max_dist = 0.0
+            if max_dist <= 0:
+                try:
+                    max_dist = float(validation_rules.get('max_distance_override', 0) or 0)
+                except Exception:
+                    max_dist = 0.0
+
+            min_possible = max(0.0, float(closest_distance) - float(max_dist))
+            try:
+                tol = float(validation_rules.get("distance_tolerance", 0.0) or 0.0)
+            except Exception:
+                tol = 0.0
+
+            try:
+                ox = float(getattr(closest_objective, "x", 0.0))
+                oy = float(getattr(closest_objective, "y", 0.0))
+            except Exception:
+                return False
+            dx_new = new_base.x - ox
+            dy_new = new_base.y - oy
+            new_distance = sqrt((dx_new * dx_new) + (dy_new * dy_new))
+            return new_distance <= (min_possible + tol)
 
         enemy_units = []
         for unit in getattr(game_map, 'units', []) or []:
@@ -3176,6 +3265,8 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
             enemy_units.append((unit, current_distance, unit_models))
 
         if not enemy_units:
+            if _objective_override_ok():
+                return {'valid': True, 'reason': f'Valid final position ({objective_reason_label})'}
             return {'valid': False, 'reason': 'No enemy units available for Blood Surge validation'}
 
         enemy_units.sort(key=lambda entry: entry[1])
@@ -3200,6 +3291,8 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
         except Exception:
             tol = 0.0
         if new_distance_to_unit > (min_possible + tol):
+            if _objective_override_ok():
+                return {'valid': True, 'reason': f'Valid final position ({objective_reason_label})'}
             reason_label = str(validation_rules.get("closest_enemy_unit_reason", "") or "Blood Surge")
             return {
                 'valid': False,

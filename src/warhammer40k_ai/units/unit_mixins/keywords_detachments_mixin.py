@@ -1944,12 +1944,24 @@ class KeywordsDetachmentsMixin:
         self._ability_cache['brazen_fury'] = applies
         return applies
 
+    def has_righteous_zeal(self) -> bool:
+        """Check if the unit has the Righteous Zeal datasheet ability."""
+        if "righteous_zeal" in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache["righteous_zeal"])
+        found, _ = self._find_ability_with_patterns(["righteous zeal"])
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache["righteous_zeal"] = bool(found)
+        return bool(found)
+
     def has_horde_move(self) -> bool:
         """Check if the unit has a Horde Move ability."""
         if 'horde_move' in getattr(self, '_ability_cache', {}):
             return self._ability_cache['horde_move']
 
         found, _ = self._find_ability_with_patterns(["horde move"])
+        if not found:
+            found = bool(self.has_righteous_zeal())
         if not hasattr(self, '_ability_cache'):
             self._ability_cache = {}
         self._ability_cache['horde_move'] = found
@@ -5807,6 +5819,9 @@ class KeywordsDetachmentsMixin:
         owner = str(getattr(current_player, "name", "") or "")
         return f"{br}:{pname}:{owner}"
 
+    def _horde_move_phase_key(self, game=None) -> str:
+        return self._blood_surge_phase_key(game)
+
     def _unhinged_vengeance_phase_key(self, game=None) -> str:
         return self._blood_surge_phase_key(game)
 
@@ -5855,6 +5870,20 @@ class KeywordsDetachmentsMixin:
         if not isinstance(sr, dict):
             sr = {}
         sr["brazen_fury_used_phase_key"] = self._brazen_fury_phase_key(game)
+        self.special_rules = sr
+
+    def horde_move_used_this_phase(self, game=None) -> bool:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        key = self._horde_move_phase_key(game)
+        return str(sr.get("horde_move_used_phase_key", "")) == key
+
+    def mark_horde_move_used(self, game=None) -> None:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["horde_move_used_phase_key"] = self._horde_move_phase_key(game)
         self.special_rules = sr
 
     def unhinged_vengeance_used_this_phase(self, game=None) -> bool:
@@ -5993,6 +6022,8 @@ class KeywordsDetachmentsMixin:
             return False
         if self.is_battle_shocked():
             return False
+        if self.has_righteous_zeal() and self.horde_move_used_this_phase(game):
+            return False
         try:
             if self.is_in_reserves():
                 return False
@@ -6003,6 +6034,19 @@ class KeywordsDetachmentsMixin:
                 return False
         except Exception:
             pass
+        if self.has_righteous_zeal():
+            if game_map is None:
+                try:
+                    game_map = getattr(game, "map", None)
+                except Exception:
+                    game_map = None
+            if game_map is not None:
+                try:
+                    for enemy in game_map.get_enemy_units(self):
+                        if game_map.is_within_engagement_range(self, enemy):
+                            return False
+                except Exception:
+                    pass
         return True
 
     def can_use_guns_blazing(self, game=None, game_map=None, *, enemy_unit=None) -> bool:

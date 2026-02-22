@@ -451,6 +451,16 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Inner Circle Task Force")
 
+    def is_vindication_task_force(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Vindication Task Force")
+
+    def is_wrathful_procession(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Wrathful Procession")
+
     def _attached_unit_root(self, unit):
         if unit is None:
             return None
@@ -2120,6 +2130,108 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not (strength_gt_toughness or has_titus_keyword):
             return 0, ""
         return 1, "Oath of Reclamation"
+
+    def _attached_unit_is_ancient(self, unit) -> bool:
+        if unit is None:
+            return False
+        if self._attached_unit_has_keyword(unit, "ANCIENT"):
+            return True
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        name = str(getattr(root, "name", "") or "").strip().lower()
+        return "ancient" in name
+
+    def _attached_unit_is_crusader_squad(self, unit) -> bool:
+        if unit is None:
+            return False
+        if self._attached_unit_has_keyword(unit, "CRUSADER SQUAD"):
+            return True
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        name = str(getattr(root, "name", "") or "").strip().lower()
+        return "crusader squad" in name
+
+    def purge_and_sanctify_wound_roll_penalty(
+        self,
+        target_unit,
+        *,
+        strength=None,
+        target_toughness=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if not self.is_vindication_task_force():
+            return 0, ""
+        target_root = self._attached_unit_root(target_unit)
+        if target_root is None:
+            return 0, ""
+        try:
+            if target_root.get_parent_army() is not self.army:
+                return 0, ""
+        except Exception:
+            return 0, ""
+        if not self.attached_unit_is_adeptus_astartes(target_root):
+            return 0, ""
+        if not self._attached_unit_is_ancient(target_root):
+            return 0, ""
+
+        game_obj = self._resolve_game_context(game=game)
+        game_map = getattr(game_obj, "map", None) if game_obj is not None else None
+        within_any_objective = getattr(target_root, "is_within_any_objective_range", None)
+        if callable(within_any_objective):
+            try:
+                if not bool(within_any_objective(game_map=game_map)):
+                    return 0, ""
+            except Exception:
+                return 0, ""
+        else:
+            checker = getattr(target_root, "is_within_objective_range", None)
+            if not callable(checker):
+                return 0, ""
+            in_range = False
+            for objective in list(getattr(game_map, "objectives", []) or []):
+                location = getattr(objective, "location", None) or objective
+                if location is None or bool(getattr(location, "removed", False)):
+                    continue
+                try:
+                    if bool(checker(location)):
+                        in_range = True
+                        break
+                except Exception:
+                    continue
+            if not in_range:
+                return 0, ""
+
+        try:
+            strength_value = int(strength)
+        except (TypeError, ValueError):
+            return 0, ""
+        if isinstance(target_toughness, int):
+            toughness_value = int(target_toughness)
+        else:
+            try:
+                toughness_value = int(getattr(target_root, "toughness", 0) or 0)
+            except Exception:
+                toughness_value = 0
+        if toughness_value <= 0 or strength_value <= toughness_value:
+            return 0, ""
+        return 1, "Purge and Sanctify"
+
+    def purge_and_sanctify_righteous_zeal_objective_override_applies(self, unit) -> bool:
+        if not self.is_vindication_task_force():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        try:
+            if root.get_parent_army() is not self.army:
+                return False
+        except Exception:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        return self._attached_unit_is_crusader_squad(root)
 
     def _attached_unit_is_terminator(self, unit) -> bool:
         if unit is None:

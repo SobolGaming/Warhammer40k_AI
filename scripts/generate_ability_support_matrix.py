@@ -582,6 +582,11 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time an attack targets an adeptus astartes unit from your army if your unit is within range of an objective marker that you controlled at the start of the phase and if the strength characteristic of that attack is greater than the toughness characteristic of your unit or your unit has the titus keyword subtract \d+ from the wound roll",
             r"your army can include ultramarines units but it cannot include any adeptus astartes units drawn from any other chapter",
         ),
+        "Purge and Sanctify": (
+            r"each time an attack targets an ancient unit from your army if that unit is within range of one or more objective markers and the strength characteristic of that attack is greater than the toughness characteristic of that unit subtract \d+ from the wound roll",
+            r"each time a crusader squad unit from your army makes a righteous zeal move that unit can end that move as close as possible to the closest objective marker instead of as close as possible to the closest enemy unit",
+            r"your army can include black templars units but it cannot include any adeptus astartes units drawn from any other chapter",
+        ),
         "Interlocking Tactics": (
             r"adeptus astartes battleline units from your army are eligible to shoot and declare a charge in a turn in which they advanced or fell back",
             r"are eligible to shoot and declare a charge in a turn in which they advanced or fell back",
@@ -1976,6 +1981,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Oath of Reclamation": (
             "Supported",
             "Reclamation Force: ADEPTUS ASTARTES melee attacks improve AP by 1 against targets within objective range, and attacks targeting your ADEPTUS ASTARTES units suffer -1 to wound when those units are within objective range of markers controlled at phase start and either Strength exceeds Toughness or the unit has TITUS; Ultramarines-only chapter restriction enforced.",
+        ),
+        "Purge and Sanctify": (
+            "Supported",
+            "Vindication Task Force: attacks targeting your ADEPTUS ASTARTES ANCIENT units suffer -1 to wound while those units are within objective range and the attack Strength exceeds their Toughness, and ADEPTUS ASTARTES CRUSADER SQUAD units can end Righteous Zeal moves as close as possible to the closest objective marker instead of the closest enemy unit; Black Templars-only chapter restriction enforced.",
         ),
         "Interlocking Tactics": (
             "Supported",

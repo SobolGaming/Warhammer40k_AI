@@ -9188,16 +9188,31 @@ class GameShootingFightHandlersMixin:
                 )
                 if has_sub:
                     continue
-            msg = (
-                "Horde Move: Move D6\" as close as possible to the closest non-AIRCRAFT enemy unit.\n"
-                "This unit cannot make a Horde move while Battle-shocked."
-            )
+            has_righteous_zeal = False
+            has_righteous_zeal_fn = getattr(target, "has_righteous_zeal", None)
+            if callable(has_righteous_zeal_fn):
+                try:
+                    has_righteous_zeal = bool(has_righteous_zeal_fn())
+                except Exception:
+                    has_righteous_zeal = False
+            if has_righteous_zeal:
+                msg = (
+                    "Righteous Zeal: Move D6+2\" as close as possible to the closest non-AIRCRAFT enemy unit.\n"
+                    "This unit cannot make a Righteous Zeal move while Battle-shocked or within Engagement Range, and can only make one such move per phase."
+                )
+                source_name = "Righteous Zeal"
+            else:
+                msg = (
+                    "Horde Move: Move D6\" as close as possible to the closest non-AIRCRAFT enemy unit.\n"
+                    "This unit cannot make a Horde move while Battle-shocked."
+                )
+                source_name = "Horde Move"
             self._queue_reactive_move_confirmation(
                 player=player,
                 unit=target,
                 kind="horde_move",
                 movement_type="horde_move",
-                source="Horde Move",
+                source=source_name,
                 message=msg,
                 attacker_unit=attacker_unit,
             )
