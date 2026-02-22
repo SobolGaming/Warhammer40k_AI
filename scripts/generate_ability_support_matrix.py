@@ -3592,6 +3592,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("TYR", "Irresistible Force"): ("Supported", "Charge-after-Fall-Back eligibility."),
         ("TYR", "Foul Spores (Aura)"): ("Partial", "Stealth aura within 6\" for non-MONSTER TYRANIDS units; Benefit of Cover aura not implemented."),
         ("TYR", "Unnatural Resilience"): ("Supported", "Feel No Pain 4+ against mortal wounds."),
+        ("TYR", "Singular Purpose"): (
+            "Supported",
+            "BR1: select one enemy unit for source-model Hit/Wound re-rolls for the battle, or one objective marker for source-model conditional Feel No Pain 5+ and Objective Control 15 while in range.",
+        ),
         ("TS", "Bounding Leaps"): ("Supported", "Shoot after Falling Back."),
         ("TS", "One Head Looks Forward"): ("Supported", "End of Command phase: Leadership test for the model; gain 1CP on pass."),
         ("TS", "Glamour of Tzeentch (Aura, Psychic)"): ("Supported", "Stealth aura within 6\" for THOUSAND SONS INFANTRY units."),

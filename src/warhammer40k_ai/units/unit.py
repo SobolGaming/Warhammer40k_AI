@@ -714,6 +714,24 @@ class Unit(
             except Exception:
                 pass
 
+            # Singular Purpose (TYRANIDS): while the selected source model is within range
+            # of the selected objective marker, that model has OC 15 (or configured value).
+            try:
+                root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+            except Exception:
+                root = self
+            try:
+                singular_active_fn = getattr(root, "singular_purpose_objective_effects_active", None)
+                if callable(singular_active_fn) and bool(singular_active_fn(model=model, game_map=game_map)):
+                    sr_root = getattr(root, "special_rules", None)
+                    try:
+                        oc_value = int(sr_root.get("singular_purpose_objective_oc", 15) or 15) if isinstance(sr_root, dict) else 15
+                    except Exception:
+                        oc_value = 15
+                    mods.append(Modifier(ModifierOp.SET, int(max(0, oc_value)), source="ability:singular_purpose"))
+            except Exception:
+                pass
+
             # Archon's Will: while in range of the selected objective and not Battle-shocked, models have OC 3.
             try:
                 archons_active_fn = getattr(root, "archons_will_effects_active", None)

@@ -10111,6 +10111,63 @@ class WargearProfile:
                                 reroll_used = True
         except Exception:
             pass
+        # Singular Purpose: optional re-roll of the Hit roll vs selected enemy unit.
+        try:
+            if rerolls_allowed and "reroll" not in hit_result:
+                unit = attacker.parent_unit
+                mode = str(getattr(unit, "_singular_purpose_mode", "") or "").strip().lower()
+                target_ids = getattr(unit, "_singular_purpose_target_ids", None)
+                if mode == "enemy_unit" and target_ids and bool(getattr(unit, "_singular_purpose_reroll_hit", True)):
+                    source_model_id = str(getattr(unit, "_singular_purpose_source_model_id", "") or "").strip()
+                    attacker_model_id = str(getattr(attacker, "_id", None) or getattr(attacker, "id", None) or "").strip()
+                    if not source_model_id or not attacker_model_id or source_model_id == attacker_model_id:
+                        try:
+                            tid = getattr(target, "_id", None)
+                            rid = getattr(target.get_attached_unit_root(), "_id", None)
+                        except Exception:
+                            tid = getattr(target, "_id", None)
+                            rid = None
+                        is_selected = (tid in target_ids) or (rid in target_ids)
+                        if is_selected:
+                            try:
+                                game = unit.get_parent_army().player.game
+                                player = unit.get_parent_army().player
+                                provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                            except Exception:
+                                provider = None
+                                player = None
+                                game = None
+                            try:
+                                success = (dice_roll != 1) and (base_skill > 0) and (dice_roll >= final_needed)
+                            except Exception:
+                                success = False
+                            do_reroll = False
+                            if callable(provider):
+                                try:
+                                    reason = str(getattr(unit, "_singular_purpose_source", "") or "Singular Purpose")
+                                    do_reroll = bool(provider(
+                                        player=player,
+                                        unit=unit,
+                                        roll_type="hit",
+                                        value=dice_roll,
+                                        dice=None,
+                                        needed=final_needed,
+                                        success=success,
+                                        reason=reason,
+                                    ))
+                                except Exception:
+                                    do_reroll = False
+                            if do_reroll:
+                                rr = _reroll_hit()
+                                label = str(getattr(unit, "_singular_purpose_source", "") or "Singular Purpose")
+                                hit_result.setdefault("special_effects", []).append(
+                                    f"{label}: re-roll Hit roll (selected enemy)"
+                                )
+                                hit_result["reroll"] = rr
+                                dice_roll = rr
+                                reroll_used = True
+        except Exception:
+            pass
         hit_result['roll'] = dice_roll
         if miracle_used:
             hit_result['special_effects'].append("Miracle die")
@@ -14012,6 +14069,89 @@ class WargearProfile:
                                 rr = _reroll_wound()
                                 wound_result.setdefault("special_effects", []).append(
                                     f"{reason}: re-roll Wound roll (prey)"
+                                )
+                                wound_result["reroll"] = rr
+                                dice_roll = rr
+                                reroll_used = True
+        except Exception:
+            pass
+
+        # Singular Purpose: optional re-roll Wound roll vs selected enemy unit.
+        try:
+            if rerolls_allowed and "reroll" not in wound_result:
+                unit = attacker.parent_unit
+                mode = str(getattr(unit, "_singular_purpose_mode", "") or "").strip().lower()
+                target_ids = getattr(unit, "_singular_purpose_target_ids", None)
+                if mode == "enemy_unit" and target_ids and bool(getattr(unit, "_singular_purpose_reroll_wound", True)):
+                    source_model_id = str(getattr(unit, "_singular_purpose_source_model_id", "") or "").strip()
+                    attacker_model_id = str(getattr(attacker, "_id", None) or getattr(attacker, "id", None) or "").strip()
+                    if not source_model_id or not attacker_model_id or source_model_id == attacker_model_id:
+                        try:
+                            tid = getattr(target, "_id", None)
+                            rid = getattr(target.get_attached_unit_root(), "_id", None)
+                        except Exception:
+                            tid = getattr(target, "_id", None)
+                            rid = None
+                        is_selected = (tid in target_ids) or (rid in target_ids)
+                        if is_selected:
+                            needed = 0
+                            try:
+                                s_val = strength
+                                t_val = target_toughness
+                                if isinstance(s_val, int) and isinstance(t_val, int):
+                                    if s_val >= 2 * t_val:
+                                        needed = 2
+                                    elif s_val > t_val:
+                                        needed = 3
+                                    elif s_val == t_val:
+                                        needed = 4
+                                    elif s_val * 2 <= t_val:
+                                        needed = 6
+                                    else:
+                                        needed = 5
+                            except Exception:
+                                needed = 0
+                            final_needed = needed
+                            try:
+                                final_needed = int(min(max(int(final_needed) - int(dice_modifier), 2), 6))
+                            except Exception:
+                                pass
+                            try:
+                                success = (dice_roll != 1) and (bool(final_needed) and dice_roll >= int(final_needed))
+                            except Exception:
+                                success = False
+                            do_reroll = False
+                            try:
+                                army = unit.get_parent_army()
+                                game = army.player.game
+                                player = army.player
+                                is_human = bool(getattr(player, "has_control", lambda: False)())
+                                provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                            except Exception:
+                                is_human = False
+                                provider = None
+                                player = None
+                            reason = str(getattr(unit, "_singular_purpose_source", "") or "Singular Purpose")
+                            if is_human and callable(provider):
+                                try:
+                                    do_reroll = bool(provider(
+                                        player=player,
+                                        unit=unit,
+                                        roll_type="wound",
+                                        value=dice_roll,
+                                        dice=None,
+                                        needed=final_needed,
+                                        success=success,
+                                        reason=reason,
+                                    ))
+                                except Exception:
+                                    do_reroll = False
+                            else:
+                                do_reroll = (not success)
+                            if do_reroll:
+                                rr = _reroll_wound()
+                                wound_result.setdefault("special_effects", []).append(
+                                    f"{reason}: re-roll Wound roll (selected enemy)"
                                 )
                                 wound_result["reroll"] = rr
                                 dice_roll = rr

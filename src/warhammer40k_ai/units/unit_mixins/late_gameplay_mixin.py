@@ -1482,6 +1482,25 @@ class LateGameplayMixin:
         except Exception:
             pass
         try:
+            # Singular Purpose (objective branch): source model gains FNP while in range of the selected objective.
+            if target_model is not None:
+                sr = getattr(self, "special_rules", None)
+                mode = str(sr.get("singular_purpose_mode", "") or "").strip().lower() if isinstance(sr, dict) else ""
+                if mode == "objective_marker":
+                    active_fn = getattr(self, "singular_purpose_objective_effects_active", None)
+                    if callable(active_fn) and bool(active_fn(model=target_model)):
+                        try:
+                            fnp_val = int(sr.get("singular_purpose_objective_fnp", 5) or 5)
+                        except Exception:
+                            fnp_val = 5
+                        fnp_val = max(2, int(fnp_val))
+                        key = (int(fnp_val), "")
+                        seen = set((int(v), (c or "")) for v, c in result)
+                        if key not in seen:
+                            result.append((int(fnp_val), None))
+        except Exception:
+            pass
+        try:
             from ...utility.aura_effects import get_aura_fnp_entries
 
             aura_entries = list(get_aura_fnp_entries(self) or [])

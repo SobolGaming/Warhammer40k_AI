@@ -3279,6 +3279,38 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not bool(shadow_mgr._unit_within_shadow_for_player(target_root, game=game, player=player)):
             return ("Melancholic Miasma target must be within your army's Shadow of Chaos.",)
         return ()
+    if ability == "singular_purpose":
+        if is_skip_choice(request, result):
+            return ("Singular Purpose selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Singular Purpose source unit was not found.",)
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return ("Singular Purpose source unit was not found.",)
+        mode = str(payload.get("mode", "") or "").strip().lower()
+        if mode not in {"enemy_unit", "objective_marker"}:
+            return ("Singular Purpose selection requires mode 'enemy_unit' or 'objective_marker'.",)
+        if mode == "enemy_unit":
+            target_unit = resolve_unit(game, payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"))
+            if target_unit is None:
+                return ("Singular Purpose enemy-unit selection requires a valid target unit.",)
+            target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+            if target_root is None:
+                return ("Singular Purpose target unit was not found.",)
+            source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+            target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+            if source_army is not None and target_army is not None and source_army is target_army:
+                return ("Singular Purpose enemy-unit selection must target an enemy unit.",)
+            return ()
+
+        objective_id = str(payload.get("objective_id") or ctx.get("objective_id") or "").strip()
+        if not objective_id:
+            return ("Singular Purpose objective selection requires objective_id.",)
+        if get_objective(game, objective_id) is None:
+            return ("Singular Purpose selected objective marker was not found.",)
+        return ()
     if is_skip_choice(request, result):
         return ()
     if ability not in ("strategic_conqueror", "archons_will_objective"):
@@ -4439,6 +4471,160 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             f"{ability_name}: {source_name} selected {mode_label}.",
         )
         return {"mode": mode}
+    if ability == "singular_purpose":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return None
+        mode = str(payload.get("mode", "") or "").strip().lower()
+        if mode not in {"enemy_unit", "objective_marker"}:
+            return None
+
+        source_model_id = str(payload.get("source_model_id") or ctx.get("source_model_id") or "").strip()
+        if not source_model_id:
+            try:
+                source_models = list(source_root.get_models_for_collision() or [])
+            except Exception:
+                source_models = list(getattr(source_root, "models", []) or [])
+            for model in list(source_models or []):
+                if model is None:
+                    continue
+                source_model_id = str(get_entity_id(model) or "")
+                if source_model_id:
+                    break
+
+        try:
+            reroll_hit = bool(ctx.get("singular_purpose_reroll_hit", True))
+        except Exception:
+            reroll_hit = True
+        try:
+            reroll_wound = bool(ctx.get("singular_purpose_reroll_wound", True))
+        except Exception:
+            reroll_wound = True
+        try:
+            objective_fnp = int(ctx.get("singular_purpose_objective_fnp", 5) or 5)
+        except Exception:
+            objective_fnp = 5
+        try:
+            objective_oc = int(ctx.get("singular_purpose_objective_oc", 15) or 15)
+        except Exception:
+            objective_oc = 15
+        objective_fnp = max(2, int(objective_fnp))
+        objective_oc = max(0, int(objective_oc))
+
+        try:
+            members = list(source_root.get_attached_unit_members() or [])
+        except Exception:
+            members = [source_root]
+        if not members:
+            members = [source_root]
+
+        ability_name = str(ctx.get("ability_name", "") or "Singular Purpose").strip() or "Singular Purpose"
+
+        target_root = None
+        target_name = ""
+        target_ids: set[str] = set()
+        objective_id = ""
+        objective = None
+        if mode == "enemy_unit":
+            target_unit = resolve_unit(game, payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"))
+            if target_unit is None:
+                return None
+            target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+            if target_root is None:
+                return None
+            target_name = str(getattr(target_root, "name", "Enemy unit") or "Enemy unit")
+            try:
+                target_members = list(target_root.get_attached_unit_members() or [])
+            except Exception:
+                target_members = [target_root]
+            for member in list(target_members or []):
+                token = str(get_entity_id(member) or "").strip()
+                if token:
+                    target_ids.add(token)
+            root_target_id = str(get_entity_id(target_root) or "").strip()
+            if root_target_id:
+                target_ids.add(root_target_id)
+        else:
+            objective_id = str(payload.get("objective_id") or ctx.get("objective_id") or "").strip()
+            if not objective_id:
+                return None
+            objective = get_objective(game, objective_id)
+            if objective is None:
+                return None
+
+        setattr(source_root, "_singular_purpose_mode", str(mode))
+        setattr(source_root, "_singular_purpose_source", ability_name)
+        setattr(source_root, "_singular_purpose_source_model_id", source_model_id)
+        setattr(source_root, "_singular_purpose_reroll_hit", bool(reroll_hit))
+        setattr(source_root, "_singular_purpose_reroll_wound", bool(reroll_wound))
+        setattr(source_root, "_singular_purpose_objective_fnp", int(objective_fnp))
+        setattr(source_root, "_singular_purpose_objective_oc", int(objective_oc))
+
+        if mode == "enemy_unit":
+            setattr(source_root, "_singular_purpose_target_ids", set(target_ids))
+            setattr(source_root, "_singular_purpose_target_name", str(target_name))
+            setattr(source_root, "_singular_purpose_objective_id", "")
+        else:
+            setattr(source_root, "_singular_purpose_target_ids", set())
+            setattr(source_root, "_singular_purpose_target_name", "")
+            setattr(source_root, "_singular_purpose_objective_id", str(objective_id))
+
+        for member in list(members or []):
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr = dict(sr)
+            sr["singular_purpose_mode"] = str(mode)
+            sr["singular_purpose_source"] = ability_name
+            sr["singular_purpose_source_model_id"] = str(source_model_id)
+            sr["singular_purpose_reroll_hit"] = bool(reroll_hit)
+            sr["singular_purpose_reroll_wound"] = bool(reroll_wound)
+            sr["singular_purpose_objective_fnp"] = int(objective_fnp)
+            sr["singular_purpose_objective_oc"] = int(objective_oc)
+            if mode == "enemy_unit":
+                sr["singular_purpose_target_unit_id"] = str(get_entity_id(target_root) or "")
+                sr["singular_purpose_target_unit_name"] = str(target_name)
+                sr["singular_purpose_objective_id"] = ""
+            else:
+                sr["singular_purpose_target_unit_id"] = ""
+                sr["singular_purpose_target_unit_name"] = ""
+                sr["singular_purpose_objective_id"] = str(objective_id)
+            member.special_rules = sr
+
+        try:
+            player = getattr(source_root.get_parent_army(), "player", None)
+        except Exception:
+            player = None
+        source_name = str(getattr(source_root, "name", "Model") or "Model")
+        if mode == "enemy_unit":
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {source_name} selected {target_name}.",
+            )
+            return {
+                "mode": "enemy_unit",
+                "target_unit_id": str(get_entity_id(target_root) or ""),
+                "source_model_id": str(source_model_id),
+            }
+
+        objective_name = str(getattr(objective, "name", "") or "Objective marker")
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {source_name} selected {objective_name}.",
+        )
+        return {
+            "mode": "objective_marker",
+            "objective_id": str(objective_id),
+            "source_model_id": str(source_model_id),
+        }
     if ability == "archons_will_objective":
         if is_skip_choice(request, result):
             return None

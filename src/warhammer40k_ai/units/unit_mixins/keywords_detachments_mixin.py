@@ -2174,6 +2174,107 @@ class KeywordsDetachmentsMixin:
         root._ability_cache[cache_key] = rule
         return rule
 
+    def get_singular_purpose_rule(self) -> Optional[dict]:
+        """
+        Detect TYRANIDS "Singular Purpose" text:
+        - BR1 choose enemy unit: this model re-rolls Hit and Wound rolls vs that unit.
+        - BR1 choose objective marker: while this model is within range, it has FNP 5+ and OC 15.
+
+        Returns a rule dict with:
+            - source: ability name
+            - reroll_hit: bool
+            - reroll_wound: bool
+            - objective_feel_no_pain: int
+            - objective_control: int
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "singular_purpose_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        def _norm(text: str) -> str:
+            if not text:
+                return ""
+            normalized = self._normalize_rules_text(text)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            return normalized
+
+        def _has_phrase(text: str, *phrases: str) -> bool:
+            for phrase in phrases:
+                if phrase and phrase in text:
+                    return True
+            return False
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = _norm(text_src)
+                if not normalized:
+                    continue
+                key = (str(name or "").strip().lower(), normalized)
+                if key in seen:
+                    continue
+                seen.add(key)
+
+                if "start of the first battle round" not in normalized:
+                    continue
+                if "select one of the following" not in normalized:
+                    continue
+                if "select one enemy unit" not in normalized:
+                    continue
+                if "select one objective marker" not in normalized:
+                    continue
+                if "each time this model makes an attack" not in normalized:
+                    continue
+                if "targets that unit" not in normalized:
+                    continue
+                if not _has_phrase(normalized, "re roll the hit roll", "reroll the hit roll"):
+                    continue
+                if not _has_phrase(normalized, "re roll the wound roll", "reroll the wound roll"):
+                    continue
+                if "within range of that objective marker" not in normalized:
+                    continue
+                if "feel no pain 5" not in normalized:
+                    continue
+                if "objective control characteristic of 15" not in normalized:
+                    continue
+
+                source = str(name or "Singular Purpose").strip() or "Singular Purpose"
+                rule = {
+                    "source": source,
+                    "reroll_hit": True,
+                    "reroll_wound": True,
+                    "objective_feel_no_pain": 5,
+                    "objective_control": 15,
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
     def get_exemplar_of_the_code_rule(self) -> Optional[dict]:
         """
         Detect abilities with text like:

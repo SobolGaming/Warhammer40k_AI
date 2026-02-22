@@ -2473,6 +2473,7 @@ class Army:
         self._queue_methodical_destruction(game=game, battle_round=int(battle_round))
         self._queue_exemplar_of_the_code(game=game, battle_round=int(battle_round))
         self._queue_prey_selection(game=game, battle_round=int(battle_round))
+        self._queue_singular_purpose(game=game, battle_round=int(battle_round))
         self._queue_archons_will(game=game, battle_round=int(battle_round))
         self._assigned_agents_destroy_empty_transports(int(battle_round), game=game)
 
@@ -2992,6 +2993,166 @@ class Army:
             exclude_embarked=False,
             context_extra=context_extra,
         )
+
+    def _queue_singular_purpose(self, *, game, battle_round: int) -> None:
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return
+        if int(battle_round or 0) != 1:
+            return
+        player = getattr(self, "player", None)
+        if player is None:
+            return
+        try:
+            enemy_units = list(game.get_enemy_units(player))
+        except Exception:
+            enemy_units = []
+
+        objective_pool = list(getattr(game, "objectives", []) or [])
+        if not objective_pool:
+            objective_pool = list(getattr(getattr(game, "map", None), "objectives", []) or [])
+        objectives = []
+        for objective in objective_pool:
+            objective_id = str(get_entity_id(objective) or "")
+            if not objective_id:
+                continue
+            objective_point = getattr(objective, "location", None)
+            if objective_point is None or bool(getattr(objective_point, "removed", False)):
+                continue
+            objectives.append((objective_id, objective))
+        objectives.sort(key=lambda item: str(item[0]))
+
+        if not enemy_units and not objectives:
+            return
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        queue = getattr(game, "decision_queue", None)
+        seen_roots: set[str] = set()
+        for unit in list(getattr(self, "units", []) or []):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if not root_id or root_id in seen_roots:
+                continue
+            seen_roots.add(root_id)
+            try:
+                if not root.is_alive():
+                    continue
+            except Exception:
+                continue
+
+            try:
+                rule = root.get_singular_purpose_rule()
+            except Exception:
+                rule = None
+            if not isinstance(rule, dict):
+                continue
+
+            sr = getattr(root, "special_rules", None)
+            if isinstance(sr, dict):
+                mode = str(sr.get("singular_purpose_mode", "") or "").strip()
+                if mode:
+                    continue
+
+            duplicate = False
+            if queue is not None and hasattr(queue, "list"):
+                for pending in list(queue.list() or []):
+                    if str(getattr(pending, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                        continue
+                    pending_ctx = dict(getattr(pending, "context", {}) or {})
+                    if str(pending_ctx.get("ability", "") or "") != "singular_purpose":
+                        continue
+                    if str(pending_ctx.get("source_unit_id", "") or "") != root_id:
+                        continue
+                    duplicate = True
+                    break
+            if duplicate:
+                continue
+
+            options = []
+            eligible_targets = self._eligible_quarry_units(enemy_units, exclude_embarked=False)
+            eligible_targets.sort(key=lambda target: str(get_entity_id(target) or ""))
+            for enemy in list(eligible_targets or []):
+                enemy_id = str(get_entity_id(enemy) or "")
+                if not enemy_id:
+                    continue
+                enemy_name = str(getattr(enemy, "name", "Enemy unit") or "Enemy unit")
+                options.append(
+                    DecisionOption.create(
+                        f"Enemy: {enemy_name}",
+                        payload={"mode": "enemy_unit", "target_unit_id": enemy_id},
+                    )
+                )
+
+            for idx, (objective_id, objective) in enumerate(objectives):
+                label = str(getattr(objective, "name", "") or f"Objective {idx + 1}")
+                objective_point = getattr(objective, "location", None)
+                try:
+                    if objective_point is not None:
+                        label = (
+                            f"{label} "
+                            f"({float(getattr(objective_point, 'x', 0.0)):.1f}, "
+                            f"{float(getattr(objective_point, 'y', 0.0)):.1f})"
+                        )
+                except Exception:
+                    pass
+                options.append(
+                    DecisionOption.create(
+                        f"Objective: {label}",
+                        payload={"mode": "objective_marker", "objective_id": objective_id},
+                    )
+                )
+
+            if not options:
+                continue
+
+            source_model_id = ""
+            try:
+                source_models = list(root.get_models_for_collision() or [])
+            except Exception:
+                source_models = list(getattr(root, "models", []) or [])
+            for model in list(source_models or []):
+                if model is None:
+                    continue
+                try:
+                    if not bool(getattr(model, "is_alive", True)):
+                        continue
+                except Exception:
+                    pass
+                source_model_id = str(get_entity_id(model) or "")
+                if source_model_id:
+                    break
+            if not source_model_id and source_models:
+                source_model_id = str(get_entity_id(source_models[0]) or "")
+
+            ability_name = str(rule.get("source", "") or "Singular Purpose").strip() or "Singular Purpose"
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{ability_name}: select one enemy unit or one objective marker.",
+                player_id=getattr(player, "id", None),
+                options=options,
+                context={
+                    "ability": "singular_purpose",
+                    "ability_name": ability_name,
+                    "source_unit_id": root_id,
+                    "unit_id": root_id,
+                    "source_model_id": source_model_id,
+                    "singular_purpose_reroll_hit": bool(rule.get("reroll_hit", False)),
+                    "singular_purpose_reroll_wound": bool(rule.get("reroll_wound", False)),
+                    "singular_purpose_objective_fnp": int(rule.get("objective_feel_no_pain", 5) or 5),
+                    "singular_purpose_objective_oc": int(rule.get("objective_control", 15) or 15),
+                    "optional": False,
+                },
+            )
+            if hasattr(game, "request_decision"):
+                game.request_decision(request)
 
     def schedule_reborn_in_blood(self, *, game) -> bool:
         """

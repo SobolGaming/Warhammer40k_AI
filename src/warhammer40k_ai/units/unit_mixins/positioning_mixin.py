@@ -1454,6 +1454,120 @@ class PositioningMixin:
             return False
         return bool(self.is_within_objective_range(loc))
 
+    def singular_purpose_objective_effects_active(self, *, model=None, game=None, game_map=None) -> bool:
+        """
+        TYRANIDS: Singular Purpose (objective branch).
+        Active while the selected source model is within range of the selected objective marker.
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        mode = str(sr.get("singular_purpose_mode", "") or "").strip().lower()
+        if mode != "objective_marker":
+            return False
+        objective_id = str(sr.get("singular_purpose_objective_id", "") or "").strip()
+        if not objective_id:
+            return False
+
+        source_model_id = str(sr.get("singular_purpose_source_model_id", "") or "").strip()
+        if model is not None and source_model_id:
+            model_id = str(get_entity_id(model) or "").strip()
+            if model_id and model_id != source_model_id:
+                return False
+
+        try:
+            if hasattr(root, "is_alive") and callable(root.is_alive) and not root.is_alive():
+                return False
+            if not bool(getattr(root, "deployed", True)):
+                return False
+        except Exception:
+            return False
+        try:
+            if bool(getattr(root, "is_embarked", False)) or root.is_in_reserves():
+                return False
+        except Exception:
+            pass
+
+        objective = None
+        if game_map is None and game is None:
+            try:
+                army = root.get_parent_army()
+            except Exception:
+                army = None
+            try:
+                game = getattr(getattr(army, "player", None), "game", None)
+            except Exception:
+                game = None
+        if game_map is None and game is not None:
+            game_map = getattr(game, "map", None)
+        for obj in list(getattr(game_map, "objectives", []) or []):
+            if str(get_entity_id(obj) or "") == objective_id:
+                objective = obj
+                break
+        if objective is None:
+            for obj in list(getattr(game, "objectives", []) or []):
+                if str(get_entity_id(obj) or "") == objective_id:
+                    objective = obj
+                    break
+        if objective is None:
+            return False
+
+        loc = getattr(objective, "location", None)
+        if loc is None or bool(getattr(loc, "removed", False)):
+            return False
+
+        source_model = None
+        try:
+            models = list(root.get_models_for_collision() or [])
+        except Exception:
+            models = list(getattr(root, "models", []) or [])
+        for candidate in list(models or []):
+            if candidate is None:
+                continue
+            try:
+                if not bool(getattr(candidate, "is_alive", True)):
+                    continue
+            except Exception:
+                pass
+            candidate_id = str(get_entity_id(candidate) or "").strip()
+            if source_model_id and candidate_id and candidate_id != source_model_id:
+                continue
+            source_model = candidate
+            break
+        if source_model is None and model is not None:
+            source_model = model
+        if source_model is None:
+            return False
+
+        try:
+            from shapely.geometry import Point as _ShPoint
+
+            area = _ShPoint(float(getattr(loc, "x", 0.0)), float(getattr(loc, "y", 0.0))).buffer(
+                float(getattr(loc, "control_radius", 0.0) or 0.0)
+            )
+            base = source_model.model_base.get_base_shape()
+            if base.intersects(area):
+                return True
+        except Exception:
+            pass
+
+        try:
+            sx, sy, _sz, _facing = source_model.get_location()
+        except Exception:
+            return False
+        try:
+            dx = float(sx) - float(getattr(loc, "x", 0.0))
+            dy = float(sy) - float(getattr(loc, "y", 0.0))
+            radius = float(getattr(loc, "control_radius", 0.0) or 0.0)
+            base_r = float(getattr(source_model.model_base, "get_radius", lambda: 1.0)())
+            return (dx * dx + dy * dy) ** 0.5 <= (radius + base_r)
+        except Exception:
+            return False
+
     def _has_aethersails(self) -> bool:
         try:
             root = self.get_attached_unit_root()
