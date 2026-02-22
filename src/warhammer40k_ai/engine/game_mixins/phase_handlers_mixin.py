@@ -3867,6 +3867,20 @@ class GamePhaseHandlersMixin:
                 continue
             mgr.on_phase_start(game=self)
 
+    def _on_phase_start_thousand_sons_flow_of_magic(self, player=None, phase=None, **_kwargs) -> None:
+        if phase is None:
+            return
+        for p in list(self.players or []):
+            if p is None:
+                raise RuntimeError("Flow of Magic phase start requires players.")
+            army = p.get_army()
+            if army is None:
+                raise RuntimeError(f"Flow of Magic requires an army for {p.name}.")
+            mgr = getattr(army, "thousand_sons_detachments", None)
+            on_phase_start = getattr(mgr, "on_phase_start", None) if mgr is not None else None
+            if callable(on_phase_start):
+                on_phase_start(game=self)
+
     def _on_phase_start_cabal_of_sorcerers(self, player=None, phase=None, **_kwargs) -> None:
         """Reset Cabal of Sorcerers usage at the start of the active player's Shooting phase."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

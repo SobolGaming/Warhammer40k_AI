@@ -220,6 +220,143 @@ class ThousandSonsDetachmentManager(DetachmentManagerBase):
         return self.detachment_matches("Warpforged Cabal")
 
     @staticmethod
+    def _phase_key_for_game(game) -> str:
+        if game is None:
+            return ""
+        try:
+            turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            turn = 0
+        phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        get_current_player = getattr(game, "get_current_player", None)
+        current_player = get_current_player() if callable(get_current_player) else None
+        owner_id = str(getattr(current_player, "id", "") or "")
+        return f"{turn}:{phase}:{owner_id}"
+
+    def _resolve_game(self, game=None):
+        if game is not None:
+            return game
+        player = getattr(self.army, "player", None) if self.army is not None else None
+        return getattr(player, "game", None) if player is not None else None
+
+    def _compute_hexwarp_flow_zones(self, game) -> set[str]:
+        zones: set[str] = {"own"}
+        if game is None:
+            return zones
+        player = getattr(self.army, "player", None) if self.army is not None else None
+        if player is None:
+            return zones
+        game_players = list(getattr(game, "players", None) or [])
+        opponent = next((p for p in game_players if p is not player), None)
+        game_map = getattr(game, "map", None)
+        objectives = list(getattr(game_map, "objectives", None) or [])
+
+        nml_total = 0
+        nml_controlled = 0
+        enemy_total = 0
+        enemy_controlled = 0
+
+        for objective in objectives:
+            location = getattr(objective, "location", None)
+            if location is None or bool(getattr(location, "removed", False)):
+                continue
+            update_control = getattr(location, "update_control", None)
+            if callable(update_control):
+                update_control(game)
+            x = float(getattr(location, "x", 0.0) or 0.0)
+            y = float(getattr(location, "y", 0.0) or 0.0)
+            in_own = bool(game.is_position_in_deployment_zone(x, y, player.id))
+            in_enemy = bool(game.is_position_in_deployment_zone(x, y, opponent.id)) if opponent is not None else False
+            controller = getattr(location, "controlling_player", None)
+            if in_enemy:
+                enemy_total += 1
+                if controller is player:
+                    enemy_controlled += 1
+            elif not in_own:
+                nml_total += 1
+                if controller is player:
+                    nml_controlled += 1
+
+        if nml_total > 0 and int(nml_controlled) * 2 >= int(nml_total):
+            zones.add("nml")
+        if enemy_total > 0 and int(enemy_controlled) * 2 >= int(enemy_total):
+            zones.add("enemy")
+        return zones
+
+    def on_phase_start(self, *, game=None) -> None:
+        if not self.is_hexwarp_thrallband():
+            return
+        game_obj = self._resolve_game(game=game)
+        if game_obj is None:
+            return
+        self.hexwarp_flow_phase_key = self._phase_key_for_game(game_obj)
+        self.hexwarp_flow_zones = self._compute_hexwarp_flow_zones(game_obj)
+
+    def _active_hexwarp_flow_zones(self, game=None) -> set[str]:
+        if not self.is_hexwarp_thrallband():
+            return {"own"}
+        game_obj = self._resolve_game(game=game)
+        if game_obj is None:
+            return {"own"}
+        phase_key = self._phase_key_for_game(game_obj)
+        if str(self.hexwarp_flow_phase_key or "") != str(phase_key or ""):
+            # Fallback for tests/minimal simulations that do not emit phase_start events.
+            self.hexwarp_flow_phase_key = phase_key
+            self.hexwarp_flow_zones = self._compute_hexwarp_flow_zones(game_obj)
+        zones = {"own"}
+        zones.update(set(self.hexwarp_flow_zones or {"own"}))
+        return zones
+
+    def _model_wholly_within_hexwarp_flow(self, model, *, game=None) -> bool:
+        if model is None:
+            return False
+        if not bool(getattr(model, "is_alive", True)):
+            return False
+        game_obj = self._resolve_game(game=game)
+        if game_obj is None:
+            return False
+        player = getattr(self.army, "player", None) if self.army is not None else None
+        if player is None:
+            return False
+        game_players = list(getattr(game_obj, "players", None) or [])
+        opponent = next((p for p in game_players if p is not player), None)
+        base = getattr(model, "model_base", None)
+        get_location = getattr(model, "get_location", None)
+        if base is None or not callable(get_location):
+            return False
+        location = get_location()
+        if location is None or len(location) < 2:
+            return False
+        x = float(location[0] or 0.0)
+        y = float(location[1] or 0.0)
+        in_own = bool(game_obj.is_position_wholly_in_deployment_zone(x, y, base, player.id))
+        in_enemy = bool(game_obj.is_position_wholly_in_deployment_zone(x, y, base, opponent.id)) if opponent is not None else False
+        if in_own:
+            zone = "own"
+        elif in_enemy:
+            zone = "enemy"
+        else:
+            zone = "nml"
+        return zone in self._active_hexwarp_flow_zones(game=game_obj)
+
+    def hexwarp_flow_of_magic_psychic_wound_modifiers(self, model, weapon_profile=None, *, game=None) -> tuple[int, bool, str]:
+        if not self.is_hexwarp_thrallband():
+            return 0, False, ""
+        if model is None or weapon_profile is None:
+            return 0, False, ""
+        if not self._model_in_army(model):
+            return 0, False, ""
+        if not self._model_is_thousand_sons(model):
+            return 0, False, ""
+        is_psychic = getattr(weapon_profile, "is_psychic", None)
+        if not callable(is_psychic) or not bool(is_psychic()):
+            return 0, False, ""
+        game_obj = self._resolve_game(game=game)
+        if self._model_wholly_within_hexwarp_flow(model, game=game_obj):
+            return 1, False, "Flow of Magic"
+        return 0, True, "Flow of Magic"
+
+    @staticmethod
     def _normalize_unit_name(name: str) -> str:
         text = str(name or "").strip().lower()
         return " ".join(text.split())

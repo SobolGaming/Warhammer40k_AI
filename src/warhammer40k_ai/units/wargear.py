@@ -11932,6 +11932,23 @@ class WargearProfile:
                     wound_result['modifiers'].append(f"+{bonus} to wound from Psychic Maelstrom")
         except Exception:
             pass
+        # Thousand Sons: Hexwarp Thrallband (Flow of Magic).
+        attack_instance["hexwarp_flow_reroll_wound_ones"] = False
+        attack_instance["hexwarp_flow_reroll_wound_ones_source"] = ""
+        attacker_unit = getattr(attacker, "parent_unit", None)
+        get_parent_army = getattr(attacker_unit, "get_parent_army", None) if attacker_unit is not None else None
+        attacker_army = get_parent_army() if callable(get_parent_army) else None
+        ts_mgr = getattr(attacker_army, "thousand_sons_detachments", None) if attacker_army is not None else None
+        flow_mods = getattr(ts_mgr, "hexwarp_flow_of_magic_psychic_wound_modifiers", None) if ts_mgr is not None else None
+        if callable(flow_mods):
+            game = getattr(getattr(attacker_army, "player", None), "game", None) if attacker_army is not None else None
+            flow_bonus, flow_reroll_ones, flow_source = flow_mods(attacker, self, game=game)
+            source_name = str(flow_source or "Flow of Magic").strip() or "Flow of Magic"
+            attack_instance["hexwarp_flow_reroll_wound_ones"] = bool(flow_reroll_ones)
+            attack_instance["hexwarp_flow_reroll_wound_ones_source"] = source_name
+            if flow_bonus:
+                dice_modifier += int(flow_bonus)
+                wound_result['modifiers'].append(f"+{int(flow_bonus)} to wound from {source_name}")
         # Temporary Psychic attack bonuses (e.g., Sacrificial Dagger).
         try:
             if self._is_psychic_attack(attacker):
@@ -12712,6 +12729,12 @@ class WargearProfile:
                     reroll_value_reasons.append("Methodical Annihilation: re-roll Wound roll of 1")
         except Exception:
             pass
+        if rerolls_allowed and bool(attack_instance.get("hexwarp_flow_reroll_wound_ones", False)):
+            reroll_wound_values.add(1)
+            source_name = str(
+                attack_instance.get("hexwarp_flow_reroll_wound_ones_source", "") or "Flow of Magic"
+            ).strip() or "Flow of Magic"
+            reroll_value_reasons.append(f"{source_name}: re-roll Wound roll of 1")
         # Space Marines: Librarius Conclave (Psychic Disciplines - Divination).
         try:
             unit = getattr(attacker, "parent_unit", None)

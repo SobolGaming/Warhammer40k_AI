@@ -420,6 +420,14 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"onslaught up to \d+ pts",
             r"no scintillating legions models from your army can be your warlord",
         ),
+        "Flow of Magic": (
+            r"certain areas of the battlefield are within your army\s*s flow of magic as follows",
+            r"your deployment zone is always within your army\s*s flow of magic",
+            r"at the start of any phase if you control at least half of the objective markers within no man\s*s land until the end of that phase no man\s*s land is within your army\s*s flow of magic",
+            r"at the start of any phase if you control at least half of the objective markers within your opponent\s*s deployment zone until the end of that phase your opponent\s*s deployment zone is within your army\s*s flow of magic",
+            r"each time a thousand sons model from your army makes a psychic attack re\s*roll a wound roll of 1",
+            r"if such a model is wholly within your army\s*s flow of magic each time it makes a psychic attack add 1 to the wound roll instead",
+        ),
         "Combat Drugs": (
             r"at the start of your command phase select which combat drugs will be active for your army until the start of your next command phase",
             r"to do so either select one from the list below you cannot select the same combat drug more than once per battle or randomly select two by rolling two d6",
@@ -1892,6 +1900,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Infernal Pacts": (
             "Supported",
             "Changehost of Deceit: Daemonic Illusions grants nearby visible THOUSAND SONS PSYKER units a 4+ invulnerable save against ranged attacks; Mortal Sorcery grants Cabal of Sorcerers to nearby visible SCINTILLATING LEGIONS PSYKER units; Scintillating Legions points caps and WARLORD restriction are validated by battle size.",
+        ),
+        "Flow of Magic": (
+            "Supported",
+            "Hexwarp Thrallband: at the start of each phase, Flow zones (own deployment always; No Man's Land/opponent deployment when controlling at least half of those objectives) are snapshotted until phase end; THOUSAND SONS Psychic attacks re-roll Wound rolls of 1, or gain +1 to Wound instead while the attacking model is wholly within Flow of Magic.",
         ),
         "All is Dust": (
             "Supported",
