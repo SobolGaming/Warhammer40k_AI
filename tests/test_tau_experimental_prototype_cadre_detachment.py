@@ -731,6 +731,107 @@ def test_hunters_instincts_requires_kroot_attacker_models():
     assert hit_result["hit"] is False
 
 
+def test_skirmish_fighters_grants_five_plus_invulnerable_save_against_ranged_attacks():
+    tau_army = _build_tau_army("Kroot Hunting Pack")
+    protected_unit = create_unit(
+        "Kroot Carnivores",
+        keywords=["INFANTRY", "KROOT"],
+        faction_keywords=["T'AU EMPIRE", "KROOT"],
+    )
+    tau_army.add_unit(protected_unit)
+
+    enemy_army = _build_tau_army("Kauyon")
+    enemy_unit = create_unit(
+        "Enemy Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    enemy_army.add_unit(enemy_unit)
+
+    target_model = protected_unit.models[0]
+    attacker_model = enemy_unit.models[0]
+    attack_profile = make_profile(range_val="24", is_ranged=True)
+    save_result = attack_profile._save_with_tracking(
+        target_model,
+        {"attacker_model": attacker_model, "target_unit": protected_unit},
+        ap=-3,
+        roll_value=6,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+
+    assert save_result.get("save_type") == "invulnerable"
+    assert int(save_result.get("final_save", 0) or 0) == 5
+    assert any("Skirmish Fighters" in str(entry) for entry in save_result.get("special_effects", []))
+
+
+def test_skirmish_fighters_grants_six_plus_invulnerable_save_against_melee_attacks():
+    tau_army = _build_tau_army("Kroot Hunting Pack")
+    protected_unit = create_unit(
+        "Kroot Carnivores",
+        keywords=["INFANTRY", "KROOT"],
+        faction_keywords=["T'AU EMPIRE", "KROOT"],
+    )
+    tau_army.add_unit(protected_unit)
+
+    enemy_army = _build_tau_army("Kauyon")
+    enemy_unit = create_unit(
+        "Enemy Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    enemy_army.add_unit(enemy_unit)
+
+    target_model = protected_unit.models[0]
+    attacker_model = enemy_unit.models[0]
+    attack_profile = make_profile(range_val="2", is_ranged=False)
+    save_result = attack_profile._save_with_tracking(
+        target_model,
+        {"attacker_model": attacker_model, "target_unit": protected_unit},
+        ap=-3,
+        roll_value=6,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+
+    assert save_result.get("save_type") == "invulnerable"
+    assert int(save_result.get("final_save", 0) or 0) == 6
+    assert any("Skirmish Fighters" in str(entry) for entry in save_result.get("special_effects", []))
+
+
+def test_skirmish_fighters_invulnerable_save_does_not_apply_to_non_kroot_models():
+    tau_army = _build_tau_army("Kroot Hunting Pack")
+    protected_unit = create_unit(
+        "Strike Team",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    tau_army.add_unit(protected_unit)
+
+    enemy_army = _build_tau_army("Kauyon")
+    enemy_unit = create_unit(
+        "Enemy Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    enemy_army.add_unit(enemy_unit)
+
+    target_model = protected_unit.models[0]
+    attacker_model = enemy_unit.models[0]
+    attack_profile = make_profile(range_val="24", is_ranged=True)
+    save_result = attack_profile._save_with_tracking(
+        target_model,
+        {"attacker_model": attacker_model, "target_unit": protected_unit},
+        ap=-3,
+        roll_value=6,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+
+    assert save_result.get("save_type") != "invulnerable"
+    assert int(save_result.get("final_save", 0) or 0) == 7
+
+
 def test_killing_blow_grants_assault_for_first_three_rounds():
     army = _build_tau_army("Mont'ka")
     army.player.game.turn = 2

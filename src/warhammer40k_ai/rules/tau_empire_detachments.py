@@ -318,6 +318,22 @@ class TauEmpireDetachmentManager(DetachmentManagerBase):
             return 0, ""
         return 1, "Hunter's Instincts"
 
+    def skirmish_fighters_invulnerable_save(self, target_model, *, attack_type: str = "") -> tuple[int, str]:
+        if not self.is_kroot_hunting_pack():
+            return 0, ""
+        if target_model is None:
+            return 0, ""
+        if not self._model_in_army(target_model):
+            return 0, ""
+        if not self._model_is_kroot(target_model):
+            return 0, ""
+        attack = str(attack_type or "").strip().lower()
+        if attack == "melee":
+            return 6, "Skirmish Fighters"
+        if attack == "ranged":
+            return 5, "Skirmish Fighters"
+        return 0, ""
+
     @staticmethod
     def _battle_round_from_game(game) -> int:
         if game is None:

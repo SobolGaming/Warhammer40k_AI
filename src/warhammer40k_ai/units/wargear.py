@@ -15020,6 +15020,22 @@ class WargearProfile:
                 if current is None or int(current) > 4:
                     attack_instance["inv_save_override"] = 4
                     attack_instance["inv_save_override_reason"] = "Idol of Blessed Blood (Aura)"
+        # Tau Empire: Kroot Hunting Pack (Skirmish Fighters) 6++ melee / 5++ ranged for KROOT models.
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            attack_type = "melee" if (self.parent_wargear and self.parent_wargear.is_melee()) else "ranged"
+            army = t_unit.get_parent_army() if t_unit is not None else None
+            tau_mgr = getattr(army, "tau_empire_detachments", None) if army is not None else None
+            if tau_mgr is not None and callable(getattr(tau_mgr, "skirmish_fighters_invulnerable_save", None)):
+                inv_value, inv_source = tau_mgr.skirmish_fighters_invulnerable_save(target_model, attack_type=attack_type)
+                if inv_value:
+                    current = attack_instance.get("inv_save_override", None)
+                    if current is None or int(current) > int(inv_value):
+                        attack_instance["inv_save_override"] = int(inv_value)
+                        source = str(inv_source or "Skirmish Fighters").strip() or "Skirmish Fighters"
+                        attack_instance["inv_save_override_reason"] = source
+        except Exception:
+            pass
         # Space Marines: Wrathful Procession (Zealous Litanies - Chant of Deathless Devotion).
         try:
             t_unit = getattr(target_model, "parent_unit", None)

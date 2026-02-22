@@ -326,6 +326,9 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Hunter's Instincts": (
             r"each time a kroot model from your army makes an attack add 1 to the hit roll if the target of that attack is below its starting strength and add 1 to the wound roll as well if the target of that attack is below half strength",
         ),
+        "Skirmish Fighters": (
+            r"kroot models from your army have a 6 invulnerable save against melee attacks and a 5 invulnerable save against ranged attacks",
+        ),
         "Ruthless Discipline": (
             r"add \d+ to the number of orders each astra militarum officer model from your army can issue as stated on their datasheet",
             r"while an astra militarum unit from your army is affected by an order each time a model in that unit makes an attack reroll a hit roll of \d+",
@@ -1929,6 +1932,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Hunter's Instincts": (
             "Supported",
             "Kroot Hunting Pack: KROOT models gain +1 to hit against targets below starting strength and gain +1 to wound as well against targets below half-strength.",
+        ),
+        "Skirmish Fighters": (
+            "Supported",
+            "Kroot Hunting Pack: KROOT models gain a 6+ invulnerable save against melee attacks and a 5+ invulnerable save against ranged attacks.",
         ),
         "Path of the Warrior": (
             "Supported",
