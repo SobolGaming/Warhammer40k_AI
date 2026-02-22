@@ -1264,6 +1264,19 @@ class DamageDeathMixin:
                 damage_expr = str(sr.get("enhancement_violent_demise_damage_dice", "") or "D3+1")
                 damage_dice = DiceCollection.from_string(damage_expr)
 
+        # Thousand Sons (Warpforged Cabal): Warpfire Infusion.
+        # Deadly Demise triggers on 5+ while the destroyed VEHICLE model is within 6" of a friendly TS PSYKER.
+        try:
+            army = self.get_parent_army()
+            ts_mgr = getattr(army, "thousand_sons_detachments", None) if army is not None else None
+            threshold_fn = getattr(ts_mgr, "warpfire_deadly_demise_trigger_threshold", None) if ts_mgr is not None else None
+            if callable(threshold_fn):
+                ts_threshold = int(threshold_fn(self, model=dying_model) or 0)
+                if ts_threshold > 0:
+                    trigger_threshold = int(min(int(trigger_threshold), int(ts_threshold)))
+        except Exception:
+            pass
+
         auto_trigger = False
         putrid_auto_trigger = False
         sanctified_auto_trigger = False

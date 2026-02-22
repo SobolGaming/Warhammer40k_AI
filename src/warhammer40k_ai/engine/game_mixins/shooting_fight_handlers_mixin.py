@@ -6205,6 +6205,53 @@ class GameShootingFightHandlersMixin:
         if callable(start_selection):
             start_selection(root, action="fight", game=self)
 
+    def _on_shooting_targets_selected_thousand_sons_warpfire_infusion(
+        self,
+        attacking_unit=None,
+        target_units=None,
+        **_kwargs,
+    ) -> None:
+        if attacking_unit is None or not target_units:
+            return
+        try:
+            root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            root = attacking_unit
+        if root is None:
+            return
+        army = root.get_parent_army()
+        if army is None:
+            return
+        mgr = getattr(army, "thousand_sons_detachments", None)
+        start_selection = getattr(mgr, "warpfire_infusion_start_selection", None) if mgr is not None else None
+        if callable(start_selection):
+            start_selection(root, action="shoot", game=self)
+
+    def _on_fight_unit_selected_thousand_sons_warpfire_infusion(
+        self,
+        unit=None,
+        selecting_player=None,
+        **_kwargs,
+    ) -> None:
+        if unit is None:
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        army = root.get_parent_army()
+        owner = getattr(army, "player", None) if army is not None else None
+        if owner is None:
+            return
+        if selecting_player is not None and selecting_player is not owner:
+            return
+        mgr = getattr(army, "thousand_sons_detachments", None)
+        start_selection = getattr(mgr, "warpfire_infusion_start_selection", None) if mgr is not None else None
+        if callable(start_selection):
+            start_selection(root, action="fight", game=self)
+
     def _on_fight_unit_selected_master_of_wolves_ferocious_strike(self, unit=None, selecting_player=None, **_kwargs) -> None:
         if unit is None:
             return

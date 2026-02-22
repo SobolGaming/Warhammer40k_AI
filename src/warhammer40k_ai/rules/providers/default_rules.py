@@ -484,6 +484,8 @@ def build_default_rule_providers() -> List[RuleProvider]:
             name="thousand_sons",
             predicate=lambda ctxs, _g: any_manager(ctxs, "cabal_of_sorcerers", ("_army_has_cabal",)),
             subscriptions=[
+                ("shooting_targets_selected", "_on_shooting_targets_selected_thousand_sons_warpfire_infusion"),
+                ("fight_unit_selected", "_on_fight_unit_selected_thousand_sons_warpfire_infusion"),
                 ("phase_start", "_on_phase_start_thousand_sons_flow_of_magic"),
                 ("phase_start", "_on_phase_start_thousand_sons_enhancements"),
                 ("phase_start", "_on_phase_start_cabal_of_sorcerers"),

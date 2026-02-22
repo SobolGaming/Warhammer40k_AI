@@ -4,7 +4,12 @@ from dataclasses import dataclass
 from typing import Optional
 
 from .detachment_manager import DetachmentManagerBase
-from ..utility.aura_utils import linked_fire_origin_is_visible, unit_within_range_of_unit
+from ..utility.aura_utils import (
+    distance_between_models_bases_3d,
+    linked_fire_origin_is_visible,
+    unit_within_range_of_unit,
+)
+from ..utility.entity_ids import get_entity_id
 
 
 @dataclass(frozen=True)
@@ -218,6 +223,163 @@ class ThousandSonsDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Warpforged Cabal")
+
+    def _warpfire_selection_key(self, unit, *, action: str, game=None) -> str:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return ""
+        unit_id = str(get_entity_id(root) or "")
+        if not unit_id:
+            unit_id = str(getattr(root, "_id", "") or "")
+        action_key = str(action or "").strip().lower()
+        if not unit_id or action_key not in {"shoot", "fight"}:
+            return ""
+        game_obj = self._resolve_game(game=game)
+        phase_key = self._phase_key_for_game(game_obj) if game_obj is not None else ""
+        if not phase_key:
+            return ""
+        return f"{phase_key}:{unit_id}:{action_key}"
+
+    def _warpfire_vehicle_within_psyker_range(self, unit) -> bool:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        for source in self._iter_unique_army_roots():
+            if source is None:
+                continue
+            if not self._unit_is_on_battlefield(source):
+                continue
+            if not self._unit_is_thousand_sons_psyker(source):
+                continue
+            if unit_within_range_of_unit(root, source, 6.0, use_attached_aggregate=True):
+                return True
+        return False
+
+    def warpfire_infusion_start_selection(self, unit, *, action: str, game=None) -> bool:
+        if not self.is_warpforged_cabal():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        if not self._unit_is_on_battlefield(root):
+            return False
+        if not self._unit_is_thousand_sons_vehicle(root):
+            return False
+
+        action_key = str(action or "").strip().lower()
+        if action_key not in {"shoot", "fight"}:
+            return False
+        selection_key = self._warpfire_selection_key(root, action=action_key, game=game)
+        if not selection_key:
+            return False
+
+        unit_id = str(get_entity_id(root) or "")
+        suffix = f":{unit_id}:{action_key}" if unit_id else ""
+        if suffix:
+            for key in list(self.warpfire_selection_state_by_key.keys()):
+                if str(key or "").endswith(suffix):
+                    self.warpfire_selection_state_by_key.pop(key, None)
+
+        if self._warpfire_vehicle_within_psyker_range(root):
+            state = {
+                "mode": "one_each",
+                "allow_hit": True,
+                "allow_wound": True,
+                "allow_damage": True,
+                "hit_remaining": 1,
+                "wound_remaining": 1,
+                "damage_remaining": 1,
+            }
+        else:
+            state = {
+                "mode": "choice",
+                "allow_hit": True,
+                "allow_wound": True,
+                "allow_damage": True,
+                "remaining": 1,
+            }
+        self.warpfire_selection_state_by_key[selection_key] = state
+        return True
+
+    def warpfire_infusion_reroll_is_available(self, unit, kind: str, *, action: str, game=None) -> bool:
+        if not self.is_warpforged_cabal():
+            return False
+        kind_key = str(kind or "").strip().lower()
+        if kind_key not in {"hit", "wound", "damage"}:
+            return False
+        selection_key = self._warpfire_selection_key(unit, action=action, game=game)
+        if not selection_key:
+            return False
+        state = self.warpfire_selection_state_by_key.get(selection_key)
+        if not isinstance(state, dict):
+            return False
+        if not bool(state.get(f"allow_{kind_key}", False)):
+            return False
+        mode_key = str(state.get("mode", "choice") or "choice").strip().lower()
+        if mode_key == "one_each":
+            try:
+                return int(state.get(f"{kind_key}_remaining", 0) or 0) > 0
+            except (TypeError, ValueError):
+                return False
+        try:
+            return int(state.get("remaining", 0) or 0) > 0
+        except (TypeError, ValueError):
+            return False
+
+    def consume_warpfire_infusion_reroll(self, unit, kind: str, *, action: str, game=None) -> bool:
+        if not self.warpfire_infusion_reroll_is_available(unit, kind, action=action, game=game):
+            return False
+        kind_key = str(kind or "").strip().lower()
+        selection_key = self._warpfire_selection_key(unit, action=action, game=game)
+        if not selection_key:
+            return False
+        state = self.warpfire_selection_state_by_key.get(selection_key)
+        if not isinstance(state, dict):
+            return False
+        mode_key = str(state.get("mode", "choice") or "choice").strip().lower()
+        if mode_key == "one_each":
+            field = f"{kind_key}_remaining"
+            state[field] = int(state.get(field, 0) or 0) - 1
+        else:
+            state["remaining"] = int(state.get("remaining", 0) or 0) - 1
+        self.warpfire_selection_state_by_key[selection_key] = state
+        return True
+
+    def warpfire_deadly_demise_trigger_threshold(self, unit, model=None) -> int:
+        if not self.is_warpforged_cabal():
+            return 0
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return 0
+        if not self._unit_in_army(root):
+            return 0
+        if not self._unit_is_thousand_sons_vehicle(root):
+            return 0
+
+        if model is not None:
+            for source in self._iter_unique_army_roots():
+                if source is None:
+                    continue
+                if not self._unit_is_on_battlefield(source):
+                    continue
+                if not self._unit_is_thousand_sons_psyker(source):
+                    continue
+                try:
+                    source_models = list(source.get_attached_unit_models() or [])
+                except Exception:
+                    source_models = list(getattr(source, "models", []) or [])
+                for source_model in source_models:
+                    if source_model is None or not bool(getattr(source_model, "is_alive", False)):
+                        continue
+                    if distance_between_models_bases_3d(model, source_model) <= 6.0 + 1e-6:
+                        return 5
+            return 0
+
+        if self._warpfire_vehicle_within_psyker_range(root):
+            return 5
+        return 0
 
     @staticmethod
     def _phase_key_for_game(game) -> str:

@@ -428,6 +428,12 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time a thousand sons model from your army makes a psychic attack re\s*roll a wound roll of 1",
             r"if such a model is wholly within your army\s*s flow of magic each time it makes a psychic attack add 1 to the wound roll instead",
         ),
+        "Warpfire Infusion": (
+            r"each time a thousand sons vehicle unit from your army is selected to shoot or fight apply one of the following when resolving those attacks",
+            r"if that vehicle unit is within 6 of one or more friendly thousand sons psyker models you can reroll one hit roll one wound roll and one damage roll",
+            r"otherwise you can reroll one hit roll one wound roll or one damage roll",
+            r"each time a thousand sons vehicle model from your army with the deadly demise ability is destroyed while it is within 6 of one or more friendly thousand sons psyker models that model(?:s| s) deadly demise ability inflicts mortal wounds on a d6 roll of 5 instead of only a 6",
+        ),
         "Combat Drugs": (
             r"at the start of your command phase select which combat drugs will be active for your army until the start of your next command phase",
             r"to do so either select one from the list below you cannot select the same combat drug more than once per battle or randomly select two by rolling two d6",
@@ -1904,6 +1910,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Flow of Magic": (
             "Supported",
             "Hexwarp Thrallband: at the start of each phase, Flow zones (own deployment always; No Man's Land/opponent deployment when controlling at least half of those objectives) are snapshotted until phase end; THOUSAND SONS Psychic attacks re-roll Wound rolls of 1, or gain +1 to Wound instead while the attacking model is wholly within Flow of Magic.",
+        ),
+        "Warpfire Infusion": (
+            "Supported",
+            "Warpforged Cabal: each time a THOUSAND SONS VEHICLE unit is selected to shoot or fight, Warpfire reroll budget is initialized (near friendly THOUSAND SONS PSYKER model: one Hit, one Wound, and one Damage reroll; otherwise one total reroll among Hit/Wound/Damage); THOUSAND SONS VEHICLE models use Deadly Demise 5+ while within 6\" of a friendly THOUSAND SONS PSYKER model.",
         ),
         "All is Dust": (
             "Supported",
