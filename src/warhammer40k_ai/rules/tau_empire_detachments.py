@@ -77,6 +77,15 @@ class TauEmpireDetachmentManager(DetachmentManagerBase):
     def _unit_is_kroot_or_vespid(self, unit) -> bool:
         return bool(self._unit_is_kroot(unit) or self._unit_is_vespid_stingwings(unit))
 
+    def _unit_is_kroot_carnivores(self, unit) -> bool:
+        if unit is None:
+            return False
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        name = str(getattr(root, "name", "") or "").strip().lower()
+        return "kroot carnivore" in name
+
     def _model_is_tau_empire(self, model) -> bool:
         if model is None:
             return False
@@ -333,6 +342,31 @@ class TauEmpireDetachmentManager(DetachmentManagerBase):
         if attack == "ranged":
             return 5, "Skirmish Fighters"
         return 0, ""
+
+    def apply_kroot_hunting_pack_battleline_keywords(self, unit=None) -> None:
+        if not self.is_kroot_hunting_pack() or self.army is None:
+            return
+        if unit is None:
+            units = list(getattr(self.army, "units", []) or [])
+        else:
+            units = [unit]
+        for entry in units:
+            if entry is None:
+                continue
+            root = self._attached_root(entry)
+            if root is None:
+                continue
+            get_parent_army = getattr(root, "get_parent_army", None)
+            if not callable(get_parent_army):
+                continue
+            if get_parent_army() is not self.army:
+                continue
+            if not self._unit_is_kroot_carnivores(root):
+                continue
+            keywords = list(getattr(root, "keywords", []) or [])
+            if not any(str(k or "").strip().lower() == "battleline" for k in keywords):
+                keywords.append("Battleline")
+                root.keywords = keywords
 
     @staticmethod
     def _battle_round_from_game(game) -> int:

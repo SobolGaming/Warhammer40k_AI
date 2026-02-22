@@ -469,6 +469,10 @@ class Army:
         apply_fn = getattr(sm_mgr, "apply_the_lost_brethren_battleline_keywords", None) if sm_mgr is not None else None
         if callable(apply_fn):
             apply_fn(unit)
+        tau_mgr = getattr(self, "tau_empire_detachments", None)
+        apply_fn = getattr(tau_mgr, "apply_kroot_hunting_pack_battleline_keywords", None) if tau_mgr is not None else None
+        if callable(apply_fn):
+            apply_fn(unit)
         game = getattr(getattr(self, "player", None), "game", None)
         refresh_fn = getattr(game, "refresh_rule_subscribers", None) if game is not None else None
         if callable(refresh_fn):

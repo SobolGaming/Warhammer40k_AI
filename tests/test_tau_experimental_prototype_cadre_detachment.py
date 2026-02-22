@@ -832,6 +832,48 @@ def test_skirmish_fighters_invulnerable_save_does_not_apply_to_non_kroot_models(
     assert int(save_result.get("final_save", 0) or 0) == 7
 
 
+def test_kroot_hunting_pack_keywords_grants_battleline_to_kroot_carnivores():
+    army = _build_tau_army("Kroot Hunting Pack")
+    unit = create_unit(
+        "Kroot Carnivores",
+        keywords=["INFANTRY", "KROOT"],
+        faction_keywords=["T'AU EMPIRE", "KROOT"],
+    )
+    assert unit.is_battleline is False
+
+    army.add_unit(unit)
+
+    assert unit.is_battleline is True
+
+
+def test_kroot_hunting_pack_keywords_do_not_apply_outside_kroot_hunting_pack():
+    army = _build_tau_army("Kauyon")
+    unit = create_unit(
+        "Kroot Carnivores",
+        keywords=["INFANTRY", "KROOT"],
+        faction_keywords=["T'AU EMPIRE", "KROOT"],
+    )
+    assert unit.is_battleline is False
+
+    army.add_unit(unit)
+
+    assert unit.is_battleline is False
+
+
+def test_kroot_hunting_pack_keywords_do_not_apply_to_non_carnivore_units():
+    army = _build_tau_army("Kroot Hunting Pack")
+    unit = create_unit(
+        "Kroot Farstalkers",
+        keywords=["INFANTRY", "KROOT"],
+        faction_keywords=["T'AU EMPIRE", "KROOT"],
+    )
+    assert unit.is_battleline is False
+
+    army.add_unit(unit)
+
+    assert unit.is_battleline is False
+
+
 def test_killing_blow_grants_assault_for_first_three_rounds():
     army = _build_tau_army("Mont'ka")
     army.player.game.turn = 2

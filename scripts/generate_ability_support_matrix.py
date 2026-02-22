@@ -329,6 +329,9 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Skirmish Fighters": (
             r"kroot models from your army have a 6 invulnerable save against melee attacks and a 5 invulnerable save against ranged attacks",
         ),
+        "KEYWORDS": (
+            r"(?:if you select this detachment )?.+ units from your army (?:have|gain) the battleline keyword",
+        ),
         "Ruthless Discipline": (
             r"add \d+ to the number of orders each astra militarum officer model from your army can issue as stated on their datasheet",
             r"while an astra militarum unit from your army is affected by an order each time a model in that unit makes an attack reroll a hit roll of \d+",
@@ -3850,6 +3853,16 @@ def _datasheet_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[str, str
         out[(str(fid or "").strip().upper(), _norm(name))] = val
     return out
 
+
+def _detachment_ability_support_by_id() -> Dict[str, Tuple[str, str]]:
+    return {
+        "000008820": (
+            "Supported",
+            "Kroot Hunting Pack: Kroot Carnivore units from your army gain the Battleline keyword.",
+        ),
+    }
+
+
 def _seed_ability_support_maps(abilities: List[dict], det_abilities_rows: List[dict]) -> None:
     global ABILITY_SUPPORT_BY_ID, ABILITY_SUPPORT_BY_NAME_FACTION, ABILITY_SUPPORT_BY_NAME_FACTION_DS
     ABILITY_SUPPORT_BY_ID = {}
@@ -3881,6 +3894,10 @@ def _seed_ability_support_maps(abilities: List[dict], det_abilities_rows: List[d
     for name_norm, val in _detachment_ability_support_by_name().items():
         for det_id in det_name_to_ids.get(name_norm, []):
             ABILITY_SUPPORT_BY_ID[det_id] = val
+    for det_id, val in _detachment_ability_support_by_id().items():
+        det_key = str(det_id or "").strip()
+        if det_key:
+            ABILITY_SUPPORT_BY_ID[det_key] = val
 
     restriction_support = _restriction_support_by_name()
     for fid, meta in FACTION_RULE_METADATA.items():
