@@ -5,7 +5,7 @@ This document defines how model footprint geometry and model height are resolved
 ## Why this exists
 
 Some datasheets use `Use model` or otherwise need manual hull footprints.  
-`wahapedia_data/model_geometry_overrides.json` provides:
+`data/model_geometry_overrides.json` provides:
 
 - manual hull dimensions
 - compound/multi-part footprints for single-model units
@@ -44,7 +44,7 @@ For Aegis Defence Line (`DEPLOYMENT` ability), section composition and connectiv
 
 ## Current seeded entries
 
-`wahapedia_data/model_geometry_overrides.json` currently seeds:
+`data/model_geometry_overrides.json` currently seeds:
 
 - `Aegis Defence Line` (compound hull footprint)
 - `Khorne Lord of Skulls` (manual hull rectangle)
@@ -65,8 +65,8 @@ So save/load preserves resolved compound geometry.
 If a model is parsed from a clear flying base and has no explicit `z_offset_mm` override,
 the engine applies a default offset by base minor diameter:
 
-- <=35mm: 20mm offset
-- <=65mm: 32mm offset
-- <=100mm: 45mm offset
-- <=120mm: 55mm offset
-- >120mm: 65mm offset
+- `<=35mm`: 20mm offset
+- `<=65mm`: 32mm offset
+- `<=100mm`: 45mm offset
+- `<=120mm`: 55mm offset
+- `>120mm`: 65mm offset

@@ -16,7 +16,7 @@ from .model_base import BaseType, create_ellipse, create_rectangle
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_OVERRIDES_FILE = ("wahapedia_data", "model_geometry_overrides.json")
+_DEFAULT_OVERRIDES_FILE = ("data", "model_geometry_overrides.json")
 _SHAPE_TYPES = {"circle", "ellipse", "hull"}
 _ENTRY_TYPES = {"hull", "compound"}
 _GUIDE_CLASSIFICATIONS = {"hull", "unique", "circle", "ellipse"}
