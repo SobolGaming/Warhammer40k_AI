@@ -8,6 +8,7 @@ from itertools import combinations
 from pathlib import Path
 
 from .detachment_manager import DetachmentManagerBase
+from ..utility.entity_ids import get_entity_id
 
 
 CODEX_SPACE_MARINES_DETACHMENTS = {
@@ -160,6 +161,9 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         self.angelic_legacy_selected_keys: tuple[str, ...] = ()
         self.angelic_legacy_selected_round: int = 0
         self.unparalleled_tactician_used_round: int = 0
+        self.grim_resolve_selected_unit_id: str = ""
+        self.grim_resolve_selected_round: int = 0
+        self.grim_resolve_selected_player_id: str = ""
 
     def _simple_norm(self, text: str) -> str:
         return _normalize_detachment_name(text)
@@ -277,6 +281,156 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("1st Company Task Force")
+
+    def is_unforgiven_task_force(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Unforgiven Task Force")
+
+    def _attached_unit_root(self, unit):
+        if unit is None:
+            return None
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        return root
+
+    def _iter_unique_army_roots(self) -> list:
+        army = self.army
+        if army is None:
+            return []
+        roots = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._attached_unit_root(unit)
+            if root is None:
+                continue
+            try:
+                if root.get_parent_army() is not army:
+                    continue
+            except Exception:
+                continue
+            rid = str(get_entity_id(root) or "")
+            if not rid or rid in seen:
+                continue
+            seen.add(rid)
+            roots.append(root)
+        roots.sort(key=lambda u: str(get_entity_id(u) or ""))
+        return roots
+
+    def _unit_has_models_or_is_alive(self, unit) -> bool:
+        if unit is None:
+            return False
+        models = getattr(unit, "models", None)
+        if isinstance(models, list) and len(models) > 0:
+            return True
+        is_alive_fn = getattr(unit, "is_alive", None)
+        if callable(is_alive_fn):
+            return bool(is_alive_fn())
+        return False
+
+    def grim_resolve_target_is_eligible(self, unit, *, game=None) -> bool:
+        if not self.is_unforgiven_task_force():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        try:
+            if root.get_parent_army() is not self.army:
+                return False
+        except Exception:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        if not self._unit_has_models_or_is_alive(root):
+            return False
+        return True
+
+    def get_grim_resolve_target_units(self, *, game=None) -> list:
+        if not self.is_unforgiven_task_force():
+            return []
+        roots = []
+        for root in self._iter_unique_army_roots():
+            if self.grim_resolve_target_is_eligible(root, game=game):
+                roots.append(root)
+        roots.sort(key=lambda u: (str(getattr(u, "name", "") or ""), str(get_entity_id(u) or "")))
+        return roots
+
+    def can_select_grim_resolve_target(self, *, game=None) -> bool:
+        if not self.is_unforgiven_task_force():
+            return False
+        if not self.get_grim_resolve_target_units(game=game):
+            return False
+        if game is None:
+            return True
+        try:
+            round_now = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            return False
+        if round_now <= 0:
+            return False
+        army_player_id = str(getattr(getattr(self.army, "player", None), "id", "") or "")
+        if (
+            self.grim_resolve_selected_round == round_now
+            and str(self.grim_resolve_selected_player_id or "") == army_player_id
+            and str(self.grim_resolve_selected_unit_id or "")
+        ):
+            return False
+        return True
+
+    def clear_grim_resolve_bonus(self, *, game=None) -> None:
+        self.grim_resolve_selected_unit_id = ""
+
+    def select_grim_resolve_target_unit(self, unit, *, game=None) -> bool:
+        if not self.is_unforgiven_task_force():
+            return False
+        if not self.grim_resolve_target_is_eligible(unit, game=game):
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        unit_id = str(get_entity_id(root) or "")
+        if not unit_id:
+            return False
+        self.grim_resolve_selected_unit_id = unit_id
+        if game is not None:
+            try:
+                self.grim_resolve_selected_round = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                self.grim_resolve_selected_round = 0
+        self.grim_resolve_selected_player_id = str(
+            getattr(getattr(self.army, "player", None), "id", "") or ""
+        )
+        return True
+
+    def grim_resolve_battle_shock_oc_bonus(self, unit) -> tuple[int, str]:
+        if not self.is_unforgiven_task_force():
+            return 0, ""
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return 0, ""
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return 0, ""
+        is_bs_fn = getattr(root, "is_battle_shocked", None)
+        if not callable(is_bs_fn) or not bool(is_bs_fn()):
+            return 0, ""
+        return 1, "Grim Resolve (Battle-shock)"
+
+    def grim_resolve_command_phase_oc_bonus(self, unit) -> tuple[int, str]:
+        if not self.is_unforgiven_task_force():
+            return 0, ""
+        selected_id = str(getattr(self, "grim_resolve_selected_unit_id", "") or "")
+        if not selected_id:
+            return 0, ""
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return 0, ""
+        if str(get_entity_id(root) or "") != selected_id:
+            return 0, ""
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return 0, ""
+        return 1, "Grim Resolve (Command phase)"
 
     def _attached_unit_has_keyword(self, unit, keyword: str) -> bool:
         if unit is None:

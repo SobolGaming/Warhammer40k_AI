@@ -2008,6 +2008,27 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         return errors
     ctx = dict(getattr(request, "context", {}) or {})
     ability = str(ctx.get("ability", "") or "")
+    if ability == "grim_resolve_target":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Grim Resolve army not found.",)
+        sm_mgr = getattr(army, "space_marines_detachments", None)
+        if sm_mgr is None:
+            return ("Space Marines detachment manager not found.",)
+        can_select = getattr(sm_mgr, "can_select_grim_resolve_target", None)
+        if not callable(can_select) or not bool(can_select(game=game)):
+            return ("Grim Resolve cannot be selected right now.",)
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return ("Grim Resolve target unit was not found.",)
+        is_eligible = getattr(sm_mgr, "grim_resolve_target_is_eligible", None)
+        if callable(is_eligible) and not bool(is_eligible(target_unit, game=game)):
+            return ("Grim Resolve target must be a friendly ADEPTUS ASTARTES unit.",)
+        return ()
     if ability == "resurrection_orb":
         payload = _option_payload(request, result)
         source_unit = resolve_unit(
@@ -2845,6 +2866,39 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
 def _apply_choose_quarry(game: object, request: DecisionRequest, result: DecisionResult):
     ctx = dict(getattr(request, "context", {}) or {})
     ability = str(ctx.get("ability", "") or "")
+    if ability == "grim_resolve_target":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        sm_mgr = getattr(army, "space_marines_detachments", None)
+        if sm_mgr is None:
+            return None
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return None
+        select_target = getattr(sm_mgr, "select_grim_resolve_target_unit", None)
+        if not callable(select_target) or not bool(select_target(target_unit, game=game)):
+            return None
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        player = _resolve_player(game, request, payload)
+        ability_name = str(ctx.get("ability_name", "") or "Grim Resolve").strip() or "Grim Resolve"
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {getattr(target_root, 'name', 'Unit')} gains +1 Objective Control until your next Command phase.",
+        )
+        return {
+            "target_unit_id": str(get_entity_id(target_root) or ""),
+            "source": ability_name,
+        }
     if ability == "murdercall":
         payload = _option_payload(request, result)
         player = _resolve_player(game, request, payload)

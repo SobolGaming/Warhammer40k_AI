@@ -639,6 +639,12 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"if you select this detachment death company marines and death company marines with bolt rifles units from your army have the battleline keyword",
             r"your army can include blood angels units but it cannot include any adeptus astartes units drawn from any other chapter",
         ),
+        "Grim Resolve": (
+            r"while an adeptus astartes unit from your army is battle shocked change the objective control characteristic of models in that unit to \d+ instead of \d+",
+            r"in your command phase select one adeptus astartes unit from your army",
+            r"until the start of your next command phase add \d+ to the objective control characteristic of models in that unit",
+            r"your army can include dark angels units but it cannot include any adeptus astartes units drawn from any other chapter",
+        ),
         "Maddened Ferocity": (
             r"each time an adeptus astartes model from your army makes a melee attack reroll a wound roll of \d+",
             r"each time an adeptus astartes unit from your army is selected to fight if that unit made a charge move this turn until the end of the phase add \d+ to the attacks characteristic of melee weapons equipped by models in that unit",
@@ -1914,6 +1920,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "A Noble Death in Combat": (
             "Supported",
             "The Lost Brethren: Death Company units re-roll Wound rolls of 1 in melee while below Starting Strength and re-roll the Wound roll instead while below Half-strength; Death Company Marines and Death Company Marines with Bolt Rifles units gain Battleline.",
+        ),
+        "Grim Resolve": (
+            "Supported",
+            "Unforgiven Task Force: while Battle-shocked, ADEPTUS ASTARTES units have Objective Control 1 instead of 0, and in each Command phase you select one ADEPTUS ASTARTES unit to gain +1 Objective Control until your next Command phase.",
         ),
         "Legacy of the Angel": (
             "Supported",

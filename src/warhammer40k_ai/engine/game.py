@@ -1106,6 +1106,75 @@ class Game(
         if hasattr(self, "request_decision"):
             self.request_decision(req)
 
+    def _maybe_prompt_grim_resolve(self) -> None:
+        player = self.get_current_player()
+        if player is None:
+            raise RuntimeError("Grim Resolve prompt requires current player.")
+        army = player.get_army()
+        if army is None:
+            raise RuntimeError("Grim Resolve prompt requires an army.")
+        sm_mgr = getattr(army, "space_marines_detachments", None)
+        if sm_mgr is None:
+            return
+        can_select = getattr(sm_mgr, "can_select_grim_resolve_target", None)
+        if not callable(can_select) or not bool(can_select(game=self)):
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        targets = list(getattr(sm_mgr, "get_grim_resolve_target_units", lambda **_k: [])(game=self) or [])
+        if not targets:
+            return
+
+        army_id = str(get_entity_id(army) or "")
+        battle_round = int(getattr(self, "turn", 0) or 0)
+        player_id = str(getattr(player, "id", "") or "")
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "grim_resolve_target":
+                    continue
+                if str(ctx.get("army_id", "") or "") != army_id:
+                    continue
+                if str(ctx.get("player_id", "") or "") != player_id:
+                    continue
+                if int(ctx.get("battle_round", battle_round) or battle_round) != battle_round:
+                    continue
+                return
+
+        options = []
+        for unit in list(targets):
+            unit_id = str(get_entity_id(unit) or "")
+            if not unit_id:
+                continue
+            unit_name = str(getattr(unit, "name", "Unit") or "Unit")
+            options.append(
+                DecisionOption.create(
+                    unit_name,
+                    payload={"target_unit_id": unit_id, "unit_id": unit_id, "army_id": army_id},
+                )
+            )
+        if not options:
+            return
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Grim Resolve: select one ADEPTUS ASTARTES unit to gain +1 Objective Control until your next Command phase.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={
+                "ability": "grim_resolve_target",
+                "ability_name": "Grim Resolve",
+                "phase": "Command phase",
+                "army_id": army_id,
+                "player_id": player_id,
+                "battle_round": battle_round,
+            },
+        )
+        if hasattr(self, "request_decision"):
+            self.request_decision(req)
+
     def _maybe_prompt_grand_coven(self) -> None:
         player = self.get_current_player()
         if player is None:
@@ -7194,7 +7263,11 @@ class Game(
         # Space Marines: Angelic Legacy selection at the start of the first battle round.
         sm_mgr = getattr(army, "space_marines_detachments", None)
         if sm_mgr is not None:
+            clear_grim_resolve = getattr(sm_mgr, "clear_grim_resolve_bonus", None)
+            if callable(clear_grim_resolve):
+                clear_grim_resolve(game=self)
             self._maybe_prompt_angelic_legacy()
+            self._maybe_prompt_grim_resolve()
 
         # Thousand Sons: Grand Coven (Kindred Sorcery) selection at the start of your Command phase.
         mgr = getattr(army, "thousand_sons_detachments", None)

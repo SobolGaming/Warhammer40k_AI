@@ -517,6 +517,28 @@ class Unit(
                 except Exception:
                     continue
 
+            # Space Marines: Grim Resolve (Unforgiven Task Force).
+            try:
+                army = self.get_parent_army()
+            except Exception:
+                army = None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if sm_mgr is not None:
+                try:
+                    bs_bonus, bs_source = sm_mgr.grim_resolve_battle_shock_oc_bonus(self)
+                except Exception:
+                    bs_bonus, bs_source = 0, ""
+                if int(bs_bonus or 0) > 0:
+                    source = str(bs_source or "Grim Resolve (Battle-shock)").strip() or "Grim Resolve (Battle-shock)"
+                    mods.append(Modifier(ModifierOp.ADD, int(bs_bonus), source=f"detachment:{source}"))
+                try:
+                    cmd_bonus, cmd_source = sm_mgr.grim_resolve_command_phase_oc_bonus(self)
+                except Exception:
+                    cmd_bonus, cmd_source = 0, ""
+                if int(cmd_bonus or 0) > 0:
+                    source = str(cmd_source or "Grim Resolve (Command phase)").strip() or "Grim Resolve (Command phase)"
+                    mods.append(Modifier(ModifierOp.ADD, int(cmd_bonus), source=f"detachment:{source}"))
+
             # Inspiring Commander: while included in your army, named units gain
             # a fixed Objective Control value for non-CHARACTER models while not Battle-shocked.
             try:
