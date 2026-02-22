@@ -54,6 +54,7 @@ class ThousandSonsDetachmentManager(DetachmentManagerBase):
         self.hexwarp_flow_phase_key: Optional[str] = None
         self.hexwarp_flow_zones: set[str] = {"own"}
         self.warpfire_selection_state_by_key: dict[str, dict[str, object]] = {}
+        self.warpmeld_sacrifice_state_by_key: dict[str, dict[str, object]] = {}
 
     def is_grand_coven(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -223,6 +224,11 @@ class ThousandSonsDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Warpforged Cabal")
+
+    def is_warpmeld_pact(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Warpmeld Pact")
 
     def _warpfire_selection_key(self, unit, *, action: str, game=None) -> str:
         root = self._attached_unit_root(unit)
@@ -622,6 +628,268 @@ class ThousandSonsDetachmentManager(DetachmentManagerBase):
     def _unit_is_thousand_sons_vehicle(self, unit) -> bool:
         return bool(self._unit_is_thousand_sons(unit) and self._attached_unit_has_keyword(unit, "VEHICLE"))
 
+    def _unit_is_tzaangors(self, unit) -> bool:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        if self._attached_unit_has_keyword(root, "TZAANGOR") or self._attached_unit_has_keyword(root, "TZAANGORS"):
+            return True
+        name = self._normalize_unit_name(getattr(root, "name", ""))
+        return "tzaangor" in name
+
+    def _unit_is_tzeentch_mutant_infantry_or_mounted(self, unit) -> bool:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        has_tzeentch = self._attached_unit_has_keyword(root, "TZEENTCH") or self._attached_unit_has_keyword(root, "TZEENTCH MUTANT")
+        has_mutant = self._attached_unit_has_keyword(root, "MUTANT") or self._attached_unit_has_keyword(root, "TZEENTCH MUTANT")
+        if not has_tzeentch or not has_mutant:
+            return False
+        return bool(self._attached_unit_has_keyword(root, "INFANTRY") or self._attached_unit_has_keyword(root, "MOUNTED"))
+
+    @staticmethod
+    def _model_has_keyword(model, keyword: str) -> bool:
+        if model is None:
+            return False
+        token = str(keyword or "").strip().upper()
+        if not token:
+            return False
+        has_any = getattr(model, "has_any_keyword", None)
+        if callable(has_any):
+            try:
+                if bool(has_any(token)):
+                    return True
+            except Exception:
+                pass
+        for attr in ("keywords", "faction_keywords"):
+            values = list(getattr(model, attr, []) or [])
+            for value in values:
+                if str(value or "").strip().upper() == token:
+                    return True
+        return False
+
+    def _model_is_tzaangor(self, model) -> bool:
+        if model is None:
+            return False
+        if self._model_has_keyword(model, "TZAANGOR") or self._model_has_keyword(model, "TZAANGORS"):
+            return True
+        name = self._normalize_unit_name(getattr(model, "name", ""))
+        return "tzaangor" in name
+
+    def _warpmeld_phase_key(self, *, game=None) -> str:
+        game_obj = self._resolve_game(game=game)
+        return self._phase_key_for_game(game_obj)
+
+    def _warpmeld_unit_id(self, unit) -> str:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return ""
+        unit_id = str(get_entity_id(root) or "")
+        if unit_id:
+            return unit_id
+        return str(getattr(root, "_id", "") or "")
+
+    def _warpmeld_state_key(self, unit, *, game=None) -> str:
+        phase_key = self._warpmeld_phase_key(game=game)
+        unit_id = self._warpmeld_unit_id(unit)
+        if not phase_key or not unit_id:
+            return ""
+        return f"{phase_key}:{unit_id}"
+
+    def _warpmeld_state(self, unit, *, game=None) -> tuple[str, dict[str, object]]:
+        key = self._warpmeld_state_key(unit, game=game)
+        if not key:
+            return "", {}
+        existing = self.warpmeld_sacrifice_state_by_key.get(key)
+        if isinstance(existing, dict):
+            return key, dict(existing)
+        return key, {}
+
+    def _warpmeld_resolve_unit_by_id(self, unit_id: str):
+        uid = str(unit_id or "")
+        if not uid:
+            return None
+        for root in self._iter_unique_army_roots():
+            rid = str(get_entity_id(root) or "")
+            if rid and rid == uid:
+                return root
+            if not rid and str(getattr(root, "_id", "") or "") == uid:
+                return root
+        return None
+
+    def apply_warpmeld_pact_battleline_keywords(self, unit=None) -> None:
+        if not self.is_warpmeld_pact() or self.army is None:
+            return
+        units = [unit] if unit is not None else list(getattr(self.army, "units", []) or [])
+        for entry in units:
+            root = self._attached_unit_root(entry)
+            if root is None:
+                continue
+            if not self._unit_in_army(root):
+                continue
+            if not self._unit_is_tzaangors(root):
+                continue
+            keywords = list(getattr(root, "keywords", []) or [])
+            if any(str(k or "").strip().lower() == "battleline" for k in keywords):
+                continue
+            keywords.append("Battleline")
+            root.keywords = keywords
+
+    def warpmeld_sacrifice_can_use(self, unit, *, mode: str, game=None) -> bool:
+        if not self.is_warpmeld_pact():
+            return False
+        mode_key = str(mode or "").strip().lower()
+        if mode_key not in {"offense", "defense"}:
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        if not self._unit_is_on_battlefield(root):
+            return False
+        if not self._unit_is_tzeentch_mutant_infantry_or_mounted(root):
+            return False
+        return bool(self._warpmeld_state_key(root, game=game))
+
+    def activate_warpmeld_sacrifice(self, unit, *, mode: str, game=None) -> bool:
+        mode_key = str(mode or "").strip().lower()
+        if not self.warpmeld_sacrifice_can_use(unit, mode=mode_key, game=game):
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        state_key, state = self._warpmeld_state(root, game=game)
+        if not state_key:
+            return False
+        unit_id = self._warpmeld_unit_id(root)
+        try:
+            uses = int(state.get("uses", 0) or 0)
+        except (TypeError, ValueError):
+            uses = 0
+        state["uses"] = int(max(0, uses) + 1)
+        state["unit_id"] = unit_id
+        state["phase_key"] = self._warpmeld_phase_key(game=game)
+        if mode_key == "offense":
+            state["offense_active"] = True
+        if mode_key == "defense":
+            state["defense_active"] = True
+        self.warpmeld_sacrifice_state_by_key[state_key] = state
+        return True
+
+    def _warpmeld_mode_active(self, unit, *, mode: str, game=None) -> bool:
+        mode_key = str(mode or "").strip().lower()
+        if mode_key not in {"offense", "defense"}:
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        state_key = self._warpmeld_state_key(root, game=game)
+        if not state_key:
+            return False
+        state = self.warpmeld_sacrifice_state_by_key.get(state_key)
+        if not isinstance(state, dict):
+            return False
+        return bool(state.get(f"{mode_key}_active", False))
+
+    def warpmeld_sacrifice_attacker_wound_bonus(self, model, weapon_profile=None, *, game=None) -> int:
+        del weapon_profile
+        if not self.is_warpmeld_pact():
+            return 0
+        if model is None:
+            return 0
+        if not self._model_in_army(model):
+            return 0
+        unit = getattr(model, "parent_unit", None)
+        if unit is None:
+            return 0
+        if not self._warpmeld_mode_active(unit, mode="offense", game=game):
+            return 0
+        return 1
+
+    def warpmeld_sacrifice_targeted_wound_penalty(self, model, *, game=None) -> int:
+        if not self.is_warpmeld_pact():
+            return 0
+        if model is None:
+            return 0
+        if not self._model_in_army(model):
+            return 0
+        unit = getattr(model, "parent_unit", None)
+        if unit is None:
+            return 0
+        if not self._warpmeld_mode_active(unit, mode="defense", game=game):
+            return 0
+        return -1
+
+    def warpmeld_tzaangor_objective_control_bonus(self, model, *, game=None) -> int:
+        del game
+        if not self.is_warpmeld_pact():
+            return 0
+        if model is None:
+            return 0
+        if not self._model_in_army(model):
+            return 0
+        unit = getattr(model, "parent_unit", None)
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return 0
+        if not self._unit_is_tzaangors(root):
+            return 0
+        if not self._model_is_tzaangor(model):
+            return 0
+        is_battle_shocked = getattr(root, "is_battle_shocked", None)
+        if callable(is_battle_shocked) and bool(is_battle_shocked()):
+            return 0
+        return 1
+
+    def resolve_warpmeld_sacrifice_phase_end(self, *, game=None) -> list[tuple[object, int, str]]:
+        if not self.is_warpmeld_pact():
+            return []
+        phase_key = self._warpmeld_phase_key(game=game)
+        if not phase_key:
+            return []
+        prefix = f"{phase_key}:"
+        phase_entries: list[tuple[str, str, int]] = []
+        for key, state in list(self.warpmeld_sacrifice_state_by_key.items()):
+            if not str(key or "").startswith(prefix):
+                continue
+            uses = 0
+            unit_id = ""
+            if isinstance(state, dict):
+                unit_id = str(state.get("unit_id", "") or "")
+                try:
+                    uses = int(state.get("uses", 0) or 0)
+                except (TypeError, ValueError):
+                    uses = 0
+            phase_entries.append((unit_id, str(key or ""), int(max(0, uses))))
+        phase_entries.sort(key=lambda e: (str(e[0] or ""), str(e[1] or "")))
+        if not phase_entries:
+            return []
+        from ..utility.dice import get_roll
+
+        resolved: list[tuple[object, int, str]] = []
+        for unit_id, key, uses in phase_entries:
+            self.warpmeld_sacrifice_state_by_key.pop(key, None)
+            if uses <= 0:
+                continue
+            unit = self._warpmeld_resolve_unit_by_id(unit_id)
+            if unit is None:
+                continue
+            if not self._unit_in_army(unit):
+                continue
+            if not self._unit_is_on_battlefield(unit):
+                continue
+            total_mortal = 0
+            for _ in range(int(uses)):
+                try:
+                    total_mortal += int(get_roll("D3") or 0)
+                except Exception:
+                    continue
+            if total_mortal <= 0:
+                continue
+            resolved.append((unit, int(total_mortal), "Warpmeld Sacrifice"))
+        return resolved
+
     @staticmethod
     def _changehost_scintillating_points_cap(points_limit: int) -> tuple[int, str]:
         if points_limit <= 1000:
@@ -699,6 +967,8 @@ class ThousandSonsDetachmentManager(DetachmentManagerBase):
 
     def validate_detachment_rules(self) -> list[str]:
         errors: list[str] = []
+        if self.is_warpmeld_pact():
+            self.apply_warpmeld_pact_battleline_keywords()
         if not self.is_changehost_of_deceit():
             return errors
         army = self.army

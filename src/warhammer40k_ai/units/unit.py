@@ -703,6 +703,17 @@ class Unit(
             except Exception:
                 pass
 
+            # Warpmeld Pact: TZAANGOR models gain +1 OC while in non-Battle-shocked Tzaangors units.
+            try:
+                ts_mgr = getattr(army, "thousand_sons_detachments", None) if army is not None else None
+                if ts_mgr is not None:
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    bonus = int(ts_mgr.warpmeld_tzaangor_objective_control_bonus(model, game=game) or 0)
+                    if bonus:
+                        mods.append(Modifier(ModifierOp.ADD, int(bonus), source="detachment:warpmeld_sacrifice_oc"))
+            except Exception:
+                pass
+
             # Archon's Will: while in range of the selected objective and not Battle-shocked, models have OC 3.
             try:
                 archons_active_fn = getattr(root, "archons_will_effects_active", None)

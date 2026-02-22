@@ -12005,6 +12005,38 @@ class WargearProfile:
             if flow_bonus:
                 dice_modifier += int(flow_bonus)
                 wound_result['modifiers'].append(f"+{int(flow_bonus)} to wound from {source_name}")
+        # Thousand Sons: Warpmeld Pact (Warpmeld Sacrifice).
+        try:
+            game = getattr(getattr(attacker_army, "player", None), "game", None) if attacker_army is not None else None
+            offense_bonus_fn = getattr(ts_mgr, "warpmeld_sacrifice_attacker_wound_bonus", None) if ts_mgr is not None else None
+            if callable(offense_bonus_fn):
+                warpmeld_bonus = int(offense_bonus_fn(attacker, self, game=game) or 0)
+                if warpmeld_bonus:
+                    dice_modifier += int(warpmeld_bonus)
+                    wound_result["modifiers"].append(f"+{int(warpmeld_bonus)} to wound from Warpmeld Sacrifice")
+        except Exception:
+            pass
+        try:
+            target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+            target_army = target_root.get_parent_army() if target_root is not None and hasattr(target_root, "get_parent_army") else None
+            target_mgr = getattr(target_army, "thousand_sons_detachments", None) if target_army is not None else None
+            defense_penalty_fn = getattr(target_mgr, "warpmeld_sacrifice_targeted_wound_penalty", None) if target_mgr is not None else None
+            if callable(defense_penalty_fn):
+                target_models = []
+                if target_root is not None:
+                    get_models = getattr(target_root, "get_attached_unit_models", None)
+                    if callable(get_models):
+                        target_models = list(get_models() or [])
+                    else:
+                        target_models = list(getattr(target_root, "models", []) or [])
+                target_model = next((m for m in list(target_models or []) if getattr(m, "is_alive", True)), None)
+                game = getattr(getattr(target_army, "player", None), "game", None) if target_army is not None else None
+                warpmeld_penalty = int(defense_penalty_fn(target_model, game=game) or 0)
+                if warpmeld_penalty:
+                    dice_modifier += int(warpmeld_penalty)
+                    wound_result["modifiers"].append(f"{int(warpmeld_penalty):+d} to wound from Warpmeld Sacrifice")
+        except Exception:
+            pass
         # Temporary Psychic attack bonuses (e.g., Sacrificial Dagger).
         try:
             if self._is_psychic_attack(attacker):

@@ -3881,6 +3881,43 @@ class GamePhaseHandlersMixin:
             if callable(on_phase_start):
                 on_phase_start(game=self)
 
+    def _on_phase_end_thousand_sons_warpmeld_sacrifice(self, player=None, phase=None, **_kwargs) -> None:
+        if phase is None:
+            return
+        from ...utility.event_bus import append_action
+
+        game_map = getattr(self, "map", None)
+        for p in list(self.players or []):
+            if p is None:
+                continue
+            army = p.get_army()
+            if army is None:
+                continue
+            mgr = getattr(army, "thousand_sons_detachments", None)
+            resolve = getattr(mgr, "resolve_warpmeld_sacrifice_phase_end", None) if mgr is not None else None
+            if not callable(resolve):
+                continue
+            for entry in list(resolve(game=self) or []):
+                if not isinstance(entry, tuple) or len(entry) < 2:
+                    continue
+                unit = entry[0]
+                try:
+                    total_mortal = int(entry[1] or 0)
+                except (TypeError, ValueError):
+                    total_mortal = 0
+                source = str(entry[2] if len(entry) > 2 else "Warpmeld Sacrifice")
+                if unit is None or total_mortal <= 0:
+                    continue
+                root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+                if root is None or not bool(getattr(root, "is_alive", lambda: False)()):
+                    continue
+                if hasattr(root, "_apply_mortal_wounds_to_unit"):
+                    root._apply_mortal_wounds_to_unit(root, int(total_mortal), game_map=game_map)
+                    append_action(
+                        p,
+                        f"{source}: {getattr(root, 'name', 'Unit')} suffered {int(total_mortal)} mortal wounds.",
+                    )
+
     def _on_phase_start_cabal_of_sorcerers(self, player=None, phase=None, **_kwargs) -> None:
         """Reset Cabal of Sorcerers usage at the start of the active player's Shooting phase."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

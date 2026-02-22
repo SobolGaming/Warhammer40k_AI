@@ -434,6 +434,16 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"otherwise you can reroll one hit roll one wound roll or one damage roll",
             r"each time a thousand sons vehicle model from your army with the deadly demise ability is destroyed while it is within 6 of one or more friendly thousand sons psyker models that model(?:s| s) deadly demise ability inflicts mortal wounds on a d6 roll of 5 instead of only a 6",
         ),
+        "Warpmeld Sacrifice": (
+            r"each time an enemy unit is selected to shoot or fight and one or more tzeentch mutant infantry or tzeentch mutant mounted units from your army are selected as a target of one or more of those attacks each of those tzeentch mutant units can make a warpmeld sacrifice",
+            r"if it does until the end of the phase each time an attack targets that unit subtract 1 from the wound roll",
+            r"at the end of the phase that tzeentch mutant unit suffers d3 mortal wounds",
+            r"each time a tzeentch mutant infantry or tzeentch mutant mounted unit from your army is selected to shoot or fight before selecting its targets that unit can make a warpmeld sacrifice",
+            r"if it does until the end of the phase each time a model in that unit makes an attack add 1 to the wound roll",
+            r"(?:keywords )?tzaangors units from your army have the battleline keyword and while such a unit is not battle shocked add 1 to the objective control characteristic of tzaangor models in that unit",
+            r"tzaangors units from your army have the battleline keyword",
+            r"while such a unit is not battle shocked add 1 to the objective control characteristic of tzaangor models in that unit",
+        ),
         "Combat Drugs": (
             r"at the start of your command phase select which combat drugs will be active for your army until the start of your next command phase",
             r"to do so either select one from the list below you cannot select the same combat drug more than once per battle or randomly select two by rolling two d6",
@@ -1914,6 +1924,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Warpfire Infusion": (
             "Supported",
             "Warpforged Cabal: each time a THOUSAND SONS VEHICLE unit is selected to shoot or fight, Warpfire reroll budget is initialized (near friendly THOUSAND SONS PSYKER model: one Hit, one Wound, and one Damage reroll; otherwise one total reroll among Hit/Wound/Damage); THOUSAND SONS VEHICLE models use Deadly Demise 5+ while within 6\" of a friendly THOUSAND SONS PSYKER model.",
+        ),
+        "Warpmeld Sacrifice": (
+            "Supported",
+            "Warpmeld Pact: each time a friendly TZEENTCH MUTANT INFANTRY/MOUNTED unit is selected to shoot or fight it can trigger Warpmeld Sacrifice for +1 to Wound until phase end, and each time such a friendly unit is selected as a target of enemy shooting/fight attacks it can trigger Warpmeld Sacrifice for -1 to enemy Wound rolls until phase end; each activation records an end-of-phase D3 mortal-wound payment; Tzaangors units gain BATTLELINE and TZAANGOR models gain +1 OC while their unit is not Battle-shocked.",
         ),
         "All is Dust": (
             "Supported",

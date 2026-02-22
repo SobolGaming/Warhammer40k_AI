@@ -3421,6 +3421,7 @@ class GameReactiveDecisionsMixin:
             "resource_transmutation",
             "oathbound_speculator",
             "dead_reckoning",
+            "warpmeld_sacrifice",
             "possessed_blade_fight",
             "aeldari_strength_from_death_lethal_surge",
             "our_time_is_nigh",
@@ -3488,6 +3489,30 @@ class GameReactiveDecisionsMixin:
             )
             return
         if not choice:
+            return
+
+        if ability_key == "warpmeld_sacrifice":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None:
+                return
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                return
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            mgr = getattr(army, "thousand_sons_detachments", None) if army is not None else None
+            activate = getattr(mgr, "activate_warpmeld_sacrifice", None) if mgr is not None else None
+            if not callable(activate):
+                return
+            mode = str(payload.get("ability_mode") or ctx.get("ability_mode") or "offense").strip().lower()
+            if mode not in {"offense", "defense"}:
+                mode = "offense"
+            activate(root, mode=mode, game=self)
             return
 
         if ability_key == "our_time_is_nigh":

@@ -252,7 +252,7 @@ def test_warpfire_infusion_rerolls_hit_wound_and_damage_in_attack_resolution(mon
 
     rolls = iter([5, 4])
     monkeypatch.setattr(wargear_mod, "get_roll", lambda _expr: next(rolls))
-    monkeypatch.setattr(dice_mod, "get_roll", lambda _expr: 6)
+    monkeypatch.setattr(dice_mod, "get_dice_roll", lambda _faces=6: 6)
 
     profile = _make_profile(ranged=True, damage="D6")
     attack_instance = {"_aura_attack_mods": _aura_stub()}

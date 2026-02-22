@@ -6205,6 +6205,214 @@ class GameShootingFightHandlersMixin:
         if callable(start_selection):
             start_selection(root, action="fight", game=self)
 
+    def _queue_thousand_sons_warpmeld_sacrifice_confirmation(
+        self,
+        *,
+        unit=None,
+        mode: str,
+        trigger_action: str,
+        source_unit=None,
+    ) -> None:
+        if unit is None:
+            return
+        mode_key = str(mode or "").strip().lower()
+        if mode_key not in {"offense", "defense"}:
+            return
+        action_key = str(trigger_action or "").strip().lower()
+        if action_key not in {"shoot", "fight"}:
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        if not bool(getattr(root, "is_alive", lambda: False)()):
+            return
+        if not bool(getattr(root, "deployed", True)):
+            return
+        try:
+            if root.is_in_reserves() or root.is_embarked:
+                return
+        except Exception:
+            pass
+        army = root.get_parent_army()
+        if army is None:
+            return
+        player = getattr(army, "player", None)
+        if player is None:
+            return
+        mgr = getattr(army, "thousand_sons_detachments", None)
+        can_use = getattr(mgr, "warpmeld_sacrifice_can_use", None) if mgr is not None else None
+        if not callable(can_use) or not bool(can_use(root, mode=mode_key, game=self)):
+            return
+        unit_id = str(get_entity_id(root) or "")
+        if not unit_id:
+            return
+        try:
+            source_root = source_unit.get_attached_unit_root() if source_unit is not None else None
+        except Exception:
+            source_root = source_unit
+        source_unit_id = str(get_entity_id(source_root) or "") if source_root is not None else ""
+        phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+        phase_label = phase_name.replace("_", " ").title() if phase_name else "Phase"
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        current_player = getattr(self, "get_current_player", lambda: None)()
+        turn_owner_id = str(getattr(current_player, "id", "") or "")
+        ability_name = "Warpmeld Sacrifice"
+        if mode_key == "offense":
+            message = f"Use {ability_name} for {getattr(root, 'name', 'Unit')} before resolving its attacks?"
+        else:
+            message = f"Use {ability_name} for {getattr(root, 'name', 'Unit')} after being selected as a target?"
+        instance_parts = [
+            "warpmeld_sacrifice",
+            str(turn),
+            phase_name,
+            turn_owner_id,
+            mode_key,
+            action_key,
+            unit_id,
+        ]
+        if source_unit_id:
+            instance_parts.append(source_unit_id)
+        instance_key = ":".join([p for p in instance_parts if p != ""])
+        self._queue_optional_ability_confirmation(
+            player=player,
+            ability_key="warpmeld_sacrifice",
+            ability_name=ability_name,
+            message=message,
+            context={
+                "ability_name": ability_name,
+                "phase": phase_label,
+                "unit": getattr(root, "name", "") or "",
+                "unit_id": unit_id,
+                "ability_mode": mode_key,
+                "trigger_action": action_key,
+                "source_unit_id": source_unit_id,
+                "turn": int(turn or 0),
+                "turn_owner_id": turn_owner_id,
+            },
+            payload={
+                "unit_id": unit_id,
+                "ability_mode": mode_key,
+                "trigger_action": action_key,
+                "source_unit_id": source_unit_id,
+            },
+            instance_key=instance_key,
+        )
+
+    def _on_shooting_targets_selected_thousand_sons_warpmeld_sacrifice(
+        self,
+        attacking_unit=None,
+        target_units=None,
+        **_kwargs,
+    ) -> None:
+        if attacking_unit is None or not target_units:
+            return
+        try:
+            attacker_root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = attacking_unit
+        if attacker_root is None:
+            return
+        self._queue_thousand_sons_warpmeld_sacrifice_confirmation(
+            unit=attacker_root,
+            mode="offense",
+            trigger_action="shoot",
+        )
+        attacker_army = attacker_root.get_parent_army()
+        target_roots: dict[str, Any] = {}
+        for target in list(target_units or []):
+            if target is None:
+                continue
+            try:
+                target_root = target.get_attached_unit_root()
+            except Exception:
+                target_root = target
+            if target_root is None:
+                continue
+            if attacker_army is not None and target_root.get_parent_army() is attacker_army:
+                continue
+            target_id = str(get_entity_id(target_root) or "")
+            if not target_id:
+                continue
+            target_roots[target_id] = target_root
+        for target_id in sorted(target_roots.keys()):
+            self._queue_thousand_sons_warpmeld_sacrifice_confirmation(
+                unit=target_roots[target_id],
+                mode="defense",
+                trigger_action="shoot",
+                source_unit=attacker_root,
+            )
+
+    def _on_fight_unit_selected_thousand_sons_warpmeld_sacrifice(
+        self,
+        unit=None,
+        selecting_player=None,
+        **_kwargs,
+    ) -> None:
+        if unit is None:
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        army = root.get_parent_army()
+        owner = getattr(army, "player", None) if army is not None else None
+        if owner is None:
+            return
+        if selecting_player is not None and selecting_player is not owner:
+            return
+        self._queue_thousand_sons_warpmeld_sacrifice_confirmation(
+            unit=root,
+            mode="offense",
+            trigger_action="fight",
+        )
+
+    def _on_fight_targets_selected_thousand_sons_warpmeld_sacrifice(
+        self,
+        attacking_unit=None,
+        target_units=None,
+        **_kwargs,
+    ) -> None:
+        if attacking_unit is None or not target_units:
+            return
+        try:
+            attacker_root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = attacking_unit
+        if attacker_root is None:
+            return
+        attacker_army = attacker_root.get_parent_army()
+        target_roots: dict[str, Any] = {}
+        for target in list(target_units or []):
+            if target is None:
+                continue
+            try:
+                target_root = target.get_attached_unit_root()
+            except Exception:
+                target_root = target
+            if target_root is None:
+                continue
+            if attacker_army is not None and target_root.get_parent_army() is attacker_army:
+                continue
+            target_id = str(get_entity_id(target_root) or "")
+            if not target_id:
+                continue
+            target_roots[target_id] = target_root
+        for target_id in sorted(target_roots.keys()):
+            self._queue_thousand_sons_warpmeld_sacrifice_confirmation(
+                unit=target_roots[target_id],
+                mode="defense",
+                trigger_action="fight",
+                source_unit=attacker_root,
+            )
+
     def _on_shooting_targets_selected_thousand_sons_warpfire_infusion(
         self,
         attacking_unit=None,
