@@ -1039,6 +1039,16 @@ class Unit(
             except Exception:
                 pass
             try:
+                sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                if sm_mgr is not None and callable(getattr(sm_mgr, "wrathful_procession_movement_bonus", None)):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    bonus, source = sm_mgr.wrathful_procession_movement_bonus(self, game=game)
+                    if int(bonus or 0):
+                        source_name = str(source or "Zealous Litanies").strip() or "Zealous Litanies"
+                        mods.append(Modifier(ModifierOp.ADD, int(bonus), source=source_name))
+            except Exception:
+                pass
+            try:
                 from ..utility.aura_effects import get_aura_move_characteristic_bonus
 
                 move_bonus, _reasons = get_aura_move_characteristic_bonus(self, game_map=game_map)

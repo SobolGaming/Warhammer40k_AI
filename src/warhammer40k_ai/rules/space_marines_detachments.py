@@ -197,6 +197,19 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         _MISSION_TACTIC_MALLEUS: "Malleus Tactics",
         _MISSION_TACTIC_PURGATUS: "Purgatus Tactics",
     }
+    _ZEALOUS_LITANY_CHORUS_OF_RELENTLESS_HATE = "CHORUS_OF_RELENTLESS_HATE"
+    _ZEALOUS_LITANY_RITE_OF_PERFERVID_WRATH = "RITE_OF_PERFERVID_WRATH"
+    _ZEALOUS_LITANY_CHANT_OF_DEATHLESS_DEVOTION = "CHANT_OF_DEATHLESS_DEVOTION"
+    _ZEALOUS_LITANY_KEYS = (
+        _ZEALOUS_LITANY_CHORUS_OF_RELENTLESS_HATE,
+        _ZEALOUS_LITANY_RITE_OF_PERFERVID_WRATH,
+        _ZEALOUS_LITANY_CHANT_OF_DEATHLESS_DEVOTION,
+    )
+    _ZEALOUS_LITANY_LABELS = {
+        _ZEALOUS_LITANY_CHORUS_OF_RELENTLESS_HATE: "Chorus of Relentless Hate",
+        _ZEALOUS_LITANY_RITE_OF_PERFERVID_WRATH: "Rite of Perfervid Wrath",
+        _ZEALOUS_LITANY_CHANT_OF_DEATHLESS_DEVOTION: "Chant of Deathless Devotion",
+    }
     _MASTER_OF_WOLVES_PACK_ENCIRCLING_JAWS = "ENCIRCLING_JAWS"
     _MASTER_OF_WOLVES_PACK_HUNTERS_EYE = "HUNTERS_EYE"
     _MASTER_OF_WOLVES_PACK_FEROCIOUS_STRIKE = "FEROCIOUS_STRIKE"
@@ -223,6 +236,11 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         self.mission_tactics_active_key: str = ""
         self.mission_tactics_active_round: int = 0
         self.mission_tactics_last_selection_round: int = 0
+        self.wrathful_procession_active_litany_key: str = ""
+        self.wrathful_procession_active_litany_round: int = 0
+        self.wrathful_procession_active_litany_player_id: str = ""
+        self.wrathful_procession_litany_selection_round: int = 0
+        self.wrathful_procession_litany_selection_player_id: str = ""
         self.master_of_wolves_selected_pack_keys: tuple[str, ...] = ()
         self.master_of_wolves_active_pack_key: str = ""
         self.master_of_wolves_active_round: int = 0
@@ -801,6 +819,163 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         if key == self._LIBRARIUS_DISCIPLINE_BIOMANCY:
             self._apply_librarius_biomancy_temporary_effects()
         return True
+
+    def _normalize_zealous_litany_key(self, choice_key: str) -> str:
+        return str(choice_key or "").strip().upper()
+
+    def clear_wrathful_procession_active_litany(self) -> None:
+        self.wrathful_procession_active_litany_key = ""
+        self.wrathful_procession_active_litany_round = 0
+        self.wrathful_procession_active_litany_player_id = ""
+
+    def get_available_zealous_litanies(self) -> list[str]:
+        return list(self._ZEALOUS_LITANY_KEYS)
+
+    def zealous_litany_label(self, key: str) -> str:
+        norm = self._normalize_zealous_litany_key(key)
+        if norm in self._ZEALOUS_LITANY_LABELS:
+            return str(self._ZEALOUS_LITANY_LABELS[norm])
+        return str(key or "").strip()
+
+    def can_select_zealous_litany(self, *, game=None) -> bool:
+        if not self.is_wrathful_procession():
+            return False
+        if game is None:
+            return True
+        try:
+            round_now = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            return False
+        if round_now <= 0:
+            return False
+        owner_id = str(getattr(getattr(self.army, "player", None), "id", "") or "")
+        if (
+            int(getattr(self, "wrathful_procession_litany_selection_round", 0) or 0) == round_now
+            and str(getattr(self, "wrathful_procession_litany_selection_player_id", "") or "") == owner_id
+        ):
+            return False
+        return True
+
+    def zealous_litany_is_active(self, key: str, *, game=None, battle_round=None) -> bool:
+        norm = self._normalize_zealous_litany_key(key)
+        active_key = str(getattr(self, "wrathful_procession_active_litany_key", "") or "").strip().upper()
+        if active_key != norm:
+            return False
+        try:
+            selected_round = int(getattr(self, "wrathful_procession_active_litany_round", 0) or 0)
+        except Exception:
+            return False
+        if selected_round <= 0:
+            return False
+        if battle_round is None:
+            game_obj = self._resolve_game_context(game=game)
+            if game_obj is not None:
+                try:
+                    battle_round = int(getattr(game_obj, "turn", 0) or 0)
+                except Exception:
+                    battle_round = None
+        if battle_round is None:
+            return True
+        try:
+            return int(selected_round) == int(battle_round or 0)
+        except Exception:
+            return False
+
+    def select_zealous_litany(self, choice_key: str, *, battle_round=None, player_id: str = "") -> bool:
+        if not self.is_wrathful_procession():
+            return False
+        key = self._normalize_zealous_litany_key(choice_key)
+        if key and key not in self._ZEALOUS_LITANY_KEYS:
+            return False
+        round_now = 0
+        if battle_round is not None:
+            try:
+                round_now = int(battle_round or 0)
+            except Exception:
+                round_now = 0
+        player = str(player_id or "")
+        self.wrathful_procession_litany_selection_round = int(round_now or 0)
+        self.wrathful_procession_litany_selection_player_id = player
+        if not key:
+            self.clear_wrathful_procession_active_litany()
+            return True
+        self.wrathful_procession_active_litany_key = key
+        self.wrathful_procession_active_litany_round = int(round_now or 0)
+        self.wrathful_procession_active_litany_player_id = player
+        return True
+
+    def _wrathful_procession_litany_unit_is_eligible(self, unit) -> bool:
+        if not self.is_wrathful_procession():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        try:
+            if root.get_parent_army() is not self.army:
+                return False
+        except Exception:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        return bool(
+            self._attached_unit_has_keyword(root, "INFANTRY")
+            or self._attached_unit_has_keyword(root, "MOUNTED")
+        )
+
+    def wrathful_procession_movement_bonus(self, unit, *, game=None) -> tuple[int, str]:
+        if not self.zealous_litany_is_active(
+            self._ZEALOUS_LITANY_CHORUS_OF_RELENTLESS_HATE,
+            game=game,
+        ):
+            return 0, ""
+        if not self._wrathful_procession_litany_unit_is_eligible(unit):
+            return 0, ""
+        return 2, "Zealous Litanies (Chorus of Relentless Hate)"
+
+    def wrathful_procession_advance_roll_bonus(self, unit, *, game=None) -> tuple[int, str]:
+        if not self.zealous_litany_is_active(
+            self._ZEALOUS_LITANY_CHORUS_OF_RELENTLESS_HATE,
+            game=game,
+        ):
+            return 0, ""
+        if not self._wrathful_procession_litany_unit_is_eligible(unit):
+            return 0, ""
+        return 1, "Zealous Litanies (Chorus of Relentless Hate)"
+
+    def wrathful_procession_melee_strength_bonus(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if not self.zealous_litany_is_active(
+            self._ZEALOUS_LITANY_RITE_OF_PERFERVID_WRATH,
+            game=game,
+        ):
+            return 0, ""
+        if attacker_model is None:
+            return 0, ""
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            if parent is not None and not bool(getattr(parent, "is_melee", lambda: False)()):
+                return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        if not self._wrathful_procession_litany_unit_is_eligible(attacker_unit):
+            return 0, ""
+        return 1, "Zealous Litanies (Rite of Perfervid Wrath)"
+
+    def wrathful_procession_ranged_invulnerable_save(self, unit, *, attack_type: str = "", game=None) -> tuple[int, str]:
+        if not self.zealous_litany_is_active(
+            self._ZEALOUS_LITANY_CHANT_OF_DEATHLESS_DEVOTION,
+            game=game,
+        ):
+            return 0, ""
+        if str(attack_type or "").strip().lower() != "ranged":
+            return 0, ""
+        if not self._wrathful_procession_litany_unit_is_eligible(unit):
+            return 0, ""
+        return 5, "Zealous Litanies (Chant of Deathless Devotion)"
 
     def clear_legendary_slayers_state(self) -> None:
         self.beastslayer_tally = 0
@@ -1550,10 +1725,111 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         if hasattr(game_obj, "request_decision"):
             game_obj.request_decision(request)
 
+    def _on_battle_round_start_wrathful_procession_litanies(self, battle_round: int, *, game=None) -> None:
+        if not self.is_wrathful_procession():
+            self.clear_wrathful_procession_active_litany()
+            self.wrathful_procession_litany_selection_round = 0
+            self.wrathful_procession_litany_selection_player_id = ""
+            return
+        self.clear_wrathful_procession_active_litany()
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is None or not bool(getattr(game_obj, "is_authoritative", True)):
+            return
+        try:
+            round_now = int(battle_round or getattr(game_obj, "turn", 0) or 0)
+        except Exception:
+            round_now = int(getattr(game_obj, "turn", 0) or 0)
+        if round_now <= 0:
+            return
+        if not self.can_select_zealous_litany(game=game_obj):
+            return
+        player = getattr(self.army, "player", None) if self.army is not None else None
+        if player is None:
+            return
+        try:
+            from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+            from ..engine.decisions import DecisionOption, DecisionRequest
+        except Exception:
+            return
+        army_id = str(get_entity_id(self.army) or "")
+        player_id = str(getattr(player, "id", "") or "")
+        queue = getattr(game_obj, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            stale_ids: list[str] = []
+            has_pending = False
+            for request in list(queue.list() or []):
+                if str(getattr(request, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                context = dict(getattr(request, "context", {}) or {})
+                if str(context.get("ability", "") or "") != "zealous_litanies":
+                    continue
+                if str(context.get("army_id", "") or "") != army_id:
+                    continue
+                request_round = int(context.get("battle_round", 0) or 0)
+                if request_round == round_now:
+                    has_pending = True
+                    break
+                stale_ids.append(str(getattr(request, "decision_id", "") or ""))
+            for decision_id in stale_ids:
+                if decision_id:
+                    queue.pop(decision_id)
+            if has_pending:
+                return
+        summaries = {
+            self._ZEALOUS_LITANY_CHORUS_OF_RELENTLESS_HATE: 'Add 2" Move and +1 to Advance rolls.',
+            self._ZEALOUS_LITANY_RITE_OF_PERFERVID_WRATH: "Add 1 to melee weapon Strength.",
+            self._ZEALOUS_LITANY_CHANT_OF_DEATHLESS_DEVOTION: "Models gain a 5+ invulnerable save against ranged attacks.",
+        }
+        options = [
+            DecisionOption.create(
+                "None",
+                payload={
+                    "skip": True,
+                    "choice_key": "",
+                    "choice_name": "None",
+                    "summary": "No litany active this battle round.",
+                    "army_id": army_id,
+                },
+            )
+        ]
+        for key in self.get_available_zealous_litanies():
+            label = self.zealous_litany_label(key)
+            options.append(
+                DecisionOption.create(
+                    label,
+                    payload={
+                        "choice_key": key,
+                        "choice_name": label,
+                        "summary": str(summaries.get(key, label) or label),
+                        "army_id": army_id,
+                    },
+                )
+            )
+        if not options:
+            return
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Zealous Litanies: select one litany for this battle round (or None).",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={
+                "ability": "zealous_litanies",
+                "ability_name": "Zealous Litanies",
+                "optional": True,
+                "army_id": army_id,
+                "player_id": player_id,
+                "battle_round": int(round_now),
+                "allowed_choice_keys": list(self._ZEALOUS_LITANY_KEYS),
+            },
+        )
+        if hasattr(game_obj, "request_decision"):
+            game_obj.request_decision(request)
+
     def on_battle_round_start(self, battle_round: int, *, game=None) -> None:
         self._on_battle_round_start_pack_quarry(battle_round, game=game)
         self._on_battle_round_start_legendary_slayers(battle_round, game=game)
         self._on_battle_round_start_librarius(battle_round, game=game)
+        self._on_battle_round_start_wrathful_procession_litanies(battle_round, game=game)
 
     def on_phase_end(self, phase, active_player=None, *, game=None) -> None:
         self.heroes_all_handle_phase_end(phase=phase, active_player=active_player, game=game)

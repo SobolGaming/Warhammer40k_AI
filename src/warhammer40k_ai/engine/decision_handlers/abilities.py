@@ -2673,6 +2673,37 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if required_round > 0 and battle_round != required_round:
             return ("Psychic Disciplines selection is no longer valid for this battle round.",)
         return ()
+    if ability == "zealous_litanies":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Zealous Litanies army was not found.",)
+        sm_mgr = getattr(army, "space_marines_detachments", None)
+        if sm_mgr is None or not bool(getattr(sm_mgr, "is_wrathful_procession", lambda: False)()):
+            return ("Zealous Litanies requires Wrathful Procession.",)
+        can_select = getattr(sm_mgr, "can_select_zealous_litany", None)
+        if not callable(can_select) or not bool(can_select(game=game)):
+            return ("Zealous Litanies cannot be selected right now.",)
+        battle_round = int(getattr(game, "turn", 0) or 0)
+        try:
+            required_round = int(ctx.get("battle_round", 0) or 0)
+        except (TypeError, ValueError):
+            required_round = 0
+        if required_round > 0 and battle_round != required_round:
+            return ("Zealous Litanies selection is no longer valid for this battle round.",)
+        if is_skip_choice(request, result):
+            return ()
+        choice_key = str(payload.get("choice_key", "") or "").strip().upper()
+        if not choice_key:
+            return ("Zealous Litanies requires selecting a litany or None.",)
+        allowed_keys = {
+            str(val).strip().upper()
+            for val in list(ctx.get("allowed_choice_keys", []) or [])
+            if str(val).strip()
+        }
+        if allowed_keys and choice_key not in allowed_keys:
+            return ("Zealous Litanies selected litany is not an eligible choice.",)
+        return ()
     if ability == "decoy_targets":
         payload = _option_payload(request, result)
         if is_skip_choice(request, result):
@@ -5231,6 +5262,78 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             choice_name = str(choice_key or "")
         if player is None:
             player = getattr(army, "player", None)
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: selected {choice_name} for battle round {int(start_round or 0)}.",
+        )
+        return {
+            "choice_key": str(choice_key),
+            "choice_name": str(choice_name),
+            "battle_round": int(start_round or 0),
+        }
+    if ability == "zealous_litanies":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        sm_mgr = getattr(army, "space_marines_detachments", None)
+        if sm_mgr is None or not bool(getattr(sm_mgr, "is_wrathful_procession", lambda: False)()):
+            return None
+
+        battle_round = int(getattr(game, "turn", 0) or 0)
+        try:
+            start_round = int(ctx.get("battle_round", 0) or battle_round)
+        except (TypeError, ValueError):
+            start_round = int(battle_round)
+        if start_round > 0 and battle_round != start_round:
+            return None
+
+        choice_key = ""
+        if not is_skip_choice(request, result):
+            choice_key = str(payload.get("choice_key", "") or "").strip().upper()
+            if not choice_key:
+                return None
+            allowed_keys = {
+                str(val).strip().upper()
+                for val in list(ctx.get("allowed_choice_keys", []) or [])
+                if str(val).strip()
+            }
+            if allowed_keys and choice_key not in allowed_keys:
+                return None
+
+        player = _resolve_player(game, request, payload)
+        player_id = str(ctx.get("player_id", "") or "")
+        if not player_id and player is not None:
+            player_id = str(getattr(player, "id", "") or "")
+        if not player_id:
+            player_id = str(getattr(getattr(army, "player", None), "id", "") or "")
+
+        apply_choice = getattr(sm_mgr, "select_zealous_litany", None)
+        if not callable(apply_choice) or not bool(
+            apply_choice(choice_key, battle_round=int(start_round or 0), player_id=player_id)
+        ):
+            return None
+
+        ability_name = str(ctx.get("ability_name", "") or "Zealous Litanies").strip() or "Zealous Litanies"
+        if player is None:
+            player = getattr(army, "player", None)
+        if not choice_key:
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: no litany selected for battle round {int(start_round or 0)}.",
+            )
+            return {
+                "choice_key": "",
+                "choice_name": "None",
+                "battle_round": int(start_round or 0),
+            }
+        label_fn = getattr(sm_mgr, "zealous_litany_label", None)
+        if callable(label_fn):
+            choice_name = str(label_fn(choice_key) or choice_key)
+        else:
+            choice_name = str(choice_key or "")
         _log_action_for_players(
             game,
             player,

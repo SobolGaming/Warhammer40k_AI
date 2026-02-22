@@ -587,6 +587,14 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time a crusader squad unit from your army makes a righteous zeal move that unit can end that move as close as possible to the closest objective marker instead of as close as possible to the closest enemy unit",
             r"your army can include black templars units but it cannot include any adeptus astartes units drawn from any other chapter",
         ),
+        "Zealous Litanies": (
+            r"at the start of the battle round you can select one of the litanies listed below",
+            r"if you do until the end of the battle round that litany is active and its effects apply to all adeptus astartes infantry and adeptus astartes mounted units from your army",
+            r"add 2 to the move characteristic of models in this unit and add 1 to advance rolls made for it",
+            r"add 1 to the strength characteristic of melee weapons equipped by models in this unit",
+            r"models in this unit have a 5 invulnerable save against ranged attacks",
+            r"your army can include black templars units but it cannot include(?: any)? adeptus astartes units drawn from any other chapter",
+        ),
         "Interlocking Tactics": (
             r"adeptus astartes battleline units from your army are eligible to shoot and declare a charge in a turn in which they advanced or fell back",
             r"are eligible to shoot and declare a charge in a turn in which they advanced or fell back",
@@ -1985,6 +1993,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Purge and Sanctify": (
             "Supported",
             "Vindication Task Force: attacks targeting your ADEPTUS ASTARTES ANCIENT units suffer -1 to wound while those units are within objective range and the attack Strength exceeds their Toughness, and ADEPTUS ASTARTES CRUSADER SQUAD units can end Righteous Zeal moves as close as possible to the closest objective marker instead of the closest enemy unit; Black Templars-only chapter restriction enforced.",
+        ),
+        "Zealous Litanies": (
+            "Supported",
+            "Wrathful Procession: at the start of each battle round you can optionally select one litany (or none); Chorus of Relentless Hate grants ADEPTUS ASTARTES INFANTRY/MOUNTED units +2\" Move and +1 to Advance rolls, Rite of Perfervid Wrath grants +1 Strength to melee weapons, and Chant of Deathless Devotion grants a 5+ invulnerable save against ranged attacks; Black Templars-only chapter restriction enforced.",
         ),
         "Interlocking Tactics": (
             "Supported",

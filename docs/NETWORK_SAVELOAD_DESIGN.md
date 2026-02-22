@@ -185,6 +185,7 @@ Command phase:
 - mission_tactics_dialog: CHOOSE_MISSION_TACTIC {choice_key | skip} (context `army_id`, `battle_round`)
 - angelic_legacy_dialog: CHOOSE_ANGELIC_LEGACY {choice_keys[2]} (context `army_id`, `battle_round`)
 - grim_resolve_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="grim_resolve_target"`, `ability_name="Grim Resolve"`, `army_id`, `player_id`, `battle_round`, `phase="Command phase"`)
+- zealous_litanies_dialog: CHOOSE_QUARRY {choice_key | skip} (context `ability="zealous_litanies"`, `ability_name="Zealous Litanies"`, `army_id`, `player_id`, `battle_round`, `allowed_choice_keys`, `optional=true`)
 - grand_coven_dialog: CHOOSE_GRAND_COVEN {choice_key | skip} (context `army_id`, `battle_round`)
 - combat_drugs_dialog: CHOOSE_COMBAT_DRUGS {choice_key} (context `army_id`, `battle_round`)
 - warmaster_dialog: CHOOSE_WARMASTER_ABILITY {choice_key} (context `unit_id`, `battle_round`, `player_id`, `expires_round`)

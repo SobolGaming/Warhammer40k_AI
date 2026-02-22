@@ -5454,6 +5454,17 @@ class ActionsMovementMixin:
             bonus = 0
         if bonus:
             mods.append((bonus, "Code Chivalric"))
+        try:
+            army = self.get_parent_army()
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if sm_mgr is not None and callable(getattr(sm_mgr, "wrathful_procession_advance_roll_bonus", None)):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                bonus, source = sm_mgr.wrathful_procession_advance_roll_bonus(self, game=game)
+                if int(bonus or 0):
+                    source_name = str(source or "Zealous Litanies").strip() or "Zealous Litanies"
+                    mods.append((int(bonus), source_name))
+        except Exception:
+            pass
         if isinstance(sr, dict) and sr.get("ere_we_go_active") is True:
             try:
                 ere_active = True

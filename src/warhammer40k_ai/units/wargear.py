@@ -11053,6 +11053,24 @@ class WargearProfile:
                         wound_result.setdefault("modifiers", []).append(f"+{s_bonus}S from Red Thirst")
         except Exception:
             pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee() and isinstance(strength, int):
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                if sm_mgr is not None and callable(getattr(sm_mgr, "wrathful_procession_melee_strength_bonus", None)):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    s_bonus, source = sm_mgr.wrathful_procession_melee_strength_bonus(
+                        attacker,
+                        weapon_profile=self,
+                        game=game,
+                    )
+                    if s_bonus:
+                        strength = strength + int(s_bonus)
+                        source_name = str(source or "Zealous Litanies").strip() or "Zealous Litanies"
+                        wound_result.setdefault("modifiers", []).append(f"+{int(s_bonus)}S from {source_name}")
+        except Exception:
+            pass
         # Drukhari: Power from Pain (Macro-steroids) set melee Strength.
         try:
             if self.parent_wargear and self.parent_wargear.is_melee():
@@ -14920,6 +14938,28 @@ class WargearProfile:
                 if current is None or int(current) > 4:
                     attack_instance["inv_save_override"] = 4
                     attack_instance["inv_save_override_reason"] = "Idol of Blessed Blood (Aura)"
+        # Space Marines: Wrathful Procession (Zealous Litanies - Chant of Deathless Devotion).
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            attack_type = "melee" if (self.parent_wargear and self.parent_wargear.is_melee()) else "ranged"
+            army = t_unit.get_parent_army() if t_unit is not None else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if sm_mgr is not None and callable(getattr(sm_mgr, "wrathful_procession_ranged_invulnerable_save", None)):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                inv_value, inv_source = sm_mgr.wrathful_procession_ranged_invulnerable_save(
+                    t_unit,
+                    attack_type=attack_type,
+                    game=game,
+                )
+                if inv_value:
+                    current = attack_instance.get("inv_save_override", None)
+                    if current is None or int(current) > int(inv_value):
+                        attack_instance["inv_save_override"] = int(inv_value)
+                        source = str(inv_source or "Zealous Litanies (Chant of Deathless Devotion)").strip()
+                        if source:
+                            attack_instance["inv_save_override_reason"] = source
+        except Exception:
+            pass
         # Wargear abilities (e.g. "The bearer has a 4+ invulnerable save.").
         try:
             t_unit = getattr(target_model, "parent_unit", None)
