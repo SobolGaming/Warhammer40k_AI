@@ -250,6 +250,15 @@ class CabalOfSorcerersManager:
                 return True
         except Exception:
             pass
+        get_parent_army = getattr(unit, "get_parent_army", None)
+        army = get_parent_army() if callable(get_parent_army) else None
+        ts_mgr = getattr(army, "thousand_sons_detachments", None) if army is not None else None
+        grant_fn = getattr(ts_mgr, "changehost_mortal_sorcery_grants_cabal", None) if ts_mgr is not None else None
+        if callable(grant_fn):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            game_map = getattr(game, "map", None) if game is not None else None
+            if bool(grant_fn(unit, game_map=game_map)):
+                return True
         for ab in (list(getattr(unit, "possible_abilities", []) or []) + list(getattr(unit, "abilities", []) or [])):
             try:
                 if isinstance(ab, str):

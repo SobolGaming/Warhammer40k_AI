@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from .detachment_manager import DetachmentManagerBase
+from ..utility.aura_utils import linked_fire_origin_is_visible, unit_within_range_of_unit
 
 
 @dataclass(frozen=True)
@@ -45,6 +46,9 @@ class ThousandSonsDetachmentManager(DetachmentManagerBase):
         self.grand_coven_active_key: Optional[str] = None
         self.grand_coven_active_round: Optional[int] = None
         self.grand_coven_used_keys: list[str] = []
+        self.hexwarp_flow_phase_key: Optional[str] = None
+        self.hexwarp_flow_zones: set[str] = {"own"}
+        self.warpfire_selection_state_by_key: dict[str, dict[str, object]] = {}
 
     def is_grand_coven(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -199,6 +203,234 @@ class ThousandSonsDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Rubricae Phalanx")
+
+    def is_changehost_of_deceit(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Changehost of Deceit")
+
+    def is_hexwarp_thrallband(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Hexwarp Thrallband")
+
+    def is_warpforged_cabal(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Warpforged Cabal")
+
+    @staticmethod
+    def _normalize_unit_name(name: str) -> str:
+        text = str(name or "").strip().lower()
+        return " ".join(text.split())
+
+    def _iter_army_units(self) -> list:
+        return list(getattr(self.army, "units", []) or [])
+
+    def _attached_unit_root(self, unit):
+        if unit is None:
+            return None
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        if callable(get_root):
+            root = get_root()
+            if root is not None:
+                return root
+        return unit
+
+    def _iter_unique_army_roots(self) -> list:
+        roots: list = []
+        seen: set[str] = set()
+        for unit in self._iter_army_units():
+            root = self._attached_unit_root(unit)
+            if root is None:
+                continue
+            uid = str(getattr(root, "_id", "") or "")
+            if not uid:
+                uid = str(id(root))
+            if uid in seen:
+                continue
+            seen.add(uid)
+            roots.append(root)
+        return roots
+
+    @staticmethod
+    def _unit_points(unit) -> int:
+        get_cost = getattr(unit, "get_unit_cost", None)
+        if callable(get_cost):
+            try:
+                return int(get_cost() or 0)
+            except (TypeError, ValueError):
+                return 0
+            except AttributeError:
+                return 0
+        raw = getattr(unit, "points", 0)
+        try:
+            return int(raw or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def _unit_is_on_battlefield(self, unit) -> bool:
+        if unit is None:
+            return False
+        is_alive_fn = getattr(unit, "is_alive", None)
+        if callable(is_alive_fn) and not bool(is_alive_fn()):
+            return False
+        if not bool(getattr(unit, "deployed", True)):
+            return False
+        in_reserves_fn = getattr(unit, "is_in_reserves", None)
+        if callable(in_reserves_fn) and bool(in_reserves_fn()):
+            return False
+        if bool(getattr(unit, "is_embarked", False)):
+            return False
+        if getattr(unit, "embarked_in", None) is not None:
+            return False
+        return True
+
+    def _unit_in_army(self, unit) -> bool:
+        if unit is None or self.army is None:
+            return False
+        get_parent_army = getattr(unit, "get_parent_army", None)
+        if callable(get_parent_army):
+            return get_parent_army() is self.army
+        return False
+
+    def _attached_unit_has_keyword(self, unit, keyword: str) -> bool:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        for member in members:
+            if self._unit_has_keyword(member, keyword):
+                return True
+        return False
+
+    def _unit_is_thousand_sons(self, unit) -> bool:
+        return self._attached_unit_has_keyword(unit, "THOUSAND SONS")
+
+    def _unit_is_scintillating_legions(self, unit) -> bool:
+        return self._attached_unit_has_keyword(unit, "SCINTILLATING LEGIONS")
+
+    def _unit_is_psyker(self, unit) -> bool:
+        return self._attached_unit_has_keyword(unit, "PSYKER")
+
+    def _unit_is_thousand_sons_psyker(self, unit) -> bool:
+        return bool(self._unit_is_thousand_sons(unit) and self._unit_is_psyker(unit))
+
+    def _unit_is_scintillating_legions_psyker(self, unit) -> bool:
+        return bool(self._unit_is_scintillating_legions(unit) and self._unit_is_psyker(unit))
+
+    def _unit_is_thousand_sons_vehicle(self, unit) -> bool:
+        return bool(self._unit_is_thousand_sons(unit) and self._attached_unit_has_keyword(unit, "VEHICLE"))
+
+    @staticmethod
+    def _changehost_scintillating_points_cap(points_limit: int) -> tuple[int, str]:
+        if points_limit <= 1000:
+            return 500, "Incursion"
+        if points_limit <= 2000:
+            return 1000, "Strike Force"
+        return 1500, "Onslaught"
+
+    def _changehost_units_within_visible_range(self, *, source_unit, target_unit, radius: float, game_map=None) -> bool:
+        if source_unit is None or target_unit is None:
+            return False
+        if not self._unit_is_on_battlefield(source_unit):
+            return False
+        if not self._unit_is_on_battlefield(target_unit):
+            return False
+        if not unit_within_range_of_unit(source_unit, target_unit, float(radius), use_attached_aggregate=True):
+            return False
+        if game_map is None:
+            return True
+        return bool(linked_fire_origin_is_visible(source_unit, target_unit, game_map=game_map))
+
+    def changehost_daemonic_illusions_invulnerable_save(
+        self,
+        target_model,
+        *,
+        attack_type: str,
+        game_map=None,
+    ) -> tuple[int, str]:
+        if not self.is_changehost_of_deceit():
+            return 0, ""
+        if str(attack_type or "").strip().lower() != "ranged":
+            return 0, ""
+        target_unit = self._attached_unit_root(getattr(target_model, "parent_unit", None))
+        if target_unit is None:
+            return 0, ""
+        if not self._unit_in_army(target_unit):
+            return 0, ""
+        if not self._unit_is_thousand_sons_psyker(target_unit):
+            return 0, ""
+        for source in self._iter_unique_army_roots():
+            if not self._unit_is_scintillating_legions(source):
+                continue
+            if not self._changehost_units_within_visible_range(
+                source_unit=source,
+                target_unit=target_unit,
+                radius=6.0,
+                game_map=game_map,
+            ):
+                continue
+            return 4, "Daemonic Illusions (Aura)"
+        return 0, ""
+
+    def changehost_mortal_sorcery_grants_cabal(self, unit, *, game_map=None) -> bool:
+        if not self.is_changehost_of_deceit():
+            return False
+        target_unit = self._attached_unit_root(unit)
+        if target_unit is None:
+            return False
+        if not self._unit_in_army(target_unit):
+            return False
+        if not self._unit_is_scintillating_legions_psyker(target_unit):
+            return False
+        for source in self._iter_unique_army_roots():
+            if not self._unit_is_thousand_sons(source):
+                continue
+            if not self._changehost_units_within_visible_range(
+                source_unit=source,
+                target_unit=target_unit,
+                radius=6.0,
+                game_map=game_map,
+            ):
+                continue
+            return True
+        return False
+
+    def validate_detachment_rules(self) -> list[str]:
+        errors: list[str] = []
+        if not self.is_changehost_of_deceit():
+            return errors
+        army = self.army
+        if army is None:
+            return errors
+        cap, size_label = self._changehost_scintillating_points_cap(
+            int(getattr(army, "points_limit", 0) or 0)
+        )
+        scint_points = 0
+        for unit in self._iter_unique_army_roots():
+            if not self._unit_is_scintillating_legions(unit):
+                continue
+            scint_points += self._unit_points(unit)
+        if int(scint_points) > int(cap):
+            errors.append(
+                "Changehost of Deceit: combined SCINTILLATING LEGIONS points "
+                f"({int(scint_points)}) exceed the {size_label} cap of {int(cap)}."
+            )
+
+        warlord = getattr(army, "warlord", None)
+        if warlord is None:
+            for unit in self._iter_unique_army_roots():
+                if bool(getattr(unit, "is_warlord", False)):
+                    warlord = unit
+                    break
+        warlord_root = self._attached_unit_root(warlord)
+        if warlord_root is not None and self._unit_is_scintillating_legions(warlord_root):
+            errors.append(
+                "Changehost of Deceit: no SCINTILLATING LEGIONS model from your army can be your WARLORD."
+            )
+        return errors
 
     def _model_is_rubricae(self, model) -> bool:
         if model is None:

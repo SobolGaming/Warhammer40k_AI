@@ -15084,6 +15084,48 @@ class WargearProfile:
                             attack_instance["inv_save_override_reason"] = source
         except Exception:
             pass
+        # Thousand Sons: Changehost of Deceit (Infernal Pacts - Daemonic Illusions).
+        t_unit = getattr(target_model, "parent_unit", None)
+        if t_unit is not None:
+            attack_type = "unknown"
+            parent_wargear = getattr(self, "parent_wargear", None)
+            if parent_wargear is not None:
+                is_ranged_fn = getattr(parent_wargear, "is_ranged", None)
+                is_melee_fn = getattr(parent_wargear, "is_melee", None)
+                if callable(is_ranged_fn) and bool(is_ranged_fn()):
+                    attack_type = "ranged"
+                elif callable(is_melee_fn) and bool(is_melee_fn()):
+                    attack_type = "melee"
+            if attack_type == "unknown":
+                range_obj = getattr(self, "range", None)
+                max_range = getattr(range_obj, "max", None) if range_obj is not None else None
+                if isinstance(max_range, str):
+                    try:
+                        max_range = float(max_range)
+                    except ValueError:
+                        max_range = 0.0
+                if isinstance(max_range, (int, float)) and float(max_range) > 0.0:
+                    attack_type = "ranged"
+                else:
+                    attack_type = "melee"
+            get_parent_army = getattr(t_unit, "get_parent_army", None)
+            army = get_parent_army() if callable(get_parent_army) else None
+            mgr = getattr(army, "thousand_sons_detachments", None) if army is not None else None
+            inv_fn = getattr(mgr, "changehost_daemonic_illusions_invulnerable_save", None) if mgr is not None else None
+            if callable(inv_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                game_map = getattr(game, "map", None) if game is not None else None
+                inv_value, inv_source = inv_fn(
+                    target_model,
+                    attack_type=attack_type,
+                    game_map=game_map,
+                )
+                if inv_value:
+                    current = attack_instance.get("inv_save_override", None)
+                    if current is None or int(current) > int(inv_value):
+                        attack_instance["inv_save_override"] = int(inv_value)
+                        source = str(inv_source or "Daemonic Illusions (Aura)").strip() or "Daemonic Illusions (Aura)"
+                        attack_instance["inv_save_override_reason"] = source
         # Wargear abilities (e.g. "The bearer has a 4+ invulnerable save.").
         try:
             t_unit = getattr(target_model, "parent_unit", None)

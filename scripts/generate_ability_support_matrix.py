@@ -408,6 +408,18 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"in your command phase if your opponent has one or more flux tokens you gain one flux token",
             r"when using fast dice rolling this rule can be used to spend any number of flux tokens up to the amount you have to reroll a number of dice up to the amount spent after rolling multiple rolls or saving throws at once",
         ),
+        "Infernal Pacts": (
+            r"scintillating legions units from your army have the following the ability",
+            r"while a friendly thousand sons psyker unit is within 6 of and visible to this unit models in that unit have a 4 invulnerable save against ranged attacks",
+            r"thousand sons units from your army have the following ability",
+            r"while a friendly scintillating legions psyker unit is within 6 of and visible to this unit that scintillating legions unit has the cabal of sorcerers ability",
+            r"you can include scintillating legions units in your army even though they do not have the thousand sons faction keyword",
+            r"the combined points cost of such units you can include in your army is",
+            r"incursion up to \d+ pts",
+            r"strike force up to \d+ pts",
+            r"onslaught up to \d+ pts",
+            r"no scintillating legions models from your army can be your warlord",
+        ),
         "Combat Drugs": (
             r"at the start of your command phase select which combat drugs will be active for your army until the start of your next command phase",
             r"to do so either select one from the list below you cannot select the same combat drug more than once per battle or randomly select two by rolling two d6",
@@ -1877,6 +1889,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
             "Supported",
             "Grand Coven: Command-phase selection (once per battle per option) with Imbued Manifestation (+6\" Psychic ranged weapons), Psychic Maelstrom (+1 to wound with Psychic weapons), and Wrath of the Immaterium ([Devastating Wounds] on Psychic weapons).",
         ),
+        "Infernal Pacts": (
+            "Supported",
+            "Changehost of Deceit: Daemonic Illusions grants nearby visible THOUSAND SONS PSYKER units a 4+ invulnerable save against ranged attacks; Mortal Sorcery grants Cabal of Sorcerers to nearby visible SCINTILLATING LEGIONS PSYKER units; Scintillating Legions points caps and WARLORD restriction are validated by battle size.",
+        ),
         "All is Dust": (
             "Supported",
             "Rubricae Phalanx: Rubricae models gain +1 to armour saves against attacks with unmodified Damage 1.",
@@ -2292,6 +2308,10 @@ def _restriction_support_by_name() -> Dict[str, Tuple[str, str]]:
         "You can include the BLOOD LEGIONS units in your army. The combined points cost of such units you can include in your army is: Incursion: Up to 500 pts Strike Force: Up to 1000 pts Onslaught: Up to 1500 pts No BLOOD LEGIONS model from your army can be your WARLORD.": (
             "Supported",
             "BLOOD LEGIONS points caps enforced by battle size; BLOOD LEGIONS cannot be your WARLORD.",
+        ),
+        "You can include Scintillating Legions units in your army, even though they do not have the THOUSAND SONS Faction keyword. The combined points cost of such units you can include in your army is: Incursion: Up to 500 pts Strike Force: Up to 1000 pts Onslaught: Up to 1500 pts No SCINTILLATING LEGIONS models from your army can be your WARLORD .": (
+            "Supported",
+            "SCINTILLATING LEGIONS points caps are enforced by battle size; SCINTILLATING LEGIONS cannot be your WARLORD.",
         ),
     }
     return {_norm(name): val for name, val in raw.items()}
@@ -3939,6 +3959,10 @@ def _classify_ability_base(
         mapped = ABILITY_SUPPORT_BY_ID.get(ab_id)
         if mapped:
             return mapped
+    if not str(description or "").strip():
+        restriction_support = _restriction_support_by_name().get(_norm(name or ""))
+        if restriction_support:
+            return restriction_support
 
     desc_support = _warlord_enhancement_restriction_support(description)
     unique_model_support = _unique_model_restriction_support(description)
