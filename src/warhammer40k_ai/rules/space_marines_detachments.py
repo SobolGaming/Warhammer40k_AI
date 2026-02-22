@@ -241,6 +241,10 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         self.rapid_drop_selected_player_id: str = ""
         self.reclamation_phase_key: str = ""
         self.reclamation_controlled_objective_ids: tuple[str, ...] = ()
+        self.pack_quarry_tally: int = 0
+        self.pack_quarry_target: int = 0
+        self.pack_quarry_completed: bool = False
+        self.pack_quarry_initialized: bool = False
         self.beastslayer_tally: int = 0
         self.beastslayer_target: int = 0
         self.beastslayer_completed: bool = False
@@ -320,6 +324,11 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Saga of the Beastslayer")
+
+    def is_saga_of_the_hunter(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Saga of the Hunter")
 
     def is_saga_of_the_great_wolf(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -1083,6 +1092,360 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False, ""
         return True, "Legendary Slayers"
 
+    def clear_pack_quarry_state(self) -> None:
+        self.pack_quarry_tally = 0
+        self.pack_quarry_target = 0
+        self.pack_quarry_completed = False
+        self.pack_quarry_initialized = False
+
+    def _pack_quarry_target_for_battle_size(self, *, game=None) -> int:
+        game_obj = self._resolve_game_context(game=game)
+        size_name = ""
+        if game_obj is not None:
+            try:
+                battlefield = getattr(game_obj, "battlefield", None)
+                size = getattr(battlefield, "size", None) if battlefield is not None else None
+                if size is not None:
+                    size_name = str(getattr(size, "name", "") or getattr(size, "value", "") or "").strip().upper()
+            except Exception:
+                size_name = ""
+        if "ONSLAUGHT" in size_name:
+            return 4
+        if "STRIKE" in size_name and "FORCE" in size_name:
+            return 3
+        if "INCURSION" in size_name:
+            return 2
+        points_limit = int(getattr(self.army, "points_limit", 0) or 0) if self.army is not None else 0
+        if points_limit >= 3000:
+            return 4
+        if points_limit >= 2000:
+            return 3
+        return 2
+
+    def _pack_quarry_update_completion(self) -> None:
+        if not self.is_saga_of_the_hunter():
+            self.pack_quarry_completed = False
+            return
+        if not bool(self.pack_quarry_initialized):
+            self.pack_quarry_completed = False
+            return
+        target = max(0, int(self.pack_quarry_target or 0))
+        tally = max(0, int(self.pack_quarry_tally or 0))
+        self.pack_quarry_completed = bool(tally >= target)
+
+    def _on_battle_round_start_pack_quarry(self, battle_round: int, *, game=None) -> None:
+        if not self.is_saga_of_the_hunter():
+            self.clear_pack_quarry_state()
+            return
+        try:
+            round_now = int(battle_round or 0)
+        except Exception:
+            round_now = 0
+        if round_now != 1:
+            return
+        self.pack_quarry_tally = 0
+        self.pack_quarry_initialized = True
+        self.pack_quarry_target = self._pack_quarry_target_for_battle_size(game=game)
+        self._pack_quarry_update_completion()
+
+    def pack_quarry_saga_completed(self) -> bool:
+        self._pack_quarry_update_completion()
+        return bool(self.pack_quarry_completed)
+
+    def _pack_quarry_add_tally(self, value: int) -> int:
+        if not self.is_saga_of_the_hunter():
+            return 0
+        try:
+            amount = int(value or 0)
+        except Exception:
+            amount = 0
+        if amount <= 0:
+            return 0
+        self.pack_quarry_tally = int(self.pack_quarry_tally or 0) + amount
+        self._pack_quarry_update_completion()
+        return amount
+
+    def _pack_quarry_tally_attacker_is_eligible(self, attacker_unit) -> bool:
+        attacker_root = self._attached_unit_root(attacker_unit)
+        if attacker_root is None:
+            return False
+        try:
+            if attacker_root.get_parent_army() is not self.army:
+                return False
+        except Exception:
+            return False
+        return self.attached_unit_is_adeptus_astartes(attacker_root)
+
+    def _pack_quarry_unit_is_space_wolves(self, unit) -> bool:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        try:
+            if root.get_parent_army() is not self.army:
+                return False
+        except Exception:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        if self._attached_unit_has_keyword(root, "SPACE WOLVES"):
+            return True
+        return str(self.get_committed_chapter_keyword() or "").strip().upper() == "SPACE WOLVES"
+
+    def _pack_quarry_alive_model_count(self, unit) -> int:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return 0
+        try:
+            models = list(root.get_attached_unit_models() or [])
+        except Exception:
+            models = []
+        if not models:
+            models = list(getattr(root, "models", []) or [])
+        if not models:
+            return 0
+        count = 0
+        for model in models:
+            try:
+                alive_attr = getattr(model, "is_alive", False)
+                alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            except Exception:
+                alive = False
+            if alive:
+                count += 1
+        return int(count)
+
+    def _pack_quarry_target_is_engaged_with_other_friendly_astartes(
+        self,
+        *,
+        attacker_unit,
+        target_unit,
+        game=None,
+    ) -> bool:
+        attacker_root = self._attached_unit_root(attacker_unit)
+        target_root = self._attached_unit_root(target_unit)
+        if attacker_root is None or target_root is None:
+            return False
+        game_obj = self._resolve_game_context(game=game)
+        game_map = getattr(game_obj, "map", None) if game_obj is not None else None
+        if game_map is None:
+            return False
+        attacker_id = str(get_entity_id(attacker_root) or "")
+        for friendly in self._iter_unique_army_roots():
+            if friendly is None:
+                continue
+            if not self._unit_is_on_battlefield(friendly):
+                continue
+            if not self.attached_unit_is_adeptus_astartes(friendly):
+                continue
+            friendly_id = str(get_entity_id(friendly) or "")
+            if attacker_id and friendly_id and attacker_id == friendly_id:
+                continue
+            try:
+                if bool(game_map.is_within_engagement_range(friendly, target_root)):
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def _pack_quarry_attacker_outnumbers_target(self, *, attacker_unit, target_unit) -> bool:
+        attacker_count = int(self._pack_quarry_alive_model_count(attacker_unit) or 0)
+        target_count = int(self._pack_quarry_alive_model_count(target_unit) or 0)
+        if attacker_count <= 0 or target_count <= 0:
+            return False
+        return attacker_count > target_count
+
+    def _pack_quarry_melee_condition_met(self, *, attacker_unit, target_unit, game=None) -> bool:
+        attacker_root = self._attached_unit_root(attacker_unit)
+        target_root = self._attached_unit_root(target_unit)
+        if attacker_root is None or target_root is None:
+            return False
+        try:
+            if attacker_root.get_parent_army() is not self.army:
+                return False
+        except Exception:
+            return False
+        try:
+            if target_root.get_parent_army() is self.army:
+                return False
+        except Exception:
+            return False
+        return bool(
+            self._pack_quarry_target_is_engaged_with_other_friendly_astartes(
+                attacker_unit=attacker_root,
+                target_unit=target_root,
+                game=game,
+            )
+            or self._pack_quarry_attacker_outnumbers_target(
+                attacker_unit=attacker_root,
+                target_unit=target_root,
+            )
+        )
+
+    def pack_quarry_hit_bonus(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        weapon_profile=None,
+        attack_instance=None,
+    ) -> tuple[int, str]:
+        _ = attack_instance
+        if not self.is_saga_of_the_hunter():
+            return 0, ""
+        if attacker_model is None or target_unit is None:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        if not self._pack_quarry_unit_is_space_wolves(attacker_unit):
+            return 0, ""
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            if parent is not None and not bool(getattr(parent, "is_melee", lambda: False)()):
+                return 0, ""
+        game_obj = self._resolve_game_context(game=None)
+        if not self._pack_quarry_melee_condition_met(
+            attacker_unit=attacker_unit,
+            target_unit=target_unit,
+            game=game_obj,
+        ):
+            return 0, ""
+        return 1, "Pack's Quarry"
+
+    def pack_quarry_wound_bonus(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        weapon_profile=None,
+        attack_instance=None,
+    ) -> tuple[int, str]:
+        _ = attack_instance
+        if not self.pack_quarry_saga_completed():
+            return 0, ""
+        if attacker_model is None or target_unit is None:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        if not self._pack_quarry_unit_is_space_wolves(attacker_unit):
+            return 0, ""
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            if parent is not None and not bool(getattr(parent, "is_melee", lambda: False)()):
+                return 0, ""
+        game_obj = self._resolve_game_context(game=None)
+        if not self._pack_quarry_melee_condition_met(
+            attacker_unit=attacker_unit,
+            target_unit=target_unit,
+            game=game_obj,
+        ):
+            return 0, ""
+        return 1, "Pack's Quarry"
+
+    def pack_quarry_mark_fight_hit_targets(self, attacker_unit=None, hits_by_target=None, *, game=None) -> None:
+        if not self.is_saga_of_the_hunter():
+            return
+        if not self._pack_quarry_tally_attacker_is_eligible(attacker_unit):
+            return
+        if not isinstance(hits_by_target, dict):
+            return
+        attacker_root = self._attached_unit_root(attacker_unit)
+        if attacker_root is None:
+            return
+        pending_ids = []
+        for target_unit, hits in list((hits_by_target or {}).items()):
+            if target_unit is None:
+                continue
+            if int(hits or 0) <= 0:
+                continue
+            target_root = self._attached_unit_root(target_unit)
+            if target_root is None:
+                continue
+            try:
+                if target_root.get_parent_army() is self.army:
+                    continue
+            except Exception:
+                continue
+            target_id = str(get_entity_id(target_root) or "")
+            if target_id:
+                pending_ids.append(target_id)
+        pending_ids = sorted(set(pending_ids))
+        if not pending_ids:
+            return
+
+        game_obj = self._resolve_game_context(game=game)
+        current_player = getattr(game_obj, "get_current_player", lambda: None)() if game_obj is not None else None
+        owner_id = str(getattr(current_player, "id", "") or "")
+        if not owner_id:
+            owner_id = str(getattr(getattr(self.army, "player", None), "id", "") or "")
+        try:
+            turn_now = int(getattr(game_obj, "turn", 0) or 0) if game_obj is not None else 0
+        except Exception:
+            turn_now = 0
+
+        sr = getattr(attacker_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        try:
+            pending_turn = int(sr.get("pack_quarry_pending_turn", 0) or 0)
+        except Exception:
+            pending_turn = 0
+        pending_owner = str(sr.get("pack_quarry_pending_owner", "") or "")
+        if pending_turn != turn_now or pending_owner != owner_id:
+            merged = set(pending_ids)
+        else:
+            merged = {
+                str(value or "")
+                for value in list(sr.get("pack_quarry_pending_target_ids", []) or [])
+                if str(value or "")
+            }
+            merged.update(pending_ids)
+        sr["pack_quarry_pending_turn"] = int(turn_now or 0)
+        sr["pack_quarry_pending_owner"] = owner_id
+        sr["pack_quarry_pending_target_ids"] = sorted(merged)
+        attacker_root.special_rules = sr
+
+    def pack_quarry_resolve_fight_sequence(self, attacker_unit=None, *, game=None) -> int:
+        if not self.is_saga_of_the_hunter():
+            return 0
+        if not self._pack_quarry_tally_attacker_is_eligible(attacker_unit):
+            return 0
+        attacker_root = self._attached_unit_root(attacker_unit)
+        if attacker_root is None:
+            return 0
+        sr = getattr(attacker_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return 0
+        pending_ids = [
+            str(value or "")
+            for value in list(sr.get("pack_quarry_pending_target_ids", []) or [])
+            if str(value or "")
+        ]
+        for key in (
+            "pack_quarry_pending_turn",
+            "pack_quarry_pending_owner",
+            "pack_quarry_pending_target_ids",
+        ):
+            sr.pop(key, None)
+        attacker_root.special_rules = sr
+        if not pending_ids:
+            return 0
+
+        destroyed_ids: set[str] = set()
+        for target_id in pending_ids:
+            target = self._legendary_slayers_resolve_unit_by_id(target_id, game=game)
+            target_root = self._attached_unit_root(target)
+            if target_root is None:
+                continue
+            try:
+                if target_root.get_parent_army() is self.army:
+                    continue
+            except Exception:
+                continue
+            if self._unit_has_models_or_is_alive(target_root):
+                continue
+            resolved_id = str(get_entity_id(target_root) or "")
+            if resolved_id:
+                destroyed_ids.add(resolved_id)
+        return self._pack_quarry_add_tally(len(destroyed_ids))
+
     def _on_battle_round_start_librarius(self, battle_round: int, *, game=None) -> None:
         if not self.is_librarius_conclave():
             self.clear_librarius_psychic_discipline()
@@ -1172,6 +1535,7 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             game_obj.request_decision(request)
 
     def on_battle_round_start(self, battle_round: int, *, game=None) -> None:
+        self._on_battle_round_start_pack_quarry(battle_round, game=game)
         self._on_battle_round_start_legendary_slayers(battle_round, game=game)
         self._on_battle_round_start_librarius(battle_round, game=game)
 

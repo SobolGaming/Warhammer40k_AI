@@ -656,6 +656,15 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"at the end of either players turn that unit is wholly within your opponents deployment zone",
             r"from the second battle round onwards at the end of your command phase that unit is within range of an objective marker you control that is not within your deployment zone",
         ),
+        "Pack's Quarry": (
+            r"each time a model in a space wolves unit from your army makes a melee attack that targets an enemy unit if that enemy unit is within engagement range of one or more other adeptus astartes units from your army or if the attacking unit contains more models than that enemy unit",
+            r"add \d+ to the hit roll",
+            r"if your saga is completed see below add \d+ to the wound roll as well",
+            r"at the start of the first battle round your quarry tally is \d+",
+            r"each time an adeptus astartes unit from your army fights after all of those attacks have been resolved add \d+ to your quarry tally for each enemy unit destroyed by those attacks",
+            r"once your quarry tally is equal to or greater than the number shown in the table below depending on the battle size your saga is completed",
+            r"battle size quarry tally incursion \d+ strike force \d+ onslaught \d+",
+        ),
         "Master of Wolves": (
             r"at the start of your command phase you can select one of the hunting packs listed below",
             r"until the start of your next command phase that hunting pack is active and its effects apply to all adeptus astartes units from your army",
@@ -2067,6 +2076,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Legendary Slayers": (
             "Supported",
             "Saga of the Beastslayer: BR1 Beastslayer target tally setup (including embarked CHARACTER/MONSTER/VEHICLE enemy units), post-shoot/fight kill tally tracking, Saga completion state, and conditional Lethal Hits are implemented.",
+        ),
+        "Pack's Quarry": (
+            "Supported",
+            "Saga of the Hunter: BR1 Quarry tally setup by battle size (Incursion 2, Strike Force 3, Onslaught 4), fight-sequence enemy-unit kill tally tracking for ADEPTUS ASTARTES units, and Space Wolves melee +1 to hit with conditional +1 to wound once the Saga is completed when outnumbering the target or when another friendly ADEPTUS ASTARTES unit is engaging that target.",
         ),
         "Psychic Disciplines": (
             "Supported",

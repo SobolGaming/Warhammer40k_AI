@@ -319,6 +319,38 @@ class GameShootingFightHandlersMixin:
             return
         resolve_fn(attacker_unit=attacker_root, game=self)
 
+    def _on_fight_attacks_resolved_pack_quarry(self, unit=None, hits_by_target=None, **_kwargs) -> None:
+        if unit is None or not isinstance(hits_by_target, dict):
+            return
+        try:
+            attacker_root = unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = unit
+        if attacker_root is None:
+            return
+        attacker_army = attacker_root.get_parent_army() if hasattr(attacker_root, "get_parent_army") else None
+        sm_mgr = getattr(attacker_army, "space_marines_detachments", None) if attacker_army is not None else None
+        mark_fn = getattr(sm_mgr, "pack_quarry_mark_fight_hit_targets", None) if sm_mgr is not None else None
+        if not callable(mark_fn):
+            return
+        mark_fn(attacker_unit=attacker_root, hits_by_target=hits_by_target, game=self)
+
+    def _on_fight_sequence_complete_pack_quarry(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        try:
+            attacker_root = unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = unit
+        if attacker_root is None:
+            return
+        attacker_army = attacker_root.get_parent_army() if hasattr(attacker_root, "get_parent_army") else None
+        sm_mgr = getattr(attacker_army, "space_marines_detachments", None) if attacker_army is not None else None
+        resolve_fn = getattr(sm_mgr, "pack_quarry_resolve_fight_sequence", None) if sm_mgr is not None else None
+        if not callable(resolve_fn):
+            return
+        resolve_fn(attacker_unit=attacker_root, game=self)
+
     def _on_unit_shooting_resolved_tactical_acumen(
         self,
         attacker_unit=None,

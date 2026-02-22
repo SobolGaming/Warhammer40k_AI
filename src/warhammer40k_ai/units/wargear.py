@@ -7623,6 +7623,23 @@ class WargearProfile:
                     _add_hit_mod(int(hunter_bonus), f"+{int(hunter_bonus)} from {source_name}")
         except Exception:
             pass
+        # Space Marines: Saga of the Hunter (Pack's Quarry) +1 to hit for qualifying melee attacks.
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if sm_mgr is not None and callable(getattr(sm_mgr, "pack_quarry_hit_bonus", None)):
+                pack_bonus, pack_source = sm_mgr.pack_quarry_hit_bonus(
+                    attacker,
+                    target,
+                    weapon_profile=self,
+                    attack_instance=attack_instance,
+                )
+                if pack_bonus:
+                    source_name = str(pack_source or "Pack's Quarry").strip() or "Pack's Quarry"
+                    _add_hit_mod(int(pack_bonus), f"+{int(pack_bonus)} from {source_name}")
+        except Exception:
+            pass
 
         # Master of Mechanisms: selected friendly VEHICLE gets +1 to hit until next Command phase.
         sr = getattr(getattr(attacker, "parent_unit", None), "special_rules", None)
@@ -12224,6 +12241,27 @@ class WargearProfile:
                 if wound_bonus:
                     dice_modifier += int(wound_bonus)
                     source_name = str(source or "Vowed Target").strip() or "Vowed Target"
+                    wound_result["modifiers"].append(
+                        f"+{int(wound_bonus)} to wound from {source_name}"
+                    )
+        except Exception:
+            pass
+        # Space Marines: Saga of the Hunter (Pack's Quarry) completed Saga grants +1 to wound
+        # for qualifying melee attacks by Space Wolves units.
+        try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            attacker_army = attacker_unit.get_parent_army() if attacker_unit is not None else None
+            sm_mgr = getattr(attacker_army, "space_marines_detachments", None) if attacker_army is not None else None
+            if sm_mgr is not None and callable(getattr(sm_mgr, "pack_quarry_wound_bonus", None)):
+                wound_bonus, source = sm_mgr.pack_quarry_wound_bonus(
+                    attacker,
+                    target,
+                    weapon_profile=self,
+                    attack_instance=attack_instance,
+                )
+                if wound_bonus:
+                    dice_modifier += int(wound_bonus)
+                    source_name = str(source or "Pack's Quarry").strip() or "Pack's Quarry"
                     wound_result["modifiers"].append(
                         f"+{int(wound_bonus)} to wound from {source_name}"
                     )
