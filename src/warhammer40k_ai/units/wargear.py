@@ -6636,7 +6636,7 @@ class WargearProfile:
 
         return str(sr.get("coterie_unshakeable_opponents_source", "") or "UNSHAKEABLE OPPONENTS").strip() or "UNSHAKEABLE OPPONENTS"
 
-    def _ignore_hit_modifier_rule(self, attacker: 'Model') -> Optional[dict]:
+    def _ignore_hit_modifier_rule(self, attacker: 'Model', target_unit: Optional['Unit'] = None) -> Optional[dict]:
         """
         Detect unit/leader abilities that allow ignoring Hit roll modifiers and,
         when present in text, BS/WS modifiers.
@@ -6683,6 +6683,23 @@ class WargearProfile:
                 telepathy_rule = None
             if isinstance(telepathy_rule, dict) and telepathy_rule:
                 return telepathy_rule
+
+        tau_mgr = getattr(army, "tau_empire_detachments", None) if army is not None else None
+        patient_rule_fn = (
+            getattr(tau_mgr, "patient_hunter_ignore_hit_modifiers_rule", None)
+            if tau_mgr is not None
+            else None
+        )
+        if callable(patient_rule_fn):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            patient_rule = patient_rule_fn(
+                attacker,
+                target_unit=target_unit,
+                weapon_profile=self,
+                game=game,
+            )
+            if isinstance(patient_rule, dict) and patient_rule:
+                return patient_rule
 
         try:
             is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
@@ -7276,6 +7293,11 @@ class WargearProfile:
                 unit = getattr(attacker, "parent_unit", None)
                 army = unit.get_parent_army() if unit is not None else None
                 mgr = getattr(army, "tau_empire_detachments", None) if army is not None else None
+                if mgr is not None and callable(getattr(mgr, "patient_hunter_sustained_hits_value", None)):
+                    game = getattr(getattr(army, "player", None), "game", None)
+                    ph_value, ph_source = mgr.patient_hunter_sustained_hits_value(attacker, self, game=game)
+                    if int(ph_value or 0) > 0:
+                        _set_bonus_sustained(int(ph_value or 0), str(ph_source or "Patient Hunter"))
                 if mgr is not None and callable(getattr(mgr, "killing_blow_lethal_hits_applies", None)):
                     game = getattr(getattr(army, "player", None), "game", None)
                     if mgr.killing_blow_lethal_hits_applies(attacker, self, target_unit=target, game=game):
@@ -8427,7 +8449,7 @@ class WargearProfile:
 
         ignore_rule = None
         try:
-            ignore_rule = self._ignore_hit_modifier_rule(attacker)
+            ignore_rule = self._ignore_hit_modifier_rule(attacker, target_unit=target)
         except Exception:
             ignore_rule = None
 

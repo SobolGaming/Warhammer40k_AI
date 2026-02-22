@@ -472,7 +472,7 @@ class AttackResolutionManager:
             if attacker is None:
                 continue
             try:
-                ignore_rule = profile._ignore_hit_modifier_rule(attacker)
+                ignore_rule = profile._ignore_hit_modifier_rule(attacker, target_unit=target)
             except (AttributeError, TypeError, ValueError):
                 ignore_rule = None
             attacker_unit = getattr(attacker, "parent_unit", None)

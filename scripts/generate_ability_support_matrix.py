@@ -319,6 +319,10 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"t au empire units excluding kroot and vespid stingwings units from your army have the following ability",
             r"while a friendly kroot or vespid stingwings unit is wholly within 6 of and visible to this unit that kroot or vespid stingwings unit can only be selected as the target of a ranged attack if the attacking model is within 18",
         ),
+        "Patient Hunter": (
+            r"during the third fourth and fifth battle rounds ranged weapons equipped by t au empire models from your army have the sustained hits 1 ability",
+            r"during the third fourth and fifth battle rounds while a unit is a guided unit see for the greater good each time a ranged attack is made by a model in that unit that targets a spotted unit you can ignore any or all modifiers to that attacks ballistic skill characteristics and or all modifiers to the hit roll",
+        ),
         "Ruthless Discipline": (
             r"add \d+ to the number of orders each astra militarum officer model from your army can issue as stated on their datasheet",
             r"while an astra militarum unit from your army is affected by an order each time a model in that unit makes an attack reroll a hit roll of \d+",
@@ -1914,6 +1918,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Integrated Command Structure": (
             "Supported",
             "Auxiliary Cadre: KROOT/VESPID spotters grant +1 AP to eligible friendly T'AU EMPIRE ranged attacks against visible enemies within 9\", and KROOT/VESPID units wholly within 6\" and visible to eligible friendly T'AU EMPIRE sources can only be targeted by ranged attacks from within 18\".",
+        ),
+        "Patient Hunter": (
+            "Supported",
+            "Kauyon: battle rounds 3-5 grant [SUSTAINED HITS 1] to ranged weapons of T'AU EMPIRE models; guided attacks targeting spotted units can ignore any/all Ballistic Skill modifiers and/or any/all Hit roll modifiers.",
         ),
         "Path of the Warrior": (
             "Supported",

@@ -32,6 +32,11 @@ class TauEmpireDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Auxiliary Cadre")
 
+    def is_kauyon(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Kauyon")
+
     def _model_in_army(self, model) -> bool:
         if model is None or self.army is None:
             return False
@@ -268,6 +273,61 @@ class TauEmpireDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Mont'ka")
+
+    def _patient_hunter_round_active_for_unit(self, unit, *, game=None) -> bool:
+        if not self.is_kauyon():
+            return False
+        if unit is None:
+            return False
+        if game is None:
+            player = getattr(self.army, "player", None) if self.army is not None else None
+            game = getattr(player, "game", None)
+        battle_round = self._battle_round_from_game(game)
+        return 3 <= battle_round <= 5
+
+    def patient_hunter_sustained_hits_value(self, model, weapon_profile=None, *, game=None) -> tuple[int, str]:
+        if model is None:
+            return 0, ""
+        if not self._model_in_army(model):
+            return 0, ""
+        if not self._model_is_tau_empire(model):
+            return 0, ""
+        if not self._weapon_is_ranged(weapon_profile):
+            return 0, ""
+        unit = getattr(model, "parent_unit", None)
+        if not self._patient_hunter_round_active_for_unit(unit, game=game):
+            return 0, ""
+        return 1, "Patient Hunter"
+
+    def patient_hunter_ignore_hit_modifiers_rule(
+        self,
+        attacker_model,
+        *,
+        target_unit=None,
+        weapon_profile=None,
+        game=None,
+    ) -> dict | None:
+        if attacker_model is None or target_unit is None:
+            return None
+        if not self._model_in_army(attacker_model):
+            return None
+        if not self._model_is_tau_empire(attacker_model):
+            return None
+        if not self._weapon_is_ranged(weapon_profile):
+            return None
+        unit = getattr(attacker_model, "parent_unit", None)
+        if unit is None:
+            return None
+        if not self._patient_hunter_round_active_for_unit(unit, game=game):
+            return None
+        if not self._unit_is_guided_against_target(unit, target_unit, game=game):
+            return None
+        return {
+            "name": "Patient Hunter",
+            "attack_type": "ranged",
+            "skill_kinds": {"ballistic"},
+            "allow_hit": True,
+        }
 
     @staticmethod
     def _attached_root(unit):

@@ -466,6 +466,169 @@ def test_integrated_command_structure_localised_stealth_projectors_require_visib
     assert sources == []
 
 
+def test_patient_hunter_grants_sustained_hits_in_round_three():
+    army = _build_tau_army("Kauyon")
+    _configure_tau_shooting_game(army, battle_round=3)
+    attacker_unit = create_unit(
+        "Strike Team",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    target_unit = create_unit(
+        "Enemy Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    army.add_unit(attacker_unit)
+
+    attack_profile = make_profile(range_val="24", is_ranged=True)
+    attacker_model = attacker_unit.models[0]
+    attack_instance = {"_aura_attack_mods": _aura_stub()}
+    hit_result = attack_profile._hit_target_with_tracking(
+        target_unit,
+        attacker_model,
+        attack_instance,
+        roll_value=6,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+
+    assert hit_result["hit"] is True
+    assert int(attack_instance.get("sustained_hit", 0) or 0) == 1
+    assert any("Patient Hunter" in str(entry) for entry in hit_result.get("special_effects", []))
+
+
+def test_patient_hunter_sustained_hits_not_active_before_round_three():
+    army = _build_tau_army("Kauyon")
+    _configure_tau_shooting_game(army, battle_round=2)
+    attacker_unit = create_unit(
+        "Strike Team",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    target_unit = create_unit(
+        "Enemy Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    army.add_unit(attacker_unit)
+
+    attack_profile = make_profile(range_val="24", is_ranged=True)
+    attacker_model = attacker_unit.models[0]
+    attack_instance = {"_aura_attack_mods": _aura_stub()}
+    hit_result = attack_profile._hit_target_with_tracking(
+        target_unit,
+        attacker_model,
+        attack_instance,
+        roll_value=6,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+
+    assert hit_result["hit"] is True
+    assert int(attack_instance.get("sustained_hit", 0) or 0) == 0
+    assert not any("Patient Hunter" in str(entry) for entry in hit_result.get("special_effects", []))
+
+
+def test_patient_hunter_guided_attacks_can_ignore_hit_modifiers():
+    from warhammer40k_ai.rules.for_the_greater_good import ForTheGreaterGoodManager
+    from warhammer40k_ai.units import wargear as wargear_mod
+    from warhammer40k_ai.utility.modifier_choice import CHOICE_IGNORE_NEGATIVE
+
+    army = _build_tau_army("Kauyon")
+    game, player = _configure_tau_shooting_game(army, battle_round=3)
+    attacker_unit = create_unit(
+        "Strike Team",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    observer_unit = create_unit(
+        "Pathfinders",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    target_unit = create_unit(
+        "Enemy Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    army.add_unit(attacker_unit)
+    army.add_unit(observer_unit)
+
+    observer_profile = make_profile(range_val="24", is_ranged=True)
+    _attach_ranged_profile(observer_unit, observer_profile)
+
+    ftgg = ForTheGreaterGoodManager(army)
+    army.for_the_greater_good = ftgg
+    assert ftgg.mark_spotted(observer_unit, target_unit, game=game, player=player) is True
+
+    attack_profile = make_profile(range_val="24", is_ranged=True)
+    attacker_model = attacker_unit.models[0]
+    attack_instance = {
+        "_aura_attack_mods": _aura_stub(),
+        "hit_roll_modifiers": [(-1, "Test penalty")],
+        "hit_modifier_choice": CHOICE_IGNORE_NEGATIVE,
+    }
+    old_get_roll = wargear_mod.get_roll
+    wargear_mod.get_roll = lambda _expr: 3
+    try:
+        hit_result = attack_profile._hit_target_with_tracking(
+            target_unit,
+            attacker_model,
+            attack_instance,
+            roll_value=None,
+            allow_rerolls=False,
+            log_roll=False,
+        )
+    finally:
+        wargear_mod.get_roll = old_get_roll
+
+    assert hit_result["hit"] is True
+    assert attack_instance.get("hit_modifier_choice") == CHOICE_IGNORE_NEGATIVE
+
+
+def test_patient_hunter_ignore_modifiers_requires_guided_attack():
+    from warhammer40k_ai.units import wargear as wargear_mod
+    from warhammer40k_ai.utility.modifier_choice import CHOICE_IGNORE_NEGATIVE
+
+    army = _build_tau_army("Kauyon")
+    _configure_tau_shooting_game(army, battle_round=3)
+    attacker_unit = create_unit(
+        "Strike Team",
+        keywords=["INFANTRY"],
+        faction_keywords=["T'AU EMPIRE"],
+    )
+    target_unit = create_unit(
+        "Enemy Squad",
+        keywords=["INFANTRY"],
+        faction_keywords=["ADEPTUS ASTARTES"],
+    )
+    army.add_unit(attacker_unit)
+
+    attack_profile = make_profile(range_val="24", is_ranged=True)
+    attacker_model = attacker_unit.models[0]
+    attack_instance = {
+        "_aura_attack_mods": _aura_stub(),
+        "hit_roll_modifiers": [(-1, "Test penalty")],
+        "hit_modifier_choice": CHOICE_IGNORE_NEGATIVE,
+    }
+    old_get_roll = wargear_mod.get_roll
+    wargear_mod.get_roll = lambda _expr: 3
+    try:
+        hit_result = attack_profile._hit_target_with_tracking(
+            target_unit,
+            attacker_model,
+            attack_instance,
+            roll_value=None,
+            allow_rerolls=False,
+            log_roll=False,
+        )
+    finally:
+        wargear_mod.get_roll = old_get_roll
+
+    assert hit_result["hit"] is False
+
+
 def test_killing_blow_grants_assault_for_first_three_rounds():
     army = _build_tau_army("Mont'ka")
     army.player.game.turn = 2
