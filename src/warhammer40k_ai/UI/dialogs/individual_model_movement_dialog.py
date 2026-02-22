@@ -1112,25 +1112,20 @@ class IndividualModelMovementDialog(BaseDialog):
         Allows base-to-base contact (touching). Disallows overlap area > 0 on the same Z band.
         """
         try:
-            from ...utility.model_base import Base as _Base
+            from ...utility.model_base import clone_base as _clone_base
         except Exception:
-            _Base = None
+            _clone_base = None
 
-        if _Base is None:
+        if _clone_base is None:
             # If we can't construct temp bases, fall back to letting placement through
             return {'valid': True, 'reason': 'No overlap checker available'}
 
         # Build a temporary base at the destination so we can test overlap without mutating the model
         try:
             src_base = model.model_base
-            cand = _Base(src_base.base_type, src_base.radius)
+            cand = _clone_base(src_base)
             cand.set_position(float(x), float(y), float(z))
             cand.set_facing(float(facing) if facing is not None else float(getattr(src_base, 'facing', 0.0)))
-            # Preserve model height (important for 3D stacking edge-cases)
-            try:
-                cand.set_model_height(float(getattr(src_base, 'model_height', cand.model_height)))
-            except Exception:
-                pass
         except Exception:
             return {'valid': True, 'reason': 'No overlap checker available'}
 

@@ -267,8 +267,7 @@ class Map:
         centroid = base_shape.centroid
         xy_points = [(centroid.x, centroid.y)] + perimeter_samples
 
-        z_bottom = model.model_base.z
-        z_top = model.model_base.z + getattr(model.model_base, 'model_height', 2.0)
+        z_bottom, z_top = model.model_base.volume_z_bounds()
         if z_levels <= 1:
             z_samples = [z_bottom + 0.01]
         elif z_levels == 2:

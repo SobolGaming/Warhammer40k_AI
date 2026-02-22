@@ -2181,11 +2181,10 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
                             other_shape = other_model.model_base.get_base_shape()
                             if test_shape.intersects(other_shape):
                                 # Use exact model heights via Base.vertical_distance to determine separation sufficiency
-                                from ..utility.model_base import Base as _Base
-                                temp_base = _Base(model.model_base.base_type, model.model_base.radius)
-                                temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]
+                                from ..utility.model_base import clone_base as _clone_base
+                                temp_base = _clone_base(model.model_base)
+                                temp_base.set_position(position[0], position[1], position[2])
                                 temp_base.set_facing(getattr(model.model_base, 'facing', 0.0))
-                                temp_base.set_model_height(getattr(model.model_base, 'model_height', 2.0))
                                 if temp_base.vertical_distance(other_model.model_base) > 0.0:
                                     allow_due_to_vertical_separation = True
                                 break
@@ -2314,9 +2313,9 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
                                     for enemy_model in tu.models:
                                         if enemy_model.is_alive:
                                             # Calculate edge-to-edge distance to this enemy model
-                                            from ..utility.model_base import Base
-                                            temp_base = Base(model.model_base.base_type, model.model_base.radius)
-                                            temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]
+                                            from ..utility.model_base import clone_base
+                                            temp_base = clone_base(model.model_base)
+                                            temp_base.set_position(position[0], position[1], position[2])
 
                                             from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
                                             horizontal_distance = float(horizontal_distance_between_bases_2d(temp_base, enemy_model.model_base))
@@ -2359,9 +2358,9 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
                                     continue
                                 for enemy_model in tu.models:
                                     if enemy_model.is_alive:
-                                        from ..utility.model_base import Base
-                                        temp_base = Base(model.model_base.base_type, model.model_base.radius)
-                                        temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]
+                                        from ..utility.model_base import clone_base
+                                        temp_base = clone_base(model.model_base)
+                                        temp_base.set_position(position[0], position[1], position[2])
                                         from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
                                         horizontal_distance = float(horizontal_distance_between_bases_2d(temp_base, enemy_model.model_base))
                                         vertical_distance = float(vertical_distance_between_bases(temp_base, enemy_model.model_base))
@@ -2421,9 +2420,9 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
             elif game_map is not None:
                 # Check enemy aircraft models directly
                 from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
-                from ..utility.model_base import Base
-                temp_base = Base(model.model_base.base_type, model.model_base.radius)
-                temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]
+                from ..utility.model_base import clone_base
+                temp_base = clone_base(model.model_base)
+                temp_base.set_position(position[0], position[1], position[2])
                 try:
                     temp_base.set_facing(float(getattr(model.model_base, "facing", 0.0) or 0.0))
                 except Exception:
@@ -2448,9 +2447,9 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
     charge_target_ids = set(validation_rules.get('charge_target_unit_ids', set()) or set())
     if charge_target_ids and is_final_position and game_map is not None:
         from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
-        from ..utility.model_base import Base
-        temp_base = Base(model.model_base.base_type, model.model_base.radius)
-        temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]
+        from ..utility.model_base import clone_base
+        temp_base = clone_base(model.model_base)
+        temp_base.set_position(position[0], position[1], position[2])
         try:
             temp_base.set_facing(float(getattr(model.model_base, "facing", 0.0) or 0.0))
         except Exception:
@@ -2477,20 +2476,14 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
             return {'valid': False, 'reason': 'No target unit specified for charge'}
 
         # Check if final position is within engagement range of target unit using edge-to-edge distance
-        from ..utility.model_base import Base
-        temp_base = Base(model.model_base.base_type, model.model_base.radius)
-        temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]
+        from ..utility.model_base import clone_base
+        temp_base = clone_base(model.model_base)
+        temp_base.set_position(position[0], position[1], position[2])
         # Preserve facing for non-circular bases (elliptical/hull) so edge distance is correct.
         try:
             temp_base.set_facing(float(getattr(model.model_base, "facing", 0.0) or 0.0))
         except Exception:
             pass
-        # Preserve model height for any 3D separation helpers that may consult it
-        try:
-            temp_base.set_model_height(float(getattr(model.model_base, "model_height", None)))
-        except Exception:
-            pass
-
         in_engagement_range = False
         for enemy_model in target_unit.models:
             if not enemy_model.is_alive:
@@ -2508,18 +2501,13 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
 
     # Check fall back rules (only apply to final positions)
     if validation_rules.get('cannot_end_in_engagement_range', False) and is_final_position:
-        from ..utility.model_base import Base
-        temp_base = Base(model.model_base.base_type, model.model_base.radius)
-        temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]
+        from ..utility.model_base import clone_base
+        temp_base = clone_base(model.model_base)
+        temp_base.set_position(position[0], position[1], position[2])
         try:
             temp_base.set_facing(float(getattr(model.model_base, "facing", 0.0) or 0.0))
         except Exception:
             pass
-        try:
-            temp_base.set_model_height(float(getattr(model.model_base, "model_height", None)))
-        except Exception:
-            pass
-
         # Check against all enemy models using proper edge-to-edge distance
         for unit in game_map.units:
             if unit.faction == model.parent_unit.faction or not unit.is_alive() or not unit.deployed:
@@ -2897,9 +2885,9 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
 
         # Check if final position is within engagement range of target unit using edge-to-edge distance
         # Create a temporary model base at the final position to check engagement range
-        from ..utility.model_base import Base
-        temp_base = Base(model.model_base.base_type, model.model_base.radius)  # Use actual model's base type and size
-        temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]
+        from ..utility.model_base import clone_base
+        temp_base = clone_base(model.model_base)
+        temp_base.set_position(position[0], position[1], position[2])
 
         in_engagement_range = False
         for enemy_model in target_unit.models:
@@ -2931,9 +2919,9 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
     if validation_rules.get('cannot_end_in_engagement_range', False):
         # Check if final position is within engagement range of any enemy using edge-to-edge distance
         # Create a temporary model base at the final position to check engagement range
-        from ..utility.model_base import Base
-        temp_base = Base(model.model_base.base_type, model.model_base.radius)  # Use actual model's base type and size
-        temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]
+        from ..utility.model_base import clone_base
+        temp_base = clone_base(model.model_base)
+        temp_base.set_position(position[0], position[1], position[2])
 
         # Check against all enemy models using proper edge-to-edge distance
         for unit in game_map.units:
@@ -2968,12 +2956,12 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
             return {'valid': False, 'reason': 'Cannot determine current model position'}
         
         # Create temporary bases for distance calculations
-        from ..utility.model_base import Base
-        current_base = Base(model.model_base.base_type, model.model_base.radius)
-        current_base.x, current_base.y, current_base.z = current_pos[0], current_pos[1], current_pos[2]
-        
-        new_base = Base(model.model_base.base_type, model.model_base.radius)
-        new_base.x, new_base.y, new_base.z = position[0], position[1], position[2]
+        from ..utility.model_base import clone_base
+        current_base = clone_base(model.model_base)
+        current_base.set_position(current_pos[0], current_pos[1], current_pos[2])
+
+        new_base = clone_base(model.model_base)
+        new_base.set_position(position[0], position[1], position[2])
         
         # Find enemy models within potential pile-in range for optimization
         # Only consider enemies within (ENGAGEMENT_RANGE + PILE_IN_DISTANCE) of current position
@@ -3166,12 +3154,12 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
         if not current_pos:
             return {'valid': False, 'reason': 'Cannot determine current model position'}
 
-        from ..utility.model_base import Base
-        current_base = Base(model.model_base.base_type, model.model_base.radius)
-        current_base.x, current_base.y, current_base.z = current_pos[0], current_pos[1], current_pos[2]
+        from ..utility.model_base import clone_base
+        current_base = clone_base(model.model_base)
+        current_base.set_position(current_pos[0], current_pos[1], current_pos[2])
 
-        new_base = Base(model.model_base.base_type, model.model_base.radius)
-        new_base.x, new_base.y, new_base.z = position[0], position[1], position[2]
+        new_base = clone_base(model.model_base)
+        new_base.set_position(position[0], position[1], position[2])
 
         exclude_keywords = set()
         try:
@@ -3311,12 +3299,12 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
         if not current_pos:
             return {'valid': False, 'reason': 'Cannot determine current model position'}
 
-        from ..utility.model_base import Base
-        current_base = Base(model.model_base.base_type, model.model_base.radius)
-        current_base.x, current_base.y, current_base.z = current_pos[0], current_pos[1], current_pos[2]
+        from ..utility.model_base import clone_base
+        current_base = clone_base(model.model_base)
+        current_base.set_position(current_pos[0], current_pos[1], current_pos[2])
 
-        new_base = Base(model.model_base.base_type, model.model_base.radius)
-        new_base.x, new_base.y, new_base.z = position[0], position[1], position[2]
+        new_base = clone_base(model.model_base)
+        new_base.set_position(position[0], position[1], position[2])
 
         from .constants import CONSOLIDATE_DISTANCE, BASE_CONTACT_EPSILON
         from ..utility.constants import ENGAGEMENT_RANGE_VERTICAL
@@ -3546,9 +3534,9 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
     if validation_rules.get('min_distance_from_enemies', 0) > 0:
         min_distance = validation_rules['min_distance_from_enemies']
         # Create a temporary model base at the final position to check distance
-        from ..utility.model_base import Base
-        temp_base = Base(model.model_base.base_type, model.model_base.radius)  # Use actual model's base type and size
-        temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]
+        from ..utility.model_base import clone_base
+        temp_base = clone_base(model.model_base)
+        temp_base.set_position(position[0], position[1], position[2])
 
         for unit in game_map.units:
             if unit.faction == model.parent_unit.faction or not unit.is_alive() or not unit.deployed:

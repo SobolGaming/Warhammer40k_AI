@@ -1,0 +1,199 @@
+{
+  "schema_version": "5.3",
+  "settings": {
+    "hull_proxy_policy": "bounding"
+  },
+  "base_size_guide": {
+    "units": {
+      "000002619": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "aegis_defence_line"
+      },
+      "000003955": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "aegis_defence_line"
+      },
+      "000002811": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "aegis_defence_line"
+      },
+      "000000970": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "khorne_lord_of_skulls"
+      },
+      "000002642": {
+        "classification": "hull",
+        "requires_manual_geometry": true,
+        "geometry_key": "khorne_lord_of_skulls"
+      }
+    }
+  },
+  "aliases": {
+    "000002619": "aegis_defence_line",
+    "000003955": "aegis_defence_line",
+    "000002811": "aegis_defence_line",
+    "aegis_defence_line": "aegis_defence_line",
+    "aegis defence line": "aegis_defence_line",
+    "aegis_defence_line_with_weapon_emplacement": "aegis_defence_line",
+    "aegis defence line with weapon emplacement": "aegis_defence_line",
+
+    "000000970": "khorne_lord_of_skulls",
+    "000002642": "khorne_lord_of_skulls",
+    "khorne_lord_of_skulls": "khorne_lord_of_skulls",
+    "khorne lord of skulls": "khorne_lord_of_skulls"
+  },
+  "units": {
+    "aegis_defence_line": {
+      "display_name": "Aegis Defence Line",
+      "type": "compound",
+      "rules_footprint": "hull",
+      "parts": [
+        {
+          "part_id": "platform",
+          "shape": "circle",
+          "diameter_mm": 115,
+          "height_mm": 50,
+          "offset_mm": [
+            0,
+            0
+          ]
+        },
+        {
+          "part_id": "end_left",
+          "shape": "hull",
+          "length_mm": 30,
+          "width_mm": 10,
+          "height_mm": 25,
+          "offset_mm": [
+            -245,
+            62
+          ]
+        },
+        {
+          "part_id": "shield_1",
+          "shape": "hull",
+          "length_mm": 70,
+          "width_mm": 10,
+          "height_mm": 30,
+          "offset_mm": [
+            -195,
+            62
+          ]
+        },
+        {
+          "part_id": "shield_2",
+          "shape": "hull",
+          "length_mm": 70,
+          "width_mm": 10,
+          "height_mm": 30,
+          "offset_mm": [
+            -125,
+            62
+          ]
+        },
+        {
+          "part_id": "broken_left",
+          "shape": "hull",
+          "length_mm": 70,
+          "width_mm": 10,
+          "height_mm": 30,
+          "offset_mm": [
+            -55,
+            62
+          ]
+        },
+        {
+          "part_id": "broken_right",
+          "shape": "hull",
+          "length_mm": 70,
+          "width_mm": 10,
+          "height_mm": 30,
+          "offset_mm": [
+            25,
+            62
+          ]
+        },
+        {
+          "part_id": "shield_3",
+          "shape": "hull",
+          "length_mm": 70,
+          "width_mm": 10,
+          "height_mm": 30,
+          "offset_mm": [
+            95,
+            62
+          ]
+        },
+        {
+          "part_id": "shield_4",
+          "shape": "hull",
+          "length_mm": 70,
+          "width_mm": 10,
+          "height_mm": 30,
+          "offset_mm": [
+            165,
+            62
+          ]
+        },
+        {
+          "part_id": "shield_5",
+          "shape": "hull",
+          "length_mm": 70,
+          "width_mm": 10,
+          "height_mm": 30,
+          "offset_mm": [
+            235,
+            62
+          ]
+        },
+        {
+          "part_id": "end_right",
+          "shape": "hull",
+          "length_mm": 30,
+          "width_mm": 10,
+          "height_mm": 25,
+          "offset_mm": [
+            285,
+            62
+          ]
+        }
+      ],
+      "composition_rules": {
+        "platform": {
+          "min": 1,
+          "max": 1
+        },
+        "shield": {
+          "min": 0,
+          "max": 5
+        },
+        "broken_shield": {
+          "min": 0,
+          "max": 2
+        },
+        "end": {
+          "min": 0,
+          "max": 2
+        },
+        "connectivity": {
+          "must_form_continuous_line": true,
+          "broken_pair_can_be_middle_if_within_in": 0.5,
+          "treated_as_single_model": true
+        }
+      }
+    },
+    "khorne_lord_of_skulls": {
+      "display_name": "Khorne Lord of Skulls",
+      "type": "hull",
+      "rules_footprint": "hull",
+      "length_mm": 190.5,
+      "width_mm": 127.0,
+      "height_mm": 178.0,
+      "notes": "Bounding rectangle proxy to keep hull handling deterministic."
+    }
+  }
+}

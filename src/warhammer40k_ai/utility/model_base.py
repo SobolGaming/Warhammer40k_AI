@@ -4,6 +4,7 @@ import math
 from enum import Enum
 from shapely.geometry import Point, Polygon as Poly
 from shapely import affinity
+from shapely.ops import unary_union
 from warhammer40k_ai.utility.calcs import get_dist, get_angle
 
 logger = logging.getLogger(__name__)
@@ -67,6 +68,8 @@ class Base:
         self.base_type = base_type
         self.radius: typing.Tuple[float, float] = self._normalize_radius(radius)
         self.set_model_height()
+        self.z_offset: float = 0.0
+        self._compound_parts: typing.Tuple[dict, ...] = tuple()
 
     def _normalize_radius(self, radius: typing.Union[float, typing.Tuple[float, float]]) -> typing.Tuple[float, float]:
         if isinstance(radius, (float, int)):
@@ -78,6 +81,57 @@ class Base:
 
     def set_model_height(self, height: float = None) -> None:
         self.model_height = min(self.radius) * 2.0 if height is None else height
+
+    def set_z_offset(self, z_offset: float = 0.0) -> None:
+        self.z_offset = float(z_offset)
+
+    def set_compound_parts(self, parts: typing.Iterable[dict]) -> None:
+        normalized: list[dict] = []
+        for idx, raw_part in enumerate(list(parts or [])):
+            if not isinstance(raw_part, dict):
+                raise ValueError(f"Compound part at index {idx} must be a dict")
+            shape = str(raw_part.get("shape", "")).strip().lower()
+            if shape not in {"circle", "ellipse", "hull"}:
+                raise ValueError(f"Unsupported compound part shape '{shape}'")
+            radius = raw_part.get("radius")
+            if not isinstance(radius, (tuple, list)) or len(radius) != 2:
+                raise ValueError(f"Compound part '{shape}' must define radius=(rx, ry)")
+            rx = float(radius[0])
+            ry = float(radius[1])
+            if rx <= 0.0 or ry <= 0.0:
+                raise ValueError(f"Compound part '{shape}' must have positive radius components")
+            offset = raw_part.get("offset", (0.0, 0.0))
+            if not isinstance(offset, (tuple, list)) or len(offset) != 2:
+                raise ValueError(f"Compound part '{shape}' must define offset=(x, y)")
+            ox = float(offset[0])
+            oy = float(offset[1])
+            part = {
+                "part_id": str(raw_part.get("part_id", "") or ""),
+                "shape": shape,
+                "radius": (rx, ry),
+                "offset": (ox, oy),
+                "facing": float(raw_part.get("facing", 0.0)),
+            }
+            normalized.append(part)
+        self._compound_parts = tuple(normalized)
+
+    def clear_compound_parts(self) -> None:
+        self._compound_parts = tuple()
+
+    def has_compound_parts(self) -> bool:
+        return bool(self._compound_parts)
+
+    def get_compound_parts(self) -> typing.Tuple[dict, ...]:
+        return tuple(
+            {
+                "part_id": str(part.get("part_id", "") or ""),
+                "shape": str(part["shape"]),
+                "radius": (float(part["radius"][0]), float(part["radius"][1])),
+                "offset": (float(part["offset"][0]), float(part["offset"][1])),
+                "facing": float(part.get("facing", 0.0)),
+            }
+            for part in self._compound_parts
+        )
 
     def set_facing(self, facing: float) -> None:
         # Normalize facing to be between 0 and 2*pi radians
@@ -142,6 +196,13 @@ class Base:
     def get_longest_radius(self) -> float:
         if hasattr(self, 'longest_radius'):
             return self.longest_radius
+        if self._compound_parts:
+            shape = self.get_base_shape_at(0.0, 0.0, 0.0)
+            minx, miny, maxx, maxy = shape.bounds
+            max_x = max(abs(minx), abs(maxx))
+            max_y = max(abs(miny), abs(maxy))
+            self.longest_radius = math.hypot(max_x, max_y)
+            return self.longest_radius
         if self.base_type in [BaseType.CIRCULAR, BaseType.ELLIPTICAL]:
             self.longest_radius = max(self.radius)
             return self.longest_radius
@@ -153,6 +214,8 @@ class Base:
 
     # Get the geometric shape of the base
     def get_base_shape(self) -> Poly:
+        if self._compound_parts:
+            return self._compound_shape_at(self.x, self.y, self.facing)
         if self.base_type in [BaseType.CIRCULAR, BaseType.ELLIPTICAL]:
             return create_ellipse((self.x, self.y), self.radius, self.facing)
         elif self.base_type == BaseType.HULL:
@@ -161,12 +224,38 @@ class Base:
             raise ValueError(f"Unknown BaseType geometry: {self.base_type}")
 
     def get_base_shape_at(self, x: float, y: float, facing: float) -> Poly:
+        if self._compound_parts:
+            return self._compound_shape_at(x, y, facing)
         if self.base_type in [BaseType.CIRCULAR, BaseType.ELLIPTICAL]:
             return create_ellipse((x, y), self.radius, facing)
         elif self.base_type == BaseType.HULL:
             return create_rectangle((x, y), self.radius, facing)
         else:
             raise ValueError(f"Unknown BaseType geometry: {self.base_type}")
+
+    def _compound_part_shape_at(self, part: dict, x: float, y: float, facing: float):
+        local_x, local_y = part["offset"]
+        cos_f = math.cos(facing)
+        sin_f = math.sin(facing)
+        global_x = x + (local_x * cos_f - local_y * sin_f)
+        global_y = y + (local_x * sin_f + local_y * cos_f)
+        total_facing = facing + float(part.get("facing", 0.0))
+
+        shape = str(part["shape"]).lower()
+        radius = (float(part["radius"][0]), float(part["radius"][1]))
+        if shape in {"circle", "ellipse"}:
+            return create_ellipse((global_x, global_y), radius, total_facing)
+        return create_rectangle((global_x, global_y), radius, total_facing)
+
+    def _compound_shape_at(self, x: float, y: float, facing: float) -> Poly:
+        if not self._compound_parts:
+            return create_rectangle((x, y), self.radius, facing)
+        shapes = [self._compound_part_shape_at(part, x, y, facing) for part in self._compound_parts]
+        return unary_union(shapes)
+
+    def volume_z_bounds(self) -> typing.Tuple[float, float]:
+        z_bottom = float(self.z) + float(getattr(self, "z_offset", 0.0))
+        return z_bottom, z_bottom + float(self.model_height)
 
     ### Measurement functions
     def edge_to_edge_distance(self, other: 'Base') -> float:
@@ -178,13 +267,13 @@ class Base:
         xy_dist = base_shape.distance(other_base_shape)
 
         # --- vertical separation ---
-        top_z = self.z + self.model_height
-        other_top = other.z + other.model_height
+        self_bottom, self_top = self.volume_z_bounds()
+        other_bottom, other_top = other.volume_z_bounds()
 
-        if top_z < other.z:
-            dz = other.z - top_z
-        elif other_top < self.z:
-            dz = self.z - other_top
+        if self_top < other_bottom:
+            dz = other_bottom - self_top
+        elif other_top < self_bottom:
+            dz = self_bottom - other_top
         else:
             dz = 0.0
 
@@ -226,10 +315,12 @@ class Base:
 
     def vertical_distance(self, other: 'Base') -> float:
         """Calculate the distance between two models in vertical space."""
-        if self.z + self.model_height < other.z:
-            return round(other.z - self.z - self.model_height, 2)
-        elif other.z + other.model_height < self.z:
-            return round(self.z - other.z - other.model_height, 2)
+        self_bottom, self_top = self.volume_z_bounds()
+        other_bottom, other_top = other.volume_z_bounds()
+        if self_top < other_bottom:
+            return round(other_bottom - self_top, 2)
+        elif other_top < self_bottom:
+            return round(self_bottom - other_top, 2)
         else:
             return 0.0
 
@@ -251,7 +342,9 @@ class Base:
             return False  # No 2D overlap, no collision
 
         # Step 2: 2D overlap exists - check Z positions
-        z_diff = abs(self.z - other.z)
+        self_bottom, _ = self.volume_z_bounds()
+        other_bottom, _ = other.volume_z_bounds()
+        z_diff = abs(self_bottom - other_bottom)
 
         # If Z positions are the same (or very close), there's definitely a collision
         if z_diff < 0.1:  # Within 0.1" is considered same level
@@ -273,12 +366,26 @@ class Base:
     ### Dunder methods
     #########################################################################################
     def __repr__(self) -> str:
-        return f"Base(type={self.base_type.name}, radius={self.radius}, x={self.x}, y={self.y}, z={self.z}, facing={self.facing})"
+        return (
+            f"Base(type={self.base_type.name}, radius={self.radius}, x={self.x}, y={self.y}, "
+            f"z={self.z}, z_offset={self.z_offset}, facing={self.facing}, compound_parts={len(self._compound_parts)})"
+        )
 
     def __str__(self) -> str:
         base_type_str = self.base_type.name.capitalize()
         radius_str = f"{self.radius[0]}" if self.radius[0] == self.radius[1] else f"{self.radius[0]}x{self.radius[1]}"
         return f"{base_type_str} base at ({self.x:.2f}, {self.y:.2f}, {self.z:.2f}), facing {math.degrees(self.facing):.1f}deg, radius: {radius_str}"
+
+
+def clone_base(base: Base) -> Base:
+    cloned = Base(base.base_type, base.radius)
+    cloned.set_position(float(base.x), float(base.y), float(base.z))
+    cloned.set_facing(float(base.facing))
+    cloned.set_model_height(float(base.model_height))
+    cloned.set_z_offset(float(getattr(base, "z_offset", 0.0)))
+    if base.has_compound_parts():
+        cloned.set_compound_parts(base.get_compound_parts())
+    return cloned
 
 
 if __name__ == "__main__":

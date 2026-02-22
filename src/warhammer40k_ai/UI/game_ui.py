@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from abc import ABC, abstractmethod
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.units.model import Model
-from warhammer40k_ai.utility.model_base import Base, BaseType
+from warhammer40k_ai.utility.model_base import Base, BaseType, clone_base
 from warhammer40k_ai.roster.player import Player
 from warhammer40k_ai.utility.dice import get_roll
 from warhammer40k_ai.utility.ability_support import ABILITY_BLESSINGS_OF_KHORNE, army_has_ability_id
@@ -19454,13 +19454,9 @@ class GameView:
         def _placement_validator(model, x: float, y: float, z: float) -> dict:
             try:
                 # Build candidate base
-                base = Base(model.model_base.base_type, model.model_base.radius)
+                base = clone_base(model.model_base)
                 base.set_position(float(x), float(y), float(z))
                 base.set_facing(float(self.individual_model_movement_dialog.get_deploy_facing_radians()))
-                try:
-                    base.set_model_height(float(getattr(model.model_base, "model_height", base.model_height)))
-                except Exception:
-                    pass
             except Exception:
                 return {"valid": False, "reason": "Invalid base for placement"}
 

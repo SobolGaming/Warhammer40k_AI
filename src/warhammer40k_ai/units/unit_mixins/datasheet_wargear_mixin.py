@@ -107,7 +107,11 @@ class DatasheetWargearMixin:
                 return base
 
         cleaned = cleaned.replace("mm", "").strip()
-        if "x" in cleaned:
+        low_cleaned = cleaned.lower().strip()
+        if low_cleaned == "hull":
+            base = Base(BaseType.HULL, (convert_mm_to_inches(80 / 2.0), convert_mm_to_inches(40 / 2.0)))
+            self._warn_unknown_base_size(model_name, "80x40mm hull")
+        elif "x" in cleaned:
             major, minor = cleaned.split("x")
             major = convert_mm_to_inches(float(major.strip()) / 2.0)
             minor = convert_mm_to_inches(float(minor.strip()) / 2.0)
@@ -118,6 +122,32 @@ class DatasheetWargearMixin:
         if is_flying:
             setattr(base, "is_flying_base", True)
         return base
+
+    def _apply_resolved_model_geometry(self, model: Model, datasheet, model_name: str) -> None:
+        if model is None or getattr(model, "model_base", None) is None:
+            return
+        unit_keywords = list(getattr(self, "keywords", []) or [])
+        unit_keywords.extend(list(getattr(self, "faction_keywords", []) or []))
+        datasheet_id = str(getattr(datasheet, "id", "") or "")
+        datasheet_name = str(getattr(datasheet, "name", getattr(self, "name", "")) or "")
+        resolved = resolve_model_geometry(
+            datasheet_id=datasheet_id,
+            datasheet_name=datasheet_name,
+            model_name=str(model_name or getattr(model, "name", "") or ""),
+            unit_keywords=unit_keywords,
+            parsed_base_type=model.model_base.base_type,
+            parsed_radius=model.model_base.radius,
+        )
+
+        old_base = model.model_base
+        new_base = Base(resolved.base_type, resolved.radius)
+        new_base.set_model_height(float(resolved.model_height))
+        new_base.set_z_offset(float(resolved.z_offset))
+        if resolved.compound_parts:
+            new_base.set_compound_parts(resolved.compound_parts)
+        if bool(getattr(old_base, "is_flying_base", False)):
+            setattr(new_base, "is_flying_base", True)
+        model.model_base = new_base
 
     def _normalize_base_size_name(self, text: str) -> str:
         text = (text or "").lower()
@@ -396,7 +426,14 @@ class DatasheetWargearMixin:
     def _build_model_from_profile(self, datasheet, model_name: str, profile: dict, *, fallback_base_size: Optional[str] = None) -> Model:
         if not profile:
             profile = datasheet.datasheets_models[0]
-        return Model(
+        base_size_value = (
+            self._select_base_size_override(
+                str(profile.get("base_size_descr", datasheet.datasheets_models[0].get("base_size_descr", "")) or ""),
+                model_name,
+            )
+            or profile.get("base_size", datasheet.datasheets_models[0]["base_size"])
+        )
+        model = Model(
             name=model_name,
             movement=self._parse_attribute(profile.get("M", datasheet.datasheets_models[0]["M"])),
             toughness=self._parse_attribute(profile.get("T", datasheet.datasheets_models[0]["T"])),
@@ -405,11 +442,7 @@ class DatasheetWargearMixin:
             leadership=self._parse_attribute(profile.get("Ld", datasheet.datasheets_models[0]["Ld"])),
             objective_control=self._parse_attribute(profile.get("OC", datasheet.datasheets_models[0]["OC"])),
             model_base=self._parse_base_size(
-                self._select_base_size_override(
-                    str(profile.get("base_size_descr", datasheet.datasheets_models[0].get("base_size_descr", "")) or ""),
-                    model_name,
-                )
-                or profile.get("base_size", datasheet.datasheets_models[0]["base_size"]),
+                base_size_value,
                 fallback_base_size=fallback_base_size,
                 model_name=model_name,
             ),
@@ -425,6 +458,8 @@ class DatasheetWargearMixin:
             keywords=list(getattr(datasheet, 'keywords', []) or []),
             faction_keywords=list(getattr(datasheet, 'faction_keywords', []) or []),
         )
+        self._apply_resolved_model_geometry(model, datasheet, model_name)
+        return model
 
     def _initialize_horrors_state(self) -> None:
         """Initialize Pink/Blue Horrors tracking (origin/state/model tags)."""

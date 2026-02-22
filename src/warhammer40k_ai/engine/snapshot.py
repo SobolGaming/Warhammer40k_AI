@@ -215,6 +215,21 @@ def _deserialize_status_effect(data: dict) -> StatusEffect:
 def _serialize_model(model: Model) -> dict:
     base = model.model_base
     radius = list(getattr(base, "radius", (0.0, 0.0)) or (0.0, 0.0))
+    compound_parts_data = []
+    get_parts = getattr(base, "get_compound_parts", None)
+    if callable(get_parts):
+        for part in list(get_parts() or []):
+            part_radius = list(part.get("radius", (0.0, 0.0)) or (0.0, 0.0))
+            part_offset = list(part.get("offset", (0.0, 0.0)) or (0.0, 0.0))
+            compound_parts_data.append(
+                {
+                    "part_id": str(part.get("part_id", "") or ""),
+                    "shape": str(part.get("shape", "") or ""),
+                    "radius": [_to_fixed(part_radius[0]), _to_fixed(part_radius[1])],
+                    "offset": [_to_fixed(part_offset[0]), _to_fixed(part_offset[1])],
+                    "facing": _to_angle_fixed(float(part.get("facing", 0.0) or 0.0)),
+                }
+            )
     pos = model.get_location()
     last_path = []
     for point in list(getattr(model, "last_move_path", []) or []):
@@ -231,6 +246,8 @@ def _serialize_model(model: Model) -> dict:
             "type": base.base_type.name,
             "radius": [_to_fixed(radius[0]), _to_fixed(radius[1])],
             "model_height": _to_fixed(getattr(base, "model_height", 0.0)),
+            "z_offset": _to_fixed(getattr(base, "z_offset", 0.0)),
+            "compound_parts": compound_parts_data,
         },
         "position": {
             "x": _to_fixed(pos[0]),
@@ -345,6 +362,26 @@ def _apply_model_state(model: Model, data: dict, unit: Unit) -> None:
     radius = base.get("radius", [0, 0])
     new_base = Base(base_type, (_from_fixed(radius[0]), _from_fixed(radius[1])))
     new_base.set_model_height(_from_fixed(base.get("model_height", 0)))
+    new_base.set_z_offset(_from_fixed(base.get("z_offset", 0)))
+    compound_parts = list(base.get("compound_parts", []) or [])
+    if compound_parts:
+        parsed_parts = []
+        for part in compound_parts:
+            if not isinstance(part, dict):
+                continue
+            part_radius = list(part.get("radius", [0, 0]) or [0, 0])
+            part_offset = list(part.get("offset", [0, 0]) or [0, 0])
+            parsed_parts.append(
+                {
+                    "part_id": str(part.get("part_id", "") or ""),
+                    "shape": str(part.get("shape", "") or ""),
+                    "radius": (_from_fixed(part_radius[0]), _from_fixed(part_radius[1])),
+                    "offset": (_from_fixed(part_offset[0]), _from_fixed(part_offset[1])),
+                    "facing": _from_angle_fixed(part.get("facing", 0)),
+                }
+            )
+        if parsed_parts:
+            new_base.set_compound_parts(parsed_parts)
     pos = data.get("position", {}) or {}
     new_base.set_position(
         _from_fixed(pos.get("x", 0)),

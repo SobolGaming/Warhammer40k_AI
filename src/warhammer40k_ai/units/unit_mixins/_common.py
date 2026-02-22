@@ -22,6 +22,7 @@ from ...utility.calcs import (
     measure_direct_distance,
     movement_segment_cost,
 )
+from ...utility.model_geometry import resolve_model_geometry
 from ...utility.dice import DiceCollection
 from ...utility.attack_roll_parser import AttackRollCondition, AttackRollRule, AttackRollEffect, parse_attack_roll_text
 from ..status_effects import StatusEffect, BattleShockEffect

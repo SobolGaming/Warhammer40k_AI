@@ -1247,8 +1247,7 @@ class ShootingMixin:
             xy_points = [(centroid.x, centroid.y)] + perimeter_samples
 
             # Z samples: bottom, mid, top (minus tiny epsilon to stay within volume)
-            z_bottom = model.model_base.z
-            z_top = model.model_base.z + getattr(model.model_base, 'model_height', 2.0)
+            z_bottom, z_top = model.model_base.volume_z_bounds()
             if z_levels <= 1:
                 z_samples = [z_bottom + 0.01]
             elif z_levels == 2:
@@ -1423,8 +1422,7 @@ class ShootingMixin:
                     if t <= 1e-6 or t >= 1.0 - 1e-6:
                         continue
                     z_here = z_at_t(t)
-                    em_z0 = enemy_model.model_base.z
-                    em_z1 = em_z0 + getattr(enemy_model.model_base, 'model_height', 2.0)
+                    em_z0, em_z1 = enemy_model.model_base.volume_z_bounds()
                     if em_z0 <= z_here <= em_z1:
                         return True
 

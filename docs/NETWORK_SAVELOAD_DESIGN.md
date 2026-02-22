@@ -75,6 +75,7 @@ Top-level:
 - units.round_state: includes declared charge targets (`charge_target_ids`) for multi-target charges
 - units.models_cost: numeric bucket keys are normalized back to integers on load so point totals remain stable after snapshot/resync
 - models: wounds, alive, position, base, wargear state
+- models.base: includes `model_height`, optional `z_offset`, and optional `compound_parts` for multi-part hull footprints
 - effects: aura effects, temporary modifiers, timers
 - decisions: pending DecisionRequests
 - events: event log tail since last snapshot (currently full log)
