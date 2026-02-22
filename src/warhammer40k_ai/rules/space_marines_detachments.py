@@ -239,6 +239,7 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         self.vowed_target_selected_player_id: str = ""
         self.rapid_drop_selected_unit_ids: tuple[str, ...] = ()
         self.rapid_drop_selected_player_id: str = ""
+        self.upon_wings_of_fire_last_resolved_phase_key: str = ""
         self.reclamation_phase_key: str = ""
         self.reclamation_controlled_objective_ids: tuple[str, ...] = ()
         self.pack_quarry_tally: int = 0
@@ -399,6 +400,11 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Angelic Inheritors")
+
+    def is_the_angelic_host(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("The Angelic Host")
 
     def is_rage_cursed_onslaught(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -1863,6 +1869,110 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         ):
             return False, ""
         return True, "Rapid-drop Deployment"
+
+    def upon_wings_of_fire_end_of_opponent_turn_max_units(self, *, game=None) -> int:
+        if not self.is_the_angelic_host():
+            return 0
+        game_obj = self._resolve_game_context(game=game)
+        size_name = ""
+        if game_obj is not None:
+            try:
+                battlefield = getattr(game_obj, "battlefield", None)
+                size = getattr(battlefield, "size", None) if battlefield is not None else None
+                if size is not None:
+                    size_name = str(getattr(size, "name", "") or getattr(size, "value", "") or "").strip().upper()
+            except Exception:
+                size_name = ""
+        if "ONSLAUGHT" in size_name:
+            return 3
+        if "STRIKE" in size_name and "FORCE" in size_name:
+            return 2
+        if "INCURSION" in size_name:
+            return 1
+        points_limit = int(getattr(self.army, "points_limit", 0) or 0) if self.army is not None else 0
+        if points_limit >= 3000:
+            return 3
+        if points_limit >= 2000:
+            return 2
+        return 1
+
+    def _upon_wings_of_fire_phase_key(self, *, game=None, turn_ending_player_id: str = "") -> str:
+        game_obj = self._resolve_game_context(game=game)
+        try:
+            turn_now = int(getattr(game_obj, "turn", 0) or 0) if game_obj is not None else 0
+        except Exception:
+            turn_now = 0
+        return f"{turn_now}:{str(turn_ending_player_id or '').strip()}"
+
+    def upon_wings_of_fire_phase_already_resolved(self, *, game=None, turn_ending_player_id: str = "") -> bool:
+        if not self.is_the_angelic_host():
+            return False
+        key = self._upon_wings_of_fire_phase_key(game=game, turn_ending_player_id=turn_ending_player_id)
+        return bool(key) and key == str(self.upon_wings_of_fire_last_resolved_phase_key or "")
+
+    def mark_upon_wings_of_fire_phase_resolved(self, *, game=None, turn_ending_player_id: str = "") -> None:
+        if not self.is_the_angelic_host():
+            self.upon_wings_of_fire_last_resolved_phase_key = ""
+            return
+        self.upon_wings_of_fire_last_resolved_phase_key = self._upon_wings_of_fire_phase_key(
+            game=game,
+            turn_ending_player_id=turn_ending_player_id,
+        )
+
+    def _upon_wings_of_fire_unit_is_jump_pack(self, unit) -> bool:
+        return bool(self._attached_unit_has_keyword(unit, "JUMP PACK"))
+
+    def upon_wings_of_fire_end_of_opponent_turn_candidates(
+        self,
+        *,
+        game=None,
+        turn_ending_player=None,
+        game_map=None,
+    ) -> list:
+        if not self.is_the_angelic_host() or self.army is None:
+            return []
+        game_obj = self._resolve_game_context(game=game)
+        if game_map is None and game_obj is not None:
+            game_map = getattr(game_obj, "map", None)
+        player = getattr(self.army, "player", None)
+        if player is None:
+            return []
+        if turn_ending_player is not None and turn_ending_player is player:
+            return []
+
+        candidates: list = []
+        for root in self._iter_unique_army_roots():
+            if root is None:
+                continue
+            if not self.attached_unit_is_adeptus_astartes(root):
+                continue
+            if not self._upon_wings_of_fire_unit_is_jump_pack(root):
+                continue
+            if not self._unit_is_on_battlefield(root):
+                continue
+            if bool(getattr(root, "embarked_in", None)) or bool(getattr(root, "is_embarked", False)):
+                continue
+            if game_map is not None:
+                engaged = False
+                for enemy in list(getattr(game_map, "get_enemy_units", lambda _u: [])(root) or []):
+                    if enemy is None:
+                        continue
+                    enemy_root = self._attached_unit_root(enemy)
+                    if enemy_root is None:
+                        continue
+                    if not self._unit_is_on_battlefield(enemy_root):
+                        continue
+                    try:
+                        if bool(game_map.is_within_engagement_range(root, enemy_root)):
+                            engaged = True
+                            break
+                    except Exception:
+                        continue
+                if engaged:
+                    continue
+            candidates.append(root)
+        candidates.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+        return candidates
 
     def on_phase_start_capture_reclamation_objective_control(self, *, phase=None, game=None) -> None:
         if not self.is_reclamation_force():

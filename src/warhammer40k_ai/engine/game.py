@@ -1529,6 +1529,91 @@ class Game(
                             )
                             self.request_decision(request)
 
+            sm_mgr = getattr(army, "space_marines_detachments", None)
+            wings_candidates_fn = (
+                getattr(sm_mgr, "upon_wings_of_fire_end_of_opponent_turn_candidates", None)
+                if sm_mgr is not None else None
+            )
+            wings_max_units_fn = (
+                getattr(sm_mgr, "upon_wings_of_fire_end_of_opponent_turn_max_units", None)
+                if sm_mgr is not None else None
+            )
+            wings_resolved_fn = (
+                getattr(sm_mgr, "upon_wings_of_fire_phase_already_resolved", None)
+                if sm_mgr is not None else None
+            )
+            if callable(wings_candidates_fn):
+                resolved = False
+                if callable(wings_resolved_fn):
+                    resolved = bool(
+                        wings_resolved_fn(
+                            game=self,
+                            turn_ending_player_id=turn_ending_player_id,
+                        )
+                    )
+                if not resolved:
+                    wings_candidates = list(
+                        wings_candidates_fn(
+                            game=self,
+                            turn_ending_player=turn_ending_player,
+                            game_map=game_map,
+                        ) or []
+                    )
+                    max_units = int(wings_max_units_fn(game=self) or 0) if callable(wings_max_units_fn) else 0
+                    max_units = max(0, min(int(max_units), len(wings_candidates)))
+                    candidate_ids = [
+                        str(get_entity_id(unit) or "")
+                        for unit in list(wings_candidates or [])
+                        if str(get_entity_id(unit) or "").strip()
+                    ]
+                    candidate_ids = sorted(set(candidate_ids))
+                    if candidate_ids and max_units > 0:
+                        phase_key = f"{int(getattr(self, 'turn', 0) or 0)}:{turn_ending_player_id}"
+                        pending = False
+                        queue = getattr(self, "decision_queue", None)
+                        if queue is not None and hasattr(queue, "list"):
+                            for req in list(queue.list() or []):
+                                if str(getattr(req, "decision_type", "") or "") != DECISION_SELECT_REALM_OF_CHAOS_UNITS:
+                                    continue
+                                if str(getattr(req, "player_id", "") or "") != str(getattr(opp, "id", "") or ""):
+                                    continue
+                                req_ctx = dict(getattr(req, "context", {}) or {})
+                                if str(req_ctx.get("ability", "") or "").strip().lower() != "upon_wings_of_fire_end_of_opponent_turn":
+                                    continue
+                                if str(req_ctx.get("turn_key", "") or "") != phase_key:
+                                    continue
+                                pending = True
+                                break
+                        if not pending:
+                            request = DecisionRequest.create(
+                                DECISION_SELECT_REALM_OF_CHAOS_UNITS,
+                                "Upon Wings of Fire: select units to place into Strategic Reserves.",
+                                player_id=getattr(opp, "id", None),
+                                options=[
+                                    DecisionOption.create("Confirm selection", payload={"action": "confirm"}),
+                                    DecisionOption.create("Do not use", payload={"action": "skip"}),
+                                ],
+                                context={
+                                    "ability": "upon_wings_of_fire_end_of_opponent_turn",
+                                    "ability_name": "Upon Wings of Fire",
+                                    "allowed_unit_ids": list(candidate_ids),
+                                    "outside_shadow_unit_ids": [],
+                                    "max_units": int(max_units),
+                                    "selection_effect": "enter_strategic_reserves",
+                                    "selection_effect_reason": "Upon Wings of Fire",
+                                    "turn_key": phase_key,
+                                    "turn_ending_player_id": turn_ending_player_id,
+                                    "title": "Upon Wings of Fire",
+                                    "subtitle": f"Select up to {int(max_units)} ADEPTUS ASTARTES JUMP PACK unit(s)",
+                                    "instruction": (
+                                        "Choose units to remove from the battlefield and place into Strategic Reserves, "
+                                        "or select None to skip."
+                                    ),
+                                    "skip_label": "None (do not use this ability)",
+                                },
+                            )
+                            self.request_decision(request)
+
             eligible = []
             seen = set()
             for unit in list(army.units):

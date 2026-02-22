@@ -759,6 +759,14 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"you can reroll advance and charge rolls made for this unit",
             r"your army can include blood angels units but it cannot include adeptus astartes units drawn from any other chapter",
         ),
+        "Upon Wings of Fire": (
+            r"at the end of your opponent s turn you can select a number of adeptus astartes jump pack units from your army excluding units that are within engagement range of one or more enemy units",
+            r"the maximum number of units you can select depends on the battle size as follows",
+            r"battle size units incursion up to \d+ units strike force up to \d+ units onslaught up to \d+ units",
+            r"once you have made your selections remove those units from the battlefield and place them into strategic reserves",
+            r"in the reinforcements step of your next movement phase set each of those units up using their deep strike ability",
+            r"your army can include blood angels units but it cannot include any adeptus astartes units drawn from any other chapter",
+        ),
         "Shield of the Imperium": (
             r"ranged weapons equipped by adeptus astartes models from your army have the heavy ability",
             r"if such a weapon already has this ability each time an attack is made with that weapon if the attacking models unit remained stationary this turn add \d+ to the wound roll",
@@ -2088,6 +2096,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Legacy of the Angel": (
             "Supported",
             "Angelic Inheritors: start-of-first-battle-round selection of exactly two Angelic Legacy abilities (Sanguinary Grace, Carmine Wrath, Their Appointed Hour) with Character-unit gating, plus Blood Angels chapter restriction enforcement.",
+        ),
+        "Upon Wings of Fire": (
+            "Supported",
+            "The Angelic Host: at the end of your opponent turn, select up to battle-size cap eligible ADEPTUS ASTARTES JUMP PACK units (Incursion 1, Strike Force 2, Onslaught 3) not in Engagement Range to enter Strategic Reserves, then force next-turn Movement-phase Deep Strike arrival windows for selected units.",
         ),
         "Shield of the Imperium": (
             "Supported",
