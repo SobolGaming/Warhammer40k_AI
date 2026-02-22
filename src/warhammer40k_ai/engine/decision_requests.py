@@ -642,6 +642,113 @@ def build_patrol_squad_requests(
     return requests
 
 
+def build_rapid_drop_deployment_requests(
+    game: object,
+    units: Iterable[object],
+    *,
+    queue_requests: bool = True,
+) -> List[DecisionRequest]:
+    all_units = _iter_units(units)
+    requests: List[DecisionRequest] = []
+    if not all_units:
+        return requests
+
+    pending_army_ids: set[str] = set()
+    queue = getattr(game, "decision_queue", None)
+    if queue is not None and hasattr(queue, "list"):
+        for req in list(queue.list() or []):
+            if getattr(req, "decision_type", None) != DECISION_CHOOSE_QUARRY:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "") != "rapid_drop_deployment":
+                continue
+            army_id = str(ctx.get("army_id", "") or "")
+            if army_id:
+                pending_army_ids.add(army_id)
+
+    units_by_army: dict[str, list[object]] = {}
+    army_by_key: dict[str, object] = {}
+    for unit in all_units:
+        army = _army_for_unit(unit)
+        if army is None:
+            continue
+        key = _army_key(army)
+        if not key:
+            continue
+        units_by_army.setdefault(key, []).append(unit)
+        army_by_key[key] = army
+
+    for key in sorted(units_by_army.keys()):
+        army = army_by_key[key]
+        army_id = str(get_entity_id(army) or "")
+        if army_id and army_id in pending_army_ids:
+            continue
+        mgr = getattr(army, "space_marines_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_orbital_assault_force", lambda: False)()):
+            continue
+        can_select = getattr(mgr, "can_select_rapid_drop_deployment", None)
+        if not callable(can_select) or not bool(can_select(game=game)):
+            continue
+        get_eligible = getattr(mgr, "rapid_drop_deployment_eligible_units", None)
+        if not callable(get_eligible):
+            continue
+        eligible = list(get_eligible(game=game) or [])
+        eligible.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+        if not eligible:
+            continue
+        get_cap = getattr(mgr, "rapid_drop_deployment_max_units", None)
+        if not callable(get_cap):
+            continue
+        max_units = int(get_cap(game=game) or 0)
+        if max_units <= 0:
+            continue
+        required = min(max_units, len(eligible))
+        if required <= 0:
+            continue
+        options: List[DecisionOption] = []
+        for combo in combinations(eligible, required):
+            selected_ids = [str(get_entity_id(unit) or "") for unit in list(combo or []) if str(get_entity_id(unit) or "")]
+            if len(selected_ids) != required:
+                continue
+            names = [str(getattr(unit, "name", "Unit") or "Unit") for unit in list(combo or [])]
+            label = ", ".join(names)
+            options.append(
+                DecisionOption.create(
+                    label,
+                    payload={
+                        "selected_unit_ids": list(selected_ids),
+                        "selection_kind": "rapid_drop_units",
+                        "required_count": int(required),
+                        "army_id": army_id,
+                    },
+                )
+            )
+        if not options:
+            continue
+        player = getattr(army, "player", None)
+        player_id = getattr(player, "id", None) if player is not None else None
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"Rapid-drop Deployment: select {required} unit(s) to gain Deep Strike.",
+            player_id=player_id,
+            options=options,
+            context={
+                "ability": "rapid_drop_deployment",
+                "ability_name": "Rapid-drop Deployment",
+                "army_id": army_id,
+                "required_count": int(required),
+                "candidate_unit_ids": [str(get_entity_id(unit) or "") for unit in list(eligible or []) if str(get_entity_id(unit) or "")],
+            },
+        )
+        requests.append(request)
+        if queue_requests and hasattr(game, "request_decision"):
+            game.request_decision(request)
+            if army_id:
+                pending_army_ids.add(army_id)
+
+    return requests
+
+
 def build_risen_rubricae_requests(
     game: object,
     units: Iterable[object],

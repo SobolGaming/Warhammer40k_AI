@@ -8789,6 +8789,20 @@ class WargearProfile:
                     reroll_value_reasons.append(f"{source_name}: re-roll Hit roll of 1")
         except Exception:
             pass
+        # Space Marines: Orbital Assault Force (Rapid-drop Deployment).
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if sm_mgr is not None and callable(getattr(sm_mgr, "rapid_drop_deployment_reroll_hit_ones", None)):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                reroll_hit_ones, source = sm_mgr.rapid_drop_deployment_reroll_hit_ones(attacker, game=game)
+                if bool(reroll_hit_ones):
+                    reroll_hit_values.add(1)
+                    source_name = str(source or "Rapid-drop Deployment").strip() or "Rapid-drop Deployment"
+                    reroll_value_reasons.append(f"{source_name}: re-roll Hit roll of 1")
+        except Exception:
+            pass
 
         hit_result["reroll_values"] = list(sorted(reroll_hit_values))
         hit_result["reroll_value_reasons"] = list(reroll_value_reasons)
@@ -12414,6 +12428,20 @@ class WargearProfile:
                 if bool(reroll_wound_ones):
                     reroll_wound_values.add(1)
                     source_name = str(source or "Psychic Disciplines (Divination)").strip() or "Psychic Disciplines (Divination)"
+                    reroll_value_reasons.append(f"{source_name}: re-roll Wound roll of 1")
+        except Exception:
+            pass
+        # Space Marines: Orbital Assault Force (Rapid-drop Deployment).
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if sm_mgr is not None and callable(getattr(sm_mgr, "rapid_drop_deployment_reroll_wound_ones", None)):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                reroll_wound_ones, source = sm_mgr.rapid_drop_deployment_reroll_wound_ones(attacker, game=game)
+                if bool(reroll_wound_ones):
+                    reroll_wound_values.add(1)
+                    source_name = str(source or "Rapid-drop Deployment").strip() or "Rapid-drop Deployment"
                     reroll_value_reasons.append(f"{source_name}: re-roll Wound roll of 1")
         except Exception:
             pass

@@ -2203,6 +2203,50 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if callable(can_target) and not bool(can_target(source_root, target_root, game=game)):
             return ("Shock and Awe target is not eligible.",)
         return ()
+    if ability == "rapid_drop_deployment":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Rapid-drop Deployment army not found.",)
+        sm_mgr = getattr(army, "space_marines_detachments", None)
+        if sm_mgr is None or not bool(getattr(sm_mgr, "is_orbital_assault_force", lambda: False)()):
+            return ("Rapid-drop Deployment requires Orbital Assault Force.",)
+        can_select = getattr(sm_mgr, "can_select_rapid_drop_deployment", None)
+        if not callable(can_select) or not bool(can_select(game=game)):
+            return ("Rapid-drop Deployment cannot be selected right now.",)
+        selected_ids = [
+            str(value or "").strip()
+            for value in list(payload.get("selected_unit_ids", []) or [])
+            if str(value or "").strip()
+        ]
+        selected_ids = list(dict.fromkeys(selected_ids))
+        if not selected_ids:
+            single_id = str(payload.get("target_unit_id") or payload.get("unit_id") or "").strip()
+            if single_id:
+                selected_ids = [single_id]
+        if not selected_ids:
+            return ("Rapid-drop Deployment requires unit selection.",)
+        candidate_ids = {
+            str(value or "").strip()
+            for value in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(value or "").strip()
+        }
+        if candidate_ids and any(unit_id not in candidate_ids for unit_id in list(selected_ids or [])):
+            return ("Rapid-drop Deployment selection contains a non-candidate unit.",)
+        is_eligible = getattr(sm_mgr, "rapid_drop_deployment_unit_is_eligible", None)
+        for unit_id in list(selected_ids or []):
+            unit = resolve_unit(game, unit_id)
+            if unit is None:
+                return ("Rapid-drop Deployment selected unit was not found.",)
+            root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+            if root is None:
+                return ("Rapid-drop Deployment selected unit was not found.",)
+            if callable(is_eligible) and not bool(is_eligible(root, game=game)):
+                return ("Rapid-drop Deployment selection includes an ineligible unit.",)
+        option_is_valid = getattr(sm_mgr, "rapid_drop_deployment_option_is_valid", None)
+        if not callable(option_is_valid) or not bool(option_is_valid(selected_ids, game=game)):
+            return ("Rapid-drop Deployment selection does not match the required unit count.",)
+        return ()
     if ability == "resurrection_orb":
         payload = _option_payload(request, result)
         source_unit = resolve_unit(
@@ -3282,6 +3326,52 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             "unit_id": str(get_entity_id(source_root) or ""),
             "target_unit_id": target_id,
             "battle_shocked": bool(battle_shocked),
+        }
+    if ability == "rapid_drop_deployment":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        sm_mgr = getattr(army, "space_marines_detachments", None)
+        if sm_mgr is None:
+            return None
+        selected_ids = [
+            str(value or "").strip()
+            for value in list(payload.get("selected_unit_ids", []) or [])
+            if str(value or "").strip()
+        ]
+        selected_ids = list(dict.fromkeys(selected_ids))
+        if not selected_ids:
+            single_id = str(payload.get("target_unit_id") or payload.get("unit_id") or "").strip()
+            if single_id:
+                selected_ids = [single_id]
+        if not selected_ids:
+            return None
+        apply_choice = getattr(sm_mgr, "select_rapid_drop_deployment_units", None)
+        if not callable(apply_choice) or not bool(apply_choice(selected_ids, game=game)):
+            return None
+        selected_units = []
+        for unit_id in list(selected_ids or []):
+            unit = resolve_unit(game, unit_id)
+            if unit is None:
+                continue
+            root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+            if root is None:
+                continue
+            selected_units.append(root)
+        selected_units.sort(key=lambda unit: (str(getattr(unit, "name", "") or ""), str(get_entity_id(unit) or "")))
+        selected_names = [str(getattr(unit, "name", "Unit") or "Unit") for unit in list(selected_units or [])]
+        ability_name = str(ctx.get("ability_name", "") or "Rapid-drop Deployment").strip() or "Rapid-drop Deployment"
+        player = _resolve_player(game, request, payload)
+        if selected_names:
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: selected {', '.join(selected_names)} to gain Deep Strike.",
+            )
+        return {
+            "selected_unit_ids": [str(get_entity_id(unit) or "") for unit in list(selected_units or []) if str(get_entity_id(unit) or "")],
+            "source": ability_name,
         }
     if ability == "murdercall":
         payload = _option_payload(request, result)

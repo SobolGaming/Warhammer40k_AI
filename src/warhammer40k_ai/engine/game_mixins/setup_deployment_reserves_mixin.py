@@ -1789,6 +1789,23 @@ class GameSetupDeploymentReservesMixin:
                 if unit_id:
                     pending_unit_ids.add(unit_id)
 
+    def _apply_rapid_drop_deployment_declarations(self) -> None:
+        """Queue Rapid-drop Deployment selections for Orbital Assault Force armies."""
+        players = list(self.players or [])
+        if not players:
+            return
+
+        from ..decision_requests import build_rapid_drop_deployment_requests
+
+        for player in players:
+            if player is None:
+                raise RuntimeError("Rapid-drop Deployment declarations require players.")
+            army = player.get_army()
+            if army is None:
+                raise RuntimeError(f"Rapid-drop Deployment declarations require an army for {player.name}.")
+            units = list(getattr(army, "units", []) or [])
+            build_rapid_drop_deployment_requests(self, units, queue_requests=True)
+
     def execute_declare_battle_formations_phase(self) -> None:
         """Phase 5: Declare Battle Formations - Attach leaders, embark in transports, allocate reserves."""
         logger.info("DECLARE BATTLE FORMATIONS: Validating formations...")
@@ -1800,6 +1817,7 @@ class GameSetupDeploymentReservesMixin:
         self._apply_hover_declarations()
         self._apply_patrol_squad_declarations()
         self._apply_shadow_assignment_declarations()
+        self._apply_rapid_drop_deployment_declarations()
 
         # Thousand Sons: Risen Rubricae selections are made at the start of this step.
         from ..decision_requests import build_risen_rubricae_requests

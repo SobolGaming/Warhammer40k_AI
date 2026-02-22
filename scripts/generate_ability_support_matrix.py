@@ -571,6 +571,12 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"this unit is eligible to declare a charge in a turn in which it advanced",
             r"your army can include ultramarines units but it cannot include any adeptus astartes units drawn from any other chapter",
         ),
+        "Rapid-drop Deployment": (
+            r"at the start of the declare battle formations step select a number of adeptus astartes units excluding titanic units from your army based on the battle size as shown below",
+            r"models in those units have the deep strike ability",
+            r"each time an adeptus astartes model from your army makes an attack if it was set up on the battlefield this turn reroll a wound roll of \d+",
+            r"if it disembarked from a drop pod this turn reroll a hit roll of \d+ as well",
+        ),
         "Interlocking Tactics": (
             r"adeptus astartes battleline units from your army are eligible to shoot and declare a charge in a turn in which they advanced or fell back",
             r"are eligible to shoot and declare a charge in a turn in which they advanced or fell back",
@@ -1914,6 +1920,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Mastered Doctrines": (
             "Supported",
             "Blade of Ultramar: up to three Command phase doctrine selections; doctrine reuse requires Marneus Calgar on the battlefield; doctrine effects and Ultramarines-only chapter restriction enforced.",
+        ),
+        "Rapid-drop Deployment": (
+            "Supported",
+            "Orbital Assault Force: at Declare Battle Formations select battle-size-scaled non-TITANIC ADEPTUS ASTARTES units to gain Deep Strike, and ADEPTUS ASTARTES attacks re-roll Wound rolls of 1 if set up this turn plus re-roll Hit rolls of 1 if disembarked from a Drop Pod this turn.",
         ),
         "Interlocking Tactics": (
             "Supported",

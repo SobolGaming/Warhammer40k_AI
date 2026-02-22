@@ -208,6 +208,8 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         self.vowed_objective_ids: tuple[str, ...] = ()
         self.vowed_target_selected_round: int = 0
         self.vowed_target_selected_player_id: str = ""
+        self.rapid_drop_selected_unit_ids: tuple[str, ...] = ()
+        self.rapid_drop_selected_player_id: str = ""
 
     def _simple_norm(self, text: str) -> str:
         return _normalize_detachment_name(text)
@@ -260,6 +262,11 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Lion's Blade Task Force")
+
+    def is_orbital_assault_force(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Orbital Assault Force")
 
     def is_stormlance_task_force(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -903,6 +910,224 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False
         transport_id = str(getattr(round_state, "disembarked_from_transport_id", "") or "").strip()
         return bool(transport_id)
+
+    def _attached_unit_disembarked_from_transport_name_this_round(
+        self,
+        unit,
+        *,
+        transport_name_fragment: str,
+        game=None,
+    ) -> bool:
+        if not self._attached_unit_disembarked_from_transport_this_round(unit):
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        round_state = getattr(root, "round_state", None)
+        if round_state is None:
+            return False
+        transport_id = str(getattr(round_state, "disembarked_from_transport_id", "") or "").strip()
+        if not transport_id:
+            return False
+        transport = None
+        game_obj = self._resolve_game_context(game=game)
+        registry = getattr(game_obj, "entity_registry", None) if game_obj is not None else None
+        if registry is not None:
+            try:
+                transport = registry.get(transport_id, kind="unit")
+            except Exception:
+                transport = None
+        if transport is None:
+            for unit_entry in list(getattr(self.army, "units", []) or []):
+                unit_id = str(get_entity_id(unit_entry) or "")
+                if unit_id != transport_id:
+                    continue
+                transport = unit_entry
+                break
+        if transport is None:
+            return False
+        return self._attached_unit_name_contains(transport, transport_name_fragment)
+
+    def _attached_unit_was_set_up_this_turn(self, unit, *, game=None) -> bool:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        was_set_up = getattr(root, "_was_set_up_this_turn", None)
+        game_obj = self._resolve_game_context(game=game)
+        if callable(was_set_up):
+            try:
+                return bool(was_set_up(game=game_obj))
+            except Exception:
+                return False
+        try:
+            if bool(getattr(root, "arrived_from_reserves_this_turn", False)):
+                return True
+        except Exception:
+            pass
+        try:
+            round_state = getattr(root, "round_state", None)
+            if bool(getattr(round_state, "reinforced_this_round", False)):
+                return True
+        except Exception:
+            pass
+        if game_obj is None:
+            return False
+        try:
+            turn_now = int(getattr(game_obj, "turn", 0) or 0)
+            return bool(turn_now > 0 and int(getattr(root, "reserve_turn_deployed", 0) or 0) == turn_now)
+        except Exception:
+            return False
+
+    def rapid_drop_deployment_max_units(self, *, game=None) -> int:
+        if not self.is_orbital_assault_force():
+            return 0
+        game_obj = self._resolve_game_context(game=game)
+        size_name = ""
+        if game_obj is not None:
+            try:
+                battlefield = getattr(game_obj, "battlefield", None)
+                size = getattr(battlefield, "size", None) if battlefield is not None else None
+                if size is not None:
+                    size_name = str(getattr(size, "name", "") or getattr(size, "value", "") or "").strip().upper()
+            except Exception:
+                size_name = ""
+        if "ONSLAUGHT" in size_name:
+            return 4
+        if "STRIKE" in size_name and "FORCE" in size_name:
+            return 3
+        return 2
+
+    def rapid_drop_deployment_unit_is_eligible(self, unit, *, game=None) -> bool:
+        if not self.is_orbital_assault_force():
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        try:
+            if root.get_parent_army() is not self.army:
+                return False
+        except Exception:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        is_titanic = getattr(root, "is_titanic", None)
+        if callable(is_titanic):
+            try:
+                if bool(is_titanic()):
+                    return False
+            except Exception:
+                return False
+        elif bool(getattr(root, "is_titanic", False)):
+            return False
+        return True
+
+    def rapid_drop_deployment_eligible_units(self, *, game=None) -> list:
+        if not self.is_orbital_assault_force():
+            return []
+        units = []
+        for root in self._iter_unique_army_roots():
+            if self.rapid_drop_deployment_unit_is_eligible(root, game=game):
+                units.append(root)
+        units.sort(key=lambda unit: (str(getattr(unit, "name", "") or ""), str(get_entity_id(unit) or "")))
+        return units
+
+    def can_select_rapid_drop_deployment(self, *, game=None) -> bool:
+        if not self.is_orbital_assault_force():
+            return False
+        if bool(getattr(self, "rapid_drop_selected_unit_ids", ())):
+            return False
+        return bool(self.rapid_drop_deployment_eligible_units(game=game))
+
+    def rapid_drop_deployment_option_is_valid(self, selected_unit_ids, *, game=None) -> bool:
+        if not self.can_select_rapid_drop_deployment(game=game):
+            return False
+        selected = [str(unit_id or "").strip() for unit_id in list(selected_unit_ids or []) if str(unit_id or "").strip()]
+        selected = list(dict.fromkeys(selected))
+        candidates = self.rapid_drop_deployment_eligible_units(game=game)
+        candidate_ids = [str(get_entity_id(unit) or "") for unit in list(candidates or []) if str(get_entity_id(unit) or "")]
+        candidate_set = set(candidate_ids)
+        if not candidate_set:
+            return False
+        for unit_id in selected:
+            if unit_id not in candidate_set:
+                return False
+        max_units = int(self.rapid_drop_deployment_max_units(game=game) or 0)
+        if max_units <= 0:
+            return False
+        required = min(max_units, len(candidate_ids))
+        return len(selected) == required
+
+    def select_rapid_drop_deployment_units(self, selected_unit_ids, *, game=None) -> bool:
+        if not self.rapid_drop_deployment_option_is_valid(selected_unit_ids, game=game):
+            return False
+        selected = [str(unit_id or "").strip() for unit_id in list(selected_unit_ids or []) if str(unit_id or "").strip()]
+        selected = sorted(set(selected))
+        game_obj = self._resolve_game_context(game=game)
+        registry = getattr(game_obj, "entity_registry", None) if game_obj is not None else None
+        for unit_id in list(selected):
+            unit = None
+            if registry is not None:
+                try:
+                    unit = registry.get(unit_id, kind="unit")
+                except Exception:
+                    unit = None
+            if unit is None:
+                for army_unit in list(getattr(self.army, "units", []) or []):
+                    if str(get_entity_id(army_unit) or "") != unit_id:
+                        continue
+                    unit = army_unit
+                    break
+            root = self._attached_unit_root(unit)
+            if root is None:
+                continue
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["bearer_unit_deep_strike"] = True
+            root.special_rules = sr
+            try:
+                cache = getattr(root, "_ability_cache", None)
+                if isinstance(cache, dict):
+                    cache.pop("deep_strike", None)
+            except Exception:
+                pass
+        self.rapid_drop_selected_unit_ids = tuple(selected)
+        self.rapid_drop_selected_player_id = str(
+            getattr(getattr(self.army, "player", None), "id", "") or ""
+        )
+        return True
+
+    def rapid_drop_deployment_reroll_wound_ones(self, attacker_model, *, game=None) -> tuple[bool, str]:
+        if not self.is_orbital_assault_force():
+            return False, ""
+        if attacker_model is None:
+            return False, ""
+        unit = getattr(attacker_model, "parent_unit", None)
+        if unit is None:
+            return False, ""
+        if not self.attached_unit_is_adeptus_astartes(unit):
+            return False, ""
+        if not self._attached_unit_was_set_up_this_turn(unit, game=game):
+            return False, ""
+        return True, "Rapid-drop Deployment"
+
+    def rapid_drop_deployment_reroll_hit_ones(self, attacker_model, *, game=None) -> tuple[bool, str]:
+        if not self.is_orbital_assault_force():
+            return False, ""
+        if attacker_model is None:
+            return False, ""
+        unit = getattr(attacker_model, "parent_unit", None)
+        if unit is None:
+            return False, ""
+        if not self.attached_unit_is_adeptus_astartes(unit):
+            return False, ""
+        if not self._attached_unit_disembarked_from_transport_name_this_round(
+            unit,
+            transport_name_fragment="Drop Pod",
+            game=game,
+        ):
+            return False, ""
+        return True, "Rapid-drop Deployment"
 
     def _attached_unit_is_terminator(self, unit) -> bool:
         if unit is None:
