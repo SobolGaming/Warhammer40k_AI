@@ -331,6 +331,9 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"if one or more targets of that charge are below half strength add 1 to the charge roll as well",
             r"each time a destroyer cult unit from your army makes a ranged attack that targets the closest eligible target add 1 to the armour penetration characteristic of that attack",
         ),
+        "Command Protocols": (
+            r"while a necrons character model is leading this unit each time a model in this unit makes an attack add 1 to the hit roll",
+        ),
         "Skirmish Fighters": (
             r"kroot models from your army have a 6 invulnerable save against melee attacks and a 5 invulnerable save against ranged attacks",
         ),
