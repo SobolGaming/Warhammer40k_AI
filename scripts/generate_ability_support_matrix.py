@@ -351,6 +351,11 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"add 2 to the strength characteristic of weapons equipped by destroyer cult models from your army",
             r"the first time each turn that a destroyer cult unit from your army makes attacks that destroy a unit or cause it to become below half strength after that unit has finished resolving its attacks until the end of the turn add 2 to the strength characteristic of weapons equipped by friendly necrons models excluding destroyer cult monster and titanic models",
         ),
+        "Hyperphasing": (
+            r"at the end of your opponents turn you can select a number of necrons units from your army excluding units that are within engagement range of one or more enemy units",
+            r"the maximum number of units you can select depends on the battle size as follows(?: battle size number of units incursion up to 1 units strike force up to 2 units onslaught up to 3 units)?",
+            r"once you have made your selections remove those units from the battlefield and place them into strategic reserves",
+        ),
         "Skirmish Fighters": (
             r"kroot models from your army have a 6 invulnerable save against melee attacks and a 5 invulnerable save against ranged attacks",
         ),
@@ -2501,6 +2506,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Cold Fervour": (
             "Supported",
             "Cursed Legion Cold Fervour: weapons equipped by DESTROYER CULT models gain +2 Strength, and the first time each turn a DESTROYER CULT unit destroys a unit or causes one to become Below Half-strength after finishing its attacks, eligible friendly NECRONS non-DESTROYER CULT/non-MONSTER/non-TITANIC models gain +2 Strength until turn end.",
+        ),
+        "Hyperphasing": (
+            "Supported",
+            "Hypercrypt Legion Hyperphasing: at the end of your opponent's turn, eligible NECRONS units not in Engagement Range can be selected (battle-size cap: Incursion 1, Strike Force 2, Onslaught 3) and moved into Strategic Reserves via deterministic multi-select decision flow.",
         ),
         "Relentless Onslaught": ("Supported", "Starshatter Arsenal: +1 to hit vs targets within objective range; VEHICLE/MOUNTED (non-TITANIC) ranged weapons gain Assault."),
         "Ruthless Discipline": (

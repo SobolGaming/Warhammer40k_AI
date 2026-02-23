@@ -29,6 +29,7 @@ class NecronsDetachmentManager(DetachmentManagerBase):
     _POWER_MATRIX_SOURCE = "Power Matrix"
     _COLD_FERVOUR_SOURCE = "Cold Fervour"
     _COLD_FERVOUR_BONUS = 2
+    _HYPERPHASING_SOURCE = "Hyperphasing"
     _TECHNOSORCEROUS_AUGMENTATIONS_SOURCE = "Technosorcerous Augmentations"
     _TECHNOSORCEROUS_CHOICE_TO_KEYWORD = {
         "ANTI_INFANTRY_3": "ANTI-INFANTRY 3+",
@@ -61,6 +62,7 @@ class NecronsDetachmentManager(DetachmentManagerBase):
         self._cold_fervour_turn_key: tuple[int, str] | None = None
         self._cold_fervour_activated_turn_key: tuple[int, str] | None = None
         self._cold_fervour_target_snapshots_by_attacker: dict[str, dict[str, tuple[object, bool, bool]]] = {}
+        self.hyperphasing_last_resolved_phase_key: str = ""
 
     def is_starshatter_arsenal(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -81,6 +83,11 @@ class NecronsDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Cursed Legion")
+
+    def is_hypercrypt_legion(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Hypercrypt Legion")
 
     def is_cryptek_conclave(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -492,6 +499,121 @@ class NecronsDetachmentManager(DetachmentManagerBase):
         self._cold_fervour_activated_turn_key = self._cold_fervour_turn_key_for_game(game)
         return True
 
+    def _iter_unique_army_roots(self) -> list:
+        if self.army is None:
+            return []
+        units = list(getattr(self.army, "units", []) or [])
+        out: list = []
+        seen: set[str] = set()
+        for unit in units:
+            root = self._unit_root(unit)
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or id(root))
+            if root_id in seen:
+                continue
+            seen.add(root_id)
+            out.append(root)
+        out.sort(key=lambda u: str(get_entity_id(u) or id(u)))
+        return out
+
+    def hyperphasing_end_of_opponent_turn_max_units(self, *, game=None) -> int:
+        if not self.is_hypercrypt_legion():
+            return 0
+        size_name = ""
+        if game is not None:
+            size = getattr(getattr(game, "battlefield", None), "size", None)
+            size_name = str(getattr(size, "name", "") or size or "")
+        size_name = size_name.strip().upper().replace(" ", "_")
+        if "INCURSION" in size_name:
+            return 1
+        if "STRIKE_FORCE" in size_name or "STRIKEFORCE" in size_name:
+            return 2
+        if "ONSLAUGHT" in size_name:
+            return 3
+        points_limit = int(getattr(self.army, "points_limit", 0) or 0) if self.army is not None else 0
+        if points_limit >= 3000:
+            return 3
+        if points_limit >= 2000:
+            return 2
+        return 1
+
+    def _hyperphasing_phase_key(self, *, game=None, turn_ending_player_id: str = "") -> str:
+        if game is None:
+            player = getattr(self.army, "player", None) if self.army is not None else None
+            game = getattr(player, "game", None) if player is not None else None
+        turn = self._current_turn(game)
+        return f"{int(turn)}:{str(turn_ending_player_id or '').strip()}"
+
+    def hyperphasing_phase_already_resolved(self, *, game=None, turn_ending_player_id: str = "") -> bool:
+        key = self._hyperphasing_phase_key(game=game, turn_ending_player_id=turn_ending_player_id)
+        return bool(key) and key == str(self.hyperphasing_last_resolved_phase_key or "")
+
+    def mark_hyperphasing_phase_resolved(self, *, game=None, turn_ending_player_id: str = "") -> None:
+        self.hyperphasing_last_resolved_phase_key = self._hyperphasing_phase_key(
+            game=game,
+            turn_ending_player_id=turn_ending_player_id,
+        )
+
+    def hyperphasing_end_of_opponent_turn_candidates(self, *, game=None, turn_ending_player=None, game_map=None) -> list:
+        if not self.is_hypercrypt_legion() or self.army is None:
+            return []
+        if game is None:
+            player = getattr(self.army, "player", None)
+            game = getattr(player, "game", None) if player is not None else None
+        if game_map is None and game is not None:
+            game_map = getattr(game, "map", None)
+        player = getattr(self.army, "player", None)
+        if player is None:
+            return []
+        if turn_ending_player is not None:
+            turn_ending_id = str(get_entity_id(turn_ending_player) or getattr(turn_ending_player, "id", "") or "")
+            player_id = str(get_entity_id(player) or getattr(player, "id", "") or "")
+            if turn_ending_id and turn_ending_id == player_id:
+                return []
+            if turn_ending_player is player:
+                return []
+
+        candidates: list = []
+        for root in self._iter_unique_army_roots():
+            if not self.unit_is_necrons(root):
+                continue
+            if not bool(getattr(root, "deployed", False)):
+                continue
+            reserve_status = str(getattr(root, "reserve_status", "deployed") or "deployed").strip().lower()
+            if reserve_status != "deployed":
+                continue
+            is_alive = getattr(root, "is_alive", None)
+            if callable(is_alive) and not bool(is_alive()):
+                continue
+            if bool(getattr(root, "embarked_in", None)) or bool(getattr(root, "is_embarked", False)):
+                continue
+            if game_map is None:
+                candidates.append(root)
+                continue
+            engaged = False
+            for enemy in list(getattr(game_map, "get_enemy_units", lambda _u: [])(root) or []):
+                if enemy is None:
+                    continue
+                enemy_root = self._unit_root(enemy)
+                if enemy_root is None:
+                    continue
+                enemy_alive = getattr(enemy_root, "is_alive", None)
+                if callable(enemy_alive) and not bool(enemy_alive()):
+                    continue
+                if not bool(getattr(enemy_root, "deployed", True)):
+                    continue
+                if bool(getattr(enemy_root, "is_embarked", False)):
+                    continue
+                if bool(game_map.is_within_engagement_range(root, enemy_root)):
+                    engaged = True
+                    break
+            if engaged:
+                continue
+            candidates.append(root)
+        candidates.sort(key=lambda u: str(get_entity_id(u) or id(u)))
+        return candidates
+
     def _annihilation_protocol_charge_eligible(self, unit) -> bool:
         if not self.is_annihilation_legion():
             return False
@@ -711,9 +833,7 @@ class NecronsDetachmentManager(DetachmentManagerBase):
     def unit_is_necrons(self, unit) -> bool:
         if unit is None:
             return False
-        if self._unit_has_keyword(unit, "NECRONS"):
-            return True
-        return self._army_faction_matches(self.faction_id)
+        return self._unit_has_keyword_or_faction(unit, "NECRONS", faction_id=self.faction_id)
 
     def unit_is_vehicle_or_mounted(self, unit) -> bool:
         if unit is None:
