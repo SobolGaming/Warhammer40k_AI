@@ -15998,6 +15998,28 @@ class WargearProfile:
                         attack_instance["benefit_of_cover_source"] = f"{existing_source}, {source_name}"
         except Exception:
             pass
+        # Astra Militarum: Recon Element (Masters of Camouflage) grants cover to WALKER/REGIMENT
+        # and can stack an additional save-characteristic improvement when another cover source applies.
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            army = t_unit.get_parent_army() if t_unit is not None and hasattr(t_unit, "get_parent_army") else None
+            am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+            cover_fn = getattr(am_mgr, "masters_of_camouflage_benefit_of_cover", None) if am_mgr is not None else None
+            if callable(cover_fn):
+                attack_type = "melee" if (self.parent_wargear and self.parent_wargear.is_melee()) else "ranged"
+                has_cover, source = cover_fn(target_model, attack_type=attack_type)
+                if has_cover:
+                    attack_instance.setdefault("benefit_of_cover", True)
+                    source_name = str(source or "Masters of Camouflage").strip() or "Masters of Camouflage"
+                    existing_source = str(attack_instance.get("benefit_of_cover_source", "") or "").strip()
+                    if not existing_source:
+                        attack_instance["benefit_of_cover_source"] = source_name
+                    elif source_name.lower() not in {
+                        part.strip().lower() for part in existing_source.split(",") if part.strip()
+                    }:
+                        attack_instance["benefit_of_cover_source"] = f"{existing_source}, {source_name}"
+        except Exception:
+            pass
         # Orks: Waaagh! (5+ invulnerable save while active).
         try:
             t_unit = getattr(target_model, "parent_unit", None)
@@ -16233,6 +16255,31 @@ class WargearProfile:
                         save_result["special_effects"].append(f"Save characteristic set ({save_reason})")
         except Exception:
             save_base = target_model.save
+        # Astra Militarum: Recon Element (Masters of Camouflage) can improve Save characteristic
+        # by 1 (to a maximum of 3+) when another cover source is also present.
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            army = t_unit.get_parent_army() if t_unit is not None and hasattr(t_unit, "get_parent_army") else None
+            am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+            bonus_fn = getattr(am_mgr, "masters_of_camouflage_save_characteristic_bonus", None) if am_mgr is not None else None
+            if callable(bonus_fn):
+                attack_type = "melee" if (self.parent_wargear and self.parent_wargear.is_melee()) else "ranged"
+                save_bonus, source = bonus_fn(
+                    target_model,
+                    attack_instance=attack_instance,
+                    attack_type=attack_type,
+                )
+                if save_bonus:
+                    improved_save = max(3, int(save_base) - int(save_bonus))
+                    if improved_save < int(save_base):
+                        save_base = int(improved_save)
+                        save_result["base_save"] = int(save_base)
+                        source_name = str(source or "Masters of Camouflage").strip() or "Masters of Camouflage"
+                        save_result["special_effects"].append(
+                            f"{source_name}: Save characteristic improved to {int(save_base)}+"
+                        )
+        except Exception:
+            pass
 
         save_value = save_base - int(effective_ap)
         save_result['final_save'] = save_value

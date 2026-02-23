@@ -424,6 +424,11 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Armoured Fist": (
             r"each time an astra militarum model from your army makes a ranged attack in a turn in which it disembarked from a transport add \d+ to the wound roll",
         ),
+        "Masters of Camouflage": (
+            r"astra militarum walker and regiment models from your army have the benefit of cover",
+            r"while such a model has the benefit of cover for any other reason(?: e)?",
+            r"because it is wholly within a ruin improve the save characteristic of that model by \d+ to a maximum of \d+",
+        ),
         "Rad-bombardment": (
             r"at the start of the first battle round for each enemy unit within your opponents deployment zone your opponent must decide whether that unit will take cover or stand firm",
             r"you then roll one d6 for each of those enemy units and apply the relevant result below",
@@ -2727,6 +2732,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Armoured Fist": (
             "Supported",
             "Mechanised Assault: ASTRA MILITARUM models gain +1 to wound on ranged attacks in turns they disembarked from a Transport.",
+        ),
+        "Masters of Camouflage": (
+            "Supported",
+            "Recon Element: ASTRA MILITARUM WALKER and REGIMENT models gain Benefit of Cover against ranged attacks, and while they already have cover from another source their Save characteristic improves by 1 (to a maximum of 3+).",
         ),
         "Rad-bombardment": (
             "Supported",

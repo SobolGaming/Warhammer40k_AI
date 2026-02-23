@@ -1135,6 +1135,98 @@ class TestVoiceOfCommand(unittest.TestCase):
             any("Armoured Fist" in str(mod or "") for mod in list(wound_without_bonus.get("modifiers", []) or []))
         )
 
+    def test_recon_element_masters_of_camouflage_cover_and_save_bonus(self):
+        from warhammer40k_ai.rules.astra_militarum_detachments import AstraMilitarumDetachmentManager
+
+        army = _ArmyStub(detachment_type="Recon Element")
+        army.astra_militarum_detachments = AstraMilitarumDetachmentManager(army)
+
+        target_unit = _UnitStub(
+            "Regiment Unit",
+            keywords=["REGIMENT", "ASTRA MILITARUM"],
+            abilities=[],
+            army=army,
+        )
+        target_model = SimpleNamespace(
+            name="Defender",
+            is_alive=True,
+            z=0.0,
+            save=4,
+            inv_save=(None, ""),
+            parent_unit=target_unit,
+        )
+        target_unit.models = [target_model]
+        target_unit.set_parent_army(army)
+        army.units = [target_unit]
+
+        enemy_army = _ArmyStub(faction_id="SM")
+        attacker_unit = _UnitStub(
+            "Enemy Unit",
+            keywords=["INFANTRY"],
+            abilities=[],
+            army=enemy_army,
+        )
+        attacker = _ModelStub("Enemy Shooter", attacker_unit, distance=12.0)
+        ranged = self._make_profile(weapon_type="Ranged", skill="4+")
+
+        attack_instance = {"mortal_wound": False, "attacker_model": attacker, "attacker_unit": attacker_unit}
+        baseline_save = ranged._save_with_tracking(
+            target_model,
+            attack_instance,
+            ap=0,
+            roll_value=3,
+            allow_rerolls=False,
+            log_roll=False,
+        )
+        self.assertTrue(bool(baseline_save.get("saved")))
+        self.assertTrue(bool(attack_instance.get("benefit_of_cover")))
+        self.assertIn("Masters of Camouflage", str(attack_instance.get("benefit_of_cover_source", "")))
+
+        stacked_instance = {
+            "mortal_wound": False,
+            "attacker_model": attacker,
+            "attacker_unit": attacker_unit,
+            "benefit_of_cover": True,
+            "benefit_of_cover_source": "RUINS",
+        }
+        stacked_save = ranged._save_with_tracking(
+            target_model,
+            stacked_instance,
+            ap=0,
+            roll_value=2,
+            allow_rerolls=False,
+            log_roll=False,
+        )
+        self.assertTrue(bool(stacked_save.get("saved")))
+        self.assertTrue(any("Save characteristic improved to 3+" in str(e or "") for e in list(stacked_save.get("special_effects", []) or [])))
+        self.assertIn("RUINS", str(stacked_instance.get("benefit_of_cover_source", "")))
+        self.assertIn("Masters of Camouflage", str(stacked_instance.get("benefit_of_cover_source", "")))
+
+        elite_model = SimpleNamespace(
+            name="Elite Defender",
+            is_alive=True,
+            z=0.0,
+            save=3,
+            inv_save=(None, ""),
+            parent_unit=target_unit,
+        )
+        cap_instance = {
+            "mortal_wound": False,
+            "attacker_model": attacker,
+            "attacker_unit": attacker_unit,
+            "benefit_of_cover": True,
+            "benefit_of_cover_source": "RUINS",
+        }
+        capped_save = ranged._save_with_tracking(
+            elite_model,
+            cap_instance,
+            ap=0,
+            roll_value=2,
+            allow_rerolls=False,
+            log_roll=False,
+        )
+        self.assertFalse(bool(capped_save.get("saved")))
+
 
 if __name__ == "__main__":
     unittest.main()

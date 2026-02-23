@@ -40,6 +40,11 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Mechanised Assault")
 
+    def is_recon_element(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Recon Element")
+
     def _unit_root(self, unit):
         if unit is None:
             return None
@@ -163,6 +168,16 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
             return False
         return self._unit_has_keyword(root, "SQUADRON")
 
+    def _unit_is_walker_or_regiment_model(self, unit, model) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if not self.unit_is_astra_militarum(root):
+            return False
+        if self._model_or_unit_has_keyword(model, root, "WALKER"):
+            return True
+        return self._model_or_unit_has_keyword(model, root, "REGIMENT")
+
     def _target_is_monster_or_vehicle(self, unit) -> bool:
         root = self._unit_root(unit)
         if root is None:
@@ -279,6 +294,59 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
         if not self._attached_unit_disembarked_from_transport_this_round(root):
             return 0, ""
         return 1, "Armoured Fist"
+
+    def masters_of_camouflage_benefit_of_cover(
+        self,
+        target_model,
+        *,
+        attack_type: str = "any",
+    ) -> tuple[bool, str]:
+        if not self.is_recon_element():
+            return False, ""
+        if str(attack_type or "any").strip().lower() != "ranged":
+            return False, ""
+        unit = getattr(target_model, "parent_unit", None)
+        root = self._unit_root(unit)
+        if root is None:
+            return False, ""
+        if not self._unit_in_army(root):
+            return False, ""
+        if not self._unit_is_walker_or_regiment_model(root, target_model):
+            return False, ""
+        return True, "Masters of Camouflage"
+
+    def masters_of_camouflage_save_characteristic_bonus(
+        self,
+        target_model,
+        attack_instance=None,
+        *,
+        attack_type: str = "any",
+    ) -> tuple[int, str]:
+        if not self.is_recon_element():
+            return 0, ""
+        if str(attack_type or "any").strip().lower() != "ranged":
+            return 0, ""
+        unit = getattr(target_model, "parent_unit", None)
+        root = self._unit_root(unit)
+        if root is None:
+            return 0, ""
+        if not self._unit_in_army(root):
+            return 0, ""
+        if not self._unit_is_walker_or_regiment_model(root, target_model):
+            return 0, ""
+        atk = attack_instance if isinstance(attack_instance, dict) else {}
+        if not bool(atk.get("benefit_of_cover", False)):
+            return 0, ""
+
+        source_text = str(atk.get("benefit_of_cover_source", "") or "").strip()
+        if not source_text:
+            return 1, "Masters of Camouflage"
+        sources = [part.strip().lower() for part in source_text.split(",") if part.strip()]
+        if not sources:
+            return 1, "Masters of Camouflage"
+        if any(part != "masters of camouflage" for part in sources):
+            return 1, "Masters of Camouflage"
+        return 0, ""
 
     def only_the_best_hit_reroll_mods(
         self,
