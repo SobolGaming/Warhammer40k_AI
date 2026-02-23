@@ -205,6 +205,8 @@ Command phase:
 - synaptic_imperatives_dialog: CHOOSE_QUARRY {choice_key | skip} (context `ability="synaptic_imperatives"`, `ability_name="Synaptic Imperatives"`, `army_id`, `battle_round`, `allowed_choice_keys[]`, `optional=true`)
 - data_psalm_benediction_dialog: CHOOSE_QUARRY {choice_key} (context `ability="data_psalm_benediction"`, `ability_name="Benedictions Of The Omnissiah"`, `army_id`, `battle_round`, `allowed_choice_keys[]`, `optional=false`)
 - acquisition_at_any_cost_dialog: CHOOSE_QUARRY {objective_id} (context `ability="acquisition_at_any_cost"`, `ability_name="Acquisition At Any Cost"`, `army_id`, `battle_round`, `candidate_objective_ids[]`, `optional=false`)
+- noospheric_transference_units_dialog: CHOOSE_QUARRY {selected_unit_ids[]} (context `ability="noospheric_transference_units"`, `ability_name="Noospheric Transference"`, `army_id`, `battle_round`, `candidate_unit_ids[]`, `max_selections`, `optional=false`)
+- noospheric_transference_override_dialog: CHOOSE_QUARRY {choice_key} (context `ability="noospheric_transference_override"`, `ability_name="Noospheric Transference"`, `army_id`, `battle_round`, `allowed_choice_keys[]`, `optional=false`)
 - necrons_command_phase_dialog: CHOOSE_QUARRY {target_unit_id} (context `necrons_command_phase_enhancement=true`, `source_unit_id`, `ability`, `effect_key`, `effect_value`)
 - worthy_foes_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="worthy_foes"`, `ability_name="Worthy Foes"`, `army_id`)
 - cosmic_distortion_dialog: SELECT_REALM_OF_CHAOS_UNITS {unit_ids | skip} (context `ability="cosmic_distortion_phase_surge"`, `ability_name="Cosmic Distortion"`, `army_id`, `phase_key`, `phase_name`, `allowed_unit_ids[]`, `max_units`)

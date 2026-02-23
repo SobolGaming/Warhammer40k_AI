@@ -429,6 +429,17 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"until the start of your next command phase that objective marker is your acquisition objective marker",
             r"each time an adeptus mechanicus model from your army makes an attack if that models unit is within range of your acquisition objective marker or if the target of that attack is within range of your acquisition objective marker reroll a wound roll of 1",
         ),
+        "Noospheric Transference": (
+            r"in your command phase select one or more adeptus mechanicus units from your army including units that are embarked within transports",
+            r"the maximum number of units you can select depends on the battle size as follows",
+            r"until the start of your next command phase those units gain the halo override keyword",
+            r"then select one of the override abilities below",
+            r"until the start of your next command phase units from your army with the halo override keyword have the selected override ability",
+            r"add 2 to the move characteristic of models in this unit",
+            r"add 1 to the toughness characteristic of models in this unit",
+            r"this unit is eligible to declare a charge in a turn in which it advanced",
+            r"models in this unit have the stealth ability",
+        ),
         "Warp Rifts": (
             r"each time a legiones daemonica unit from your army is set up on the battlefield using the deep strike ability .* it can be set up anywhere that is more than 6 horizontally away from all enemy models instead of more than 9",
         ),
@@ -2690,6 +2701,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Acquisition At Any Cost": (
             "Supported",
             "Explorator Maniple: in your Command phase you select one objective marker as your Acquisition objective until your next Command phase, and ADEPTUS MECHANICUS attacks re-roll Wound rolls of 1 while either the attacker or target unit is within range of that selected objective marker.",
+        ),
+        "Noospheric Transference": (
+            "Supported",
+            "Haloscreed Battle Clade: in your Command phase you select units for HALO OVERRIDE based on battle size (Incursion 1, Strike Force 2, Onslaught 3), then select one override ability; Electromotive gives +2\" Move, Microactuator gives +1 Toughness, Predation allows charging after Advancing, and Muted grants Stealth until your next Command phase.",
         ),
         "The Blood of Martyrs": (
             "Supported",

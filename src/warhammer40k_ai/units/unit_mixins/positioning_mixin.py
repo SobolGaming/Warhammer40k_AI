@@ -6342,6 +6342,13 @@ class PositioningMixin:
             game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
             if bool(sneaky_fn(self, game=game)):
                 return True
+        # Haloscreed Battle Clade: Muted Servomotors.
+        adm_mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+        muted_fn = getattr(adm_mgr, "noospheric_transference_stealth_applies", None) if adm_mgr is not None else None
+        if callable(muted_fn):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            if bool(muted_fn(self, game=game)):
+                return True
         # Use cached result if available
         if 'stealth' in getattr(self, '_ability_cache', {}):
             found = self._ability_cache['stealth']

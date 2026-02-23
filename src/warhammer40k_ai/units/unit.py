@@ -992,6 +992,21 @@ class Unit(
                         mods.append(Modifier(ModifierOp.ADD, int(penalty), source=f"ability:nurgles_rot:{source}"))
             except Exception:
                 pass
+            try:
+                army = self.get_parent_army()
+                adm_mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+                bonus_fn = (
+                    getattr(adm_mgr, "noospheric_transference_toughness_bonus", None)
+                    if adm_mgr is not None
+                    else None
+                )
+                if callable(bonus_fn):
+                    bonus, source = bonus_fn(model, unit=self)
+                    if int(bonus or 0):
+                        source_name = str(source or "Noospheric Transference").strip() or "Noospheric Transference"
+                        mods.append(Modifier(ModifierOp.ADD, int(bonus), source=f"detachment:{source_name}"))
+            except Exception:
+                pass
 
         if ckey == "leadership":
             if game_map is None:
@@ -1178,6 +1193,16 @@ class Unit(
                     bonus, source = bonus_fn(model, unit=self)
                     if int(bonus or 0):
                         source_name = str(source or "Cyber-Psalm Programming").strip() or "Cyber-Psalm Programming"
+                        mods.append(Modifier(ModifierOp.ADD, int(bonus), source=f"detachment:{source_name}"))
+                noospheric_bonus_fn = (
+                    getattr(adm_mgr, "noospheric_transference_movement_bonus", None)
+                    if adm_mgr is not None
+                    else None
+                )
+                if callable(noospheric_bonus_fn):
+                    bonus, source = noospheric_bonus_fn(model, unit=self)
+                    if int(bonus or 0):
+                        source_name = str(source or "Noospheric Transference").strip() or "Noospheric Transference"
                         mods.append(Modifier(ModifierOp.ADD, int(bonus), source=f"detachment:{source_name}"))
             except Exception:
                 pass

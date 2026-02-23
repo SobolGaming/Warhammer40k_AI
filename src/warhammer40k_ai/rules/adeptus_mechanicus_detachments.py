@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from itertools import combinations
 from typing import Optional
 
 from ..utility.dice import get_roll
@@ -17,6 +18,17 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
     _EXPLORATOR_MANIPLE_NAME = "Explorator Maniple"
     _ACQUISITION_ABILITY_KEY = "acquisition_at_any_cost"
     _ACQUISITION_SOURCE = "Acquisition At Any Cost"
+    _HALOSCREED_BATTLE_CLADE_NAME = "Haloscreed Battle Clade"
+    _NOOSPHERIC_UNITS_ABILITY_KEY = "noospheric_transference_units"
+    _NOOSPHERIC_OVERRIDE_ABILITY_KEY = "noospheric_transference_override"
+    _NOOSPHERIC_SOURCE = "Noospheric Transference"
+    _NOOSPHERIC_ELECTROMOTIVE_KEY = "ELECTROMOTIVE_ENERGISATION"
+    _NOOSPHERIC_MICROACTUATOR_KEY = "MICROACTUATOR_BRACING"
+    _NOOSPHERIC_PREDATION_KEY = "PREDATION_PROTOCOLS"
+    _NOOSPHERIC_MUTED_KEY = "MUTED_SERVOMOTORS"
+    _NOOSPHERIC_ACTIVE_FLAG_KEY = "noospheric_transference_halo_override_active"
+    _NOOSPHERIC_SOURCE_FLAG_KEY = "noospheric_transference_source"
+    _NOOSPHERIC_OVERRIDE_FLAG_KEY = "noospheric_transference_override_key"
     _DATA_PSALM_CONCLAVE_NAME = "Data-Psalm Conclave"
     _DATA_PSALM_ABILITY_KEY = "data_psalm_benediction"
     _DATA_PSALM_SOURCE = "Benedictions Of The Omnissiah"
@@ -39,6 +51,9 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
         super().__init__(army)
         self.active_acquisition_objective_id: str = ""
         self.acquisition_selected_round: int = 0
+        self.active_noospheric_unit_ids: list[str] = []
+        self.active_noospheric_override_key: str = ""
+        self.noospheric_selected_round: int = 0
         self.active_data_psalm_benediction_key: Optional[str] = None
         self.data_psalm_selected_round: Optional[int] = None
 
@@ -61,6 +76,11 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches(self._EXPLORATOR_MANIPLE_NAME)
+
+    def is_haloscreed_battle_clade(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches(self._HALOSCREED_BATTLE_CLADE_NAME)
 
     @classmethod
     def _normalize_data_psalm_choice_key(cls, choice_key: str) -> str:
@@ -695,6 +715,500 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
             return True, f"{self._ACQUISITION_SOURCE} (Acquisition objective)"
         return False, ""
 
+    @classmethod
+    def _normalize_noospheric_override_choice_key(cls, choice_key: str) -> str:
+        raw = str(choice_key or "").strip().upper()
+        aliases = {
+            "ELECTROMOTIVE": cls._NOOSPHERIC_ELECTROMOTIVE_KEY,
+            "ELECTROMOTIVE_ENERGISATION": cls._NOOSPHERIC_ELECTROMOTIVE_KEY,
+            "MICROACTUATOR": cls._NOOSPHERIC_MICROACTUATOR_KEY,
+            "MICROACTUATOR_BRACING": cls._NOOSPHERIC_MICROACTUATOR_KEY,
+            "PREDATION": cls._NOOSPHERIC_PREDATION_KEY,
+            "PREDATION_PROTOCOLS": cls._NOOSPHERIC_PREDATION_KEY,
+            "MUTED": cls._NOOSPHERIC_MUTED_KEY,
+            "MUTED_SERVOMOTORS": cls._NOOSPHERIC_MUTED_KEY,
+        }
+        return aliases.get(raw, "")
+
+    @classmethod
+    def noospheric_override_choices(cls) -> tuple[tuple[str, str], ...]:
+        return (
+            (cls._NOOSPHERIC_ELECTROMOTIVE_KEY, "Electromotive Energisation"),
+            (cls._NOOSPHERIC_MICROACTUATOR_KEY, "Microactuator Bracing"),
+            (cls._NOOSPHERIC_PREDATION_KEY, "Predation Protocols"),
+            (cls._NOOSPHERIC_MUTED_KEY, "Muted Servomotors"),
+        )
+
+    def _noospheric_max_selected_units(self, *, game=None) -> int:
+        if game is None:
+            owner = getattr(self.army, "player", None)
+            game = getattr(owner, "game", None) if owner is not None else None
+        size_value = getattr(getattr(game, "battlefield", None), "size", None) if game is not None else None
+        size_key = str(getattr(size_value, "name", size_value) or "").strip().upper()
+        if size_key == "INCURSION":
+            return 1
+        if size_key == "ONSLAUGHT":
+            return 3
+        return 2
+
+    def _unit_is_on_battlefield_or_embarked(self, unit) -> bool:
+        if unit is None:
+            return False
+        is_alive = getattr(unit, "is_alive", None)
+        if callable(is_alive) and not bool(is_alive()):
+            return False
+        if bool(getattr(unit, "is_embarked", False)):
+            return True
+        if getattr(unit, "embarked_in", None) is not None:
+            return True
+        if not bool(getattr(unit, "deployed", False)):
+            return False
+        return str(getattr(unit, "reserve_status", "deployed") or "deployed") == "deployed"
+
+    def _iter_noospheric_candidate_roots(self) -> list:
+        if self.army is None:
+            return []
+        seen: set[str] = set()
+        roots: list = []
+        for unit in list(getattr(self.army, "units", []) or []):
+            root = self._attached_root(unit)
+            if root is None:
+                continue
+            root_id = self._entity_id(root) or str(id(root))
+            if root_id in seen:
+                continue
+            seen.add(root_id)
+            if not self._unit_has_keyword_or_faction(root, "ADEPTUS MECHANICUS", faction_id=self.faction_id):
+                continue
+            if not self._unit_is_on_battlefield_or_embarked(root):
+                continue
+            roots.append(root)
+        roots.sort(key=lambda item: self._entity_id(item) or str(getattr(item, "name", "") or ""))
+        return roots
+
+    def _pending_noospheric_request(self, game, army_id: str, *, ability_key: str, battle_round: int):
+        if game is None:
+            return None
+        queue = getattr(game, "decision_queue", None)
+        if queue is None:
+            return None
+        for req in list(getattr(queue, "list", lambda: [])() or []):
+            if str(getattr(req, "decision_type", "")) != "CHOOSE_QUARRY":
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "") != str(ability_key or ""):
+                continue
+            if str(ctx.get("army_id", "") or "") != str(army_id or ""):
+                continue
+            try:
+                req_round = int(ctx.get("battle_round", 0) or 0)
+            except (TypeError, ValueError):
+                req_round = 0
+            if req_round != int(battle_round):
+                continue
+            return req
+        return None
+
+    def _clear_noospheric_flags_on_army_units(self) -> None:
+        for unit in list(getattr(self.army, "units", []) or []):
+            root = self._attached_root(unit)
+            if root is None:
+                continue
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            updated = dict(sr)
+            updated.pop(self._NOOSPHERIC_ACTIVE_FLAG_KEY, None)
+            updated.pop(self._NOOSPHERIC_SOURCE_FLAG_KEY, None)
+            updated.pop(self._NOOSPHERIC_OVERRIDE_FLAG_KEY, None)
+            root.special_rules = updated
+
+    def _apply_noospheric_flags_to_selected_units(self) -> None:
+        self._clear_noospheric_flags_on_army_units()
+        selected_ids = {str(uid or "").strip() for uid in list(self.active_noospheric_unit_ids or []) if str(uid or "").strip()}
+        if not selected_ids:
+            return
+        for unit in list(getattr(self.army, "units", []) or []):
+            root = self._attached_root(unit)
+            if root is None:
+                continue
+            root_id = str(self._entity_id(root) or "").strip()
+            if not root_id or root_id not in selected_ids:
+                continue
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            updated = dict(sr)
+            updated[self._NOOSPHERIC_ACTIVE_FLAG_KEY] = True
+            updated[self._NOOSPHERIC_SOURCE_FLAG_KEY] = self._NOOSPHERIC_SOURCE
+            if str(self.active_noospheric_override_key or "").strip():
+                updated[self._NOOSPHERIC_OVERRIDE_FLAG_KEY] = str(self.active_noospheric_override_key)
+            else:
+                updated.pop(self._NOOSPHERIC_OVERRIDE_FLAG_KEY, None)
+            root.special_rules = updated
+
+    def clear_noospheric_transference_state(self) -> None:
+        self.active_noospheric_unit_ids = []
+        self.active_noospheric_override_key = ""
+        self.noospheric_selected_round = 0
+        self._clear_noospheric_flags_on_army_units()
+
+    def can_select_noospheric_units(self, *, game=None, battle_round: Optional[int] = None) -> bool:
+        if not self.is_haloscreed_battle_clade():
+            return False
+        br = 0
+        if battle_round is not None:
+            try:
+                br = int(battle_round or 0)
+            except (TypeError, ValueError):
+                br = 0
+        elif game is not None:
+            try:
+                br = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                br = 0
+        if br <= 0:
+            return False
+        if self.noospheric_selected_round == br and list(self.active_noospheric_unit_ids or []):
+            return False
+        return True
+
+    def _build_noospheric_unit_selection_request(self, game, *, battle_round: int):
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        if game is None:
+            return None
+        owner = getattr(self.army, "player", None)
+        if owner is None:
+            return None
+        candidates = self._iter_noospheric_candidate_roots()
+        if not candidates:
+            return None
+        max_count = min(self._noospheric_max_selected_units(game=game), len(candidates))
+        if max_count <= 0:
+            return None
+        options = []
+        for count in range(1, max_count + 1):
+            for combo in combinations(candidates, count):
+                unit_ids = [self._entity_id(unit) for unit in combo]
+                if any(not unit_id for unit_id in unit_ids):
+                    continue
+                label = " + ".join(str(getattr(unit, "name", "Unit") or "Unit") for unit in combo)
+                options.append(DecisionOption.create(label, payload={"selected_unit_ids": list(unit_ids)}))
+        if not options:
+            return None
+        return DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            (
+                "Noospheric Transference: select one or more friendly ADEPTUS MECHANICUS units "
+                "to gain HALO OVERRIDE until your next Command phase."
+            ),
+            player_id=getattr(owner, "id", None),
+            options=options,
+            context={
+                "ability": self._NOOSPHERIC_UNITS_ABILITY_KEY,
+                "ability_name": self._NOOSPHERIC_SOURCE,
+                "army_id": self._entity_id(self.army),
+                "battle_round": int(battle_round),
+                "candidate_unit_ids": [self._entity_id(unit) for unit in candidates if self._entity_id(unit)],
+                "max_selections": int(max_count),
+                "optional": False,
+            },
+        )
+
+    def queue_noospheric_unit_selection_request(self, *, game=None, player=None, battle_round: int = 0):
+        if not self.is_haloscreed_battle_clade():
+            return None
+        if self.army is None:
+            return None
+        owner = getattr(self.army, "player", None)
+        if player is None:
+            player = owner
+        if player is None or (owner is not None and player is not owner):
+            return None
+        if game is None:
+            game = getattr(player, "game", None)
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return None
+        br = int(battle_round or 0)
+        if br <= 0:
+            return None
+        if self.noospheric_selected_round != br:
+            self.clear_noospheric_transference_state()
+        if not self.can_select_noospheric_units(game=game, battle_round=br):
+            return None
+        army_id = self._entity_id(self.army)
+        if self._pending_noospheric_request(
+            game,
+            army_id,
+            ability_key=self._NOOSPHERIC_UNITS_ABILITY_KEY,
+            battle_round=br,
+        ) is not None:
+            return None
+        request = self._build_noospheric_unit_selection_request(game, battle_round=br)
+        request_fn = getattr(game, "request_decision", None)
+        if callable(request_fn) and request is not None:
+            request_fn(request)
+        return request
+
+    def validate_noospheric_unit_selection(
+        self,
+        selected_unit_ids: list[str] | tuple[str, ...] | None,
+        *,
+        game=None,
+        player=None,
+        battle_round: int = 0,
+    ) -> tuple[bool, str]:
+        if not self.is_haloscreed_battle_clade():
+            return False, "Noospheric Transference requires Haloscreed Battle Clade detachment."
+        if self.army is None:
+            return False, "Noospheric Transference army not found."
+        owner = getattr(self.army, "player", None)
+        if player is not None and owner is not None and player is not owner:
+            return False, "Noospheric Transference must be resolved by the owning player."
+        selected_ids = [
+            str(unit_id or "").strip()
+            for unit_id in list(selected_unit_ids or [])
+            if str(unit_id or "").strip()
+        ]
+        selected_ids = list(dict.fromkeys(selected_ids))
+        if not selected_ids:
+            return False, "Noospheric Transference requires selecting at least one unit."
+        max_count = self._noospheric_max_selected_units(game=game)
+        if len(selected_ids) > int(max_count):
+            return False, f"Noospheric Transference can select at most {int(max_count)} unit(s) this battle size."
+        valid_by_id = {self._entity_id(unit): unit for unit in self._iter_noospheric_candidate_roots() if self._entity_id(unit)}
+        if any(unit_id not in valid_by_id for unit_id in selected_ids):
+            return False, "Noospheric Transference selection includes ineligible units."
+        expected_round = int(battle_round or 0)
+        if expected_round and game is not None:
+            try:
+                current_round = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_round = 0
+            if current_round and current_round != expected_round:
+                return False, "Noospheric Transference selection is no longer in the current battle round."
+        if expected_round and self.noospheric_selected_round == expected_round and list(self.active_noospheric_unit_ids or []):
+            return False, "Noospheric Transference units have already been selected this Command phase."
+        return True, ""
+
+    def select_noospheric_unit_selection(
+        self,
+        selected_unit_ids: list[str] | tuple[str, ...] | None,
+        *,
+        game=None,
+        player=None,
+        battle_round: int = 0,
+    ):
+        valid, reason = self.validate_noospheric_unit_selection(
+            selected_unit_ids,
+            game=game,
+            player=player,
+            battle_round=battle_round,
+        )
+        if not valid:
+            return None
+        valid_by_id = {self._entity_id(unit): unit for unit in self._iter_noospheric_candidate_roots() if self._entity_id(unit)}
+        selected_ids = sorted(
+            {
+                str(unit_id or "").strip()
+                for unit_id in list(selected_unit_ids or [])
+                if str(unit_id or "").strip() and str(unit_id or "").strip() in valid_by_id
+            }
+        )
+        if not selected_ids:
+            return None
+        self.active_noospheric_unit_ids = list(selected_ids)
+        self.active_noospheric_override_key = ""
+        if game is not None:
+            try:
+                self.noospheric_selected_round = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                self.noospheric_selected_round = int(battle_round or 0)
+        else:
+            self.noospheric_selected_round = int(battle_round or 0)
+        self._apply_noospheric_flags_to_selected_units()
+        return {
+            "selected_unit_ids": list(selected_ids),
+            "selected_unit_names": [str(getattr(valid_by_id[unit_id], "name", "Unit") or "Unit") for unit_id in selected_ids],
+            "battle_round": int(self.noospheric_selected_round or 0),
+            "source": self._NOOSPHERIC_SOURCE,
+        }
+
+    def _build_noospheric_override_request(self, game, *, battle_round: int):
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        if game is None or not list(self.active_noospheric_unit_ids or []):
+            return None
+        owner = getattr(self.army, "player", None)
+        if owner is None:
+            return None
+        options = [
+            DecisionOption.create(label, payload={"choice_key": key})
+            for key, label in self.noospheric_override_choices()
+        ]
+        if not options:
+            return None
+        return DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Noospheric Transference: select one HALO OVERRIDE ability to apply until your next Command phase.",
+            player_id=getattr(owner, "id", None),
+            options=options,
+            context={
+                "ability": self._NOOSPHERIC_OVERRIDE_ABILITY_KEY,
+                "ability_name": self._NOOSPHERIC_SOURCE,
+                "army_id": self._entity_id(self.army),
+                "battle_round": int(battle_round),
+                "allowed_choice_keys": [key for key, _label in self.noospheric_override_choices()],
+                "optional": False,
+            },
+        )
+
+    def queue_noospheric_override_request(self, *, game=None, player=None, battle_round: int = 0):
+        if not self.is_haloscreed_battle_clade():
+            return None
+        if self.army is None:
+            return None
+        owner = getattr(self.army, "player", None)
+        if player is None:
+            player = owner
+        if player is None or (owner is not None and player is not owner):
+            return None
+        if game is None:
+            game = getattr(player, "game", None)
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return None
+        br = int(battle_round or 0)
+        if br <= 0 or self.noospheric_selected_round != br:
+            return None
+        if not list(self.active_noospheric_unit_ids or []):
+            return None
+        if str(self.active_noospheric_override_key or "").strip():
+            return None
+        army_id = self._entity_id(self.army)
+        if self._pending_noospheric_request(
+            game,
+            army_id,
+            ability_key=self._NOOSPHERIC_OVERRIDE_ABILITY_KEY,
+            battle_round=br,
+        ) is not None:
+            return None
+        request = self._build_noospheric_override_request(game, battle_round=br)
+        request_fn = getattr(game, "request_decision", None)
+        if callable(request_fn) and request is not None:
+            request_fn(request)
+        return request
+
+    def validate_noospheric_override_choice(
+        self,
+        choice_key: str,
+        *,
+        game=None,
+        player=None,
+        battle_round: int = 0,
+    ) -> tuple[bool, str]:
+        if not self.is_haloscreed_battle_clade():
+            return False, "Noospheric Transference requires Haloscreed Battle Clade detachment."
+        if self.army is None:
+            return False, "Noospheric Transference army not found."
+        owner = getattr(self.army, "player", None)
+        if player is not None and owner is not None and player is not owner:
+            return False, "Noospheric Transference must be resolved by the owning player."
+        if not list(self.active_noospheric_unit_ids or []):
+            return False, "Noospheric Transference override requires selected HALO OVERRIDE units."
+        expected_round = int(battle_round or 0)
+        if expected_round <= 0:
+            return False, "Noospheric Transference override requires current battle round context."
+        if self.noospheric_selected_round != expected_round:
+            return False, "Noospheric Transference override must be selected in the same Command phase."
+        normalized = self._normalize_noospheric_override_choice_key(choice_key)
+        if not normalized:
+            return False, "Noospheric Transference override choice is not supported."
+        return True, ""
+
+    def select_noospheric_override_choice(
+        self,
+        choice_key: str,
+        *,
+        game=None,
+        player=None,
+        battle_round: int = 0,
+    ):
+        valid, reason = self.validate_noospheric_override_choice(
+            choice_key,
+            game=game,
+            player=player,
+            battle_round=battle_round,
+        )
+        if not valid:
+            return None
+        normalized = self._normalize_noospheric_override_choice_key(choice_key)
+        self.active_noospheric_override_key = normalized
+        self._apply_noospheric_flags_to_selected_units()
+        labels = {key: label for key, label in self.noospheric_override_choices()}
+        return {
+            "choice_key": str(normalized),
+            "choice_label": str(labels.get(normalized, normalized.replace("_", " ").title())),
+            "battle_round": int(self.noospheric_selected_round or 0),
+            "source": self._NOOSPHERIC_SOURCE,
+        }
+
+    def _unit_selected_for_noospheric(self, unit) -> bool:
+        if not self.is_haloscreed_battle_clade():
+            return False
+        selected_ids = {str(uid or "").strip() for uid in list(self.active_noospheric_unit_ids or []) if str(uid or "").strip()}
+        if not selected_ids:
+            return False
+        root = self._attached_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return False
+        root_id = str(self._entity_id(root) or "").strip()
+        return bool(root_id and root_id in selected_ids)
+
+    def _noospheric_override_active(self, choice_key: str) -> bool:
+        if not self.is_haloscreed_battle_clade():
+            return False
+        normalized = self._normalize_noospheric_override_choice_key(choice_key)
+        if not normalized:
+            return False
+        if not list(self.active_noospheric_unit_ids or []):
+            return False
+        return str(self.active_noospheric_override_key or "").strip().upper() == normalized
+
+    def noospheric_transference_movement_bonus(self, model, *, unit=None) -> tuple[int, str]:
+        if model is None:
+            return 0, ""
+        if not self._noospheric_override_active(self._NOOSPHERIC_ELECTROMOTIVE_KEY):
+            return 0, ""
+        source_unit = unit if unit is not None else getattr(model, "parent_unit", None)
+        if not self._unit_selected_for_noospheric(source_unit):
+            return 0, ""
+        return 2, f"{self._NOOSPHERIC_SOURCE} (Electromotive Energisation)"
+
+    def noospheric_transference_toughness_bonus(self, model, *, unit=None) -> tuple[int, str]:
+        if model is None:
+            return 0, ""
+        if not self._noospheric_override_active(self._NOOSPHERIC_MICROACTUATOR_KEY):
+            return 0, ""
+        source_unit = unit if unit is not None else getattr(model, "parent_unit", None)
+        if not self._unit_selected_for_noospheric(source_unit):
+            return 0, ""
+        return 1, f"{self._NOOSPHERIC_SOURCE} (Microactuator Bracing)"
+
+    def noospheric_transference_charge_after_advance_applies(self, unit, *, game=None) -> bool:
+        _ = game
+        if not self._noospheric_override_active(self._NOOSPHERIC_PREDATION_KEY):
+            return False
+        return self._unit_selected_for_noospheric(unit)
+
+    def noospheric_transference_stealth_applies(self, unit, *, game=None) -> bool:
+        _ = game
+        if not self._noospheric_override_active(self._NOOSPHERIC_MUTED_KEY):
+            return False
+        return self._unit_selected_for_noospheric(unit)
+
     def _iter_player_unit_roots(self, player) -> list:
         if player is None:
             return []
@@ -1049,6 +1563,12 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
         if not bool(getattr(game, "is_authoritative", True)):
             return
         battle_round = int(getattr(game, "turn", 0) or 0)
+        if self.is_haloscreed_battle_clade():
+            self.queue_noospheric_unit_selection_request(
+                game=game,
+                player=player,
+                battle_round=int(battle_round),
+            )
         if self.is_explorator_maniple():
             self._queue_acquisition_request(game, player=player, battle_round=int(battle_round))
         if not self.is_rad_zone_corps():

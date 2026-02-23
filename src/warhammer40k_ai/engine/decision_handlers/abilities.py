@@ -3902,6 +3902,80 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not valid:
             return (str(reason or "Acquisition At Any Cost selection is not legal."),)
         return ()
+    if ability == "noospheric_transference_units":
+        if is_skip_choice(request, result):
+            return ("Noospheric Transference unit selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        source_army = _resolve_army(game, request, payload)
+        if source_army is None:
+            return ("Noospheric Transference army not found.",)
+        mgr = getattr(source_army, "adeptus_mechanicus_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_haloscreed_battle_clade", lambda: False)()):
+            return ("Noospheric Transference requires a Haloscreed Battle Clade army.",)
+
+        selected_vals = payload.get("selected_unit_ids")
+        if not isinstance(selected_vals, list):
+            selected_vals = []
+        if not selected_vals:
+            one_target = payload.get("target_unit_id") or payload.get("unit_id")
+            if one_target:
+                selected_vals = [one_target]
+        selected_ids = [str(v or "").strip() for v in list(selected_vals or []) if str(v or "").strip()]
+
+        validate_selection = getattr(mgr, "validate_noospheric_unit_selection", None)
+        if not callable(validate_selection):
+            return ("Noospheric Transference manager support is unavailable.",)
+        player = _resolve_player(game, request, payload)
+        try:
+            battle_round = int(ctx.get("battle_round", 0) or getattr(game, "turn", 0) or 0)
+        except Exception:
+            battle_round = int(getattr(game, "turn", 0) or 0)
+        valid, reason = validate_selection(
+            selected_ids,
+            game=game,
+            player=player,
+            battle_round=int(battle_round),
+        )
+        if not valid:
+            return (str(reason or "Noospheric Transference selection is not legal."),)
+        return ()
+    if ability == "noospheric_transference_override":
+        if is_skip_choice(request, result):
+            return ("Noospheric Transference override selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        source_army = _resolve_army(game, request, payload)
+        if source_army is None:
+            return ("Noospheric Transference army not found.",)
+        mgr = getattr(source_army, "adeptus_mechanicus_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_haloscreed_battle_clade", lambda: False)()):
+            return ("Noospheric Transference requires a Haloscreed Battle Clade army.",)
+        choice_key = str(payload.get("choice_key") or payload.get("override_key") or "").strip()
+        if not choice_key:
+            return ("Noospheric Transference override requires choice_key.",)
+        allowed_keys = {
+            str(val or "").strip().upper()
+            for val in list(ctx.get("allowed_choice_keys", []) or [])
+            if str(val or "").strip()
+        }
+        if allowed_keys and str(choice_key).strip().upper() not in allowed_keys:
+            return ("Noospheric Transference override choice is not an eligible candidate.",)
+        validate_choice = getattr(mgr, "validate_noospheric_override_choice", None)
+        if not callable(validate_choice):
+            return ("Noospheric Transference manager support is unavailable.",)
+        player = _resolve_player(game, request, payload)
+        try:
+            battle_round = int(ctx.get("battle_round", 0) or getattr(game, "turn", 0) or 0)
+        except Exception:
+            battle_round = int(getattr(game, "turn", 0) or 0)
+        valid, reason = validate_choice(
+            choice_key,
+            game=game,
+            player=player,
+            battle_round=int(battle_round),
+        )
+        if not valid:
+            return (str(reason or "Noospheric Transference override selection is not legal."),)
+        return ()
     if ability == "rad_bombardment":
         if is_skip_choice(request, result):
             return ("Rad-bombardment cannot be skipped.",)
@@ -5726,6 +5800,88 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 game,
                 owner,
                 f"Acquisition At Any Cost: selected {objective_name} as your Acquisition objective marker until your next Command phase.",
+            )
+        return outcome
+    if ability == "noospheric_transference_units":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        source_army = _resolve_army(game, request, payload)
+        if source_army is None:
+            return None
+        mgr = getattr(source_army, "adeptus_mechanicus_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_haloscreed_battle_clade", lambda: False)()):
+            return None
+        selected_vals = payload.get("selected_unit_ids")
+        if not isinstance(selected_vals, list):
+            selected_vals = []
+        if not selected_vals:
+            one_target = payload.get("target_unit_id") or payload.get("unit_id")
+            if one_target:
+                selected_vals = [one_target]
+        selected_ids = [str(v or "").strip() for v in list(selected_vals or []) if str(v or "").strip()]
+        try:
+            battle_round = int(ctx.get("battle_round", 0) or getattr(game, "turn", 0) or 0)
+        except Exception:
+            battle_round = int(getattr(game, "turn", 0) or 0)
+        player = _resolve_player(game, request, payload)
+        select_fn = getattr(mgr, "select_noospheric_unit_selection", None)
+        if not callable(select_fn):
+            return None
+        outcome = select_fn(
+            selected_ids,
+            game=game,
+            player=player,
+            battle_round=int(battle_round),
+        )
+        if outcome is not None:
+            owner = getattr(source_army, "player", None)
+            names = [str(v or "").strip() for v in list((outcome or {}).get("selected_unit_names", []) or []) if str(v or "").strip()]
+            if names:
+                joined_names = ", ".join(names)
+                _log_action_for_players(
+                    game,
+                    owner,
+                    f"Noospheric Transference: selected {joined_names} to gain HALO OVERRIDE until your next Command phase.",
+                )
+            queue_override = getattr(mgr, "queue_noospheric_override_request", None)
+            if callable(queue_override):
+                queue_override(game=game, player=player, battle_round=int(battle_round))
+        return outcome
+    if ability == "noospheric_transference_override":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        source_army = _resolve_army(game, request, payload)
+        if source_army is None:
+            return None
+        mgr = getattr(source_army, "adeptus_mechanicus_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_haloscreed_battle_clade", lambda: False)()):
+            return None
+        choice_key = str(payload.get("choice_key") or payload.get("override_key") or "").strip()
+        if not choice_key:
+            return None
+        try:
+            battle_round = int(ctx.get("battle_round", 0) or getattr(game, "turn", 0) or 0)
+        except Exception:
+            battle_round = int(getattr(game, "turn", 0) or 0)
+        player = _resolve_player(game, request, payload)
+        select_fn = getattr(mgr, "select_noospheric_override_choice", None)
+        if not callable(select_fn):
+            return None
+        outcome = select_fn(
+            choice_key,
+            game=game,
+            player=player,
+            battle_round=int(battle_round),
+        )
+        if outcome is not None:
+            owner = getattr(source_army, "player", None)
+            label = str((outcome or {}).get("choice_label", "") or choice_key.replace("_", " ").title())
+            _log_action_for_players(
+                game,
+                owner,
+                f"Noospheric Transference: selected {label} for friendly HALO OVERRIDE units until your next Command phase.",
             )
         return outcome
     if ability == "rad_bombardment":
