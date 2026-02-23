@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import math
+import uuid
 from dataclasses import dataclass
 from typing import Any, Optional
 
 from .detachment_manager import DetachmentManagerBase
-from ..utility.aura_utils import unit_within_range_of_unit
+from ..utility.aura_utils import horizontal_distance_point_to_model_base_2d, unit_within_range_of_unit
 from ..utility.dice import get_roll
 from ..utility.entity_ids import get_entity_id
 
@@ -54,6 +56,26 @@ _LEADER_BEASTS_TYRANID_WARRIOR_UNIT_NAMES = {
     "tyranid warriors with melee bio weapons",
 }
 _ENRAGED_BEHEMOTHS_SOURCE = "Enraged Behemoths"
+_SURPRISE_ASSAULT_SOURCE = "Surprise Assault"
+_SUBTERRANEAN_ASSAULT_TRYGON_SELECTION_ABILITY = "subterranean_assault_trygon_character_selection"
+_SUBTERRANEAN_ASSAULT_TUNNEL_MARKER_PLACEMENT_ABILITY = "subterranean_assault_tunnel_marker_placement"
+_TUNNEL_MARKER_HORIZONTAL_RANGE = 9.0
+_TUNNEL_MARKER_ENEMY_DISTANCE = 6.0
+_TUNNEL_MARKER_REMOVAL_DISTANCE = 3.0
+_TUNNEL_MARKER_PLACE_WITHIN_UNIT_DISTANCE = 1.0
+
+
+@dataclass
+class TunnelMarker:
+    marker_id: str
+    x: float
+    y: float
+    z: float = 0.0
+    active: bool = True
+
+    @property
+    def id(self) -> str:
+        return self.marker_id
 
 
 class TyranidsDetachmentManager(DetachmentManagerBase):
@@ -63,6 +85,8 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
         super().__init__(army)
         self.active_hyper_adaptation_key: Optional[str] = None
         self.hyper_adaptation_selected_round: Optional[int] = None
+        self.tunnel_markers: list[TunnelMarker] = []
+        self._subterranean_assault_trygon_selection_resolved: bool = False
 
     def is_invasion_fleet(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -154,6 +178,77 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
             model._objective_control = int(oc)
         if hasattr(model, "_objective_control_raw"):
             model._objective_control_raw = str(int(oc))
+
+    def _unit_datasheet_name_norm(self, unit) -> str:
+        root = self._unit_root(unit)
+        if root is None:
+            return ""
+        return self._norm(str(getattr(root, "name", "") or ""))
+
+    def _unit_is_trygon_datasheet(self, unit) -> bool:
+        name_norm = self._unit_datasheet_name_norm(unit)
+        return bool(name_norm) and "trygon" in name_norm
+
+    def _unit_is_mawloc_or_trygon_datasheet(self, unit) -> bool:
+        name_norm = self._unit_datasheet_name_norm(unit)
+        if not name_norm:
+            return False
+        return "mawloc" in name_norm or "trygon" in name_norm
+
+    def _unit_is_burrower(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if self._unit_has_keyword(root, "BURROWER"):
+            return True
+        for model in list(getattr(root, "models", []) or []):
+            if self._model_keyword(model, "BURROWER"):
+                return True
+        return False
+
+    def apply_subterranean_assault_burrower_keywords(self, unit=None) -> None:
+        """
+        Subterranean Assault - Surprise Assault:
+        Mawloc and Trygon units gain BURROWER.
+        """
+        if not self.is_subterranean_assault() or self.army is None:
+            return
+        if unit is None:
+            units = list(getattr(self.army, "units", []) or [])
+        else:
+            units = [unit]
+        seen: set[str] = set()
+        for entry in units:
+            root = self._unit_root(entry)
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "").strip()
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            if not self._unit_in_army(root):
+                continue
+            if not self._unit_is_mawloc_or_trygon_datasheet(root):
+                continue
+            self._add_keyword_once(root, "Burrower")
+            for model in list(getattr(root, "models", []) or []):
+                self._add_keyword_once(model, "Burrower")
+
+    def surprise_assault_reroll_hit_ones(self, model, *, unit=None, game=None) -> tuple[bool, str]:
+        if not self.is_subterranean_assault():
+            return False, ""
+        if model is None:
+            return False, ""
+        source_unit = unit if unit is not None else getattr(model, "parent_unit", None)
+        root = self._unit_root(source_unit)
+        if root is None:
+            return False, ""
+        if not self._unit_in_army(root):
+            return False, ""
+        if not self._unit_is_tyranids(root) and not self._model_keyword(model, "TYRANIDS"):
+            return False, ""
+        return True, _SURPRISE_ASSAULT_SOURCE
 
     def apply_warrior_bioform_leader_beasts(self, unit=None) -> None:
         """
@@ -884,10 +979,453 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
             if hasattr(game, "request_decision"):
                 game.request_decision(request)
 
+    def get_active_tunnel_markers(self) -> list[TunnelMarker]:
+        markers = [marker for marker in list(self.tunnel_markers or []) if bool(getattr(marker, "active", False))]
+        return sorted(markers, key=lambda marker: str(getattr(marker, "marker_id", "") or ""))
+
+    def _subterranean_assault_trygon_candidates(self) -> list:
+        if not self.is_subterranean_assault():
+            return []
+        candidates = []
+        seen: set[str] = set()
+        for root in self._iter_army_roots():
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "").strip()
+            if not root_id or root_id in seen:
+                continue
+            if not self._unit_in_army(root):
+                continue
+            if not self._unit_is_tyranids(root):
+                continue
+            if not self._unit_is_trygon_datasheet(root):
+                continue
+            candidates.append(root)
+            seen.add(root_id)
+        candidates.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+        return candidates
+
+    def _pending_subterranean_assault_trygon_request(self, game, *, army_id: str) -> bool:
+        if game is None:
+            return False
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        from ..engine.decision_kinds import DECISION_SELECT_REALM_OF_CHAOS_UNITS
+
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != DECISION_SELECT_REALM_OF_CHAOS_UNITS:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "").strip().lower() != _SUBTERRANEAN_ASSAULT_TRYGON_SELECTION_ABILITY:
+                continue
+            if str(ctx.get("army_id", "") or "") != str(army_id or ""):
+                continue
+            return True
+        return False
+
+    def queue_subterranean_assault_trygon_character_selection_request(self, *, game=None, player=None) -> None:
+        if not self.is_subterranean_assault():
+            return
+        if self.army is None:
+            return
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return
+        if self._subterranean_assault_trygon_selection_resolved:
+            return
+
+        from ..engine.decision_kinds import DECISION_SELECT_REALM_OF_CHAOS_UNITS
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return
+        candidates = list(self._subterranean_assault_trygon_candidates() or [])
+        if not candidates:
+            self._subterranean_assault_trygon_selection_resolved = True
+            return
+        army_id = str(get_entity_id(self.army) or "")
+        if self._pending_subterranean_assault_trygon_request(game, army_id=army_id):
+            return
+
+        candidate_ids = [str(get_entity_id(unit) or "") for unit in candidates if str(get_entity_id(unit) or "")]
+        if not candidate_ids:
+            self._subterranean_assault_trygon_selection_resolved = True
+            return
+        request = DecisionRequest.create(
+            DECISION_SELECT_REALM_OF_CHAOS_UNITS,
+            "Surprise Assault: select up to two TRYGON models to gain CHARACTER.",
+            player_id=getattr(owner, "id", None),
+            options=[
+                DecisionOption.create("Confirm", payload={"action": "confirm"}),
+                DecisionOption.create("None", payload={"action": "skip"}),
+            ],
+            context={
+                "army_id": army_id,
+                "ability": _SUBTERRANEAN_ASSAULT_TRYGON_SELECTION_ABILITY,
+                "ability_name": "Surprise Assault",
+                "phase": "Muster Armies step",
+                "max_units": 2,
+                "allowed_unit_ids": list(candidate_ids),
+                "title": "Surprise Assault",
+                "subtitle": "Select up to two TRYGON units.",
+                "instruction": "Selected TRYGON units gain the CHARACTER keyword.",
+                "skip_label": "None (do not select TRYGON units)",
+            },
+        )
+        if hasattr(game, "request_decision"):
+            game.request_decision(request)
+
+    def subterranean_assault_trygon_selection_is_valid(self, unit_ids, *, game=None) -> tuple[bool, str]:
+        if not self.is_subterranean_assault():
+            return False, "Surprise Assault is not active for this army."
+        if unit_ids is None:
+            return True, ""
+        if not isinstance(unit_ids, list):
+            return False, "Surprise Assault selection requires unit_ids."
+        unique_ids = sorted({str(uid or "").strip() for uid in list(unit_ids or []) if str(uid or "").strip()})
+        if len(unique_ids) > 2:
+            return False, "Surprise Assault can select at most two TRYGON units."
+        candidates = {
+            str(get_entity_id(unit) or ""): unit
+            for unit in list(self._subterranean_assault_trygon_candidates() or [])
+            if str(get_entity_id(unit) or "")
+        }
+        for uid in unique_ids:
+            if uid not in candidates:
+                return False, "Surprise Assault selection contains an ineligible unit."
+        return True, ""
+
+    def apply_subterranean_assault_trygon_character_selection(self, unit_ids, *, game=None) -> list[str]:
+        selected = list(unit_ids or [])
+        valid, _reason = self.subterranean_assault_trygon_selection_is_valid(selected, game=game)
+        if not valid:
+            return []
+        candidate_by_id = {
+            str(get_entity_id(unit) or ""): unit
+            for unit in list(self._subterranean_assault_trygon_candidates() or [])
+            if str(get_entity_id(unit) or "")
+        }
+        applied_ids: list[str] = []
+        for unit_id in sorted({str(uid or "").strip() for uid in selected if str(uid or "").strip()}):
+            root = candidate_by_id.get(unit_id)
+            if root is None:
+                continue
+            self._add_keyword_once(root, "Character")
+            for model in list(getattr(root, "models", []) or []):
+                self._add_keyword_once(model, "Character")
+            applied_ids.append(unit_id)
+        self._subterranean_assault_trygon_selection_resolved = True
+        return list(applied_ids)
+
+    def _pending_subterranean_assault_tunnel_marker_request(self, game, *, unit_id: str) -> bool:
+        if game is None:
+            return False
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        from ..engine.decision_kinds import DECISION_PICK_POINT
+
+        target_id = str(unit_id or "")
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != DECISION_PICK_POINT:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "").strip().lower() != _SUBTERRANEAN_ASSAULT_TUNNEL_MARKER_PLACEMENT_ABILITY:
+                continue
+            if str(ctx.get("unit_id", "") or "") != target_id:
+                continue
+            return True
+        return False
+
+    def _marker_within_burrower_unit_distance(self, unit, *, x: float, y: float) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        get_models = getattr(root, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+        for model in list(models or []):
+            if not self._model_is_alive(model):
+                continue
+            if float(horizontal_distance_point_to_model_base_2d(model, x, y)) <= _TUNNEL_MARKER_PLACE_WITHIN_UNIT_DISTANCE + 1e-6:
+                return True
+        return False
+
+    def _iter_enemy_models_on_battlefield(self, game, *, owner_player=None) -> list:
+        if game is None:
+            return []
+        owner = owner_player if owner_player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return []
+        try:
+            enemy_units = list(getattr(game, "get_enemy_units", lambda _p: [])(owner) or [])
+        except Exception:
+            enemy_units = []
+        enemy_models = []
+        for enemy in list(enemy_units or []):
+            root = self._unit_root(enemy)
+            if root is None:
+                continue
+            if not self._unit_on_battlefield(root):
+                continue
+            for model in list(getattr(root, "models", []) or []):
+                if not self._model_is_alive(model):
+                    continue
+                enemy_models.append(model)
+        enemy_models.sort(key=lambda model: str(get_entity_id(model) or ""))
+        return enemy_models
+
+    def _tunnel_marker_position_valid(self, game, unit, *, x: float, y: float) -> tuple[bool, str]:
+        if game is None:
+            return False, "Game context is required for Tunnel Marker placement."
+        try:
+            width = float(getattr(getattr(game, "battlefield", None), "width", 0.0) or 0.0)
+            height = float(getattr(getattr(game, "battlefield", None), "height", 0.0) or 0.0)
+        except Exception:
+            return False, "Battlefield dimensions are unavailable."
+        if x < 0.0 or y < 0.0 or x > width or y > height:
+            return False, "Tunnel Marker must be within battlefield bounds."
+        if not self._marker_within_burrower_unit_distance(unit, x=x, y=y):
+            return False, "Tunnel Marker must be within 1\" of the arriving Burrower unit."
+        for enemy_model in self._iter_enemy_models_on_battlefield(game):
+            if float(horizontal_distance_point_to_model_base_2d(enemy_model, x, y)) <= _TUNNEL_MARKER_REMOVAL_DISTANCE + 1e-6:
+                return False, "Tunnel Marker must be more than 3\" from enemy units."
+        return True, ""
+
+    def validate_subterranean_assault_tunnel_marker_point(self, *, unit, point, game=None) -> tuple[bool, str]:
+        if not self.is_subterranean_assault():
+            return False, "Surprise Assault is not active for this army."
+        root = self._unit_root(unit)
+        if root is None:
+            return False, "Tunnel Marker placement requires an arriving unit."
+        if not self._unit_in_army(root):
+            return False, "Tunnel Marker unit is not part of this army."
+        if not self._unit_is_burrower(root):
+            return False, "Tunnel Marker placement requires a Burrower unit."
+        if not isinstance(point, (list, tuple)) or len(point) < 2:
+            return False, "Tunnel Marker point is missing coordinates."
+        try:
+            x = float(point[0])
+            y = float(point[1])
+        except (TypeError, ValueError):
+            return False, "Tunnel Marker coordinates must be numeric."
+        return self._tunnel_marker_position_valid(game, root, x=x, y=y)
+
+    def _publish_tunnel_markers_updated(self, game) -> None:
+        if game is None:
+            return
+        event_system = getattr(game, "event_system", None)
+        if event_system is None:
+            return
+        event_system.publish(
+            "subterranean_assault_tunnel_markers_updated",
+            army=self.army,
+            markers=self.get_active_tunnel_markers(),
+        )
+
+    def place_tunnel_marker_at(self, *, game=None, unit=None, x: float, y: float) -> Optional[TunnelMarker]:
+        root = self._unit_root(unit)
+        valid, _reason = self.validate_subterranean_assault_tunnel_marker_point(
+            unit=root,
+            point=(x, y),
+            game=game,
+        )
+        if not valid:
+            return None
+        z = 0.0
+        map_obj = getattr(game, "map", None) if game is not None else None
+        height_fn = getattr(map_obj, "get_height_at_point", None) if map_obj is not None else None
+        if callable(height_fn):
+            z = float(height_fn(float(x), float(y)))
+        marker = TunnelMarker(
+            marker_id=str(uuid.uuid4()),
+            x=float(x),
+            y=float(y),
+            z=float(z),
+            active=True,
+        )
+        self.tunnel_markers.append(marker)
+        self._publish_tunnel_markers_updated(game)
+        return marker
+
+    def remove_tunnel_marker(self, marker: TunnelMarker) -> None:
+        if marker is None:
+            return
+        marker.active = False
+
+    @staticmethod
+    def _base_longest_radius(base, *, fallback_model=None) -> float:
+        if base is None and fallback_model is not None:
+            base = getattr(fallback_model, "model_base", None)
+        if base is None:
+            return 0.0
+        if hasattr(base, "get_longest_radius"):
+            return float(base.get_longest_radius())
+        if hasattr(base, "get_radius"):
+            return float(base.get_radius())
+        radius = getattr(base, "radius", None)
+        if isinstance(radius, (list, tuple)) and radius:
+            return float(radius[0])
+        return float(radius) if radius is not None else 0.0
+
+    def _placements_wholly_within_tunnel_marker(
+        self,
+        unit,
+        placements: list[tuple[float, float, float, float]],
+        *,
+        marker: TunnelMarker,
+        max_distance: float,
+    ) -> bool:
+        models = list(getattr(unit, "models", []) or [])
+        for idx, placement in enumerate(list(placements or [])):
+            if idx >= len(models):
+                break
+            model = models[idx]
+            x, y, z, facing = placement
+            if hasattr(unit, "_create_potential_base"):
+                try:
+                    base = unit._create_potential_base(x, y, z, facing, model=model)
+                except Exception:
+                    base = None
+            else:
+                base = None
+            if base is None:
+                base = getattr(model, "model_base", None)
+            if base is None:
+                return False
+            try:
+                bx = float(getattr(base, "x", x))
+                by = float(getattr(base, "y", y))
+            except Exception:
+                bx = float(x)
+                by = float(y)
+            radius = float(self._base_longest_radius(base, fallback_model=model))
+            center_dist = float(math.hypot(bx - float(marker.x), by - float(marker.y)))
+            if center_dist + radius > float(max_distance) + 1e-6:
+                return False
+        return True
+
+    def subterranean_assault_arrival_marker_for_positions(
+        self,
+        unit,
+        placements: list[tuple[float, float, float, float]],
+        *,
+        game=None,
+    ) -> Optional[TunnelMarker]:
+        if not self.is_subterranean_assault():
+            return None
+        if unit is None:
+            return None
+        if not placements:
+            return None
+        root = self._unit_root(unit)
+        if root is None:
+            return None
+        if not self._unit_in_army(root):
+            return None
+        if not self._unit_is_tyranids(root):
+            return None
+        for marker in list(self.get_active_tunnel_markers() or []):
+            if self._placements_wholly_within_tunnel_marker(
+                root,
+                list(placements),
+                marker=marker,
+                max_distance=_TUNNEL_MARKER_HORIZONTAL_RANGE,
+            ):
+                return marker
+        return None
+
+    def on_unit_set_up(self, *, unit=None, game=None, set_up_as_reinforcements: bool = False) -> None:
+        if not self.is_subterranean_assault():
+            return
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return
+        if not bool(set_up_as_reinforcements):
+            return
+        root = self._unit_root(unit)
+        if root is None:
+            return
+        if not self._unit_in_army(root):
+            return
+        if not self._unit_is_tyranids(root):
+            return
+        if not self._unit_is_burrower(root):
+            return
+        unit_id = str(get_entity_id(root) or "")
+        if not unit_id:
+            return
+        if self._pending_subterranean_assault_tunnel_marker_request(game, unit_id=unit_id):
+            return
+
+        from ..engine.decision_kinds import DECISION_PICK_POINT
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        owner = getattr(self.army, "player", None)
+        if owner is None:
+            return
+        request = DecisionRequest.create(
+            DECISION_PICK_POINT,
+            f"Surprise Assault: place a Tunnel Marker for {getattr(root, 'name', 'Burrower unit')}.",
+            player_id=getattr(owner, "id", None),
+            options=[DecisionOption.create("Confirm", payload={"action": "confirm"})],
+            context={
+                "ability": _SUBTERRANEAN_ASSAULT_TUNNEL_MARKER_PLACEMENT_ABILITY,
+                "ability_name": "Surprise Assault",
+                "phase": "Movement phase - Reinforcements step",
+                "army_id": str(get_entity_id(self.army) or ""),
+                "unit_id": unit_id,
+                "unit_name": str(getattr(root, "name", "") or "Burrower unit"),
+                "place_within_unit_distance": _TUNNEL_MARKER_PLACE_WITHIN_UNIT_DISTANCE,
+                "min_enemy_distance": _TUNNEL_MARKER_REMOVAL_DISTANCE,
+            },
+        )
+        if hasattr(game, "request_decision"):
+            game.request_decision(request)
+
+    def apply_subterranean_assault_tunnel_marker_point(self, *, unit=None, point=None, game=None) -> Optional[TunnelMarker]:
+        root = self._unit_root(unit)
+        valid, _reason = self.validate_subterranean_assault_tunnel_marker_point(
+            unit=root,
+            point=point,
+            game=game,
+        )
+        if not valid:
+            return None
+        x = float(point[0])
+        y = float(point[1])
+        return self.place_tunnel_marker_at(game=game, unit=root, x=x, y=y)
+
+    def on_enemy_unit_move_ended(self, enemy_unit, *, game=None) -> None:
+        if not self.is_subterranean_assault():
+            return
+        root = self._unit_root(enemy_unit)
+        if root is None:
+            return
+        enemy_army = getattr(root, "get_parent_army", lambda: None)()
+        if enemy_army is self.army:
+            return
+        if self._unit_has_keyword(root, "AIRCRAFT"):
+            return
+        if not self._unit_on_battlefield(root):
+            return
+        removed_any = False
+        for marker in list(self.get_active_tunnel_markers() or []):
+            for model in list(getattr(root, "models", []) or []):
+                if not self._model_is_alive(model):
+                    continue
+                if float(horizontal_distance_point_to_model_base_2d(model, marker.x, marker.y)) <= _TUNNEL_MARKER_REMOVAL_DISTANCE + 1e-6:
+                    self.remove_tunnel_marker(marker)
+                    removed_any = True
+                    break
+        if removed_any:
+            self._publish_tunnel_markers_updated(game)
+
     def _army_has_hyper_adaptations(self) -> bool:
         return self.is_invasion_fleet()
 
     def validate_detachment_rules(self) -> list[str]:
+        if self.is_subterranean_assault():
+            self.apply_subterranean_assault_burrower_keywords()
         if self.is_warrior_bioform_onslaught():
             self.apply_warrior_bioform_leader_beasts()
         return []

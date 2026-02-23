@@ -3775,8 +3775,94 @@ class GameView:
                 DECISION_USE_GILDED_CHAMPION,
                 DECISION_CHOOSE_MALEFIC_SURGE_UNIT,
                 DECISION_CHOOSE_MALEFIC_SURGE_ABILITY,
+                DECISION_PICK_POINT,
             )
         except Exception:
+            return
+
+        if decision_type == DECISION_PICK_POINT:
+            if self.cult_ambush_point_dialog is None:
+                return
+            from ..utility.decision_utils import resolve_decision_command
+            from .decision_ui_utils import first_option_id, option_id_for_action
+
+            ctx = dict(getattr(request, "context", {}) or {})
+            ability_key = str(ctx.get("ability", "") or "").strip().lower()
+
+            title = str(ctx.get("ability_name", "") or getattr(request, "prompt", "") or "Select Point")
+            instructions = str(ctx.get("instruction", "") or "Select a point on the battlefield.")
+            if ability_key == "subterranean_assault_tunnel_marker_placement":
+                instructions = (
+                    "Select a Tunnel Marker position within 1\" of the arriving Burrower unit "
+                    "and more than 3\" from enemy units."
+                )
+
+            def _validate_point(x, y):
+                if ability_key == "subterranean_assault_tunnel_marker_placement":
+                    unit_id = str(ctx.get("unit_id", "") or "")
+                    unit = self._resolve_unit_by_id(unit_id)
+                    if unit is None:
+                        return {"valid": False, "reason": "Burrower unit not found."}
+                    army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
+                    mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+                    validate_fn = getattr(mgr, "validate_subterranean_assault_tunnel_marker_point", None) if mgr is not None else None
+                    if not callable(validate_fn):
+                        return {"valid": False, "reason": "Tunnel Marker validation unavailable."}
+                    valid, reason = validate_fn(unit=unit, point=(float(x), float(y)), game=self.game)
+                    if not bool(valid):
+                        return {"valid": False, "reason": str(reason or "Invalid point.")}
+                    return {"valid": True, "reason": "OK"}
+                return {"valid": True, "reason": "OK"}
+
+            def _on_confirm(option_id: str, point):
+                resolve_decision_command(
+                    self.game,
+                    request,
+                    option_id,
+                    result_payload={"point": list(point)},
+                    player_id=getattr(player, "id", None),
+                )
+                try:
+                    self.cult_ambush_point_dialog.hide()
+                except Exception:
+                    pass
+
+            def _on_cancel():
+                skip_id = option_id_for_action(request, "skip")
+                if skip_id:
+                    resolve_decision_command(
+                        self.game,
+                        request,
+                        skip_id,
+                        result_payload={"skipped": True},
+                        player_id=getattr(player, "id", None),
+                    )
+                else:
+                    default_id = first_option_id(request)
+                    if default_id:
+                        try:
+                            self.cult_ambush_point_dialog.hide()
+                        except Exception:
+                            pass
+                    return
+                try:
+                    self.cult_ambush_point_dialog.hide()
+                except Exception:
+                    pass
+
+            self.cult_ambush_point_dialog.show(
+                game_view=self,
+                title=title,
+                instructions=instructions,
+                validate_cb=_validate_point,
+                on_confirm=_on_confirm,
+                on_cancel=_on_cancel,
+                decision_request=request,
+            )
+            try:
+                self.dialog_manager.open(self.cult_ambush_point_dialog, modal=True)
+            except Exception:
+                pass
             return
 
         if decision_type == DECISION_CHOOSE_BLESSINGS:

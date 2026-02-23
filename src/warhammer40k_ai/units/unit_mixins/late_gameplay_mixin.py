@@ -1802,6 +1802,11 @@ class LateGameplayMixin:
                 delattr(self, "_pending_reserves_deep_strike")
         except Exception:
             pass
+        try:
+            if hasattr(self, "_pending_reserves_tunnel_marker_id"):
+                delattr(self, "_pending_reserves_tunnel_marker_id")
+        except Exception:
+            pass
 
         # Update unit status
         self.deployed = True

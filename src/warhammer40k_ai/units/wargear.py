@@ -8951,6 +8951,20 @@ class WargearProfile:
                     reroll_value_reasons.append(f"{source_name}: re-roll Hit roll of 1")
         except Exception:
             pass
+        # Tyranids: Subterranean Assault (Surprise Assault).
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+            tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+            if tyr_mgr is not None and callable(getattr(tyr_mgr, "surprise_assault_reroll_hit_ones", None)):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                reroll_hit_ones, source = tyr_mgr.surprise_assault_reroll_hit_ones(attacker, unit=unit, game=game)
+                if bool(reroll_hit_ones):
+                    reroll_hit_values.add(1)
+                    source_name = str(source or "Surprise Assault").strip() or "Surprise Assault"
+                    reroll_value_reasons.append(f"{source_name}: re-roll Hit roll of 1")
+        except Exception:
+            pass
 
         hit_result["reroll_values"] = list(sorted(reroll_hit_values))
         hit_result["reroll_value_reasons"] = list(reroll_value_reasons)

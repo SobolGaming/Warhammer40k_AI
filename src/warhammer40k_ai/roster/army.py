@@ -474,6 +474,9 @@ class Army:
         if callable(apply_fn):
             apply_fn(unit)
         tyr_mgr = getattr(self, "tyranids_detachments", None)
+        apply_fn = getattr(tyr_mgr, "apply_subterranean_assault_burrower_keywords", None) if tyr_mgr is not None else None
+        if callable(apply_fn):
+            apply_fn(unit)
         apply_fn = getattr(tyr_mgr, "apply_warrior_bioform_leader_beasts", None) if tyr_mgr is not None else None
         if callable(apply_fn):
             apply_fn(unit)

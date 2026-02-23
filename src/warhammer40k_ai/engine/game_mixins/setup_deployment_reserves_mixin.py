@@ -982,6 +982,16 @@ class GameSetupDeploymentReservesMixin:
         if not prospective:
             return False
 
+        tunnel_marker = None
+        try:
+            army = unit.get_parent_army()
+        except Exception:
+            army = None
+        tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+        marker_fn = getattr(tyr_mgr, "subterranean_assault_arrival_marker_for_positions", None) if tyr_mgr is not None else None
+        if callable(marker_fn):
+            tunnel_marker = marker_fn(unit, list(prospective), game=self)
+
         for m, loc in zip(unit.models, prospective):
             if loc:
                 m.set_location(*loc)
@@ -1017,7 +1027,7 @@ class GameSetupDeploymentReservesMixin:
                     if loc:
                         m.set_location(*loc)
                 return False
-        if battlefield_edge is None:
+        if battlefield_edge is None and tunnel_marker is None:
             valid_dark_apparitions = True
             try:
                 checker = getattr(unit, "is_dark_apparitions_arrival_valid", None)
@@ -1042,7 +1052,9 @@ class GameSetupDeploymentReservesMixin:
             if loc:
                 m.set_location(*loc)
 
-        if battlefield_edge is None:
+        if tunnel_marker is not None:
+            min_enemy_distance = float(6.0)
+        if battlefield_edge is None and tunnel_marker is None:
             try:
                 if hasattr(unit, "get_deep_strike_min_distance_override"):
                     override = unit.get_deep_strike_min_distance_override()
@@ -1083,7 +1095,7 @@ class GameSetupDeploymentReservesMixin:
             mb = unit._create_potential_base(x, y, z, facing, model=unit.models[idx])
             for enemy_root, em in list(enemy_models or []):
                 required_distance = float(min_enemy_distance)
-                if battlefield_edge is None:
+                if battlefield_edge is None and tunnel_marker is None:
                     try:
                         per_enemy = None
                         if hasattr(unit, "get_deep_strike_min_distance_vs_enemy"):
@@ -1104,20 +1116,29 @@ class GameSetupDeploymentReservesMixin:
 
         if unit.is_in_strategic_reserves():
             deep_strike_ok = bool(unit.has_deep_strike())
-            ok = bool(strategic_ok or deep_strike_ok)
+            tunnel_ok = bool(tunnel_marker is not None)
+            ok = bool(strategic_ok or deep_strike_ok or tunnel_ok)
             # If we are validating Strategic edge placement and it required the edge-touch exception,
             # mark it on the unit so `arrive_from_reserves` can apply additional restrictions this turn.
             if ok and strategic_ok and strategic_used_edge_touch:
                 setattr(unit, "_pending_reserves_edge_touch", True)
             if ok:
                 if battlefield_edge is None:
-                    pending_deep_strike = bool(deep_strike_ok)
+                    pending_deep_strike = bool(deep_strike_ok and not tunnel_ok)
                 else:
                     pending_deep_strike = bool(deep_strike_ok and not strategic_ok)
                 setattr(unit, "_pending_reserves_deep_strike", pending_deep_strike)
+                if tunnel_ok:
+                    setattr(unit, "_pending_reserves_tunnel_marker_id", str(getattr(tunnel_marker, "marker_id", "") or ""))
+                elif hasattr(unit, "_pending_reserves_tunnel_marker_id"):
+                    delattr(unit, "_pending_reserves_tunnel_marker_id")
             return ok
 
-        setattr(unit, "_pending_reserves_deep_strike", True)
+        setattr(unit, "_pending_reserves_deep_strike", tunnel_marker is None)
+        if tunnel_marker is not None:
+            setattr(unit, "_pending_reserves_tunnel_marker_id", str(getattr(tunnel_marker, "marker_id", "") or ""))
+        elif hasattr(unit, "_pending_reserves_tunnel_marker_id"):
+            delattr(unit, "_pending_reserves_tunnel_marker_id")
         return True
 
     def is_valid_strategic_reserves_edge(self, battlefield_edge: str, *, turn: Optional[int] = None) -> bool:
@@ -1537,12 +1558,19 @@ class GameSetupDeploymentReservesMixin:
                 army = player.get_army()
                 if army is None:
                     raise RuntimeError(f"Missing army for {player.name} during mustering.")
-                pending = list(army.get_pending_daemonic_allegiance_units() or [])
-                if not pending:
-                    continue
                 if not bool(getattr(self, "is_authoritative", True)):
                     continue
-                army.resolve_daemonic_allegiances(player=player, game=self)
+                pending = list(army.get_pending_daemonic_allegiance_units() or [])
+                if pending:
+                    army.resolve_daemonic_allegiances(player=player, game=self)
+                tyr_mgr = getattr(army, "tyranids_detachments", None)
+                queue_trygon_fn = getattr(
+                    tyr_mgr,
+                    "queue_subterranean_assault_trygon_character_selection_request",
+                    None,
+                ) if tyr_mgr is not None else None
+                if callable(queue_trygon_fn):
+                    queue_trygon_fn(game=self, player=player)
         else:
             logger.info("Not enough players loaded")
 

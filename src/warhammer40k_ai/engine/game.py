@@ -2566,7 +2566,7 @@ class Game(
         if unit is None:
             return
         action_key = str(action or "").strip().lower()
-        if action_key not in ("move", "advance", "fall_back", "charge"):
+        if action_key not in ("move", "advance", "fall_back", "charge", "pile_in", "consolidate"):
             return
 
         get_moving_root = getattr(unit, "get_attached_unit_root", None)
@@ -3100,6 +3100,12 @@ class Game(
                                     },
                                 )
                                 self.request_decision(request)
+
+            tyr_mgr = getattr(reacting_army, "tyranids_detachments", None)
+            if tyr_mgr is not None:
+                on_enemy_move_fn = getattr(tyr_mgr, "on_enemy_unit_move_ended", None)
+                if callable(on_enemy_move_fn):
+                    on_enemy_move_fn(moving_root, game=self)
 
             ae_mgr = getattr(reacting_army, "aeldari_detachments", None)
             if ae_mgr is None:
@@ -4810,6 +4816,34 @@ class Game(
         if army is None:
             return
         mgr = getattr(army, "genestealer_cults_detachments", None)
+        if mgr is None:
+            return
+        on_unit_set_up = getattr(mgr, "on_unit_set_up", None)
+        if not callable(on_unit_set_up):
+            return
+        on_unit_set_up(
+            unit=root,
+            game=self,
+            set_up_as_reinforcements=bool(set_up_as_reinforcements),
+        )
+
+    def _on_unit_set_up_tyranids_detachments(
+        self,
+        unit=None,
+        set_up_as_reinforcements: bool = False,
+        **_kwargs,
+    ) -> None:
+        if unit is None:
+            return
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else unit
+        if root is None:
+            return
+        get_parent_army = getattr(root, "get_parent_army", None)
+        army = get_parent_army() if callable(get_parent_army) else None
+        if army is None:
+            return
+        mgr = getattr(army, "tyranids_detachments", None)
         if mgr is None:
             return
         on_unit_set_up = getattr(mgr, "on_unit_set_up", None)

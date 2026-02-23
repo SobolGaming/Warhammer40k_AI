@@ -915,13 +915,26 @@ def _evaluate_reserves_arrival_positions(
                 selected_edge = edge
                 break
 
+    tunnel_marker = None
+    try:
+        army = unit.get_parent_army()
+    except Exception:
+        army = None
+    tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+    marker_fn = getattr(tyr_mgr, "subterranean_assault_arrival_marker_for_positions", None) if tyr_mgr is not None else None
+    if callable(marker_fn):
+        tunnel_marker = marker_fn(unit, list(prospective), game=game)
+
     deep_strike_ok = True
     if bool(getattr(unit, "is_in_strategic_reserves", lambda: False)()):
         try:
             deep_strike_ok = bool(getattr(unit, "has_deep_strike", lambda: False)())
         except Exception:
             deep_strike_ok = False
-        if not strategic_ok and not deep_strike_ok:
+        if not strategic_ok and not deep_strike_ok and tunnel_marker is None:
+            has_tunnel_rule = bool(tyr_mgr is not None and getattr(tyr_mgr, "is_subterranean_assault", lambda: False)())
+            if has_tunnel_rule:
+                return {"errors": ["Reserves arrival must be within 6\" of a battlefield edge or wholly within 9\" of a Tunnel Marker."]}
             return {"errors": ["Reserves arrival must be within 6\" of a battlefield edge."]}
 
     battlefield_edge = selected_edge if strategic_ok else None
@@ -930,8 +943,10 @@ def _evaluate_reserves_arrival_positions(
         min_enemy_distance = float(getattr(game, "_warp_rifts_min_distance")(unit) or 9.0)
     except Exception:
         min_enemy_distance = 9.0
+    if tunnel_marker is not None:
+        min_enemy_distance = 6.0
 
-    if battlefield_edge is None:
+    if battlefield_edge is None and tunnel_marker is None:
         try:
             if hasattr(unit, "get_deep_strike_min_distance_override"):
                 override = unit.get_deep_strike_min_distance_override()
@@ -1014,7 +1029,7 @@ def _evaluate_reserves_arrival_positions(
                 except Exception:
                     continue
                 required_distance = float(min_enemy_distance)
-                if battlefield_edge is None:
+                if battlefield_edge is None and tunnel_marker is None:
                     try:
                         per_enemy = None
                         if hasattr(unit, "get_deep_strike_min_distance_vs_enemy"):
@@ -1038,9 +1053,9 @@ def _evaluate_reserves_arrival_positions(
 
     pending_deep_strike = False
     if bool(getattr(unit, "is_in_strategic_reserves", lambda: False)()):
-        pending_deep_strike = bool(deep_strike_ok and not strategic_ok)
+        pending_deep_strike = bool(deep_strike_ok and not strategic_ok and tunnel_marker is None)
     else:
-        pending_deep_strike = True
+        pending_deep_strike = bool(tunnel_marker is None)
 
     return {
         "errors": errors,
@@ -1048,6 +1063,7 @@ def _evaluate_reserves_arrival_positions(
         "battlefield_edge": battlefield_edge,
         "edge_touch": bool(strategic_ok and strategic_used_edge_touch),
         "pending_deep_strike": bool(pending_deep_strike),
+        "tunnel_marker_id": str(getattr(tunnel_marker, "marker_id", "") or ""),
     }
 
 
@@ -1077,6 +1093,13 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
             ):
                 sr.pop(k, None)
             unit.special_rules = sr
+            for attr in (
+                "_pending_reserves_edge_touch",
+                "_pending_reserves_deep_strike",
+                "_pending_reserves_tunnel_marker_id",
+            ):
+                if hasattr(unit, attr):
+                    delattr(unit, attr)
         return None
     model_positions = list(result.payload.get("model_positions") or [])
     apply_model_positions(game, model_positions)
@@ -1239,6 +1262,14 @@ def _finalize_reserves_arrival_move(game: object, unit: object, model_positions:
         pass
     try:
         setattr(unit, "_pending_reserves_deep_strike", bool(evaluation.get("pending_deep_strike", False)))
+    except Exception:
+        pass
+    tunnel_marker_id = str(evaluation.get("tunnel_marker_id", "") or "")
+    try:
+        if tunnel_marker_id:
+            setattr(unit, "_pending_reserves_tunnel_marker_id", tunnel_marker_id)
+        elif hasattr(unit, "_pending_reserves_tunnel_marker_id"):
+            delattr(unit, "_pending_reserves_tunnel_marker_id")
     except Exception:
         pass
 
@@ -1509,7 +1540,11 @@ def _validate_pick_point(game: object, request: DecisionRequest, result: Decisio
     errors = list(validate_option_choice(request, result))
     if errors:
         return errors
+    ctx = dict(getattr(request, "context", {}) or {})
+    ability_key = str(ctx.get("ability", "") or "").strip().lower()
     if is_skip_choice(request, result):
+        if ability_key == "subterranean_assault_tunnel_marker_placement":
+            return ("Tunnel Marker placement cannot be skipped.",)
         return ()
     payload = dict(result.payload or {})
     point = payload.get("point")
@@ -1522,18 +1557,47 @@ def _validate_pick_point(game: object, request: DecisionRequest, result: Decisio
             float(point[2])
     except (TypeError, ValueError):
         return ("Point coordinates must be numeric.",)
+    if ability_key == "subterranean_assault_tunnel_marker_placement":
+        unit_id = str(ctx.get("unit_id", "") or "")
+        unit = get_unit(game, unit_id)
+        if unit is None:
+            return ("Tunnel Marker placement requires a valid Burrower unit.",)
+        army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
+        mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+        validate_fn = getattr(mgr, "validate_subterranean_assault_tunnel_marker_point", None) if mgr is not None else None
+        if not callable(validate_fn):
+            return ("Tunnel Marker placement manager is unavailable.",)
+        valid, reason = validate_fn(unit=unit, point=point, game=game)
+        if not bool(valid):
+            return (str(reason or "Tunnel Marker position is invalid."),)
     return ()
 
 
 def _apply_pick_point(game: object, request: DecisionRequest, result: DecisionResult) -> None:
     if is_skip_choice(request, result):
         return None
+    ctx = dict(getattr(request, "context", {}) or {})
+    ability_key = str(ctx.get("ability", "") or "").strip().lower()
     payload = dict(result.payload or {})
     point = payload.get("point") or []
     if not isinstance(point, (list, tuple)) or len(point) < 2:
         return None
     x = float(point[0])
     y = float(point[1])
+    if ability_key == "subterranean_assault_tunnel_marker_placement":
+        unit_id = str(ctx.get("unit_id", "") or "")
+        unit = get_unit(game, unit_id)
+        if unit is None:
+            return None
+        army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
+        mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+        apply_fn = getattr(mgr, "apply_subterranean_assault_tunnel_marker_point", None) if mgr is not None else None
+        if not callable(apply_fn):
+            return None
+        marker = apply_fn(unit=unit, point=point, game=game)
+        if marker is None:
+            return None
+        return (float(getattr(marker, "x", x)), float(getattr(marker, "y", y)), float(getattr(marker, "z", 0.0)))
     if len(point) > 2:
         z = float(point[2])
         return (x, y, z)
