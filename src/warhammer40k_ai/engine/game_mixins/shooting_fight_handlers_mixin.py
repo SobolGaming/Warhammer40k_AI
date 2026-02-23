@@ -7476,6 +7476,81 @@ class GameShootingFightHandlersMixin:
             instance_key=f"{unit_id}:{turn}:{owner_id}:resource_transmutation",
         )
 
+    def _on_shooting_targets_selected_optimal_application(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        del target_units
+        if attacking_unit is None:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            root = attacking_unit
+        if root is None:
+            return
+        army = root.get_parent_army()
+        player = getattr(army, "player", None) if army is not None else None
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(root, "is_alive", lambda: False)()):
+            return
+        if not bool(getattr(root, "deployed", True)):
+            return
+        try:
+            if root.is_in_reserves() or root.is_embarked:
+                return
+        except Exception:
+            pass
+
+        detachment_mgr = getattr(army, "leagues_of_votann_detachments", None) if army is not None else None
+        eligible_fn = (
+            getattr(detachment_mgr, "optimal_application_shooting_unit_eligible", None)
+            if detachment_mgr is not None
+            else None
+        )
+        if not callable(eligible_fn) or not bool(eligible_fn(root)):
+            return
+
+        pe = getattr(army, "prioritised_efficiency", None)
+        if pe is None:
+            return
+        try:
+            if int(getattr(pe, "yield_points", 0) or 0) < 1:
+                return
+        except Exception:
+            return
+
+        active_fn = getattr(root, "_optimal_application_active_for_shooting", None)
+        if callable(active_fn) and bool(active_fn(game=self)):
+            return
+
+        owner_id = str(getattr(player, "id", "") or "")
+        turn = int(getattr(self, "turn", 0) or 0)
+        unit_id = str(get_entity_id(root) or "")
+        if not unit_id:
+            return
+        self._queue_optional_ability_confirmation(
+            player=player,
+            ability_key="optimal_application",
+            ability_name="Optimal Application",
+            message=f"Optimal Application: spend 1 YP for {getattr(root, 'name', 'Unit')}?",
+            context={
+                "ability_name": "Optimal Application",
+                "phase": "Shooting phase",
+                "unit_id": unit_id,
+                "source_unit_id": unit_id,
+                "cost": 1,
+                "turn_owner": owner_id,
+                "turn": int(turn or 0),
+            },
+            payload={
+                "unit_id": unit_id,
+                "source_unit_id": unit_id,
+                "cost": 1,
+            },
+            instance_key=f"{unit_id}:{turn}:{owner_id}:optimal_application",
+        )
+
     def _on_unit_shooting_resolved_resource_transmutation(self, attacker_unit=None, killing_models_by_target=None, **_kwargs) -> None:
         if attacker_unit is None:
             return

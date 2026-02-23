@@ -446,7 +446,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
             predicate=lambda ctxs, _g: any_manager(
                 ctxs,
                 "leagues_of_votann_detachments",
-                ("is_needgaard_oathband", "is_hearthband"),
+                ("is_needgaard_oathband", "is_hearthband", "is_hearthfyre_arsenal"),
             ),
             subscriptions=[
                 ("unit_destroyed", "_on_unit_destroyed_martial_leverage"),
@@ -458,6 +458,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("shooting_targets_selected", "_on_shooting_targets_selected_bastion_shield"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_geomantic_hunters"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_resource_transmutation"),
+                ("shooting_targets_selected", "_on_shooting_targets_selected_optimal_application"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_quake_multigenerator"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_resource_transmutation"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_unhinged_vengeance"),

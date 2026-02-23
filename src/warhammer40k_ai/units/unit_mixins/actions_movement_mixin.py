@@ -3066,6 +3066,49 @@ class ActionsMovementMixin:
                 return False
         return True
 
+    def _optimal_application_active_for_shooting(self, *, game=None) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not sr.get("optimal_application_active"):
+            return False
+        owner_id = str(sr.get("optimal_application_turn_owner", "") or "")
+        try:
+            effect_turn = int(sr.get("optimal_application_turn", 0) or 0)
+        except Exception:
+            effect_turn = 0
+        if game is None:
+            try:
+                army = root.get_parent_army()
+            except Exception:
+                army = None
+            try:
+                game = getattr(getattr(army, "player", None), "game", None)
+            except Exception:
+                game = None
+        if game is None:
+            return True
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_name and phase_name != "SHOOTING_PHASE":
+            return False
+        if owner_id:
+            try:
+                current = game.get_current_player()
+            except Exception:
+                current = None
+            current_id = str(getattr(current, "id", "") or "") if current is not None else ""
+            if current_id and current_id != owner_id:
+                return False
+        if effect_turn:
+            try:
+                if int(getattr(game, "turn", 0) or 0) != effect_turn:
+                    return False
+            except Exception:
+                return False
+        return True
+
     def _needgaard_ordered_retreat_active_this_turn(self, *, game=None) -> bool:
         try:
             root = self.get_attached_unit_root()
@@ -3317,6 +3360,15 @@ class ActionsMovementMixin:
             if atype in ("any", "ranged") and callable(active_fn) and active_fn():
                 reroll_hit_values.add(1)
                 reroll_hit_reasons.append("HUNTR'S MARK: re-roll Hit rolls of 1")
+        except Exception:
+            pass
+
+        # Hearthfyre Arsenal: Optimal Application grants ranged re-roll Hit rolls of 1.
+        try:
+            active_fn = getattr(root, "_optimal_application_active_for_shooting", None)
+            if atype in ("any", "ranged") and callable(active_fn) and active_fn():
+                reroll_hit_values.add(1)
+                reroll_hit_reasons.append("Optimal Application: re-roll Hit rolls of 1")
         except Exception:
             pass
 

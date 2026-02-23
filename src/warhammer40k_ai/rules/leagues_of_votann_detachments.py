@@ -16,6 +16,7 @@ class LeaguesOfVotannDetachmentManager(DetachmentManagerBase):
         "einhyr hearthguard",
     )
     _MOBILE_SENSOR_RELAYS_SOURCE = "Mobile Sensor Relays: Firebase Control"
+    _OPTIMAL_APPLICATION_SOURCE = "Optimal Application"
 
     def is_brandfast_oathband(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -34,6 +35,11 @@ class LeaguesOfVotannDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Hearthband")
+
+    def is_hearthfyre_arsenal(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Hearthfyre Arsenal")
 
     def is_needgaard_oathband(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -130,6 +136,40 @@ class LeaguesOfVotannDetachmentManager(DetachmentManagerBase):
     def _unit_is_infantry(self, unit) -> bool:
         return bool(unit is not None and self._unit_has_role_keyword(unit, "INFANTRY"))
 
+    def _unit_matches_iron_master_or_memnyr_keywords(self, unit) -> bool:
+        if unit is None:
+            return False
+        texts = [getattr(unit, "name", "")]
+        texts += list(getattr(unit, "keywords", []) or [])
+        texts += list(getattr(unit, "faction_keywords", []) or [])
+        for raw in texts:
+            norm = self._normalize_text(raw)
+            if "brokhyr iron master" in norm or "brokhyr ironmaster" in norm:
+                return True
+            if "iron master" in norm and "brokhyr" in norm:
+                return True
+            if "memnyr strategist" in norm:
+                return True
+        return False
+
+    def _unit_matches_optimal_application_shooter_keywords(self, unit) -> bool:
+        if unit is None:
+            return False
+        texts = [getattr(unit, "name", "")]
+        texts += list(getattr(unit, "keywords", []) or [])
+        texts += list(getattr(unit, "faction_keywords", []) or [])
+        for raw in texts:
+            norm = self._normalize_text(raw)
+            if "brokhyr" in norm:
+                return True
+            if "ironkin steeljacks" in norm:
+                return True
+            if "ironkin" in norm and "steeljacks" in norm:
+                return True
+            if "arkanyst evaluator" in norm:
+                return True
+        return False
+
     def _unit_matches_cthonian_beserks_keywords(self, unit) -> bool:
         if unit is None:
             return False
@@ -181,6 +221,34 @@ class LeaguesOfVotannDetachmentManager(DetachmentManagerBase):
         unit = getattr(model, "parent_unit", None)
         return self._unit_is_votann(unit)
 
+    @staticmethod
+    def _model_within_objective_marker(model, objective_point) -> bool:
+        if model is None or objective_point is None:
+            return False
+        get_location = getattr(model, "get_location", None)
+        if not callable(get_location):
+            return False
+        pos = get_location()
+        if not pos:
+            return False
+        dx = float(pos[0]) - float(getattr(objective_point, "x", 0.0))
+        dy = float(pos[1]) - float(getattr(objective_point, "y", 0.0))
+        radius = float(getattr(objective_point, "control_radius", 0.0) or 0.0)
+        get_radius = getattr(getattr(model, "model_base", None), "get_radius", None)
+        base_radius = float(get_radius() if callable(get_radius) else 1.0)
+        return (dx * dx + dy * dy) ** 0.5 <= (radius + base_radius)
+
+    @staticmethod
+    def _model_is_alive(model) -> bool:
+        if model is None:
+            return False
+        is_alive = getattr(model, "is_alive", None)
+        if callable(is_alive):
+            return bool(is_alive())
+        if is_alive is None:
+            return True
+        return bool(is_alive)
+
     def mobile_sensor_relays_sustained_hits_value(self, model, weapon_profile=None, *, game_map=None) -> tuple[int, str]:
         del game_map
         if not self.is_brandfast_oathband():
@@ -223,6 +291,119 @@ class LeaguesOfVotannDetachmentManager(DetachmentManagerBase):
             if unit_wholly_within_range_of_unit(source, infantry_root, 6.0, use_attached_aggregate=True):
                 return 1, self._MOBILE_SENSOR_RELAYS_SOURCE
         return 0, ""
+
+    def _current_turn_context(self, game) -> tuple[int, str]:
+        if game is None:
+            return 0, ""
+        turn = int(getattr(game, "turn", 0) or 0)
+        owner_id = ""
+        get_current = getattr(game, "get_current_player", None)
+        current_player = get_current() if callable(get_current) else None
+        if current_player is not None:
+            owner_id = str(getattr(current_player, "id", "") or "")
+        return turn, owner_id
+
+    def _player_is_current_turn_owner(self, game, player) -> bool:
+        if game is None or player is None:
+            return False
+        get_current = getattr(game, "get_current_player", None)
+        if callable(get_current):
+            return get_current() is player
+        return False
+
+    def _iter_objective_locations(self, game) -> list:
+        if game is None:
+            return []
+        game_map = getattr(game, "map", None)
+        objectives = list(getattr(game_map, "objectives", []) or []) if game_map is not None else []
+        locations = []
+        for obj in objectives:
+            location = getattr(obj, "location", obj)
+            if location is None:
+                continue
+            if bool(getattr(location, "removed", False)):
+                continue
+            locations.append(location)
+        return locations
+
+    def _objective_has_iron_master_or_memnyr_model(self, objective_location) -> bool:
+        for root in self._iter_unique_army_roots():
+            if root is None:
+                continue
+            if not self._unit_in_army(root):
+                continue
+            if not self._unit_is_on_battlefield(root):
+                continue
+            for member in self._attached_unit_members(root):
+                if not self._unit_matches_iron_master_or_memnyr_keywords(member):
+                    continue
+                for model in list(getattr(member, "models", []) or []):
+                    if not self._model_is_alive(model):
+                        continue
+                    if self._model_within_objective_marker(model, objective_location):
+                        return True
+        return False
+
+    def optimal_application_command_phase_gain(self, *, game) -> int:
+        if not self.is_hearthfyre_arsenal():
+            return 0
+        if self.army is None or game is None:
+            return 0
+        player = getattr(self.army, "player", None)
+        if player is None:
+            return 0
+        if not self._player_is_current_turn_owner(game, player):
+            return 0
+
+        turn, owner_id = self._current_turn_context(game)
+        if turn <= 0:
+            return 0
+        try:
+            last_turn = int(getattr(self, "_optimal_application_last_gain_turn", 0) or 0)
+        except (TypeError, ValueError):
+            last_turn = 0
+        last_owner = str(getattr(self, "_optimal_application_last_gain_owner", "") or "")
+        if last_turn == turn and owner_id and last_owner == owner_id:
+            return 0
+
+        gained = 0
+        in_player_deployment = getattr(game, "_objective_in_player_deployment", None)
+        for location in self._iter_objective_locations(game):
+            update_control = getattr(location, "update_control", None)
+            if callable(update_control):
+                update_control(game)
+            if getattr(location, "controlling_player", None) is not player:
+                continue
+            if callable(in_player_deployment) and bool(in_player_deployment(player, location)):
+                continue
+            if not self._objective_has_iron_master_or_memnyr_model(location):
+                continue
+            gained += 1
+            if gained >= 2:
+                break
+
+        if gained <= 0:
+            return 0
+        self._optimal_application_last_gain_turn = int(turn)
+        self._optimal_application_last_gain_owner = str(owner_id or "")
+        return int(gained)
+
+    def optimal_application_shooting_unit_eligible(self, unit) -> bool:
+        if not self.is_hearthfyre_arsenal():
+            return False
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        if not self._unit_is_votann(root):
+            return False
+        if not self._unit_is_on_battlefield(root):
+            return False
+        for member in self._attached_unit_members(root):
+            if self._unit_matches_optimal_application_shooter_keywords(member):
+                return True
+        return False
 
     def fury_from_the_delve_grants_deep_strike(self, unit) -> bool:
         if not self.is_delve_assault_shift():

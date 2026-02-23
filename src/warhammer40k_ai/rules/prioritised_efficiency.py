@@ -223,6 +223,11 @@ class PrioritisedEfficiencyManager:
             if len(controlled) > max_opponent:
                 delta += 1
 
+        lov_mgr = getattr(self.army, "leagues_of_votann_detachments", None)
+        extra_gain_fn = getattr(lov_mgr, "optimal_application_command_phase_gain", None) if lov_mgr is not None else None
+        if callable(extra_gain_fn):
+            delta += int(extra_gain_fn(game=game) or 0)
+
         if delta <= 0:
             return 0
         return int(self.add_yield_points(int(delta), game=game) or 0)

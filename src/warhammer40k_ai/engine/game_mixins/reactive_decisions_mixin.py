@@ -3419,6 +3419,7 @@ class GameReactiveDecisionsMixin:
             "seized_opportunity",
             "geomantic_hunters",
             "resource_transmutation",
+            "optimal_application",
             "oathbound_speculator",
             "dead_reckoning",
             "warpmeld_sacrifice",
@@ -3721,6 +3722,67 @@ class GameReactiveDecisionsMixin:
                     mode=getattr(pe, "mode", None),
                     yield_points=int(getattr(pe, "yield_points", 0) or 0),
                     reason="Resource Transmutation",
+                )
+            return
+
+        if ability_key == "optimal_application":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or ctx.get("source_unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None:
+                return
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                return
+            player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+            if player is None:
+                try:
+                    player = root.get_parent_army().player
+                except Exception:
+                    player = None
+            if player is None:
+                return
+            army = player.get_army()
+            pe = getattr(army, "prioritised_efficiency", None) if army is not None else None
+            if pe is None:
+                return
+            detachment_mgr = getattr(army, "leagues_of_votann_detachments", None) if army is not None else None
+            eligible_fn = (
+                getattr(detachment_mgr, "optimal_application_shooting_unit_eligible", None)
+                if detachment_mgr is not None
+                else None
+            )
+            if not callable(eligible_fn) or not bool(eligible_fn(root)):
+                return
+            if not bool(getattr(pe, "spend_yield_points", lambda _a, game=None: False)(1, game=self)):
+                return
+
+            owner_id = str(getattr(player, "id", "") or "")
+            turn = int(getattr(self, "turn", 0) or 0)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["optimal_application_active"] = True
+            sr["optimal_application_turn_owner"] = owner_id
+            sr["optimal_application_turn"] = int(turn or 0)
+            sr["optimal_application_expires_phase"] = "SHOOTING_PHASE"
+            sr["optimal_application_source"] = str(ctx.get("ability_name", "") or "Optimal Application").strip() or "Optimal Application"
+            root.special_rules = sr
+
+            event_system = getattr(self, "event_system", None)
+            if event_system is not None:
+                event_system.publish(
+                    "prioritised_efficiency_updated",
+                    player=player,
+                    game=self,
+                    delta=-1,
+                    mode=getattr(pe, "mode", None),
+                    yield_points=int(getattr(pe, "yield_points", 0) or 0),
+                    reason="Optimal Application",
                 )
             return
 

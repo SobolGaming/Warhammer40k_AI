@@ -998,6 +998,12 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Martial Leverage": (
             r"each time an enemy unit is destroyed you gain \d+yp",
         ),
+        "Optimal Application": (
+            r"at the end of your command phase you gain 1yp for each objective marker you control that is not within your deployment zone and has one or more iron master and or memnyr strategist models from your army within range of it to a maximum of 2yp gained from this detachment rule per turn",
+            r"in your shooting phase each time a (?:brokhyr|br khyr) ironkin steeljacks or arkanyst evaluator unit from your (?:army|array) is selected to shoot you can spend 1yp",
+            r"if you do until the end of the phase each time a model in that unit makes an attack reroll a hit roll of 1",
+            r"up to 2 pts",
+        ),
         "Worldblight": (
             r"if you control an objective marker at the end of your command phase and a death guard unit from your army excluding battle shocked units is within range of that objective marker that objective marker remains under your control until your opponents level of control over that objective marker is greater than yours at the end of a phase",
             r"in addition until you lose control of that objective marker it has the nurgles gift ability as if it were a death guard model from your army",
@@ -2099,6 +2105,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Martial Leverage": (
             "Supported",
             "Needgaârd Oathband: gain 1 Yield Point each time an enemy unit is destroyed (integrates with Prioritised Efficiency).",
+        ),
+        "Optimal Application": (
+            "Supported",
+            "Hearthfyre Arsenal: at the end of your Command phase, gain up to 2 YP from controlled non-deployment-zone objectives with Iron-master/Memnyr Strategist models in range; in your Shooting phase, Brôkhyr/Ironkin Steeljacks/Arkanyst Evaluator units can spend 1 YP when selected to shoot to re-roll Hit rolls of 1 until end of phase.",
         ),
         "Worldblight": (
             "Supported",
