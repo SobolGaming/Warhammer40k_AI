@@ -12649,6 +12649,21 @@ class WargearProfile:
                 wound_result['modifiers'].append(f"+{int(wound_bonus)} to wound from {source}")
         except Exception:
             pass
+        # Astra Militarum: Mechanised Assault (Armoured Fist).
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+            bonus_fn = getattr(am_mgr, "armoured_fist_wound_bonus", None) if am_mgr is not None else None
+            if callable(bonus_fn):
+                attack_type = "melee" if bool(getattr(self.parent_wargear, "is_melee", lambda: False)()) else "ranged"
+                bonus, source = bonus_fn(attacker, attack_type=attack_type)
+                if bonus:
+                    source_name = str(source or "Armoured Fist").strip() or "Armoured Fist"
+                    dice_modifier += int(bonus)
+                    wound_result['modifiers'].append(f"+{int(bonus)} to wound from {source_name}")
+        except Exception:
+            pass
         # Adepta Sororitas: The Blood of Martyrs (Hallowed Martyrs).
         unit = getattr(attacker, "parent_unit", None)
         army = (

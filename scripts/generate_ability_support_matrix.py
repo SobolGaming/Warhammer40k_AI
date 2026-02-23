@@ -421,6 +421,9 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time a squadron unit from your army advances do not make an advance roll for it",
             r"until the end of the phase add \d+ to the move characteristic of models in that unit and when making that advance move that unit can move within engagement range of enemy models but cannot end that move within engagement range of enemy models",
         ),
+        "Armoured Fist": (
+            r"each time an astra militarum model from your army makes a ranged attack in a turn in which it disembarked from a transport add \d+ to the wound roll",
+        ),
         "Rad-bombardment": (
             r"at the start of the first battle round for each enemy unit within your opponents deployment zone your opponent must decide whether that unit will take cover or stand firm",
             r"you then roll one d6 for each of those enemy units and apply the relevant result below",
@@ -2720,6 +2723,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Iron Tread": (
             "Supported",
             "Hammer of the Emperor: SQUADRON units replace Advance rolls with a fixed +6\" and can move within (but not end within) Engagement Range during that Advance move.",
+        ),
+        "Armoured Fist": (
+            "Supported",
+            "Mechanised Assault: ASTRA MILITARUM models gain +1 to wound on ranged attacks in turns they disembarked from a Transport.",
         ),
         "Rad-bombardment": (
             "Supported",

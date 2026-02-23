@@ -1063,6 +1063,78 @@ class TestVoiceOfCommand(unittest.TestCase):
         )
         self.assertFalse(any("Lethal Hits" in str(e or "") for e in list(hidden_target.get("special_effects", []) or [])))
 
+    def test_mechanised_assault_armoured_fist_adds_wound_after_disembark(self):
+        from warhammer40k_ai.rules.astra_militarum_detachments import AstraMilitarumDetachmentManager
+
+        army = _ArmyStub(detachment_type="Mechanised Assault")
+        army.astra_militarum_detachments = AstraMilitarumDetachmentManager(army)
+
+        shooter = _UnitStub(
+            "Infantry Squad",
+            keywords=["INFANTRY", "ASTRA MILITARUM"],
+            abilities=[],
+            army=army,
+        )
+        target_army = _ArmyStub(faction_id="SM")
+        target = _UnitStub(
+            "Target",
+            keywords=["INFANTRY"],
+            abilities=[],
+            army=target_army,
+        )
+        target.models = [
+            SimpleNamespace(
+                name="Defender",
+                is_alive=True,
+                z=0.0,
+                save=4,
+                inv_save=(None, ""),
+                parent_unit=target,
+            )
+        ]
+        shooter.set_parent_army(army)
+        army.units = [shooter]
+
+        game = SimpleNamespace(
+            turn=1,
+            map=_MapStub([shooter]),
+            event_system=SimpleNamespace(publish=lambda *_a, **_k: None),
+        )
+        army.player.game = game
+
+        attacker = _ModelStub("Shooter", shooter, distance=12.0)
+        ranged = self._make_profile(weapon_type="Ranged", skill="4+")
+
+        shooter.round_state.disembarked_this_round = True
+        shooter.round_state.disembarked_from_transport_id = "transport-1"
+        wound_with_bonus = ranged._wound_target_with_tracking(
+            target,
+            attacker,
+            {},
+            roll_value=3,
+            allow_rerolls=False,
+            log_roll=False,
+        )
+        self.assertTrue(bool(wound_with_bonus.get("wound")))
+        self.assertTrue(
+            any("Armoured Fist" in str(mod or "") for mod in list(wound_with_bonus.get("modifiers", []) or []))
+        )
+
+        shooter.round_state.disembarked_this_round = False
+        shooter.round_state.disembarked_from_transport_id = ""
+        wound_without_bonus = ranged._wound_target_with_tracking(
+            target,
+            attacker,
+            {},
+            roll_value=3,
+            allow_rerolls=False,
+            log_roll=False,
+        )
+        self.assertFalse(bool(wound_without_bonus.get("wound")))
+        self.assertFalse(
+            any("Armoured Fist" in str(mod or "") for mod in list(wound_without_bonus.get("modifiers", []) or []))
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

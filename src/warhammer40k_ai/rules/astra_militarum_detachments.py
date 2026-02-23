@@ -35,6 +35,11 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Hammer of the Emperor")
 
+    def is_mechanised_assault(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Mechanised Assault")
+
     def _unit_root(self, unit):
         if unit is None:
             return None
@@ -252,6 +257,28 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
         if not self._unit_in_army(root):
             return False
         return self._unit_is_squadron_unit(root)
+
+    def armoured_fist_wound_bonus(
+        self,
+        attacker_model,
+        *,
+        attack_type: str = "any",
+    ) -> tuple[int, str]:
+        if not self.is_mechanised_assault():
+            return 0, ""
+        if str(attack_type or "any").strip().lower() != "ranged":
+            return 0, ""
+        unit = getattr(attacker_model, "parent_unit", None)
+        root = self._unit_root(unit)
+        if root is None:
+            return 0, ""
+        if not self._unit_in_army(root):
+            return 0, ""
+        if not self.unit_is_astra_militarum(root):
+            return 0, ""
+        if not self._attached_unit_disembarked_from_transport_this_round(root):
+            return 0, ""
+        return 1, "Armoured Fist"
 
     def only_the_best_hit_reroll_mods(
         self,
