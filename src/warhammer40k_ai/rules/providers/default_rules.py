@@ -312,7 +312,9 @@ def build_default_rule_providers() -> List[RuleProvider]:
             name="chaos_knights",
             predicate=lambda ctxs, _g: any_faction(ctxs, "QT"),
             subscriptions=[
+                ("shooting_targets_selected", "_on_shooting_targets_selected_iconoclast_dark_sacrifice"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_malefic_surge"),
+                ("fight_unit_selected", "_on_fight_unit_selected_iconoclast_dark_sacrifice"),
                 ("fight_unit_selected", "_on_fight_unit_selected_malefic_surge"),
                 ("fight_targets_selected", "_on_fight_targets_selected_malefic_surge"),
             ],

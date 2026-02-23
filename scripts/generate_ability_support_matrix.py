@@ -612,6 +612,22 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"until the end of the battle those units have the character keyword",
             r"this means that the selected units can be given enhancements and one of them can be selected as your warlord",
         ),
+        "Dreaded Masters": (
+            r"titanic chaos knights units from your army have the following abilities",
+            r"while a friendly damned unit is within 9 of this unit each time a model in that unit makes an attack reroll a hit roll of 1 and reroll a wound roll of 1",
+            r"chaos knights units from your army have the following abilities",
+            r"each time a chaos knights unit with this ability is selected to shoot or fight it can make a dark sacrifice",
+            r"if it does select one friendly damned unit within 6",
+            r"that damned unit must take a leadership test",
+            r"if passed destroy d3 models in that damned unit",
+            r"if failed destroy d3 3 models in that damned unit",
+            r"in either case then select one of the following abilities for your chaos knights units weapons to have until the end of the phase",
+            r"the combined points cost of such units depends on your battle size",
+            r"incursion up to 250 pts",
+            r"strike force up to 500 pts",
+            r"onslaught up to 750 pts",
+            r"no damned models from your army can be your warlord",
+        ),
         "Quicksilver Grace": (
             r"you can reroll advance rolls made for emperors children units from your army",
         ),
@@ -2638,6 +2654,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Marked Prey": (
             "Supported",
             "Houndpack Lance: command-phase enemy-unit selection grants [SUSTAINED HITS 1] to visible WAR DOG attacks against that target until your next Command phase; validates minimum three WAR DOG units, grants BATTLELINE to WAR DOG units, and enforces selection of exactly three WAR DOG units to gain CHARACTER during Muster Armies.",
+        ),
+        "Dreaded Masters": (
+            "Supported",
+            "Iconoclast Fiefdom: Dread Tyrants aura grants DAMNED units within 9\" of friendly TITANIC CHAOS KNIGHTS re-roll Hit and Wound rolls of 1; Dark Sacrifice prompts once each time a CHAOS KNIGHTS unit is selected to shoot/fight to choose a friendly DAMNED unit within 6\" and either [LETHAL HITS] or [SUSTAINED HITS 1] until end of phase after destroying D3 (or D3+3 on failed Leadership) models; Wretched Thralls enforces DAMNED ally points cap by battle size and blocks DAMNED Warlords.",
         ),
         "Blood Tithe": (
             "Supported",

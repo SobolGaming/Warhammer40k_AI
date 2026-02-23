@@ -1353,6 +1353,32 @@ def get_aura_attack_modifiers(attacker_unit, target_unit, weapon_profile, *, gam
     applied_aura_names: set[str] = set()
     friendly_units = list(game_map.get_friendly_units(attacker_unit))
 
+    # Chaos Knights (Iconoclast Fiefdom): Dread Tyrants (Aura)
+    # While a friendly DAMNED unit is within 9" of a TITANIC CHAOS KNIGHTS source,
+    # re-roll Hit rolls of 1 and Wound rolls of 1.
+    for source in list(friendly_units or []):
+        source_army = source.get_parent_army() if hasattr(source, "get_parent_army") else None
+        ck_mgr = getattr(source_army, "chaos_knights_detachments", None) if source_army is not None else None
+        applies_fn = getattr(ck_mgr, "iconoclast_dread_tyrants_applies", None) if ck_mgr is not None else None
+        if not callable(applies_fn):
+            continue
+        if not bool(applies_fn(attacker_unit=attacker_unit, source_unit=source)):
+            continue
+        aura_key = _norm_name("Dread Tyrants (Aura)")
+        if aura_key and aura_key in applied_aura_names:
+            break
+        if aura_key:
+            applied_aura_names.add(aura_key)
+        out = out.merge(
+            AuraAttackModifiers(
+                reroll_hit_ones=True,
+                reroll_wound_ones=True,
+                reroll_hit_reasons=("Aura: re-roll Hit rolls of 1 from Dread Tyrants (Aura)",),
+                reroll_wound_reasons=("Aura: re-roll Wound rolls of 1 from Dread Tyrants (Aura)",),
+            )
+        )
+        break
+
     for source in friendly_units:
         for ab in _iter_possible_abilities(source):
             if not _is_aura_ability(ab):

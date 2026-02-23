@@ -2862,6 +2862,77 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not bool(is_valid_target(target_root, player=player, game=game)):
             return ("Marked Prey target must be an enemy unit on the battlefield.",)
         return ()
+    if ability == "iconoclast_dark_sacrifice":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Dark Sacrifice army not found.",)
+        mgr = getattr(army, "chaos_knights_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_iconoclast_fiefdom", lambda: False)()):
+            return ("Dark Sacrifice requires Iconoclast Fiefdom detachment.",)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id") or payload.get("unit_id") or ctx.get("source_unit_id") or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Dark Sacrifice source unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return ("Dark Sacrifice source unit was not found.",)
+        if is_skip_choice(request, result):
+            return ()
+        damned_unit = resolve_unit(
+            game,
+            payload.get("damned_unit_id")
+            or payload.get("target_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("damned_unit_id")
+            or ctx.get("target_unit_id"),
+        )
+        if damned_unit is None:
+            return ("Dark Sacrifice target unit was not found.",)
+        damned_root = (
+            damned_unit.get_attached_unit_root()
+            if hasattr(damned_unit, "get_attached_unit_root")
+            else damned_unit
+        )
+        if damned_root is None:
+            return ("Dark Sacrifice target unit was not found.",)
+        damned_id = str(get_entity_id(damned_root) or "")
+        candidate_ids = {
+            str(v)
+            for v in list(ctx.get("candidate_damned_unit_ids", []) or [])
+            if str(v)
+        }
+        if candidate_ids and damned_id not in candidate_ids:
+            return ("Dark Sacrifice target is not an eligible candidate.",)
+        mode = str(payload.get("sacrifice_mode", "") or payload.get("mode", "") or "").strip().upper()
+        allowed_modes = {
+            str(v or "").strip().upper()
+            for v in list(ctx.get("allowed_modes", []) or [])
+            if str(v or "").strip()
+        }
+        if allowed_modes and mode not in allowed_modes:
+            return ("Dark Sacrifice mode is not an eligible candidate.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        validate_choice = getattr(mgr, "validate_iconoclast_dark_sacrifice_choice", None)
+        if not callable(validate_choice):
+            return ("Dark Sacrifice validation is unavailable.",)
+        valid, reason = validate_choice(
+            source_root,
+            damned_root,
+            mode=mode,
+            player=player,
+        )
+        if not bool(valid):
+            return (str(reason or "Dark Sacrifice selection is invalid."),)
+        return ()
     if ability == "dread_mob_try_dat_button":
         if is_skip_choice(request, result):
             return ("Try Dat Button! selection cannot be skipped.",)
@@ -11455,6 +11526,43 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 source_name = str(ctx.get("ability_name", "") or "Worthy Foes").strip() or "Worthy Foes"
                 target_name = str(getattr(chosen, "name", "Unit") or "Unit")
                 _log_action_for_players(game, player, f"{source_name}: selected {target_name} as the worthy foe.")
+    if ability_key == "iconoclast_dark_sacrifice":
+        army = _resolve_army(game, request, payload)
+        mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
+        if mgr is not None:
+            source_unit = resolve_unit(
+                game,
+                payload.get("source_unit_id") or payload.get("unit_id") or ctx.get("source_unit_id") or ctx.get("unit_id"),
+            )
+            player = _resolve_player(game, request, payload)
+            if player is None:
+                player = getattr(army, "player", None) if army is not None else None
+            if not is_skip_choice(request, result) and source_unit is not None and chosen is not None:
+                mode = str(payload.get("sacrifice_mode", "") or payload.get("mode", "") or "").strip().upper()
+                apply_fn = getattr(mgr, "apply_iconoclast_dark_sacrifice", None)
+                if callable(apply_fn):
+                    outcome = apply_fn(source_unit, chosen, mode=mode, game=game, player=player)
+                    if isinstance(outcome, dict) and bool(outcome.get("ok")):
+                        source_name = str(getattr(source_unit, "name", "Unit") or "Unit")
+                        damned_name = str(getattr(chosen, "name", "Unit") or "Unit")
+                        destroyed = int(outcome.get("destroyed_models", 0) or 0)
+                        passed = bool(outcome.get("leadership_passed"))
+                        mode_label = "Lethal Hits" if mode == "LETHAL_HITS" else "Sustained Hits 1"
+                        test_result = "passed" if passed else "failed"
+                        ability_name = str(ctx.get("ability_name", "") or "Dark Sacrifice").strip() or "Dark Sacrifice"
+                        _log_action_for_players(
+                            game,
+                            player,
+                            (
+                                f"{ability_name}: {source_name} selected {damned_name}; "
+                                f"Leadership test {test_result}, {destroyed} model(s) destroyed, "
+                                f"weapons gain [{mode_label}] until end of phase."
+                            ),
+                        )
+            elif source_unit is not None:
+                ability_name = str(ctx.get("ability_name", "") or "Dark Sacrifice").strip() or "Dark Sacrifice"
+                source_name = str(getattr(source_unit, "name", "Unit") or "Unit")
+                _log_action_for_players(game, player, f"{ability_name}: {source_name} selected none.")
     if ability_key == "marked_prey":
         army = _resolve_army(game, request, payload)
         mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None

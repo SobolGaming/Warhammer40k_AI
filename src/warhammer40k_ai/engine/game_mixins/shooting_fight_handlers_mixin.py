@@ -3608,6 +3608,24 @@ class GameShootingFightHandlersMixin:
             if tmgr is not None:
                 tmgr.queue_malefic_surge_choice(troot, trigger="targeted_shooting", game=self)
 
+    def _on_shooting_targets_selected_iconoclast_dark_sacrifice(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None or not target_units:
+            return
+        try:
+            root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            root = attacking_unit
+        if root is None:
+            return
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
+        queue_choice = getattr(mgr, "queue_iconoclast_dark_sacrifice_choice", None) if mgr is not None else None
+        if callable(queue_choice):
+            queue_choice(root, trigger="shooting", game=self)
+
     def _on_shooting_targets_selected_path_of_warrior(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:
             return
@@ -5095,6 +5113,24 @@ class GameShootingFightHandlersMixin:
         mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
         if mgr is not None:
             mgr.queue_malefic_surge_choice(root, trigger="fight", game=self)
+
+    def _on_fight_unit_selected_iconoclast_dark_sacrifice(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
+        queue_choice = getattr(mgr, "queue_iconoclast_dark_sacrifice_choice", None) if mgr is not None else None
+        if callable(queue_choice):
+            queue_choice(root, trigger="fight", game=self)
 
     def _on_fight_targets_selected_malefic_surge(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None or not target_units:

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Iterable, Optional
 
 from .detachment_manager import DetachmentManagerBase
+from ..utility.aura_utils import unit_within_range_of_unit
 from ..utility.dice import get_roll
 from ..utility.entity_ids import get_entity_id
 
@@ -12,9 +13,12 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
 
     MALEFIC_SURGE_NAME = "Malefic Surge"
     MARKED_PREY_NAME = "Marked Prey"
+    DARK_SACRIFICE_NAME = "Dark Sacrifice"
     DETACHMENT_INFERNAL_LANCE = "Infernal Lance"
     DETACHMENT_HOUNDPACK_LANCE = "Houndpack Lance"
+    DETACHMENT_ICONOCLAST_FIEFDOM = "Iconoclast Fiefdom"
     HOUNDPACK_CHARACTER_SELECTION_ABILITY = "houndpack_lance_character_selection"
+    ICONOCLAST_DARK_SACRIFICE_ABILITY = "iconoclast_dark_sacrifice"
 
     def __init__(self, army=None):
         super().__init__(army)
@@ -35,6 +39,11 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches(self.DETACHMENT_HOUNDPACK_LANCE)
+
+    def is_iconoclast_fiefdom(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches(self.DETACHMENT_ICONOCLAST_FIEFDOM)
 
     @staticmethod
     def _unit_root(unit):
@@ -112,6 +121,433 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
         if unit_army is None or player_army is None:
             return False
         return unit_army is not player_army
+
+    def _unit_is_damned(self, unit) -> bool:
+        return self._unit_has_keyword(unit, "DAMNED")
+
+    def _unit_is_titanic(self, unit) -> bool:
+        return self._unit_has_keyword(unit, "TITANIC")
+
+    def _iconoclast_damned_points_cap(self) -> int:
+        army = self.army
+        if army is None:
+            return 0
+        limit = int(getattr(army, "points_limit", 0) or 0)
+        if limit <= 0:
+            return 0
+        if limit <= 1000:
+            return 250
+        if limit <= 2000:
+            return 500
+        return 750
+
+    @staticmethod
+    def _iconoclast_mode_is_valid(mode: str) -> bool:
+        return str(mode or "").strip().upper() in {"LETHAL_HITS", "SUSTAINED_HITS_1"}
+
+    def _clear_iconoclast_dark_sacrifice(self, unit) -> None:
+        root = self._unit_root(unit)
+        if root is None:
+            return
+        sr = self._unit_sr(root)
+        for key in (
+            "iconoclast_dark_sacrifice_active",
+            "iconoclast_dark_sacrifice_choice",
+            "iconoclast_dark_sacrifice_source",
+            "iconoclast_dark_sacrifice_expires_phase",
+            "iconoclast_dark_sacrifice_turn",
+            "iconoclast_dark_sacrifice_owner",
+        ):
+            sr.pop(key, None)
+        root.special_rules = sr
+
+    @staticmethod
+    def _iconoclast_current_phase(game) -> str:
+        phase = getattr(getattr(game, "phase", None), "name", None)
+        if not phase:
+            phase = getattr(game, "phase", "")
+        return str(phase or "").strip().upper()
+
+    @staticmethod
+    def _iconoclast_current_owner_id(game) -> str:
+        if game is None or not hasattr(game, "get_current_player"):
+            return ""
+        current_player = game.get_current_player()
+        return str(getattr(current_player, "id", "") or "")
+
+    def active_iconoclast_dark_sacrifice_mode(self, unit, *, game=None, player=None) -> str:
+        root = self._unit_root(unit)
+        if root is None:
+            return ""
+        sr = self._unit_sr(root)
+        if not bool(sr.get("iconoclast_dark_sacrifice_active")):
+            return ""
+        mode = str(sr.get("iconoclast_dark_sacrifice_choice", "") or "").strip().upper()
+        if not self._iconoclast_mode_is_valid(mode):
+            self._clear_iconoclast_dark_sacrifice(root)
+            return ""
+        if game is not None:
+            expires_phase = str(sr.get("iconoclast_dark_sacrifice_expires_phase", "") or "").strip().upper()
+            if expires_phase and expires_phase != self._iconoclast_current_phase(game):
+                self._clear_iconoclast_dark_sacrifice(root)
+                return ""
+            owner_id = str(sr.get("iconoclast_dark_sacrifice_owner", "") or "")
+            current_owner = str(getattr(player, "id", "") or "") if player is not None else self._iconoclast_current_owner_id(game)
+            if owner_id and current_owner and owner_id != current_owner:
+                self._clear_iconoclast_dark_sacrifice(root)
+                return ""
+            try:
+                active_turn = int(sr.get("iconoclast_dark_sacrifice_turn", 0) or 0)
+                current_turn = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                active_turn = 0
+                current_turn = 0
+            if active_turn and current_turn and active_turn != current_turn:
+                self._clear_iconoclast_dark_sacrifice(root)
+                return ""
+        return mode
+
+    def iconoclast_dark_sacrifice_weapon_keyword(self, model, *, attack_type: str = "", game=None) -> tuple[str, str]:
+        del attack_type
+        if not self.is_iconoclast_fiefdom():
+            return "", ""
+        if model is None:
+            return "", ""
+        source_unit = getattr(model, "parent_unit", None)
+        root = self._unit_root(source_unit)
+        if root is None:
+            return "", ""
+        if not self._unit_belongs_to_army(root):
+            return "", ""
+        if not self._unit_is_chaos_knights(root):
+            return "", ""
+        mode = self.active_iconoclast_dark_sacrifice_mode(root, game=game)
+        if mode == "LETHAL_HITS":
+            return "LETHAL HITS", self.DARK_SACRIFICE_NAME
+        if mode == "SUSTAINED_HITS_1":
+            return "SUSTAINED HITS 1", self.DARK_SACRIFICE_NAME
+        return "", ""
+
+    def iconoclast_dread_tyrants_applies(self, *, attacker_unit=None, source_unit=None) -> bool:
+        if not self.is_iconoclast_fiefdom():
+            return False
+        attacker_root = self._unit_root(attacker_unit)
+        source_root = self._unit_root(source_unit)
+        if attacker_root is None or source_root is None:
+            return False
+        if not self._unit_belongs_to_army(attacker_root) or not self._unit_belongs_to_army(source_root):
+            return False
+        if not self._unit_is_damned(attacker_root):
+            return False
+        if not self._unit_is_chaos_knights(source_root):
+            return False
+        if not self._unit_is_titanic(source_root):
+            return False
+        if not self._unit_on_battlefield(attacker_root) or not self._unit_on_battlefield(source_root):
+            return False
+        return bool(
+            unit_within_range_of_unit(
+                source_root,
+                attacker_root,
+                9.0,
+                use_attached_aggregate=True,
+            )
+        )
+
+    def _iconoclast_dark_sacrifice_candidates(self, source_unit) -> list:
+        source_root = self._unit_root(source_unit)
+        if source_root is None:
+            return []
+        if not self._unit_on_battlefield(source_root):
+            return []
+        candidates = []
+        seen_ids: set[str] = set()
+        for root in list(self._iter_unique_army_roots()):
+            if root is None:
+                continue
+            if not self._unit_is_damned(root):
+                continue
+            if not self._unit_on_battlefield(root):
+                continue
+            if not bool(unit_within_range_of_unit(source_root, root, 6.0, use_attached_aggregate=True)):
+                continue
+            unit_id = self._unit_root_id(root)
+            if not unit_id or unit_id in seen_ids:
+                continue
+            seen_ids.add(unit_id)
+            candidates.append(root)
+        candidates.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+        return candidates
+
+    def _pending_iconoclast_dark_sacrifice_request(self, game, *, source_unit_id: str, trigger: str) -> bool:
+        if game is None:
+            return False
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+
+        source_id = str(source_unit_id or "")
+        trigger_key = str(trigger or "").strip().lower()
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "").strip().lower() != self.ICONOCLAST_DARK_SACRIFICE_ABILITY:
+                continue
+            if source_id and str(ctx.get("source_unit_id", "") or "") != source_id:
+                continue
+            if trigger_key and str(ctx.get("trigger", "") or "").strip().lower() != trigger_key:
+                continue
+            return True
+        return False
+
+    def queue_iconoclast_dark_sacrifice_choice(self, source_unit, *, trigger: str, game=None):
+        if not self.is_iconoclast_fiefdom():
+            return None
+        if self.army is None:
+            return None
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return None
+        source_root = self._unit_root(source_unit)
+        if source_root is None:
+            return None
+        if not self._unit_belongs_to_army(source_root):
+            return None
+        if not self._unit_is_chaos_knights(source_root):
+            return None
+        if not self._unit_on_battlefield(source_root):
+            return None
+        owner = getattr(self.army, "player", None)
+        if owner is None:
+            return None
+        if hasattr(game, "get_current_player") and game.get_current_player() is not owner:
+            return None
+        source_unit_id = str(get_entity_id(source_root) or "")
+        if not source_unit_id:
+            return None
+        trigger_key = str(trigger or "").strip().lower()
+        if not trigger_key:
+            return None
+        if self._pending_iconoclast_dark_sacrifice_request(
+            game,
+            source_unit_id=source_unit_id,
+            trigger=trigger_key,
+        ):
+            return None
+
+        candidates = list(self._iconoclast_dark_sacrifice_candidates(source_root) or [])
+        if not candidates:
+            return None
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        options = [
+            DecisionOption.create(
+                "None",
+                payload={
+                    "skip": True,
+                    "action": "skip",
+                    "source_unit_id": source_unit_id,
+                    "trigger": trigger_key,
+                },
+            )
+        ]
+        candidate_ids = []
+        for candidate in candidates:
+            candidate_id = str(get_entity_id(candidate) or "")
+            if not candidate_id:
+                continue
+            candidate_ids.append(candidate_id)
+            name = str(getattr(candidate, "name", "Unit") or "Unit")
+            options.append(
+                DecisionOption.create(
+                    f"{name}: Lethal Hits",
+                    payload={
+                        "target_unit_id": candidate_id,
+                        "damned_unit_id": candidate_id,
+                        "source_unit_id": source_unit_id,
+                        "sacrifice_mode": "LETHAL_HITS",
+                        "trigger": trigger_key,
+                    },
+                )
+            )
+            options.append(
+                DecisionOption.create(
+                    f"{name}: Sustained Hits 1",
+                    payload={
+                        "target_unit_id": candidate_id,
+                        "damned_unit_id": candidate_id,
+                        "source_unit_id": source_unit_id,
+                        "sacrifice_mode": "SUSTAINED_HITS_1",
+                        "trigger": trigger_key,
+                    },
+                )
+            )
+        if len(options) <= 1:
+            return None
+
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Dark Sacrifice: select one friendly DAMNED unit within 6\" and choose a weapon bonus (or None).",
+            player_id=getattr(owner, "id", None),
+            options=options,
+            context={
+                "ability": self.ICONOCLAST_DARK_SACRIFICE_ABILITY,
+                "ability_name": self.DARK_SACRIFICE_NAME,
+                "army_id": str(get_entity_id(self.army) or ""),
+                "source_unit_id": source_unit_id,
+                "trigger": trigger_key,
+                "candidate_damned_unit_ids": sorted({cid for cid in candidate_ids if cid}),
+                "allowed_modes": ["LETHAL_HITS", "SUSTAINED_HITS_1"],
+                "optional": True,
+            },
+        )
+        if hasattr(game, "request_decision"):
+            game.request_decision(request)
+        return request
+
+    def validate_iconoclast_dark_sacrifice_choice(
+        self,
+        source_unit,
+        damned_unit,
+        *,
+        mode: str,
+        player=None,
+    ) -> tuple[bool, str]:
+        if not self.is_iconoclast_fiefdom():
+            return False, "Dark Sacrifice requires Iconoclast Fiefdom."
+        source_root = self._unit_root(source_unit)
+        if source_root is None:
+            return False, "Dark Sacrifice source unit is missing."
+        if not self._unit_belongs_to_army(source_root):
+            return False, "Dark Sacrifice source unit must belong to your army."
+        if not self._unit_is_chaos_knights(source_root):
+            return False, "Dark Sacrifice source must be a CHAOS KNIGHTS unit."
+        if not self._unit_on_battlefield(source_root):
+            return False, "Dark Sacrifice source unit must be on the battlefield."
+        if player is not None and getattr(self.army, "player", None) is not player:
+            return False, "Dark Sacrifice can only be selected by the controlling player."
+        mode_key = str(mode or "").strip().upper()
+        if not self._iconoclast_mode_is_valid(mode_key):
+            return False, "Dark Sacrifice mode must be LETHAL_HITS or SUSTAINED_HITS_1."
+        damned_root = self._unit_root(damned_unit)
+        if damned_root is None:
+            return False, "Dark Sacrifice requires a DAMNED unit target."
+        if not self._unit_belongs_to_army(damned_root):
+            return False, "Dark Sacrifice target must be a friendly unit."
+        if not self._unit_is_damned(damned_root):
+            return False, "Dark Sacrifice target must have the DAMNED keyword."
+        if not self._unit_on_battlefield(damned_root):
+            return False, "Dark Sacrifice target must be on the battlefield."
+        if not bool(unit_within_range_of_unit(source_root, damned_root, 6.0, use_attached_aggregate=True)):
+            return False, "Dark Sacrifice target must be within 6\"."
+        return True, ""
+
+    def _destroy_models_for_dark_sacrifice(self, unit, *, count: int, game=None) -> int:
+        root = self._unit_root(unit)
+        if root is None:
+            return 0
+        try:
+            target = int(count or 0)
+        except (TypeError, ValueError):
+            target = 0
+        if target <= 0:
+            return 0
+        models = [model for model in list(getattr(root, "models", []) or []) if model is not None and bool(getattr(model, "is_alive", False))]
+        models.sort(key=lambda m: str(get_entity_id(m) or ""))
+        removed = 0
+        for model in models:
+            if removed >= target:
+                break
+            remove_model = getattr(root, "remove_model", None)
+            if not callable(remove_model):
+                break
+            remove_model(model, False, game_map=getattr(game, "map", None) if game is not None else None)
+            removed += 1
+        return removed
+
+    def apply_iconoclast_dark_sacrifice(
+        self,
+        source_unit,
+        damned_unit,
+        *,
+        mode: str,
+        game=None,
+        player=None,
+    ) -> dict:
+        source_root = self._unit_root(source_unit)
+        damned_root = self._unit_root(damned_unit)
+        valid, reason = self.validate_iconoclast_dark_sacrifice_choice(
+            source_root,
+            damned_root,
+            mode=mode,
+            player=player,
+        )
+        if not valid:
+            return {"ok": False, "reason": reason}
+        mode_key = str(mode or "").strip().upper()
+        leadership_fn = getattr(damned_root, "pass_leadership_check", None)
+        if not callable(leadership_fn):
+            return {"ok": False, "reason": "Dark Sacrifice requires a Leadership test handler."}
+        passed = bool(leadership_fn())
+        raw = get_roll("D3")
+        try:
+            rolled = int(raw or 0)
+        except (TypeError, ValueError):
+            rolled = 0
+        if rolled <= 0:
+            rolled = 1
+        destroy_count = rolled if passed else rolled + 3
+        destroyed_models = self._destroy_models_for_dark_sacrifice(damned_root, count=destroy_count, game=game)
+
+        sr = self._unit_sr(source_root)
+        sr["iconoclast_dark_sacrifice_active"] = True
+        sr["iconoclast_dark_sacrifice_choice"] = mode_key
+        sr["iconoclast_dark_sacrifice_source"] = self.DARK_SACRIFICE_NAME
+        sr["iconoclast_dark_sacrifice_expires_phase"] = self._iconoclast_current_phase(game)
+        sr["iconoclast_dark_sacrifice_turn"] = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        owner = player if player is not None else getattr(self.army, "player", None)
+        sr["iconoclast_dark_sacrifice_owner"] = str(getattr(owner, "id", "") or "")
+        source_root.special_rules = sr
+        return {
+            "ok": True,
+            "source_unit_id": self._unit_root_id(source_root),
+            "damned_unit_id": self._unit_root_id(damned_root),
+            "mode": mode_key,
+            "leadership_passed": passed,
+            "destroyed_models": int(destroyed_models or 0),
+        }
+
+    def _validate_iconoclast_restrictions(self) -> list[str]:
+        errors: list[str] = []
+        if not self.is_iconoclast_fiefdom():
+            return errors
+        damned_units = []
+        seen_ids: set[str] = set()
+        for root in list(self._iter_unique_army_roots()):
+            if root is None:
+                continue
+            root_id = self._unit_root_id(root)
+            if root_id and root_id in seen_ids:
+                continue
+            if root_id:
+                seen_ids.add(root_id)
+            if self._unit_is_damned(root):
+                damned_units.append(root)
+        if not damned_units:
+            return errors
+        points_cap = self._iconoclast_damned_points_cap()
+        total_points = sum(int(getattr(unit, "get_unit_cost", lambda: 0)() or 0) for unit in damned_units)
+        if points_cap <= 0 or total_points > points_cap:
+            errors.append(
+                f"Iconoclast Fiefdom (Wretched Thralls): DAMNED units total {int(total_points)} points (cap {int(points_cap)})."
+            )
+        for unit in damned_units:
+            if bool(getattr(unit, "is_warlord", False)):
+                errors.append("Iconoclast Fiefdom (Wretched Thralls): DAMNED units cannot be your Warlord.")
+                break
+        return errors
 
     def apply_houndpack_lance_battleline_keywords(self, unit=None) -> None:
         if not self.is_houndpack_lance():
@@ -516,25 +952,26 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
 
     def validate_detachment_rules(self) -> list[str]:
         errors: list[str] = []
-        if not self.is_houndpack_lance():
-            return errors
-        self.apply_houndpack_lance_battleline_keywords()
-        candidates = list(self._houndpack_character_candidates())
-        if len(candidates) < 3:
-            errors.append("Houndpack Lance: your army must include three or more WAR DOG units.")
-            self._reconcile_houndpack_character_keywords()
-            return errors
-        candidate_ids = {self._unit_root_id(unit) for unit in candidates}
-        selected_valid = {
-            unit_id for unit_id in self._houndpack_character_unit_ids
-            if unit_id in candidate_ids
-        }
-        if len(selected_valid) > 3:
-            errors.append("Houndpack Lance: exactly three WAR DOG units can gain the CHARACTER keyword.")
-        self._houndpack_character_unit_ids = set(selected_valid)
-        self.ensure_houndpack_character_selection()
-        if len(self._houndpack_character_unit_ids) != 3:
-            errors.append("Houndpack Lance: exactly three WAR DOG units must be selected to gain the CHARACTER keyword.")
+        if self.is_houndpack_lance():
+            self.apply_houndpack_lance_battleline_keywords()
+            candidates = list(self._houndpack_character_candidates())
+            if len(candidates) < 3:
+                errors.append("Houndpack Lance: your army must include three or more WAR DOG units.")
+                self._reconcile_houndpack_character_keywords()
+                return errors
+            candidate_ids = {self._unit_root_id(unit) for unit in candidates}
+            selected_valid = {
+                unit_id for unit_id in self._houndpack_character_unit_ids
+                if unit_id in candidate_ids
+            }
+            if len(selected_valid) > 3:
+                errors.append("Houndpack Lance: exactly three WAR DOG units can gain the CHARACTER keyword.")
+            self._houndpack_character_unit_ids = set(selected_valid)
+            self.ensure_houndpack_character_selection()
+            if len(self._houndpack_character_unit_ids) != 3:
+                errors.append("Houndpack Lance: exactly three WAR DOG units must be selected to gain the CHARACTER keyword.")
+        if self.is_iconoclast_fiefdom():
+            errors.extend(self._validate_iconoclast_restrictions())
         return errors
 
     def _unit_is_chaos_knights(self, unit) -> bool:
