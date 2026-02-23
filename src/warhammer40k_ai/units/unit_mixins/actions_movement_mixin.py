@@ -5551,6 +5551,13 @@ class ActionsMovementMixin:
                 if int(bonus or 0):
                     source_name = str(source or "Synaptic Imperatives").strip() or "Synaptic Imperatives"
                     mods.append((int(bonus), source_name))
+            ac_mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
+            auric_bonus_fn = getattr(ac_mgr, "auric_armour_advance_roll_bonus", None) if ac_mgr is not None else None
+            if callable(auric_bonus_fn):
+                bonus, source = auric_bonus_fn(self, game=game)
+                if int(bonus or 0):
+                    source_name = str(source or "Auric Armour").strip() or "Auric Armour"
+                    mods.append((int(bonus), source_name))
         except Exception:
             pass
         if isinstance(sr, dict) and sr.get("ere_we_go_active") is True:

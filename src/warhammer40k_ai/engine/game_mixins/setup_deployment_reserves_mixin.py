@@ -1571,6 +1571,14 @@ class GameSetupDeploymentReservesMixin:
                 ) if tyr_mgr is not None else None
                 if callable(queue_trygon_fn):
                     queue_trygon_fn(game=self, player=player)
+                ac_mgr = getattr(army, "adeptus_custodes_detachments", None)
+                queue_walker_fn = getattr(
+                    ac_mgr,
+                    "queue_solar_spearhead_walker_character_selection_request",
+                    None,
+                ) if ac_mgr is not None else None
+                if callable(queue_walker_fn):
+                    queue_walker_fn(game=self, player=player)
         else:
             logger.info("Not enough players loaded")
 

@@ -8917,6 +8917,12 @@ class Game(
             bonus, source = synaptic_charge_bonus_fn(charging_unit, game=self)
             if int(bonus or 0):
                 modifiers.append((int(bonus), str(source or "Synaptic Imperatives").strip() or "Synaptic Imperatives"))
+        ac_mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
+        auric_charge_bonus_fn = getattr(ac_mgr, "auric_armour_charge_roll_bonus", None) if ac_mgr is not None else None
+        if callable(auric_charge_bonus_fn):
+            bonus, source = auric_charge_bonus_fn(charging_unit, target_units=target_unit, game=self)
+            if int(bonus or 0):
+                modifiers.append((int(bonus), str(source or "Auric Armour").strip() or "Auric Armour"))
 
         from ..utility.aura_effects import get_aura_advance_charge_roll_modifiers
         _adv_mods, aura_charge_mods = get_aura_advance_charge_roll_modifiers(charging_unit, game_map=self.map)

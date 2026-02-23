@@ -12,6 +12,8 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
 
     _AGAINST_ALL_ODDS_RANGE = 6.0
     _ASSEMBLAGE_OF_MIGHT_SOURCE = "Assemblage of Might"
+    _AURIC_ARMOUR_SOURCE = "Auric Armour"
+    _AURIC_ARMOUR_WALKER_SELECTION_ABILITY = "solar_spearhead_walker_character_selection"
     _CREEPING_DREAD_RANGE = 12.0
     _CREEPING_DREAD_SOURCE = "Creeping Dread"
     _MARTIAL_MASTERY_SOURCE = "Martial Mastery"
@@ -23,6 +25,8 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
         self.martial_mastery_mode: str = ""
         self.martial_mastery_active_round: Optional[int] = None
         self.martial_mastery_resolved_round: Optional[int] = None
+        self.solar_spearhead_character_walker_unit_ids: tuple[str, ...] = tuple()
+        self._solar_spearhead_walker_selection_resolved: bool = False
 
     def is_lions_of_the_emperor(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -44,6 +48,24 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Shield Host")
 
+    def is_solar_spearhead(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Solar Spearhead")
+
+    @staticmethod
+    def _add_keyword_once(entity, keyword: str) -> None:
+        if entity is None:
+            return
+        key = str(keyword or "").strip()
+        if not key:
+            return
+        keywords = list(getattr(entity, "keywords", []) or [])
+        if any(str(value or "").strip().lower() == key.lower() for value in keywords):
+            return
+        keywords.append(key)
+        entity.keywords = keywords
+
     def _model_in_army(self, model) -> bool:
         if model is None or self.army is None:
             return False
@@ -64,6 +86,20 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
         if bool(getattr(unit, "is_vehicle", False)):
             return True
         return self._unit_has_keyword(unit, "VEHICLE")
+
+    def _unit_is_aircraft(self, unit) -> bool:
+        if unit is None:
+            return False
+        if bool(getattr(unit, "is_aircraft", False)):
+            return True
+        return self._unit_has_keyword(unit, "AIRCRAFT")
+
+    def _unit_is_walker(self, unit) -> bool:
+        if unit is None:
+            return False
+        if bool(getattr(unit, "is_walker", False)):
+            return True
+        return self._unit_has_keyword(unit, "WALKER")
 
     def _root_unit(self, unit):
         if unit is None:
@@ -98,6 +134,47 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
             if self._unit_has_keyword(member, "CHARACTER"):
                 return True
         return False
+
+    def _unit_is_custodes(self, unit) -> bool:
+        root = self._root_unit(unit)
+        if root is None:
+            return False
+        return self._unit_has_keyword_or_faction(root, "ADEPTUS CUSTODES", faction_id=self.faction_id)
+
+    def _unit_is_custodes_vehicle(self, unit) -> bool:
+        root = self._root_unit(unit)
+        if root is None:
+            return False
+        if not self._unit_is_custodes(root):
+            return False
+        return self._unit_is_vehicle(root)
+
+    @staticmethod
+    def _unit_is_below_starting_strength(unit) -> bool:
+        if unit is None:
+            return False
+        checker = getattr(unit, "is_below_starting_strength", None)
+        if not callable(checker):
+            return False
+        return bool(checker())
+
+    @staticmethod
+    def _unit_is_below_half_strength(unit) -> bool:
+        if unit is None:
+            return False
+        checker = getattr(unit, "is_below_half_strength", None)
+        if not callable(checker):
+            return False
+        return bool(checker())
+
+    @staticmethod
+    def _unit_is_battle_shocked(unit) -> bool:
+        if unit is None:
+            return False
+        checker = getattr(unit, "is_battle_shocked", None)
+        if not callable(checker):
+            return False
+        return bool(checker())
 
     def _unit_key(self, unit) -> Optional[str]:
         if unit is None:
@@ -340,6 +417,245 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
                 out.append(model)
         out.sort(key=lambda model: str(maybe_entity_id(model) or id(model)))
         return out
+
+    def _solar_spearhead_walker_candidates(self) -> list:
+        if not self.is_solar_spearhead():
+            return []
+        if self.army is None:
+            return []
+        out: list = []
+        seen: set[str] = set()
+        for root in self._iter_army_roots(self.army):
+            if root is None:
+                continue
+            unit_id = str(maybe_entity_id(root) or "").strip()
+            if not unit_id or unit_id in seen:
+                continue
+            if not self._unit_in_army(root):
+                continue
+            if not self._unit_is_custodes(root):
+                continue
+            if not self._unit_is_walker(root):
+                continue
+            out.append(root)
+            seen.add(unit_id)
+        out.sort(key=lambda unit: str(maybe_entity_id(unit) or ""))
+        return out
+
+    def _pending_solar_spearhead_walker_request(self, game, *, army_id: str) -> bool:
+        if game is None:
+            return False
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        from ..engine.decision_kinds import DECISION_SELECT_REALM_OF_CHAOS_UNITS
+
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != DECISION_SELECT_REALM_OF_CHAOS_UNITS:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            ability = str(ctx.get("ability", "") or "").strip().lower()
+            if ability != self._AURIC_ARMOUR_WALKER_SELECTION_ABILITY:
+                continue
+            if str(ctx.get("army_id", "") or "") != str(army_id or ""):
+                continue
+            return True
+        return False
+
+    def queue_solar_spearhead_walker_character_selection_request(self, *, game=None, player=None) -> None:
+        if not self.is_solar_spearhead():
+            return
+        if self.army is None:
+            return
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return
+        if self._solar_spearhead_walker_selection_resolved:
+            return
+
+        from ..engine.decision_kinds import DECISION_SELECT_REALM_OF_CHAOS_UNITS
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return
+        candidates = list(self._solar_spearhead_walker_candidates() or [])
+        if not candidates:
+            self._solar_spearhead_walker_selection_resolved = True
+            return
+
+        army_id = str(maybe_entity_id(self.army) or "")
+        if self._pending_solar_spearhead_walker_request(game, army_id=army_id):
+            return
+
+        candidate_ids = [str(maybe_entity_id(unit) or "") for unit in candidates if str(maybe_entity_id(unit) or "")]
+        if not candidate_ids:
+            self._solar_spearhead_walker_selection_resolved = True
+            return
+
+        request = DecisionRequest.create(
+            DECISION_SELECT_REALM_OF_CHAOS_UNITS,
+            "Auric Armour: select up to two ADEPTUS CUSTODES WALKER models to gain CHARACTER.",
+            player_id=getattr(owner, "id", None),
+            options=[
+                DecisionOption.create("Confirm", payload={"action": "confirm"}),
+                DecisionOption.create("None", payload={"action": "skip"}),
+            ],
+            context={
+                "army_id": army_id,
+                "ability": self._AURIC_ARMOUR_WALKER_SELECTION_ABILITY,
+                "ability_name": self._AURIC_ARMOUR_SOURCE,
+                "phase": "Muster Armies step",
+                "max_units": 2,
+                "allowed_unit_ids": list(candidate_ids),
+                "title": self._AURIC_ARMOUR_SOURCE,
+                "subtitle": "Select up to two ADEPTUS CUSTODES WALKER models.",
+                "instruction": "Selected WALKER units gain the CHARACTER keyword.",
+                "skip_label": "None (do not select WALKER units)",
+            },
+        )
+        if hasattr(game, "request_decision"):
+            game.request_decision(request)
+
+    def solar_spearhead_walker_selection_is_valid(self, unit_ids, *, game=None) -> tuple[bool, str]:
+        del game
+        if not self.is_solar_spearhead():
+            return False, "Auric Armour is not active for this army."
+        if unit_ids is None:
+            return True, ""
+        if not isinstance(unit_ids, list):
+            return False, "Auric Armour selection requires unit_ids."
+        unique_ids = sorted({str(unit_id or "").strip() for unit_id in list(unit_ids or []) if str(unit_id or "").strip()})
+        if len(unique_ids) > 2:
+            return False, "Auric Armour can select at most two WALKER units."
+        candidates = {
+            str(maybe_entity_id(unit) or ""): unit
+            for unit in list(self._solar_spearhead_walker_candidates() or [])
+            if str(maybe_entity_id(unit) or "")
+        }
+        for unit_id in unique_ids:
+            if unit_id not in candidates:
+                return False, "Auric Armour selection contains an ineligible unit."
+        return True, ""
+
+    def apply_solar_spearhead_walker_character_selection(self, unit_ids, *, game=None) -> list[str]:
+        selected = list(unit_ids or [])
+        valid, _reason = self.solar_spearhead_walker_selection_is_valid(selected, game=game)
+        if not valid:
+            return []
+        candidate_by_id = {
+            str(maybe_entity_id(unit) or ""): unit
+            for unit in list(self._solar_spearhead_walker_candidates() or [])
+            if str(maybe_entity_id(unit) or "")
+        }
+        applied_ids: list[str] = []
+        selected_ids = sorted({str(unit_id or "").strip() for unit_id in list(selected or []) if str(unit_id or "").strip()})
+        for unit_id in selected_ids:
+            root = candidate_by_id.get(unit_id)
+            if root is None:
+                continue
+            self._add_keyword_once(root, "Character")
+            for model in list(getattr(root, "models", []) or []):
+                self._add_keyword_once(model, "Character")
+            applied_ids.append(unit_id)
+        self.solar_spearhead_character_walker_unit_ids = tuple(applied_ids)
+        if self.army is not None:
+            setattr(self.army, "solar_spearhead_character_walker_unit_ids", list(applied_ids))
+        self._solar_spearhead_walker_selection_resolved = True
+        return list(applied_ids)
+
+    def _auric_armour_vehicle_unit(self, model_or_unit):
+        if not self.is_solar_spearhead():
+            return None
+        if model_or_unit is None:
+            return None
+        unit = getattr(model_or_unit, "parent_unit", None)
+        if unit is None:
+            unit = model_or_unit
+        root = self._root_unit(unit)
+        if root is None:
+            return None
+        if not self._unit_in_army(root):
+            return None
+        if not self._unit_is_custodes_vehicle(root):
+            return None
+        return root
+
+    def _auric_armour_walker_unit(self, model_or_unit):
+        if not self.is_solar_spearhead():
+            return None
+        if model_or_unit is None:
+            return None
+        unit = getattr(model_or_unit, "parent_unit", None)
+        if unit is None:
+            unit = model_or_unit
+        root = self._root_unit(unit)
+        if root is None:
+            return None
+        if not self._unit_in_army(root):
+            return None
+        if not self._unit_is_custodes(root):
+            return None
+        if not self._unit_is_walker(root):
+            return None
+        return root
+
+    def auric_armour_objective_control_bonus(self, model, *, unit=None) -> tuple[int, str]:
+        if unit is None:
+            unit = getattr(model, "parent_unit", None)
+        root = self._auric_armour_vehicle_unit(unit)
+        if root is None:
+            return 0, ""
+        if self._unit_is_aircraft(root):
+            return 0, ""
+        if self._unit_is_battle_shocked(root):
+            return 0, ""
+        if self._unit_is_below_starting_strength(root):
+            return 0, ""
+        return 2, self._AURIC_ARMOUR_SOURCE
+
+    def auric_armour_hit_reroll_ones(self, attacker_model, target_unit=None, *, game=None, weapon_profile=None, attack_instance=None) -> tuple[bool, str]:
+        del target_unit
+        del game
+        del weapon_profile
+        del attack_instance
+        root = self._auric_armour_vehicle_unit(attacker_model)
+        if root is None:
+            return False, ""
+        if not self._unit_is_below_starting_strength(root):
+            return False, ""
+        return True, self._AURIC_ARMOUR_SOURCE
+
+    def auric_armour_wound_reroll_ones(self, attacker_model, target_unit=None, *, game=None, weapon_profile=None, attack_instance=None) -> tuple[bool, str]:
+        del target_unit
+        del game
+        del weapon_profile
+        del attack_instance
+        root = self._auric_armour_vehicle_unit(attacker_model)
+        if root is None:
+            return False, ""
+        if not self._unit_is_below_half_strength(root):
+            return False, ""
+        return True, self._AURIC_ARMOUR_SOURCE
+
+    def auric_armour_move_bonus(self, model, *, unit=None) -> tuple[int, str]:
+        if unit is None:
+            unit = getattr(model, "parent_unit", None)
+        if self._auric_armour_walker_unit(unit) is None:
+            return 0, ""
+        return 2, self._AURIC_ARMOUR_SOURCE
+
+    def auric_armour_advance_roll_bonus(self, unit, *, game=None) -> tuple[int, str]:
+        del game
+        if self._auric_armour_walker_unit(unit) is None:
+            return 0, ""
+        return 1, self._AURIC_ARMOUR_SOURCE
+
+    def auric_armour_charge_roll_bonus(self, unit, *, target_units=None, game=None) -> tuple[int, str]:
+        del target_units
+        del game
+        if self._auric_armour_walker_unit(unit) is None:
+            return 0, ""
+        return 1, self._AURIC_ARMOUR_SOURCE
 
     def apply_creeping_dread_opponent_command_phase(self, *, game=None, current_player=None) -> list:
         if not self.is_null_maiden_vigil():

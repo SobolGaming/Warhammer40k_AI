@@ -747,6 +747,26 @@ class Unit(
             except Exception:
                 pass
 
+            # Adeptus Custodes (Solar Spearhead): Auric Armour +2 OC
+            # for ADEPTUS CUSTODES VEHICLE units at Starting Strength
+            # (excluding AIRCRAFT and Battle-shocked units).
+            try:
+                ac_mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
+                bonus_fn = getattr(ac_mgr, "auric_armour_objective_control_bonus", None) if ac_mgr is not None else None
+                if callable(bonus_fn):
+                    bonus, source = bonus_fn(model, unit=self)
+                    if int(bonus or 0) > 0:
+                        source_name = str(source or "Auric Armour").strip() or "Auric Armour"
+                        mods.append(
+                            Modifier(
+                                ModifierOp.ADD,
+                                int(bonus),
+                                source=f"detachment:{source_name}",
+                            )
+                        )
+            except Exception:
+                pass
+
             # Singular Purpose (TYRANIDS): while the selected source model is within range
             # of the selected objective marker, that model has OC 15 (or configured value).
             try:
@@ -1137,6 +1157,16 @@ class Unit(
                         or "Desperate for Redemption (The Path of the Penitent)"
                     )
                     mods.append(Modifier(ModifierOp.ADD, int(bonus), source=f"detachment:{source_name}"))
+            try:
+                ac_mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
+                bonus_fn = getattr(ac_mgr, "auric_armour_move_bonus", None) if ac_mgr is not None else None
+                if callable(bonus_fn):
+                    bonus, source = bonus_fn(model, unit=self)
+                    if int(bonus or 0):
+                        source_name = str(source or "Auric Armour").strip() or "Auric Armour"
+                        mods.append(Modifier(ModifierOp.ADD, int(bonus), source=f"detachment:{source_name}"))
+            except Exception:
+                pass
             try:
                 from ..utility.aura_effects import get_aura_move_characteristic_bonus
 

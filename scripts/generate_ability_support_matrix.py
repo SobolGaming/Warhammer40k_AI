@@ -1010,6 +1010,16 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time an adeptus custodes model from your army with the martial ka tah ability makes a melee attack a successful unmodified hit roll of 5 scores a critical hit",
             r"improve the armour penetration characteristic of melee weapons equipped by adeptus custodes models from your army with the martial ka tah ability by 1",
         ),
+        "Auric Armour": (
+            r"while an adeptus custodes vehicle unit from your army is at starting strength unless that unit is an aircraft or it is battle shocked add 2 to the objective control characteristic of models in that unit",
+            r"while an adeptus custodes vehicle unit from your army is below starting strength each time a model in that unit makes an attack reroll a hit roll of 1",
+            r"while an adeptus custodes vehicle unit from your army is below half strength each time a model in that unit makes an attack reroll a hit roll of 1 and reroll a wound roll of 1",
+            r"moritoi ancients the adeptus custodes honoured fallen are ever eager for battle",
+            r"add 2 to the move characteristic of models in adeptus custodes walker units from your army and add 1 to advance and charge rolls made for such units",
+            r"(?:keywords )?in the muster armies step you can select up to 2 adeptus custodes walker models from your army",
+            r"the selected units gain the character keyword",
+            r"this means that the selected models can be given enhancements and one of them can be selected as your warlord",
+        ),
         "Kindred Sorcery": (
             r"in your command phase you can select one of the abilities listed below to take effect until the start of your next command phase",
             r"you can only select each of these abilities once per battle",
@@ -2130,6 +2140,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Martial Mastery": (
             "Supported",
             "Shield Host: at the start of each battle round, select one mode (or none) until the next battle round - melee attacks by ADEPTUS CUSTODES models with Martial Ka'tah score critical hits on 5+, or improve AP of those melee weapons by 1.",
+        ),
+        "Auric Armour": (
+            "Supported",
+            "Solar Spearhead: ADEPTUS CUSTODES VEHICLE units gain +2 Objective Control at Starting Strength (excluding AIRCRAFT and Battle-shocked units), re-roll Hit rolls of 1 while below Starting Strength, and re-roll Hit rolls of 1 plus Wound rolls of 1 while Below Half-strength; ADEPTUS CUSTODES WALKER units gain +2\" Move and +1 to Advance/Charge rolls; in the Muster Armies step, you can select up to two ADEPTUS CUSTODES WALKER units to gain the CHARACTER keyword.",
         ),
         "Kindred Sorcery": (
             "Supported",
