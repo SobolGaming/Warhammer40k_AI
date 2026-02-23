@@ -334,6 +334,14 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Command Protocols": (
             r"while a necrons character model is leading this unit each time a model in this unit makes an attack add 1 to the hit roll",
         ),
+        "Power Matrix": (
+            r"certain areas of the battlefield are considered to be within your armys power matrix as follows",
+            r"your deployment zone is always within your armys power matrix",
+            r"at the start of any phase if you control at least half of the objective markers within no mans land until the end of that phase no mans land is within your armys power matrix",
+            r"at the start of any phase if you control at least half of the objective markers within your opponents deployment zone until the end of that phase your opponents deployment zone is within your armys power matrix",
+            r"each time a model in a cryptek or canoptek unit from your army makes an attack reroll a hit roll of 1",
+            r"if such a unit is wholly within your armys power matrix you can reroll the hit roll instead",
+        ),
         "Skirmish Fighters": (
             r"kroot models from your army have a 6 invulnerable save against melee attacks and a 5 invulnerable save against ranged attacks",
         ),
@@ -2472,6 +2480,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Annihilation Protocol": (
             "Supported",
             "Annihilation Legion: DESTROYER CULT and FLAYED ONES units can re-roll Charge rolls; declared charges get +1 when any target is Below Half-strength; DESTROYER CULT ranged attacks improve AP by 1 against the closest eligible target.",
+        ),
+        "Power Matrix": (
+            "Supported",
+            "Canoptek Court: start-of-phase Power Matrix snapshot (own deployment zone always; No Man's Land and opponent deployment zone active when controlling at least half of their objective markers), CRYPTEK/CANOPTEK units re-roll Hit rolls of 1, and those units re-roll the Hit roll instead while wholly within the Power Matrix.",
         ),
         "Relentless Onslaught": ("Supported", "Starshatter Arsenal: +1 to hit vs targets within objective range; VEHICLE/MOUNTED (non-TITANIC) ranged weapons gain Assault."),
         "Ruthless Discipline": (

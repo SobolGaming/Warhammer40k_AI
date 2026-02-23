@@ -25,6 +25,8 @@ class NecronsDetachmentManager(DetachmentManagerBase):
     _ANNIHILATION_PROTOCOL_RANGED_KEYWORD = "DESTROYER CULT"
     _ANNIHILATION_PROTOCOL_CHARGE_SOURCE = "Annihilation Protocol (+1 to Charge roll vs Below Half-strength)"
     _ANNIHILATION_PROTOCOL_AP_SOURCE = "Annihilation Protocol (+1 AP vs closest eligible target)"
+    _POWER_MATRIX_KEYWORDS = ("CRYPTEK", "CANOPTEK")
+    _POWER_MATRIX_SOURCE = "Power Matrix"
 
     _COMMAND_PHASE_SELECT_FRIENDLY_RE = re.compile(
         r"in your command phase, select one friendly (?P<target>.+?) unit(?:,|\s)*"
@@ -41,6 +43,12 @@ class NecronsDetachmentManager(DetachmentManagerBase):
         flags=re.IGNORECASE,
     )
 
+    def __init__(self, army=None):
+        super().__init__(army)
+        self._power_matrix_phase_key: tuple[int, str] | None = None
+        self._power_matrix_nml_active: bool = False
+        self._power_matrix_enemy_active: bool = False
+
     def is_starshatter_arsenal(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
             return False
@@ -50,6 +58,11 @@ class NecronsDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Annihilation Legion")
+
+    def is_canoptek_court(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Canoptek Court")
 
     @staticmethod
     def _unit_root(unit):
@@ -169,6 +182,145 @@ class NecronsDetachmentManager(DetachmentManagerBase):
         if bool(is_closest(attacker_model, weapon_profile, target_root, game_map)):
             return 1, self._ANNIHILATION_PROTOCOL_AP_SOURCE
         return 0, ""
+
+    @staticmethod
+    def _phase_key_for_game(game) -> tuple[int, str]:
+        try:
+            turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            turn = 0
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        return turn, phase_name
+
+    def on_phase_start(self, *, game=None) -> None:
+        if not self.is_canoptek_court():
+            return
+        if game is None:
+            return
+        player = getattr(self.army, "player", None)
+        if player is None:
+            return
+        phase_key = self._phase_key_for_game(game)
+        self._power_matrix_phase_key = phase_key
+        self._power_matrix_nml_active = False
+        self._power_matrix_enemy_active = False
+        zones_fn = getattr(game, "_shadow_of_chaos_zones", None)
+        if callable(zones_fn):
+            zones = set(zones_fn(player))
+            self._power_matrix_nml_active = "nml" in zones
+            self._power_matrix_enemy_active = "enemy" in zones
+
+    def _active_power_matrix_zones(self, game) -> set[str]:
+        zones = {"own"}
+        if game is None:
+            return zones
+        phase_key = self._phase_key_for_game(game)
+        if self._power_matrix_phase_key != phase_key:
+            self._power_matrix_phase_key = phase_key
+            self._power_matrix_nml_active = False
+            self._power_matrix_enemy_active = False
+            player = getattr(self.army, "player", None)
+            zones_fn = getattr(game, "_shadow_of_chaos_zones", None)
+            if player is not None and callable(zones_fn):
+                snapshot = set(zones_fn(player))
+                self._power_matrix_nml_active = "nml" in snapshot
+                self._power_matrix_enemy_active = "enemy" in snapshot
+        if self._power_matrix_nml_active:
+            zones.add("nml")
+        if self._power_matrix_enemy_active:
+            zones.add("enemy")
+        return zones
+
+    def _unit_is_power_matrix_eligible(self, unit) -> bool:
+        if not self.is_canoptek_court():
+            return False
+        if unit is None:
+            return False
+        if not self._unit_belongs_to_army(unit):
+            return False
+        return self._unit_contains_any_keyword(unit, self._POWER_MATRIX_KEYWORDS)
+
+    def _model_within_power_matrix(self, model, *, game, player, opponent, zones: set[str]) -> bool:
+        if model is None:
+            return False
+        if not bool(getattr(model, "is_alive", True)):
+            return False
+        get_location = getattr(model, "get_location", None)
+        if not callable(get_location):
+            return False
+        location = get_location()
+        if location is None or len(location) < 2:
+            return False
+        x = float(location[0] or 0.0)
+        y = float(location[1] or 0.0)
+        base = getattr(model, "model_base", None)
+        if base is None:
+            return False
+        in_own = bool(game.is_position_wholly_in_deployment_zone(x, y, base, player.id))
+        in_enemy = bool(game.is_position_wholly_in_deployment_zone(x, y, base, opponent.id)) if opponent is not None else False
+        if in_own:
+            zone = "own"
+        elif in_enemy:
+            zone = "enemy"
+        else:
+            zone = "nml"
+        return zone in zones
+
+    def unit_wholly_within_power_matrix(self, unit, *, game=None) -> bool:
+        if not self.is_canoptek_court():
+            return False
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if not self._unit_belongs_to_army(root):
+            return False
+        player = getattr(self.army, "player", None)
+        if player is None:
+            return False
+        if game is None:
+            game = getattr(player, "game", None)
+        if game is None:
+            return False
+        opponent = next((p for p in (getattr(game, "players", None) or []) if p is not player), None)
+        zones = self._active_power_matrix_zones(game)
+        get_models = getattr(root, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+        if not models:
+            return False
+        for model in models:
+            if not self._model_within_power_matrix(
+                model,
+                game=game,
+                player=player,
+                opponent=opponent,
+                zones=zones,
+            ):
+                return False
+        return True
+
+    def power_matrix_hit_reroll_mods(self, attacker_model, *, game=None) -> dict:
+        if not self.is_canoptek_court():
+            return {}
+        if attacker_model is None:
+            return {}
+        unit = getattr(attacker_model, "parent_unit", None)
+        if not self._unit_is_power_matrix_eligible(unit):
+            return {}
+        reroll_values = (1,)
+        reroll_reasons = (f"{self._POWER_MATRIX_SOURCE}: re-roll Hit rolls of 1",)
+        if self.unit_wholly_within_power_matrix(unit, game=game):
+            return {
+                "reroll_values": reroll_values,
+                "reroll_reasons": reroll_reasons,
+                "reroll_full": True,
+                "reroll_full_reasons": (f"{self._POWER_MATRIX_SOURCE}: re-roll Hit roll",),
+            }
+        return {
+            "reroll_values": reroll_values,
+            "reroll_reasons": reroll_reasons,
+            "reroll_full": False,
+            "reroll_full_reasons": (),
+        }
 
     def unit_is_necrons(self, unit) -> bool:
         if unit is None:

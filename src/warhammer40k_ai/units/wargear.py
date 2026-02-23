@@ -9008,6 +9008,23 @@ class WargearProfile:
                 reroll_value_reasons.extend(list(mods.get("reroll_reasons", ()) or ()))
                 if bool(mods.get("reroll_full")):
                     reroll_full_reasons.extend(list(mods.get("reroll_full_reasons", ()) or ()))
+        # Necrons: Power Matrix (Canoptek Court) hit rerolls.
+        unit = getattr(attacker, "parent_unit", None)
+        army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+        mgr = getattr(army, "necrons_detachments", None) if army is not None else None
+        power_matrix_mods_fn = getattr(mgr, "power_matrix_hit_reroll_mods", None) if mgr is not None else None
+        if callable(power_matrix_mods_fn):
+            game = getattr(getattr(army, "player", None), "game", None)
+            mods = power_matrix_mods_fn(attacker, game=game)
+            if isinstance(mods, dict):
+                for v in list(mods.get("reroll_values", ()) or ()):
+                    try:
+                        reroll_hit_values.add(int(v))
+                    except Exception:
+                        continue
+                reroll_value_reasons.extend(list(mods.get("reroll_reasons", ()) or ()))
+                if bool(mods.get("reroll_full")):
+                    reroll_full_reasons.extend(list(mods.get("reroll_full_reasons", ()) or ()))
         # Space Marines: Librarius Conclave (Psychic Disciplines - Divination).
         try:
             unit = getattr(attacker, "parent_unit", None)
