@@ -473,6 +473,10 @@ class Army:
         apply_fn = getattr(tau_mgr, "apply_kroot_hunting_pack_battleline_keywords", None) if tau_mgr is not None else None
         if callable(apply_fn):
             apply_fn(unit)
+        tyr_mgr = getattr(self, "tyranids_detachments", None)
+        apply_fn = getattr(tyr_mgr, "apply_warrior_bioform_leader_beasts", None) if tyr_mgr is not None else None
+        if callable(apply_fn):
+            apply_fn(unit)
         game = getattr(getattr(self, "player", None), "game", None)
         refresh_fn = getattr(game, "refresh_rule_subscribers", None) if game is not None else None
         if callable(refresh_fn):
@@ -1546,6 +1550,11 @@ class Army:
         ts_mgr = getattr(self, "thousand_sons_detachments", None)
         if ts_mgr is not None:
             for msg in list(ts_mgr.validate_detachment_rules() or []):
+                if msg:
+                    raise ArmyValidationError(str(msg))
+        tyr_mgr = getattr(self, "tyranids_detachments", None)
+        if tyr_mgr is not None:
+            for msg in list(tyr_mgr.validate_detachment_rules() or []):
                 if msg:
                     raise ArmyValidationError(str(msg))
 

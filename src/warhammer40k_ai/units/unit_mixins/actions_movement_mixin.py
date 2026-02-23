@@ -1152,6 +1152,20 @@ class ActionsMovementMixin:
                         best_value = 4
                         best_source = str(sr.get("aegis_eternal_source", "") or "Aegis Eternal")
 
+        # Tyranids: Warrior Bioform Onslaught (Leader-beasts): 5+ invulnerable save.
+        try:
+            army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+            tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+            inv_fn = getattr(tyr_mgr, "leader_beasts_invulnerable_save", None) if tyr_mgr is not None else None
+            if callable(inv_fn):
+                inv_value, inv_source = inv_fn(model, unit=self)
+                inv_value = int(inv_value or 0)
+                if inv_value > 0 and (best_value is None or inv_value < best_value):
+                    best_value = int(inv_value)
+                    best_source = str(inv_source or "Leader-beasts").strip() or "Leader-beasts"
+        except Exception:
+            pass
+
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
         if not aegis_active and not archons_dynamic:

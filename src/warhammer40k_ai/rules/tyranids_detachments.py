@@ -49,6 +49,11 @@ HYPER_ADAPTATIONS: tuple[HyperAdaptation, ...] = (
 )
 HYPER_ADAPTATION_BY_KEY = {h.key: h for h in HYPER_ADAPTATIONS}
 
+_LEADER_BEASTS_TYRANID_WARRIOR_UNIT_NAMES = {
+    "tyranid warriors with ranged bio weapons",
+    "tyranid warriors with melee bio weapons",
+}
+
 
 class TyranidsDetachmentManager(DetachmentManagerBase):
     faction_id = "TYR"
@@ -92,6 +97,119 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Vanguard Onslaught")
+
+    def is_warrior_bioform_onslaught(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Warrior Bioform Onslaught")
+
+    def _unit_in_army(self, unit) -> bool:
+        if unit is None:
+            return False
+        army = self.army
+        if army is None:
+            return False
+        get_parent_army = getattr(unit, "get_parent_army", None)
+        if callable(get_parent_army):
+            try:
+                return get_parent_army() is army
+            except Exception:
+                return False
+        return unit in list(getattr(army, "units", []) or [])
+
+    def _leader_beasts_unit_name_norm(self, unit) -> str:
+        root = self._unit_root(unit)
+        if root is None:
+            return ""
+        return self._norm(str(getattr(root, "name", "") or ""))
+
+    def _leader_beasts_unit_is_tyranid_warrior_datasheet(self, unit) -> bool:
+        return self._leader_beasts_unit_name_norm(unit) in _LEADER_BEASTS_TYRANID_WARRIOR_UNIT_NAMES
+
+    def _leader_beasts_unit_is_winged_tyranid_prime_datasheet(self, unit) -> bool:
+        return self._leader_beasts_unit_name_norm(unit) == "winged tyranid prime"
+
+    @staticmethod
+    def _add_keyword_once(entity, keyword: str) -> None:
+        if entity is None:
+            return
+        key = str(keyword or "").strip()
+        if not key:
+            return
+        keywords = list(getattr(entity, "keywords", []) or [])
+        if any(str(v or "").strip().lower() == key.lower() for v in keywords):
+            return
+        keywords.append(key)
+        entity.keywords = keywords
+
+    @staticmethod
+    def _set_model_objective_control(model, value: int) -> None:
+        if model is None:
+            return
+        oc = int(max(0, value))
+        if hasattr(model, "_base_objective_control"):
+            model._base_objective_control = int(oc)
+        if hasattr(model, "_objective_control"):
+            model._objective_control = int(oc)
+        if hasattr(model, "_objective_control_raw"):
+            model._objective_control_raw = str(int(oc))
+
+    def apply_warrior_bioform_leader_beasts(self, unit=None) -> None:
+        """
+        Warrior Bioform Onslaught - Leader-beasts:
+        - Tyranid Warriors with Ranged/Melee Bio-weapons gain TYRANID WARRIORS and BATTLELINE.
+        - TYRANID WARRIORS models in those units have Objective Control 3.
+        """
+        if not self.is_warrior_bioform_onslaught() or self.army is None:
+            return
+        if unit is None:
+            units = list(getattr(self.army, "units", []) or [])
+        else:
+            units = [unit]
+        seen: set[str] = set()
+        for entry in units:
+            root = self._unit_root(entry)
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if root_id and root_id in seen:
+                continue
+            if root_id:
+                seen.add(root_id)
+            if not self._unit_in_army(root):
+                continue
+            if not self._leader_beasts_unit_is_tyranid_warrior_datasheet(root):
+                continue
+            self._add_keyword_once(root, "Tyranid Warriors")
+            self._add_keyword_once(root, "Battleline")
+            for model in list(getattr(root, "models", []) or []):
+                self._add_keyword_once(model, "Tyranid Warriors")
+                if self._model_keyword(model, "TYRANID WARRIORS"):
+                    self._set_model_objective_control(model, 3)
+
+    def leader_beasts_invulnerable_save(self, model, *, unit=None) -> tuple[int, str]:
+        """
+        Return (value, source) for Warrior Bioform Onslaught Leader-beasts invulnerable save.
+        """
+        if not self.is_warrior_bioform_onslaught():
+            return 0, ""
+        if model is None:
+            return 0, ""
+        source_unit = unit if unit is not None else getattr(model, "parent_unit", None)
+        root = self._unit_root(source_unit)
+        if root is None:
+            return 0, ""
+        if not self._unit_in_army(root):
+            return 0, ""
+        if self._leader_beasts_unit_is_tyranid_warrior_datasheet(root):
+            return 5, "Leader-beasts"
+        if self._leader_beasts_unit_is_winged_tyranid_prime_datasheet(root):
+            return 5, "Leader-beasts"
+        if self._attached_unit_has_keyword(root, "TYRANID WARRIORS"):
+            return 5, "Leader-beasts"
+        if self._attached_unit_has_keyword(root, "WINGED TYRANID PRIME"):
+            return 5, "Leader-beasts"
+        return 0, ""
 
     def _unit_root(self, unit):
         if unit is None:
@@ -691,6 +809,11 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
 
     def _army_has_hyper_adaptations(self) -> bool:
         return self.is_invasion_fleet()
+
+    def validate_detachment_rules(self) -> list[str]:
+        if self.is_warrior_bioform_onslaught():
+            self.apply_warrior_bioform_leader_beasts()
+        return []
 
     def _unit_is_tyranids(self, unit) -> bool:
         if unit is None:

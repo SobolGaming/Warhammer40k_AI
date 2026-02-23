@@ -943,6 +943,10 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"one destroyed infantry model excluding characters is returned to that unit with its full wounds remaining",
             r"if that unit is an endless multitude unit up to 3 destroyed models are returned instead",
         ),
+        "Leader-beasts": (
+            r"tyranid warriors see below and winged tyranid prime units from your army have a 5 invulnerable save",
+            r"(?:keywords )?tyranid warriors with ranged bio weapons and tyranid warriors with melee bio weapons units from your army gain the tyranid warriors and battleline keywords and while such a unit is not battle shocked tyranid warriors models in that unit have an objective control characteristic of 3",
+        ),
     }
     return {_norm(name): tuple(pats) for name, pats in raw.items()}
 
@@ -2074,6 +2078,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Feed the Swarm": (
             "Supported",
             "Assimilation Swarm: in your Command phase, each eligible HARVESTER queues an optional CHOOSE_QUARRY regeneration decision (with None), then either heals one friendly TYRANIDS model by D3+1 or returns destroyed INFANTRY non-CHARACTER models (up to 3 for ENDLESS MULTITUDE); source/target per-phase limits are enforced, including Regenerating Monstrosity and Biophagic Flow range interactions.",
+        ),
+        "Leader-beasts": (
+            "Supported",
+            "Warrior Bioform Onslaught: Tyranid Warriors with Ranged/Melee Bio-weapons gain TYRANID WARRIORS and BATTLELINE; TYRANID WARRIORS models in those units have Objective Control 3 (Battle-shock core rule still sets OC to 0); TYRANID WARRIORS and WINGED TYRANID PRIME units gain a 5+ invulnerable save.",
         ),
         "Get Stuck In": ("Supported", "War Horde: ORKS melee weapons gain Sustained Hits 1."),
         "Combat Doctrines": ("Supported", "Gladius Task Force: select each doctrine once per battle to grant move/charge eligibility."),
