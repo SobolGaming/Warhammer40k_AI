@@ -119,6 +119,24 @@ class GamePhaseHandlersMixin:
                 continue
             resolve_fn(game=self, opponent_player=player)
 
+    def _on_phase_start_tyranids_detachments(self, player=None, phase=None, **_kwargs) -> None:
+        """Command phase start: queue TYRANIDS Assimilation Swarm Feed the Swarm decisions."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        mgr = getattr(army, "tyranids_detachments", None)
+        queue_fn = getattr(mgr, "queue_feed_the_swarm_requests", None) if mgr is not None else None
+        if not callable(queue_fn):
+            return
+        queue_fn(game=self, player=player)
+
     def _on_phase_start_space_marines_detachment_rules(self, player=None, phase=None, **_kwargs) -> None:
         """Capture Space Marines start-of-phase detachment state."""
         for p in list(getattr(self, "players", []) or []):

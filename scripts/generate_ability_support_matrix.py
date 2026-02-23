@@ -935,6 +935,14 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"while a friendly jakhals or goremongers unit is within 6 of this model or within 9 if this model is titanic models in that unit have a 4 invulnerable save",
             r"jakhals and goremongers units from your army have the battleline keyword",
         ),
+        "Feed the Swarm": (
+            r"in your command phase each harvester unit from your army can regenerate one friendly tyranids unit that is within 6 of it",
+            r"a unit can only be regenerated once per phase",
+            r"each time a unit regenerates do one of the following",
+            r"one model in that unit regains up to d3 1 lost wounds",
+            r"one destroyed infantry model excluding characters is returned to that unit with its full wounds remaining",
+            r"if that unit is an endless multitude unit up to 3 destroyed models are returned instead",
+        ),
     }
     return {_norm(name): tuple(pats) for name, pats in raw.items()}
 
@@ -2062,6 +2070,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Idols of Khorne": (
             "Supported",
             "Cult of Blood: Command-phase selection (once per idol per battle) activates one Idol aura for WORLD EATERS TITANIC/MONSTER sources; JAKHALS/GOREMONGERS within 6\" (9\" if source is TITANIC) gain either +1 hit/+1 wound, +1\" Move/+1 Advance/+1 Charge, or a 4+ invulnerable save. JAKHALS/GOREMONGERS gain BATTLELINE.",
+        ),
+        "Feed the Swarm": (
+            "Supported",
+            "Assimilation Swarm: in your Command phase, each eligible HARVESTER queues an optional CHOOSE_QUARRY regeneration decision (with None), then either heals one friendly TYRANIDS model by D3+1 or returns destroyed INFANTRY non-CHARACTER models (up to 3 for ENDLESS MULTITUDE); source/target per-phase limits are enforced, including Regenerating Monstrosity and Biophagic Flow range interactions.",
         ),
         "Get Stuck In": ("Supported", "War Horde: ORKS melee weapons gain Sustained Hits 1."),
         "Combat Doctrines": ("Supported", "Gladius Task Force: select each doctrine once per battle to grant move/charge eligibility."),
@@ -9761,6 +9773,8 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000010654003": "Exalted Patron: bearer gains +1\" Move and can attach to Flawless Blades during Declare Battle Formations.",
         "000010654004": "Soulstain Made Manifest: start of Fight phase optional single-dialog target selection (with None) for one engaged enemy to take a Battle-shock test at -1.",
         "000010654005": "Spiritsliver: bearer melee weapons gain +1 Strength and +1 Attacks.",
+        "000008412002": "Regenerating Monstrosity: while resolving Feed the Swarm, the bearer's unit can be regenerated up to twice per phase instead of once.",
+        "000008412004": "Biophagic Flow (Aura): while a friendly Harvester model is within 12\" of the bearer, that Harvester's Feed the Swarm regeneration range is 9\" instead of 6\".",
         "000010078002": "Icon of War: BLOOD LEGIONS within 6\" gain Blessings of Khorne; with Might of Khorne active, may re-roll Battle-shock tests.",
         "000010078003": "Blood-forged Armour: set bearer Save to 2+; gain 1 Blood Tithe point when bearer is destroyed.",
         "000010078004": "Disciple of Khorne: Lord on Juggernaut can attach to Bloodcrushers/Flesh Hounds; bearer gains Deep Strike and BLOOD LEGIONS (instead of WORLD EATERS) while leading; attached unit benefits from Blessings of Khorne (FAQ).",

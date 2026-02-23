@@ -2154,6 +2154,42 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         return errors
     ctx = dict(getattr(request, "context", {}) or {})
     ability = str(ctx.get("ability", "") or "")
+    if ability == "feed_the_swarm":
+        payload = _option_payload(request, result)
+        if is_skip_choice(request, result):
+            return ()
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Feed the Swarm army not found.",)
+        mgr = getattr(army, "tyranids_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_assimilation_swarm", lambda: False)()):
+            return ("Feed the Swarm requires Assimilation Swarm.",)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Feed the Swarm source unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return ("Feed the Swarm source unit was not found.",)
+        validate_payload = getattr(mgr, "feed_the_swarm_payload_is_valid", None)
+        if not callable(validate_payload):
+            return ("Feed the Swarm payload validator is unavailable.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        valid, reason = validate_payload(source_root, payload, game=game, player=player)
+        if not bool(valid):
+            return (str(reason or "Feed the Swarm choice is not currently eligible."),)
+        return ()
     if ability == "grim_resolve_target":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)
@@ -3334,6 +3370,83 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
 def _apply_choose_quarry(game: object, request: DecisionRequest, result: DecisionResult):
     ctx = dict(getattr(request, "context", {}) or {})
     ability = str(ctx.get("ability", "") or "")
+    if ability == "feed_the_swarm":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "tyranids_detachments", None)
+        if mgr is None:
+            return None
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        ability_name = str(ctx.get("ability_name", "") or "Feed the Swarm").strip() or "Feed the Swarm"
+
+        if is_skip_choice(request, result):
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {getattr(source_root, 'name', 'Unit')} selected none.",
+            )
+            return {
+                "action": "skip",
+                "source": ability_name,
+                "source_unit_id": str(get_entity_id(source_root) or ""),
+            }
+
+        apply_payload = getattr(mgr, "apply_feed_the_swarm_payload", None)
+        if not callable(apply_payload):
+            return None
+        outcome = apply_payload(source_root, payload, game=game, player=player)
+        if not isinstance(outcome, dict):
+            return None
+
+        action = str(outcome.get("action", "") or "").strip().lower()
+        if action == "heal":
+            healed = int(outcome.get("healed_wounds", 0) or 0)
+            heal_roll = int(outcome.get("heal_roll", 0) or 0)
+            t_model = str(outcome.get("target_model_name", "") or "Model")
+            t_unit = str(outcome.get("target_unit_name", "") or "Unit")
+            _log_action_for_players(
+                game,
+                player,
+                (
+                    f"{ability_name}: {getattr(source_root, 'name', 'Unit')} regenerated {t_unit} - "
+                    f"{t_model} regained {healed} wound(s) (roll {heal_roll})."
+                ),
+            )
+            return outcome
+
+        if action == "return":
+            returned = int(outcome.get("return_count", 0) or 0)
+            t_unit = str(outcome.get("target_unit_name", "") or "Unit")
+            _log_action_for_players(
+                game,
+                player,
+                (
+                    f"{ability_name}: {getattr(source_root, 'name', 'Unit')} regenerated {t_unit} - "
+                    f"returned {returned} destroyed model(s)."
+                ),
+            )
+            return outcome
+        return outcome
     if ability == "grim_resolve_target":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)
