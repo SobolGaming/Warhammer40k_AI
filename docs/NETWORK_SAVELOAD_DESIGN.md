@@ -435,7 +435,7 @@ Faction / Detachment / Ability choices:
 - hyper_adaptations_dialog: CHOOSE_HYPER_ADAPTATION {choice_id}
 - synaptic_imperatives_dialog: CHOOSE_QUARRY {choice_key | skip} (context `ability="synaptic_imperatives"`, `ability_name="Synaptic Imperatives"`, `army_id`, `battle_round`, `allowed_choice_keys[]`, `optional=true`)
 - frenzy_choice_dialog: CHOOSE_FRENZY_TARGET {target_unit_id}
-- harbingers_of_dread_dialog: CHOOSE_HARBINGER {choice_id}
+- harbingers_of_dread_dialog: CHOOSE_HARBINGER {choice_id | skip} (context `army_id`, `battle_round`; Traitoris Lance bonus choice uses `ability="traitoris_paragons_of_terror_bonus"`, `ability_name="Paragons of Terror"`, `allowed_choice_keys[]`, `optional=true`)
 - martial_katah_dialog: CHOOSE_MARTIAL_KATAH {choice_id}
 - martial_katah_dialog: CHOOSE_TECHNOSORCEROUS_AUGMENTATION {choice_id} (context `unit_id`, `ability_name`, `phase_name`)
 - moment_shackle_dialog: CHOOSE_MOMENT_SHACKLE {choice_id | skip} (context `unit_id`, `model_id`, `ability_key`, `ability_name`)

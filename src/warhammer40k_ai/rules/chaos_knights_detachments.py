@@ -15,12 +15,15 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
     MARKED_PREY_NAME = "Marked Prey"
     DARK_SACRIFICE_NAME = "Dark Sacrifice"
     TYRANNICAL_COURT_NAME = "Tyrannical Court"
+    PARAGONS_OF_TERROR_NAME = "Paragons of Terror"
     DETACHMENT_INFERNAL_LANCE = "Infernal Lance"
     DETACHMENT_HOUNDPACK_LANCE = "Houndpack Lance"
     DETACHMENT_ICONOCLAST_FIEFDOM = "Iconoclast Fiefdom"
     DETACHMENT_LORDS_OF_DREAD = "Lords of Dread"
+    DETACHMENT_TRAITORIS_LANCE = "Traitoris Lance"
     HOUNDPACK_CHARACTER_SELECTION_ABILITY = "houndpack_lance_character_selection"
     ICONOCLAST_DARK_SACRIFICE_ABILITY = "iconoclast_dark_sacrifice"
+    TRAITORIS_PARAGONS_ABILITY = "traitoris_paragons_of_terror_bonus"
 
     def __init__(self, army=None):
         super().__init__(army)
@@ -32,6 +35,7 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
         self._houndpack_character_unit_ids: set[str] = set()
         self._houndpack_character_selection_resolved: bool = False
         self._lords_of_dread_claimed_for_dark_gods_used_round: int = 0
+        self._traitoris_paragons_bonus_round: int = 0
 
     def is_infernal_lance(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -52,6 +56,11 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches(self.DETACHMENT_LORDS_OF_DREAD)
+
+    def is_traitoris_lance(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches(self.DETACHMENT_TRAITORIS_LANCE)
 
     @staticmethod
     def _unit_root(unit):
@@ -627,6 +636,131 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
         if battle_round <= 0:
             return
         self._lords_of_dread_claimed_for_dark_gods_used_round = battle_round
+
+    def can_queue_traitoris_paragons_bonus_choice(self, *, battle_round: int, game=None) -> bool:
+        if not self.is_traitoris_lance():
+            return False
+        try:
+            br = int(battle_round or 0)
+        except (TypeError, ValueError):
+            br = 0
+        if br != 1:
+            return False
+        if int(self._traitoris_paragons_bonus_round or 0) == br:
+            return False
+        if game is not None and not bool(getattr(game, "is_authoritative", True)):
+            return False
+        harbingers = getattr(self.army, "harbingers_of_dread", None) if self.army is not None else None
+        if harbingers is None:
+            return False
+        available = list(getattr(harbingers, "get_available_dread_abilities", lambda: [])() or [])
+        return bool(available)
+
+    def mark_traitoris_paragons_bonus_used(self, *, battle_round: int | None = None, game=None) -> None:
+        br = battle_round
+        if br is None and game is not None:
+            br = getattr(game, "turn", 0)
+        try:
+            resolved = int(br or 0)
+        except (TypeError, ValueError):
+            resolved = 0
+        if resolved <= 0:
+            return
+        self._traitoris_paragons_bonus_round = resolved
+
+    def _pending_traitoris_paragons_request(self, game, *, army_id: str, battle_round: int) -> bool:
+        if game is None:
+            return False
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        from ..engine.decision_kinds import DECISION_CHOOSE_HARBINGER
+
+        target_army_id = str(army_id or "")
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_HARBINGER:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "").strip().lower() != self.TRAITORIS_PARAGONS_ABILITY:
+                continue
+            if target_army_id and str(ctx.get("army_id", "") or "") != target_army_id:
+                continue
+            try:
+                req_round = int(ctx.get("battle_round", 0) or 0)
+            except (TypeError, ValueError):
+                req_round = 0
+            if req_round and req_round != int(battle_round or 0):
+                continue
+            return True
+        return False
+
+    def queue_traitoris_paragons_bonus_choice(self, *, battle_round: int, game=None, player=None):
+        if not self.can_queue_traitoris_paragons_bonus_choice(battle_round=battle_round, game=game):
+            return None
+        if game is None:
+            return None
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return None
+        harbingers = getattr(self.army, "harbingers_of_dread", None) if self.army is not None else None
+        if harbingers is None:
+            return None
+        available = list(getattr(harbingers, "get_available_dread_abilities", lambda: [])() or [])
+        available.sort(key=lambda dread: str(getattr(dread, "key", "") or ""))
+        if not available:
+            self.mark_traitoris_paragons_bonus_used(battle_round=battle_round, game=game)
+            return None
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_HARBINGER
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        army_id = str(get_entity_id(self.army) or "")
+        if self._pending_traitoris_paragons_request(game, army_id=army_id, battle_round=int(battle_round or 0)):
+            return None
+
+        options = [
+            DecisionOption.create(
+                "None",
+                payload={"skip": True, "action": "skip", "army_id": army_id},
+            )
+        ]
+        allowed_choice_keys: list[str] = []
+        for dread in available:
+            dread_key = str(getattr(dread, "key", "") or "").strip().upper()
+            if not dread_key:
+                continue
+            allowed_choice_keys.append(dread_key)
+            options.append(
+                DecisionOption.create(
+                    str(getattr(dread, "name", dread_key) or dread_key),
+                    payload={
+                        "choice_key": dread_key,
+                        "summary": str(getattr(dread, "summary", "") or ""),
+                        "army_id": army_id,
+                    },
+                )
+            )
+        if len(options) <= 1:
+            self.mark_traitoris_paragons_bonus_used(battle_round=battle_round, game=game)
+            return None
+
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_HARBINGER,
+            "Paragons of Terror: select one additional Dread ability (or None).",
+            player_id=getattr(owner, "id", None),
+            options=options,
+            context={
+                "army_id": army_id,
+                "battle_round": int(battle_round or 0),
+                "ability": self.TRAITORIS_PARAGONS_ABILITY,
+                "ability_name": self.PARAGONS_OF_TERROR_NAME,
+                "allowed_choice_keys": list(allowed_choice_keys),
+                "optional": True,
+            },
+        )
+        if hasattr(game, "request_decision"):
+            game.request_decision(request)
+        return request
 
     def apply_houndpack_lance_battleline_keywords(self, unit=None) -> None:
         if not self.is_houndpack_lance():

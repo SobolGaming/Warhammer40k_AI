@@ -2223,12 +2223,32 @@ def _validate_choose_harbinger(game: object, request: DecisionRequest, result: D
     army = _resolve_army(game, request, payload)
     if army is None or getattr(army, "harbingers_of_dread", None) is None:
         return ("Harbingers manager not found.",)
+    ctx = dict(getattr(request, "context", {}) or {})
+    ability_key = str(ctx.get("ability", "") or "").strip().lower()
+    if ability_key == "traitoris_paragons_of_terror_bonus":
+        ck_mgr = getattr(army, "chaos_knights_detachments", None)
+        if ck_mgr is None:
+            return ("Chaos Knights detachment manager not found.",)
+        battle_round = ctx.get("battle_round")
+        can_queue = getattr(ck_mgr, "can_queue_traitoris_paragons_bonus_choice", None)
+        if callable(can_queue):
+            try:
+                if not bool(can_queue(battle_round=int(battle_round or 0), game=game)):
+                    return ("Paragons of Terror bonus choice is not available.",)
+            except (TypeError, ValueError):
+                return ("Paragons of Terror battle_round is invalid.",)
+        choice_key = str(payload.get("choice_key") or payload.get("key") or "").strip().upper()
+        allowed = {
+            str(item or "").strip().upper()
+            for item in list(ctx.get("allowed_choice_keys", []) or [])
+            if str(item or "").strip()
+        }
+        if allowed and choice_key not in allowed:
+            return ("Selected Dread ability is not eligible for Paragons of Terror.",)
     return ()
 
 
 def _apply_choose_harbinger(game: object, request: DecisionRequest, result: DecisionResult):
-    if is_skip_choice(request, result):
-        return None
     payload = _option_payload(request, result)
     army = _resolve_army(game, request, payload)
     if army is None:
@@ -2236,8 +2256,22 @@ def _apply_choose_harbinger(game: object, request: DecisionRequest, result: Deci
     mgr = getattr(army, "harbingers_of_dread", None)
     if mgr is None:
         raise RuntimeError("Harbingers manager not found.")
+    context = dict(getattr(request, "context", {}) or {})
+    ability_key = str(context.get("ability", "") or "").strip().lower()
+    battle_round = context.get("battle_round")
+    ck_mgr = getattr(army, "chaos_knights_detachments", None)
+    if is_skip_choice(request, result):
+        if ability_key == "traitoris_paragons_of_terror_bonus":
+            mark_used = getattr(ck_mgr, "mark_traitoris_paragons_bonus_used", None) if ck_mgr is not None else None
+            if callable(mark_used):
+                mark_used(battle_round=battle_round, game=game)
+            try:
+                player = getattr(army, "player", None)
+                _log_action_for_players(game, player, "Paragons of Terror: no additional Dread ability selected.")
+            except Exception:
+                pass
+        return None
     choice = payload.get("choice_key") or payload.get("key")
-    battle_round = request.context.get("battle_round")
     applied = None
     if bool(payload.get("random", False)) or str(choice or "").strip().upper() == "ROLL":
         rolls = payload.get("rolls")
@@ -2266,6 +2300,18 @@ def _apply_choose_harbinger(game: object, request: DecisionRequest, result: Deci
                 _log_action_for_players(game, player, f"Harbingers of Dread: {label} (Battle Round {battle_round})")
     except Exception:
         pass
+    if ability_key == "traitoris_paragons_of_terror_bonus":
+        mark_used = getattr(ck_mgr, "mark_traitoris_paragons_bonus_used", None) if ck_mgr is not None else None
+        if callable(mark_used):
+            mark_used(battle_round=battle_round, game=game)
+        return applied
+    queue_bonus = getattr(ck_mgr, "queue_traitoris_paragons_bonus_choice", None) if ck_mgr is not None else None
+    if callable(queue_bonus):
+        queue_bonus(
+            battle_round=battle_round,
+            game=game,
+            player=getattr(army, "player", None),
+        )
     return applied
 
 

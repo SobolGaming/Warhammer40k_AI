@@ -632,6 +632,9 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"improve the objective control characteristic of chaos knights character models from your army by 2",
             r"(?:in addition )?once per battle round if your warlord is on the battlefield you can use the claimed for the dark gods stratagem for 0cp",
         ),
+        "Paragons of Terror": (
+            r"at the start of the first battle round after selecting one or more dread abilities to be active for your army you can select one additional dread ability to be active for your army this additional dread ability cannot be randomly selected",
+        ),
         "Quicksilver Grace": (
             r"you can reroll advance rolls made for emperors children units from your army",
         ),
@@ -2666,6 +2669,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Tyrannical Court": (
             "Supported",
             "Lords of Dread: Chaos Knights CHARACTER models gain +2 Objective Control, and once per battle round, if your Warlord is on the battlefield, you can use CLAIMED FOR THE DARK GODS for 0CP.",
+        ),
+        "Paragons of Terror": (
+            "Supported",
+            "Traitoris Lance: at the start of battle round 1, after Harbingers selection resolves, queue an optional additional non-random Dread ability selection (or None).",
         ),
         "Blood Tithe": (
             "Supported",
