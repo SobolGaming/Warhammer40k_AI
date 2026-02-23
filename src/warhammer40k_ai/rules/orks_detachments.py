@@ -10,6 +10,8 @@ from ..utility.entity_ids import get_entity_id
 class OrksDetachmentManager(DetachmentManagerBase):
     faction_id = "ORK"
     _SECOND_WAAAGH_NAMED_UNITS = ("nobz", "meganobz")
+    _GREEN_TIDE_BOYZ_NAMED_UNITS = ("boyz",)
+    _GREEN_TIDE_MOB_MENTALITY_SOURCE = "Mob Mentality"
     _DA_BIG_HUNT_PREY_KEYWORDS = ("MONSTER", "VEHICLE", "CHARACTER")
     _HERE_BE_LOOT_QUALIFYING_KEYWORDS = ("INFANTRY", "MOUNTED", "WALKER")
     _DREAD_MOB_BUTTON_SUSTAINED = "SUSTAINED_HITS_1"
@@ -58,6 +60,11 @@ class OrksDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Freebooter Krew")
+
+    def is_green_tide(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Green Tide")
 
     @staticmethod
     def _normalize_name(text: str) -> str:
@@ -188,6 +195,40 @@ class OrksDetachmentManager(DetachmentManagerBase):
             if member_name in names:
                 return True
         return False
+
+    def _unit_total_model_count(self, unit) -> int:
+        root = self._unit_root(unit)
+        if root is None:
+            return 0
+        members_fn = getattr(root, "get_attached_unit_members", None)
+        if callable(members_fn):
+            members = list(members_fn() or [])
+        else:
+            members = [root]
+        total = 0
+        for member in members:
+            total += len(list(getattr(member, "models", []) or []))
+        return int(total)
+
+    def green_tide_mob_mentality_invulnerable_save(self, target_model, *, attack_type: str = "") -> tuple[int, str]:
+        del attack_type
+        if not self.is_green_tide():
+            return 0, ""
+        if target_model is None:
+            return 0, ""
+        target_unit = getattr(target_model, "parent_unit", None)
+        root = self._unit_root(target_unit)
+        if root is None or not self._unit_belongs_to_army(root):
+            return 0, ""
+        if not self._unit_contains_keyword(root, "BOYZ"):
+            if not self._unit_name_matches_any(root, self._GREEN_TIDE_BOYZ_NAMED_UNITS):
+                return 0, ""
+        model_count = self._unit_total_model_count(root)
+        if model_count >= 10:
+            return 5, self._GREEN_TIDE_MOB_MENTALITY_SOURCE
+        if model_count > 0:
+            return 6, self._GREEN_TIDE_MOB_MENTALITY_SOURCE
+        return 0, ""
 
     def _unit_contains_warboss_model(self, unit) -> bool:
         if unit is None:

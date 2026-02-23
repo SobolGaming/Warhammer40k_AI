@@ -15491,6 +15491,21 @@ class WargearProfile:
                     attack_instance["inv_save_override"] = 5
         except Exception:
             pass
+        # Orks: Green Tide (Mob Mentality) grants BOYZ units a 6++ (or 5++ while containing 10+ models).
+        t_unit = getattr(target_model, "parent_unit", None)
+        get_parent_army = getattr(t_unit, "get_parent_army", None) if t_unit is not None else None
+        army = get_parent_army() if callable(get_parent_army) else None
+        orks_mgr = getattr(army, "orks_detachments", None) if army is not None else None
+        mob_inv_fn = getattr(orks_mgr, "green_tide_mob_mentality_invulnerable_save", None) if orks_mgr is not None else None
+        if callable(mob_inv_fn):
+            attack_type = "melee" if (self.parent_wargear and self.parent_wargear.is_melee()) else "ranged"
+            inv_value, inv_source = mob_inv_fn(target_model, attack_type=attack_type)
+            if inv_value:
+                current = attack_instance.get("inv_save_override", None)
+                if current is None or int(current) > int(inv_value):
+                    attack_instance["inv_save_override"] = int(inv_value)
+                    source = str(inv_source or "Mob Mentality").strip() or "Mob Mentality"
+                    attack_instance["inv_save_override_reason"] = source
         # World Eaters: Blood Tithe (Boon of Blood) 4++ for BLOOD LEGIONS units.
         try:
             t_unit = getattr(target_model, "parent_unit", None)
