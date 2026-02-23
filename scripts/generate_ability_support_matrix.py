@@ -347,6 +347,10 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"in your shooting phase each time a cryptek unit from your army is selected to shoot select one of the following abilities(?: anti infantry 3 anti mounted 4 assault heavy ignores cover)?",
             r"until the end of the phase ranged weapons equipped by models in that unit have that ability",
         ),
+        "Cold Fervour": (
+            r"add 2 to the strength characteristic of weapons equipped by destroyer cult models from your army",
+            r"the first time each turn that a destroyer cult unit from your army makes attacks that destroy a unit or cause it to become below half strength after that unit has finished resolving its attacks until the end of the turn add 2 to the strength characteristic of weapons equipped by friendly necrons models excluding destroyer cult monster and titanic models",
+        ),
         "Skirmish Fighters": (
             r"kroot models from your army have a 6 invulnerable save against melee attacks and a 5 invulnerable save against ranged attacks",
         ),
@@ -2493,6 +2497,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Technosorcerous Augmentations": (
             "Supported",
             "Cryptek Conclave Technosorcerous Augmentations: CRYPTEK models' ranged weapons count as Assault for Advance-and-shoot eligibility, and in your Shooting phase each selected CRYPTEK unit prompts a deterministic choice of ANTI-INFANTRY 3+, ANTI-MOUNTED 4+, ASSAULT, HEAVY, or IGNORES COVER, applying the chosen keyword to that unit's ranged weapons until phase end.",
+        ),
+        "Cold Fervour": (
+            "Supported",
+            "Cursed Legion Cold Fervour: weapons equipped by DESTROYER CULT models gain +2 Strength, and the first time each turn a DESTROYER CULT unit destroys a unit or causes one to become Below Half-strength after finishing its attacks, eligible friendly NECRONS non-DESTROYER CULT/non-MONSTER/non-TITANIC models gain +2 Strength until turn end.",
         ),
         "Relentless Onslaught": ("Supported", "Starshatter Arsenal: +1 to hit vs targets within objective range; VEHICLE/MOUNTED (non-TITANIC) ranged weapons gain Assault."),
         "Ruthless Discipline": (

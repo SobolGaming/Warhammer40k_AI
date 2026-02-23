@@ -27,6 +27,8 @@ class NecronsDetachmentManager(DetachmentManagerBase):
     _ANNIHILATION_PROTOCOL_AP_SOURCE = "Annihilation Protocol (+1 AP vs closest eligible target)"
     _POWER_MATRIX_KEYWORDS = ("CRYPTEK", "CANOPTEK")
     _POWER_MATRIX_SOURCE = "Power Matrix"
+    _COLD_FERVOUR_SOURCE = "Cold Fervour"
+    _COLD_FERVOUR_BONUS = 2
     _TECHNOSORCEROUS_AUGMENTATIONS_SOURCE = "Technosorcerous Augmentations"
     _TECHNOSORCEROUS_CHOICE_TO_KEYWORD = {
         "ANTI_INFANTRY_3": "ANTI-INFANTRY 3+",
@@ -56,6 +58,9 @@ class NecronsDetachmentManager(DetachmentManagerBase):
         self._power_matrix_phase_key: tuple[int, str] | None = None
         self._power_matrix_nml_active: bool = False
         self._power_matrix_enemy_active: bool = False
+        self._cold_fervour_turn_key: tuple[int, str] | None = None
+        self._cold_fervour_activated_turn_key: tuple[int, str] | None = None
+        self._cold_fervour_target_snapshots_by_attacker: dict[str, dict[str, tuple[object, bool, bool]]] = {}
 
     def is_starshatter_arsenal(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -71,6 +76,11 @@ class NecronsDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Canoptek Court")
+
+    def is_cursed_legion(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Cursed Legion")
 
     def is_cryptek_conclave(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -307,6 +317,180 @@ class NecronsDetachmentManager(DetachmentManagerBase):
                 sr["technosorcerous_assault_turn_owner"] = str(getattr(player, "id", "") or "")
         root.special_rules = sr
         return bool(applied)
+
+    @staticmethod
+    def _current_turn_owner_id(game) -> str:
+        if game is None:
+            return ""
+        get_current_player = getattr(game, "get_current_player", None)
+        if not callable(get_current_player):
+            return ""
+        player = get_current_player()
+        return str(getattr(player, "id", "") or "")
+
+    def _cold_fervour_turn_key_for_game(self, game) -> tuple[int, str]:
+        return (self._current_turn(game), self._current_turn_owner_id(game))
+
+    def _cold_fervour_sync_turn_state(self, game) -> None:
+        key = self._cold_fervour_turn_key_for_game(game)
+        if key == self._cold_fervour_turn_key:
+            return
+        self._cold_fervour_turn_key = key
+        self._cold_fervour_activated_turn_key = None
+        self._cold_fervour_target_snapshots_by_attacker = {}
+
+    def _cold_fervour_attacker_unit_is_eligible(self, unit) -> bool:
+        if not self.is_cursed_legion():
+            return False
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if not self._unit_belongs_to_army(root):
+            return False
+        return self._unit_contains_keyword(root, "DESTROYER CULT")
+
+    @staticmethod
+    def _cold_fervour_model_has_keyword(model, keyword: str) -> bool:
+        if model is None:
+            return False
+        has_any = getattr(model, "has_any_keyword", None)
+        if callable(has_any):
+            return bool(has_any(keyword))
+        raw = [str(k or "") for k in list(getattr(model, "keywords", []) or [])]
+        raw += [str(k or "") for k in list(getattr(model, "faction_keywords", []) or [])]
+        return str(keyword or "").strip().lower() in {k.lower() for k in raw if str(k).strip()}
+
+    @staticmethod
+    def _unit_alive_and_below_half_state(unit) -> tuple[bool, bool]:
+        if unit is None:
+            return (False, False)
+        alive_attr = getattr(unit, "is_alive", None)
+        if callable(alive_attr):
+            alive = bool(alive_attr())
+        else:
+            alive = bool(alive_attr)
+        below_half_fn = getattr(unit, "is_below_half_strength", None)
+        if callable(below_half_fn):
+            below_half = bool(below_half_fn())
+        else:
+            below_half = False
+        return (alive, below_half)
+
+    def _cold_fervour_secondary_bonus_active(self, game) -> bool:
+        key = self._cold_fervour_turn_key_for_game(game)
+        return bool(self._cold_fervour_activated_turn_key is not None and self._cold_fervour_activated_turn_key == key)
+
+    def _cold_fervour_secondary_model_eligible(self, model) -> bool:
+        if model is None:
+            return False
+        unit = getattr(model, "parent_unit", None)
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if not self._unit_belongs_to_army(root):
+            return False
+        if not self.unit_is_necrons(root):
+            return False
+        if self._cold_fervour_model_has_keyword(model, "DESTROYER CULT"):
+            return False
+        if self._cold_fervour_model_has_keyword(model, "MONSTER"):
+            return False
+        if self._cold_fervour_model_has_keyword(model, "TITANIC"):
+            return False
+        return True
+
+    def cold_fervour_strength_bonus(self, attacker_model, weapon_profile, *, game=None) -> tuple[int, str]:
+        if attacker_model is None or weapon_profile is None:
+            return (0, "")
+        if not self.is_cursed_legion():
+            return (0, "")
+        unit = getattr(attacker_model, "parent_unit", None)
+        root = self._unit_root(unit)
+        if root is None or not self._unit_belongs_to_army(root):
+            return (0, "")
+
+        if self._cold_fervour_model_has_keyword(attacker_model, "DESTROYER CULT"):
+            return (self._COLD_FERVOUR_BONUS, self._COLD_FERVOUR_SOURCE)
+
+        self._cold_fervour_sync_turn_state(game)
+        if not self._cold_fervour_secondary_bonus_active(game):
+            return (0, "")
+        if not self._cold_fervour_secondary_model_eligible(attacker_model):
+            return (0, "")
+        return (self._COLD_FERVOUR_BONUS, self._COLD_FERVOUR_SOURCE)
+
+    def cold_fervour_record_targets_selected(self, attacking_unit, target_units, *, game=None) -> None:
+        if not self._cold_fervour_attacker_unit_is_eligible(attacking_unit):
+            return
+        self._cold_fervour_sync_turn_state(game)
+        root = self._unit_root(attacking_unit)
+        if root is None:
+            return
+        attacker_id = str(get_entity_id(root) or id(root))
+        snapshots: dict[str, tuple[object, bool, bool]] = {}
+        for target in list(target_units or []):
+            target_root = self._unit_root(target)
+            if target_root is None:
+                continue
+            target_id = str(get_entity_id(target_root) or id(target_root))
+            if target_id in snapshots:
+                continue
+            before_alive, before_below_half = self._unit_alive_and_below_half_state(target_root)
+            snapshots[target_id] = (target_root, bool(before_alive), bool(before_below_half))
+        if snapshots:
+            self._cold_fervour_target_snapshots_by_attacker[attacker_id] = snapshots
+        else:
+            self._cold_fervour_target_snapshots_by_attacker.pop(attacker_id, None)
+
+    def cold_fervour_register_attacks_resolved(self, attacker_unit, *, target_units=None, game=None) -> bool:
+        if not self._cold_fervour_attacker_unit_is_eligible(attacker_unit):
+            return False
+        self._cold_fervour_sync_turn_state(game)
+        root = self._unit_root(attacker_unit)
+        if root is None:
+            return False
+        attacker_id = str(get_entity_id(root) or id(root))
+        snapshots = dict(self._cold_fervour_target_snapshots_by_attacker.get(attacker_id, {}) or {})
+        if not snapshots:
+            return False
+
+        resolved_target_ids: list[str] = []
+        for target in list(target_units or []):
+            target_root = self._unit_root(target)
+            if target_root is None:
+                continue
+            target_id = str(get_entity_id(target_root) or id(target_root))
+            if target_id and target_id not in resolved_target_ids:
+                resolved_target_ids.append(target_id)
+        if not resolved_target_ids:
+            resolved_target_ids = list(snapshots.keys())
+
+        triggered = False
+        for target_id in resolved_target_ids:
+            entry = snapshots.pop(target_id, None)
+            if not isinstance(entry, tuple) or len(entry) != 3:
+                continue
+            target_root, before_alive, before_below_half = entry
+            if not bool(before_alive):
+                continue
+            after_alive, after_below_half = self._unit_alive_and_below_half_state(target_root)
+            became_below_half = (not bool(before_below_half)) and bool(after_alive) and bool(after_below_half)
+            destroyed = not bool(after_alive)
+            if destroyed or became_below_half:
+                triggered = True
+                break
+
+        if snapshots:
+            self._cold_fervour_target_snapshots_by_attacker[attacker_id] = snapshots
+        else:
+            self._cold_fervour_target_snapshots_by_attacker.pop(attacker_id, None)
+
+        if not triggered:
+            return False
+        if self._cold_fervour_secondary_bonus_active(game):
+            return False
+        self._cold_fervour_activated_turn_key = self._cold_fervour_turn_key_for_game(game)
+        return True
 
     def _annihilation_protocol_charge_eligible(self, unit) -> bool:
         if not self.is_annihilation_legion():

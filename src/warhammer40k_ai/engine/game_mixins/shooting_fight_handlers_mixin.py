@@ -3959,6 +3959,94 @@ class GameShootingFightHandlersMixin:
         )
         self.request_decision(req)
 
+    def _on_shooting_targets_selected_cold_fervour(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None or not target_units:
+            return
+        try:
+            root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            root = attacking_unit
+        if root is None:
+            return
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        mgr = getattr(army, "necrons_detachments", None) if army is not None else None
+        record_fn = getattr(mgr, "cold_fervour_record_targets_selected", None) if mgr is not None else None
+        if callable(record_fn):
+            record_fn(root, list(target_units or []), game=self)
+
+    def _on_fight_targets_selected_cold_fervour(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None or not target_units:
+            return
+        try:
+            root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            root = attacking_unit
+        if root is None:
+            return
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        mgr = getattr(army, "necrons_detachments", None) if army is not None else None
+        record_fn = getattr(mgr, "cold_fervour_record_targets_selected", None) if mgr is not None else None
+        if callable(record_fn):
+            record_fn(root, list(target_units or []), game=self)
+
+    def _on_unit_shooting_resolved_cold_fervour(self, attacker_unit=None, hits_by_target=None, **_kwargs) -> None:
+        if attacker_unit is None:
+            return
+        try:
+            root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            root = attacker_unit
+        if root is None:
+            return
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        mgr = getattr(army, "necrons_detachments", None) if army is not None else None
+        resolve_fn = getattr(mgr, "cold_fervour_register_attacks_resolved", None) if mgr is not None else None
+        if not callable(resolve_fn):
+            return
+        target_units = list(dict(hits_by_target or {}).keys())
+        activated = bool(resolve_fn(root, target_units=target_units, game=self))
+        if not activated:
+            return
+        from ...utility.event_bus import append_action
+
+        message = "Cold Fervour: first trigger this turn resolved, +2 Strength now applies to eligible NECRONS models until turn end."
+        for player in list(getattr(self, "players", []) or []):
+            if player is None:
+                continue
+            append_action(player, message)
+
+    def _on_fight_attacks_resolved_cold_fervour(self, unit=None, target_unit=None, hits_by_target=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        mgr = getattr(army, "necrons_detachments", None) if army is not None else None
+        resolve_fn = getattr(mgr, "cold_fervour_register_attacks_resolved", None) if mgr is not None else None
+        if not callable(resolve_fn):
+            return
+        targets: list = []
+        if target_unit is not None:
+            targets.append(target_unit)
+        for candidate in list(dict(hits_by_target or {}).keys()):
+            if candidate is None or candidate in targets:
+                continue
+            targets.append(candidate)
+        activated = bool(resolve_fn(root, target_units=targets, game=self))
+        if not activated:
+            return
+        from ...utility.event_bus import append_action
+
+        message = "Cold Fervour: first trigger this turn resolved, +2 Strength now applies to eligible NECRONS models until turn end."
+        for player in list(getattr(self, "players", []) or []):
+            if player is None:
+                continue
+            append_action(player, message)
+
     def _on_shooting_targets_selected_hand_of_asuryan(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:
             return

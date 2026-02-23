@@ -11306,6 +11306,23 @@ class WargearProfile:
                         )
         except Exception:
             pass
+        # Necrons: Cursed Legion - Cold Fervour (+2 Strength baseline for DESTROYER CULT models;
+        # first trigger each turn extends +2 Strength to eligible non-DESTROYER CULT NECRONS models).
+        try:
+            if isinstance(strength, int):
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                mgr = getattr(army, "necrons_detachments", None) if army is not None else None
+                bonus_fn = getattr(mgr, "cold_fervour_strength_bonus", None) if mgr is not None else None
+                if callable(bonus_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    s_bonus, source = bonus_fn(attacker, self, game=game)
+                    if int(s_bonus or 0):
+                        strength = strength + int(s_bonus)
+                        source_name = str(source or "Cold Fervour").strip() or "Cold Fervour"
+                        wound_result.setdefault("modifiers", []).append(f"+{int(s_bonus)}S from {source_name}")
+        except Exception:
+            pass
         try:
             if self.parent_wargear and self.parent_wargear.is_melee() and isinstance(strength, int):
                 sr = getattr(attacker.parent_unit, "special_rules", None)
