@@ -1004,6 +1004,12 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"if that unit is below half strength it must subtract \d+ from its battle shock test this phase instead",
             r"this means that all enemy psyker units within range of this aura ability and all enemy units within range of this aura ability that have lost one or more models must take a battle shock test in your opponents command phase not just those that are below half strength",
         ),
+        "Martial Mastery": (
+            r"at the start of the battle round you can select one of the bullet points below",
+            r"if you do until the start of the next battle round that bullet points effects apply",
+            r"each time an adeptus custodes model from your army with the martial ka tah ability makes a melee attack a successful unmodified hit roll of 5 scores a critical hit",
+            r"improve the armour penetration characteristic of melee weapons equipped by adeptus custodes models from your army with the martial ka tah ability by 1",
+        ),
         "Kindred Sorcery": (
             r"in your command phase you can select one of the abilities listed below to take effect until the start of your next command phase",
             r"you can only select each of these abilities once per battle",
@@ -2120,6 +2126,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Creeping Dread (Aura)": (
             "Supported",
             "Null Maiden Vigil: in your opponent's Command phase, enemy units within 12\" of ANATHEMA PSYKANA models must take Battle-shock tests if they are PSYKER or below Starting Strength; Below Half-strength targets take that test at -1.",
+        ),
+        "Martial Mastery": (
+            "Supported",
+            "Shield Host: at the start of each battle round, select one mode (or none) until the next battle round - melee attacks by ADEPTUS CUSTODES models with Martial Ka'tah score critical hits on 5+, or improve AP of those melee weapons by 1.",
         ),
         "Kindred Sorcery": (
             "Supported",

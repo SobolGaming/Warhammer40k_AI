@@ -384,6 +384,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
             predicate=lambda ctxs, _g: any_faction(ctxs, "AC"),
             subscriptions=[
                 ("fight_unit_selected", "_on_fight_unit_selected_martial_katah"),
+                ("battle_round_started", "_on_battle_round_started_adeptus_custodes"),
             ],
         )
     )

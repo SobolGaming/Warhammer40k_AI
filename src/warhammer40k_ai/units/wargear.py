@@ -2372,6 +2372,19 @@ class WargearProfile:
                     ap_val -= bonus
         except Exception:
             pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
+                bonus_fn = getattr(mgr, "martial_mastery_melee_ap_bonus", None) if mgr is not None else None
+                if callable(bonus_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    bonus = int(bonus_fn(attacker, target_unit=target, game=game, weapon_profile=self) or 0)
+                    if bonus:
+                        ap_val -= int(bonus)
+        except Exception:
+            pass
         if self.parent_wargear and self.parent_wargear.is_melee():
             sr = self._unit_special_rules(attacker)
             unit_bonus = int(sr.get("enhancement_melee_ap_bonus", 0) or 0)
@@ -10626,6 +10639,21 @@ class WargearProfile:
                     source = str(ctx.get("source", "") or "PRIMED AND READIED").strip() or "PRIMED AND READIED"
                     crit_threshold = min(int(crit_threshold), int(threshold))
                     crit_hit_reasons.append(f"{source}: critical hit on {int(threshold)}+")
+        except Exception:
+            pass
+        try:
+            is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+            if is_melee:
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
+                threshold_fn = getattr(mgr, "martial_mastery_crit_hit_threshold", None) if mgr is not None else None
+                if callable(threshold_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    threshold = int(threshold_fn(attacker, game=game, weapon_profile=self) or 0)
+                    if threshold:
+                        crit_threshold = min(int(crit_threshold), int(threshold))
+                        crit_hit_reasons.append(f"Martial Mastery: critical hit on {int(threshold)}+")
         except Exception:
             pass
 

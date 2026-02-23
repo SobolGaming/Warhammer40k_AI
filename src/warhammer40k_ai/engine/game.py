@@ -6236,6 +6236,19 @@ class Game(
                         manager=mgr,
                     )
 
+    def _on_battle_round_started_adeptus_custodes(self, game=None, battle_round: int = 0, **_kwargs) -> None:
+        br = int(battle_round or getattr(self, "turn", 0) or 0)
+        if br <= 0:
+            return
+        for player in list(getattr(self, "players", []) or []):
+            army = self._get_player_army(player)
+            if army is None:
+                continue
+            mgr = getattr(army, "adeptus_custodes_detachments", None)
+            on_start = getattr(mgr, "on_battle_round_start", None) if mgr is not None else None
+            if callable(on_start):
+                on_start(br, game=self)
+
     def _on_battle_round_started_start_of_battle_keyword_rerolls(
         self,
         game=None,

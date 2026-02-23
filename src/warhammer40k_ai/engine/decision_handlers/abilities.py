@@ -2491,6 +2491,36 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if target_id not in candidate_ids:
             return ("Assemblage of Might selection contains an ineligible target.",)
         return ()
+    if ability == "martial_mastery":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Martial Mastery army not found.",)
+        mgr = getattr(army, "adeptus_custodes_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_shield_host", lambda: False)()):
+            return ("Martial Mastery requires Shield Host.",)
+        battle_round = payload.get("battle_round")
+        if battle_round is None:
+            battle_round = ctx.get("battle_round")
+        can_select = getattr(mgr, "can_select_martial_mastery", None)
+        if not callable(can_select) or not bool(can_select(game=game, battle_round=battle_round)):
+            return ("Martial Mastery cannot be selected right now.",)
+        if is_skip_choice(request, result):
+            return ()
+        choice = payload.get("choice_key") or payload.get("key")
+        if choice is None:
+            return ("Martial Mastery selection requires choice_key.",)
+        choice_key = str(choice or "").strip().upper()
+        allowed_keys = {
+            str(v or "").strip().upper()
+            for v in list(ctx.get("allowed_choice_keys", []) or [])
+            if str(v or "").strip()
+        }
+        if allowed_keys and choice_key not in allowed_keys:
+            return ("Selected Martial Mastery mode is not in this request's candidate list.",)
+        if choice_key not in {"CRIT_5_PLUS", "AP_PLUS_1"}:
+            return ("Martial Mastery choice must be CRIT_5_PLUS or AP_PLUS_1 (or skip).",)
+        return ()
     if ability == "da_big_hunt_prey":
         if is_skip_choice(request, result):
             return ("Da Hunt Is On selection cannot be skipped.",)
@@ -4476,6 +4506,40 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             return applied
         choice = payload.get("choice_key") or payload.get("key")
         applied = bool(mgr.select_synaptic_imperative(choice, battle_round=battle_round))
+        if applied:
+            label = _option_label(request, result) or str(choice)
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {label} (Battle Round {battle_round}).",
+            )
+        return applied
+    if ability == "martial_mastery":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "adeptus_custodes_detachments", None)
+        if mgr is None:
+            return None
+        battle_round = payload.get("battle_round")
+        if battle_round is None:
+            battle_round = ctx.get("battle_round")
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        ability_name = str(ctx.get("ability_name", "") or "Martial Mastery").strip() or "Martial Mastery"
+        if is_skip_choice(request, result):
+            applied = bool(mgr.select_martial_mastery("", battle_round=battle_round))
+            if applied:
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"{ability_name}: none selected (Battle Round {battle_round}).",
+                )
+            return applied
+        choice = payload.get("choice_key") or payload.get("key")
+        applied = bool(mgr.select_martial_mastery(choice, battle_round=battle_round))
         if applied:
             label = _option_label(request, result) or str(choice)
             _log_action_for_players(

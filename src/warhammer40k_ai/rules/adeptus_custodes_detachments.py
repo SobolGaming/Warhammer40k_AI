@@ -14,11 +14,15 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
     _ASSEMBLAGE_OF_MIGHT_SOURCE = "Assemblage of Might"
     _CREEPING_DREAD_RANGE = 12.0
     _CREEPING_DREAD_SOURCE = "Creeping Dread"
+    _MARTIAL_MASTERY_SOURCE = "Martial Mastery"
 
     def __init__(self, army=None):
         super().__init__(army=army)
         self.assemblage_of_might_target_unit_id: str = ""
         self.assemblage_of_might_target_name: str = ""
+        self.martial_mastery_mode: str = ""
+        self.martial_mastery_active_round: Optional[int] = None
+        self.martial_mastery_resolved_round: Optional[int] = None
 
     def is_lions_of_the_emperor(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -34,6 +38,11 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Null Maiden Vigil")
+
+    def is_shield_host(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Shield Host")
 
     def _model_in_army(self, model) -> bool:
         if model is None or self.army is None:
@@ -507,6 +516,217 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
         if hasattr(game, "request_decision"):
             game.request_decision(request)
         return request
+
+    def _resolve_battle_round(self, *, game=None, battle_round=None) -> Optional[int]:
+        if battle_round is not None:
+            try:
+                return int(battle_round)
+            except (TypeError, ValueError):
+                return None
+        if game is None:
+            player = getattr(self.army, "player", None) if self.army is not None else None
+            game = getattr(player, "game", None) if player is not None else None
+        if game is None:
+            return None
+        try:
+            return int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            return None
+
+    def clear_martial_mastery(self) -> None:
+        self.martial_mastery_mode = ""
+        self.martial_mastery_active_round = None
+
+    def get_martial_mastery_mode(self, *, game=None, battle_round: Optional[int] = None) -> str:
+        if not self.is_shield_host():
+            return ""
+        mode = str(self.martial_mastery_mode or "").strip().upper()
+        if not mode:
+            return ""
+        active_round = self.martial_mastery_active_round
+        if active_round is None:
+            return mode
+        round_value = self._resolve_battle_round(game=game, battle_round=battle_round)
+        if round_value is None:
+            return mode
+        if int(active_round) != int(round_value):
+            return ""
+        return mode
+
+    def can_select_martial_mastery(self, *, game=None, battle_round: Optional[int] = None) -> bool:
+        if not self.is_shield_host():
+            return False
+        round_value = self._resolve_battle_round(game=game, battle_round=battle_round)
+        if round_value is None:
+            return False
+        resolved_round = self.martial_mastery_resolved_round
+        if resolved_round is not None and int(resolved_round) == int(round_value):
+            return False
+        return True
+
+    def select_martial_mastery(self, choice, *, battle_round: Optional[int] = None) -> bool:
+        if not self.is_shield_host():
+            return False
+        round_value = self._resolve_battle_round(battle_round=battle_round)
+        if round_value is None:
+            return False
+        if self.martial_mastery_resolved_round is not None and int(self.martial_mastery_resolved_round) == int(round_value):
+            return False
+        choice_key = str(choice or "").strip().upper()
+        if choice_key in ("", "NONE", "SKIP"):
+            self.martial_mastery_mode = ""
+            self.martial_mastery_active_round = int(round_value)
+            self.martial_mastery_resolved_round = int(round_value)
+            return True
+        normalized_choice = ""
+        if choice_key in ("CRIT_5_PLUS", "CRIT5", "CRITICAL_HITS_5_PLUS", "CRITICALS"):
+            normalized_choice = "CRIT_5_PLUS"
+        elif choice_key in ("AP_PLUS_1", "AP1", "AP_PLUS_ONE"):
+            normalized_choice = "AP_PLUS_1"
+        if not normalized_choice:
+            return False
+        self.martial_mastery_mode = normalized_choice
+        self.martial_mastery_active_round = int(round_value)
+        self.martial_mastery_resolved_round = int(round_value)
+        return True
+
+    def _pending_martial_mastery_request(self, game, *, army_id: str, battle_round: int):
+        if game is None:
+            return None
+        queue = getattr(game, "decision_queue", None)
+        if queue is None:
+            return None
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+
+        for req in list(getattr(queue, "list", lambda: [])() or []):
+            if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "").strip().lower() != "martial_mastery":
+                continue
+            if str(ctx.get("army_id", "") or "") != str(army_id):
+                continue
+            if int(ctx.get("battle_round", 0) or 0) != int(battle_round):
+                continue
+            return req
+        return None
+
+    def build_martial_mastery_request(self, *, game=None, player=None, battle_round: Optional[int] = None):
+        if not self.is_shield_host():
+            return None
+        if game is None or player is None:
+            return None
+        if not bool(getattr(game, "is_authoritative", True)):
+            return None
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        round_value = self._resolve_battle_round(game=game, battle_round=battle_round)
+        if round_value is None:
+            return None
+        if not self.can_select_martial_mastery(game=game, battle_round=round_value):
+            return None
+        army_id = str(maybe_entity_id(self.army) or "") if self.army is not None else ""
+        if self._pending_martial_mastery_request(game, army_id=army_id, battle_round=int(round_value)):
+            return None
+
+        options = [
+            DecisionOption.create(
+                "None",
+                payload={
+                    "action": "skip",
+                    "choice_key": "",
+                    "army_id": army_id,
+                    "battle_round": int(round_value),
+                },
+            ),
+            DecisionOption.create(
+                "Critical Hits on 5+ (Melee)",
+                payload={
+                    "choice_key": "CRIT_5_PLUS",
+                    "army_id": army_id,
+                    "battle_round": int(round_value),
+                },
+            ),
+            DecisionOption.create(
+                "+1 AP (Melee)",
+                payload={
+                    "choice_key": "AP_PLUS_1",
+                    "army_id": army_id,
+                    "battle_round": int(round_value),
+                },
+            ),
+        ]
+
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Martial Mastery: select one mode for this battle round (or None).",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={
+                "ability": "martial_mastery",
+                "ability_name": self._MARTIAL_MASTERY_SOURCE,
+                "army_id": army_id,
+                "battle_round": int(round_value),
+                "allowed_choice_keys": ["CRIT_5_PLUS", "AP_PLUS_1"],
+                "optional": True,
+            },
+        )
+        if hasattr(game, "request_decision"):
+            game.request_decision(request)
+        return request
+
+    def on_battle_round_start(self, battle_round: int, *, game=None) -> None:
+        round_value = self._resolve_battle_round(game=game, battle_round=battle_round)
+        if round_value is None:
+            return
+        if (
+            self.martial_mastery_active_round is not None
+            and int(self.martial_mastery_active_round) != int(round_value)
+        ):
+            self.clear_martial_mastery()
+        if not self.is_shield_host():
+            self.martial_mastery_resolved_round = None
+            return
+        if not bool(getattr(game, "is_authoritative", True)):
+            return
+        player = getattr(self.army, "player", None) if self.army is not None else None
+        if player is None:
+            return
+        self.build_martial_mastery_request(game=game, player=player, battle_round=round_value)
+
+    def _martial_mastery_attacker_eligible(self, attacker_model) -> bool:
+        if attacker_model is None or not self.is_shield_host():
+            return False
+        if not self._model_in_army(attacker_model):
+            return False
+        unit = getattr(attacker_model, "parent_unit", None)
+        root = self._root_unit(unit)
+        if root is None:
+            return False
+        if not self._unit_has_keyword_or_faction(root, "ADEPTUS CUSTODES", faction_id=self.faction_id):
+            return False
+        has_martial_katah = getattr(root, "attached_unit_has_martial_katah", None)
+        return bool(callable(has_martial_katah) and has_martial_katah())
+
+    def martial_mastery_crit_hit_threshold(self, attacker_model, *, game=None, weapon_profile=None) -> int:
+        del weapon_profile
+        if not self._martial_mastery_attacker_eligible(attacker_model):
+            return 0
+        mode = self.get_martial_mastery_mode(game=game)
+        if mode != "CRIT_5_PLUS":
+            return 0
+        return 5
+
+    def martial_mastery_melee_ap_bonus(self, attacker_model, target_unit=None, *, game=None, weapon_profile=None) -> int:
+        del target_unit
+        del weapon_profile
+        if not self._martial_mastery_attacker_eligible(attacker_model):
+            return 0
+        mode = self.get_martial_mastery_mode(game=game)
+        if mode != "AP_PLUS_1":
+            return 0
+        return 1
 
     def on_command_phase_start(self, *, game=None, player=None) -> None:
         self.clear_assemblage_of_might_target()
