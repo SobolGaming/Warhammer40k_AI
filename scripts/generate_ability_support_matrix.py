@@ -342,6 +342,11 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time a model in a cryptek or canoptek unit from your army makes an attack reroll a hit roll of 1",
             r"if such a unit is wholly within your armys power matrix you can reroll the hit roll instead",
         ),
+        "Technosorcerous Augmentations": (
+            r"ranged weapons equipped by cryptek models from your army have the assault ability",
+            r"in your shooting phase each time a cryptek unit from your army is selected to shoot select one of the following abilities(?: anti infantry 3 anti mounted 4 assault heavy ignores cover)?",
+            r"until the end of the phase ranged weapons equipped by models in that unit have that ability",
+        ),
         "Skirmish Fighters": (
             r"kroot models from your army have a 6 invulnerable save against melee attacks and a 5 invulnerable save against ranged attacks",
         ),
@@ -2484,6 +2489,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Power Matrix": (
             "Supported",
             "Canoptek Court: start-of-phase Power Matrix snapshot (own deployment zone always; No Man's Land and opponent deployment zone active when controlling at least half of their objective markers), CRYPTEK/CANOPTEK units re-roll Hit rolls of 1, and those units re-roll the Hit roll instead while wholly within the Power Matrix.",
+        ),
+        "Technosorcerous Augmentations": (
+            "Supported",
+            "Cryptek Conclave Technosorcerous Augmentations: CRYPTEK models' ranged weapons count as Assault for Advance-and-shoot eligibility, and in your Shooting phase each selected CRYPTEK unit prompts a deterministic choice of ANTI-INFANTRY 3+, ANTI-MOUNTED 4+, ASSAULT, HEAVY, or IGNORES COVER, applying the chosen keyword to that unit's ranged weapons until phase end.",
         ),
         "Relentless Onslaught": ("Supported", "Starshatter Arsenal: +1 to hit vs targets within objective range; VEHICLE/MOUNTED (non-TITANIC) ranged weapons gain Assault."),
         "Ruthless Discipline": (

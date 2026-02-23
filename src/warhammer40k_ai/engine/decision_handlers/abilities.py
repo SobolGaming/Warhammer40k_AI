@@ -29,6 +29,7 @@ from ..decision_kinds import (
     DECISION_CHOOSE_PATH_OF_WARRIOR,
     DECISION_CHOOSE_CRUEL_AMUSEMENT,
     DECISION_CHOOSE_MASTER_OF_MAGICKS,
+    DECISION_CHOOSE_TECHNOSORCEROUS_AUGMENTATION,
     DECISION_CHOOSE_HARBINGER_OF_DEATH,
     DECISION_CHOOSE_DANCE_OF_DEATH,
     DECISION_CHOOSE_LIMB_FROM_LIMB,
@@ -1102,6 +1103,76 @@ def _apply_choose_master_of_magicks(game: object, request: DecisionRequest, resu
         )
     except Exception:
         pass
+    return str(choice_key)
+
+
+def _validate_choose_technosorcerous_augmentation(
+    game: object,
+    request: DecisionRequest,
+    result: DecisionResult,
+) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    if is_skip_choice(request, result):
+        return ()
+    payload = _option_payload(request, result)
+    unit_val = payload.get("unit_id") or payload.get("unit") or request.context.get("unit_id")
+    choice = payload.get("choice") or payload.get("choice_key") or payload.get("key")
+    if unit_val is None or not choice:
+        return ("Technosorcerous Augmentations requires unit_id and choice.",)
+    unit = resolve_unit(game, unit_val)
+    if unit is None:
+        return ("Technosorcerous Augmentations unit not found.",)
+    choice_key = str(choice or "").strip().upper()
+    valid_choices = {"ANTI_INFANTRY_3", "ANTI_MOUNTED_4", "ASSAULT", "HEAVY", "IGNORES_COVER"}
+    if choice_key not in valid_choices:
+        return ("Technosorcerous Augmentations choice is invalid.",)
+    get_army = getattr(unit, "get_parent_army", None)
+    army = get_army() if callable(get_army) else getattr(unit, "parent_army", None)
+    mgr = getattr(army, "necrons_detachments", None) if army is not None else None
+    unit_ok_fn = getattr(mgr, "technosorcerous_unit_is_eligible", None) if mgr is not None else None
+    if not callable(unit_ok_fn):
+        return ("Technosorcerous Augmentations manager not found.",)
+    if not bool(unit_ok_fn(unit)):
+        return ("Technosorcerous Augmentations requires an eligible CRYPTEK unit in Cryptek Conclave.",)
+    return ()
+
+
+def _apply_choose_technosorcerous_augmentation(game: object, request: DecisionRequest, result: DecisionResult):
+    if is_skip_choice(request, result):
+        return None
+    payload = _option_payload(request, result)
+    unit = resolve_unit(game, payload.get("unit_id") or payload.get("unit") or request.context.get("unit_id"))
+    if unit is None:
+        raise RuntimeError("Technosorcerous Augmentations unit not found.")
+    choice = payload.get("choice") or payload.get("choice_key") or payload.get("key")
+    choice_key = str(choice or "").strip().upper()
+    valid_choices = {"ANTI_INFANTRY_3", "ANTI_MOUNTED_4", "ASSAULT", "HEAVY", "IGNORES_COVER"}
+    if choice_key not in valid_choices:
+        raise RuntimeError("Technosorcerous Augmentations choice is invalid.")
+    get_army = getattr(unit, "get_parent_army", None)
+    army = get_army() if callable(get_army) else getattr(unit, "parent_army", None)
+    mgr = getattr(army, "necrons_detachments", None) if army is not None else None
+    apply_fn = getattr(mgr, "apply_technosorcerous_augmentation_choice", None) if mgr is not None else None
+    if not callable(apply_fn):
+        raise RuntimeError("Technosorcerous Augmentations manager not found.")
+    applied = bool(apply_fn(unit, choice_key, game=game))
+    if not applied:
+        raise RuntimeError("Technosorcerous Augmentations could not be applied.")
+    label = {
+        "ANTI_INFANTRY_3": "Anti-Infantry 3+",
+        "ANTI_MOUNTED_4": "Anti-Mounted 4+",
+        "ASSAULT": "Assault",
+        "HEAVY": "Heavy",
+        "IGNORES_COVER": "Ignores Cover",
+    }.get(choice_key, choice_key)
+    player = getattr(army, "player", None) if army is not None else None
+    _log_action_for_players(
+        game,
+        player,
+        f"Technosorcerous Augmentations: {getattr(unit, 'name', 'Unit')} gains {label} on ranged weapons this phase.",
+    )
     return str(choice_key)
 
 
@@ -11966,6 +12037,11 @@ register_decision_handler(DECISION_CHOOSE_MOMENT_SHACKLE, validate=_validate_cho
 register_decision_handler(DECISION_CHOOSE_PATH_OF_WARRIOR, validate=_validate_choose_path_of_warrior, apply=_apply_choose_path_of_warrior)
 register_decision_handler(DECISION_CHOOSE_CRUEL_AMUSEMENT, validate=_validate_choose_cruel_amusement, apply=_apply_choose_cruel_amusement)
 register_decision_handler(DECISION_CHOOSE_MASTER_OF_MAGICKS, validate=_validate_choose_master_of_magicks, apply=_apply_choose_master_of_magicks)
+register_decision_handler(
+    DECISION_CHOOSE_TECHNOSORCEROUS_AUGMENTATION,
+    validate=_validate_choose_technosorcerous_augmentation,
+    apply=_apply_choose_technosorcerous_augmentation,
+)
 register_decision_handler(DECISION_CHOOSE_HARBINGER_OF_DEATH, validate=_validate_choose_harbinger_of_death, apply=_apply_choose_harbinger_of_death)
 register_decision_handler(DECISION_CHOOSE_DANCE_OF_DEATH, validate=_validate_choose_dance_of_death, apply=_apply_choose_dance_of_death)
 register_decision_handler(DECISION_CHOOSE_LIMB_FROM_LIMB, validate=_validate_choose_limb_from_limb, apply=_apply_choose_limb_from_limb)

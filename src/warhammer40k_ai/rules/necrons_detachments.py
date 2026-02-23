@@ -27,6 +27,14 @@ class NecronsDetachmentManager(DetachmentManagerBase):
     _ANNIHILATION_PROTOCOL_AP_SOURCE = "Annihilation Protocol (+1 AP vs closest eligible target)"
     _POWER_MATRIX_KEYWORDS = ("CRYPTEK", "CANOPTEK")
     _POWER_MATRIX_SOURCE = "Power Matrix"
+    _TECHNOSORCEROUS_AUGMENTATIONS_SOURCE = "Technosorcerous Augmentations"
+    _TECHNOSORCEROUS_CHOICE_TO_KEYWORD = {
+        "ANTI_INFANTRY_3": "ANTI-INFANTRY 3+",
+        "ANTI_MOUNTED_4": "ANTI-MOUNTED 4+",
+        "ASSAULT": "ASSAULT",
+        "HEAVY": "HEAVY",
+        "IGNORES_COVER": "IGNORES COVER",
+    }
 
     _COMMAND_PHASE_SELECT_FRIENDLY_RE = re.compile(
         r"in your command phase, select one friendly (?P<target>.+?) unit(?:,|\s)*"
@@ -63,6 +71,11 @@ class NecronsDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Canoptek Court")
+
+    def is_cryptek_conclave(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Cryptek Conclave")
 
     @staticmethod
     def _unit_root(unit):
@@ -105,6 +118,195 @@ class NecronsDetachmentManager(DetachmentManagerBase):
             if self._unit_contains_keyword(unit, keyword):
                 return True
         return False
+
+    @staticmethod
+    def _entity_has_keyword(entity, keyword: str) -> bool:
+        if entity is None:
+            return False
+        kw = str(keyword or "").strip()
+        if not kw:
+            return False
+        has_any = getattr(entity, "has_any_keyword", None)
+        if callable(has_any):
+            return bool(has_any(kw))
+        raw = [str(k or "") for k in (getattr(entity, "keywords", []) or [])]
+        raw += [str(k or "") for k in (getattr(entity, "faction_keywords", []) or [])]
+        return kw.lower() in {k.lower() for k in raw if str(k).strip()}
+
+    @staticmethod
+    def _iter_unit_models(unit) -> list:
+        if unit is None:
+            return []
+        get_models = getattr(unit, "get_attached_unit_models", None)
+        if callable(get_models):
+            return [m for m in list(get_models() or []) if m is not None]
+        return [m for m in list(getattr(unit, "models", []) or []) if m is not None]
+
+    @staticmethod
+    def _weapon_profile_is_ranged(weapon_profile) -> bool:
+        if weapon_profile is None:
+            return False
+        parent_wargear = getattr(weapon_profile, "parent_wargear", None)
+        if parent_wargear is None:
+            return False
+        is_ranged = getattr(parent_wargear, "is_ranged", None)
+        if not callable(is_ranged):
+            return False
+        return bool(is_ranged())
+
+    @staticmethod
+    def _model_has_weapon_profile(model, weapon_profile) -> bool:
+        if model is None or weapon_profile is None:
+            return False
+        parent_wargear = getattr(weapon_profile, "parent_wargear", None)
+        if parent_wargear is None:
+            return False
+        model_wargear = list(getattr(model, "wargear", []) or [])
+        if parent_wargear in model_wargear:
+            return True
+        target_name = str(getattr(parent_wargear, "name", "") or "").strip().lower()
+        if not target_name:
+            return False
+        for wargear in model_wargear:
+            if str(getattr(wargear, "name", "") or "").strip().lower() == target_name:
+                return True
+        return False
+
+    def technosorcerous_unit_is_eligible(self, unit) -> bool:
+        if not self.is_cryptek_conclave():
+            return False
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if not self._unit_belongs_to_army(root):
+            return False
+        return self._unit_contains_keyword(root, "CRYPTEK")
+
+    def technosorcerous_choice_keyword(self, choice_key: str) -> str:
+        key = str(choice_key or "").strip().upper()
+        return str(self._TECHNOSORCEROUS_CHOICE_TO_KEYWORD.get(key, "") or "")
+
+    @staticmethod
+    def _current_phase_name(game) -> str:
+        if game is None:
+            return ""
+        return str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+
+    @staticmethod
+    def _current_turn(game) -> int:
+        try:
+            return int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def _technosorcerous_assault_flag_active(self, unit, *, game=None) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        if not bool(sr.get("technosorcerous_assault_active")):
+            return False
+        if game is None:
+            return True
+        expires_phase = str(sr.get("technosorcerous_assault_expires_phase", "") or "").strip().upper()
+        if expires_phase and expires_phase != self._current_phase_name(game):
+            return False
+        try:
+            active_turn = int(sr.get("technosorcerous_assault_turn", 0) or 0)
+        except (TypeError, ValueError):
+            active_turn = 0
+        current_turn = self._current_turn(game)
+        if active_turn and current_turn and active_turn != current_turn:
+            return False
+        active_owner = str(sr.get("technosorcerous_assault_turn_owner", "") or "").strip()
+        if active_owner:
+            player = getattr(self.army, "player", None)
+            owner_id = str(getattr(player, "id", "") or "").strip()
+            if owner_id and owner_id != active_owner:
+                return False
+        return True
+
+    def technosorcerous_assault_applies(self, unit, weapon_profile, *, game=None) -> bool:
+        if not self.technosorcerous_unit_is_eligible(unit):
+            return False
+        if not self._weapon_profile_is_ranged(weapon_profile):
+            return False
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if self._technosorcerous_assault_flag_active(root, game=game):
+            return True
+        for model in self._iter_unit_models(root):
+            if not bool(getattr(model, "is_alive", True)):
+                continue
+            if not self._entity_has_keyword(model, "CRYPTEK"):
+                continue
+            if self._model_has_weapon_profile(model, weapon_profile):
+                return True
+        return False
+
+    def apply_technosorcerous_augmentation_choice(self, unit, choice_key: str, *, game=None) -> bool:
+        keyword = self.technosorcerous_choice_keyword(choice_key)
+        if not keyword:
+            return False
+        if not self.technosorcerous_unit_is_eligible(unit):
+            return False
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        try:
+            seq = int(sr.get("technosorcerous_augmentations_sequence", 0) or 0)
+        except (TypeError, ValueError):
+            seq = 0
+        seq += 1
+        sr["technosorcerous_augmentations_sequence"] = int(seq)
+
+        applied = False
+        unit_id = str(get_entity_id(root) or id(root))
+        choice_key_norm = str(choice_key or "").strip().upper()
+        for model in self._iter_unit_models(root):
+            if not bool(getattr(model, "is_alive", True)):
+                continue
+            set_keywords = getattr(model, "set_temporary_weapon_keyword_bonuses", None)
+            if not callable(set_keywords):
+                continue
+            model_id = str(get_entity_id(model) or id(model))
+            for index, wargear in enumerate(list(getattr(model, "wargear", []) or [])):
+                is_ranged = getattr(wargear, "is_ranged", None)
+                if not callable(is_ranged) or not bool(is_ranged()):
+                    continue
+                weapon_name = str(getattr(wargear, "name", "") or "").strip()
+                if not weapon_name:
+                    continue
+                effect_key = (
+                    "technosorcerous_augmentations"
+                    f":{unit_id}:{choice_key_norm}:{seq}:{model_id}:{int(index)}"
+                )
+                set_keywords(
+                    key=effect_key,
+                    weapon_name=weapon_name,
+                    keywords=[keyword],
+                    source=self._TECHNOSORCEROUS_AUGMENTATIONS_SOURCE,
+                    expires_phase="SHOOTING_PHASE",
+                    attack_type="ranged",
+                )
+                applied = True
+
+        if keyword == "ASSAULT":
+            sr["technosorcerous_assault_active"] = True
+            sr["technosorcerous_assault_expires_phase"] = "SHOOTING_PHASE"
+            if game is not None:
+                sr["technosorcerous_assault_turn"] = self._current_turn(game)
+                player = getattr(self.army, "player", None)
+                sr["technosorcerous_assault_turn_owner"] = str(getattr(player, "id", "") or "")
+        root.special_rules = sr
+        return bool(applied)
 
     def _annihilation_protocol_charge_eligible(self, unit) -> bool:
         if not self.is_annihilation_legion():

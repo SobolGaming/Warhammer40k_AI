@@ -10366,6 +10366,16 @@ class ActionsMovementMixin:
             pass
         try:
             army = self.get_parent_army()
+            mgr = getattr(army, "necrons_detachments", None) if army is not None else None
+            assault_fn = getattr(mgr, "technosorcerous_assault_applies", None) if mgr is not None else None
+            if callable(assault_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if assault_fn(self, profile, game=game):
+                    return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
             mgr = getattr(army, "aeldari_detachments", None) if army is not None else None
             if mgr is not None and getattr(mgr, "skilled_crews_assault_applies", None):
                 if mgr.skilled_crews_assault_applies(self):

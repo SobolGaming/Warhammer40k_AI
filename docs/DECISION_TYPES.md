@@ -107,6 +107,7 @@ For UI mapping, see `docs/NETWORK_SAVELOAD_DESIGN.md`.
 - `CHOOSE_PATH_OF_WARRIOR` — Choose Path of the Warrior.
 - `CHOOSE_CRUEL_AMUSEMENT` — Choose Cruel Amusement.
 - `CHOOSE_MASTER_OF_MAGICKS` — Choose Master of Magicks.
+- `CHOOSE_TECHNOSORCEROUS_AUGMENTATION` — Choose Technosorcerous Augmentations weapon ability.
 - `CHOOSE_HARBINGER_OF_DEATH` — Choose Harbinger of Death.
 - `CHOOSE_DANCE_OF_DEATH` — Choose Dance of Death.
 - `CHOOSE_LIMB_FROM_LIMB` — Choose Limb from Limb target.

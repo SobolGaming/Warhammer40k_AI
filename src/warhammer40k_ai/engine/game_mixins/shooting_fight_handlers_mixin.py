@@ -3355,9 +3355,10 @@ class GameShootingFightHandlersMixin:
             return
         if not target_units:
             return
-        try:
-            root = attacking_unit.get_attached_unit_root()
-        except Exception:
+        get_root = getattr(attacking_unit, "get_attached_unit_root", None)
+        if callable(get_root):
+            root = get_root()
+        else:
             root = attacking_unit
         if root is None:
             return
@@ -3862,6 +3863,101 @@ class GameShootingFightHandlersMixin:
                 context=ctx,
             )
             self.request_decision(req)
+
+    def _on_shooting_targets_selected_technosorcerous_augmentations(
+        self,
+        attacking_unit=None,
+        target_units=None,
+        **_kwargs,
+    ) -> None:
+        if attacking_unit is None or not target_units:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            root = attacking_unit
+        if root is None or not root.is_alive():
+            return
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        if army is None:
+            return
+        player = getattr(army, "player", None)
+        if player is None or player is not self.get_current_player():
+            return
+
+        mgr = getattr(army, "necrons_detachments", None)
+        eligible_fn = getattr(mgr, "technosorcerous_unit_is_eligible", None) if mgr is not None else None
+        if not callable(eligible_fn) or not bool(eligible_fn(root)):
+            return
+
+        from ..decision_kinds import DECISION_CHOOSE_TECHNOSORCEROUS_AUGMENTATION
+        from ..decisions import DecisionOption, DecisionRequest
+
+        unit_id = str(get_entity_id(root) or "")
+        phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_TECHNOSORCEROUS_AUGMENTATION:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("unit_id", "") or "") != unit_id:
+                    continue
+                if str(ctx.get("phase_name", "") or "").strip().upper() != phase_name:
+                    continue
+                return
+
+        options = [
+            DecisionOption.create(
+                "Anti-Infantry 3+",
+                payload={
+                    "choice": "ANTI_INFANTRY_3",
+                    "summary": "Ranged weapons gain [ANTI-INFANTRY 3+] until end of phase.",
+                },
+            ),
+            DecisionOption.create(
+                "Anti-Mounted 4+",
+                payload={
+                    "choice": "ANTI_MOUNTED_4",
+                    "summary": "Ranged weapons gain [ANTI-MOUNTED 4+] until end of phase.",
+                },
+            ),
+            DecisionOption.create(
+                "Assault",
+                payload={
+                    "choice": "ASSAULT",
+                    "summary": "Ranged weapons gain [ASSAULT] until end of phase.",
+                },
+            ),
+            DecisionOption.create(
+                "Heavy",
+                payload={
+                    "choice": "HEAVY",
+                    "summary": "Ranged weapons gain [HEAVY] until end of phase.",
+                },
+            ),
+            DecisionOption.create(
+                "Ignores Cover",
+                payload={
+                    "choice": "IGNORES_COVER",
+                    "summary": "Ranged weapons gain [IGNORES COVER] until end of phase.",
+                },
+            ),
+        ]
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_TECHNOSORCEROUS_AUGMENTATION,
+            "Technosorcerous Augmentations: select one weapon ability.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={
+                "unit_id": get_entity_id(root),
+                "ability_name": "Technosorcerous Augmentations",
+                "phase_name": "SHOOTING_PHASE",
+            },
+        )
+        self.request_decision(req)
 
     def _on_shooting_targets_selected_hand_of_asuryan(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:
