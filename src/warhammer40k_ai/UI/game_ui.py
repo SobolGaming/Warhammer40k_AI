@@ -12000,15 +12000,30 @@ class GameView:
                 return
         except Exception:
             return
+        try:
+            next_scope = str(getattr(mgr, "next_call_scope", lambda **_k: "all")(game=game, player=player) or "all").strip().lower()
+        except Exception:
+            next_scope = "all"
+        is_second_call = next_scope == "bully_boyz_restricted"
 
-        title = "Waaagh!"
-        msg = (
-            "Call the Waaagh! now?\n\n"
-            "Until the start of your next Command phase:\n"
-            "- Your units can charge after advancing\n"
-            "- Melee weapons get +1S and +1A\n"
-            "- Your models gain a 5+ invulnerable save"
-        )
+        title = "Waaagh! (Second Call)" if is_second_call else "Waaagh!"
+        if is_second_call:
+            msg = (
+                "Call the second Waaagh! now?\n\n"
+                "Bully Boyz restriction: this Waaagh! only affects WARBOSS, Nobz, and Meganobz units.\n\n"
+                "Until the start of your next Command phase:\n"
+                "- Affected units can charge after advancing\n"
+                "- Affected units' melee weapons get +1S and +1A\n"
+                "- Affected units gain a 5+ invulnerable save"
+            )
+        else:
+            msg = (
+                "Call the Waaagh! now?\n\n"
+                "Until the start of your next Command phase:\n"
+                "- Your units can charge after advancing\n"
+                "- Melee weapons get +1S and +1A\n"
+                "- Your models gain a 5+ invulnerable save"
+            )
 
         def _done(choice: bool):
             try:

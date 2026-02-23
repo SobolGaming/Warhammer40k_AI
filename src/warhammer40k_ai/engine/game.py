@@ -972,15 +972,24 @@ class Game(
             return
         if not mgr.can_call_now(game=self, player=player):
             return
+        next_scope = str(getattr(mgr, "next_call_scope", lambda **_k: "all")(game=self, player=player) or "all").strip().lower()
+        is_second_call = next_scope == "bully_boyz_restricted"
+        call_number = int(getattr(mgr, "calls_this_battle", 0) or 0) + 1
+        ability_label = "Waaagh! (Bully Boyz second call)" if is_second_call else "Waaagh!"
         ctx = {
-            "ability_name": "Waaagh!",
+            "ability_name": ability_label,
             "phase": "Command phase",
+            "waaagh_call_number": int(call_number),
+            "waaagh_scope": next_scope,
         }
-        message = "Call Waaagh!? (Once per battle)"
+        if is_second_call:
+            message = "Call second Waaagh!? (Bully Boyz: WARBOSS, Nobz, and Meganobz units only)"
+        else:
+            message = "Call Waaagh!? (First call this battle)"
         self._queue_optional_ability_confirmation(
             player=player,
             ability_key="waaagh",
-            ability_name="Waaagh!",
+            ability_name=ability_label,
             message=message,
             context=ctx,
         )

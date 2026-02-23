@@ -607,6 +607,10 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Bold Gallantry": (
             r"each time an imperial knights unit from your army advances until the end of the turn ranged weapons equipped by imperial knights models from your army have the assault ability",
         ),
+        "Da Boss Is Watchin'": (
+            r"at the start of your command phase in a turn in which you have not called a waaagh if you have one or more warboss models on the battlefield or embarked within a transport that is on the battlefield you can call a waaagh for a second time this battle",
+            r"when doing so that second waaagh only counts as having been called for warboss nobz and meganobz units from your army",
+        ),
         "Get Stuck In": (
             r"melee weapons equipped by orks models from your army have the sustained hits \d+ ability",
         ),
@@ -2136,6 +2140,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Synaptic Imperatives": (
             "Supported",
             "Synaptic Nexus: at the start of each battle round, optionally select one unused Synaptic Imperative (or none) via CHOOSE_QUARRY; selected imperative applies to TYRANIDS units within Synapse Range for that round only, granting either a 5+ invulnerable save, +1 to Advance and Charge rolls, or +1 to melee Hit rolls. Each imperative can only be selected once per battle.",
+        ),
+        "Da Boss Is Watchin'": (
+            "Supported",
+            "Bully Boyz: after your first Waaagh!, a second Command phase Waaagh! can be called if a Warboss model is on the battlefield (including embarked in a battlefield Transport); that second Waaagh! only affects WARBOSS, Nobz, and Meganobz units.",
         ),
         "Get Stuck In": ("Supported", "War Horde: ORKS melee weapons gain Sustained Hits 1."),
         "Combat Doctrines": ("Supported", "Gladius Task Force: select each doctrine once per battle to grant move/charge eligibility."),
