@@ -204,6 +204,7 @@ Command phase:
 - synaptic_imperatives_dialog: CHOOSE_QUARRY {choice_key | skip} (context `ability="synaptic_imperatives"`, `ability_name="Synaptic Imperatives"`, `army_id`, `battle_round`, `allowed_choice_keys[]`, `optional=true`)
 - necrons_command_phase_dialog: CHOOSE_QUARRY {target_unit_id} (context `necrons_command_phase_enhancement=true`, `source_unit_id`, `ability`, `effect_key`, `effect_value`)
 - worthy_foes_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="worthy_foes"`, `ability_name="Worthy Foes"`, `army_id`)
+- cosmic_distortion_dialog: SELECT_REALM_OF_CHAOS_UNITS {unit_ids | skip} (context `ability="cosmic_distortion_phase_surge"`, `ability_name="Cosmic Distortion"`, `army_id`, `phase_key`, `phase_name`, `allowed_unit_ids[]`, `max_units`)
 - resurrection_orb_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="resurrection_orb"`, `source_unit_id`, `bearer_model_id`, `resurrection_orb_variant`, `allowed_target_unit_ids`, `optional=true`)
 - aeldari_lucid_eye_dialog: CHOOSE_QUARRY {die_index + delta | skip} (context `ability="aeldari_lucid_eye_fate_die"`, `source_unit_id`, `model_id`, `optional=true`)
 - aeldari_spirit_stone_heal_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="aeldari_spirit_stone_heal"`, `source_unit_id`, `model_id`, `range`)

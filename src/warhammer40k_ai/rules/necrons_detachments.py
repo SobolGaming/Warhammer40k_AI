@@ -32,6 +32,17 @@ class NecronsDetachmentManager(DetachmentManagerBase):
     _HYPERPHASING_SOURCE = "Hyperphasing"
     _WORTHY_FOES_SOURCE = "Worthy Foes"
     _WORTHY_FOES_ATTACKER_KEYWORDS = ("NOBLE", "LYCHGUARD", "TRIARCH")
+    _COSMIC_DISTORTION_SOURCE = "Cosmic Distortion"
+    _COSMIC_DISTORTION_DEFAULT_RANGE = 6.0
+    _COSMIC_DISTORTION_SURGED_RANGE = 9.0
+    _COSMIC_DISTORTION_AP_BONUS = 1
+    _COSMIC_DISTORTION_MORTAL_WOUNDS = 3
+    _PANTHEON_BINDING_SURCHARGE_BY_UNIT_NAME = {
+        "c tan shard of the deceiver": 40,
+        "c tan shard of the nightbringer": 30,
+        "c tan shard of the void dragon": 20,
+        "transcendent c tan": 25,
+    }
     _TECHNOSORCEROUS_AUGMENTATIONS_SOURCE = "Technosorcerous Augmentations"
     _TECHNOSORCEROUS_CHOICE_TO_KEYWORD = {
         "ANTI_INFANTRY_3": "ANTI-INFANTRY 3+",
@@ -67,6 +78,8 @@ class NecronsDetachmentManager(DetachmentManagerBase):
         self.hyperphasing_last_resolved_phase_key: str = ""
         self.worthy_foes_target_unit_id: str = ""
         self.worthy_foes_target_name: str = ""
+        self._cosmic_distortion_phase_key: str = ""
+        self._cosmic_distortion_surged_unit_ids: set[str] = set()
 
     def is_starshatter_arsenal(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -102,6 +115,16 @@ class NecronsDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Cryptek Conclave")
+
+    def is_pantheon_of_woe(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Pantheon of Woe")
+
+    @staticmethod
+    def _normalize_name(value: str) -> str:
+        text = re.sub(r"[^a-z0-9 ]+", " ", str(value or "").lower())
+        return re.sub(r"\s+", " ", text).strip()
 
     @staticmethod
     def _unit_root(unit):
@@ -789,6 +812,264 @@ class NecronsDetachmentManager(DetachmentManagerBase):
             game.request_decision(request)
         return request
 
+    def _cosmic_distortion_phase_key_for_game(self, *, game=None) -> str:
+        if game is None:
+            player = getattr(self.army, "player", None) if self.army is not None else None
+            game = getattr(player, "game", None) if player is not None else None
+        phase_name = self._current_phase_name(game)
+        if not phase_name:
+            return ""
+        turn = int(self._current_turn(game) or 0)
+        turn_owner_id = str(self._current_turn_owner_id(game) or "")
+        return f"{turn}:{turn_owner_id}:{phase_name}"
+
+    def _sync_cosmic_distortion_phase_state(self, *, game=None) -> str:
+        if not self.is_pantheon_of_woe():
+            self._cosmic_distortion_phase_key = ""
+            self._cosmic_distortion_surged_unit_ids = set()
+            return ""
+        phase_key = self._cosmic_distortion_phase_key_for_game(game=game)
+        if not phase_key:
+            self._cosmic_distortion_phase_key = ""
+            self._cosmic_distortion_surged_unit_ids = set()
+            return ""
+        if phase_key != self._cosmic_distortion_phase_key:
+            self._cosmic_distortion_phase_key = phase_key
+            self._cosmic_distortion_surged_unit_ids = set()
+        return phase_key
+
+    def current_cosmic_distortion_phase_key(self, *, game=None) -> str:
+        return str(self._sync_cosmic_distortion_phase_state(game=game) or "")
+
+    def _pantheon_monster_unit_is_eligible(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if not self._unit_belongs_to_army(root):
+            return False
+        if not self.unit_is_necrons(root):
+            return False
+        if not self._unit_contains_keyword(root, "MONSTER"):
+            return False
+        if not self._unit_is_active(root):
+            return False
+        return True
+
+    def cosmic_distortion_phase_surge_candidates(self, *, game=None, player=None) -> list:
+        if not self.is_pantheon_of_woe():
+            return []
+        if player is not None and player is not getattr(self.army, "player", None):
+            return []
+        self._sync_cosmic_distortion_phase_state(game=game)
+        candidates: list = []
+        for root in self._iter_unique_army_roots():
+            if not self._pantheon_monster_unit_is_eligible(root):
+                continue
+            candidates.append(root)
+        candidates.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+        return candidates
+
+    def _pending_cosmic_distortion_phase_surge_request(self, *, game=None, army_id: str = "", phase_key: str = "") -> bool:
+        queue = getattr(game, "decision_queue", None) if game is not None else None
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != "SELECT_REALM_OF_CHAOS_UNITS":
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "").strip().lower() != "cosmic_distortion_phase_surge":
+                continue
+            if army_id and str(ctx.get("army_id", "") or "") != str(army_id):
+                continue
+            if phase_key and str(ctx.get("phase_key", "") or "") != str(phase_key):
+                continue
+            return True
+        return False
+
+    def build_cosmic_distortion_phase_surge_request(self, *, game=None, player=None, phase_name: str = ""):
+        if not self.is_pantheon_of_woe():
+            return None
+        if game is None or player is None:
+            return None
+        if player is not getattr(self.army, "player", None):
+            return None
+        if not bool(getattr(game, "is_authoritative", True)):
+            return None
+        from ..engine.decision_kinds import DECISION_SELECT_REALM_OF_CHAOS_UNITS
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        phase_key = self._sync_cosmic_distortion_phase_state(game=game)
+        if not phase_key:
+            return None
+
+        phase_name_upper = str(phase_name or self._current_phase_name(game) or "").strip().upper()
+        if not phase_name_upper:
+            return None
+
+        candidates = self.cosmic_distortion_phase_surge_candidates(game=game, player=player)
+        if not candidates:
+            return None
+
+        army_id = str(get_entity_id(self.army) or "") if self.army is not None else ""
+        if self._pending_cosmic_distortion_phase_surge_request(game=game, army_id=army_id, phase_key=phase_key):
+            return None
+
+        candidate_ids = [
+            str(get_entity_id(unit) or "")
+            for unit in list(candidates or [])
+            if str(get_entity_id(unit) or "").strip()
+        ]
+        candidate_ids = sorted(set(candidate_ids))
+        if not candidate_ids:
+            return None
+
+        request = DecisionRequest.create(
+            DECISION_SELECT_REALM_OF_CHAOS_UNITS,
+            "Cosmic Distortion: select NECRONS MONSTER units to surge Distortion Fields.",
+            player_id=getattr(player, "id", None),
+            options=[
+                DecisionOption.create("Confirm selection", payload={"action": "confirm"}),
+                DecisionOption.create("Do not use", payload={"action": "skip"}),
+            ],
+            context={
+                "ability": "cosmic_distortion_phase_surge",
+                "ability_name": "Cosmic Distortion",
+                "army_id": army_id,
+                "phase_key": phase_key,
+                "phase_name": phase_name_upper,
+                "allowed_unit_ids": list(candidate_ids),
+                "outside_shadow_unit_ids": [],
+                "max_units": int(len(candidate_ids)),
+                "title": "Cosmic Distortion",
+                "subtitle": "Select any NECRONS MONSTER unit(s) to suffer 3 mortal wounds.",
+                "instruction": (
+                    "Selected units suffer 3 mortal wounds and increase Distortion Fields range to 9\" "
+                    "until the end of this phase."
+                ),
+                "skip_label": "None (do not use this ability)",
+            },
+        )
+        if hasattr(game, "request_decision"):
+            game.request_decision(request)
+        return request
+
+    def apply_cosmic_distortion_phase_surge(self, unit_ids: list[str], *, game=None, phase_key: str = "", player=None) -> list:
+        if not self.is_pantheon_of_woe():
+            return []
+        if player is not None and player is not getattr(self.army, "player", None):
+            return []
+        current_phase_key = self._sync_cosmic_distortion_phase_state(game=game)
+        expected_phase_key = str(phase_key or current_phase_key or "")
+        if current_phase_key and expected_phase_key and current_phase_key != expected_phase_key:
+            return []
+
+        candidates = self.cosmic_distortion_phase_surge_candidates(game=game, player=player)
+        candidates_by_id = {
+            str(get_entity_id(unit) or ""): unit
+            for unit in list(candidates or [])
+            if unit is not None
+        }
+        selected_ids = sorted({str(uid or "").strip() for uid in list(unit_ids or []) if str(uid or "").strip()})
+
+        selected_units: list = []
+        for uid in selected_ids:
+            unit = candidates_by_id.get(uid)
+            if unit is None:
+                continue
+            selected_units.append(unit)
+
+        game_map = getattr(game, "map", None) if game is not None else None
+        surged_unit_ids: set[str] = set()
+        for unit in list(selected_units or []):
+            apply_mortals = getattr(unit, "_apply_mortal_wounds_to_unit", None)
+            if callable(apply_mortals):
+                apply_mortals(unit, int(self._COSMIC_DISTORTION_MORTAL_WOUNDS), game_map=game_map)
+            unit_id = str(get_entity_id(unit) or "").strip()
+            if unit_id:
+                surged_unit_ids.add(unit_id)
+
+        self._cosmic_distortion_phase_key = current_phase_key
+        self._cosmic_distortion_surged_unit_ids = set(surged_unit_ids)
+        if self.army is not None:
+            setattr(self.army, "cosmic_distortion_phase_key", self._cosmic_distortion_phase_key)
+            setattr(self.army, "cosmic_distortion_surged_unit_ids", sorted(self._cosmic_distortion_surged_unit_ids))
+        return selected_units
+
+    def cosmic_distortion_ap_bonus(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        del weapon_profile
+        if not self.is_pantheon_of_woe():
+            return 0, ""
+        if attacker_model is None or target_unit is None:
+            return 0, ""
+
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root = self._unit_root(attacker_unit)
+        if attacker_root is None or not self._unit_belongs_to_army(attacker_root):
+            return 0, ""
+
+        target_root = self._unit_root(target_unit)
+        if target_root is None:
+            return 0, ""
+        if self._unit_belongs_to_army(target_root):
+            return 0, ""
+
+        self._sync_cosmic_distortion_phase_state(game=game)
+        surged_unit_ids = set(self._cosmic_distortion_surged_unit_ids or set())
+        for source_unit in list(self.cosmic_distortion_phase_surge_candidates(game=game) or []):
+            source_id = str(get_entity_id(source_unit) or "").strip()
+            aura_range = float(self._COSMIC_DISTORTION_DEFAULT_RANGE)
+            if source_id and source_id in surged_unit_ids:
+                aura_range = float(self._COSMIC_DISTORTION_SURGED_RANGE)
+            if self._source_in_range_of_target(source_unit, target_root, aura_range):
+                return int(self._COSMIC_DISTORTION_AP_BONUS), self._COSMIC_DISTORTION_SOURCE
+        return 0, ""
+
+    def pantheon_of_woe_points_surcharge_for_unit(self, unit) -> int:
+        if not self.is_pantheon_of_woe():
+            return 0
+        root = self._unit_root(unit)
+        if root is None:
+            return 0
+        if not self._unit_belongs_to_army(root):
+            return 0
+        if not self.unit_is_necrons(root):
+            return 0
+        if not self._unit_contains_keyword(root, "MONSTER"):
+            return 0
+        unit_name_key = self._normalize_name(str(getattr(root, "name", "") or ""))
+        return int(self._PANTHEON_BINDING_SURCHARGE_BY_UNIT_NAME.get(unit_name_key, 0) or 0)
+
+    def validate_detachment_rules(self) -> list[str]:
+        errors: list[str] = []
+        if not self.is_pantheon_of_woe() or self.army is None:
+            return errors
+
+        for root in self._iter_unique_army_roots():
+            if root is None:
+                continue
+            if not self._unit_belongs_to_army(root):
+                continue
+            if not self.unit_is_necrons(root):
+                continue
+            if not self._unit_contains_keyword(root, "MONSTER"):
+                continue
+            unit_name = str(getattr(root, "name", "") or "").strip() or "Unknown Unit"
+            unit_name_key = self._normalize_name(unit_name)
+            if unit_name_key in self._PANTHEON_BINDING_SURCHARGE_BY_UNIT_NAME:
+                continue
+            errors.append(
+                "Pantheon of Woe (Necrodermal Binding): "
+                f"no configured points surcharge mapping for '{unit_name}'."
+            )
+        return errors
+
     def _annihilation_protocol_charge_eligible(self, unit) -> bool:
         if not self.is_annihilation_legion():
             return False
@@ -876,9 +1157,10 @@ class NecronsDetachmentManager(DetachmentManagerBase):
         return turn, phase_name
 
     def on_phase_start(self, *, game=None) -> None:
-        if not self.is_canoptek_court():
-            return
         if game is None:
+            return
+        self._sync_cosmic_distortion_phase_state(game=game)
+        if not self.is_canoptek_court():
             return
         player = getattr(self.army, "player", None)
         if player is None:

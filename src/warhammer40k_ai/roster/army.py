@@ -1567,6 +1567,11 @@ class Army:
             for msg in list(tyr_mgr.validate_detachment_rules() or []):
                 if msg:
                     raise ArmyValidationError(str(msg))
+        ne_mgr = getattr(self, "necrons_detachments", None)
+        if ne_mgr is not None and hasattr(ne_mgr, "validate_detachment_rules"):
+            for msg in list(ne_mgr.validate_detachment_rules() or []):
+                if msg:
+                    raise ArmyValidationError(str(msg))
 
     def _detachment_matches_pact(self, detachment: str, forbidden: str) -> bool:
         def _norm(text: str) -> str:

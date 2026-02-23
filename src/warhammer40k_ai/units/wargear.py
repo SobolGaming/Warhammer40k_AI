@@ -2699,6 +2699,21 @@ class WargearProfile:
                 bonus, _source = bonus_fn(attacker, target, weapon_profile=self, game_map=game_map)
                 if int(bonus or 0) > 0:
                     ap_val -= int(bonus)
+        attacker_unit = getattr(attacker, "parent_unit", None)
+        get_parent_army = getattr(attacker_unit, "get_parent_army", None) if attacker_unit is not None else None
+        attacker_army = get_parent_army() if callable(get_parent_army) else getattr(attacker_unit, "parent_army", None)
+        necrons_mgr = getattr(attacker_army, "necrons_detachments", None) if attacker_army is not None else None
+        cosmic_ap_bonus_fn = getattr(necrons_mgr, "cosmic_distortion_ap_bonus", None) if necrons_mgr is not None else None
+        if callable(cosmic_ap_bonus_fn):
+            game = getattr(getattr(attacker_army, "player", None), "game", None) if attacker_army is not None else None
+            bonus, _source = cosmic_ap_bonus_fn(
+                attacker,
+                target,
+                weapon_profile=self,
+                game=game,
+            )
+            if int(bonus or 0) > 0:
+                ap_val -= int(bonus)
         try:
             if self.parent_wargear and self.parent_wargear.is_ranged():
                 unit = getattr(attacker, "parent_unit", None)

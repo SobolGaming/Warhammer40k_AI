@@ -154,6 +154,30 @@ class GamePhaseHandlersMixin:
             if callable(capture):
                 capture(phase=phase, game=self)
 
+    def _on_phase_start_necrons_detachment_rules(self, player=None, phase=None, **_kwargs) -> None:
+        """Capture Necrons start-of-phase detachment state and queue Pantheon of Woe phase-start choices."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if not pname:
+            return
+        for p in list(getattr(self, "players", []) or []):
+            if p is None:
+                continue
+            army = p.get_army()
+            if army is None:
+                continue
+            ne_mgr = getattr(army, "necrons_detachments", None)
+            if ne_mgr is None:
+                continue
+            on_phase_start = getattr(ne_mgr, "on_phase_start", None)
+            if callable(on_phase_start):
+                on_phase_start(game=self)
+            if not bool(getattr(self, "is_authoritative", True)):
+                continue
+            build_request = getattr(ne_mgr, "build_cosmic_distortion_phase_surge_request", None)
+            if not callable(build_request):
+                continue
+            build_request(game=self, player=p, phase_name=pname)
+
     def _on_phase_start_optional_abilities(self, player=None, phase=None, **_kwargs) -> None:
         """
         Hook point for optional, player-decided abilities that trigger at specific timing windows.
@@ -169,6 +193,7 @@ class GamePhaseHandlersMixin:
         self._on_phase_start_vanguard_of_dark_city(player=player, phase=phase)
         self._on_phase_start_chaos_daemons_detachment_rules(player=player, phase=phase)
         self._on_phase_start_space_marines_detachment_rules(player=player, phase=phase)
+        self._on_phase_start_necrons_detachment_rules(player=player, phase=phase)
         self._on_phase_start_vowed_target(player=player, phase=phase)
         self._on_phase_start_master_of_wolves(player=player, phase=phase)
         if pname:

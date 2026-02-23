@@ -3870,6 +3870,10 @@ class StateAttachmentMixin:
         surcharge_fn = getattr(ia_mgr, "extremis_sanction_points_surcharge_for_unit", None) if ia_mgr is not None else None
         if callable(surcharge_fn):
             total += int(surcharge_fn(self) or 0)
+        ne_mgr = getattr(army, "necrons_detachments", None) if army is not None else None
+        pantheon_surcharge_fn = getattr(ne_mgr, "pantheon_of_woe_points_surcharge_for_unit", None) if ne_mgr is not None else None
+        if callable(pantheon_surcharge_fn):
+            total += int(pantheon_surcharge_fn(self) or 0)
 
         return int(total)
 

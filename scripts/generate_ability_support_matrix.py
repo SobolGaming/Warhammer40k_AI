@@ -360,6 +360,16 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"in your command phase select one enemy unit",
             r"until the start of your next command phase each time a noble lychguard or triarch unit from your army makes an attack that targets that unit add 1 to the wound roll",
         ),
+        "Cosmic Distortion": (
+            r"necrons monster units from your army have the following ability",
+            r"while an enemy unit is within 6 of this unit it is unravelling",
+            r"while an enemy unit is unravelling each time an attack targets that unit improve the armour penetration characteristic of that attack by 1",
+            r"at the start of each phase for each necrons monster unit from your army that unit can suffer 3 mortal wounds",
+            r"if it does until the end of the phase the range of that units distortion fields aura ability is increased to 9",
+            r"if your army contains more than one transcendent c tan unit each of those units must take the reletavistic tether ability",
+            r"when mustering your army each necrons monster unit from your army has the relevant necrodermal binding ability shown below and you must increase the points cost of each of those units by the amount shown in the munitorum field manual",
+            r"if this causes your army to exceed the points limit for the battle you are playing you cannot include that unit in your army",
+        ),
         "Skirmish Fighters": (
             r"kroot models from your army have a 6 invulnerable save against melee attacks and a 5 invulnerable save against ranged attacks",
         ),
@@ -2519,6 +2529,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
             "Supported",
             "Obeisance Phalanx Worthy Foes: in your Command phase, select one enemy unit; until your next Command phase, NOBLE/LYCHGUARD/TRIARCH units from your army gain +1 to Wound rolls when attacking that selected unit.",
         ),
+        "Cosmic Distortion": (
+            "Supported",
+            "Pantheon of Woe Cosmic Distortion: NECRONS MONSTER units project Distortion Fields (enemy units within 6\" are unravelling and attacks targeting them improve AP by 1), and at the start of each phase you can select any eligible friendly NECRONS MONSTER units to suffer 3 mortal wounds to extend their Distortion Fields range to 9\" until phase end via deterministic multi-select decision flow. Necrodermal Binding surcharge validation is applied for Pantheon mustering.",
+        ),
         "Relentless Onslaught": ("Supported", "Starshatter Arsenal: +1 to hit vs targets within objective range; VEHICLE/MOUNTED (non-TITANIC) ranged weapons gain Assault."),
         "Ruthless Discipline": (
             "Supported",
@@ -2558,6 +2572,10 @@ def _restriction_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Pact of Blood": ("Supported", "Army faction restriction enforced during validation."),
         "Space Marine Chapters": ("Supported", "Chapter keyword restrictions and unit bans."),
         "Deathwatch": ("Supported", "Deathwatch-only chapter restrictions."),
+        "When mustering your army, each NECRONS MONSTER unit from your army has the relevant Necrodermal Binding ability shown below, and you must increase the points cost of each of those units by the amount shown in the Munitorum Field Manual . If this causes your army to exceed the points limit for the battle you are playing, you cannot include that unit in your army.": (
+            "Supported",
+            "Pantheon of Woe Necrodermal Binding surcharges are enforced in unit point costs for NECRONS MONSTER units, so army points-limit validation includes the mandatory Pantheon binding costs.",
+        ),
         "You can include the BLOOD LEGIONS units in your army. The combined points cost of such units you can include in your army is: Incursion: Up to 500 pts Strike Force: Up to 1000 pts Onslaught: Up to 1500 pts No BLOOD LEGIONS model from your army can be your WARLORD.": (
             "Supported",
             "BLOOD LEGIONS points caps enforced by battle size; BLOOD LEGIONS cannot be your WARLORD.",

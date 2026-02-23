@@ -492,6 +492,33 @@ def _validate_select_realm_of_chaos_units(game: object, request: DecisionRequest
         resolved_fn = getattr(mgr, "hyperphasing_phase_already_resolved", None)
         if callable(resolved_fn) and bool(resolved_fn(game=game, turn_ending_player_id=turn_ending_player_id)):
             return ("Hyperphasing has already resolved this end-of-turn window.",)
+    if ability_key == "cosmic_distortion_phase_surge":
+        player = resolve_player(game, request.player_id)
+        if player is None:
+            return ("Cosmic Distortion requires a player.",)
+        army = getattr(player, "get_army", lambda: None)()
+        if army is None:
+            return ("Cosmic Distortion requires an army.",)
+        mgr = getattr(army, "necrons_detachments", None)
+        if mgr is None or not getattr(mgr, "is_pantheon_of_woe", lambda: False)():
+            return ("Cosmic Distortion requires Pantheon of Woe.",)
+        phase_key = str(ctx.get("phase_key", "") or "")
+        current_phase_key_fn = getattr(mgr, "current_cosmic_distortion_phase_key", None)
+        if callable(current_phase_key_fn) and phase_key:
+            current_phase_key = str(current_phase_key_fn(game=game) or "")
+            if current_phase_key and current_phase_key != phase_key:
+                return ("Cosmic Distortion selection window has expired.",)
+        candidates_fn = getattr(mgr, "cosmic_distortion_phase_surge_candidates", None)
+        if not callable(candidates_fn):
+            return ("Cosmic Distortion candidate resolver is unavailable.",)
+        candidates = list(candidates_fn(game=game, player=player) or [])
+        candidate_ids = {str(get_entity_id(unit) or "") for unit in list(candidates or []) if unit is not None}
+        for uid in seen:
+            if uid not in candidate_ids:
+                return ("Cosmic Distortion selection contains an ineligible unit.",)
+        max_units_allowed = int(ctx.get("max_units", len(candidate_ids)) or 0)
+        if len(seen) > max(0, int(max_units_allowed)):
+            return ("Too many units selected for Cosmic Distortion.",)
     return ()
 
 
@@ -679,6 +706,45 @@ def _apply_select_realm_of_chaos_units(game: object, request: DecisionRequest, r
         if callable(mark_fn):
             mark_fn(game=game, turn_ending_player_id=turn_ending_player_id)
         return moved_units
+
+    if ability_key == "cosmic_distortion_phase_surge":
+        player = resolve_player(game, request.player_id)
+        if player is None:
+            raise RuntimeError("Cosmic Distortion player not found.")
+        army = getattr(player, "get_army", lambda: None)()
+        if army is None:
+            raise RuntimeError("Cosmic Distortion army not found.")
+        mgr = getattr(army, "necrons_detachments", None)
+        if mgr is None:
+            raise RuntimeError("Cosmic Distortion detachment manager not found.")
+
+        unit_ids = []
+        if not is_skip_choice(request, result):
+            unit_ids = sorted({str(uid or "").strip() for uid in list(result.payload.get("unit_ids") or []) if str(uid or "").strip()})
+
+        apply_fn = getattr(mgr, "apply_cosmic_distortion_phase_surge", None)
+        if not callable(apply_fn):
+            raise RuntimeError("Cosmic Distortion apply function is unavailable.")
+        applied_units = list(
+            apply_fn(
+                unit_ids,
+                game=game,
+                phase_key=str(ctx.get("phase_key", "") or ""),
+                player=player,
+            ) or []
+        )
+
+        if not unit_ids:
+            _log_action_for_players(game, player, "Cosmic Distortion: no units surged this phase.")
+        elif applied_units:
+            labels = ", ".join(str(getattr(unit, "name", "Unit") or "Unit") for unit in list(applied_units or []))
+            _log_action_for_players(
+                game,
+                player,
+                "Cosmic Distortion: "
+                f"{labels} suffered 3 mortal wounds and have 9\" Distortion Fields until end of phase.",
+            )
+        return applied_units
 
     if is_skip_choice(request, result):
         return None
