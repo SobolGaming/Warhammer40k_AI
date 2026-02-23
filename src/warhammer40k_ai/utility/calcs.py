@@ -1438,6 +1438,25 @@ def get_validation_rules(
             'cannot_move_within_engagement_range': True,  # Cannot move within 1" of enemies
         })
 
+    # Hammer of the Emperor (Astra Militarum): Iron Tread.
+    # SQUADRON units can move within Engagement Range while Advancing, but cannot end there.
+    if movement_type == MovementType.ADVANCE and moving_unit is not None:
+        am_mgr = None
+        try:
+            army = moving_unit.get_parent_army()
+        except Exception:
+            army = None
+        if army is not None:
+            am_mgr = getattr(army, "astra_militarum_detachments", None)
+        iron_tread_fn = (
+            getattr(am_mgr, "iron_tread_allows_advance_move_within_engagement_range", None)
+            if am_mgr is not None
+            else None
+        )
+        if callable(iron_tread_fn) and bool(iron_tread_fn(moving_unit)):
+            base_rules['cannot_move_within_engagement_range'] = False
+            base_rules['cannot_end_in_engagement_range'] = True
+
     # FLY: can move over enemy models for Normal/Advance/Fall Back/Charge moves.
     try:
         is_fly = bool(moving_unit is not None and moving_unit.is_flying)

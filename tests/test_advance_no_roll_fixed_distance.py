@@ -32,12 +32,18 @@ class _DummyPlayer:
 
 
 class _MockDatasheet:
-    def __init__(self, ability_text: str) -> None:
+    def __init__(
+        self,
+        ability_text: str,
+        *,
+        keywords: list[str] | None = None,
+        faction_keywords: list[str] | None = None,
+    ) -> None:
         self.id = "advance-no-roll"
         self.name = "Swift Unit"
         self.faction_data = {"name": "Test"}
-        self.keywords = ["INFANTRY"]
-        self.faction_keywords = ["TEST"]
+        self.keywords = list(keywords or ["INFANTRY"])
+        self.faction_keywords = list(faction_keywords or ["TEST"])
         self.attached_to = []
         self.datasheets_unit_composition = [{"description": "1 Test Model"}]
         self.datasheets_models_cost = [{"description": "1 model", "cost": 100}]
@@ -67,8 +73,19 @@ class _MockDatasheet:
         self.loadout = "This model is equipped with: nothing"
 
 
-def _make_unit(ability_text: str = _ADVANCE_NO_ROLL_TEXT) -> Unit:
-    return Unit(_MockDatasheet(ability_text))
+def _make_unit(
+    ability_text: str = _ADVANCE_NO_ROLL_TEXT,
+    *,
+    keywords: list[str] | None = None,
+    faction_keywords: list[str] | None = None,
+) -> Unit:
+    return Unit(
+        _MockDatasheet(
+            ability_text,
+            keywords=keywords,
+            faction_keywords=faction_keywords,
+        )
+    )
 
 
 class _LeaderDatasheet(_MockDatasheet):
@@ -158,6 +175,50 @@ def test_advance_no_roll_with_phase_move_through_models_and_terrain():
     advance_rules = get_validation_rules(MovementType.ADVANCE, moving_unit=unit)
     assert bool(advance_rules.get("can_move_through_enemy_models"))
     assert bool(advance_rules.get("can_move_through_terrain"))
+    assert bool(advance_rules.get("cannot_move_within_engagement_range", True)) is False
+    assert bool(advance_rules.get("cannot_end_in_engagement_range"))
+
+
+def test_hammer_of_the_emperor_iron_tread_squadron_advance_support():
+    from warhammer40k_ai.rules.astra_militarum_detachments import AstraMilitarumDetachmentManager
+    from warhammer40k_ai.utility.calcs import MovementType, get_validation_rules
+
+    squadron = _make_unit(
+        ability_text="",
+        keywords=["VEHICLE", "SQUADRON"],
+        faction_keywords=["ASTRA MILITARUM"],
+    )
+    non_squadron = _make_unit(
+        ability_text="",
+        keywords=["INFANTRY", "REGIMENT"],
+        faction_keywords=["ASTRA MILITARUM"],
+    )
+
+    army = Army(faction="Astra Militarum", detachment_type="Hammer of the Emperor", points_limit=2000)
+    army.faction_id = "AM"
+    army.player = _DummyPlayer()
+    army.units = [squadron, non_squadron]
+    for unit in army.units:
+        unit.parent_army = army
+    army.astra_militarum_detachments = AstraMilitarumDetachmentManager(army)
+
+    effect = squadron._get_advance_no_roll_effect()
+    assert effect is not None
+    assert int(effect.get("distance", 0) or 0) == 6
+    assert "Iron Tread" in str(effect.get("source", "") or "")
+
+    with patch("warhammer40k_ai.units.unit.get_roll") as roll_mock:
+        prepared = squadron.prepare_advance()
+    assert int(prepared or 0) == 6
+    roll_mock.assert_not_called()
+
+    no_effect = non_squadron._get_advance_no_roll_effect()
+    assert no_effect is None
+
+    move_rules = get_validation_rules(MovementType.MOVE, moving_unit=squadron)
+    assert bool(move_rules.get("cannot_move_within_engagement_range", False))
+
+    advance_rules = get_validation_rules(MovementType.ADVANCE, moving_unit=squadron)
     assert bool(advance_rules.get("cannot_move_within_engagement_range", True)) is False
     assert bool(advance_rules.get("cannot_end_in_engagement_range"))
 

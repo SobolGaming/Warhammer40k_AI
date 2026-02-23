@@ -30,6 +30,11 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Grizzled Company")
 
+    def is_hammer_of_the_emperor(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Hammer of the Emperor")
+
     def _unit_root(self, unit):
         if unit is None:
             return None
@@ -145,6 +150,14 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
             return False
         return self._model_or_unit_has_keyword(model, root, "SQUADRON")
 
+    def _unit_is_squadron_unit(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if not self.unit_is_astra_militarum(root):
+            return False
+        return self._unit_has_keyword(root, "SQUADRON")
+
     def _target_is_monster_or_vehicle(self, unit) -> bool:
         root = self._unit_root(unit)
         if root is None:
@@ -213,6 +226,32 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
         if not self.unit_is_astra_militarum(unit):
             return False
         return self._attached_unit_has_order(unit)
+
+    def iron_tread_advance_no_roll_effect(self, unit) -> dict | None:
+        if not self.is_hammer_of_the_emperor():
+            return None
+        root = self._unit_root(unit)
+        if root is None:
+            return None
+        if not self._unit_in_army(root):
+            return None
+        if not self._unit_is_squadron_unit(root):
+            return None
+        return {
+            "distance": 6,
+            "source": "Iron Tread",
+            "tag": "detachment:iron_tread",
+        }
+
+    def iron_tread_allows_advance_move_within_engagement_range(self, unit) -> bool:
+        if not self.is_hammer_of_the_emperor():
+            return False
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        return self._unit_is_squadron_unit(root)
 
     def only_the_best_hit_reroll_mods(
         self,

@@ -2958,12 +2958,19 @@ class RulesParsingMixin:
             if not isinstance(member_effects, list) or not member_effects:
                 continue
             effects.extend([entry for entry in member_effects if isinstance(entry, dict)])
+
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+        iron_tread_fn = getattr(am_mgr, "iron_tread_advance_no_roll_effect", None) if am_mgr is not None else None
+        if callable(iron_tread_fn):
+            iron_tread_effect = iron_tread_fn(root)
+            if isinstance(iron_tread_effect, dict):
+                effects.append(dict(iron_tread_effect))
         if not effects:
             return None
 
         phase_name = ""
         try:
-            army = root.get_parent_army()
             game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
             phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
         except Exception:
