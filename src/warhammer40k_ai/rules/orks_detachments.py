@@ -12,6 +12,8 @@ class OrksDetachmentManager(DetachmentManagerBase):
     _SECOND_WAAAGH_NAMED_UNITS = ("nobz", "meganobz")
     _GREEN_TIDE_BOYZ_NAMED_UNITS = ("boyz",)
     _GREEN_TIDE_MOB_MENTALITY_SOURCE = "Mob Mentality"
+    _KULT_OF_SPEED_SPEED_FREEKS_KEYWORD = "SPEED FREEKS"
+    _KULT_OF_SPEED_ADRENALINE_JUNKIES_SOURCE = "Adrenaline Junkies"
     _DA_BIG_HUNT_PREY_KEYWORDS = ("MONSTER", "VEHICLE", "CHARACTER")
     _HERE_BE_LOOT_QUALIFYING_KEYWORDS = ("INFANTRY", "MOUNTED", "WALKER")
     _DREAD_MOB_BUTTON_SUSTAINED = "SUSTAINED_HITS_1"
@@ -65,6 +67,11 @@ class OrksDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Green Tide")
+
+    def is_kult_of_speed(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Kult of Speed")
 
     @staticmethod
     def _normalize_name(text: str) -> str:
@@ -229,6 +236,18 @@ class OrksDetachmentManager(DetachmentManagerBase):
         if model_count > 0:
             return 6, self._GREEN_TIDE_MOB_MENTALITY_SOURCE
         return 0, ""
+
+    def kult_of_speed_adrenaline_junkies_applies(self, unit) -> bool:
+        if not self.is_kult_of_speed():
+            return False
+        if unit is None:
+            return False
+        root = self._unit_root(unit)
+        if root is None or not self._unit_belongs_to_army(root):
+            return False
+        if not self._unit_contains_keyword(root, self._KULT_OF_SPEED_SPEED_FREEKS_KEYWORD):
+            return False
+        return True
 
     def _unit_contains_warboss_model(self, unit) -> bool:
         if unit is None:

@@ -617,6 +617,9 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time a beast snagga unit from your army declares a charge that includes your prey as one of the targets you can reroll the charge roll",
             r"each time a beast snagga model from your army makes an attack that targets your prey improve the armour penetration characteristic of that attack by \d+",
         ),
+        "Adrenaline Junkies": (
+            r"speed freeks units from your army are eligible to shoot and declare a charge in a turn in which they advanced or fell back",
+        ),
         "Mob Mentality": (
             r"each time an attack targets a boyz unit from your army models in that unit have a \d+ invulnerable save against that attack",
             r"each time an attack targets a boyz unit from your army that contains 10 or more models models in that unit have a \d+ invulnerable save against that attack",
@@ -2175,6 +2178,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Da Hunt Is On": (
             "Supported",
             "Da Big Hunt: at the start of your Command phase, select an enemy MONSTER, VEHICLE, or CHARACTER as your Prey until your next Command phase; BEAST SNAGGA units can re-roll Charge rolls when declaring charges that include that Prey, and BEAST SNAGGA model attacks improve AP by 1 against that Prey.",
+        ),
+        "Adrenaline Junkies": (
+            "Supported",
+            "Kult of Speed: SPEED FREEKS units are eligible to shoot and declare a charge in turns when they Advanced or Fell Back.",
         ),
         "Mob Mentality": (
             "Supported",
@@ -4064,6 +4071,10 @@ def _detachment_ability_support_by_id() -> Dict[str, Tuple[str, str]]:
         "000008880": (
             "Supported",
             "Green Tide: BOYZ units gain a 6+ invulnerable save when targeted, improving to 5+ while the unit contains 10 or more models.",
+        ),
+        "000008871": (
+            "Supported",
+            "Kult of Speed: SPEED FREEKS units are eligible to shoot and declare a charge in turns when they Advanced or Fell Back.",
         ),
         "000008820": (
             "Supported",

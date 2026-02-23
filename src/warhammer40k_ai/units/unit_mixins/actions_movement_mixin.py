@@ -10368,6 +10368,14 @@ class ActionsMovementMixin:
                     return True
         except Exception:
             pass
+        army = self.get_parent_army()
+        mgr = getattr(army, "orks_detachments", None) if army is not None else None
+        applies_fn = getattr(mgr, "kult_of_speed_adrenaline_junkies_applies", None) if mgr is not None else None
+        if callable(applies_fn) and applies_fn(self):
+            parent_wargear = getattr(profile, "parent_wargear", None)
+            is_ranged_fn = getattr(parent_wargear, "is_ranged", None) if parent_wargear is not None else None
+            if callable(is_ranged_fn) and bool(is_ranged_fn()):
+                return True
         try:
             army = self.get_parent_army()
             mgr = getattr(army, "combat_doctrines", None) if army is not None else None
@@ -10460,6 +10468,14 @@ class ActionsMovementMixin:
                         return True
                 return False
             return True
+        army = self.get_parent_army()
+        mgr = getattr(army, "orks_detachments", None) if army is not None else None
+        applies_fn = getattr(mgr, "kult_of_speed_adrenaline_junkies_applies", None) if mgr is not None else None
+        if callable(applies_fn) and applies_fn(self):
+            parent_wargear = getattr(profile, "parent_wargear", None)
+            is_ranged_fn = getattr(parent_wargear, "is_ranged", None) if parent_wargear is not None else None
+            if callable(is_ranged_fn) and bool(is_ranged_fn()):
+                return True
 
         try:
             army = self.get_parent_army()
@@ -10749,6 +10765,11 @@ class ActionsMovementMixin:
                     return True
         except Exception:
             pass
+        army = self.get_parent_army()
+        mgr = getattr(army, "orks_detachments", None) if army is not None else None
+        applies_fn = getattr(mgr, "kult_of_speed_adrenaline_junkies_applies", None) if mgr is not None else None
+        if callable(applies_fn) and applies_fn(self):
+            return True
         return bool(self.has_advance_and_charge())
 
     def _advance_and_charge_once_per_battle_spec(self) -> Optional[dict]:
@@ -10792,6 +10813,11 @@ class ActionsMovementMixin:
     def can_charge_after_fall_back(self) -> bool:
         """Check if this unit can charge after falling back."""
         if self.has_thrill_seekers():
+            return True
+        army = self.get_parent_army()
+        mgr = getattr(army, "orks_detachments", None) if army is not None else None
+        applies_fn = getattr(mgr, "kult_of_speed_adrenaline_junkies_applies", None) if mgr is not None else None
+        if callable(applies_fn) and applies_fn(self):
             return True
         try:
             army = self.get_parent_army()
