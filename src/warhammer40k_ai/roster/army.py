@@ -448,6 +448,9 @@ class Army:
         apply_fn = getattr(orks_mgr, "apply_dread_mob_gretchin_battleline_keywords", None) if orks_mgr is not None else None
         if callable(apply_fn):
             apply_fn(unit)
+        apply_fn = getattr(orks_mgr, "apply_taktikal_brigade_stormboyz_battleline_keywords", None) if orks_mgr is not None else None
+        if callable(apply_fn):
+            apply_fn(unit)
         cd_mgr = getattr(self, "chaos_daemons_detachments", None)
         apply_fn = getattr(cd_mgr, "apply_shadow_legion_keywords", None) if cd_mgr is not None else None
         if callable(apply_fn):

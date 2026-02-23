@@ -4864,6 +4864,34 @@ class Game(
             set_up_as_reinforcements=bool(set_up_as_reinforcements),
         )
 
+    def _on_unit_set_up_orks_detachments(
+        self,
+        unit=None,
+        set_up_as_reinforcements: bool = False,
+        **_kwargs,
+    ) -> None:
+        if unit is None:
+            return
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else unit
+        if root is None:
+            return
+        get_parent_army = getattr(root, "get_parent_army", None)
+        army = get_parent_army() if callable(get_parent_army) else None
+        if army is None:
+            return
+        mgr = getattr(army, "orks_detachments", None)
+        if mgr is None:
+            return
+        on_unit_set_up = getattr(mgr, "on_unit_set_up", None)
+        if not callable(on_unit_set_up):
+            return
+        on_unit_set_up(
+            unit=root,
+            game=self,
+            set_up_as_reinforcements=bool(set_up_as_reinforcements),
+        )
+
     def _on_unit_set_up_setup_reactive_shoot_or_charge(self, unit=None, **_kwargs) -> None:
         if unit is None:
             return

@@ -194,6 +194,7 @@ Command phase:
 - blood_tithe_dialog: CHOOSE_BLOOD_TITHE {ability_key | skip} (context `army_id`, `timing`)
 - idols_of_khorne_dialog: CHOOSE_IDOL_OF_KHORNE {ability_key | skip} (context `army_id`, `timing`)
 - here_be_loot_dialog: CHOOSE_QUARRY {objective_id} (context `ability="here_be_loot"`, `ability_name="Here Be Loot"`, `army_id`, `battle_round`, `candidate_objective_ids[]`, `optional=false`)
+- lissen_ere_dialog: CHOOSE_QUARRY {action="none" | target_unit_id+taktik} (context `ability="taktikal_brigade_lissen_ere"`, `ability_name="Lissen 'Ere"`, `army_id`, `issuer_model_id`, `issuer_model_name`, `issuer_unit_id`, `battle_round`, `trigger`, `candidate_unit_ids[]`, `candidate_taktiks[]`, `optional=true`)
 - vessels_of_wrath_models_dialog: SELECT_VESSEL_OF_WRATH_MODELS {model_ids | skip} (context `army_id`, `battle_round`, `max_models`)
 - wrath_of_khorne_blessing_dialog: CHOOSE_VESSEL_OF_WRATH_BLESSING {blessing_key} (context `army_id`, `battle_round`)
 - realm_of_chaos_units_dialog: SELECT_REALM_OF_CHAOS_UNITS {unit_ids | skip} (context `allowed_unit_ids`, `outside_shadow_unit_ids`, `max_units`) (used for The Realm of Chaos and Delirium Unmade)

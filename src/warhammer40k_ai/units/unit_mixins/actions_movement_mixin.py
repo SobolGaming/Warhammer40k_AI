@@ -6338,6 +6338,14 @@ class ActionsMovementMixin:
         if callable(da_big_hunt_applies):
             if da_big_hunt_applies(self, target_units=target_units, game=game):
                 return True
+        taktikal_get_stuck_in = (
+            getattr(orks_mgr, "taktikal_brigade_get_stuck_in_charge_reroll_applies", None)
+            if orks_mgr is not None
+            else None
+        )
+        if callable(taktikal_get_stuck_in):
+            if bool(taktikal_get_stuck_in(self, game=game)):
+                return True
 
         conditional_found = False
         try:

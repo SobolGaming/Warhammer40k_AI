@@ -16,6 +16,25 @@ class OrksDetachmentManager(DetachmentManagerBase):
     _KULT_OF_SPEED_ADRENALINE_JUNKIES_SOURCE = "Adrenaline Junkies"
     _MORE_DAKKA_QUALIFYING_KEYWORDS = ("INFANTRY", "WALKER")
     _MORE_DAKKA_SOURCE = "Dakka! Dakka! Dakka!"
+    _TAKTIKAL_BRIGADE_STORMBOYZ_NAMED_UNITS = ("stormboyz",)
+    _TAKTIKAL_BRIGADE_TAKTIK_GET_STUCK_IN = "get_stuck_in"
+    _TAKTIKAL_BRIGADE_TAKTIK_GET_ON_WIV_IT = "get_on_wiv_it"
+    _TAKTIKAL_BRIGADE_TAKTIK_SNEAKY_STALKIN = "sneaky_stalkin"
+    _TAKTIKAL_BRIGADE_TAKTIK_SHOOTA_DRILLS = "shoota_drills"
+    _TAKTIKAL_BRIGADE_TAKTIKS = (
+        _TAKTIKAL_BRIGADE_TAKTIK_GET_STUCK_IN,
+        _TAKTIKAL_BRIGADE_TAKTIK_GET_ON_WIV_IT,
+        _TAKTIKAL_BRIGADE_TAKTIK_SNEAKY_STALKIN,
+        _TAKTIKAL_BRIGADE_TAKTIK_SHOOTA_DRILLS,
+    )
+    _TAKTIKAL_BRIGADE_TAKTIK_LABELS = {
+        _TAKTIKAL_BRIGADE_TAKTIK_GET_STUCK_IN: "Get Stuck In",
+        _TAKTIKAL_BRIGADE_TAKTIK_GET_ON_WIV_IT: "Get On Wiv It",
+        _TAKTIKAL_BRIGADE_TAKTIK_SNEAKY_STALKIN: "Sneaky Stalkin'",
+        _TAKTIKAL_BRIGADE_TAKTIK_SHOOTA_DRILLS: "Shoota Drills",
+    }
+    _TAKTIKAL_BRIGADE_SOURCE = "Lissen 'Ere"
+    _TAKTIKAL_BRIGADE_RANGE = 6.0
     _DA_BIG_HUNT_PREY_KEYWORDS = ("MONSTER", "VEHICLE", "CHARACTER")
     _HERE_BE_LOOT_QUALIFYING_KEYWORDS = ("INFANTRY", "MOUNTED", "WALKER")
     _DREAD_MOB_BUTTON_SUSTAINED = "SUSTAINED_HITS_1"
@@ -39,6 +58,8 @@ class OrksDetachmentManager(DetachmentManagerBase):
         self.da_big_hunt_prey_owner_id: str = ""
         self.freebooter_loot_objective_id: str = ""
         self.freebooter_loot_battle_round: int = 0
+        self._taktikal_brigade_issued_by_model_round: dict[str, int] = {}
+        self._taktikal_brigade_issued_to_unit_round: dict[str, int] = {}
 
     def is_war_horde(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -80,6 +101,11 @@ class OrksDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("More Dakka!")
 
+    def is_taktikal_brigade(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Taktikal Brigade")
+
     @staticmethod
     def _normalize_name(text: str) -> str:
         value = re.sub(r"[^a-z0-9 ]+", " ", str(text or "").lower())
@@ -102,6 +128,15 @@ class OrksDetachmentManager(DetachmentManagerBase):
         return bool(getattr(unit, "is_alive", True))
 
     @staticmethod
+    def _model_is_alive(model) -> bool:
+        if model is None:
+            return False
+        is_alive_val = getattr(model, "is_alive", None)
+        if callable(is_alive_val):
+            return bool(is_alive_val())
+        return bool(is_alive_val)
+
+    @staticmethod
     def _unit_is_deployed_on_battlefield(unit) -> bool:
         if unit is None:
             return False
@@ -114,6 +149,15 @@ class OrksDetachmentManager(DetachmentManagerBase):
         if callable(in_reserves_fn):
             return not bool(in_reserves_fn())
         return True
+
+    @staticmethod
+    def _unit_is_battle_shocked(unit) -> bool:
+        if unit is None:
+            return False
+        fn = getattr(unit, "is_battle_shocked", None)
+        if callable(fn):
+            return bool(fn())
+        return bool(getattr(unit, "battle_shocked", False))
 
     def _transport_is_on_battlefield(self, transport_unit) -> bool:
         if transport_unit is None:
@@ -379,6 +423,621 @@ class OrksDetachmentManager(DetachmentManagerBase):
             return get_parent_army() is self.army
         return getattr(root, "parent_army", None) is self.army
 
+    def _taktikal_label(self, taktik_key: str) -> str:
+        return str(self._TAKTIKAL_BRIGADE_TAKTIK_LABELS.get(str(taktik_key or "").strip().lower(), "") or "")
+
+    def _model_has_any_keyword(self, model, keywords: tuple[str, ...]) -> bool:
+        for keyword in keywords:
+            if self._model_has_keyword(model, keyword):
+                return True
+        return False
+
+    def _model_is_taktikal_issuer(self, model) -> bool:
+        if model is None:
+            return False
+        if self._model_has_any_keyword(model, ("MEK", "WARBOSS")):
+            return True
+        model_name = self._normalize_name(getattr(model, "name", ""))
+        if model_name == "boss snikrot":
+            return True
+        parent_unit = getattr(model, "parent_unit", None)
+        parent_name = self._normalize_name(getattr(parent_unit, "name", ""))
+        return parent_name == "boss snikrot"
+
+    def _model_is_meganobz(self, model) -> bool:
+        if model is None:
+            return False
+        if self._model_has_keyword(model, "MEGANOBZ"):
+            return True
+        model_name = self._normalize_name(getattr(model, "name", ""))
+        return "meganob" in model_name
+
+    def _taktikal_current_battle_round(self, game=None) -> int:
+        if game is None and self.army is not None:
+            player = getattr(self.army, "player", None)
+            game = getattr(player, "game", None) if player is not None else None
+        if game is None:
+            return 0
+        try:
+            return int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def _cleanup_taktikal_tracking_for_round(self, battle_round: int) -> None:
+        current = int(battle_round or 0)
+        if current <= 0:
+            return
+        self._taktikal_brigade_issued_by_model_round = {
+            str(model_id): int(round_value)
+            for model_id, round_value in dict(self._taktikal_brigade_issued_by_model_round or {}).items()
+            if int(round_value or 0) >= current
+        }
+        self._taktikal_brigade_issued_to_unit_round = {
+            str(unit_id): int(round_value)
+            for unit_id, round_value in dict(self._taktikal_brigade_issued_to_unit_round or {}).items()
+            if int(round_value or 0) >= current
+        }
+
+    def _taktikal_issuer_used_this_round(self, issuer_model, *, battle_round: int) -> bool:
+        model_id = str(get_entity_id(issuer_model) or "")
+        if not model_id:
+            return False
+        return int(self._taktikal_brigade_issued_by_model_round.get(model_id, 0) or 0) == int(battle_round or 0)
+
+    def _taktikal_target_used_this_round(self, target_unit, *, battle_round: int) -> bool:
+        unit_id = self._unit_root_id(target_unit)
+        if not unit_id:
+            return False
+        return int(self._taktikal_brigade_issued_to_unit_round.get(unit_id, 0) or 0) == int(battle_round or 0)
+
+    def _mark_taktikal_usage(
+        self,
+        issuer_model,
+        target_unit,
+        *,
+        battle_round: int,
+    ) -> None:
+        model_id = str(get_entity_id(issuer_model) or "")
+        unit_id = self._unit_root_id(target_unit)
+        if model_id:
+            self._taktikal_brigade_issued_by_model_round[model_id] = int(battle_round or 0)
+        if unit_id:
+            self._taktikal_brigade_issued_to_unit_round[unit_id] = int(battle_round or 0)
+
+    def _collect_taktikal_issuer_models(self, *, unit=None) -> list:
+        if not self.is_taktikal_brigade() or self.army is None:
+            return []
+        if unit is None:
+            roots = []
+            seen_root_ids: set[str] = set()
+            for entry in list(getattr(self.army, "units", []) or []):
+                root = self._unit_root(entry)
+                if root is None:
+                    continue
+                rid = self._unit_root_id(root)
+                if rid and rid in seen_root_ids:
+                    continue
+                if rid:
+                    seen_root_ids.add(rid)
+                roots.append(root)
+        else:
+            root = self._unit_root(unit)
+            roots = [root] if root is not None else []
+        issuers = []
+        for root in roots:
+            if root is None or not self._unit_belongs_to_army(root):
+                continue
+            if not self._unit_is_on_battlefield(root):
+                continue
+            members_fn = getattr(root, "get_attached_unit_members", None)
+            members = list(members_fn() or []) if callable(members_fn) else [root]
+            for member in members:
+                for model in list(getattr(member, "models", []) or []):
+                    if not self._model_is_alive(model):
+                        continue
+                    if not self._model_is_taktikal_issuer(model):
+                        continue
+                    issuers.append(model)
+        issuers.sort(key=lambda model: str(get_entity_id(model) or ""))
+        return issuers
+
+    def _collect_taktikal_target_units_for_issuer(self, issuer_model, *, game=None) -> list:
+        if issuer_model is None or self.army is None:
+            return []
+        issuer_unit = getattr(issuer_model, "parent_unit", None)
+        issuer_root = self._unit_root(issuer_unit)
+        if issuer_root is None or not self._unit_belongs_to_army(issuer_root):
+            return []
+        if not self._unit_is_on_battlefield(issuer_root):
+            return []
+        from ..utility.aura_utils import model_within_range_of_unit
+
+        battle_round = self._taktikal_current_battle_round(game)
+        candidates = []
+        seen_ids: set[str] = set()
+        for candidate in list(getattr(self.army, "units", []) or []):
+            root = self._unit_root(candidate)
+            if root is None:
+                continue
+            rid = self._unit_root_id(root)
+            if not rid or rid in seen_ids:
+                continue
+            seen_ids.add(rid)
+            if not self._unit_belongs_to_army(root):
+                continue
+            if not self._unit_is_on_battlefield(root):
+                continue
+            if self._unit_is_battle_shocked(root):
+                continue
+            if not self._unit_has_keyword_or_faction(root, "ORKS", faction_id=self.faction_id):
+                continue
+            if battle_round and self._taktikal_target_used_this_round(root, battle_round=battle_round):
+                continue
+            if not model_within_range_of_unit(
+                issuer_model,
+                root,
+                float(self._TAKTIKAL_BRIGADE_RANGE),
+                use_attached_aggregate=True,
+            ):
+                continue
+            candidates.append(root)
+        candidates.sort(key=lambda root: (self._normalize_name(getattr(root, "name", "")), self._unit_root_id(root)))
+        return candidates
+
+    def _pending_taktikal_request_for_issuer(self, game, *, player, issuer_model, battle_round: int, trigger: str) -> bool:
+        if game is None or player is None or issuer_model is None:
+            return False
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        issuer_id = str(get_entity_id(issuer_model) or "")
+        trigger_key = str(trigger or "").strip().lower()
+        for request in list(queue.list() or []):
+            context = dict(getattr(request, "context", {}) or {})
+            if str(context.get("ability", "") or "") != "taktikal_brigade_lissen_ere":
+                continue
+            if str(getattr(request, "player_id", "") or "") != str(getattr(player, "id", "") or ""):
+                continue
+            if str(context.get("issuer_model_id", "") or "") != issuer_id:
+                continue
+            if int(context.get("battle_round", 0) or 0) != int(battle_round or 0):
+                continue
+            if str(context.get("trigger", "") or "").strip().lower() != trigger_key:
+                continue
+            return True
+        return False
+
+    def build_taktikal_brigade_lissen_ere_request(
+        self,
+        issuer_model,
+        *,
+        game=None,
+        player=None,
+        trigger: str = "command_phase",
+        battle_round: int = 0,
+    ):
+        if not self.is_taktikal_brigade() or self.army is None:
+            return None
+        if issuer_model is None or not self._model_is_taktikal_issuer(issuer_model):
+            return None
+        if not self._model_is_alive(issuer_model):
+            return None
+        if player is None:
+            player = getattr(self.army, "player", None)
+        if player is None:
+            return None
+        if game is None:
+            game = getattr(player, "game", None)
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return None
+        if player is not getattr(self.army, "player", None):
+            return None
+        trigger_key = str(trigger or "").strip().lower()
+        if trigger_key not in ("command_phase", "set_up"):
+            return None
+        if battle_round <= 0:
+            battle_round = self._taktikal_current_battle_round(game)
+        self._cleanup_taktikal_tracking_for_round(int(battle_round or 0))
+        if self._taktikal_issuer_used_this_round(issuer_model, battle_round=int(battle_round or 0)):
+            return None
+        if self._pending_taktikal_request_for_issuer(
+            game,
+            player=player,
+            issuer_model=issuer_model,
+            battle_round=int(battle_round or 0),
+            trigger=trigger_key,
+        ):
+            return None
+
+        targets = self._collect_taktikal_target_units_for_issuer(issuer_model, game=game)
+        if not targets:
+            return None
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        options = [
+            DecisionOption.create(
+                "Do not issue Taktiks",
+                payload={
+                    "issuer_model_id": str(get_entity_id(issuer_model) or ""),
+                    "action": "none",
+                },
+            )
+        ]
+        candidate_unit_ids = []
+        for target in targets:
+            target_id = self._unit_root_id(target)
+            if not target_id:
+                continue
+            candidate_unit_ids.append(target_id)
+            target_name = str(getattr(target, "name", "") or "Unit")
+            for taktik in self._TAKTIKAL_BRIGADE_TAKTIKS:
+                taktik_label = self._taktikal_label(taktik) or taktik
+                options.append(
+                    DecisionOption.create(
+                        f"{taktik_label}: {target_name}",
+                        payload={
+                            "issuer_model_id": str(get_entity_id(issuer_model) or ""),
+                            "target_unit_id": str(target_id),
+                            "taktik": str(taktik),
+                        },
+                    )
+                )
+
+        if len(options) <= 1:
+            return None
+
+        issuer_name = str(getattr(issuer_model, "name", "Model") or "Model")
+        issuer_unit = getattr(issuer_model, "parent_unit", None)
+        return DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"Lissen 'Ere: choose Taktiks to issue from {issuer_name}.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={
+                "ability": "taktikal_brigade_lissen_ere",
+                "ability_name": self._TAKTIKAL_BRIGADE_SOURCE,
+                "army_id": str(get_entity_id(self.army) or ""),
+                "issuer_model_id": str(get_entity_id(issuer_model) or ""),
+                "issuer_model_name": issuer_name,
+                "issuer_unit_id": self._unit_root_id(issuer_unit),
+                "battle_round": int(battle_round or 0),
+                "trigger": trigger_key,
+                "candidate_unit_ids": list(candidate_unit_ids),
+                "candidate_taktiks": list(self._TAKTIKAL_BRIGADE_TAKTIKS),
+                "optional": True,
+            },
+        )
+
+    def validate_taktikal_brigade_lissen_ere_choice(
+        self,
+        issuer_model,
+        payload: dict,
+        *,
+        game=None,
+        player=None,
+        battle_round: int = 0,
+        trigger: str = "",
+    ) -> tuple[bool, str]:
+        if not self.is_taktikal_brigade():
+            return False, "Lissen 'Ere requires Taktikal Brigade detachment."
+        if self.army is None:
+            return False, "Lissen 'Ere army not found."
+        if issuer_model is None or not self._model_is_taktikal_issuer(issuer_model):
+            return False, "Lissen 'Ere issuer model is not eligible."
+        if not self._model_is_alive(issuer_model):
+            return False, "Lissen 'Ere issuer model must be alive."
+        issuer_unit = getattr(issuer_model, "parent_unit", None)
+        issuer_root = self._unit_root(issuer_unit)
+        if issuer_root is None or not self._unit_belongs_to_army(issuer_root):
+            return False, "Lissen 'Ere issuer model must belong to your army."
+        if not self._unit_is_on_battlefield(issuer_root):
+            return False, "Lissen 'Ere issuer model must be on the battlefield."
+        if player is not None:
+            army_player = getattr(self.army, "player", None)
+            if army_player is not None and player is not army_player:
+                return False, "Lissen 'Ere must be resolved by the owning player."
+        trigger_key = str(trigger or "").strip().lower()
+        if trigger_key and trigger_key not in ("command_phase", "set_up"):
+            return False, "Lissen 'Ere trigger must be command_phase or set_up."
+        if battle_round <= 0:
+            battle_round = self._taktikal_current_battle_round(game)
+        self._cleanup_taktikal_tracking_for_round(int(battle_round or 0))
+        if self._taktikal_issuer_used_this_round(issuer_model, battle_round=int(battle_round or 0)):
+            return False, "Lissen 'Ere issuer model has already issued Taktiks this battle round."
+
+        action = str(dict(payload or {}).get("action", "") or "").strip().lower()
+        if action == "none":
+            return True, ""
+
+        taktik = str(dict(payload or {}).get("taktik", "") or "").strip().lower()
+        if taktik not in set(self._TAKTIKAL_BRIGADE_TAKTIKS):
+            return False, "Lissen 'Ere selected Taktik is not valid."
+        target_unit = dict(payload or {}).get("target_unit")
+        if target_unit is None:
+            return False, "Lissen 'Ere selected target unit was not found."
+        target_root = self._unit_root(target_unit)
+        if target_root is None or not self._unit_belongs_to_army(target_root):
+            return False, "Lissen 'Ere target must be a friendly ORKS unit."
+        if not self._unit_is_on_battlefield(target_root):
+            return False, "Lissen 'Ere target must be on the battlefield."
+        if self._unit_is_battle_shocked(target_root):
+            return False, "Lissen 'Ere cannot target Battle-shocked units."
+        if not self._unit_has_keyword_or_faction(target_root, "ORKS", faction_id=self.faction_id):
+            return False, "Lissen 'Ere target must be an ORKS unit."
+        if self._taktikal_target_used_this_round(target_root, battle_round=int(battle_round or 0)):
+            return False, "Lissen 'Ere target unit has already had Taktiks issued this battle round."
+
+        from ..utility.aura_utils import model_within_range_of_unit
+
+        if not model_within_range_of_unit(
+            issuer_model,
+            target_root,
+            float(self._TAKTIKAL_BRIGADE_RANGE),
+            use_attached_aggregate=True,
+        ):
+            return False, "Lissen 'Ere target must be within 6\" of the issuing model."
+        return True, ""
+
+    def _set_taktikal_effect_on_unit(
+        self,
+        target_root,
+        *,
+        taktik: str,
+        issuer_model,
+        battle_round: int,
+        trigger: str,
+    ) -> None:
+        source = self._TAKTIKAL_BRIGADE_SOURCE
+        label = self._taktikal_label(taktik) or taktik
+        special_rules = getattr(target_root, "special_rules", None)
+        if not isinstance(special_rules, dict):
+            special_rules = {}
+        special_rules["taktikal_brigade_taktik_active"] = True
+        special_rules["taktikal_brigade_taktik_key"] = str(taktik)
+        special_rules["taktikal_brigade_taktik_label"] = str(label)
+        special_rules["taktikal_brigade_taktik_source"] = str(source)
+        special_rules["taktikal_brigade_taktik_battle_round"] = int(battle_round or 0)
+        special_rules["taktikal_brigade_taktik_trigger"] = str(trigger or "").strip().lower()
+        special_rules["taktikal_brigade_taktik_issuer_model_id"] = str(get_entity_id(issuer_model) or "")
+        special_rules["taktikal_brigade_taktik_issuer_model_name"] = str(getattr(issuer_model, "name", "Model") or "Model")
+        target_root.special_rules = special_rules
+
+    def clear_taktikal_brigade_active_taktiks(self) -> None:
+        if self.army is None:
+            return
+        keys = (
+            "taktikal_brigade_taktik_active",
+            "taktikal_brigade_taktik_key",
+            "taktikal_brigade_taktik_label",
+            "taktikal_brigade_taktik_source",
+            "taktikal_brigade_taktik_battle_round",
+            "taktikal_brigade_taktik_trigger",
+            "taktikal_brigade_taktik_issuer_model_id",
+            "taktikal_brigade_taktik_issuer_model_name",
+        )
+        seen: set[str] = set()
+        for entry in list(getattr(self.army, "units", []) or []):
+            root = self._unit_root(entry)
+            if root is None:
+                continue
+            rid = self._unit_root_id(root)
+            if rid and rid in seen:
+                continue
+            if rid:
+                seen.add(rid)
+            special_rules = getattr(root, "special_rules", None)
+            if not isinstance(special_rules, dict):
+                continue
+            if not any(k in special_rules for k in keys):
+                continue
+            updated = dict(special_rules)
+            for key in keys:
+                updated.pop(key, None)
+            root.special_rules = updated
+
+    def _unit_active_taktikal_taktik_key(self, unit, *, game=None) -> str:
+        del game
+        if not self.is_taktikal_brigade():
+            return ""
+        root = self._unit_root(unit)
+        if root is None or not self._unit_belongs_to_army(root):
+            return ""
+        special_rules = getattr(root, "special_rules", None)
+        if not isinstance(special_rules, dict):
+            return ""
+        if not bool(special_rules.get("taktikal_brigade_taktik_active")):
+            return ""
+        if self._unit_is_battle_shocked(root):
+            return ""
+        taktik = str(special_rules.get("taktikal_brigade_taktik_key", "") or "").strip().lower()
+        if taktik not in set(self._TAKTIKAL_BRIGADE_TAKTIKS):
+            return ""
+        return taktik
+
+    def taktikal_brigade_get_stuck_in_charge_reroll_applies(self, unit, *, game=None) -> bool:
+        return self._unit_active_taktikal_taktik_key(unit, game=game) == self._TAKTIKAL_BRIGADE_TAKTIK_GET_STUCK_IN
+
+    def taktikal_brigade_get_on_wiv_it_melee_strength_bonus(self, attacker_model, *, attack_type: str = "", game=None) -> tuple[int, str]:
+        if str(attack_type or "").strip().lower() not in ("", "melee"):
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None) if attacker_model is not None else None
+        if self._unit_active_taktikal_taktik_key(attacker_unit, game=game) != self._TAKTIKAL_BRIGADE_TAKTIK_GET_ON_WIV_IT:
+            return 0, ""
+        return 1, f"{self._TAKTIKAL_BRIGADE_SOURCE}: {self._taktikal_label(self._TAKTIKAL_BRIGADE_TAKTIK_GET_ON_WIV_IT)}"
+
+    def taktikal_brigade_shoota_drills_hit_bonus(
+        self,
+        attacker_model,
+        *,
+        attack_type: str = "",
+        game=None,
+    ) -> tuple[int, str]:
+        if str(attack_type or "").strip().lower() not in ("", "ranged"):
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None) if attacker_model is not None else None
+        if self._unit_active_taktikal_taktik_key(attacker_unit, game=game) != self._TAKTIKAL_BRIGADE_TAKTIK_SHOOTA_DRILLS:
+            return 0, ""
+        if attacker_model is None:
+            return 0, ""
+        if not self._model_has_any_keyword(attacker_model, ("INFANTRY", "MOUNTED")):
+            return 0, ""
+        return 1, f"{self._TAKTIKAL_BRIGADE_SOURCE}: {self._taktikal_label(self._TAKTIKAL_BRIGADE_TAKTIK_SHOOTA_DRILLS)}"
+
+    def taktikal_brigade_sneaky_stalkin_stealth_applies(self, unit, *, game=None) -> bool:
+        if self._unit_active_taktikal_taktik_key(unit, game=game) != self._TAKTIKAL_BRIGADE_TAKTIK_SNEAKY_STALKIN:
+            return False
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if self._unit_contains_keyword(root, "MEGANOBZ"):
+            return False
+        return self._unit_contains_any_keyword(root, ("INFANTRY", "MOUNTED"))
+
+    def taktikal_brigade_sneaky_stalkin_benefit_of_cover(self, target_model, *, attack_type: str = "", game=None) -> tuple[bool, str]:
+        if str(attack_type or "").strip().lower() not in ("", "ranged"):
+            return False, ""
+        if target_model is None:
+            return False, ""
+        target_unit = getattr(target_model, "parent_unit", None)
+        if self._unit_active_taktikal_taktik_key(target_unit, game=game) != self._TAKTIKAL_BRIGADE_TAKTIK_SNEAKY_STALKIN:
+            return False, ""
+        if self._model_is_meganobz(target_model):
+            return False, ""
+        if not self._model_has_any_keyword(target_model, ("INFANTRY", "MOUNTED")):
+            return False, ""
+        return True, f"{self._TAKTIKAL_BRIGADE_SOURCE}: {self._taktikal_label(self._TAKTIKAL_BRIGADE_TAKTIK_SNEAKY_STALKIN)}"
+
+    def apply_taktikal_brigade_stormboyz_battleline_keywords(self, unit=None) -> None:
+        if not self.is_taktikal_brigade() or self.army is None:
+            return
+        if unit is None:
+            entries = list(getattr(self.army, "units", []) or [])
+        else:
+            entries = [unit]
+        for entry in entries:
+            root = self._unit_root(entry)
+            if root is None or not self._unit_belongs_to_army(root):
+                continue
+            if not self._unit_contains_keyword(root, "STORMBOYZ"):
+                if not self._unit_name_matches_any(root, self._TAKTIKAL_BRIGADE_STORMBOYZ_NAMED_UNITS):
+                    continue
+            keywords = list(getattr(root, "keywords", []) or [])
+            if not any(str(keyword or "").strip().lower() == "battleline" for keyword in keywords):
+                keywords.append("Battleline")
+                root.keywords = keywords
+
+    def queue_taktikal_brigade_lissen_ere_requests(
+        self,
+        *,
+        game=None,
+        player=None,
+        trigger: str = "command_phase",
+        unit=None,
+    ) -> None:
+        if not self.is_taktikal_brigade() or self.army is None:
+            return
+        if game is None:
+            player = getattr(self.army, "player", None) if player is None else player
+            game = getattr(player, "game", None) if player is not None else None
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return
+        if player is None:
+            player = getattr(self.army, "player", None)
+        if player is None or player is not getattr(self.army, "player", None):
+            return
+        battle_round = self._taktikal_current_battle_round(game)
+        self._cleanup_taktikal_tracking_for_round(int(battle_round or 0))
+        trigger_key = str(trigger or "").strip().lower()
+        issuers = self._collect_taktikal_issuer_models(unit=unit)
+        for issuer in issuers:
+            request = self.build_taktikal_brigade_lissen_ere_request(
+                issuer,
+                game=game,
+                player=player,
+                trigger=trigger_key,
+                battle_round=int(battle_round or 0),
+            )
+            if request is not None and hasattr(game, "request_decision"):
+                game.request_decision(request)
+
+    def apply_taktikal_brigade_lissen_ere_choice(
+        self,
+        issuer_model,
+        payload: dict,
+        *,
+        game=None,
+        player=None,
+        battle_round: int = 0,
+        trigger: str = "",
+    ):
+        valid, reason = self.validate_taktikal_brigade_lissen_ere_choice(
+            issuer_model,
+            payload,
+            game=game,
+            player=player,
+            battle_round=battle_round,
+            trigger=trigger,
+        )
+        if not valid:
+            return {"valid": False, "reason": str(reason or "")}
+        action = str(dict(payload or {}).get("action", "") or "").strip().lower()
+        if action == "none":
+            return {
+                "action": "none",
+                "issuer_model_id": str(get_entity_id(issuer_model) or ""),
+                "issuer_model_name": str(getattr(issuer_model, "name", "Model") or "Model"),
+                "source": self._TAKTIKAL_BRIGADE_SOURCE,
+            }
+
+        target_unit = dict(payload or {}).get("target_unit")
+        target_root = self._unit_root(target_unit)
+        if target_root is None:
+            return {"valid": False, "reason": "Lissen 'Ere target unit was not found."}
+        taktik = str(dict(payload or {}).get("taktik", "") or "").strip().lower()
+        if battle_round <= 0:
+            battle_round = self._taktikal_current_battle_round(game)
+        issuer_unit = getattr(issuer_model, "parent_unit", None)
+        issuer_root = self._unit_root(issuer_unit)
+        leadership_passed = True
+        test_fn = getattr(issuer_root, "pass_leadership_check_for_model", None) if issuer_root is not None else None
+        if callable(test_fn):
+            leadership_passed = bool(test_fn(issuer_model))
+
+        mortal_wounds = 0
+        if not leadership_passed:
+            apply_mortal_wounds = getattr(target_root, "_apply_mortal_wounds_to_unit", None)
+            if callable(apply_mortal_wounds):
+                game_map = getattr(game, "map", None) if game is not None else None
+                apply_mortal_wounds(target_root, 1, game_map=game_map)
+                mortal_wounds = 1
+
+        self._set_taktikal_effect_on_unit(
+            target_root,
+            taktik=taktik,
+            issuer_model=issuer_model,
+            battle_round=int(battle_round or 0),
+            trigger=str(trigger or "").strip().lower(),
+        )
+        self._mark_taktikal_usage(
+            issuer_model,
+            target_root,
+            battle_round=int(battle_round or 0),
+        )
+        return {
+            "action": "issue",
+            "issuer_model_id": str(get_entity_id(issuer_model) or ""),
+            "issuer_model_name": str(getattr(issuer_model, "name", "Model") or "Model"),
+            "target_unit_id": self._unit_root_id(target_root),
+            "target_unit_name": str(getattr(target_root, "name", "Unit") or "Unit"),
+            "taktik": str(taktik),
+            "taktik_label": self._taktikal_label(taktik) or taktik,
+            "leadership_passed": bool(leadership_passed),
+            "mortal_wounds": int(mortal_wounds),
+            "source": self._TAKTIKAL_BRIGADE_SOURCE,
+        }
+
     def _da_big_hunt_prey_active(self) -> bool:
         if not self.is_da_big_hunt():
             return False
@@ -390,15 +1049,50 @@ class OrksDetachmentManager(DetachmentManagerBase):
         self.da_big_hunt_prey_owner_id = ""
 
     def on_command_phase_start(self, *, game=None, player=None) -> None:
-        if not self.is_da_big_hunt():
-            return
         if self.army is None:
             self.clear_da_big_hunt_prey()
+            self.clear_taktikal_brigade_active_taktiks()
             return
         army_player = getattr(self.army, "player", None)
         if player is not None and army_player is not None and army_player is not player:
             return
-        self.clear_da_big_hunt_prey()
+        if self.is_da_big_hunt():
+            self.clear_da_big_hunt_prey()
+        if self.is_taktikal_brigade():
+            self.apply_taktikal_brigade_stormboyz_battleline_keywords()
+            self.clear_taktikal_brigade_active_taktiks()
+            self.queue_taktikal_brigade_lissen_ere_requests(
+                game=game,
+                player=army_player,
+                trigger="command_phase",
+            )
+
+    def on_unit_set_up(self, *, unit=None, game=None, set_up_as_reinforcements: bool = False) -> None:
+        self.apply_taktikal_brigade_stormboyz_battleline_keywords(unit=unit)
+        if not self.is_taktikal_brigade() or self.army is None:
+            return
+        if not bool(set_up_as_reinforcements):
+            return
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return
+        phase_name = self._phase_key_from_game(game)
+        if phase_name != "MOVEMENT_PHASE":
+            return
+        owner = getattr(self.army, "player", None)
+        current_player = getattr(game, "get_current_player", lambda: None)()
+        if owner is None or current_player is not owner:
+            return
+        root = self._unit_root(unit)
+        if root is None or not self._unit_belongs_to_army(root):
+            return
+        if not self._unit_is_on_battlefield(root):
+            return
+        self.queue_taktikal_brigade_lissen_ere_requests(
+            game=game,
+            player=owner,
+            trigger="set_up",
+            unit=root,
+        )
 
     @staticmethod
     def _objective_point_for_entry(objective):
@@ -589,6 +1283,9 @@ class OrksDetachmentManager(DetachmentManagerBase):
 
     def on_battle_round_start(self, battle_round: int, *, game=None) -> None:
         self.clear_here_be_loot_objective()
+        if self.is_taktikal_brigade():
+            self.apply_taktikal_brigade_stormboyz_battleline_keywords()
+            self._cleanup_taktikal_tracking_for_round(int(battle_round or 0))
         if not self.is_freebooter_krew() or self.army is None:
             return
         player = getattr(self.army, "player", None)

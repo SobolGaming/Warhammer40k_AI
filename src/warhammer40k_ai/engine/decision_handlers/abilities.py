@@ -2294,6 +2294,64 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not bool(valid):
             return (str(reason or "Try Dat Button! choice is not valid."),)
         return ()
+    if ability == "taktikal_brigade_lissen_ere":
+        payload = dict(_option_payload(request, result) or {})
+        if is_skip_choice(request, result):
+            payload["action"] = "none"
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Lissen 'Ere army not found.",)
+        mgr = getattr(army, "orks_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_taktikal_brigade", lambda: False)()):
+            return ("Lissen 'Ere requires Taktikal Brigade detachment.",)
+        issuer_model = resolve_model(
+            game,
+            payload.get("issuer_model_id") or ctx.get("issuer_model_id"),
+        )
+        if issuer_model is None:
+            return ("Lissen 'Ere issuer model was not found.",)
+        action = str(payload.get("action", "") or "").strip().lower()
+        target_unit = None
+        if action != "none":
+            target_unit = resolve_unit(
+                game,
+                payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+            )
+            if target_unit is None:
+                return ("Lissen 'Ere target unit was not found.",)
+            target_root = (
+                target_unit.get_attached_unit_root()
+                if hasattr(target_unit, "get_attached_unit_root")
+                else target_unit
+            )
+            if target_root is None:
+                return ("Lissen 'Ere target unit was not found.",)
+            target_id = str(get_entity_id(target_root) or "")
+            candidate_ids = {
+                str(v or "").strip()
+                for v in list(ctx.get("candidate_unit_ids", []) or [])
+                if str(v or "").strip()
+            }
+            if candidate_ids and target_id not in candidate_ids:
+                return ("Lissen 'Ere target is not an eligible candidate.",)
+            payload["target_unit"] = target_root
+        validate_choice = getattr(mgr, "validate_taktikal_brigade_lissen_ere_choice", None)
+        if not callable(validate_choice):
+            return ("Lissen 'Ere validation is unavailable.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        valid, reason = validate_choice(
+            issuer_model,
+            payload,
+            game=game,
+            player=player,
+            battle_round=int(ctx.get("battle_round", 0) or 0),
+            trigger=str(ctx.get("trigger", "") or ""),
+        )
+        if not bool(valid):
+            return (str(reason or "Lissen 'Ere choice is not valid."),)
+        return ()
     if ability == "feed_the_swarm":
         payload = _option_payload(request, result)
         if is_skip_choice(request, result):
@@ -3672,6 +3730,82 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 game,
                 player,
                 f"{ability_name}: {unit_name} selected {effect_label}{hazardous_text}.",
+            )
+        return outcome
+    if ability == "taktikal_brigade_lissen_ere":
+        payload = dict(_option_payload(request, result) or {})
+        if is_skip_choice(request, result):
+            payload["action"] = "none"
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "orks_detachments", None)
+        if mgr is None:
+            return None
+        issuer_model = resolve_model(
+            game,
+            payload.get("issuer_model_id") or ctx.get("issuer_model_id"),
+        )
+        if issuer_model is None:
+            return None
+        action = str(payload.get("action", "") or "").strip().lower()
+        target_root = None
+        if action != "none":
+            target_unit = resolve_unit(
+                game,
+                payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+            )
+            if target_unit is None:
+                return None
+            target_root = (
+                target_unit.get_attached_unit_root()
+                if hasattr(target_unit, "get_attached_unit_root")
+                else target_unit
+            )
+            if target_root is None:
+                return None
+            payload["target_unit"] = target_root
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        apply_choice = getattr(mgr, "apply_taktikal_brigade_lissen_ere_choice", None)
+        if not callable(apply_choice):
+            return None
+        outcome = apply_choice(
+            issuer_model,
+            payload,
+            game=game,
+            player=player,
+            battle_round=int(ctx.get("battle_round", 0) or 0),
+            trigger=str(ctx.get("trigger", "") or ""),
+        )
+        if not isinstance(outcome, dict):
+            return None
+        if not bool(outcome.get("valid", True)):
+            return None
+        ability_name = str(ctx.get("ability_name", "") or "Lissen 'Ere").strip() or "Lissen 'Ere"
+        issuer_name = str(outcome.get("issuer_model_name", "") or getattr(issuer_model, "name", "Model"))
+        if str(outcome.get("action", "") or "").strip().lower() == "none":
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {issuer_name} did not issue Taktiks.",
+            )
+            return outcome
+        target_name = str(outcome.get("target_unit_name", "") or getattr(target_root, "name", "Unit"))
+        taktik_label = str(outcome.get("taktik_label", "") or "Taktik")
+        if bool(outcome.get("leadership_passed", False)):
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {issuer_name} issued {taktik_label} to {target_name}.",
+            )
+        else:
+            mortal_wounds = int(outcome.get("mortal_wounds", 0) or 0)
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {issuer_name} issued {taktik_label} to {target_name} and failed the Leadership test ({mortal_wounds} mortal wound).",
             )
         return outcome
     if ability == "feed_the_swarm":

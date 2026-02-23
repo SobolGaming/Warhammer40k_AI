@@ -645,6 +645,21 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"if you do until the end of the phase weapons equipped by models in that unit have the hazardous ability as well",
             r"if a weapon equipped by a model from you army has the hazardous ability from multiple sources each time you take a hazardous test for that weapon it is failed on a roll of a \d+ or a \d+",
         ),
+        "Lissen ’Ere": (
+            r"once per battle round in your command phase or after being set up on the battlefield in your movement phase each boss snikrot mek and warboss model in your army can issue taktiks abilities",
+            r"to do so select one of the taktiks abilities below and select one friendly orks unit within 6 of that model to issue them to",
+            r"that model must take a leadership test(?: if failed the selected unit suffers 1 mortal wound)?",
+            r"if failed the selected unit suffers 1 mortal wound",
+            r"until the start of your next command phase the selected unit is affected by the selected taktik",
+            r"a unit cannot have taktiks issued to it in this way more than once per battle round",
+            r"taktiks abilities cannot be issued to battle shocked units(?: and if a unit affected by taktiks becomes battle shocked all taktiks cease to affect that unit while it is battle shocked)?",
+            r"(?:if a unit affected by taktiks becomes battle shocked )?all taktiks cease to affect that unit while it is battle shocked",
+            r"(?:get stuck in )?you can reroll charge rolls made for this unit",
+            r"(?:get on wiv it )?add 1 to the strength characteristic of melee weapons equipped by models in this unit",
+            r"(?:sneaky stalkin )?infantry and mounted models excluding meganobz in this unit have the stealth ability and each time a ranged attack targets this unit those models have the benefit of cover against that attack",
+            r"(?:shoota drills )?each time an infantry or mounted model in this unit makes a ranged attack add 1 to the hit roll",
+            r"stormboyz units from your army gain the battleline keyword",
+        ),
         "Get Stuck In": (
             r"melee weapons equipped by orks models from your army have the sustained hits \d+ ability",
         ),
@@ -2202,6 +2217,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Try Dat Button!": (
             "Supported",
             "Dread Mob: each time an eligible Mek/Walker/Grots Vehicle unit is selected to shoot or fight, choose roll/manual effect via CHOOSE_QUARRY; effects apply until phase end (Sustained Hits 1, Lethal Hits, or AP +2 on Critical Wound), manual selection also grants Hazardous, and multiple Hazardous sources fail on 1-2.",
+        ),
+        "Lissen ’Ere": (
+            "Supported",
+            "Taktikal Brigade: each Boss Snikrot/Mek/Warboss model can issue one once-per-battle-round Taktik choice (or none) in your Command phase or after Reinforcements setup in your Movement phase; selected friendly ORKS unit within 6\" takes a Leadership test for the issuing model (failure inflicts 1 mortal wound) and gains one Taktik until your next Command phase (Get Stuck In charge re-rolls, Get On Wiv It +1 melee Strength, Sneaky Stalkin' Stealth + model-level Benefit of Cover excluding Meganobz, Shoota Drills +1 ranged hit for INFANTRY/MOUNTED models), with Battle-shock gating and Stormboyz gaining Battleline.",
         ),
         "Get Stuck In": ("Supported", "War Horde: ORKS melee weapons gain Sustained Hits 1."),
         "Combat Doctrines": ("Supported", "Gladius Task Force: select each doctrine once per battle to grant move/charge eligibility."),
@@ -4087,6 +4106,10 @@ def _detachment_ability_support_by_id() -> Dict[str, Tuple[str, str]]:
         "000009990": (
             "Supported",
             "More Dakka!: ORKS INFANTRY/WALKER ranged weapons count as ASSAULT, and while Waaagh! is active during your Shooting phase those models' ranged attacks gain Sustained Hits 1.",
+        ),
+        "000009794": (
+            "Supported",
+            "Taktikal Brigade: each Boss Snikrot/Mek/Warboss model can issue one once-per-battle-round Taktik choice (or none) in your Command phase or after Reinforcements setup in your Movement phase; selected friendly ORKS unit within 6\" takes a Leadership test for the issuing model (failure inflicts 1 mortal wound) and gains one Taktik until your next Command phase (Get Stuck In charge re-rolls, Get On Wiv It +1 melee Strength, Sneaky Stalkin' Stealth + model-level Benefit of Cover excluding Meganobz, Shoota Drills +1 ranged hit for INFANTRY/MOUNTED models), with Battle-shock gating and Stormboyz gaining Battleline.",
         ),
         "000008820": (
             "Supported",

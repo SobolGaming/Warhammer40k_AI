@@ -7762,6 +7762,20 @@ class WargearProfile:
                     _add_hit_mod(int(bonus), f"+{int(bonus)} from {source_name}")
         except Exception:
             pass
+        # Orks: Taktikal Brigade (Lissen 'Ere - Shoota Drills) +1 to hit for ranged attacks.
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            orks_mgr = getattr(army, "orks_detachments", None) if army is not None else None
+            bonus_fn = getattr(orks_mgr, "taktikal_brigade_shoota_drills_hit_bonus", None) if orks_mgr is not None else None
+            if callable(bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                bonus, source = bonus_fn(attacker, attack_type="ranged", game=game)
+                if bonus:
+                    source_name = str(source or "Shoota Drills").strip() or "Shoota Drills"
+                    _add_hit_mod(int(bonus), f"+{int(bonus)} from {source_name}")
+        except Exception:
+            pass
 
         # Master of Mechanisms: selected friendly VEHICLE gets +1 to hit until next Command phase.
         sr = getattr(getattr(attacker, "parent_unit", None), "special_rules", None)
@@ -11392,6 +11406,22 @@ class WargearProfile:
                     if s_bonus:
                         strength = strength + int(s_bonus)
                         source_name = str(source or "Zealous Litanies").strip() or "Zealous Litanies"
+                        wound_result.setdefault("modifiers", []).append(f"+{int(s_bonus)}S from {source_name}")
+        except Exception:
+            pass
+        # Orks: Taktikal Brigade (Lissen 'Ere - Get On Wiv It) +1 Strength for melee weapons.
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee() and isinstance(strength, int):
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                orks_mgr = getattr(army, "orks_detachments", None) if army is not None else None
+                bonus_fn = getattr(orks_mgr, "taktikal_brigade_get_on_wiv_it_melee_strength_bonus", None) if orks_mgr is not None else None
+                if callable(bonus_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    s_bonus, source = bonus_fn(attacker, attack_type="melee", game=game)
+                    if s_bonus:
+                        strength = strength + int(s_bonus)
+                        source_name = str(source or "Get On Wiv It").strip() or "Get On Wiv It"
                         wound_result.setdefault("modifiers", []).append(f"+{int(s_bonus)}S from {source_name}")
         except Exception:
             pass
@@ -15494,6 +15524,28 @@ class WargearProfile:
                                 if reason not in parts:
                                     parts.append(reason)
                             attack_instance["benefit_of_cover_source"] = ", ".join(parts) if parts else existing
+        except Exception:
+            pass
+        # Orks: Taktikal Brigade (Lissen 'Ere - Sneaky Stalkin') grants Benefit of Cover to eligible models.
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            army = t_unit.get_parent_army() if t_unit is not None and hasattr(t_unit, "get_parent_army") else None
+            orks_mgr = getattr(army, "orks_detachments", None) if army is not None else None
+            bonus_fn = getattr(orks_mgr, "taktikal_brigade_sneaky_stalkin_benefit_of_cover", None) if orks_mgr is not None else None
+            if callable(bonus_fn):
+                attack_type = "melee" if (self.parent_wargear and self.parent_wargear.is_melee()) else "ranged"
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                has_cover, source = bonus_fn(target_model, attack_type=attack_type, game=game)
+                if has_cover:
+                    attack_instance.setdefault("benefit_of_cover", True)
+                    source_name = str(source or "Sneaky Stalkin'").strip() or "Sneaky Stalkin'"
+                    existing_source = str(attack_instance.get("benefit_of_cover_source", "") or "").strip()
+                    if not existing_source:
+                        attack_instance["benefit_of_cover_source"] = source_name
+                    elif source_name.lower() not in {
+                        part.strip().lower() for part in existing_source.split(",") if part.strip()
+                    }:
+                        attack_instance["benefit_of_cover_source"] = f"{existing_source}, {source_name}"
         except Exception:
             pass
         # Orks: Waaagh! (5+ invulnerable save while active).

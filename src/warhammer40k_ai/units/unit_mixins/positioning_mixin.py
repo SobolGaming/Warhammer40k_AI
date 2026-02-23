@@ -6312,6 +6312,13 @@ class PositioningMixin:
         applies_fn = getattr(dg_mgr, "verminous_haze_applies_to_unit", None) if dg_mgr is not None else None
         if callable(applies_fn) and applies_fn(self):
             return True
+        # Orks: Taktikal Brigade (Lissen 'Ere - Sneaky Stalkin').
+        orks_mgr = getattr(army, "orks_detachments", None) if army is not None else None
+        sneaky_fn = getattr(orks_mgr, "taktikal_brigade_sneaky_stalkin_stealth_applies", None) if orks_mgr is not None else None
+        if callable(sneaky_fn):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            if bool(sneaky_fn(self, game=game)):
+                return True
         # Use cached result if available
         if 'stealth' in getattr(self, '_ability_cache', {}):
             found = self._ability_cache['stealth']
