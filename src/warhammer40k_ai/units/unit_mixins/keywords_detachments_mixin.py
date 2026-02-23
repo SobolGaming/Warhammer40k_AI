@@ -6912,6 +6912,17 @@ class KeywordsDetachmentsMixin:
         if extra_reasons:
             reroll_values.add(1)
             reroll_reasons.extend(extra_reasons)
+        if model is not None and target is not None:
+            army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+            mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+            if mgr is not None and bool(getattr(mgr, "is_explorator_maniple", lambda: False)()):
+                apply_reroll = getattr(mgr, "acquisition_at_any_cost_wound_reroll_ones", None)
+                if callable(apply_reroll):
+                    applies, source = apply_reroll(model, target_unit=target)
+                    if bool(applies):
+                        reroll_values.add(1)
+                        reason = str(source or "Acquisition At Any Cost").strip() or "Acquisition At Any Cost"
+                        reroll_reasons.append(f"{reason}: re-roll Wound rolls of 1")
         hunter = self.get_hunter_of_souls_rule(model)
         if hunter and target is not None and bool(hunter.get("requires_target_character", True)):
             if self._target_has_keyword(target, "CHARACTER"):

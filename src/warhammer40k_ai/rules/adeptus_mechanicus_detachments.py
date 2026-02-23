@@ -14,6 +14,9 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
     _COHORT_CYBERNETICA_NAME = "Cohort Cybernetica"
     _CYBER_PSALM_PROGRAMMING_SOURCE = "Cyber-Psalm Programming"
     _LEGIO_CYBERNETICA_KEYWORD = "LEGIO CYBERNETICA"
+    _EXPLORATOR_MANIPLE_NAME = "Explorator Maniple"
+    _ACQUISITION_ABILITY_KEY = "acquisition_at_any_cost"
+    _ACQUISITION_SOURCE = "Acquisition At Any Cost"
     _DATA_PSALM_CONCLAVE_NAME = "Data-Psalm Conclave"
     _DATA_PSALM_ABILITY_KEY = "data_psalm_benediction"
     _DATA_PSALM_SOURCE = "Benedictions Of The Omnissiah"
@@ -34,6 +37,8 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
 
     def __init__(self, army=None):
         super().__init__(army)
+        self.active_acquisition_objective_id: str = ""
+        self.acquisition_selected_round: int = 0
         self.active_data_psalm_benediction_key: Optional[str] = None
         self.data_psalm_selected_round: Optional[int] = None
 
@@ -51,6 +56,11 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches(self._COHORT_CYBERNETICA_NAME)
+
+    def is_explorator_maniple(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches(self._EXPLORATOR_MANIPLE_NAME)
 
     @classmethod
     def _normalize_data_psalm_choice_key(cls, choice_key: str) -> str:
@@ -400,6 +410,291 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
             game=game,
         )
 
+    @staticmethod
+    def _objective_point_for_entry(entry):
+        point = getattr(entry, "location", None)
+        if point is None:
+            point = entry
+        if point is None:
+            return None
+        if not hasattr(point, "x") or not hasattr(point, "y"):
+            return None
+        return point
+
+    def _collect_objective_entries(self, *, game=None, game_map=None) -> list:
+        if game_map is None and game is not None:
+            game_map = getattr(game, "map", None)
+        if game_map is None:
+            owner = getattr(self.army, "player", None) if self.army is not None else None
+            game_obj = getattr(owner, "game", None) if owner is not None else None
+            if game is None:
+                game = game_obj
+            game_map = getattr(game_obj, "map", None) if game_obj is not None else None
+
+        pool = []
+        if game_map is not None:
+            pool.extend(list(getattr(game_map, "objectives", []) or []))
+        if game is not None:
+            pool.extend(list(getattr(game, "objectives", []) or []))
+
+        entries: list = []
+        seen_ids: set[str] = set()
+        for objective in pool:
+            point = self._objective_point_for_entry(objective)
+            if point is None or bool(getattr(point, "removed", False)):
+                continue
+            objective_id = str(get_entity_id(objective) or get_entity_id(point) or "")
+            if not objective_id or objective_id in seen_ids:
+                continue
+            seen_ids.add(objective_id)
+            entries.append((objective_id, objective, point))
+        entries.sort(key=lambda item: str(item[0]))
+        return entries
+
+    def _objective_entry_by_id(self, objective_id: str, *, game=None, game_map=None):
+        wanted = str(objective_id or "").strip()
+        if not wanted:
+            return None
+        for entry in self._collect_objective_entries(game=game, game_map=game_map):
+            if str(entry[0]) == wanted:
+                return entry
+        return None
+
+    def clear_acquisition_objective(self) -> None:
+        self.active_acquisition_objective_id = ""
+        self.acquisition_selected_round = 0
+
+    def can_select_acquisition_objective(self, *, game=None, battle_round: Optional[int] = None) -> bool:
+        if not self.is_explorator_maniple():
+            return False
+        br = 0
+        if battle_round is not None:
+            try:
+                br = int(battle_round or 0)
+            except (TypeError, ValueError):
+                br = 0
+        elif game is not None:
+            try:
+                br = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                br = 0
+        if br <= 0:
+            return False
+        if self.acquisition_selected_round == br and bool(str(self.active_acquisition_objective_id or "").strip()):
+            return False
+        return True
+
+    def _pending_acquisition_request(self, game, army_id: str, *, battle_round: int):
+        if game is None:
+            return None
+        queue = getattr(game, "decision_queue", None)
+        if queue is None:
+            return None
+        for req in list(getattr(queue, "list", lambda: [])() or []):
+            if str(getattr(req, "decision_type", "")) != "CHOOSE_QUARRY":
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "") != self._ACQUISITION_ABILITY_KEY:
+                continue
+            if str(ctx.get("army_id", "") or "") != str(army_id or ""):
+                continue
+            try:
+                req_round = int(ctx.get("battle_round", 0) or 0)
+            except (TypeError, ValueError):
+                req_round = 0
+            if req_round != int(battle_round):
+                continue
+            return req
+        return None
+
+    def _build_acquisition_request(self, game, *, battle_round: int):
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        if game is None:
+            return None
+        owner = getattr(self.army, "player", None)
+        if owner is None:
+            return None
+        entries = self._collect_objective_entries(game=game)
+        if not entries:
+            return None
+        options = []
+        objective_ids: list[str] = []
+        for idx, (objective_id, objective, point) in enumerate(entries):
+            objective_ids.append(str(objective_id))
+            label = str(getattr(objective, "name", "") or f"Objective {idx + 1}")
+            try:
+                label = f"{label} ({float(getattr(point, 'x', 0.0)):.1f}, {float(getattr(point, 'y', 0.0)):.1f})"
+            except (TypeError, ValueError):
+                pass
+            options.append(DecisionOption.create(label, payload={"objective_id": str(objective_id)}))
+        if not options:
+            return None
+
+        army_id = self._entity_id(self.army)
+        return DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Acquisition At Any Cost: select one objective marker to be your Acquisition objective marker.",
+            player_id=getattr(owner, "id", None),
+            options=options,
+            context={
+                "ability": self._ACQUISITION_ABILITY_KEY,
+                "ability_name": self._ACQUISITION_SOURCE,
+                "army_id": army_id,
+                "battle_round": int(battle_round),
+                "candidate_objective_ids": list(objective_ids),
+                "optional": False,
+            },
+        )
+
+    def _queue_acquisition_request(self, game, *, player, battle_round: int) -> None:
+        if not self.is_explorator_maniple():
+            return
+        if game is None or player is None:
+            return
+        if player is not getattr(self.army, "player", None):
+            return
+        if not bool(getattr(game, "is_authoritative", True)):
+            return
+
+        br = int(battle_round or 0)
+        if br <= 0:
+            return
+        if self.acquisition_selected_round != br:
+            self.clear_acquisition_objective()
+        if not self.can_select_acquisition_objective(game=game, battle_round=br):
+            return
+
+        army_id = self._entity_id(self.army)
+        if self._pending_acquisition_request(game, army_id, battle_round=br) is not None:
+            return
+        request = self._build_acquisition_request(game, battle_round=br)
+        request_decision = getattr(game, "request_decision", None)
+        if callable(request_decision) and request is not None:
+            request_decision(request)
+
+    def validate_acquisition_objective_choice(
+        self,
+        objective_id: str,
+        *,
+        game=None,
+        player=None,
+        battle_round: int = 0,
+    ) -> tuple[bool, str]:
+        if not self.is_explorator_maniple():
+            return False, "Acquisition At Any Cost requires an Explorator Maniple army."
+        if self.army is None:
+            return False, "Acquisition At Any Cost army not found."
+        if player is not None:
+            owner = getattr(self.army, "player", None)
+            if owner is not None and owner is not player:
+                return False, "Acquisition At Any Cost must be resolved by the owning player."
+        objective_id = str(objective_id or "").strip()
+        if not objective_id:
+            return False, "Acquisition At Any Cost selection requires objective_id."
+        if self._objective_entry_by_id(objective_id, game=game) is None:
+            return False, "Acquisition At Any Cost selected objective marker was not found."
+
+        expected_round = int(battle_round or 0)
+        if expected_round and game is not None:
+            try:
+                current_round = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_round = 0
+            if current_round and current_round != expected_round:
+                return False, "Acquisition At Any Cost selection is no longer in the current battle round."
+        if expected_round and self.acquisition_selected_round == expected_round and bool(
+            str(self.active_acquisition_objective_id or "").strip()
+        ):
+            return False, "Acquisition At Any Cost has already been selected this Command phase."
+        return True, ""
+
+    def select_acquisition_objective(
+        self,
+        objective_id: str,
+        *,
+        game=None,
+        player=None,
+        battle_round: int = 0,
+    ):
+        valid, reason = self.validate_acquisition_objective_choice(
+            objective_id,
+            game=game,
+            player=player,
+            battle_round=battle_round,
+        )
+        if not valid:
+            return None
+        entry = self._objective_entry_by_id(str(objective_id or "").strip(), game=game)
+        if entry is None:
+            return None
+        objective_key, objective, _point = entry
+        self.active_acquisition_objective_id = str(objective_key)
+        if game is not None:
+            try:
+                self.acquisition_selected_round = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                self.acquisition_selected_round = int(battle_round or 0)
+        else:
+            self.acquisition_selected_round = int(battle_round or 0)
+        return {
+            "objective_id": str(objective_key),
+            "objective_name": str(getattr(objective, "name", "") or "Objective marker"),
+            "battle_round": int(self.acquisition_selected_round or 0),
+            "source": self._ACQUISITION_SOURCE,
+        }
+
+    def _active_acquisition_objective_point(self, *, game=None, game_map=None):
+        if not self.is_explorator_maniple():
+            return None
+        objective_id = str(self.active_acquisition_objective_id or "").strip()
+        if not objective_id:
+            return None
+        entry = self._objective_entry_by_id(objective_id, game=game, game_map=game_map)
+        if entry is None:
+            return None
+        _objective_id, objective, point = entry
+        if point is None or bool(getattr(point, "removed", False)):
+            return None
+        return objective, point
+
+    def acquisition_at_any_cost_wound_reroll_ones(
+        self,
+        attacker_model,
+        *,
+        target_unit=None,
+        game=None,
+        game_map=None,
+    ) -> tuple[bool, str]:
+        if not self.is_explorator_maniple():
+            return False, ""
+        if attacker_model is None or target_unit is None:
+            return False, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root = self._attached_root(attacker_unit)
+        if attacker_root is None or not self._unit_in_army(attacker_root):
+            return False, ""
+        if not self._unit_has_keyword_or_faction(attacker_root, "ADEPTUS MECHANICUS", faction_id=self.faction_id):
+            return False, ""
+        active = self._active_acquisition_objective_point(game=game, game_map=game_map)
+        if not isinstance(active, tuple):
+            return False, ""
+        _objective, objective_point = active
+        attacker_within = False
+        is_within_attacker = getattr(attacker_root, "is_within_objective_range", None)
+        if callable(is_within_attacker):
+            attacker_within = bool(is_within_attacker(objective_point))
+        target_root = self._attached_root(target_unit)
+        target_within = False
+        if target_root is not None:
+            is_within_target = getattr(target_root, "is_within_objective_range", None)
+            if callable(is_within_target):
+                target_within = bool(is_within_target(objective_point))
+        if attacker_within or target_within:
+            return True, f"{self._ACQUISITION_SOURCE} (Acquisition objective)"
+        return False, ""
+
     def _iter_player_unit_roots(self, player) -> list:
         if player is None:
             return []
@@ -747,8 +1042,6 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
             self._queue_data_psalm_benediction_request(game, battle_round=br)
 
     def on_command_phase_start(self, *, game=None, player=None) -> None:
-        if not self.is_rad_zone_corps():
-            return
         if game is None or player is None:
             return
         if player is not getattr(self.army, "player", None):
@@ -756,6 +1049,10 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
         if not bool(getattr(game, "is_authoritative", True)):
             return
         battle_round = int(getattr(game, "turn", 0) or 0)
+        if self.is_explorator_maniple():
+            self._queue_acquisition_request(game, player=player, battle_round=int(battle_round))
+        if not self.is_rad_zone_corps():
+            return
         if battle_round < 2 or battle_round > 5:
             return
         opponent = self._opponent_player(game)

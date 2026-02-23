@@ -424,6 +424,11 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"(?:panegyric procession )?each time a cult mechanicus model from your army makes a ranged attack that targets a unit within half range improve the armour penetration characteristic of that attack by 1",
             r"(?:citation in savagery )?each time a cult mechanicus unit from your army is selected to fight if that unit made a charge move this turn until the end of the phase add 1 to the strength and attacks characteristics of melee weapons equipped by models in that unit",
         ),
+        "Acquisition At Any Cost": (
+            r"at the start of your command phase select one objective marker",
+            r"until the start of your next command phase that objective marker is your acquisition objective marker",
+            r"each time an adeptus mechanicus model from your army makes an attack if that models unit is within range of your acquisition objective marker or if the target of that attack is within range of your acquisition objective marker reroll a wound roll of 1",
+        ),
         "Warp Rifts": (
             r"each time a legiones daemonica unit from your army is set up on the battlefield using the deep strike ability .* it can be set up anywhere that is more than 6 horizontally away from all enemy models instead of more than 9",
         ),
@@ -2681,6 +2686,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Benedictions Of The Omnissiah": (
             "Supported",
             "Data-Psalm Conclave: at the start of battle round 1 you select Panegyric Procession or Citation in Savagery; Panegyric improves AP by 1 for CULT MECHANICUS ranged attacks within half range, and Citation grants CULT MECHANICUS charged units +1 Strength and +1 Attacks for melee weapons while resolving fight attacks.",
+        ),
+        "Acquisition At Any Cost": (
+            "Supported",
+            "Explorator Maniple: in your Command phase you select one objective marker as your Acquisition objective until your next Command phase, and ADEPTUS MECHANICUS attacks re-roll Wound rolls of 1 while either the attacker or target unit is within range of that selected objective marker.",
         ),
         "The Blood of Martyrs": (
             "Supported",

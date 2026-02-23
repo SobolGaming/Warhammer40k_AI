@@ -3864,6 +3864,44 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if callable(can_select_fn) and not bool(can_select_fn(game=game, battle_round=battle_round)):
             return ("Benedictions of the Omnissiah can only be selected once at the start of battle round 1.",)
         return ()
+    if ability == "acquisition_at_any_cost":
+        if is_skip_choice(request, result):
+            return ("Acquisition At Any Cost selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        source_army = _resolve_army(game, request, payload)
+        if source_army is None:
+            return ("Acquisition At Any Cost army not found.",)
+        mgr = getattr(source_army, "adeptus_mechanicus_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_explorator_maniple", lambda: False)()):
+            return ("Acquisition At Any Cost requires an Explorator Maniple army.",)
+
+        objective_id = str(payload.get("objective_id") or ctx.get("objective_id") or "").strip()
+        if not objective_id:
+            return ("Acquisition At Any Cost selection requires objective_id.",)
+        candidate_ids = {
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_objective_ids", []) or [])
+            if str(v or "").strip()
+        }
+        if candidate_ids and objective_id not in candidate_ids:
+            return ("Acquisition At Any Cost selected objective marker is not an eligible candidate.",)
+        validate_choice = getattr(mgr, "validate_acquisition_objective_choice", None)
+        if not callable(validate_choice):
+            return ("Acquisition At Any Cost manager support is unavailable.",)
+        player = _resolve_player(game, request, payload)
+        try:
+            battle_round = int(ctx.get("battle_round", 0) or getattr(game, "turn", 0) or 0)
+        except Exception:
+            battle_round = int(getattr(game, "turn", 0) or 0)
+        valid, reason = validate_choice(
+            objective_id,
+            game=game,
+            player=player,
+            battle_round=int(battle_round),
+        )
+        if not valid:
+            return (str(reason or "Acquisition At Any Cost selection is not legal."),)
+        return ()
     if ability == "rad_bombardment":
         if is_skip_choice(request, result):
             return ("Rad-bombardment cannot be skipped.",)
@@ -5654,6 +5692,42 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 f"Benedictions of the Omnissiah: {label} selected (Battle Round {int(battle_round)}).",
             )
         return applied
+    if ability == "acquisition_at_any_cost":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        source_army = _resolve_army(game, request, payload)
+        if source_army is None:
+            return None
+        mgr = getattr(source_army, "adeptus_mechanicus_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_explorator_maniple", lambda: False)()):
+            return None
+        objective_id = str(payload.get("objective_id") or ctx.get("objective_id") or "").strip()
+        if not objective_id:
+            return None
+        player = _resolve_player(game, request, payload)
+        try:
+            battle_round = int(ctx.get("battle_round", 0) or getattr(game, "turn", 0) or 0)
+        except Exception:
+            battle_round = int(getattr(game, "turn", 0) or 0)
+        select_fn = getattr(mgr, "select_acquisition_objective", None)
+        if not callable(select_fn):
+            return None
+        outcome = select_fn(
+            objective_id,
+            game=game,
+            player=player,
+            battle_round=int(battle_round),
+        )
+        if outcome is not None:
+            objective_name = str((outcome or {}).get("objective_name", "") or "Objective marker")
+            owner = getattr(source_army, "player", None)
+            _log_action_for_players(
+                game,
+                owner,
+                f"Acquisition At Any Cost: selected {objective_name} as your Acquisition objective marker until your next Command phase.",
+            )
+        return outcome
     if ability == "rad_bombardment":
         if is_skip_choice(request, result):
             return None
