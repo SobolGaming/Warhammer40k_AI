@@ -2347,6 +2347,45 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         return errors
     ctx = dict(getattr(request, "context", {}) or {})
     ability = str(ctx.get("ability", "") or "")
+    if ability == "worthy_foes":
+        if is_skip_choice(request, result):
+            return ("Worthy Foes target selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Worthy Foes army not found.",)
+        mgr = getattr(army, "necrons_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_obeisance_phalanx", lambda: False)()):
+            return ("Worthy Foes requires Obeisance Phalanx.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return ("Worthy Foes target unit was not found.",)
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return ("Worthy Foes target unit was not found.",)
+        target_id = str(get_entity_id(target_root) or "")
+        candidates_fn = getattr(mgr, "_worthy_foes_eligible_enemy_units", None)
+        if not callable(candidates_fn):
+            return ("Worthy Foes target validation is unavailable.",)
+        candidates = list(candidates_fn(game=game, player=player) or [])
+        candidate_ids = {
+            str(get_entity_id(unit) or "")
+            for unit in candidates
+            if unit is not None
+        }
+        if target_id not in candidate_ids:
+            return ("Worthy Foes selection contains an ineligible target.",)
+        return ()
     if ability == "da_big_hunt_prey":
         if is_skip_choice(request, result):
             return ("Da Hunt Is On selection cannot be skipped.",)
@@ -10194,6 +10233,16 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 except Exception:
                     pass
     ability_key = str(ctx.get("ability", "") or "")
+    if ability_key == "worthy_foes":
+        army = _resolve_army(game, request, payload)
+        mgr = getattr(army, "necrons_detachments", None) if army is not None else None
+        if mgr is not None and chosen is not None:
+            set_target = getattr(mgr, "set_worthy_foes_target", None)
+            if callable(set_target) and bool(set_target(chosen)):
+                player = getattr(army, "player", None) if army is not None else None
+                source_name = str(ctx.get("ability_name", "") or "Worthy Foes").strip() or "Worthy Foes"
+                target_name = str(getattr(chosen, "name", "Unit") or "Unit")
+                _log_action_for_players(game, player, f"{source_name}: selected {target_name} as the worthy foe.")
     if ability_key == "oath_of_moment":
         army = _resolve_army(game, request, payload)
         mgr = getattr(army, "oath_of_moment", None) if army is not None else None

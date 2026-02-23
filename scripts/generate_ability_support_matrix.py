@@ -356,6 +356,10 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"the maximum number of units you can select depends on the battle size as follows(?: battle size number of units incursion up to 1 units strike force up to 2 units onslaught up to 3 units)?",
             r"once you have made your selections remove those units from the battlefield and place them into strategic reserves",
         ),
+        "Worthy Foes": (
+            r"in your command phase select one enemy unit",
+            r"until the start of your next command phase each time a noble lychguard or triarch unit from your army makes an attack that targets that unit add 1 to the wound roll",
+        ),
         "Skirmish Fighters": (
             r"kroot models from your army have a 6 invulnerable save against melee attacks and a 5 invulnerable save against ranged attacks",
         ),
@@ -2510,6 +2514,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Hyperphasing": (
             "Supported",
             "Hypercrypt Legion Hyperphasing: at the end of your opponent's turn, eligible NECRONS units not in Engagement Range can be selected (battle-size cap: Incursion 1, Strike Force 2, Onslaught 3) and moved into Strategic Reserves via deterministic multi-select decision flow.",
+        ),
+        "Worthy Foes": (
+            "Supported",
+            "Obeisance Phalanx Worthy Foes: in your Command phase, select one enemy unit; until your next Command phase, NOBLE/LYCHGUARD/TRIARCH units from your army gain +1 to Wound rolls when attacking that selected unit.",
         ),
         "Relentless Onslaught": ("Supported", "Starshatter Arsenal: +1 to hit vs targets within objective range; VEHICLE/MOUNTED (non-TITANIC) ranged weapons gain Assault."),
         "Ruthless Discipline": (

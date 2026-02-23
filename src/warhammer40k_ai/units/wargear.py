@@ -12593,6 +12593,31 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Necrons: Obeisance Phalanx (Worthy Foes) +1 to wound vs the selected enemy unit.
+        attacker_unit = getattr(attacker, "parent_unit", None)
+        attacker_army = None
+        if attacker_unit is not None:
+            get_parent_army = getattr(attacker_unit, "get_parent_army", None)
+            if callable(get_parent_army):
+                attacker_army = get_parent_army()
+            else:
+                attacker_army = getattr(attacker_unit, "parent_army", None)
+        necrons_mgr = getattr(attacker_army, "necrons_detachments", None) if attacker_army is not None else None
+        worthy_foes_bonus_fn = getattr(necrons_mgr, "worthy_foes_wound_bonus", None) if necrons_mgr is not None else None
+        if callable(worthy_foes_bonus_fn):
+            game = getattr(getattr(attacker_army, "player", None), "game", None) if attacker_army is not None else None
+            wound_bonus, source = worthy_foes_bonus_fn(
+                attacker,
+                target,
+                game=game,
+                weapon_profile=self,
+                attack_instance=attack_instance,
+            )
+            if wound_bonus:
+                dice_modifier += int(wound_bonus)
+                source_name = str(source or "Worthy Foes").strip() or "Worthy Foes"
+                wound_result["modifiers"].append(f"+{int(wound_bonus)} to wound from {source_name}")
+
         # Friendly aura roll modifiers (e.g. "Beacons of Rage (Aura)")
         if getattr(aura_mods, "wound", 0):
             dice_modifier += int(aura_mods.wound)

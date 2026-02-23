@@ -30,6 +30,8 @@ class NecronsDetachmentManager(DetachmentManagerBase):
     _COLD_FERVOUR_SOURCE = "Cold Fervour"
     _COLD_FERVOUR_BONUS = 2
     _HYPERPHASING_SOURCE = "Hyperphasing"
+    _WORTHY_FOES_SOURCE = "Worthy Foes"
+    _WORTHY_FOES_ATTACKER_KEYWORDS = ("NOBLE", "LYCHGUARD", "TRIARCH")
     _TECHNOSORCEROUS_AUGMENTATIONS_SOURCE = "Technosorcerous Augmentations"
     _TECHNOSORCEROUS_CHOICE_TO_KEYWORD = {
         "ANTI_INFANTRY_3": "ANTI-INFANTRY 3+",
@@ -63,6 +65,8 @@ class NecronsDetachmentManager(DetachmentManagerBase):
         self._cold_fervour_activated_turn_key: tuple[int, str] | None = None
         self._cold_fervour_target_snapshots_by_attacker: dict[str, dict[str, tuple[object, bool, bool]]] = {}
         self.hyperphasing_last_resolved_phase_key: str = ""
+        self.worthy_foes_target_unit_id: str = ""
+        self.worthy_foes_target_name: str = ""
 
     def is_starshatter_arsenal(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -88,6 +92,11 @@ class NecronsDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Hypercrypt Legion")
+
+    def is_obeisance_phalanx(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Obeisance Phalanx")
 
     def is_cryptek_conclave(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -613,6 +622,172 @@ class NecronsDetachmentManager(DetachmentManagerBase):
             candidates.append(root)
         candidates.sort(key=lambda u: str(get_entity_id(u) or id(u)))
         return candidates
+
+    def clear_worthy_foes_target(self) -> None:
+        self.worthy_foes_target_unit_id = ""
+        self.worthy_foes_target_name = ""
+        if self.army is not None:
+            setattr(self.army, "worthy_foes_target_unit_id", "")
+            setattr(self.army, "worthy_foes_target_name", "")
+
+    def set_worthy_foes_target(self, target_unit) -> bool:
+        if target_unit is None:
+            return False
+        root = self._unit_root(target_unit)
+        if root is None:
+            return False
+        rid = str(get_entity_id(root) or "").strip()
+        if not rid:
+            return False
+        self.worthy_foes_target_unit_id = rid
+        self.worthy_foes_target_name = str(getattr(root, "name", "") or "")
+        if self.army is not None:
+            setattr(self.army, "worthy_foes_target_unit_id", self.worthy_foes_target_unit_id)
+            setattr(self.army, "worthy_foes_target_name", self.worthy_foes_target_name)
+        return True
+
+    def is_worthy_foe_target(self, target_unit) -> bool:
+        if target_unit is None:
+            return False
+        target_id = str(self.worthy_foes_target_unit_id or "").strip()
+        if not target_id:
+            return False
+        root = self._unit_root(target_unit)
+        if root is None:
+            return False
+        rid = str(get_entity_id(root) or "").strip()
+        return bool(rid) and rid == target_id
+
+    def _worthy_foes_attacker_eligible(self, attacker_model) -> bool:
+        if attacker_model is None:
+            return False
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        if attacker_unit is None:
+            return False
+        root = self._unit_root(attacker_unit)
+        if root is None:
+            return False
+        if not self._unit_belongs_to_army(root):
+            return False
+        return self._unit_contains_any_keyword(root, self._WORTHY_FOES_ATTACKER_KEYWORDS)
+
+    def worthy_foes_wound_bonus(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        game=None,
+        weapon_profile=None,
+        attack_instance=None,
+    ) -> tuple[int, str]:
+        del game  # Present for parity with other detachment manager hooks.
+        del weapon_profile
+        del attack_instance
+        if not self.is_obeisance_phalanx():
+            return 0, ""
+        if not self._worthy_foes_attacker_eligible(attacker_model):
+            return 0, ""
+        if not self.is_worthy_foe_target(target_unit):
+            return 0, ""
+        return 1, self._WORTHY_FOES_SOURCE
+
+    def _worthy_foes_eligible_enemy_units(self, *, game=None, player=None) -> list:
+        if not self.is_obeisance_phalanx():
+            return []
+        if game is None or player is None:
+            return []
+        get_enemy_units = getattr(game, "get_enemy_units", None)
+        if not callable(get_enemy_units):
+            return []
+        enemy_units = list(get_enemy_units(player) or [])
+        if not enemy_units:
+            return []
+
+        out: list = []
+        seen: set[str] = set()
+        for enemy in enemy_units:
+            root = self._unit_root(enemy)
+            if root is None:
+                continue
+            rid = str(get_entity_id(root) or "").strip()
+            if not rid or rid in seen:
+                continue
+            seen.add(rid)
+            is_alive = getattr(root, "is_alive", None)
+            if callable(is_alive) and not bool(is_alive()):
+                continue
+            if not bool(getattr(root, "deployed", True)):
+                continue
+            reserve_status = str(getattr(root, "reserve_status", "deployed") or "deployed").strip().lower()
+            if reserve_status != "deployed":
+                continue
+            if bool(getattr(root, "embarked_in", None)) or bool(getattr(root, "is_embarked", False)):
+                continue
+            out.append(root)
+        out.sort(key=lambda u: str(get_entity_id(u) or id(u)))
+        return out
+
+    def _pending_worthy_foes_target_request(self, *, game=None, army_id: str = "") -> bool:
+        queue = getattr(game, "decision_queue", None) if game is not None else None
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != "CHOOSE_QUARRY":
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "").strip().lower() != "worthy_foes":
+                continue
+            if army_id and str(ctx.get("army_id", "") or "") != str(army_id):
+                continue
+            return True
+        return False
+
+    def build_worthy_foes_request(self, *, game=None, player=None):
+        if not self.is_obeisance_phalanx():
+            return None
+        if game is None or player is None:
+            return None
+        if not bool(getattr(game, "is_authoritative", True)):
+            return None
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        targets = self._worthy_foes_eligible_enemy_units(game=game, player=player)
+        if not targets:
+            return None
+
+        army_id = str(get_entity_id(self.army) or "") if self.army is not None else ""
+        if self._pending_worthy_foes_target_request(game=game, army_id=army_id):
+            return None
+
+        options = []
+        for target in targets:
+            target_id = str(get_entity_id(target) or "").strip()
+            if not target_id:
+                continue
+            options.append(
+                DecisionOption.create(
+                    str(getattr(target, "name", "Unit") or "Unit"),
+                    payload={"target_unit_id": target_id},
+                )
+            )
+        if not options:
+            return None
+
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Worthy Foes: select one enemy unit.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={
+                "ability": "worthy_foes",
+                "ability_name": "Worthy Foes",
+                "army_id": army_id,
+            },
+        )
+        if hasattr(game, "request_decision"):
+            game.request_decision(request)
+        return request
 
     def _annihilation_protocol_charge_eligible(self, unit) -> bool:
         if not self.is_annihilation_legion():
@@ -1282,10 +1457,12 @@ class NecronsDetachmentManager(DetachmentManagerBase):
 
     def on_command_phase_start(self, *, game=None, player=None) -> None:
         self.clear_command_phase_bearer_effects()
+        self.clear_worthy_foes_target()
         if self.army is None or player is None:
             return
         if player is not getattr(self.army, "player", None):
             return
+        self.build_worthy_foes_request(game=game, player=player)
         sources = self.get_command_phase_bearer_sources()
         if not sources:
             return
