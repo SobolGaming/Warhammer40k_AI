@@ -800,6 +800,162 @@ class TestVoiceOfCommand(unittest.TestCase):
         self.assertIsNone(wound.get("reroll_of_one"))
         self.assertIsNone(wound.get("reroll"))
 
+    def test_bridgehead_only_the_best_rerolls_hit_ones_for_infantry_ranged_only(self):
+        from warhammer40k_ai.rules.astra_militarum_detachments import AstraMilitarumDetachmentManager
+        from warhammer40k_ai.units import wargear as wargear_module
+
+        army = _ArmyStub(detachment_type="Bridgehead Strike")
+        army.astra_militarum_detachments = AstraMilitarumDetachmentManager(army)
+
+        shooter = _UnitStub(
+            "Infantry",
+            keywords=["INFANTRY", "ASTRA MILITARUM"],
+            abilities=[],
+            army=army,
+        )
+        target_army = _ArmyStub(faction_id="SM")
+        target = _UnitStub(
+            "Target",
+            keywords=["INFANTRY"],
+            abilities=[],
+            army=target_army,
+        )
+        target.models = [
+            SimpleNamespace(
+                name="Defender",
+                is_alive=True,
+                z=0.0,
+                save=4,
+                inv_save=(None, ""),
+                parent_unit=target,
+            )
+        ]
+        shooter.set_parent_army(army)
+        army.units = [shooter]
+
+        game = SimpleNamespace(
+            turn=1,
+            map=_MapStub([shooter]),
+            event_system=SimpleNamespace(publish=lambda *_a, **_k: None),
+        )
+        army.player.game = game
+
+        attacker = _ModelStub("Shooter", shooter, distance=12.0)
+        ranged = self._make_profile(weapon_type="Ranged", skill="4+")
+        melee = self._make_profile(weapon_type="Melee", skill="4+")
+
+        original_roll = wargear_module.get_roll
+        wargear_module.get_roll = lambda _d: 4
+        try:
+            ranged_hit = ranged._hit_target_with_tracking(
+                target,
+                attacker,
+                {},
+                roll_value=1,
+                allow_rerolls=True,
+                log_roll=False,
+            )
+            melee_hit = melee._hit_target_with_tracking(
+                target,
+                attacker,
+                {},
+                roll_value=1,
+                allow_rerolls=True,
+                log_roll=False,
+            )
+        finally:
+            wargear_module.get_roll = original_roll
+
+        self.assertEqual(ranged_hit.get("reroll_of_one"), 1)
+        self.assertEqual(ranged_hit.get("reroll"), 4)
+        ranged_reasons = [str(v or "") for v in list(ranged_hit.get("reroll_value_reasons", []) or [])]
+        self.assertTrue(any("Only the Best" in reason for reason in ranged_reasons))
+        self.assertIsNone(melee_hit.get("reroll_of_one"))
+        self.assertIsNone(melee_hit.get("reroll"))
+
+    def test_bridgehead_fire_zone_purge_adds_hit_after_set_up_or_disembark(self):
+        from warhammer40k_ai.rules.astra_militarum_detachments import AstraMilitarumDetachmentManager
+
+        army = _ArmyStub(detachment_type="Bridgehead Strike")
+        army.astra_militarum_detachments = AstraMilitarumDetachmentManager(army)
+
+        shooter = _UnitStub(
+            "Tempestus Scions",
+            keywords=["INFANTRY", "ASTRA MILITARUM", "MILITARUM TEMPESTUS"],
+            abilities=[],
+            army=army,
+        )
+        target_army = _ArmyStub(faction_id="SM")
+        target = _UnitStub(
+            "Target",
+            keywords=["INFANTRY"],
+            abilities=[],
+            army=target_army,
+        )
+        target.models = [
+            SimpleNamespace(
+                name="Defender",
+                is_alive=True,
+                z=0.0,
+                save=4,
+                inv_save=(None, ""),
+                parent_unit=target,
+            )
+        ]
+        shooter.set_parent_army(army)
+        army.units = [shooter]
+
+        game = SimpleNamespace(
+            turn=1,
+            map=_MapStub([shooter]),
+            event_system=SimpleNamespace(publish=lambda *_a, **_k: None),
+        )
+        army.player.game = game
+
+        attacker = _ModelStub("Scion", shooter, distance=12.0)
+        ranged = self._make_profile(weapon_type="Ranged", skill="4+")
+
+        shooter.arrived_from_reserves_this_turn = True
+        shooter.round_state.disembarked_this_round = False
+        shooter.round_state.disembarked_from_transport_id = ""
+        set_up_hit = ranged._hit_target_with_tracking(
+            target,
+            attacker,
+            {},
+            roll_value=3,
+            allow_rerolls=False,
+            log_roll=False,
+        )
+        self.assertTrue(bool(set_up_hit.get("hit")))
+        self.assertTrue(any("Fire Zone Purge" in str(mod or "") for mod in list(set_up_hit.get("modifiers", []) or [])))
+
+        shooter.arrived_from_reserves_this_turn = False
+        shooter.round_state.disembarked_this_round = True
+        shooter.round_state.disembarked_from_transport_id = "transport-1"
+        disembark_hit = ranged._hit_target_with_tracking(
+            target,
+            attacker,
+            {},
+            roll_value=3,
+            allow_rerolls=False,
+            log_roll=False,
+        )
+        self.assertTrue(bool(disembark_hit.get("hit")))
+        self.assertTrue(any("Fire Zone Purge" in str(mod or "") for mod in list(disembark_hit.get("modifiers", []) or [])))
+
+        shooter.round_state.disembarked_this_round = False
+        shooter.round_state.disembarked_from_transport_id = ""
+        no_bonus_hit = ranged._hit_target_with_tracking(
+            target,
+            attacker,
+            {},
+            roll_value=3,
+            allow_rerolls=False,
+            log_roll=False,
+        )
+        self.assertFalse(bool(no_bonus_hit.get("hit")))
+        self.assertFalse(any("Fire Zone Purge" in str(mod or "") for mod in list(no_bonus_hit.get("modifiers", []) or [])))
+
 
 if __name__ == "__main__":
     unittest.main()

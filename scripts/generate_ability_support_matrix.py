@@ -407,6 +407,12 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"add \d+ to the number of orders each astra militarum officer model from your army can issue as stated on their datasheet",
             r"while an astra militarum unit from your army is affected by an order each time a model in that unit makes an attack reroll a hit roll of \d+",
         ),
+        "Only the Best": (
+            r"each time an astra militarum infantry model from your army makes a ranged attack reroll a hit roll of \d+",
+        ),
+        "Fire Zone Purge": (
+            r"each time a militarum tempestus model from your army makes a ranged attack in a turn in which it was set up on the battlefield from reserves or it disembarked from a transport add \d+ to the hit roll",
+        ),
         "Rad-bombardment": (
             r"at the start of the first battle round for each enemy unit within your opponents deployment zone your opponent must decide whether that unit will take cover or stand firm",
             r"you then roll one d6 for each of those enemy units and apply the relevant result below",
@@ -2690,6 +2696,14 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Ruthless Discipline": (
             "Supported",
             "Grizzled Company: OFFICERs issue +1 order; ordered units re-roll Hit rolls of 1.",
+        ),
+        "Only the Best": (
+            "Supported",
+            "Bridgehead Strike: ASTRA MILITARUM INFANTRY models re-roll Hit rolls of 1 for ranged attacks.",
+        ),
+        "Fire Zone Purge": (
+            "Supported",
+            "Bridgehead Strike: MILITARUM TEMPESTUS models gain +1 to hit for ranged attacks on turns they were set up from Reserves or disembarked from a Transport.",
         ),
         "Rad-bombardment": (
             "Supported",
