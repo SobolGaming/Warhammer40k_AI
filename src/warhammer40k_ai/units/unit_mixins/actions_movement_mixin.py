@@ -6333,6 +6333,16 @@ class ActionsMovementMixin:
             target_units = deduped
 
         army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+        necrons_mgr = getattr(army, "necrons_detachments", None) if army is not None else None
+        annihilation_protocol_reroll_applies = (
+            getattr(necrons_mgr, "annihilation_protocol_charge_reroll_applies", None)
+            if necrons_mgr is not None
+            else None
+        )
+        if callable(annihilation_protocol_reroll_applies):
+            if bool(annihilation_protocol_reroll_applies(self, target_units=target_units, game=game)):
+                return True
+
         orks_mgr = getattr(army, "orks_detachments", None) if army is not None else None
         da_big_hunt_applies = getattr(orks_mgr, "da_big_hunt_charge_reroll_applies", None) if orks_mgr is not None else None
         if callable(da_big_hunt_applies):
@@ -6546,6 +6556,18 @@ class ActionsMovementMixin:
                 bonus, source = 0, ""
             if int(bonus or 0):
                 modifiers.append((int(bonus or 0), str(source or "In The Lion's Claws")))
+
+        necrons_mgr = getattr(army, "necrons_detachments", None) if army is not None else None
+        necrons_bonus_fn = (
+            getattr(necrons_mgr, "annihilation_protocol_charge_roll_bonus", None)
+            if necrons_mgr is not None
+            else None
+        )
+        if callable(necrons_bonus_fn):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            bonus, source = necrons_bonus_fn(root, target_units=targets, game=game)
+            if int(bonus or 0):
+                modifiers.append((int(bonus or 0), str(source or "Annihilation Protocol")))
         return modifiers
 
     def _defensive_charge_roll_penalty_specs(self) -> list[dict]:

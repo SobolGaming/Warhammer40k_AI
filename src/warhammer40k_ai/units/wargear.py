@@ -2683,6 +2683,22 @@ class WargearProfile:
                     ap_val -= bonus
         except Exception:
             pass
+        necrons_annihilation_is_ranged = bool(
+            self.parent_wargear is not None
+            and callable(getattr(self.parent_wargear, "is_ranged", None))
+            and self.parent_wargear.is_ranged()
+        )
+        if necrons_annihilation_is_ranged:
+            unit = getattr(attacker, "parent_unit", None)
+            get_parent_army = getattr(unit, "get_parent_army", None) if unit is not None else None
+            army = get_parent_army() if callable(get_parent_army) else getattr(unit, "parent_army", None)
+            mgr = getattr(army, "necrons_detachments", None) if army is not None else None
+            bonus_fn = getattr(mgr, "annihilation_protocol_ranged_ap_bonus", None) if mgr is not None else None
+            if callable(bonus_fn):
+                game_map = self._get_game_map_from_model(attacker)
+                bonus, _source = bonus_fn(attacker, target, weapon_profile=self, game_map=game_map)
+                if int(bonus or 0) > 0:
+                    ap_val -= int(bonus)
         try:
             if self.parent_wargear and self.parent_wargear.is_ranged():
                 unit = getattr(attacker, "parent_unit", None)

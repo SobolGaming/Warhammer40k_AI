@@ -21,6 +21,10 @@ class CommandPhaseBearerTargetSpec:
 
 class NecronsDetachmentManager(DetachmentManagerBase):
     faction_id = "NEC"
+    _ANNIHILATION_PROTOCOL_CHARGE_KEYWORDS = ("DESTROYER CULT", "FLAYED ONES")
+    _ANNIHILATION_PROTOCOL_RANGED_KEYWORD = "DESTROYER CULT"
+    _ANNIHILATION_PROTOCOL_CHARGE_SOURCE = "Annihilation Protocol (+1 to Charge roll vs Below Half-strength)"
+    _ANNIHILATION_PROTOCOL_AP_SOURCE = "Annihilation Protocol (+1 AP vs closest eligible target)"
 
     _COMMAND_PHASE_SELECT_FRIENDLY_RE = re.compile(
         r"in your command phase, select one friendly (?P<target>.+?) unit(?:,|\s)*"
@@ -41,6 +45,130 @@ class NecronsDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Starshatter Arsenal")
+
+    def is_annihilation_legion(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Annihilation Legion")
+
+    @staticmethod
+    def _unit_root(unit):
+        if unit is None:
+            return None
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        if callable(get_root):
+            root = get_root()
+            if root is not None:
+                return root
+        return unit
+
+    def _unit_belongs_to_army(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        get_parent_army = getattr(root, "get_parent_army", None)
+        if callable(get_parent_army):
+            unit_army = get_parent_army()
+        else:
+            unit_army = getattr(root, "parent_army", None)
+        return unit_army is self.army
+
+    def _unit_contains_keyword(self, unit, keyword: str) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if self._unit_has_keyword(root, keyword):
+            return True
+        members_fn = getattr(root, "get_attached_unit_members", None)
+        if not callable(members_fn):
+            return False
+        for member in list(members_fn() or []):
+            if self._unit_has_keyword(member, keyword):
+                return True
+        return False
+
+    def _unit_contains_any_keyword(self, unit, keywords: tuple[str, ...]) -> bool:
+        for keyword in keywords:
+            if self._unit_contains_keyword(unit, keyword):
+                return True
+        return False
+
+    def _annihilation_protocol_charge_eligible(self, unit) -> bool:
+        if not self.is_annihilation_legion():
+            return False
+        if unit is None:
+            return False
+        if not self._unit_belongs_to_army(unit):
+            return False
+        return self._unit_contains_any_keyword(unit, self._ANNIHILATION_PROTOCOL_CHARGE_KEYWORDS)
+
+    def _annihilation_protocol_ranged_eligible(self, unit) -> bool:
+        if not self._annihilation_protocol_charge_eligible(unit):
+            return False
+        return self._unit_contains_keyword(unit, self._ANNIHILATION_PROTOCOL_RANGED_KEYWORD)
+
+    @staticmethod
+    def _normalize_target_units(target_units) -> list:
+        if target_units is None:
+            return []
+        if isinstance(target_units, (list, tuple, set)):
+            return [t for t in list(target_units or []) if t is not None]
+        return [target_units]
+
+    def annihilation_protocol_charge_reroll_applies(self, unit, *, target_units=None, game=None) -> bool:
+        del game  # Unused; present for parity with other detachment manager hooks.
+        if not self._annihilation_protocol_charge_eligible(unit):
+            return False
+        if target_units is None:
+            return True
+        return bool(self._normalize_target_units(target_units))
+
+    def annihilation_protocol_charge_roll_bonus(self, unit, *, target_units=None, game=None) -> tuple[int, str]:
+        del game  # Unused; present for parity with other detachment manager hooks.
+        if not self._annihilation_protocol_charge_eligible(unit):
+            return 0, ""
+        for target in self._normalize_target_units(target_units):
+            root = self._unit_root(target)
+            if root is None:
+                continue
+            is_below_half = getattr(root, "is_below_half_strength", None)
+            if callable(is_below_half) and bool(is_below_half()):
+                return 1, self._ANNIHILATION_PROTOCOL_CHARGE_SOURCE
+        return 0, ""
+
+    def annihilation_protocol_ranged_ap_bonus(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        weapon_profile=None,
+        game_map=None,
+    ) -> tuple[int, str]:
+        if attacker_model is None or target_unit is None:
+            return 0, ""
+        if weapon_profile is None or game_map is None:
+            return 0, ""
+        parent_wargear = getattr(weapon_profile, "parent_wargear", None)
+        if parent_wargear is None or not callable(getattr(parent_wargear, "is_ranged", None)):
+            return 0, ""
+        if not bool(parent_wargear.is_ranged()):
+            return 0, ""
+
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        if not self._annihilation_protocol_ranged_eligible(attacker_unit):
+            return 0, ""
+
+        root = self._unit_root(attacker_unit)
+        is_closest = getattr(root, "is_target_closest_eligible", None) if root is not None else None
+        if not callable(is_closest):
+            return 0, ""
+        target_root = self._unit_root(target_unit)
+        if target_root is None:
+            return 0, ""
+
+        if bool(is_closest(attacker_model, weapon_profile, target_root, game_map)):
+            return 1, self._ANNIHILATION_PROTOCOL_AP_SOURCE
+        return 0, ""
 
     def unit_is_necrons(self, unit) -> bool:
         if unit is None:

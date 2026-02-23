@@ -326,6 +326,11 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Hunter's Instincts": (
             r"each time a kroot model from your army makes an attack add 1 to the hit roll if the target of that attack is below its starting strength and add 1 to the wound roll as well if the target of that attack is below half strength",
         ),
+        "Annihilation Protocol": (
+            r"each time a destroyer cult or flayed ones unit from your army declares a charge you can reroll the charge roll",
+            r"if one or more targets of that charge are below half strength add 1 to the charge roll as well",
+            r"each time a destroyer cult unit from your army makes a ranged attack that targets the closest eligible target add 1 to the armour penetration characteristic of that attack",
+        ),
         "Skirmish Fighters": (
             r"kroot models from your army have a 6 invulnerable save against melee attacks and a 5 invulnerable save against ranged attacks",
         ),
@@ -2460,6 +2465,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Bold Gallantry": (
             "Supported",
             "Valourstrike Lance: IMPERIAL KNIGHTS ranged weapons count as [ASSAULT] when checking Advance-and-shoot eligibility.",
+        ),
+        "Annihilation Protocol": (
+            "Supported",
+            "Annihilation Legion: DESTROYER CULT and FLAYED ONES units can re-roll Charge rolls; declared charges get +1 when any target is Below Half-strength; DESTROYER CULT ranged attacks improve AP by 1 against the closest eligible target.",
         ),
         "Relentless Onslaught": ("Supported", "Starshatter Arsenal: +1 to hit vs targets within objective range; VEHICLE/MOUNTED (non-TITANIC) ranged weapons gain Assault."),
         "Ruthless Discipline": (
