@@ -10,6 +10,10 @@ from .detachment_manager import DetachmentManagerBase
 class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
     faction_id = "ADM"
 
+    _COHORT_CYBERNETICA_NAME = "Cohort Cybernetica"
+    _CYBER_PSALM_PROGRAMMING_SOURCE = "Cyber-Psalm Programming"
+    _LEGIO_CYBERNETICA_KEYWORD = "LEGIO CYBERNETICA"
+
     _RAD_BOMBARDMENT_ABILITY_KEY = "rad_bombardment"
     _RAD_BOMBARDMENT_CHOICE_KEY = "rad_bombardment_choice"
     _RAD_BOMBARDMENT_TAKING_COVER_ROUND_KEY = "rad_bombardment_taking_cover_round"
@@ -25,6 +29,11 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Rad-Zone Corps")
+
+    def is_cohort_cybernetica(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches(self._COHORT_CYBERNETICA_NAME)
 
     @staticmethod
     def _entity_id(entity) -> str:
@@ -56,6 +65,53 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
         else:
             models = list(getattr(unit, "models", []) or [])
         return [model for model in models if model is not None and self._is_model_alive(model)]
+
+    def _unit_in_army(self, unit) -> bool:
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        for own_unit in list(getattr(self.army, "units", []) or []):
+            if self._attached_root(own_unit) is root:
+                return True
+        return False
+
+    @staticmethod
+    def _unit_is_battle_shocked(unit) -> bool:
+        if unit is None:
+            return False
+        check = getattr(unit, "is_battle_shocked", None)
+        return bool(check()) if callable(check) else False
+
+    def _legio_cybernetica_root(self, unit):
+        if not self.is_cohort_cybernetica():
+            return None
+        root = self._attached_root(unit)
+        if root is None:
+            return None
+        if not self._unit_in_army(root):
+            return None
+        if not self._unit_has_keyword(root, self._LEGIO_CYBERNETICA_KEYWORD):
+            return None
+        return root
+
+    def cyber_psalm_programming_movement_bonus(self, model, *, unit=None) -> tuple[int, str]:
+        if model is None:
+            return 0, ""
+        source_unit = unit if unit is not None else getattr(model, "parent_unit", None)
+        if self._legio_cybernetica_root(source_unit) is None:
+            return 0, ""
+        return 2, self._CYBER_PSALM_PROGRAMMING_SOURCE
+
+    def cyber_psalm_programming_objective_control_bonus(self, model, *, unit=None) -> tuple[int, str]:
+        if model is None:
+            return 0, ""
+        source_unit = unit if unit is not None else getattr(model, "parent_unit", None)
+        root = self._legio_cybernetica_root(source_unit)
+        if root is None:
+            return 0, ""
+        if self._unit_is_battle_shocked(root):
+            return 0, ""
+        return 1, self._CYBER_PSALM_PROGRAMMING_SOURCE
 
     def _iter_player_unit_roots(self, player) -> list:
         if player is None:

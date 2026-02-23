@@ -716,6 +716,20 @@ class Unit(
                         mods.append(Modifier(ModifierOp.ADD, int(bonus), source=f"detachment:{source_name}"))
             except Exception:
                 pass
+            try:
+                adm_mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+                bonus_fn = (
+                    getattr(adm_mgr, "cyber_psalm_programming_objective_control_bonus", None)
+                    if adm_mgr is not None
+                    else None
+                )
+                if callable(bonus_fn):
+                    bonus, source = bonus_fn(model, unit=self)
+                    if int(bonus or 0):
+                        source_name = str(source or "Cyber-Psalm Programming").strip() or "Cyber-Psalm Programming"
+                        mods.append(Modifier(ModifierOp.ADD, int(bonus), source=f"detachment:{source_name}"))
+            except Exception:
+                pass
 
             # Warpmeld Pact: TZAANGOR models gain +1 OC while in non-Battle-shocked Tzaangors units.
             try:
@@ -1157,6 +1171,16 @@ class Unit(
                         or "Desperate for Redemption (The Path of the Penitent)"
                     )
                     mods.append(Modifier(ModifierOp.ADD, int(bonus), source=f"detachment:{source_name}"))
+            try:
+                adm_mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+                bonus_fn = getattr(adm_mgr, "cyber_psalm_programming_movement_bonus", None) if adm_mgr is not None else None
+                if callable(bonus_fn):
+                    bonus, source = bonus_fn(model, unit=self)
+                    if int(bonus or 0):
+                        source_name = str(source or "Cyber-Psalm Programming").strip() or "Cyber-Psalm Programming"
+                        mods.append(Modifier(ModifierOp.ADD, int(bonus), source=f"detachment:{source_name}"))
+            except Exception:
+                pass
             try:
                 ac_mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
                 bonus_fn = getattr(ac_mgr, "auric_armour_move_bonus", None) if ac_mgr is not None else None

@@ -415,6 +415,10 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"at the start of your command phase during the second third fourth and fifth battle rounds roll one d6 for each enemy unit within your opponents deployment zone",
             r"on a 3 that unit suffers 1 mortal wound and must take a battle shock test",
         ),
+        "Cyber-Psalm Programming": (
+            r"add 2 to the move characteristic of models in legio cybernetica units from your army",
+            r"(?:in addition )?unless that unit is battle shocked add 1 to the objective control characteristic of models in that unit",
+        ),
         "Warp Rifts": (
             r"each time a legiones daemonica unit from your army is set up on the battlefield using the deep strike ability .* it can be set up anywhere that is more than 6 horizontally away from all enemy models instead of more than 9",
         ),
@@ -2664,6 +2668,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Rad-bombardment": (
             "Supported",
             "Rad-Zone Corps: BR1 Bombardment prompts the opponent to choose Stand Firm or Take Cover per enemy unit in their deployment zone, resolves mortal wounds by threshold, applies Take Cover Battle-shock until end of battle round, and BR2-5 Fallout applies 1 mortal wound plus a Battle-shock test on 3+ (Radial Suffusion extends Fallout targeting to enemy units within 6\" of their deployment zone while the bearer is on the battlefield).",
+        ),
+        "Cyber-Psalm Programming": (
+            "Supported",
+            "Cohort Cybernetica: models in friendly LEGIO CYBERNETICA units gain +2\" Move, and while their unit is not Battle-shocked they gain +1 Objective Control.",
         ),
         "The Blood of Martyrs": (
             "Supported",
