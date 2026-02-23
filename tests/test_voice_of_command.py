@@ -956,6 +956,113 @@ class TestVoiceOfCommand(unittest.TestCase):
         self.assertFalse(bool(no_bonus_hit.get("hit")))
         self.assertFalse(any("Fire Zone Purge" in str(mod or "") for mod in list(no_bonus_hit.get("modifiers", []) or [])))
 
+    def test_combined_arms_born_soldiers_lethal_hits_by_regiment_and_squadron_visibility(self):
+        from warhammer40k_ai.rules.astra_militarum_detachments import AstraMilitarumDetachmentManager
+
+        army = _ArmyStub(detachment_type="Combined Arms")
+        army.astra_militarum_detachments = AstraMilitarumDetachmentManager(army)
+
+        regiment = _UnitStub(
+            "Regiment Unit",
+            keywords=["REGIMENT", "INFANTRY", "ASTRA MILITARUM"],
+            abilities=[],
+            army=army,
+        )
+        squadron = _UnitStub(
+            "Squadron Unit",
+            keywords=["SQUADRON", "VEHICLE", "ASTRA MILITARUM"],
+            abilities=[],
+            army=army,
+        )
+        army.units = [regiment, squadron]
+        regiment.set_parent_army(army)
+        squadron.set_parent_army(army)
+
+        enemy_army = _ArmyStub(faction_id="SM")
+        infantry_target = _UnitStub(
+            "Infantry Target",
+            keywords=["INFANTRY"],
+            abilities=[],
+            army=enemy_army,
+        )
+        vehicle_target = _UnitStub(
+            "Vehicle Target",
+            keywords=["VEHICLE"],
+            abilities=[],
+            army=enemy_army,
+        )
+        infantry_target.models = [
+            SimpleNamespace(
+                name="Infantry Defender",
+                is_alive=True,
+                z=0.0,
+                save=4,
+                inv_save=(None, ""),
+                parent_unit=infantry_target,
+            )
+        ]
+        vehicle_target.models = [
+            SimpleNamespace(
+                name="Vehicle Defender",
+                is_alive=True,
+                z=0.0,
+                save=3,
+                inv_save=(None, ""),
+                parent_unit=vehicle_target,
+            )
+        ]
+
+        game = SimpleNamespace(
+            turn=1,
+            map=_MapStub([regiment, squadron]),
+            event_system=SimpleNamespace(publish=lambda *_a, **_k: None),
+        )
+        army.player.game = game
+
+        ranged = self._make_profile(weapon_type="Ranged", skill="4+")
+        regiment_model = _ModelStub("Regiment Shooter", regiment, distance=12.0)
+        squadron_model = _ModelStub("Squadron Shooter", squadron, distance=12.0)
+
+        regiment_vs_infantry = ranged._hit_target_with_tracking(
+            infantry_target,
+            regiment_model,
+            {},
+            roll_value=6,
+            allow_rerolls=False,
+            log_roll=False,
+        )
+        self.assertTrue(any("Lethal Hits" in str(e or "") for e in list(regiment_vs_infantry.get("special_effects", []) or [])))
+
+        regiment_vs_vehicle = ranged._hit_target_with_tracking(
+            vehicle_target,
+            regiment_model,
+            {},
+            roll_value=6,
+            allow_rerolls=False,
+            log_roll=False,
+        )
+        self.assertFalse(any("Lethal Hits" in str(e or "") for e in list(regiment_vs_vehicle.get("special_effects", []) or [])))
+
+        squadron_vs_vehicle = ranged._hit_target_with_tracking(
+            vehicle_target,
+            squadron_model,
+            {},
+            roll_value=6,
+            allow_rerolls=False,
+            log_roll=False,
+        )
+        self.assertTrue(any("Lethal Hits" in str(e or "") for e in list(squadron_vs_vehicle.get("special_effects", []) or [])))
+
+        hidden_target = ranged._hit_target_with_tracking(
+            infantry_target,
+            regiment_model,
+            {"indirect_fire_no_visible": True},
+            roll_value=6,
+            allow_rerolls=False,
+            log_roll=False,
+        )
+        self.assertFalse(any("Lethal Hits" in str(e or "") for e in list(hidden_target.get("special_effects", []) or [])))
+
 
 if __name__ == "__main__":
     unittest.main()

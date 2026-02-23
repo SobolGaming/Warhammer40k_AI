@@ -413,6 +413,10 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Fire Zone Purge": (
             r"each time a militarum tempestus model from your army makes a ranged attack in a turn in which it was set up on the battlefield from reserves or it disembarked from a transport add \d+ to the hit roll",
         ),
+        "Born Soldiers": (
+            r"each time a model in a regiment unit from your army makes a ranged attack that targets a visible unit excluding monsters and vehicles that attack has the lethal hits ability",
+            r"each time a model in a squadron unit from your army makes a ranged attack that targets a visible monster or vehicle unit that attack has the lethal hits ability",
+        ),
         "Rad-bombardment": (
             r"at the start of the first battle round for each enemy unit within your opponents deployment zone your opponent must decide whether that unit will take cover or stand firm",
             r"you then roll one d6 for each of those enemy units and apply the relevant result below",
@@ -2704,6 +2708,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Fire Zone Purge": (
             "Supported",
             "Bridgehead Strike: MILITARUM TEMPESTUS models gain +1 to hit for ranged attacks on turns they were set up from Reserves or disembarked from a Transport.",
+        ),
+        "Born Soldiers": (
+            "Supported",
+            "Combined Arms: visible REGIMENT ranged attacks gain Lethal Hits versus non-MONSTER/non-VEHICLE targets, and visible SQUADRON ranged attacks gain Lethal Hits versus MONSTER/VEHICLE targets.",
         ),
         "Rad-bombardment": (
             "Supported",

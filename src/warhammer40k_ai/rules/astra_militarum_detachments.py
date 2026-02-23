@@ -20,6 +20,11 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Bridgehead Strike")
 
+    def is_combined_arms(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Combined Arms")
+
     def is_grizzled_company(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
             return False
@@ -123,6 +128,32 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
         if not self.unit_is_astra_militarum(root):
             return False
         return self._model_or_unit_has_keyword(model, root, "MILITARUM TEMPESTUS")
+
+    def _unit_is_regiment_model(self, unit, model) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if not self.unit_is_astra_militarum(root):
+            return False
+        return self._model_or_unit_has_keyword(model, root, "REGIMENT")
+
+    def _unit_is_squadron_model(self, unit, model) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if not self.unit_is_astra_militarum(root):
+            return False
+        return self._model_or_unit_has_keyword(model, root, "SQUADRON")
+
+    def _target_is_monster_or_vehicle(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if self._unit_has_keyword(root, "MONSTER"):
+            return True
+        if self._unit_has_keyword(root, "VEHICLE"):
+            return True
+        return bool(getattr(root, "is_monster", False) or getattr(root, "is_vehicle", False))
 
     def unit_is_astra_militarum(self, unit) -> bool:
         if unit is None:
@@ -238,3 +269,45 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
         if not (set_up or disembarked):
             return 0, ""
         return 1, "Fire Zone Purge"
+
+    def born_soldiers_lethal_hits_applies(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        attack_type: str = "any",
+        game=None,
+        game_map=None,
+        target_visible=None,
+    ) -> tuple[bool, str]:
+        if not self.is_combined_arms():
+            return False, ""
+        if str(attack_type or "any").strip().lower() != "ranged":
+            return False, ""
+        unit = getattr(attacker_model, "parent_unit", None)
+        root = self._unit_root(unit)
+        if root is None:
+            return False, ""
+        if not self._unit_in_army(root):
+            return False, ""
+        if target_unit is None:
+            return False, ""
+
+        visible = True
+        if target_visible is None:
+            local_map = game_map
+            if local_map is None and game is not None:
+                local_map = getattr(game, "map", None)
+            if local_map is not None and hasattr(root, "_has_line_of_sight_to_target"):
+                visible = bool(root._has_line_of_sight_to_target(attacker_model, target_unit, local_map))
+        else:
+            visible = bool(target_visible)
+        if not visible:
+            return False, ""
+
+        target_is_monster_or_vehicle = self._target_is_monster_or_vehicle(target_unit)
+        if self._unit_is_regiment_model(root, attacker_model) and not target_is_monster_or_vehicle:
+            return True, "Born Soldiers"
+        if self._unit_is_squadron_model(root, attacker_model) and target_is_monster_or_vehicle:
+            return True, "Born Soldiers"
+        return False, ""

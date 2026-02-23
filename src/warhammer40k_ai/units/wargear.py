@@ -7497,6 +7497,35 @@ class WargearProfile:
                         bonus_lethal = True
         except Exception:
             pass
+        # Astra Militarum: Combined Arms (Born Soldiers) grants Lethal Hits
+        # for visible Regiment ranged attacks vs non-MONSTER/VEHICLE targets and
+        # visible Squadron ranged attacks vs MONSTER/VEHICLE targets.
+        try:
+            if attack_is_ranged:
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+                lethal_fn = getattr(am_mgr, "born_soldiers_lethal_hits_applies", None) if am_mgr is not None else None
+                if callable(lethal_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    game_map = getattr(game, "map", None) if game is not None else None
+                    target_visible = None
+                    if game_map is not None and hasattr(unit, "_has_line_of_sight_to_target") and target is not None:
+                        target_visible = bool(unit._has_line_of_sight_to_target(attacker, target, game_map))
+                    else:
+                        target_visible = not bool(attack_instance.get("indirect_fire_no_visible", False))
+                    applies, _source = lethal_fn(
+                        attacker,
+                        target,
+                        attack_type=attack_type,
+                        game=game,
+                        game_map=game_map,
+                        target_visible=target_visible,
+                    )
+                    if applies:
+                        bonus_lethal = True
+        except Exception:
+            pass
 
         # Enhancement: Aspect of Murder grants Precision to bearer melee weapons.
         try:
