@@ -950,6 +950,10 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"when doing so those models can be moved within engagement range of enemy units",
             r"a unit cannot make a surge move while it is battle shocked",
         ),
+        "Questing Tendrils": (
+            r"tyranids units with this ability are eligible to charge in a turn in which they fell back",
+            r"vanguard invader units with this ability are eligible to charge in a turn in which they advanced",
+        ),
         "Leader-beasts": (
             r"tyranid warriors see below and winged tyranid prime units from your army have a 5 invulnerable save",
             r"(?:keywords )?tyranid warriors with ranged bio weapons and tyranid warriors with melee bio weapons units from your army gain the tyranid warriors and battleline keywords and while such a unit is not battle shocked tyranid warriors models in that unit have an objective control characteristic of 3",
@@ -2112,6 +2116,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Insurmountable Odds": (
             "Supported",
             "Unending Swarm: after each enemy unit finishes shooting, each ENDLESS MULTITUDE unit from your army that lost models from those attacks can make a reactive Surge move by rolling D6 and moving up to that distance; the move must end as close as possible to the closest non-AIRCRAFT enemy unit, can enter Engagement Range, and is blocked while Battle-shocked.",
+        ),
+        "Questing Tendrils": (
+            "Supported",
+            "Vanguard Onslaught: TYRANIDS units can declare charges in turns when they Fell Back, and TYRANIDS units with the VANGUARD INVADER keyword can also declare charges in turns when they Advanced.",
         ),
         "Leader-beasts": (
             "Supported",

@@ -10732,6 +10732,15 @@ class ActionsMovementMixin:
                     return True
         except Exception:
             pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "can_charge_after_advance", None):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if mgr.can_charge_after_advance(self, game=game):
+                    return True
+        except Exception:
+            pass
         return bool(self.has_advance_and_charge())
 
     def _advance_and_charge_once_per_battle_spec(self) -> Optional[dict]:
@@ -10919,6 +10928,15 @@ class ActionsMovementMixin:
         try:
             army = self.get_parent_army()
             mgr = getattr(army, "combat_doctrines", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "can_charge_after_fall_back", None):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if mgr.can_charge_after_fall_back(self, game=game):
+                    return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
             if mgr is not None and getattr(mgr, "can_charge_after_fall_back", None):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if mgr.can_charge_after_fall_back(self, game=game):

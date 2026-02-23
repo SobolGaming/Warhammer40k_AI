@@ -191,6 +191,33 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
             return False
         return self._unending_swarm_unit_is_endless_multitude(root)
 
+    def questing_tendrils_charge_after_fall_back_applies(self, unit, *, game=None) -> bool:
+        _ = game
+        if not self.is_vanguard_onslaught():
+            return False
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        return self._unit_is_tyranids(root)
+
+    def questing_tendrils_charge_after_advance_applies(self, unit, *, game=None) -> bool:
+        if not self.questing_tendrils_charge_after_fall_back_applies(unit, game=game):
+            return False
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if self._unit_has_keyword(root, "VANGUARD INVADER"):
+            return True
+        return self._attached_unit_has_keyword(root, "VANGUARD INVADER")
+
+    def can_charge_after_fall_back(self, unit, *, game=None) -> bool:
+        return self.questing_tendrils_charge_after_fall_back_applies(unit, game=game)
+
+    def can_charge_after_advance(self, unit, *, game=None) -> bool:
+        return self.questing_tendrils_charge_after_advance_applies(unit, game=game)
+
     def _unit_in_army(self, unit) -> bool:
         if unit is None:
             return False
