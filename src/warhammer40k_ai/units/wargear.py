@@ -4011,6 +4011,31 @@ class WargearProfile:
                     attack_result.attacks_special_modifiers.append(f"Red Thirst +{bonus}A (melee)")
         except Exception:
             pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                mgr = getattr(army, "adepta_sororitas_detachments", None) if army is not None else None
+                bonus_fn = getattr(mgr, "desperate_for_redemption_melee_attacks_bonus", None) if mgr is not None else None
+                if callable(bonus_fn):
+                    bonus, source = bonus_fn(attacker, unit=unit, weapon_profile=self)
+                    if int(bonus or 0):
+                        source_name = (
+                            str(source or "Desperate for Redemption (Absolution in Battle)").strip()
+                            or "Desperate for Redemption (Absolution in Battle)"
+                        )
+                        atk_mods.append(
+                            Modifier(
+                                ModifierOp.ADD,
+                                int(bonus),
+                                source="detachment:desperate_for_redemption_absolution_attacks",
+                            )
+                        )
+                        attack_result.attacks_special_modifiers.append(
+                            f"{source_name} +{int(bonus)}A (melee)"
+                        )
+        except Exception:
+            pass
 
         try:
             if self.parent_wargear and self.parent_wargear.is_melee():
@@ -7076,6 +7101,26 @@ class WargearProfile:
                     if penalty > 0:
                         source = str(sr.get("data_spike_ws_penalty_source", "") or "Data-spike").strip() or "Data-spike"
                         _add_skill_mod(-int(penalty), f"{source}: -{int(penalty)} WS")
+        except Exception:
+            pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            mgr = getattr(army, "adepta_sororitas_detachments", None) if army is not None else None
+            bonus_fn = getattr(mgr, "righteous_purpose_skill_bonus", None) if mgr is not None else None
+            if callable(bonus_fn):
+                bonus, source = bonus_fn(attacker, unit=unit, weapon_profile=self)
+                if bonus:
+                    is_melee = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_melee())
+                    is_ranged = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_ranged())
+                    if is_melee and not is_ranged:
+                        skill_label = "WS"
+                    elif is_ranged and not is_melee:
+                        skill_label = "BS"
+                    else:
+                        skill_label = "BS/WS"
+                    source_name = str(source or "Righteous Purpose").strip() or "Righteous Purpose"
+                    _add_skill_mod(int(bonus), f"{source_name}: +{int(bonus)} {skill_label}")
         except Exception:
             pass
 
@@ -11454,6 +11499,25 @@ class WargearProfile:
                     if apply_bonus:
                         strength = strength + s_bonus
                         wound_result.setdefault("modifiers", []).append(f"+{s_bonus}S from Red Thirst")
+        except Exception:
+            pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee() and isinstance(strength, int):
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                mgr = getattr(army, "adepta_sororitas_detachments", None) if army is not None else None
+                bonus_fn = getattr(mgr, "desperate_for_redemption_melee_strength_bonus", None) if mgr is not None else None
+                if callable(bonus_fn):
+                    s_bonus, source = bonus_fn(attacker, unit=unit, weapon_profile=self)
+                    if int(s_bonus or 0):
+                        strength = strength + int(s_bonus)
+                        source_name = (
+                            str(source or "Desperate for Redemption (Absolution in Battle)").strip()
+                            or "Desperate for Redemption (Absolution in Battle)"
+                        )
+                        wound_result.setdefault("modifiers", []).append(
+                            f"+{int(s_bonus)}S from {source_name}"
+                        )
         except Exception:
             pass
         try:

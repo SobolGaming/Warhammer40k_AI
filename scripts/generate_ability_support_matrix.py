@@ -308,6 +308,23 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Sacred Rites": (
             r"each adepta sororitas unit from your army can perform up to two acts of faith per phase instead of just one",
         ),
+        "Righteous Purpose": (
+            r"in your command phase you can select up to 3 adepta sororitas units from your army including units that are embarked within transports until the start of your next command phase those units are righteous",
+            r"while a unit is righteous",
+            r"add 1 to the move characteristic of models in that unit",
+            r"improve the leadership characteristic of models in that unit by 1",
+            r"improve the weapon skill and ballistic skill characteristics of weapons equipped by battle sisters squad celestian sacresants and paragon warsuits models in that unit by 1",
+            r"while a celestian sacresants unit from your army is not battle shocked add 1 to the objective control characteristic of celestian sacresants models in that unit",
+        ),
+        "Desperate for Redemption": (
+            r"at the start of the battle round you can select one of the following vows of atonement to be active for your army until the start of the next battle round",
+            r"you can only select each vow of atonement once per battle",
+            r"add 3 to the move characteristic of penitent models from your army",
+            r"each time a unit from your army is selected to fight if that unit made a charge move this turn until the end of the phase add 1 to the attacks and strength characteristics of melee weapons equipped by penitent models in that unit",
+            r"each time a penitent model from your army is destroyed by a melee attack if that model has not fought this phase roll one d6",
+            r"on a 2 do not remove it from play",
+            r"the destroyed model can fight after the attacking unit has finished making its attacks and is then removed from play",
+        ),
         "Yriel's Own": (
             r"aeldari units in your army are eligible to declare a charge in a turn in which they advanced",
             r"in addition each time an anhrathe rangers or shroud runners unit from your army advances you can reroll the advance roll",
@@ -2608,6 +2625,14 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Fervent Purgation": (
             "Supported",
             "Bringers of Flame: ADEPTA SORORITAS ranged weapons count as Assault and gain +1 Strength against targets within 6\".",
+        ),
+        "Righteous Purpose": (
+            "Supported",
+            "Champions of Faith: at each of your Command phases, choose up to 3 ADEPTA SORORITAS units to become Righteous until your next Command phase (+1\" Move, Leadership improves by 1, and Battle Sisters Squad/Celestian Sacresants/Paragon Warsuits weapons improve WS/BS by 1); CELESTIAN SACRESANTS models also gain +1 Objective Control while their unit is not Battle-shocked.",
+        ),
+        "Desperate for Redemption": (
+            "Supported",
+            "Penitent Host: at the start of each battle round, optionally select one unused Vow of Atonement (or none) for your army; The Path of the Penitent grants PENITENT models +3\" Move, Absolution in Battle grants PENITENT models +1 Attacks and +1 Strength for melee weapons while their unit charged this turn, and Death Before Disgrace grants PENITENT models melee fight-on-death on 2+ after the attacker finishes its attacks.",
         ),
         "Maddened Ferocity": (
             "Supported",

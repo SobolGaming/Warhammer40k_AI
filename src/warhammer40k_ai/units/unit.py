@@ -702,6 +702,20 @@ class Unit(
                         mods.append(Modifier(ModifierOp.ADD, int(bonus), source="enhancement:strategic_conqueror"))
             except Exception:
                 pass
+            try:
+                as_mgr = getattr(army, "adepta_sororitas_detachments", None) if army is not None else None
+                bonus_fn = (
+                    getattr(as_mgr, "righteous_purpose_sacresants_objective_control_bonus", None)
+                    if as_mgr is not None
+                    else None
+                )
+                if callable(bonus_fn):
+                    bonus, source = bonus_fn(model, self)
+                    if bonus:
+                        source_name = str(source or "Righteous Purpose").strip() or "Righteous Purpose"
+                        mods.append(Modifier(ModifierOp.ADD, int(bonus), source=f"detachment:{source_name}"))
+            except Exception:
+                pass
 
             # Warpmeld Pact: TZAANGOR models gain +1 OC while in non-Battle-shocked Tzaangors units.
             try:
@@ -1013,6 +1027,17 @@ class Unit(
                     mods.append(Modifier(ModifierOp.ADD, -1, source="enhancement:pledge_of_dark_glory"))
             except Exception:
                 pass
+            try:
+                army = self.get_parent_army()
+            except Exception:
+                army = None
+            as_mgr = getattr(army, "adepta_sororitas_detachments", None) if army is not None else None
+            bonus_fn = getattr(as_mgr, "righteous_purpose_leadership_bonus", None) if as_mgr is not None else None
+            if callable(bonus_fn):
+                bonus, source = bonus_fn(self)
+                if int(bonus or 0):
+                    source_name = str(source or "Righteous Purpose").strip() or "Righteous Purpose"
+                    mods.append(Modifier(ModifierOp.ADD, int(bonus), source=f"detachment:{source_name}"))
 
         afflicted_plague = None
         try:
@@ -1096,6 +1121,22 @@ class Unit(
                         mods.append(Modifier(ModifierOp.ADD, int(bonus), source=source_name))
             except Exception:
                 pass
+            as_mgr = getattr(army, "adepta_sororitas_detachments", None) if army is not None else None
+            bonus_fn = getattr(as_mgr, "righteous_purpose_move_bonus", None) if as_mgr is not None else None
+            if callable(bonus_fn):
+                bonus, source = bonus_fn(self)
+                if int(bonus or 0):
+                    source_name = str(source or "Righteous Purpose").strip() or "Righteous Purpose"
+                    mods.append(Modifier(ModifierOp.ADD, int(bonus), source=f"detachment:{source_name}"))
+            bonus_fn = getattr(as_mgr, "desperate_for_redemption_move_bonus", None) if as_mgr is not None else None
+            if callable(bonus_fn):
+                bonus, source = bonus_fn(model, self)
+                if int(bonus or 0):
+                    source_name = (
+                        str(source or "Desperate for Redemption (The Path of the Penitent)").strip()
+                        or "Desperate for Redemption (The Path of the Penitent)"
+                    )
+                    mods.append(Modifier(ModifierOp.ADD, int(bonus), source=f"detachment:{source_name}"))
             try:
                 from ..utility.aura_effects import get_aura_move_characteristic_bonus
 

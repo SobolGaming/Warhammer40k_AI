@@ -7924,6 +7924,11 @@ class Game(
         if mgr is not None and hasattr(mgr, "on_command_phase_start"):
             mgr.on_command_phase_start(game=self, player=current_player)
 
+        # Adepta Sororitas: Champions of Faith (Righteous Purpose) command-phase selection.
+        mgr = getattr(army, "adepta_sororitas_detachments", None)
+        if mgr is not None and hasattr(mgr, "on_command_phase_start"):
+            mgr.on_command_phase_start(game=self, player=current_player)
+
         # Core (per official app wording): at the start of your Command phase, before doing anything else,
         # BOTH players gain the normal Command phase CP. This normal CP does not count toward the
         # per-battle-round "bonus CP" guardrail.

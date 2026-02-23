@@ -906,6 +906,28 @@ class KeywordsDetachmentsMixin:
         except Exception:
             pass
 
+        # Adepta Sororitas: Penitent Host (Death Before Disgrace) temporary vow.
+        army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+        as_mgr = getattr(army, "adepta_sororitas_detachments", None) if army is not None else None
+        vow_rule_fn = (
+            getattr(as_mgr, "desperate_for_redemption_melee_fight_on_death_rule", None)
+            if as_mgr is not None
+            else None
+        )
+        if callable(vow_rule_fn):
+            vow_rule = vow_rule_fn(self, model=model)
+            if isinstance(vow_rule, dict):
+                try:
+                    threshold = int(vow_rule.get("threshold", 0) or 0)
+                except (TypeError, ValueError):
+                    threshold = 0
+                if 2 <= threshold <= 6:
+                    source = (
+                        str(vow_rule.get("source", "") or "Desperate for Redemption (Death Before Disgrace)").strip()
+                        or "Desperate for Redemption (Death Before Disgrace)"
+                    )
+                    return {"threshold": int(threshold), "source": source}
+
         if cache_key in getattr(self, "_ability_cache", {}):
             return self._ability_cache[cache_key]
 

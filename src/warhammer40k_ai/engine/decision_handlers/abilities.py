@@ -3452,6 +3452,97 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
             if unit_id not in allowed_ids:
                 return ("Strike Swiftly selection includes an ineligible unit.",)
         return ()
+    if ability == "desperate_for_redemption":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Desperate for Redemption army was not found.",)
+        mgr = getattr(army, "adepta_sororitas_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_penitent_host", lambda: False)()):
+            return ("Desperate for Redemption requires Penitent Host detachment.",)
+
+        battle_round = int(getattr(game, "turn", 0) or 0)
+        try:
+            required_round = int(ctx.get("battle_round", 0) or 0)
+        except (TypeError, ValueError):
+            required_round = 0
+        if required_round > 0 and battle_round != required_round:
+            return ("Desperate for Redemption selection is no longer valid for this battle round.",)
+
+        if is_skip_choice(request, result):
+            return ()
+
+        choice_key = str(payload.get("choice_key", "") or payload.get("vow_key", "") or "").strip()
+        if not choice_key:
+            return ("Desperate for Redemption requires selecting one Vow of Atonement or None.",)
+        normalize_key = getattr(mgr, "_normalize_desperate_for_redemption_vow_key", None)
+        if callable(normalize_key):
+            choice_key = str(normalize_key(choice_key) or "")
+        else:
+            choice_key = str(choice_key).strip().lower()
+        if not choice_key:
+            return ("Desperate for Redemption selected vow is not supported.",)
+
+        normalize_allowed = normalize_key if callable(normalize_key) else (lambda v: str(v or "").strip().lower())
+        allowed_keys = {
+            str(normalize_allowed(val) or "").strip()
+            for val in list(ctx.get("allowed_choice_keys", []) or [])
+            if str(val or "").strip()
+        }
+        allowed_keys = {v for v in allowed_keys if v}
+        if allowed_keys and choice_key not in allowed_keys:
+            return ("Desperate for Redemption selected vow is not an eligible choice.",)
+
+        can_select = getattr(mgr, "can_select_desperate_for_redemption_vow", None)
+        if callable(can_select) and not bool(can_select(choice_key)):
+            return ("Desperate for Redemption selected vow has already been selected this battle.",)
+        return ()
+    if ability == "righteous_purpose":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Righteous Purpose army not found.",)
+        mgr = getattr(army, "adepta_sororitas_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_champions_of_faith", lambda: False)()):
+            return ("Righteous Purpose requires Champions of Faith detachment.",)
+        if is_skip_choice(request, result):
+            return ()
+
+        selected_vals = payload.get("selected_unit_ids")
+        if not isinstance(selected_vals, list):
+            selected_vals = []
+        if not selected_vals:
+            one_target = payload.get("target_unit_id") or payload.get("unit_id")
+            if one_target:
+                selected_vals = [one_target]
+
+        selected_ids = [str(v or "").strip() for v in list(selected_vals or []) if str(v or "").strip()]
+        if len(selected_ids) > 3:
+            return ("Righteous Purpose can select at most three units.",)
+        if len(selected_ids) != len(set(selected_ids)):
+            return ("Righteous Purpose selected_unit_ids must be unique.",)
+
+        allowed_ids = {str(v or "").strip() for v in list(ctx.get("candidate_unit_ids", []) or []) if str(v or "").strip()}
+        resolved_root_ids: set[str] = set()
+        for unit_id in selected_ids:
+            unit = resolve_unit(game, unit_id)
+            if unit is None:
+                return ("Righteous Purpose selected unit was not found.",)
+            root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+            if root is None:
+                return ("Righteous Purpose selected unit was not found.",)
+            root_id = str(get_entity_id(root) or "")
+            if root_id in resolved_root_ids:
+                return ("Righteous Purpose selected units must be unique.",)
+            resolved_root_ids.add(root_id)
+            if allowed_ids and root_id not in allowed_ids:
+                return ("Righteous Purpose selection includes an ineligible unit.",)
+            if not bool(getattr(mgr, "unit_is_adepta_sororitas", lambda _u: False)(root)):
+                return ("Righteous Purpose can only select friendly ADEPTA SORORITAS units.",)
+            on_field_fn = getattr(mgr, "_unit_is_on_battlefield_or_embarked", None)
+            if callable(on_field_fn) and not bool(on_field_fn(root)):
+                return ("Righteous Purpose units must be on the battlefield or embarked within a Transport.")
+        return ()
     if ability in (
         "imperial_knights_iron_chalice",
         "imperial_knights_evanescent_ion",
@@ -5925,6 +6016,152 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 f"Strike Swiftly: {source_name} selected none.",
             )
         return selected_roots
+    if ability == "righteous_purpose":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "adepta_sororitas_detachments", None)
+        if mgr is None:
+            return None
+
+        selected_vals = payload.get("selected_unit_ids")
+        if not isinstance(selected_vals, list):
+            selected_vals = []
+        if not selected_vals:
+            one_target = payload.get("target_unit_id") or payload.get("unit_id")
+            if one_target:
+                selected_vals = [one_target]
+        if is_skip_choice(request, result):
+            selected_vals = []
+
+        selected_ids = []
+        seen: set[str] = set()
+        for unit_id in list(selected_vals or []):
+            unit_id_str = str(unit_id or "").strip()
+            if not unit_id_str or unit_id_str in seen:
+                continue
+            seen.add(unit_id_str)
+            selected_ids.append(unit_id_str)
+            if len(selected_ids) >= 3:
+                break
+
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        apply_fn = getattr(mgr, "apply_righteous_purpose_selection", None)
+        if not callable(apply_fn):
+            return None
+        applied_ids = list(apply_fn(selected_ids, game=game, player=player) or [])
+
+        ability_name = str(ctx.get("ability_name", "") or "Righteous Purpose").strip() or "Righteous Purpose"
+        if applied_ids:
+            chosen_names: list[str] = []
+            for unit_id in applied_ids:
+                unit = resolve_unit(game, unit_id)
+                if unit is None:
+                    continue
+                root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+                if root is None:
+                    continue
+                chosen_names.append(str(getattr(root, "name", "Unit") or "Unit"))
+            if chosen_names:
+                joined = ", ".join(chosen_names)
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"{ability_name}: selected {joined} to become Righteous until your next Command phase.",
+                )
+            else:
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"{ability_name}: selected {len(applied_ids)} unit(s) to become Righteous until your next Command phase.",
+                )
+        else:
+            _log_action_for_players(game, player, f"{ability_name}: selected none.")
+        return {
+            "selected_unit_ids": [str(v or "") for v in applied_ids if str(v or "").strip()],
+            "source": ability_name,
+        }
+    if ability == "desperate_for_redemption":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "adepta_sororitas_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_penitent_host", lambda: False)()):
+            return None
+
+        battle_round = int(getattr(game, "turn", 0) or 0)
+        try:
+            start_round = int(ctx.get("battle_round", 0) or battle_round)
+        except (TypeError, ValueError):
+            start_round = int(battle_round)
+        if start_round > 0 and battle_round != start_round:
+            return None
+
+        choice_key = ""
+        if not is_skip_choice(request, result):
+            choice_key = str(payload.get("choice_key", "") or payload.get("vow_key", "") or "").strip()
+            normalize_key = getattr(mgr, "_normalize_desperate_for_redemption_vow_key", None)
+            if callable(normalize_key):
+                choice_key = str(normalize_key(choice_key) or "")
+            else:
+                choice_key = str(choice_key or "").strip().lower()
+            if not choice_key:
+                return None
+            normalize_allowed = normalize_key if callable(normalize_key) else (lambda v: str(v or "").strip().lower())
+            allowed_keys = {
+                str(normalize_allowed(val) or "").strip()
+                for val in list(ctx.get("allowed_choice_keys", []) or [])
+                if str(val or "").strip()
+            }
+            allowed_keys = {v for v in allowed_keys if v}
+            if allowed_keys and choice_key not in allowed_keys:
+                return None
+
+        player = _resolve_player(game, request, payload)
+        player_id = str(ctx.get("player_id", "") or "")
+        if not player_id and player is not None:
+            player_id = str(getattr(player, "id", "") or "")
+        if not player_id:
+            player_id = str(getattr(getattr(army, "player", None), "id", "") or "")
+
+        select_vow = getattr(mgr, "select_desperate_for_redemption_vow", None)
+        if not callable(select_vow) or not bool(
+            select_vow(choice_key, battle_round=int(start_round or 0), player_id=player_id)
+        ):
+            return None
+
+        if player is None:
+            player = getattr(army, "player", None)
+        ability_name = (
+            str(ctx.get("ability_name", "") or "Desperate for Redemption").strip() or "Desperate for Redemption"
+        )
+        label_fn = getattr(mgr, "desperate_for_redemption_vow_label", None)
+        if choice_key:
+            if callable(label_fn):
+                choice_name = str(label_fn(choice_key) or choice_key)
+            else:
+                choice_name = str(choice_key or "")
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: selected {choice_name} for battle round {int(start_round or 0)}.",
+            )
+        else:
+            choice_name = "None"
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: no Vow of Atonement selected for battle round {int(start_round or 0)}.",
+            )
+        return {
+            "choice_key": str(choice_key),
+            "choice_name": str(choice_name),
+            "battle_round": int(start_round or 0),
+        }
     if ability in (
         "aeldari_light_of_clarity_target",
         "aeldari_stave_of_kurnous_target",
