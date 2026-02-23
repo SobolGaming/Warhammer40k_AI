@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 
 from .detachment_manager import DetachmentManagerBase
+from ..utility.dice import get_roll
 from ..utility.entity_ids import get_entity_id
 
 
@@ -10,6 +11,19 @@ class OrksDetachmentManager(DetachmentManagerBase):
     faction_id = "ORK"
     _SECOND_WAAAGH_NAMED_UNITS = ("nobz", "meganobz")
     _DA_BIG_HUNT_PREY_KEYWORDS = ("MONSTER", "VEHICLE", "CHARACTER")
+    _DREAD_MOB_BUTTON_SUSTAINED = "SUSTAINED_HITS_1"
+    _DREAD_MOB_BUTTON_LETHAL = "LETHAL_HITS"
+    _DREAD_MOB_BUTTON_CRIT_AP = "CRITICAL_WOUND_AP_2"
+    _DREAD_MOB_BUTTON_EFFECTS = (
+        _DREAD_MOB_BUTTON_SUSTAINED,
+        _DREAD_MOB_BUTTON_LETHAL,
+        _DREAD_MOB_BUTTON_CRIT_AP,
+    )
+    _DREAD_MOB_BUTTON_LABELS = {
+        _DREAD_MOB_BUTTON_SUSTAINED: "Sustained Hits 1",
+        _DREAD_MOB_BUTTON_LETHAL: "Lethal Hits",
+        _DREAD_MOB_BUTTON_CRIT_AP: "Critical Wound AP +2",
+    }
 
     def __init__(self, army=None):
         super().__init__(army)
@@ -32,10 +46,22 @@ class OrksDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Da Big Hunt")
 
+    def is_dread_mob(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Dread Mob")
+
     @staticmethod
     def _normalize_name(text: str) -> str:
         value = re.sub(r"[^a-z0-9 ]+", " ", str(text or "").lower())
         return re.sub(r"\s+", " ", value).strip()
+
+    @staticmethod
+    def _phase_key_from_game(game) -> str:
+        if game is None:
+            return ""
+        phase = getattr(game, "phase", None)
+        return str(getattr(phase, "name", "") or phase or "").strip().upper()
 
     @staticmethod
     def _unit_is_alive(unit) -> bool:
@@ -404,6 +430,323 @@ class OrksDetachmentManager(DetachmentManagerBase):
         if not self.is_da_big_hunt_prey_target(target_unit):
             return 0
         return 1
+
+    def _dread_mob_unit_is_eligible(self, unit) -> bool:
+        if unit is None:
+            return False
+        if not self._unit_belongs_to_army(unit):
+            return False
+        is_mek = self._unit_contains_keyword(unit, "MEK")
+        is_walker = self._unit_contains_keyword(unit, "WALKER")
+        is_grots_vehicle = self._unit_contains_keyword(unit, "GROTS") and self._unit_contains_keyword(unit, "VEHICLE")
+        return bool(is_mek or is_walker or is_grots_vehicle)
+
+    def apply_dread_mob_gretchin_battleline_keywords(self, unit=None) -> None:
+        if not self.is_dread_mob() or self.army is None:
+            return
+        if unit is None:
+            units = list(getattr(self.army, "units", []) or [])
+        else:
+            units = [unit]
+        for entry in units:
+            if entry is None:
+                continue
+            root = self._unit_root(entry)
+            if root is None:
+                continue
+            if not self._unit_belongs_to_army(root):
+                continue
+            if not self._unit_contains_keyword(root, "GRETCHIN"):
+                continue
+            keywords = list(getattr(root, "keywords", []) or [])
+            if not any(str(k or "").strip().lower() == "battleline" for k in keywords):
+                keywords.append("Battleline")
+                root.keywords = keywords
+
+    def _dread_mob_effect_from_roll(self, roll_value: int) -> str:
+        if int(roll_value or 0) <= 2:
+            return self._DREAD_MOB_BUTTON_SUSTAINED
+        if int(roll_value or 0) <= 4:
+            return self._DREAD_MOB_BUTTON_LETHAL
+        return self._DREAD_MOB_BUTTON_CRIT_AP
+
+    def _dread_mob_effect_label(self, effect_key: str) -> str:
+        key = str(effect_key or "").strip().upper()
+        return str(self._DREAD_MOB_BUTTON_LABELS.get(key, key) or key)
+
+    def queue_dread_mob_try_dat_button_choice(self, unit, *, trigger: str = "", game=None):
+        if not self.is_dread_mob() or self.army is None or game is None:
+            return None
+        if not bool(getattr(game, "is_authoritative", True)):
+            return None
+        root = self._unit_root(unit)
+        if root is None or not self._dread_mob_unit_is_eligible(root):
+            return None
+        if not self._unit_is_alive(root):
+            return None
+        player = getattr(self.army, "player", None)
+        if player is None:
+            return None
+        trigger_key = str(trigger or "").strip().lower()
+        if trigger_key not in ("shooting", "fight"):
+            return None
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        unit_id = self._unit_root_id(root)
+        phase_name = self._phase_key_from_game(game)
+        queue = getattr(game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                if str(getattr(req, "player_id", "") or "") != str(getattr(player, "id", "") or ""):
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "dread_mob_try_dat_button":
+                    continue
+                if str(ctx.get("unit_id", "") or "") != str(unit_id):
+                    continue
+                if str(ctx.get("phase_name", "") or "") != phase_name:
+                    continue
+                if str(ctx.get("trigger", "") or "") != trigger_key:
+                    continue
+                return None
+
+        options = [
+            DecisionOption.create(
+                "Roll D6 (no Hazardous)",
+                payload={"button_mode": "roll"},
+            ),
+            DecisionOption.create(
+                "Sustained Hits 1 + Hazardous",
+                payload={
+                    "button_mode": "manual",
+                    "button_effect": self._DREAD_MOB_BUTTON_SUSTAINED,
+                },
+            ),
+            DecisionOption.create(
+                "Lethal Hits + Hazardous",
+                payload={
+                    "button_mode": "manual",
+                    "button_effect": self._DREAD_MOB_BUTTON_LETHAL,
+                },
+            ),
+            DecisionOption.create(
+                "Critical Wound AP +2 + Hazardous",
+                payload={
+                    "button_mode": "manual",
+                    "button_effect": self._DREAD_MOB_BUTTON_CRIT_AP,
+                },
+            ),
+        ]
+        return DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"Try Dat Button!: choose effect for {getattr(root, 'name', 'Unit')}.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={
+                "ability": "dread_mob_try_dat_button",
+                "ability_name": "Try Dat Button!",
+                "army_id": str(get_entity_id(self.army) or ""),
+                "unit_id": unit_id,
+                "phase_name": phase_name,
+                "trigger": trigger_key,
+                "candidate_button_modes": ["roll", "manual"],
+                "candidate_button_effects": list(self._DREAD_MOB_BUTTON_EFFECTS),
+                "optional": False,
+            },
+        )
+
+    def validate_dread_mob_try_dat_button_choice(
+        self,
+        unit,
+        payload: dict,
+        *,
+        game=None,
+        player=None,
+        phase_name: str = "",
+        trigger: str = "",
+    ) -> tuple[bool, str]:
+        if not self.is_dread_mob():
+            return False, "Try Dat Button! requires Dread Mob detachment."
+        root = self._unit_root(unit)
+        if root is None or not self._dread_mob_unit_is_eligible(root):
+            return False, "Try Dat Button! source unit is not an eligible Mek, Orks Walker, or Grots Vehicle unit."
+        if not self._unit_is_alive(root):
+            return False, "Try Dat Button! source unit must be alive."
+        if player is not None:
+            army_player = getattr(self.army, "player", None)
+            if army_player is not None and army_player is not player:
+                return False, "Try Dat Button! must be resolved by the owning player."
+        trigger_key = str(trigger or "").strip().lower()
+        if trigger_key and trigger_key not in ("shooting", "fight"):
+            return False, "Try Dat Button! trigger must be shooting or fight."
+        expected_phase = str(phase_name or "").strip().upper()
+        if expected_phase and game is not None:
+            current_phase = self._phase_key_from_game(game)
+            if current_phase and current_phase != expected_phase:
+                return False, "Try Dat Button! request is no longer in the current phase."
+
+        mode = str(dict(payload or {}).get("button_mode", "") or "").strip().lower()
+        if mode == "roll":
+            return True, ""
+        if mode != "manual":
+            return False, "Try Dat Button! requires button_mode of roll or manual."
+        effect_key = str(dict(payload or {}).get("button_effect", "") or "").strip().upper()
+        if effect_key not in set(self._DREAD_MOB_BUTTON_EFFECTS):
+            return False, "Try Dat Button! selected effect is not valid."
+        return True, ""
+
+    def apply_dread_mob_try_dat_button_choice(
+        self,
+        unit,
+        payload: dict,
+        *,
+        game=None,
+        player=None,
+        phase_name: str = "",
+        trigger: str = "",
+    ):
+        valid, reason = self.validate_dread_mob_try_dat_button_choice(
+            unit,
+            payload,
+            game=game,
+            player=player,
+            phase_name=phase_name,
+            trigger=trigger,
+        )
+        if not valid:
+            return None
+        root = self._unit_root(unit)
+        if root is None:
+            return None
+        mode = str(dict(payload or {}).get("button_mode", "") or "").strip().lower()
+        effect_key = ""
+        rolled = 0
+        hazardous = False
+        if mode == "roll":
+            rolled = int(get_roll("D6") or 1)
+            if rolled < 1:
+                rolled = 1
+            if rolled > 6:
+                rolled = 6
+            effect_key = self._dread_mob_effect_from_roll(int(rolled))
+        else:
+            effect_key = str(dict(payload or {}).get("button_effect", "") or "").strip().upper()
+            hazardous = True
+        if effect_key not in set(self._DREAD_MOB_BUTTON_EFFECTS):
+            return None
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        current_phase = self._phase_key_from_game(game)
+        if not current_phase:
+            current_phase = str(phase_name or "").strip().upper()
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        except (TypeError, ValueError):
+            current_turn = 0
+
+        sr["dread_mob_try_dat_button_active"] = True
+        sr["dread_mob_try_dat_button_effect"] = str(effect_key)
+        sr["dread_mob_try_dat_button_hazardous"] = bool(hazardous)
+        sr["dread_mob_try_dat_button_mode"] = str(mode)
+        sr["dread_mob_try_dat_button_roll"] = int(rolled)
+        sr["dread_mob_try_dat_button_expires_phase"] = str(current_phase)
+        sr["dread_mob_try_dat_button_turn"] = int(current_turn)
+        sr["dread_mob_try_dat_button_trigger"] = str(trigger or "").strip().lower()
+        sr["dread_mob_try_dat_button_source"] = "Try Dat Button!"
+        root.special_rules = sr
+        return {
+            "unit_id": self._unit_root_id(root),
+            "unit_name": str(getattr(root, "name", "Unit") or "Unit"),
+            "mode": str(mode),
+            "effect_key": str(effect_key),
+            "effect_label": self._dread_mob_effect_label(effect_key),
+            "hazardous": bool(hazardous),
+            "roll": int(rolled),
+            "source": "Try Dat Button!",
+            "phase_name": str(current_phase),
+        }
+
+    def _dread_mob_try_dat_button_entry(self, attacker_model, *, game=None):
+        if not self.is_dread_mob():
+            return None
+        if attacker_model is None:
+            return None
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        if attacker_unit is None:
+            return None
+        root = self._unit_root(attacker_unit)
+        if root is None or not self._unit_belongs_to_army(root):
+            return None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("dread_mob_try_dat_button_active")):
+            return None
+        effect_key = str(sr.get("dread_mob_try_dat_button_effect", "") or "").strip().upper()
+        if effect_key not in set(self._DREAD_MOB_BUTTON_EFFECTS):
+            return None
+        if game is None:
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            player = getattr(army, "player", None) if army is not None else None
+            game = getattr(player, "game", None) if player is not None else None
+        expected_phase = str(sr.get("dread_mob_try_dat_button_expires_phase", "") or "").strip().upper()
+        if expected_phase and game is not None:
+            current_phase = self._phase_key_from_game(game)
+            if current_phase and current_phase != expected_phase:
+                return None
+        try:
+            effect_turn = int(sr.get("dread_mob_try_dat_button_turn", 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+        if effect_turn and game is not None:
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            if current_turn and current_turn != effect_turn:
+                return None
+        return {
+            "effect_key": effect_key,
+            "hazardous": bool(sr.get("dread_mob_try_dat_button_hazardous")),
+            "source": str(sr.get("dread_mob_try_dat_button_source", "") or "Try Dat Button!"),
+        }
+
+    def dread_mob_try_dat_button_lethal_hits_applies(self, attacker_model, *, game=None) -> bool:
+        entry = self._dread_mob_try_dat_button_entry(attacker_model, game=game)
+        if not isinstance(entry, dict):
+            return False
+        return str(entry.get("effect_key", "") or "") == self._DREAD_MOB_BUTTON_LETHAL
+
+    def dread_mob_try_dat_button_sustained_hits_value(self, attacker_model, *, game=None) -> int:
+        entry = self._dread_mob_try_dat_button_entry(attacker_model, game=game)
+        if not isinstance(entry, dict):
+            return 0
+        if str(entry.get("effect_key", "") or "") != self._DREAD_MOB_BUTTON_SUSTAINED:
+            return 0
+        return 1
+
+    def dread_mob_try_dat_button_critical_wound_ap_bonus(self, attacker_model, attack_instance, *, game=None) -> tuple[int, str]:
+        if not isinstance(attack_instance, dict):
+            return 0, ""
+        if not bool(attack_instance.get("crit_wound", False)):
+            return 0, ""
+        entry = self._dread_mob_try_dat_button_entry(attacker_model, game=game)
+        if not isinstance(entry, dict):
+            return 0, ""
+        if str(entry.get("effect_key", "") or "") != self._DREAD_MOB_BUTTON_CRIT_AP:
+            return 0, ""
+        source = str(entry.get("source", "") or "Try Dat Button!").strip() or "Try Dat Button!"
+        return 2, source
+
+    def dread_mob_try_dat_button_manual_hazardous_applies(self, attacker_model, *, game=None) -> bool:
+        entry = self._dread_mob_try_dat_button_entry(attacker_model, game=game)
+        if not isinstance(entry, dict):
+            return False
+        return bool(entry.get("hazardous", False))
 
     def war_horde_sustained_hits_value(self, unit, *, attack_type: str = "", keyword: str = "ORKS") -> int:
         if not self.is_war_horde():

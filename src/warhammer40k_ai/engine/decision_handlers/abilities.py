@@ -2235,6 +2235,65 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not bool(is_valid_target(target_root, player=player, game=game)):
             return ("Da Hunt Is On target must be an enemy MONSTER, VEHICLE, or CHARACTER unit on the battlefield.",)
         return ()
+    if ability == "dread_mob_try_dat_button":
+        if is_skip_choice(request, result):
+            return ("Try Dat Button! selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Try Dat Button! army not found.",)
+        mgr = getattr(army, "orks_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_dread_mob", lambda: False)()):
+            return ("Try Dat Button! requires Dread Mob detachment.",)
+        source_unit = resolve_unit(
+            game,
+            payload.get("unit_id") or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Try Dat Button! source unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return ("Try Dat Button! source unit was not found.",)
+        source_id = str(get_entity_id(source_root) or "")
+        if str(ctx.get("unit_id", "") or "") and str(ctx.get("unit_id", "") or "") != source_id:
+            return ("Try Dat Button! source unit mismatch.",)
+        mode = str(payload.get("button_mode", "") or "").strip().lower()
+        candidate_modes = {
+            str(v or "").strip().lower()
+            for v in list(ctx.get("candidate_button_modes", []) or [])
+            if str(v or "").strip()
+        }
+        if candidate_modes and mode not in candidate_modes:
+            return ("Try Dat Button! selected mode is not an eligible option.",)
+        effect_key = str(payload.get("button_effect", "") or "").strip().upper()
+        candidate_effects = {
+            str(v or "").strip().upper()
+            for v in list(ctx.get("candidate_button_effects", []) or [])
+            if str(v or "").strip()
+        }
+        if mode == "manual" and candidate_effects and effect_key not in candidate_effects:
+            return ("Try Dat Button! selected effect is not an eligible option.",)
+        validate_choice = getattr(mgr, "validate_dread_mob_try_dat_button_choice", None)
+        if not callable(validate_choice):
+            return ("Try Dat Button! validation is unavailable.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        valid, reason = validate_choice(
+            source_root,
+            payload,
+            game=game,
+            player=player,
+            phase_name=str(ctx.get("phase_name", "") or ""),
+            trigger=str(ctx.get("trigger", "") or ""),
+        )
+        if not bool(valid):
+            return (str(reason or "Try Dat Button! choice is not valid."),)
+        return ()
     if ability == "feed_the_swarm":
         payload = _option_payload(request, result)
         if is_skip_choice(request, result):
@@ -3527,6 +3586,59 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             "target_unit_id": str(get_entity_id(target_root) or ""),
             "source": ability_name,
         }
+    if ability == "dread_mob_try_dat_button":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "orks_detachments", None)
+        if mgr is None:
+            return None
+        source_unit = resolve_unit(game, payload.get("unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        apply_choice = getattr(mgr, "apply_dread_mob_try_dat_button_choice", None)
+        if not callable(apply_choice):
+            return None
+        outcome = apply_choice(
+            source_root,
+            payload,
+            game=game,
+            player=player,
+            phase_name=str(ctx.get("phase_name", "") or ""),
+            trigger=str(ctx.get("trigger", "") or ""),
+        )
+        if not isinstance(outcome, dict):
+            return None
+        ability_name = str(ctx.get("ability_name", "") or "Try Dat Button!").strip() or "Try Dat Button!"
+        unit_name = str(outcome.get("unit_name", "") or getattr(source_root, "name", "Unit"))
+        effect_label = str(outcome.get("effect_label", "") or "effect")
+        mode = str(outcome.get("mode", "") or "").strip().lower()
+        if mode == "roll":
+            roll = int(outcome.get("roll", 0) or 0)
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {unit_name} rolled {roll} and gained {effect_label}.",
+            )
+        else:
+            hazardous_text = " and [HAZARDOUS]" if bool(outcome.get("hazardous", False)) else ""
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {unit_name} selected {effect_label}{hazardous_text}.",
+            )
+        return outcome
     if ability == "feed_the_swarm":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)

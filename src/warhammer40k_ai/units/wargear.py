@@ -7,8 +7,8 @@ import re
 from warhammer40k_ai.utility.dice import DiceCollection, get_roll
 from warhammer40k_ai.utility.hazardous import (
     apply_hazardous_roll_modifier,
+    hazardous_fail_on_values,
     hazardous_roll_modifier,
-    is_hazardous_failure,
 )
 from warhammer40k_ai.utility.event_bus import append_dice, append_action
 from warhammer40k_ai.utility.range import Range
@@ -5056,11 +5056,14 @@ class WargearProfile:
         
         # Handle hazardous weapon effects
         hazardous_active = self.is_hazardous()
+        hazardous_source_count = 1 if hazardous_active else 0
         if daemonic_ordnance_active:
             hazardous_active = True
+            hazardous_source_count += 1
         reorder_reality_active = self._unit_temp_ranged_effect_active(attacker, "reorder_reality")
         if reorder_reality_active:
             hazardous_active = True
+            hazardous_source_count += 1
         sr = getattr(getattr(attacker, "parent_unit", None), "special_rules", None)
         parent_wargear = getattr(self, "parent_wargear", None)
         is_melee_weapon = bool(
@@ -5078,11 +5081,13 @@ class WargearProfile:
             possessed_blade = self._get_possessed_blade_state(attacker)
             if possessed_blade and possessed_blade.get("active", False) and possessed_blade.get("weapon_matches", False):
                 hazardous_active = True
+                hazardous_source_count += 1
                 possessed_blade_hazardous = True
                 attack_result.attacks_special_modifiers.append("Possessed Blade: [HAZARDOUS] (active)")
         if isinstance(sr, dict) and sr.get("pain_melee_hazardous_non_character"):
             if is_melee_weapon and not bool(getattr(attacker, "is_character", False)):
                 hazardous_active = True
+                hazardous_source_count += 1
         target_melee_hazardous = False
         if is_melee_weapon:
             target_root = target.get_attached_unit_root() if (target is not None and hasattr(target, "get_attached_unit_root")) else target
@@ -5091,6 +5096,7 @@ class WargearProfile:
                 target_melee_hazardous = bool(fn())
         if target_melee_hazardous:
             hazardous_active = True
+            hazardous_source_count += 1
         target_ranged_hazardous = False
         attacker_ranged_hazardous = False
         if is_ranged_weapon:
@@ -5098,6 +5104,7 @@ class WargearProfile:
             if tau_hazardous:
                 attacker_ranged_hazardous = True
                 hazardous_active = True
+                hazardous_source_count += 1
                 source_name = str(tau_source or "EXPERIMENTAL AMMUNITION").strip() or "EXPERIMENTAL AMMUNITION"
                 note = f"{source_name}: [HAZARDOUS] (ranged)"
                 if note not in attack_result.attacks_special_modifiers:
@@ -5106,6 +5113,7 @@ class WargearProfile:
             if taa_hazardous:
                 attacker_ranged_hazardous = True
                 hazardous_active = True
+                hazardous_source_count += 1
                 source_name = str(taa_source or "THREAT ASSESSMENT ANALYSER").strip() or "THREAT ASSESSMENT ANALYSER"
                 note = f"{source_name}: [HAZARDOUS] (ranged)"
                 if note not in attack_result.attacks_special_modifiers:
@@ -5151,11 +5159,37 @@ class WargearProfile:
                 if apply_hazardous:
                     target_ranged_hazardous = True
                     hazardous_active = True
+                    hazardous_source_count += 1
                     try:
                         source = str(tsr.get("shooting_phase_ranged_hazardous_source", "") or "Treason of Tzeentch").strip()
                         attack_result.attacks_special_modifiers.append(f"{source}: [HAZARDOUS] (ranged)")
                     except Exception:
                         pass
+        dread_mob_manual_hazardous = False
+        try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            attacker_army = (
+                attacker_unit.get_parent_army()
+                if attacker_unit is not None and hasattr(attacker_unit, "get_parent_army")
+                else None
+            )
+            orks_mgr = getattr(attacker_army, "orks_detachments", None) if attacker_army is not None else None
+            manual_hazardous_fn = (
+                getattr(orks_mgr, "dread_mob_try_dat_button_manual_hazardous_applies", None)
+                if orks_mgr is not None
+                else None
+            )
+            if callable(manual_hazardous_fn):
+                game = getattr(getattr(attacker_army, "player", None), "game", None) if attacker_army is not None else None
+                dread_mob_manual_hazardous = bool(manual_hazardous_fn(attacker, game=game))
+        except Exception:
+            dread_mob_manual_hazardous = False
+        if dread_mob_manual_hazardous:
+            hazardous_active = True
+            hazardous_source_count += 1
+            note = "Try Dat Button!: [HAZARDOUS]"
+            if note not in attack_result.attacks_special_modifiers:
+                attack_result.attacks_special_modifiers.append(note)
         # Enemy psychic auras that make Psychic weapons hazardous (e.g., Discordant Disruption).
         try:
             from ..utility.aura_effects import get_enemy_aura_psychic_hazardous
@@ -5166,6 +5200,7 @@ class WargearProfile:
             )
             if enemy_hazardous:
                 hazardous_active = True
+                hazardous_source_count += 1
                 try:
                     attack_result.attacks_special_modifiers.extend(list(enemy_reasons or ()))
                 except Exception:
@@ -5201,7 +5236,12 @@ class WargearProfile:
                 )
             except Exception:
                 pass
-            if is_hazardous_failure(self, hazard_roll):
+            fail_on_values = list(hazardous_fail_on_values(self) or [])
+            if not fail_on_values:
+                fail_on_values = [1]
+            if hazardous_source_count >= 2 and 2 not in set(fail_on_values):
+                fail_on_values = sorted(set(list(fail_on_values) + [2]))
+            if int(hazard_roll or 0) in set(int(v) for v in fail_on_values):
                 attack_result.hazardous_damage = 3
                 # 10e: For each failed test, select an eligible model in that unit equipped with one or more Hazardous weapons.
                 # Priority: wounded eligible; otherwise non-Character eligible; otherwise eligible Character.
@@ -10780,17 +10820,28 @@ class WargearProfile:
         bearer_unit_sustained = bool(bearer_unit_sustained_value)
 
         war_horde_sustained_value = 0
+        orks_mgr = None
+        unit = getattr(attacker, "parent_unit", None)
+        army = None
+        get_parent_army = getattr(unit, "get_parent_army", None) if unit is not None else None
+        if callable(get_parent_army):
+            army = get_parent_army()
+        orks_mgr = getattr(army, "orks_detachments", None) if army is not None else None
         if is_melee:
-            unit = getattr(attacker, "parent_unit", None)
-            army = None
-            get_parent_army = getattr(unit, "get_parent_army", None) if unit is not None else None
-            if callable(get_parent_army):
-                army = get_parent_army()
-            mgr = getattr(army, "orks_detachments", None) if army is not None else None
-            value_fn = getattr(mgr, "war_horde_sustained_hits_value", None) if mgr is not None else None
+            value_fn = getattr(orks_mgr, "war_horde_sustained_hits_value", None) if orks_mgr is not None else None
             if callable(value_fn):
                 war_horde_sustained_value = int(value_fn(unit, attack_type="melee") or 0)
         war_horde_sustained = bool(war_horde_sustained_value)
+        dread_mob_lethal = False
+        dread_mob_sustained_value = 0
+        if orks_mgr is not None:
+            lethal_fn = getattr(orks_mgr, "dread_mob_try_dat_button_lethal_hits_applies", None)
+            if callable(lethal_fn):
+                dread_mob_lethal = bool(lethal_fn(attacker))
+            sustained_fn = getattr(orks_mgr, "dread_mob_try_dat_button_sustained_hits_value", None)
+            if callable(sustained_fn):
+                dread_mob_sustained_value = int(sustained_fn(attacker) or 0)
+        dread_mob_sustained = bool(dread_mob_sustained_value)
         bonus_sustained = bool(bonus_sustained_value or bonus_sustained_dice)
 
         sustained_base = (
@@ -10806,6 +10857,7 @@ class WargearProfile:
             or pain_sustained
             or bearer_unit_sustained
             or war_horde_sustained
+            or dread_mob_sustained
             or devoted_duellists_sustained
             or bonus_sustained
             or malefic_sustained
@@ -10884,11 +10936,11 @@ class WargearProfile:
                 attack_instance["bonus_precision"] = True
                 hit_result['special_effects'].append("Precision")
 
-            if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal or martial_katah_lethal or bondsman_lethal or pact_lethal or exquisite_lethal or pain_lethal or leading_lethal or bonus_lethal or malefic_lethal or deadly_debut_lethal:
+            if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal or martial_katah_lethal or bondsman_lethal or pact_lethal or exquisite_lethal or pain_lethal or leading_lethal or bonus_lethal or malefic_lethal or deadly_debut_lethal or dread_mob_lethal:
                 hit_result['special_effects'].append("Lethal Hits")
                 attack_instance['lethal_hit'] = True
             # For Sustained Hits, do not override an existing Sustained Hits X on the weapon.
-            if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained or bearer_unit_sustained or war_horde_sustained or devoted_duellists_sustained or bonus_sustained or malefic_sustained or blitzing_grants_sustained:
+            if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained or bearer_unit_sustained or war_horde_sustained or dread_mob_sustained or devoted_duellists_sustained or bonus_sustained or malefic_sustained or blitzing_grants_sustained:
                 # Support Sustained Hits X / Sustained Hits D3 / etc. Roll per critical hit.
                 if self.is_sustained_hits():
                     try:
@@ -10913,6 +10965,9 @@ class WargearProfile:
                     elif war_horde_sustained_value:
                         sustained_val = max(int(sustained_val), int(war_horde_sustained_value))
                         label = f"Sustained Hits (+{sustained_val}) [War Horde]"
+                    elif dread_mob_sustained_value:
+                        sustained_val = max(int(sustained_val), int(dread_mob_sustained_value))
+                        label = f"Sustained Hits (+{sustained_val}) [Try Dat Button!]"
                     elif devoted_duellists_sustained_value:
                         sustained_val = max(int(sustained_val), int(devoted_duellists_sustained_value))
                         label = f"Sustained Hits (+{sustained_val}) [Devoted Duellists]"
@@ -10967,12 +11022,12 @@ class WargearProfile:
                 # This includes weapon-native AND unit/ability-based Lethal/Sustained hits
 
                 # Apply Lethal Hits from all sources (same as baseline critical)
-                if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal or martial_katah_lethal or bondsman_lethal or pact_lethal or exquisite_lethal or pain_lethal or leading_lethal or bonus_lethal or deadly_debut_lethal:
+                if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal or martial_katah_lethal or bondsman_lethal or pact_lethal or exquisite_lethal or pain_lethal or leading_lethal or bonus_lethal or deadly_debut_lethal or dread_mob_lethal:
                     hit_result['special_effects'].append("Lethal Hits")
                     attack_instance['lethal_hit'] = True
 
                 # Apply Sustained Hits from all sources (same as baseline critical)
-                if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained or bearer_unit_sustained or war_horde_sustained or devoted_duellists_sustained or bonus_sustained or blitzing_grants_sustained:
+                if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained or bearer_unit_sustained or war_horde_sustained or dread_mob_sustained or devoted_duellists_sustained or bonus_sustained or blitzing_grants_sustained:
                     # Support Sustained Hits X / Sustained Hits D3 / etc. Roll per critical hit.
                     if self.is_sustained_hits():
                         try:
@@ -11012,6 +11067,11 @@ class WargearProfile:
                                 label = f"Sustained Hits (+{war_horde_sustained_value}) [War Horde]"
                             else:
                                 label += " [War Horde]"
+                        elif dread_mob_sustained:
+                            if dread_mob_sustained_value > 1:
+                                label = f"Sustained Hits (+{dread_mob_sustained_value}) [Try Dat Button!]"
+                            else:
+                                label += " [Try Dat Button!]"
                         elif devoted_duellists_sustained:
                             if devoted_duellists_sustained_value > 1:
                                 label = f"Sustained Hits (+{devoted_duellists_sustained_value}) [Devoted Duellists]"
@@ -11030,6 +11090,8 @@ class WargearProfile:
                             sustained_vals.append(int(pain_sustained_value or 0))
                         if war_horde_sustained:
                             sustained_vals.append(int(war_horde_sustained_value or 0))
+                        if dread_mob_sustained:
+                            sustained_vals.append(int(dread_mob_sustained_value or 0))
                         if devoted_duellists_sustained:
                             sustained_vals.append(int(devoted_duellists_sustained_value or 0))
                         if bonus_sustained:
@@ -15581,6 +15643,31 @@ class WargearProfile:
             source_name = str(fate_source or "FATE INESCAPABLE").strip() or "FATE INESCAPABLE"
             save_result["special_effects"].append(
                 f"{source_name}: AP improved by {int(fate_ap_bonus)} on Critical Wound"
+            )
+        try:
+            attacker_model = attack_instance.get("attacker_model")
+        except Exception:
+            attacker_model = None
+        dread_mob_ap_bonus = 0
+        dread_mob_ap_source = ""
+        try:
+            attacker_unit = getattr(attacker_model, "parent_unit", None)
+            get_parent_army = getattr(attacker_unit, "get_parent_army", None) if attacker_unit is not None else None
+            army = get_parent_army() if callable(get_parent_army) else None
+            orks_mgr = getattr(army, "orks_detachments", None) if army is not None else None
+            bonus_fn = getattr(orks_mgr, "dread_mob_try_dat_button_critical_wound_ap_bonus", None) if orks_mgr is not None else None
+            if callable(bonus_fn):
+                dread_mob_ap_bonus, dread_mob_ap_source = bonus_fn(attacker_model, attack_instance)
+                dread_mob_ap_bonus = int(dread_mob_ap_bonus or 0)
+                dread_mob_ap_source = str(dread_mob_ap_source or "").strip()
+        except Exception:
+            dread_mob_ap_bonus = 0
+            dread_mob_ap_source = ""
+        if int(dread_mob_ap_bonus or 0) > 0:
+            effective_ap = int(effective_ap) - int(dread_mob_ap_bonus)
+            source_name = dread_mob_ap_source or "Try Dat Button!"
+            save_result["special_effects"].append(
+                f"{source_name}: AP improved by {int(dread_mob_ap_bonus)} on Critical Wound"
             )
         save_result["ap_modifier"] = int(effective_ap)
         save_base = target_model.save

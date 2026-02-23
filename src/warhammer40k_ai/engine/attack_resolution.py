@@ -1952,18 +1952,47 @@ class AttackResolutionManager:
         attacker_unit = self._resolve_unit(game, seq.attacker_unit_id)
         if profile is None or attacker_unit is None:
             return False
-        hazardous_active = False
+        profile_hazardous = False
         try:
-            hazardous_active = bool(profile.is_hazardous())
+            profile_hazardous = bool(profile.is_hazardous())
         except (AttributeError, TypeError, ValueError):
-            hazardous_active = False
+            profile_hazardous = False
+        hazardous_active = bool(profile_hazardous)
         target_melee_hazardous = False
         target_ranged_hazardous = False
         attacker_ranged_hazardous = False
+        dread_mob_manual_hazardous = False
         target_unit = self._resolve_unit(game, seq.target_unit_id)
         parent_wargear = getattr(profile, "parent_wargear", None)
         is_melee = bool(parent_wargear is not None and callable(getattr(parent_wargear, "is_melee", None)) and parent_wargear.is_melee())
         is_ranged = bool(parent_wargear is not None and callable(getattr(parent_wargear, "is_ranged", None)) and parent_wargear.is_ranged())
+        attacker_root = attacker_unit.get_attached_unit_root() if hasattr(attacker_unit, "get_attached_unit_root") else attacker_unit
+        attacker_army = (
+            attacker_root.get_parent_army()
+            if attacker_root is not None and hasattr(attacker_root, "get_parent_army")
+            else None
+        )
+        orks_mgr = getattr(attacker_army, "orks_detachments", None) if attacker_army is not None else None
+        manual_hazardous_fn = (
+            getattr(orks_mgr, "dread_mob_try_dat_button_manual_hazardous_applies", None)
+            if orks_mgr is not None
+            else None
+        )
+        if callable(manual_hazardous_fn):
+            source_model = None
+            for model_id in list(seq.model_ids or []):
+                source_model = self._resolve_model(game, model_id)
+                if source_model is not None and bool(getattr(source_model, "is_alive", False)):
+                    break
+            if source_model is None and seq.model_ids:
+                source_model = self._resolve_model(game, str(seq.model_ids[0]))
+            if source_model is not None:
+                try:
+                    dread_mob_manual_hazardous = bool(manual_hazardous_fn(source_model, game=game))
+                except (AttributeError, TypeError, ValueError):
+                    dread_mob_manual_hazardous = False
+            if dread_mob_manual_hazardous:
+                hazardous_active = True
         if is_melee and target_unit is not None and hasattr(target_unit, "get_attached_unit_root"):
             target_root = target_unit.get_attached_unit_root()
             fn = getattr(target_root, "enemy_melee_weapons_hazardous_while_targeted", None) if target_root is not None else None
@@ -2069,6 +2098,19 @@ class AttackResolutionManager:
                     pain_hazardous = True
         except (AttributeError, TypeError, ValueError):
             pain_hazardous = False
+        hazardous_source_count = 0
+        if profile_hazardous:
+            hazardous_source_count += 1
+        if pain_hazardous:
+            hazardous_source_count += 1
+        if target_melee_hazardous:
+            hazardous_source_count += 1
+        if target_ranged_hazardous:
+            hazardous_source_count += 1
+        if attacker_ranged_hazardous:
+            hazardous_source_count += 1
+        if dread_mob_manual_hazardous:
+            hazardous_source_count += 1
         test_model_ids: list[str] = []
         if hazardous_active or pain_hazardous or target_melee_hazardous or target_ranged_hazardous or attacker_ranged_hazardous:
             for model_id in list(seq.model_ids or []):
@@ -2090,6 +2132,7 @@ class AttackResolutionManager:
         seq.context["hazardous_pain_melee_non_character"] = bool(pain_hazardous)
         seq.context["hazardous_target_melee_all"] = bool(target_melee_hazardous)
         seq.context["hazardous_target_ranged_all"] = bool(target_ranged_hazardous or attacker_ranged_hazardous)
+        seq.context["hazardous_dread_mob_manual"] = bool(dread_mob_manual_hazardous)
         seq.step = "hazardous_roll"
         player = attacker_unit.get_parent_army().player if attacker_unit is not None else None
         player_id = getattr(player, "id", None) if player is not None else None
@@ -2098,6 +2141,10 @@ class AttackResolutionManager:
         fail_on = hazardous_fail_on_values(profile)
         if not fail_on:
             fail_on = [1]
+        if hazardous_source_count >= 2 and 2 not in set(fail_on):
+            fail_on = sorted(set(list(fail_on) + [2]))
+        seq.context["hazardous_fail_on"] = list(fail_on)
+        seq.context["hazardous_source_count"] = int(hazardous_source_count)
         if len(fail_on) == 1:
             fail_on_desc = f"fail on {fail_on[0]}"
         else:
@@ -2139,13 +2186,31 @@ class AttackResolutionManager:
             seq.context["hazardous_done"] = True
             self._mark_sequence_done(game, seq)
             return
-        from ..utility.hazardous import is_hazardous_failure
+        from ..utility.hazardous import hazardous_fail_on_values
+        raw_fail_on = list(
+            (getattr(roll_state, "spec", {}) or {}).get("fail_on", [])
+            or seq.context.get("hazardous_fail_on", [])
+            or []
+        )
+        fail_on_set = set()
+        for value in list(raw_fail_on or []):
+            try:
+                parsed = int(value)
+            except (TypeError, ValueError):
+                continue
+            if 1 <= parsed <= 6:
+                fail_on_set.add(parsed)
+        if not fail_on_set:
+            fallback = list(hazardous_fail_on_values(profile) or [])
+            if not fallback:
+                fallback = [1]
+            fail_on_set = {int(v) for v in fallback}
         failures = 0
         for die in list(roll_state.dice or []):
             if bool(die.get("is_derived", False)):
                 continue
             try:
-                if not is_hazardous_failure(profile, int(die.get("value", 0) or 0)):
+                if int(die.get("value", 0) or 0) not in fail_on_set:
                     continue
             except (TypeError, ValueError, AttributeError):
                 continue

@@ -3367,6 +3367,27 @@ class GameShootingFightHandlersMixin:
         if callable(trigger_fn):
             trigger_fn(self, phase_name=phase_name, trigger="shooting")
 
+    def _on_shooting_targets_selected_orks_try_dat_button(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None or not target_units:
+            return
+        try:
+            root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            root = attacking_unit
+        if root is None:
+            return
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "orks_detachments", None) if army is not None else None
+        build_fn = getattr(mgr, "queue_dread_mob_try_dat_button_choice", None) if mgr is not None else None
+        if not callable(build_fn):
+            return
+        req = build_fn(root, trigger="shooting", game=self)
+        if req is not None:
+            self.request_decision(req)
+
     def _on_shooting_targets_selected_daemonic_ordnance(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None or not target_units:
             return
@@ -4852,6 +4873,27 @@ class GameShootingFightHandlersMixin:
         trigger_fn = getattr(root, "maybe_trigger_dark_pacts", None)
         if callable(trigger_fn):
             trigger_fn(self, phase_name=phase_name, trigger="fight")
+
+    def _on_fight_unit_selected_orks_try_dat_button(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "orks_detachments", None) if army is not None else None
+        build_fn = getattr(mgr, "queue_dread_mob_try_dat_button_choice", None) if mgr is not None else None
+        if not callable(build_fn):
+            return
+        req = build_fn(root, trigger="fight", game=self)
+        if req is not None:
+            self.request_decision(req)
 
     def _on_fight_unit_selected_malefic_surge(self, unit=None, **_kwargs) -> None:
         if unit is None:

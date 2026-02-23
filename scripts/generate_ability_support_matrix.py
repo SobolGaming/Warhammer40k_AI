@@ -617,6 +617,16 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time a beast snagga unit from your army declares a charge that includes your prey as one of the targets you can reroll the charge roll",
             r"each time a beast snagga model from your army makes an attack that targets your prey improve the armour penetration characteristic of that attack by \d+",
         ),
+        "Try Dat Button!": (
+            r"each time a mek orks walker or grots vehicle unit from your army is selected to shoot or fight roll one d6",
+            r"until the end of the phase weapons equipped by models in that unit have the corresponding ability shown in the table below",
+            r"sustained hits \d+ ability",
+            r"lethal hits ability",
+            r"each time an attack is made with this weapon on a critical wound improve the armour penetration characteristic of that attack by \d+",
+            r"alternatively when such a unit is selected to shoot or fight you can select one of the abilities above instead of rolling the d6",
+            r"if you do until the end of the phase weapons equipped by models in that unit have the hazardous ability as well",
+            r"if a weapon equipped by a model from you army has the hazardous ability from multiple sources each time you take a hazardous test for that weapon it is failed on a roll of a \d+ or a \d+",
+        ),
         "Get Stuck In": (
             r"melee weapons equipped by orks models from your army have the sustained hits \d+ ability",
         ),
@@ -2154,6 +2164,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Da Hunt Is On": (
             "Supported",
             "Da Big Hunt: at the start of your Command phase, select an enemy MONSTER, VEHICLE, or CHARACTER as your Prey until your next Command phase; BEAST SNAGGA units can re-roll Charge rolls when declaring charges that include that Prey, and BEAST SNAGGA model attacks improve AP by 1 against that Prey.",
+        ),
+        "Try Dat Button!": (
+            "Supported",
+            "Dread Mob: each time an eligible Mek/Walker/Grots Vehicle unit is selected to shoot or fight, choose roll/manual effect via CHOOSE_QUARRY; effects apply until phase end (Sustained Hits 1, Lethal Hits, or AP +2 on Critical Wound), manual selection also grants Hazardous, and multiple Hazardous sources fail on 1-2.",
         ),
         "Get Stuck In": ("Supported", "War Horde: ORKS melee weapons gain Sustained Hits 1."),
         "Combat Doctrines": ("Supported", "Gladius Task Force: select each doctrine once per battle to grant move/charge eligibility."),
@@ -4016,6 +4030,14 @@ def _datasheet_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[str, str
 
 def _detachment_ability_support_by_id() -> Dict[str, Tuple[str, str]]:
     return {
+        "000008875": (
+            "Supported",
+            "Dread Mob: Try Dat Button! selection and effect resolution implemented, including manual Hazardous multi-source fail-on-2 handling.",
+        ),
+        "000008876": (
+            "Supported",
+            "Dread Mob: Gretchin units from your army gain the Battleline keyword.",
+        ),
         "000008820": (
             "Supported",
             "Kroot Hunting Pack: Kroot Carnivore units from your army gain the Battleline keyword.",

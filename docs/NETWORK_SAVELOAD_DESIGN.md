@@ -280,6 +280,7 @@ Shooting:
 - overwatch_shooter_dialog: SELECT_OVERWATCH_SHOOTER {unit_id} (also used for stratagem unit selection; context may include enemy_unit_id)
 - roll_reroll_dialog: REROLL_ROLL {roll_id, reroll_all_or_one, die_index}
 - dark_pacts_dialog: CHOOSE_DARK_PACT {choice, optional `empyric_wellspring_choice` | skip} (context `unit_id`, `phase_name`, `trigger`; Cabal of Chaos requires `empyric_wellspring_choice`)
+- dread_mob_try_dat_button_shooting_dialog: CHOOSE_QUARRY {button_mode, button_effect?} (context `ability="dread_mob_try_dat_button"`, `ability_name="Try Dat Button!"`, `army_id`, `unit_id`, `phase_name`, `trigger="shooting"`, `candidate_button_modes[]`, `candidate_button_effects[]`, `optional=false`)
 - path_of_warrior_dialog: CHOOSE_PATH_OF_WARRIOR {choice_key} (context `unit_id`, `phase_name`, `trigger`)
 - cruel_amusement_dialog: CHOOSE_CRUEL_AMUSEMENT {choice} (context `unit_id`, `model_id`, `weapon_name`, `ability_name`)
 - master_of_magicks_dialog: CHOOSE_MASTER_OF_MAGICKS {choice} (context `unit_id`, `model_id`, `weapon_name`, `ability_name`)
@@ -335,6 +336,7 @@ Fight:
 - fight_within_3_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="fight_within_3"`, `unit_id`, `target_unit_id`)
 - possessed_lord_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="possessed_lord"`, `unit_id`, `model_id`)
 - dance_of_death_dialog: CHOOSE_DANCE_OF_DEATH {choice} (context `unit_id`, `phase_name`, `ability_name`)
+- dread_mob_try_dat_button_fight_dialog: CHOOSE_QUARRY {button_mode, button_effect?} (context `ability="dread_mob_try_dat_button"`, `ability_name="Try Dat Button!"`, `army_id`, `unit_id`, `phase_name`, `trigger="fight"`, `candidate_button_modes[]`, `candidate_button_effects[]`, `optional=false`)
 - harbinger_of_death_dialog: CHOOSE_HARBINGER_OF_DEATH {choice} (context `unit_id`, `model_id`, `weapon_name`, `ability_name`)
 - herald_of_ynnead_target_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="herald_of_ynnead"`, `attacker_unit_id`, `model_id`, `keyword`, `ability_name`)
 - strength_from_death_lethal_reprisal_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="aeldari_strength_from_death_lethal_reprisal"`, `ability_name`, `turn`, `turn_owner_id`)
