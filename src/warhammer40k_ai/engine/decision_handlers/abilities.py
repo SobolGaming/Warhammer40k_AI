@@ -3523,6 +3523,41 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if get_objective(game, objective_id) is None:
             return ("Singular Purpose selected objective marker was not found.",)
         return ()
+    if ability == "here_be_loot":
+        if is_skip_choice(request, result):
+            return ("Here Be Loot selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Here Be Loot army not found.",)
+        mgr = getattr(army, "orks_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_freebooter_krew", lambda: False)()):
+            return ("Here Be Loot requires Freebooter Krew detachment.",)
+        objective_id = str(payload.get("objective_id") or ctx.get("objective_id") or "").strip()
+        if not objective_id:
+            return ("Here Be Loot selection requires objective_id.",)
+        candidate_ids = {
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_objective_ids", []) or [])
+            if str(v or "").strip()
+        }
+        if candidate_ids and objective_id not in candidate_ids:
+            return ("Here Be Loot selected objective marker is not an eligible candidate.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        validate_choice = getattr(mgr, "validate_here_be_loot_objective_choice", None)
+        if not callable(validate_choice):
+            return ("Here Be Loot validation is unavailable.",)
+        valid, reason = validate_choice(
+            objective_id,
+            game=game,
+            player=player,
+            battle_round=int(ctx.get("battle_round", 0) or 0),
+        )
+        if not bool(valid):
+            return (str(reason or "Here Be Loot selection is not valid."),)
+        return ()
     if is_skip_choice(request, result):
         return ()
     if ability not in ("strategic_conqueror", "archons_will_objective"):
@@ -5220,6 +5255,41 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         except Exception:
             pass
         return objective
+    if ability == "here_be_loot":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "orks_detachments", None)
+        if mgr is None:
+            return None
+        objective_id = str(payload.get("objective_id") or ctx.get("objective_id") or "").strip()
+        if not objective_id:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        select_objective = getattr(mgr, "select_here_be_loot_objective", None)
+        if not callable(select_objective):
+            return None
+        outcome = select_objective(
+            objective_id,
+            game=game,
+            player=player,
+            battle_round=int(ctx.get("battle_round", 0) or 0),
+        )
+        if not isinstance(outcome, dict):
+            return None
+        ability_name = str(ctx.get("ability_name", "") or "Here Be Loot").strip() or "Here Be Loot"
+        objective = get_objective(game, objective_id)
+        objective_name = str(outcome.get("objective_name", "") or getattr(objective, "name", "") or "Objective marker")
+        round_value = int(outcome.get("battle_round", 0) or 0)
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: selected {objective_name} as your loot objective for battle round {round_value}.",
+        )
+        return outcome
     if ability == "strike_swiftly":
         payload = _option_payload(request, result)
         source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))

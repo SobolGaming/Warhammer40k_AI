@@ -11,6 +11,7 @@ class OrksDetachmentManager(DetachmentManagerBase):
     faction_id = "ORK"
     _SECOND_WAAAGH_NAMED_UNITS = ("nobz", "meganobz")
     _DA_BIG_HUNT_PREY_KEYWORDS = ("MONSTER", "VEHICLE", "CHARACTER")
+    _HERE_BE_LOOT_QUALIFYING_KEYWORDS = ("INFANTRY", "MOUNTED", "WALKER")
     _DREAD_MOB_BUTTON_SUSTAINED = "SUSTAINED_HITS_1"
     _DREAD_MOB_BUTTON_LETHAL = "LETHAL_HITS"
     _DREAD_MOB_BUTTON_CRIT_AP = "CRITICAL_WOUND_AP_2"
@@ -30,6 +31,8 @@ class OrksDetachmentManager(DetachmentManagerBase):
         self.da_big_hunt_prey_unit_id: str = ""
         self.da_big_hunt_prey_turn: int = 0
         self.da_big_hunt_prey_owner_id: str = ""
+        self.freebooter_loot_objective_id: str = ""
+        self.freebooter_loot_battle_round: int = 0
 
     def is_war_horde(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -50,6 +53,11 @@ class OrksDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Dread Mob")
+
+    def is_freebooter_krew(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Freebooter Krew")
 
     @staticmethod
     def _normalize_name(text: str) -> str:
@@ -271,6 +279,266 @@ class OrksDetachmentManager(DetachmentManagerBase):
         if player is not None and army_player is not None and army_player is not player:
             return
         self.clear_da_big_hunt_prey()
+
+    @staticmethod
+    def _objective_point_for_entry(objective):
+        if objective is None:
+            return None
+        point = getattr(objective, "location", None)
+        if point is not None:
+            return point
+        if hasattr(objective, "x") and hasattr(objective, "y"):
+            return objective
+        return None
+
+    def _collect_objective_entries(self, *, game=None, game_map=None) -> list[tuple[str, object, object]]:
+        if game is None and self.army is not None:
+            player = getattr(self.army, "player", None)
+            game = getattr(player, "game", None) if player is not None else None
+        if game_map is None and game is not None:
+            game_map = getattr(game, "map", None)
+        pool = []
+        if game is not None:
+            pool.extend(list(getattr(game, "objectives", []) or []))
+        if game_map is not None:
+            pool.extend(list(getattr(game_map, "objectives", []) or []))
+
+        entries = []
+        seen_ids: set[str] = set()
+        for objective in pool:
+            point = self._objective_point_for_entry(objective)
+            if point is None or bool(getattr(point, "removed", False)):
+                continue
+            objective_id = str(get_entity_id(objective) or get_entity_id(point) or "")
+            if not objective_id or objective_id in seen_ids:
+                continue
+            seen_ids.add(objective_id)
+            entries.append((objective_id, objective, point))
+        entries.sort(key=lambda item: str(item[0]))
+        return entries
+
+    def _objective_entry_by_id(self, objective_id: str, *, game=None, game_map=None):
+        target_id = str(objective_id or "").strip()
+        if not target_id:
+            return None
+        for entry in self._collect_objective_entries(game=game, game_map=game_map):
+            if str(entry[0]) == target_id:
+                return entry
+        return None
+
+    def clear_here_be_loot_objective(self) -> None:
+        self.freebooter_loot_objective_id = ""
+        self.freebooter_loot_battle_round = 0
+
+    def build_here_be_loot_request(self, *, game=None, player=None, battle_round: int = 0):
+        if not self.is_freebooter_krew():
+            return None
+        if self.army is None:
+            return None
+        if player is None:
+            player = getattr(self.army, "player", None)
+        if player is None:
+            return None
+        if game is None:
+            game = getattr(player, "game", None)
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return None
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        entries = self._collect_objective_entries(game=game)
+        if not entries:
+            return None
+        objective_ids = [str(entry[0]) for entry in entries]
+
+        queue = getattr(game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                if str(getattr(req, "player_id", "") or "") != str(getattr(player, "id", "") or ""):
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "here_be_loot":
+                    continue
+                if int(ctx.get("battle_round", 0) or 0) != int(battle_round or 0):
+                    continue
+                return None
+
+        options = []
+        for idx, (objective_id, objective, point) in enumerate(entries):
+            label = str(getattr(objective, "name", "") or f"Objective {idx + 1}")
+            try:
+                label = (
+                    f"{label} "
+                    f"({float(getattr(point, 'x', 0.0)):.1f}, "
+                    f"{float(getattr(point, 'y', 0.0)):.1f})"
+                )
+            except (TypeError, ValueError):
+                pass
+            options.append(
+                DecisionOption.create(
+                    label,
+                    payload={"objective_id": str(objective_id)},
+                )
+            )
+        if not options:
+            return None
+
+        return DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Here Be Loot: select one objective marker to be your loot objective until the next battle round.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={
+                "ability": "here_be_loot",
+                "ability_name": "Here Be Loot",
+                "army_id": str(get_entity_id(self.army) or ""),
+                "battle_round": int(battle_round or 0),
+                "candidate_objective_ids": list(objective_ids),
+                "optional": False,
+            },
+        )
+
+    def validate_here_be_loot_objective_choice(
+        self,
+        objective_id: str,
+        *,
+        game=None,
+        player=None,
+        battle_round: int = 0,
+    ) -> tuple[bool, str]:
+        if not self.is_freebooter_krew():
+            return False, "Here Be Loot requires Freebooter Krew detachment."
+        if self.army is None:
+            return False, "Here Be Loot army not found."
+        if player is not None:
+            army_player = getattr(self.army, "player", None)
+            if army_player is not None and army_player is not player:
+                return False, "Here Be Loot must be resolved by the owning player."
+        objective_id = str(objective_id or "").strip()
+        if not objective_id:
+            return False, "Here Be Loot selection requires objective_id."
+        if self._objective_entry_by_id(objective_id, game=game) is None:
+            return False, "Here Be Loot selected objective marker was not found."
+        expected_round = int(battle_round or 0)
+        if expected_round and game is not None:
+            try:
+                current_round = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_round = 0
+            if current_round and current_round != expected_round:
+                return False, "Here Be Loot selection is no longer in the current battle round."
+        return True, ""
+
+    def select_here_be_loot_objective(
+        self,
+        objective_id: str,
+        *,
+        game=None,
+        player=None,
+        battle_round: int = 0,
+    ):
+        valid, reason = self.validate_here_be_loot_objective_choice(
+            objective_id,
+            game=game,
+            player=player,
+            battle_round=battle_round,
+        )
+        if not valid:
+            return None
+        entry = self._objective_entry_by_id(str(objective_id or "").strip(), game=game)
+        if entry is None:
+            return None
+        objective_key, objective, _point = entry
+        self.freebooter_loot_objective_id = str(objective_key)
+        if game is not None:
+            try:
+                self.freebooter_loot_battle_round = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                self.freebooter_loot_battle_round = int(battle_round or 0)
+        else:
+            self.freebooter_loot_battle_round = int(battle_round or 0)
+        return {
+            "objective_id": str(objective_key),
+            "objective_name": str(getattr(objective, "name", "") or "Objective marker"),
+            "battle_round": int(self.freebooter_loot_battle_round or 0),
+            "source": "Here Be Loot",
+        }
+
+    def on_battle_round_start(self, battle_round: int, *, game=None) -> None:
+        self.clear_here_be_loot_objective()
+        if not self.is_freebooter_krew() or self.army is None:
+            return
+        player = getattr(self.army, "player", None)
+        if game is None:
+            game = getattr(player, "game", None) if player is not None else None
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return
+        request = self.build_here_be_loot_request(game=game, player=player, battle_round=int(battle_round or 0))
+        if request is not None and hasattr(game, "request_decision"):
+            game.request_decision(request)
+
+    def _active_here_be_loot_objective_point(self, *, game=None, game_map=None):
+        if not self.is_freebooter_krew():
+            return None
+        objective_id = str(self.freebooter_loot_objective_id or "").strip()
+        if not objective_id:
+            return None
+        if game is None and self.army is not None:
+            player = getattr(self.army, "player", None)
+            game = getattr(player, "game", None) if player is not None else None
+        if game is not None and int(self.freebooter_loot_battle_round or 0):
+            try:
+                current_round = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_round = 0
+            if current_round and int(self.freebooter_loot_battle_round or 0) != current_round:
+                return None
+        entry = self._objective_entry_by_id(objective_id, game=game, game_map=game_map)
+        if entry is None:
+            return None
+        _objective_key, objective, point = entry
+        if point is None or bool(getattr(point, "removed", False)):
+            return None
+        return objective, point
+
+    def freebooter_here_be_loot_sustained_hits_value(
+        self,
+        attacker_model,
+        *,
+        target_unit=None,
+        game=None,
+        game_map=None,
+    ) -> int:
+        if not self.is_freebooter_krew():
+            return 0
+        if attacker_model is None:
+            return 0
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root = self._unit_root(attacker_unit)
+        if attacker_root is None or not self._unit_belongs_to_army(attacker_root):
+            return 0
+        if not self._unit_contains_any_keyword(attacker_root, self._HERE_BE_LOOT_QUALIFYING_KEYWORDS):
+            return 0
+        active = self._active_here_be_loot_objective_point(game=game, game_map=game_map)
+        if not isinstance(active, tuple):
+            return 0
+        _objective, objective_point = active
+        in_attacker_range = False
+        in_target_range = False
+        is_within = getattr(attacker_root, "is_within_objective_range", None)
+        if callable(is_within):
+            in_attacker_range = bool(is_within(objective_point))
+        target_root = self._unit_root(target_unit)
+        if target_root is not None:
+            target_is_within = getattr(target_root, "is_within_objective_range", None)
+            if callable(target_is_within):
+                in_target_range = bool(target_is_within(objective_point))
+        if in_attacker_range or in_target_range:
+            return 1
+        return 0
 
     def _collect_da_big_hunt_prey_candidates(self, *, game=None, player=None) -> list:
         if game is None or player is None:

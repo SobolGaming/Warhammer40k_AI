@@ -617,6 +617,13 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time a beast snagga unit from your army declares a charge that includes your prey as one of the targets you can reroll the charge roll",
             r"each time a beast snagga model from your army makes an attack that targets your prey improve the armour penetration characteristic of that attack by \d+",
         ),
+        "Here Be Loot": (
+            r"at the start of the battle round select one objective marker",
+            r"until the start of the next battle round that objective marker is your loot objective",
+            r"each time a model in an orks infantry orks mounted or orks walker unit from your army makes an attack that attack has the sustained hits \d+ ability if either or both of the following are true",
+            r"that model(?: s|s) unit is within range of your loot objective",
+            r"that attack targets a unit within range of your loot objective",
+        ),
         "Try Dat Button!": (
             r"each time a mek orks walker or grots vehicle unit from your army is selected to shoot or fight roll one d6",
             r"until the end of the phase weapons equipped by models in that unit have the corresponding ability shown in the table below",
@@ -2164,6 +2171,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Da Hunt Is On": (
             "Supported",
             "Da Big Hunt: at the start of your Command phase, select an enemy MONSTER, VEHICLE, or CHARACTER as your Prey until your next Command phase; BEAST SNAGGA units can re-roll Charge rolls when declaring charges that include that Prey, and BEAST SNAGGA model attacks improve AP by 1 against that Prey.",
+        ),
+        "Here Be Loot": (
+            "Supported",
+            "Freebooter Krew: at the start of each battle round select one objective marker as your Loot objective via CHOOSE_QUARRY; ORKS INFANTRY/MOUNTED/WALKER model attacks gain Sustained Hits 1 while the attacker's unit is within range of that objective and/or while targeting a unit within range of that objective.",
         ),
         "Try Dat Button!": (
             "Supported",
@@ -4030,6 +4041,10 @@ def _datasheet_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[str, str
 
 def _detachment_ability_support_by_id() -> Dict[str, Tuple[str, str]]:
     return {
+        "000010711": (
+            "Supported",
+            "Freebooter Krew: Here Be Loot objective selection and Sustained Hits 1 objective-range attack gating implemented.",
+        ),
         "000008875": (
             "Supported",
             "Dread Mob: Try Dat Button! selection and effect resolution implemented, including manual Hazardous multi-source fail-on-2 handling.",

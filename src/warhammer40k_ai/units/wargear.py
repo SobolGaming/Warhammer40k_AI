@@ -10820,6 +10820,7 @@ class WargearProfile:
         bearer_unit_sustained = bool(bearer_unit_sustained_value)
 
         war_horde_sustained_value = 0
+        freebooter_loot_sustained_value = 0
         orks_mgr = None
         unit = getattr(attacker, "parent_unit", None)
         army = None
@@ -10832,6 +10833,11 @@ class WargearProfile:
             if callable(value_fn):
                 war_horde_sustained_value = int(value_fn(unit, attack_type="melee") or 0)
         war_horde_sustained = bool(war_horde_sustained_value)
+        if orks_mgr is not None:
+            loot_fn = getattr(orks_mgr, "freebooter_here_be_loot_sustained_hits_value", None)
+            if callable(loot_fn):
+                freebooter_loot_sustained_value = int(loot_fn(attacker, target_unit=target) or 0)
+        freebooter_loot_sustained = bool(freebooter_loot_sustained_value)
         dread_mob_lethal = False
         dread_mob_sustained_value = 0
         if orks_mgr is not None:
@@ -10857,6 +10863,7 @@ class WargearProfile:
             or pain_sustained
             or bearer_unit_sustained
             or war_horde_sustained
+            or freebooter_loot_sustained
             or dread_mob_sustained
             or devoted_duellists_sustained
             or bonus_sustained
@@ -10940,7 +10947,7 @@ class WargearProfile:
                 hit_result['special_effects'].append("Lethal Hits")
                 attack_instance['lethal_hit'] = True
             # For Sustained Hits, do not override an existing Sustained Hits X on the weapon.
-            if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained or bearer_unit_sustained or war_horde_sustained or dread_mob_sustained or devoted_duellists_sustained or bonus_sustained or malefic_sustained or blitzing_grants_sustained:
+            if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained or bearer_unit_sustained or war_horde_sustained or freebooter_loot_sustained or dread_mob_sustained or devoted_duellists_sustained or bonus_sustained or malefic_sustained or blitzing_grants_sustained:
                 # Support Sustained Hits X / Sustained Hits D3 / etc. Roll per critical hit.
                 if self.is_sustained_hits():
                     try:
@@ -10965,6 +10972,9 @@ class WargearProfile:
                     elif war_horde_sustained_value:
                         sustained_val = max(int(sustained_val), int(war_horde_sustained_value))
                         label = f"Sustained Hits (+{sustained_val}) [War Horde]"
+                    elif freebooter_loot_sustained_value:
+                        sustained_val = max(int(sustained_val), int(freebooter_loot_sustained_value))
+                        label = f"Sustained Hits (+{sustained_val}) [Here Be Loot]"
                     elif dread_mob_sustained_value:
                         sustained_val = max(int(sustained_val), int(dread_mob_sustained_value))
                         label = f"Sustained Hits (+{sustained_val}) [Try Dat Button!]"
@@ -11027,7 +11037,7 @@ class WargearProfile:
                     attack_instance['lethal_hit'] = True
 
                 # Apply Sustained Hits from all sources (same as baseline critical)
-                if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained or bearer_unit_sustained or war_horde_sustained or dread_mob_sustained or devoted_duellists_sustained or bonus_sustained or blitzing_grants_sustained:
+                if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained or bearer_unit_sustained or war_horde_sustained or freebooter_loot_sustained or dread_mob_sustained or devoted_duellists_sustained or bonus_sustained or blitzing_grants_sustained:
                     # Support Sustained Hits X / Sustained Hits D3 / etc. Roll per critical hit.
                     if self.is_sustained_hits():
                         try:
@@ -11067,6 +11077,11 @@ class WargearProfile:
                                 label = f"Sustained Hits (+{war_horde_sustained_value}) [War Horde]"
                             else:
                                 label += " [War Horde]"
+                        elif freebooter_loot_sustained:
+                            if freebooter_loot_sustained_value > 1:
+                                label = f"Sustained Hits (+{freebooter_loot_sustained_value}) [Here Be Loot]"
+                            else:
+                                label += " [Here Be Loot]"
                         elif dread_mob_sustained:
                             if dread_mob_sustained_value > 1:
                                 label = f"Sustained Hits (+{dread_mob_sustained_value}) [Try Dat Button!]"
@@ -11090,6 +11105,8 @@ class WargearProfile:
                             sustained_vals.append(int(pain_sustained_value or 0))
                         if war_horde_sustained:
                             sustained_vals.append(int(war_horde_sustained_value or 0))
+                        if freebooter_loot_sustained:
+                            sustained_vals.append(int(freebooter_loot_sustained_value or 0))
                         if dread_mob_sustained:
                             sustained_vals.append(int(dread_mob_sustained_value or 0))
                         if devoted_duellists_sustained:
