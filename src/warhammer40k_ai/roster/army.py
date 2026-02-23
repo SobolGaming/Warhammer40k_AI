@@ -459,6 +459,10 @@ class Army:
         apply_fn = getattr(ae_mgr, "apply_acrobatic_onslaught_travelling_players", None) if ae_mgr is not None else None
         if callable(apply_fn):
             apply_fn(unit)
+        ck_mgr = getattr(self, "chaos_knights_detachments", None)
+        apply_fn = getattr(ck_mgr, "apply_houndpack_lance_battleline_keywords", None) if ck_mgr is not None else None
+        if callable(apply_fn):
+            apply_fn(unit)
         apply_fn = getattr(ae_mgr, "apply_ride_the_wind_battleline_keywords", None) if ae_mgr is not None else None
         if callable(apply_fn):
             apply_fn(unit)
@@ -1574,6 +1578,11 @@ class Army:
         ne_mgr = getattr(self, "necrons_detachments", None)
         if ne_mgr is not None and hasattr(ne_mgr, "validate_detachment_rules"):
             for msg in list(ne_mgr.validate_detachment_rules() or []):
+                if msg:
+                    raise ArmyValidationError(str(msg))
+        ck_mgr = getattr(self, "chaos_knights_detachments", None)
+        if ck_mgr is not None and hasattr(ck_mgr, "validate_detachment_rules"):
+            for msg in list(ck_mgr.validate_detachment_rules() or []):
                 if msg:
                     raise ArmyValidationError(str(msg))
 

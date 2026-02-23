@@ -3103,6 +3103,21 @@ class PositioningMixin:
                             ]
         except Exception:
             pass
+        if target is not None:
+            source_unit = getattr(model, "parent_unit", None) or self
+            source_army = source_unit.get_parent_army() if hasattr(source_unit, "get_parent_army") else None
+            mgr = getattr(source_army, "chaos_knights_detachments", None) if source_army is not None else None
+            sustained_fn = getattr(mgr, "marked_prey_sustained_hits_value", None) if mgr is not None else None
+            if callable(sustained_fn):
+                sustained_value, source = sustained_fn(model, target)
+                if int(sustained_value or 0) > 0:
+                    rules = list(rules or []) + [
+                        {
+                            "attack_type": "any",
+                            "keyword": f"SUSTAINED HITS {int(sustained_value)}",
+                            "source": str(source or "Marked Prey"),
+                        }
+                    ]
         try:
             if target is not None:
                 root = self.get_attached_unit_root()

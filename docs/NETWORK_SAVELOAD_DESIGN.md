@@ -179,6 +179,7 @@ Deployment / Pre-battle:
 - reserves_arrival_placement_dialog: MOVE_UNIT {unit_id, model_positions} (context `placement_kind="reserves_arrival"`, `allow_skip`, `battle_round`, `reserve_status`)
 - aeldari_guileful_strategist_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="aeldari_guileful_strategist"`, `redeploy_action`, `remaining`)
 - auric_armour_walker_selection_dialog: SELECT_REALM_OF_CHAOS_UNITS {unit_ids | skip} (context `ability="solar_spearhead_walker_character_selection"`, `ability_name="Auric Armour"`, `phase="Muster Armies step"`, `army_id`, `allowed_unit_ids[]`, `max_units=2`)
+- houndpack_lance_character_selection_dialog: SELECT_REALM_OF_CHAOS_UNITS {unit_ids} (context `ability="houndpack_lance_character_selection"`, `ability_name="Marked Prey"`, `phase="Muster Armies step"`, `army_id`, `allowed_unit_ids[]`, `max_units=3`, `required_units=3`)
 
 Command phase:
 - shadow_in_the_warp_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="shadow_in_the_warp"`)
@@ -446,6 +447,7 @@ Faction / Detachment / Ability choices:
 - quarry_selection_dialog: CHOOSE_QUARRY {target_unit_id | objective_id | mode | selected_unit_ids[] | skip} (context may include `ability`, `ability_name`, `effect_key`, `source_unit_id`, `prey_reroll_hit`, `prey_reroll_wound`, `prey_melee_only`, `prey_keyword`, `prey_repick_on_destroyed`, `source_model_id`, `singular_purpose_reroll_hit`, `singular_purpose_reroll_wound`, `singular_purpose_objective_fnp`, `singular_purpose_objective_oc`)
 - quarry_selection_dialog (Artillery Support mode): CHOOSE_QUARRY {artillery_support_mode} (context `ability="siege_regiment_artillery_support_mode"`, `ability_name="Artillery Support"`, `army_id`, `battle_round`, `allowed_modes[]`, `max_units`)
 - realm_of_chaos_units_dialog (Artillery Support selections): SELECT_REALM_OF_CHAOS_UNITS {unit_ids | skip} (context `ability="siege_regiment_incendiary_bombardment"` or `ability="siege_regiment_smoke_shells"` or `ability="siege_regiment_creeping_barrage_selection"`, `ability_name`, `army_id`, `battle_round`, `allowed_unit_ids[]`, `max_units`, optional `required_units`)
+- realm_of_chaos_units_dialog (Houndpack Lance CHARACTER selection): SELECT_REALM_OF_CHAOS_UNITS {unit_ids} (context `ability="houndpack_lance_character_selection"`, `ability_name="Marked Prey"`, `phase="Muster Armies step"`, `army_id`, `allowed_unit_ids[]`, `max_units=3`, `required_units=3`)
 - quarry_selection_dialog (Shadow Assignment): SHADOW_ASSIGNMENT {unit_id, replacement_datasheet_id | skip} (context `ability="shadow_assignment"`, `ability_name="Shadow Assignment"`)
 - quarry_selection_dialog (Risen Rubricae): CHOOSE_QUARRY {selected_unit_ids[]} (context `ability="risen_rubricae"`, `ability_name="Risen Rubricae"`, `source_unit_id`, `enhancement_id`)
 - quarry_selection_dialog (Ethereal Pathway): CHOOSE_QUARRY {selected_unit_ids[] | skip} (context `ability="ethereal_pathway"`, `ability_name="Ethereal Pathway"`, `source_unit_id`, `enhancement_id`)

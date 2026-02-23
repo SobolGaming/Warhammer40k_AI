@@ -7888,17 +7888,10 @@ class Game(
         if mgr is not None:
             self._maybe_prompt_combat_drugs()
 
-        # Chaos Knights: Malefic Surge selection (Infernal Lance).
+        # Chaos Knights: command-phase hooks (e.g., Marked Prey, Malefic Surge).
         mgr = getattr(army, "chaos_knights_detachments", None)
-        if mgr is not None:
-            try:
-                mgr.clear_empowered_at_command_phase_start(game=self, player=current_player)
-            except Exception:
-                pass
-            try:
-                mgr.prompt_malefic_surge_selection(game=self, player=current_player)
-            except Exception:
-                pass
+        if mgr is not None and hasattr(mgr, "on_command_phase_start"):
+            mgr.on_command_phase_start(game=self, player=current_player)
 
         # Imperial Knights: Bondsman selection at the start of your Command phase.
         mgr = getattr(army, "bondsman", None)

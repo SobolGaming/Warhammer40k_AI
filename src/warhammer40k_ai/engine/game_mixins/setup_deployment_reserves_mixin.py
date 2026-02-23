@@ -1579,6 +1579,14 @@ class GameSetupDeploymentReservesMixin:
                 ) if ac_mgr is not None else None
                 if callable(queue_walker_fn):
                     queue_walker_fn(game=self, player=player)
+                ck_mgr = getattr(army, "chaos_knights_detachments", None)
+                queue_houndpack_fn = getattr(
+                    ck_mgr,
+                    "queue_houndpack_lance_character_selection_request",
+                    None,
+                ) if ck_mgr is not None else None
+                if callable(queue_houndpack_fn):
+                    queue_houndpack_fn(game=self, player=player)
         else:
             logger.info("Not enough players loaded")
 

@@ -350,6 +350,8 @@ def _validate_select_realm_of_chaos_units(game: object, request: DecisionRequest
     ability_key = str(ctx.get("ability", "") or "").strip().lower()
     if is_skip_choice(request, result) and ability_key == "siege_regiment_creeping_barrage_selection":
         return ("Creeping Barrage target selection cannot be skipped.",)
+    if is_skip_choice(request, result) and ability_key == "houndpack_lance_character_selection":
+        return ("Houndpack Lance selection cannot be skipped.",)
     if is_skip_choice(request, result):
         return ()
     unit_ids = result.payload.get("unit_ids")
@@ -430,6 +432,23 @@ def _validate_select_realm_of_chaos_units(game: object, request: DecisionRequest
         valid, reason = validate_fn(list(seen), game=game)
         if not bool(valid):
             return (str(reason or "Auric Armour selection is invalid."),)
+        return ()
+    if ability_key == "houndpack_lance_character_selection":
+        player = resolve_player(game, request.player_id)
+        if player is None:
+            return ("Houndpack Lance requires a player.",)
+        army = getattr(player, "get_army", lambda: None)()
+        if army is None:
+            return ("Houndpack Lance requires an army.",)
+        mgr = getattr(army, "chaos_knights_detachments", None)
+        if mgr is None or not getattr(mgr, "is_houndpack_lance", lambda: False)():
+            return ("Houndpack Lance requires the Houndpack Lance detachment.",)
+        validate_fn = getattr(mgr, "houndpack_character_selection_is_valid", None)
+        if not callable(validate_fn):
+            return ("Houndpack Lance selection validation is unavailable.",)
+        valid, reason = validate_fn(list(seen), game=game)
+        if not bool(valid):
+            return (str(reason or "Houndpack Lance selection is invalid."),)
         return ()
     if ability_key == "ride_the_wind_end_of_opponent_turn":
         player = resolve_player(game, request.player_id)
@@ -735,6 +754,27 @@ def _apply_select_realm_of_chaos_units(game: object, request: DecisionRequest, r
         apply_fn = getattr(mgr, "apply_solar_spearhead_walker_character_selection", None)
         if not callable(apply_fn):
             raise RuntimeError("Auric Armour apply function is unavailable.")
+        applied_ids = list(apply_fn(unit_ids, game=game) or [])
+        units = []
+        for uid in list(applied_ids or []):
+            unit = resolve_unit(game, str(uid))
+            if unit is not None:
+                units.append(unit)
+        return units
+    if ability_key == "houndpack_lance_character_selection":
+        player = resolve_player(game, request.player_id)
+        if player is None:
+            raise RuntimeError("Houndpack Lance player not found.")
+        army = getattr(player, "get_army", lambda: None)()
+        if army is None:
+            raise RuntimeError("Houndpack Lance army not found.")
+        mgr = getattr(army, "chaos_knights_detachments", None)
+        if mgr is None:
+            raise RuntimeError("Houndpack Lance detachment manager not found.")
+        unit_ids = sorted({str(uid or "").strip() for uid in list(result.payload.get("unit_ids") or []) if str(uid or "").strip()})
+        apply_fn = getattr(mgr, "apply_houndpack_lance_character_selection", None)
+        if not callable(apply_fn):
+            raise RuntimeError("Houndpack Lance apply function is unavailable.")
         applied_ids = list(apply_fn(unit_ids, game=game) or [])
         units = []
         for uid in list(applied_ids or []):
@@ -2781,6 +2821,46 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
             return ("Da Hunt Is On target validation is unavailable.",)
         if not bool(is_valid_target(target_root, player=player, game=game)):
             return ("Da Hunt Is On target must be an enemy MONSTER, VEHICLE, or CHARACTER unit on the battlefield.",)
+        return ()
+    if ability == "marked_prey":
+        if is_skip_choice(request, result):
+            return ("Marked Prey selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Marked Prey army not found.",)
+        mgr = getattr(army, "chaos_knights_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_houndpack_lance", lambda: False)()):
+            return ("Marked Prey requires Houndpack Lance detachment.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return ("Marked Prey target unit was not found.",)
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return ("Marked Prey target unit was not found.",)
+        target_id = str(get_entity_id(target_root) or "")
+        candidate_ids = {
+            str(v)
+            for v in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(v)
+        }
+        if candidate_ids and target_id not in candidate_ids:
+            return ("Marked Prey target is not an eligible candidate.",)
+        is_valid_target = getattr(mgr, "is_valid_marked_prey_target", None)
+        if not callable(is_valid_target):
+            return ("Marked Prey target validation is unavailable.",)
+        if not bool(is_valid_target(target_root, player=player, game=game)):
+            return ("Marked Prey target must be an enemy unit on the battlefield.",)
         return ()
     if ability == "dread_mob_try_dat_button":
         if is_skip_choice(request, result):
@@ -11375,6 +11455,16 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 source_name = str(ctx.get("ability_name", "") or "Worthy Foes").strip() or "Worthy Foes"
                 target_name = str(getattr(chosen, "name", "Unit") or "Unit")
                 _log_action_for_players(game, player, f"{source_name}: selected {target_name} as the worthy foe.")
+    if ability_key == "marked_prey":
+        army = _resolve_army(game, request, payload)
+        mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
+        if mgr is not None and chosen is not None:
+            player = getattr(army, "player", None) if army is not None else None
+            select_target = getattr(mgr, "select_marked_prey", None)
+            if callable(select_target) and bool(select_target(chosen, game=game, player=player)):
+                source_name = str(ctx.get("ability_name", "") or "Marked Prey").strip() or "Marked Prey"
+                target_name = str(getattr(chosen, "name", "Unit") or "Unit")
+                _log_action_for_players(game, player, f"{source_name}: selected {target_name} as quarry.")
     if ability_key == "oath_of_moment":
         army = _resolve_army(game, request, payload)
         mgr = getattr(army, "oath_of_moment", None) if army is not None else None

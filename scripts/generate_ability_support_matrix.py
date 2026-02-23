@@ -602,6 +602,16 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"models in this unit have the feel no pain 6 ability",
             r"we recommend placing a token next to chaos knights models that are empowered removing it once they have used a malefic surge ability and removing all unused tokens at the start of your command phase",
         ),
+        "Marked Prey": (
+            r"at the start of your command phase select one unit from your opponents army",
+            r"until the start of your next command phase each time a war dog model from your army makes an attack that targets that enemy unit if that unit is visible to the attacking model that attack has the sustained hits 1 ability",
+            r"while using the houndpack lance detachment the following rules apply",
+            r"your army must include three or more war dog units",
+            r"war dog units from your army have the battleline keyword",
+            r"when mustering your army select three war dog units from your army",
+            r"until the end of the battle those units have the character keyword",
+            r"this means that the selected units can be given enhancements and one of them can be selected as your warlord",
+        ),
         "Quicksilver Grace": (
             r"you can reroll advance rolls made for emperors children units from your army",
         ),
@@ -2624,6 +2634,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Malefic Surge": (
             "Supported",
             "Infernal Lance: Command-phase unit selection with Leadership test + D3 mortals on failure; Empowered state grants Unholy Hunger (+3\" Move), Diabolic Power (Lethal or Sustained Hits 1), or Unnatural Fortitude (5+ invuln or FNP 6+), then consumes Empowered.",
+        ),
+        "Marked Prey": (
+            "Supported",
+            "Houndpack Lance: command-phase enemy-unit selection grants [SUSTAINED HITS 1] to visible WAR DOG attacks against that target until your next Command phase; validates minimum three WAR DOG units, grants BATTLELINE to WAR DOG units, and enforces selection of exactly three WAR DOG units to gain CHARACTER during Muster Armies.",
         ),
         "Blood Tithe": (
             "Supported",
