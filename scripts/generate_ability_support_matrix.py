@@ -302,6 +302,9 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"ranged weapons equipped by aeldari vehicle models from your army have the assault ability",
             r"you can reroll advance rolls made for aeldari vehicle fly units from your army",
         ),
+        "Fervent Purgation": (
+            r"ranged weapons equipped by adepta sororitas models from your army have the assault ability and each time an attack made with such a weapon targets a unit within 6 add 1 to the strength characteristic of that attack",
+        ),
         "Sacred Rites": (
             r"each adepta sororitas unit from your army can perform up to two acts of faith per phase instead of just one",
         ),
@@ -2601,6 +2604,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Sacred Rites": (
             "Supported",
             "Army of Faith: ADEPTA SORORITAS units can perform up to two Acts of Faith per phase instead of one.",
+        ),
+        "Fervent Purgation": (
+            "Supported",
+            "Bringers of Flame: ADEPTA SORORITAS ranged weapons count as Assault and gain +1 Strength against targets within 6\".",
         ),
         "Maddened Ferocity": (
             "Supported",

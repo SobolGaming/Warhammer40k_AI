@@ -8,6 +8,7 @@ class AdeptaSororitasDetachmentManager(DetachmentManagerBase):
 
     THE_BLOOD_OF_MARTYRS_NAME = "The Blood of Martyrs"
     SACRED_RITES_NAME = "Sacred Rites"
+    FERVENT_PURGATION_NAME = "Fervent Purgation"
 
     def is_hallowed_martyrs(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -18,6 +19,11 @@ class AdeptaSororitasDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Army of Faith")
+
+    def is_bringers_of_flame(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Bringers of Flame")
 
     def unit_is_adepta_sororitas(self, unit) -> bool:
         if unit is None:
@@ -43,6 +49,59 @@ class AdeptaSororitasDetachmentManager(DetachmentManagerBase):
         if not self.unit_is_adepta_sororitas(unit):
             return 1
         return 2
+
+    def fervent_purgation_assault_applies(self, unit, weapon_profile=None) -> bool:
+        if not self.is_bringers_of_flame():
+            return False
+        if unit is None:
+            return False
+        if not self.unit_is_adepta_sororitas(unit):
+            return False
+        if weapon_profile is None:
+            return True
+        parent = getattr(weapon_profile, "parent_wargear", None)
+        if parent is None:
+            return False
+        is_ranged_fn = getattr(parent, "is_ranged", None)
+        if not callable(is_ranged_fn):
+            return False
+        return bool(is_ranged_fn())
+
+    def fervent_purgation_strength_bonus(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        weapon_profile=None,
+        attack_instance=None,
+    ) -> tuple[int, str]:
+        if not self.is_bringers_of_flame():
+            return 0, ""
+        if attacker_model is None:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        if attacker_unit is None:
+            return 0, ""
+        if not self.fervent_purgation_assault_applies(attacker_unit, weapon_profile):
+            return 0, ""
+        try:
+            distance = float((attack_instance or {}).get("distance_to_target", 0.0) or 0.0)
+        except Exception:
+            distance = 0.0
+        if distance <= 0.0 and target_unit is not None:
+            game_map = None
+            try:
+                game_map = getattr(getattr(attacker_unit.get_parent_army(), "player", None), "game", None).map
+            except Exception:
+                game_map = None
+            if game_map is not None:
+                try:
+                    distance = float(game_map.get_distance_between_units(attacker_unit, target_unit))
+                except Exception:
+                    distance = 0.0
+        if distance <= 0.0 or distance > 6.0 + 1e-6:
+            return 0, ""
+        return 1, self.FERVENT_PURGATION_NAME
 
     def blood_of_martyrs_hit_bonus(self, model, unit) -> tuple[int, str]:
         """

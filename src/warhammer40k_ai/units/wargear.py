@@ -11562,6 +11562,24 @@ class WargearProfile:
             if self.parent_wargear and self.parent_wargear.is_ranged() and isinstance(strength, int):
                 unit = getattr(attacker, "parent_unit", None)
                 army = unit.get_parent_army() if unit is not None else None
+                mgr = getattr(army, "adepta_sororitas_detachments", None) if army is not None else None
+                if mgr is not None and callable(getattr(mgr, "fervent_purgation_strength_bonus", None)):
+                    s_bonus, source = mgr.fervent_purgation_strength_bonus(
+                        attacker,
+                        target,
+                        weapon_profile=self,
+                        attack_instance=attack_instance,
+                    )
+                    if s_bonus:
+                        strength = strength + int(s_bonus)
+                        source_name = str(source or "Fervent Purgation").strip() or "Fervent Purgation"
+                        wound_result.setdefault("modifiers", []).append(f"+{int(s_bonus)}S from {source_name}")
+        except Exception:
+            pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_ranged() and isinstance(strength, int):
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
                 sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
                 if sm_mgr is not None and callable(getattr(sm_mgr, "vulkans_quest_strength_bonus", None)):
                     s_bonus, source = sm_mgr.vulkans_quest_strength_bonus(
