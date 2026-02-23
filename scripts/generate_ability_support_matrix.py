@@ -982,6 +982,10 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "All is Dust": (
             r"each time an attack with an unmodified damage characteristic of \d+ is allocated to a rubricae model from your army add \d+ to any armour saving throw made against that attack",
         ),
+        "Mobile Sensor Relays": (
+            r"leagues of votann transport units from your army have the following ability",
+            r"while a friendly leagues of votann infantry unit is wholly within 6 of this transport ranged weapons equipped by models in that infantry unit have the sustained hits 1 ability",
+        ),
         "Methodical Annihilation": (
             r"each time a leagues of votann model from your army makes an attack with a weapon that targets the closest eligible target or a target that is within engagement range of that models unit",
             r"reroll a wound roll of \d+",
@@ -2075,6 +2079,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "All is Dust": (
             "Supported",
             "Rubricae Phalanx: Rubricae models gain +1 to armour saves against attacks with unmodified Damage 1.",
+        ),
+        "Mobile Sensor Relays": (
+            "Supported",
+            "Brandfast Oathband: friendly LEAGUES OF VOTANN INFANTRY units wholly within 6\" of a friendly LEAGUES OF VOTANN TRANSPORT gain [SUSTAINED HITS 1] for ranged weapons.",
         ),
         "Methodical Annihilation": (
             "Supported",
