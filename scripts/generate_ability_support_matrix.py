@@ -986,6 +986,10 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"leagues of votann transport units from your army have the following ability",
             r"while a friendly leagues of votann infantry unit is wholly within 6 of this transport ranged weapons equipped by models in that infantry unit have the sustained hits 1 ability",
         ),
+        "Fury From The Dêlve": (
+            r"cthonian beserks units from your army have the deep strike ability",
+            r"cthonian beserks units from your army gain the battleline keyword",
+        ),
         "Methodical Annihilation": (
             r"each time a leagues of votann model from your army makes an attack with a weapon that targets the closest eligible target or a target that is within engagement range of that models unit",
             r"reroll a wound roll of \d+",
@@ -2083,6 +2087,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Mobile Sensor Relays": (
             "Supported",
             "Brandfast Oathband: friendly LEAGUES OF VOTANN INFANTRY units wholly within 6\" of a friendly LEAGUES OF VOTANN TRANSPORT gain [SUSTAINED HITS 1] for ranged weapons.",
+        ),
+        "Fury From The Dêlve": (
+            "Supported",
+            "Dêlve Assault Shift: Cthonian Beserks units gain Deep Strike and the BATTLELINE keyword.",
         ),
         "Methodical Annihilation": (
             "Supported",

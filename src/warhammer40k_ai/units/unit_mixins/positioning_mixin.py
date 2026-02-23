@@ -5628,6 +5628,12 @@ class PositioningMixin:
             except Exception:
                 found = False
         if not found:
+            try:
+                if self._fury_from_the_delve_active():
+                    found = True
+            except Exception:
+                found = False
+        if not found:
             if (
                 self._first_prince_of_chaos_active()
                 and self._is_chaos_undivided()

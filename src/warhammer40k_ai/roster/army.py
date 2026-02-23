@@ -480,6 +480,10 @@ class Army:
         apply_fn = getattr(tau_mgr, "apply_kroot_hunting_pack_battleline_keywords", None) if tau_mgr is not None else None
         if callable(apply_fn):
             apply_fn(unit)
+        lov_mgr = getattr(self, "leagues_of_votann_detachments", None)
+        apply_fn = getattr(lov_mgr, "apply_delve_assault_shift_battleline_keywords", None) if lov_mgr is not None else None
+        if callable(apply_fn):
+            apply_fn(unit)
         tyr_mgr = getattr(self, "tyranids_detachments", None)
         apply_fn = getattr(tyr_mgr, "apply_subterranean_assault_burrower_keywords", None) if tyr_mgr is not None else None
         if callable(apply_fn):

@@ -6967,6 +6967,20 @@ class ActionsMovementMixin:
                 return False
         return False
 
+    def _fury_from_the_delve_active(self) -> bool:
+        try:
+            army = self.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "leagues_of_votann_detachments", None) if army is not None else None
+        checker = getattr(mgr, "fury_from_the_delve_grants_deep_strike", None) if mgr is not None else None
+        if callable(checker):
+            try:
+                return bool(checker(self))
+            except Exception:
+                return False
+        return False
+
     def _first_prince_of_chaos_active(self) -> bool:
         try:
             army = self.get_parent_army()

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import re
 import unicodedata
@@ -22,6 +22,14 @@ class LeaguesOfVotannDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Brandfast Oathband")
 
+    def is_delve_assault_shift(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return (
+            self._detachment_matches_normalized("Dêlve Assault Shift")
+            or self._detachment_matches_normalized("Delve Assault Shift")
+        )
+
     def is_hearthband(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
             return False
@@ -30,13 +38,29 @@ class LeaguesOfVotannDetachmentManager(DetachmentManagerBase):
     def is_needgaard_oathband(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
             return False
-        return self.detachment_matches("Needgaârd Oathband") or self.detachment_matches("Needgaard Oathband")
+        return (
+            self._detachment_matches_normalized("Needgaârd Oathband")
+            or self._detachment_matches_normalized("Needgaard Oathband")
+        )
 
     def _normalize_text(self, text: str) -> str:
         t = unicodedata.normalize("NFKD", str(text or ""))
         t = t.encode("ascii", "ignore").decode("ascii")
         t = re.sub(r"[^a-z0-9 ]+", " ", t.lower())
         return re.sub(r"\s+", " ", t).strip()
+
+    def _detachment_matches_normalized(self, detachment_name: str) -> bool:
+        det = self._normalize_text(self._get_detachment_type())
+        target = self._normalize_text(detachment_name)
+        if not det or not target:
+            return False
+        if det == target:
+            return True
+        if det.endswith("s") and det[:-1] == target:
+            return True
+        if target.endswith("s") and target[:-1] == det:
+            return True
+        return det in target or target in det
 
     @staticmethod
     def _attached_root(unit):
@@ -106,6 +130,33 @@ class LeaguesOfVotannDetachmentManager(DetachmentManagerBase):
     def _unit_is_infantry(self, unit) -> bool:
         return bool(unit is not None and self._unit_has_role_keyword(unit, "INFANTRY"))
 
+    def _unit_matches_cthonian_beserks_keywords(self, unit) -> bool:
+        if unit is None:
+            return False
+        texts = [getattr(unit, "name", "")]
+        texts += list(getattr(unit, "keywords", []) or [])
+        texts += list(getattr(unit, "faction_keywords", []) or [])
+        for raw in texts:
+            norm = self._normalize_text(raw)
+            if "cthonian beserks" in norm:
+                return True
+            if "cthonian" in norm and ("beserks" in norm or "beserk" in norm):
+                return True
+        return False
+
+    def _unit_is_cthonian_beserks(self, unit) -> bool:
+        if unit is None:
+            return False
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        if self._unit_matches_cthonian_beserks_keywords(root):
+            return True
+        for member in self._attached_unit_members(root):
+            if self._unit_matches_cthonian_beserks_keywords(member):
+                return True
+        return False
+
     @staticmethod
     def _weapon_is_ranged(weapon_profile) -> bool:
         if weapon_profile is None:
@@ -172,6 +223,36 @@ class LeaguesOfVotannDetachmentManager(DetachmentManagerBase):
             if unit_wholly_within_range_of_unit(source, infantry_root, 6.0, use_attached_aggregate=True):
                 return 1, self._MOBILE_SENSOR_RELAYS_SOURCE
         return 0, ""
+
+    def fury_from_the_delve_grants_deep_strike(self, unit) -> bool:
+        if not self.is_delve_assault_shift():
+            return False
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        if not self._unit_is_votann(root):
+            return False
+        return self._unit_is_cthonian_beserks(root)
+
+    def apply_delve_assault_shift_battleline_keywords(self, unit=None) -> None:
+        if not self.is_delve_assault_shift() or self.army is None:
+            return
+        units = [unit] if unit is not None else list(getattr(self.army, "units", []) or [])
+        for entry in units:
+            root = self._attached_root(entry)
+            if root is None:
+                continue
+            if not self._unit_in_army(root):
+                continue
+            if not self._unit_is_cthonian_beserks(root):
+                continue
+            keywords = list(getattr(root, "keywords", []) or [])
+            if any(str(k or "").strip().lower() == "battleline" for k in keywords):
+                continue
+            keywords.append("Battleline")
+            root.keywords = keywords
 
     def _get_yield_points_manager(self):
         try:
@@ -266,3 +347,4 @@ class LeaguesOfVotannDetachmentManager(DetachmentManagerBase):
         if not self._unit_is_methodical_ap_unit(unit):
             return 0
         return 1
+
