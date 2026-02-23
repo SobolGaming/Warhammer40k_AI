@@ -1036,6 +1036,16 @@ class ActionsMovementMixin:
         sr = getattr(self, "special_rules", None)
         aegis_active = bool(isinstance(sr, dict) and sr.get("aegis_eternal_active"))
         archons_dynamic = bool(isinstance(sr, dict) and str(sr.get("archons_will_objective_id", "") or "").strip())
+        army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+        tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        synaptic_dynamic = False
+        active_synaptic_fn = getattr(tyr_mgr, "get_active_synaptic_imperative", None) if tyr_mgr is not None else None
+        if callable(active_synaptic_fn):
+            try:
+                synaptic_dynamic = active_synaptic_fn(game=game) is not None
+            except Exception:
+                synaptic_dynamic = False
         try:
             temp_val, temp_source = getattr(model, "get_temporary_invulnerable_save", lambda: (0, ""))()
             if temp_val:
@@ -1043,7 +1053,7 @@ class ActionsMovementMixin:
         except Exception:
             pass
         cache_key = f"model_invulnerable_save:{get_entity_id(model)}"
-        if not aegis_active and not archons_dynamic and cache_key in getattr(self, "_ability_cache", {}):
+        if not aegis_active and not archons_dynamic and not synaptic_dynamic and cache_key in getattr(self, "_ability_cache", {}):
             return self._ability_cache[cache_key]
 
         best_value: Optional[int] = None
@@ -1154,8 +1164,6 @@ class ActionsMovementMixin:
 
         # Tyranids: Warrior Bioform Onslaught (Leader-beasts): 5+ invulnerable save.
         try:
-            army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
-            tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
             inv_fn = getattr(tyr_mgr, "leader_beasts_invulnerable_save", None) if tyr_mgr is not None else None
             if callable(inv_fn):
                 inv_value, inv_source = inv_fn(model, unit=self)
@@ -1163,12 +1171,19 @@ class ActionsMovementMixin:
                 if inv_value > 0 and (best_value is None or inv_value < best_value):
                     best_value = int(inv_value)
                     best_source = str(inv_source or "Leader-beasts").strip() or "Leader-beasts"
+            synaptic_inv_fn = getattr(tyr_mgr, "synaptic_imperatives_invulnerable_save", None) if tyr_mgr is not None else None
+            if callable(synaptic_inv_fn):
+                inv_value, inv_source = synaptic_inv_fn(model, unit=self, game=game)
+                inv_value = int(inv_value or 0)
+                if inv_value > 0 and (best_value is None or inv_value < best_value):
+                    best_value = int(inv_value)
+                    best_source = str(inv_source or "Synaptic Imperatives").strip() or "Synaptic Imperatives"
         except Exception:
             pass
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
-        if not aegis_active and not archons_dynamic:
+        if not aegis_active and not archons_dynamic and not synaptic_dynamic:
             self._ability_cache[cache_key] = (best_value, best_source)
         return best_value, best_source
 
@@ -5470,12 +5485,19 @@ class ActionsMovementMixin:
             mods.append((bonus, "Code Chivalric"))
         try:
             army = self.get_parent_army()
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
             sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
             if sm_mgr is not None and callable(getattr(sm_mgr, "wrathful_procession_advance_roll_bonus", None)):
-                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 bonus, source = sm_mgr.wrathful_procession_advance_roll_bonus(self, game=game)
                 if int(bonus or 0):
                     source_name = str(source or "Zealous Litanies").strip() or "Zealous Litanies"
+                    mods.append((int(bonus), source_name))
+            tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+            synaptic_bonus_fn = getattr(tyr_mgr, "synaptic_imperatives_advance_roll_bonus", None) if tyr_mgr is not None else None
+            if callable(synaptic_bonus_fn):
+                bonus, source = synaptic_bonus_fn(self, game=game)
+                if int(bonus or 0):
+                    source_name = str(source or "Synaptic Imperatives").strip() or "Synaptic Imperatives"
                     mods.append((int(bonus), source_name))
         except Exception:
             pass

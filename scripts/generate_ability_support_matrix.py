@@ -962,6 +962,14 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time a tyranids monster model from your army makes an attack add 1 to the hit roll if that model(?: s|s) unit is below its starting strength and add 1 to the wound roll as well if that model(?: s|s) unit is below half strength",
             r"in addition while a tyranids monster unit from your army excluding battle shocked units is at its starting strength add 2 to the objective control characteristic of models in that unit",
         ),
+        "Synaptic Imperatives": (
+            r"at the start of the battle round you can select one of the synaptic imperatives shown below",
+            r"until the end of the battle round that synaptic imperative is active for your army and while a tyranids unit from your army is within synapse range of your army it will benefit from it",
+            r"each synaptic imperative can only be selected once per battle",
+            r"while this unit is within synapse range of your army models in this unit have a 5 invulnerable save",
+            r"while this unit is within synapse range of your army add 1 to advance and charge rolls made for this unit",
+            r"while this unit is within synapse range of your army each time a model in this unit makes a melee attack add 1 to the hit roll",
+        ),
     }
     return {_norm(name): tuple(pats) for name, pats in raw.items()}
 
@@ -2105,6 +2113,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Enraged Behemoths": (
             "Supported",
             "Crusher Stampede: TYRANIDS MONSTER models gain +1 to Hit while their unit is below Starting Strength and +1 to Wound while their unit is Below Half-strength; TYRANIDS MONSTER units that are at Starting Strength and not Battle-shocked gain +2 Objective Control.",
+        ),
+        "Synaptic Imperatives": (
+            "Supported",
+            "Synaptic Nexus: at the start of each battle round, optionally select one unused Synaptic Imperative (or none) via CHOOSE_QUARRY; selected imperative applies to TYRANIDS units within Synapse Range for that round only, granting either a 5+ invulnerable save, +1 to Advance and Charge rolls, or +1 to melee Hit rolls. Each imperative can only be selected once per battle.",
         ),
         "Get Stuck In": ("Supported", "War Horde: ORKS melee weapons gain Sustained Hits 1."),
         "Combat Doctrines": ("Supported", "Gladius Task Force: select each doctrine once per battle to grant move/charge eligibility."),

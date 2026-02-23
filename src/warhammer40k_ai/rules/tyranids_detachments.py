@@ -51,6 +51,45 @@ HYPER_ADAPTATIONS: tuple[HyperAdaptation, ...] = (
 )
 HYPER_ADAPTATION_BY_KEY = {h.key: h for h in HYPER_ADAPTATIONS}
 
+
+@dataclass(frozen=True)
+class SynapticImperative:
+    key: str
+    name: str
+    summary: str
+    invulnerable_save: int = 0
+    advance_roll_bonus: int = 0
+    charge_roll_bonus: int = 0
+    melee_hit_bonus: int = 0
+
+
+SYNAPTIC_AUGMENTATION = SynapticImperative(
+    key="SYNAPTIC_AUGMENTATION",
+    name="Synaptic Augmentation",
+    summary="Units in Synapse Range gain a 5+ invulnerable save.",
+    invulnerable_save=5,
+)
+SURGING_VITALITY = SynapticImperative(
+    key="SURGING_VITALITY",
+    name="Surging Vitality",
+    summary="Units in Synapse Range gain +1 to Advance and Charge rolls.",
+    advance_roll_bonus=1,
+    charge_roll_bonus=1,
+)
+GOADED_TO_SLAUGHTER = SynapticImperative(
+    key="GOADED_TO_SLAUGHTER",
+    name="Goaded to Slaughter",
+    summary="Units in Synapse Range gain +1 to melee hit rolls.",
+    melee_hit_bonus=1,
+)
+
+SYNAPTIC_IMPERATIVES: tuple[SynapticImperative, ...] = (
+    SYNAPTIC_AUGMENTATION,
+    SURGING_VITALITY,
+    GOADED_TO_SLAUGHTER,
+)
+SYNAPTIC_IMPERATIVE_BY_KEY = {imperative.key: imperative for imperative in SYNAPTIC_IMPERATIVES}
+
 _LEADER_BEASTS_TYRANID_WARRIOR_UNIT_NAMES = {
     "tyranid warriors with ranged bio weapons",
     "tyranid warriors with melee bio weapons",
@@ -85,6 +124,10 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
         super().__init__(army)
         self.active_hyper_adaptation_key: Optional[str] = None
         self.hyper_adaptation_selected_round: Optional[int] = None
+        self.active_synaptic_imperative_key: Optional[str] = None
+        self.synaptic_imperative_active_round: Optional[int] = None
+        self.synaptic_imperative_resolved_round: Optional[int] = None
+        self.synaptic_imperatives_used_keys: list[str] = []
         self.tunnel_markers: list[TunnelMarker] = []
         self._subterranean_assault_trygon_selection_resolved: bool = False
 
@@ -489,6 +532,71 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
         if callable(below_start) and bool(below_start()):
             return 0, ""
         return 2, f"{_ENRAGED_BEHEMOTHS_SOURCE} (+2 OC at Starting Strength)"
+
+    def _unit_in_synapse_range(self, unit, *, game=None) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        if not self._unit_is_tyranids(root):
+            return False
+        synapse_mgr = getattr(self.army, "synapse", None) if self.army is not None else None
+        if synapse_mgr is None:
+            return False
+        return bool(synapse_mgr.unit_in_synapse_range(root, game=game))
+
+    def synaptic_imperatives_invulnerable_save(self, model, *, unit=None, game=None) -> tuple[int, str]:
+        if model is None:
+            return 0, ""
+        source_unit = unit if unit is not None else getattr(model, "parent_unit", None)
+        if source_unit is None:
+            return 0, ""
+        imperative = self.get_active_synaptic_imperative(game=game)
+        if imperative is None or int(getattr(imperative, "invulnerable_save", 0) or 0) <= 0:
+            return 0, ""
+        if not self._unit_in_synapse_range(source_unit, game=game):
+            return 0, ""
+        value = int(getattr(imperative, "invulnerable_save", 0) or 0)
+        return value, f"Synaptic Imperatives ({imperative.name})"
+
+    def synaptic_imperatives_advance_roll_bonus(self, unit, *, game=None) -> tuple[int, str]:
+        imperative = self.get_active_synaptic_imperative(game=game)
+        if imperative is None:
+            return 0, ""
+        bonus = int(getattr(imperative, "advance_roll_bonus", 0) or 0)
+        if bonus <= 0:
+            return 0, ""
+        if not self._unit_in_synapse_range(unit, game=game):
+            return 0, ""
+        return bonus, f"Synaptic Imperatives ({imperative.name})"
+
+    def synaptic_imperatives_charge_roll_bonus(self, unit, *, game=None) -> tuple[int, str]:
+        imperative = self.get_active_synaptic_imperative(game=game)
+        if imperative is None:
+            return 0, ""
+        bonus = int(getattr(imperative, "charge_roll_bonus", 0) or 0)
+        if bonus <= 0:
+            return 0, ""
+        if not self._unit_in_synapse_range(unit, game=game):
+            return 0, ""
+        return bonus, f"Synaptic Imperatives ({imperative.name})"
+
+    def synaptic_imperatives_melee_hit_bonus(self, model, *, unit=None, game=None) -> tuple[int, str]:
+        if model is None:
+            return 0, ""
+        source_unit = unit if unit is not None else getattr(model, "parent_unit", None)
+        if source_unit is None:
+            return 0, ""
+        imperative = self.get_active_synaptic_imperative(game=game)
+        if imperative is None:
+            return 0, ""
+        bonus = int(getattr(imperative, "melee_hit_bonus", 0) or 0)
+        if bonus <= 0:
+            return 0, ""
+        if not self._unit_in_synapse_range(source_unit, game=game):
+            return 0, ""
+        return bonus, f"Synaptic Imperatives ({imperative.name})"
 
     @staticmethod
     def _wounds_snapshot(model) -> tuple[int, int]:
@@ -1420,6 +1528,191 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
         if removed_any:
             self._publish_tunnel_markers_updated(game)
 
+    def _resolve_battle_round(self, *, game=None, battle_round: Optional[int] = None) -> Optional[int]:
+        if battle_round is not None:
+            try:
+                return int(battle_round)
+            except Exception:
+                return None
+        if game is None:
+            return None
+        try:
+            return int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            return None
+
+    def _army_has_synaptic_imperatives(self) -> bool:
+        return self.is_synaptic_nexus()
+
+    def get_available_synaptic_imperatives(self) -> list[SynapticImperative]:
+        if not self._army_has_synaptic_imperatives():
+            return []
+        used_keys = {
+            str(key or "").strip().upper()
+            for key in list(self.synaptic_imperatives_used_keys or [])
+            if str(key or "").strip()
+        }
+        return [imperative for imperative in SYNAPTIC_IMPERATIVES if imperative.key not in used_keys]
+
+    def get_active_synaptic_imperative(
+        self,
+        *,
+        game=None,
+        battle_round: Optional[int] = None,
+    ) -> Optional[SynapticImperative]:
+        if not self._army_has_synaptic_imperatives():
+            return None
+        key = str(self.active_synaptic_imperative_key or "").strip().upper()
+        if not key:
+            return None
+        imperative = SYNAPTIC_IMPERATIVE_BY_KEY.get(key)
+        if imperative is None:
+            return None
+        active_round = self.synaptic_imperative_active_round
+        if active_round is not None:
+            round_value = self._resolve_battle_round(game=game, battle_round=battle_round)
+            if round_value is not None and int(active_round) != int(round_value):
+                return None
+        return imperative
+
+    def can_select_synaptic_imperative(self, *, game=None, battle_round: Optional[int] = None) -> bool:
+        if not self._army_has_synaptic_imperatives():
+            return False
+        round_value = self._resolve_battle_round(game=game, battle_round=battle_round)
+        if round_value is None:
+            return False
+        if self.synaptic_imperative_resolved_round is not None and int(self.synaptic_imperative_resolved_round) == int(round_value):
+            return False
+        return bool(self.get_available_synaptic_imperatives())
+
+    def select_synaptic_imperative(self, imperative, *, battle_round: Optional[int] = None) -> bool:
+        if not self._army_has_synaptic_imperatives():
+            return False
+        round_value = self._resolve_battle_round(battle_round=battle_round)
+        if round_value is None:
+            return False
+        if self.synaptic_imperative_resolved_round is not None and int(self.synaptic_imperative_resolved_round) == int(round_value):
+            return False
+        key = getattr(imperative, "key", imperative)
+        key = str(key or "").strip().upper()
+        if not key:
+            self.active_synaptic_imperative_key = None
+            self.synaptic_imperative_active_round = int(round_value)
+            self.synaptic_imperative_resolved_round = int(round_value)
+            return True
+        if key not in SYNAPTIC_IMPERATIVE_BY_KEY:
+            return False
+        used_keys = {
+            str(entry or "").strip().upper()
+            for entry in list(self.synaptic_imperatives_used_keys or [])
+            if str(entry or "").strip()
+        }
+        if key in used_keys:
+            return False
+        self.active_synaptic_imperative_key = key
+        self.synaptic_imperative_active_round = int(round_value)
+        self.synaptic_imperative_resolved_round = int(round_value)
+        if key not in used_keys:
+            self.synaptic_imperatives_used_keys.append(key)
+        return True
+
+    def _pending_synaptic_imperative_request(self, game, *, army_id: str, battle_round: int):
+        if game is None:
+            return None
+        queue = getattr(game, "decision_queue", None)
+        if queue is None:
+            return None
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+
+        for req in list(getattr(queue, "list", lambda: [])() or []):
+            if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "").strip().lower() != "synaptic_imperatives":
+                continue
+            if str(ctx.get("army_id", "") or "") != str(army_id):
+                continue
+            if int(ctx.get("battle_round", 0) or 0) != int(battle_round):
+                continue
+            return req
+        return None
+
+    def _build_synaptic_imperative_request(self, game, player, battle_round: int):
+        if game is None:
+            return None
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.entity_ids import get_entity_id
+
+        options = list(self.get_available_synaptic_imperatives() or [])
+        if not options:
+            return None
+        army = self.army
+        army_id = get_entity_id(army) if army is not None else None
+        req_options = [
+            DecisionOption.create(
+                "None",
+                payload={
+                    "action": "skip",
+                    "choice_key": "",
+                    "army_id": army_id,
+                    "battle_round": int(battle_round),
+                },
+            )
+        ]
+        choice_keys: list[str] = []
+        for imperative in options:
+            choice_keys.append(str(imperative.key))
+            req_options.append(
+                DecisionOption.create(
+                    imperative.name,
+                    payload={
+                        "choice_key": str(imperative.key),
+                        "summary": str(imperative.summary),
+                        "army_id": army_id,
+                        "battle_round": int(battle_round),
+                    },
+                )
+            )
+        return DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Select Synaptic Imperative.",
+            player_id=getattr(player, "id", None),
+            options=req_options,
+            context={
+                "ability": "synaptic_imperatives",
+                "ability_name": "Synaptic Imperatives",
+                "army_id": army_id,
+                "battle_round": int(battle_round),
+                "allowed_choice_keys": list(choice_keys),
+                "optional": True,
+            },
+        )
+
+    def _queue_synaptic_imperatives_request(self, battle_round: int, *, game=None) -> None:
+        if not self._army_has_synaptic_imperatives():
+            return
+        if game is None:
+            return
+        if not bool(getattr(game, "is_authoritative", True)):
+            return
+        if self.synaptic_imperative_resolved_round is not None and int(self.synaptic_imperative_resolved_round) == int(battle_round):
+            return
+        if not self.get_available_synaptic_imperatives():
+            self.synaptic_imperative_resolved_round = int(battle_round)
+            return
+        player = getattr(self.army, "player", None) if self.army is not None else None
+        if player is None:
+            return
+        army_id = str(get_entity_id(self.army) or "") if self.army is not None else ""
+        if self._pending_synaptic_imperative_request(game, army_id=army_id, battle_round=int(battle_round)):
+            return
+        request = self._build_synaptic_imperative_request(game, player, int(battle_round))
+        if request is None:
+            return
+        if hasattr(game, "request_decision"):
+            game.request_decision(request)
+
     def _army_has_hyper_adaptations(self) -> bool:
         return self.is_invasion_fleet()
 
@@ -1549,13 +1842,17 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
         )
 
     def on_battle_round_start(self, battle_round: int, *, game=None) -> None:
+        br = self._resolve_battle_round(game=game, battle_round=battle_round)
+        if br is None:
+            return
+        if self.synaptic_imperative_active_round is not None and int(self.synaptic_imperative_active_round) != int(br):
+            self.active_synaptic_imperative_key = None
+            self.synaptic_imperative_active_round = None
+        self._queue_synaptic_imperatives_request(int(br), game=game)
+
         if not self._army_has_hyper_adaptations():
             return
-        try:
-            br = int(battle_round or 0)
-        except Exception:
-            return
-        if br != 1:
+        if int(br) != 1:
             return
         if self.active_hyper_adaptation_key:
             return
@@ -1577,7 +1874,7 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
         army_id = get_entity_id(self.army) if self.army is not None else None
         if self._pending_hyper_adaptation_request(game, army_id):
             return
-        request = self._build_hyper_adaptation_request(game, player, br)
+        request = self._build_hyper_adaptation_request(game, player, int(br))
         if request is None:
             return
         if hasattr(game, "request_decision"):

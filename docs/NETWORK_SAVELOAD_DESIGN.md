@@ -199,6 +199,7 @@ Command phase:
 - oath_of_moment_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="oath_of_moment"`, `army_id`)
 - bondsman_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="bondsman"`, `source_unit_id`)
 - feed_the_swarm_dialog: CHOOSE_QUARRY {option_key | skip} (context `ability="feed_the_swarm"`, `ability_name="Feed the Swarm"`, `phase="Command phase"`, `army_id`, `source_unit_id`, `source_unit_name`, `option_keys[]`, `turn_owner_id`, `turn`)
+- synaptic_imperatives_dialog: CHOOSE_QUARRY {choice_key | skip} (context `ability="synaptic_imperatives"`, `ability_name="Synaptic Imperatives"`, `army_id`, `battle_round`, `allowed_choice_keys[]`, `optional=true`)
 - necrons_command_phase_dialog: CHOOSE_QUARRY {target_unit_id} (context `necrons_command_phase_enhancement=true`, `source_unit_id`, `ability`, `effect_key`, `effect_value`)
 - resurrection_orb_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="resurrection_orb"`, `source_unit_id`, `bearer_model_id`, `resurrection_orb_variant`, `allowed_target_unit_ids`, `optional=true`)
 - aeldari_lucid_eye_dialog: CHOOSE_QUARRY {die_index + delta | skip} (context `ability="aeldari_lucid_eye_fate_die"`, `source_unit_id`, `model_id`, `optional=true`)
@@ -413,6 +414,7 @@ Faction / Detachment / Ability choices:
 - grand_coven_dialog: CHOOSE_GRAND_COVEN {choice_id | skip}
 - combat_drugs_dialog: CHOOSE_COMBAT_DRUGS {choice_id}
 - hyper_adaptations_dialog: CHOOSE_HYPER_ADAPTATION {choice_id}
+- synaptic_imperatives_dialog: CHOOSE_QUARRY {choice_key | skip} (context `ability="synaptic_imperatives"`, `ability_name="Synaptic Imperatives"`, `army_id`, `battle_round`, `allowed_choice_keys[]`, `optional=true`)
 - frenzy_choice_dialog: CHOOSE_FRENZY_TARGET {target_unit_id}
 - harbingers_of_dread_dialog: CHOOSE_HARBINGER {choice_id}
 - martial_katah_dialog: CHOOSE_MARTIAL_KATAH {choice_id}

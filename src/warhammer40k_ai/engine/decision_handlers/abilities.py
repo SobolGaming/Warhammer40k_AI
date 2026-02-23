@@ -2231,6 +2231,42 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not bool(valid):
             return (str(reason or "Feed the Swarm choice is not currently eligible."),)
         return ()
+    if ability == "synaptic_imperatives":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Synaptic Imperatives army not found.",)
+        mgr = getattr(army, "tyranids_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_synaptic_nexus", lambda: False)()):
+            return ("Synaptic Imperatives requires Synaptic Nexus.",)
+        battle_round = payload.get("battle_round")
+        if battle_round is None:
+            battle_round = ctx.get("battle_round")
+        if not bool(getattr(mgr, "can_select_synaptic_imperative", lambda **_k: False)(game=game, battle_round=battle_round)):
+            return ("Synaptic Imperatives cannot be selected right now.",)
+        if is_skip_choice(request, result):
+            return ()
+        choice = payload.get("choice_key") or payload.get("key")
+        if choice is None:
+            return ("Synaptic Imperatives selection requires choice_key.",)
+        choice_key = str(choice or "").strip().upper()
+        if not choice_key:
+            return ("Synaptic Imperatives selection requires a non-empty choice_key or skip action.",)
+        allowed_keys = {
+            str(v or "").strip().upper()
+            for v in list(ctx.get("allowed_choice_keys", []) or [])
+            if str(v or "").strip()
+        }
+        if allowed_keys and choice_key not in allowed_keys:
+            return ("Selected Synaptic Imperative is not in this request's candidate list.",)
+        available = {
+            str(getattr(item, "key", "") or "").strip().upper()
+            for item in list(getattr(mgr, "get_available_synaptic_imperatives", lambda: [])() or [])
+            if str(getattr(item, "key", "") or "").strip()
+        }
+        if choice_key not in available:
+            return ("Selected Synaptic Imperative has already been used or is not available.",)
+        return ()
     if ability == "grim_resolve_target":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)
@@ -3488,6 +3524,40 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             )
             return outcome
         return outcome
+    if ability == "synaptic_imperatives":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "tyranids_detachments", None)
+        if mgr is None:
+            return None
+        battle_round = payload.get("battle_round")
+        if battle_round is None:
+            battle_round = ctx.get("battle_round")
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        ability_name = str(ctx.get("ability_name", "") or "Synaptic Imperatives").strip() or "Synaptic Imperatives"
+        if is_skip_choice(request, result):
+            applied = bool(mgr.select_synaptic_imperative("", battle_round=battle_round))
+            if applied:
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"{ability_name}: none selected (Battle Round {battle_round}).",
+                )
+            return applied
+        choice = payload.get("choice_key") or payload.get("key")
+        applied = bool(mgr.select_synaptic_imperative(choice, battle_round=battle_round))
+        if applied:
+            label = _option_label(request, result) or str(choice)
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {label} (Battle Round {battle_round}).",
+            )
+        return applied
     if ability == "grim_resolve_target":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)

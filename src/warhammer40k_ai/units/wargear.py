@@ -8085,6 +8085,12 @@ class WargearProfile:
             bonus, reason = bonus_fn(attacker, unit)
             if bonus:
                 _add_hit_mod(int(bonus), reason or f"+{int(bonus)} to hit from Enraged Behemoths")
+        if bool(getattr(self.parent_wargear, "is_melee", lambda: False)()):
+            synaptic_bonus_fn = getattr(mgr, "synaptic_imperatives_melee_hit_bonus", None) if mgr is not None else None
+            if callable(synaptic_bonus_fn):
+                bonus, reason = synaptic_bonus_fn(attacker, unit=unit, game=game)
+                if bonus:
+                    _add_hit_mod(int(bonus), reason or f"+{int(bonus)} to hit from Synaptic Imperatives")
         # Adeptus Custodes: Against All Odds (+1 to hit when isolated).
         unit = getattr(attacker, "parent_unit", None)
         army = None

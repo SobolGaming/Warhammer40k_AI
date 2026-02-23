@@ -8752,6 +8752,17 @@ class Game(
                 if goretrack_active:
                     modifiers.append((1, "Goretrack Onslaught"))
 
+        try:
+            army = charging_unit.get_parent_army()
+        except Exception:
+            army = None
+        tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+        synaptic_charge_bonus_fn = getattr(tyr_mgr, "synaptic_imperatives_charge_roll_bonus", None) if tyr_mgr is not None else None
+        if callable(synaptic_charge_bonus_fn):
+            bonus, source = synaptic_charge_bonus_fn(charging_unit, game=self)
+            if int(bonus or 0):
+                modifiers.append((int(bonus), str(source or "Synaptic Imperatives").strip() or "Synaptic Imperatives"))
+
         from ..utility.aura_effects import get_aura_advance_charge_roll_modifiers
         _adv_mods, aura_charge_mods = get_aura_advance_charge_roll_modifiers(charging_unit, game_map=self.map)
         for val, source in list(aura_charge_mods or []):
