@@ -12498,6 +12498,21 @@ class WargearProfile:
             if bonus:
                 dice_modifier += bonus
                 wound_result['modifiers'].append(f"+{bonus} to wound from Against All Odds")
+        if mgr is not None and callable(getattr(mgr, "assemblage_of_might_wound_bonus", None)):
+            game = getattr(getattr(army, "player", None), "game", None)
+            bonus = int(
+                mgr.assemblage_of_might_wound_bonus(
+                    attacker,
+                    target,
+                    game=game,
+                    weapon_profile=self,
+                    attack_instance=attack_instance,
+                )
+                or 0
+            )
+            if bonus:
+                dice_modifier += bonus
+                wound_result["modifiers"].append(f"+{bonus} to wound from Assemblage of Might")
         # Imperial Agents: ENSNARING TRAP (Callidus Assassin) melee wound bonus.
         is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
         if is_melee:

@@ -995,6 +995,10 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Against All Odds": (
             r"each time a model in an adeptus custodes unit from your army excluding vehicles makes an attack if there are no other friendly units within \d+ of that unit add 1 to the hit roll and add 1 to the wound roll",
         ),
+        "Assemblage of Might": (
+            r"at the start of your command phase select one unit from your opponent(?: s|s) army",
+            r"until the start of your next command phase each time a model in an adeptus custodes character unit from your army makes an attack that targets that enemy unit add 1 to the wound roll",
+        ),
         "Kindred Sorcery": (
             r"in your command phase you can select one of the abilities listed below to take effect until the start of your next command phase",
             r"you can only select each of these abilities once per battle",
@@ -2103,6 +2107,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Against All Odds": (
             "Supported",
             "Lions of the Emperor: non-vehicle ADEPTUS CUSTODES units gain +1 to hit and +1 to wound when no other friendly units are within 6\" (3D; attached units deduplicated).",
+        ),
+        "Assemblage of Might": (
+            "Supported",
+            "Auric Champions: at the start of your Command phase select one enemy unit; until your next Command phase, ADEPTUS CUSTODES Character units gain +1 to wound when targeting that unit.",
         ),
         "Kindred Sorcery": (
             "Supported",

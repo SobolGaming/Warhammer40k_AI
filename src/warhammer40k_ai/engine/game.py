@@ -7899,6 +7899,11 @@ class Game(
             mgr.on_command_phase_start(game=self, player=current_player)
             self.event_system.publish("necrons_command_phase_enhancement_prompt", player=current_player, game=self)
 
+        # Adeptus Custodes detachments: command-phase target selection (e.g. Auric Champions).
+        mgr = getattr(army, "adeptus_custodes_detachments", None)
+        if mgr is not None and hasattr(mgr, "on_command_phase_start"):
+            mgr.on_command_phase_start(game=self, player=current_player)
+
         # Orks detachments: command-phase state resets and mandatory prey selection (Da Big Hunt).
         mgr = getattr(army, "orks_detachments", None)
         if mgr is not None and hasattr(mgr, "on_command_phase_start"):

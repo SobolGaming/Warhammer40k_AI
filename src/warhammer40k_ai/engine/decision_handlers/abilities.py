@@ -2452,6 +2452,45 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if target_id not in candidate_ids:
             return ("Worthy Foes selection contains an ineligible target.",)
         return ()
+    if ability == "assemblage_of_might":
+        if is_skip_choice(request, result):
+            return ("Assemblage of Might target selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Assemblage of Might army not found.",)
+        mgr = getattr(army, "adeptus_custodes_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_auric_champions", lambda: False)()):
+            return ("Assemblage of Might requires Auric Champions.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return ("Assemblage of Might target unit was not found.",)
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return ("Assemblage of Might target unit was not found.",)
+        target_id = str(get_entity_id(target_root) or "")
+        candidates_fn = getattr(mgr, "_assemblage_of_might_eligible_enemy_units", None)
+        if not callable(candidates_fn):
+            return ("Assemblage of Might target validation is unavailable.",)
+        candidates = list(candidates_fn(game=game, player=player) or [])
+        candidate_ids = {
+            str(get_entity_id(unit) or "")
+            for unit in candidates
+            if unit is not None
+        }
+        if target_id not in candidate_ids:
+            return ("Assemblage of Might selection contains an ineligible target.",)
+        return ()
     if ability == "da_big_hunt_prey":
         if is_skip_choice(request, result):
             return ("Da Hunt Is On selection cannot be skipped.",)
@@ -4080,6 +4119,44 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             game,
             player,
             f"{ability_name}: selected {target_name} as your Prey until your next Command phase.",
+        )
+        return {
+            "target_unit_id": str(get_entity_id(target_root) or ""),
+            "source": ability_name,
+        }
+    if ability == "assemblage_of_might":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "adeptus_custodes_detachments", None)
+        if mgr is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return None
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return None
+        set_target = getattr(mgr, "set_assemblage_of_might_target", None)
+        if not callable(set_target) or not bool(set_target(target_root)):
+            return None
+        ability_name = str(ctx.get("ability_name", "") or "Assemblage of Might").strip() or "Assemblage of Might"
+        target_name = str(getattr(target_root, "name", "Unit") or "Unit")
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: selected {target_name} as the marked enemy unit.",
         )
         return {
             "target_unit_id": str(get_entity_id(target_root) or ""),
