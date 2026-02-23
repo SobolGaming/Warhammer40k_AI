@@ -2066,7 +2066,26 @@ class WargearProfile:
         if root is None:
             return False
         sr = getattr(root, "special_rules", None)
-        if not isinstance(sr, dict) or not sr.get("move_over_no_cover_active"):
+        if not isinstance(sr, dict):
+            return False
+        game = None
+        try:
+            game = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
+        except Exception:
+            game = None
+        current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        if bool(sr.get("artillery_support_scattered_active")):
+            try:
+                marked_round = int(sr.get("artillery_support_scattered_round", 0) or 0)
+            except Exception:
+                marked_round = 0
+            if marked_round <= 0:
+                return True
+            if current_turn <= 0:
+                return True
+            if current_turn == marked_round:
+                return True
+        if not sr.get("move_over_no_cover_active"):
             return False
         try:
             marked_turn = int(sr.get("move_over_no_cover_turn", 0) or 0)
@@ -2074,12 +2093,6 @@ class WargearProfile:
             marked_turn = 0
         if marked_turn <= 0:
             return bool(sr.get("move_over_no_cover_active"))
-        game = None
-        try:
-            game = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
-        except Exception:
-            game = None
-        current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
         if current_turn <= 0:
             return bool(sr.get("move_over_no_cover_active"))
         return current_turn == marked_turn
@@ -15691,6 +15704,12 @@ class WargearProfile:
             if isinstance(sr, dict) and sr.get("smokescreen_active") is True:
                 attack_instance.setdefault("benefit_of_cover", True)
                 attack_instance.setdefault("benefit_of_cover_source", "SMOKESCREEN")
+        except Exception:
+            pass
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            if self._target_cannot_have_cover_this_turn(t_unit):
+                attack_instance["ignores_cover"] = True
         except Exception:
             pass
         # Imperial Knights: Selfless Protector (cover + 4++ when obscured by the Knight Defender model).

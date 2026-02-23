@@ -290,6 +290,19 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"the maximum number of units you can select depends on the battle size as shown below",
             r"windriders units from your army gain the battleline keyword",
         ),
+        "Artillery Support": (
+            r"at the start of the battle round select one of the following types of artillery support",
+            r"roll one d6 for each enemy unit that is more than 12 from every model from your army that is on the battlefield",
+            r"on a 5 until the end of the battle round that unit is shaken",
+            r"while a unit is shaken subtract 2 from its move characteristic and subtract 2 from charge rolls made for it",
+            r"select a number of enemy units more than 12 from every model from your army that is on the battlefield",
+            r"until the end of the battle round those enemy units are scattered",
+            r"while a unit is scattered it cannot have the benefit of cover",
+            r"select a number of units from your army",
+            r"until the end of the battle round those units have the stealth ability",
+            r"the maximum number of units that can be shaken by this rule in each battle round depends on the battle size as shown below",
+            r"the maximum number of units you can select in this way depends on the battle size as shown below",
+        ),
         "Shepherds of the Dead": (
             r"each time an asuryani psyker model from your army is destroyed by an enemy unit that enemy unit gains a vengeful dead token",
             r"each time a wraith construct model from your army makes an attack that targets a unit with one or more vengeful dead tokens add 1 to the hit roll and add 1 to the wound roll",
@@ -2736,6 +2749,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Masters of Camouflage": (
             "Supported",
             "Recon Element: ASTRA MILITARUM WALKER and REGIMENT models gain Benefit of Cover against ranged attacks, and while they already have cover from another source their Save characteristic improves by 1 (to a maximum of 3+).",
+        ),
+        "Artillery Support": (
+            "Supported",
+            "Siege Regiment: at the start of each battle round, select Creeping Barrage, Incendiary Bombardment, or Smoke Shells; Creeping Barrage rolls for each eligible enemy unit more than 12\" from every friendly on-battlefield model and applies Shaken (Move -2\", Charge -2) up to battle-size caps (Incursion 2, Strike Force 3, Onslaught 4), Incendiary Bombardment selects eligible enemy units up to that cap to become Scattered (cannot have Benefit of Cover), and Smoke Shells selects friendly units up to that cap to gain Stealth until the end of the battle round.",
         ),
         "Rad-bombardment": (
             "Supported",

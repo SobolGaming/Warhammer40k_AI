@@ -1,12 +1,25 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Iterable
 
+from ..utility.dice import get_roll
+from ..utility.entity_ids import get_entity_id
 from .detachment_manager import DetachmentManagerBase
 
 
 class AstraMilitarumDetachmentManager(DetachmentManagerBase):
     faction_id = "AM"
+    _ARTILLERY_SUPPORT_MODE_ABILITY = "siege_regiment_artillery_support_mode"
+    _ARTILLERY_SUPPORT_INCENDIARY_ABILITY = "siege_regiment_incendiary_bombardment"
+    _ARTILLERY_SUPPORT_SMOKE_ABILITY = "siege_regiment_smoke_shells"
+    _ARTILLERY_SUPPORT_CREEPING_SELECTION_ABILITY = "siege_regiment_creeping_barrage_selection"
+    _ARTILLERY_SUPPORT_SHAKEN_TAG = "detachment:artillery_support_shaken"
+    _ARTILLERY_SUPPORT_SHAKEN_MODIFIER_SOURCE = "ability:artillery_support_shaken"
+    _ARTILLERY_SUPPORT_MODE_LABELS = {
+        "creeping_barrage": "Creeping Barrage",
+        "incendiary_bombardment": "Incendiary Bombardment",
+        "smoke_shells": "Smoke Shells",
+    }
 
     @staticmethod
     def _safe_int(value: Any, default: int = 0) -> int:
@@ -44,6 +57,763 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Recon Element")
+
+    def is_siege_regiment(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Siege Regiment")
+
+    @staticmethod
+    def _entity_id(entity) -> str:
+        return str(get_entity_id(entity) or "")
+
+    def _current_game(self):
+        if self.army is None:
+            return None
+        player = getattr(self.army, "player", None)
+        if player is None:
+            return None
+        return getattr(player, "game", None)
+
+    def _unit_is_on_battlefield(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        is_alive_fn = getattr(root, "is_alive", None)
+        if callable(is_alive_fn):
+            if not bool(is_alive_fn()):
+                return False
+        elif getattr(root, "is_alive", True) is False:
+            return False
+        if not bool(getattr(root, "deployed", True)):
+            return False
+        reserve_status = str(getattr(root, "reserve_status", "deployed") or "deployed").strip().lower()
+        if reserve_status != "deployed":
+            return False
+        if bool(getattr(root, "embarked_in", None)):
+            return False
+        if bool(getattr(root, "is_embarked", False)):
+            return False
+        in_reserves_fn = getattr(root, "is_in_reserves", None)
+        if callable(in_reserves_fn) and bool(in_reserves_fn()):
+            return False
+        return True
+
+    def _iter_game_unit_roots(self, *, game=None) -> list:
+        roots = []
+        seen: set[str] = set()
+
+        armies = []
+        if game is not None:
+            for player in list(getattr(game, "players", []) or []):
+                if player is None:
+                    continue
+                get_army = getattr(player, "get_army", None)
+                army = get_army() if callable(get_army) else getattr(player, "army", None)
+                if army is not None:
+                    armies.append(army)
+        if self.army is not None and self.army not in armies:
+            armies.append(self.army)
+
+        for army in armies:
+            for unit in list(getattr(army, "units", []) or []):
+                root = self._unit_root(unit)
+                if root is None:
+                    continue
+                root_id = self._entity_id(root)
+                if not root_id:
+                    root_id = f"unit:{id(root)}"
+                if root_id in seen:
+                    continue
+                seen.add(root_id)
+                roots.append(root)
+        return roots
+
+    def _friendly_battlefield_roots(self) -> list:
+        if self.army is None:
+            return []
+        out = []
+        seen: set[str] = set()
+        for unit in list(getattr(self.army, "units", []) or []):
+            root = self._unit_root(unit)
+            if root is None:
+                continue
+            if not self._unit_is_on_battlefield(root):
+                continue
+            root_id = self._entity_id(root)
+            if not root_id or root_id in seen:
+                continue
+            seen.add(root_id)
+            out.append(root)
+        out.sort(key=lambda unit: self._entity_id(unit))
+        return out
+
+    def _enemy_battlefield_roots(self, *, game=None, player=None) -> list:
+        if game is None or player is None:
+            return []
+        get_enemy_units = getattr(game, "get_enemy_units", None)
+        if not callable(get_enemy_units):
+            return []
+        out = []
+        seen: set[str] = set()
+        for enemy in list(get_enemy_units(player) or []):
+            root = self._unit_root(enemy)
+            if root is None:
+                continue
+            if not self._unit_is_on_battlefield(root):
+                continue
+            root_id = self._entity_id(root)
+            if not root_id or root_id in seen:
+                continue
+            seen.add(root_id)
+            out.append(root)
+        out.sort(key=lambda unit: self._entity_id(unit))
+        return out
+
+    def _distance_between_units(self, unit_a, unit_b, *, game=None) -> float | None:
+        if game is None:
+            return None
+        game_map = getattr(game, "map", None)
+        distance_fn = getattr(game_map, "get_distance_between_units", None) if game_map is not None else None
+        if not callable(distance_fn):
+            distance_fn = getattr(game, "get_distance_between_units", None)
+        if not callable(distance_fn):
+            return None
+        try:
+            return float(distance_fn(unit_a, unit_b))
+        except (TypeError, ValueError, AttributeError):
+            return None
+
+    def _eligible_enemy_units_for_artillery_support(self, *, game=None, player=None) -> list:
+        if self.army is None:
+            return []
+        owner = player if player is not None else getattr(self.army, "player", None)
+        game_obj = game if game is not None else getattr(owner, "game", None)
+        if owner is None or game_obj is None:
+            return []
+        enemies = self._enemy_battlefield_roots(game=game_obj, player=owner)
+        if not enemies:
+            return []
+        friendlies = self._friendly_battlefield_roots()
+        if not friendlies:
+            return enemies
+        eligible = []
+        for enemy in enemies:
+            too_close = False
+            for friendly in friendlies:
+                distance = self._distance_between_units(enemy, friendly, game=game_obj)
+                if distance is None:
+                    continue
+                if distance <= 12.0 + 1e-6:
+                    too_close = True
+                    break
+            if not too_close:
+                eligible.append(enemy)
+        eligible.sort(key=lambda unit: self._entity_id(unit))
+        return eligible
+
+    def _friendly_units_for_smoke_shells(self) -> list:
+        return self._friendly_battlefield_roots()
+
+    def _pending_artillery_support_request(
+        self,
+        game,
+        *,
+        decision_type: str,
+        ability_key: str,
+        army_id: str,
+        battle_round: int,
+    ) -> bool:
+        if game is None:
+            return False
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != str(decision_type or ""):
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "") != str(ability_key or ""):
+                continue
+            if str(ctx.get("army_id", "") or "") != str(army_id or ""):
+                continue
+            req_round = self._safe_int(ctx.get("battle_round", 0) or 0, 0)
+            if req_round and int(battle_round or 0) and req_round != int(battle_round):
+                continue
+            return True
+        return False
+
+    def siege_regiment_artillery_support_max_units(self, *, game=None) -> int:
+        size = getattr(getattr(game, "battlefield", None), "size", None)
+        size_name = str(getattr(size, "name", size) or "").strip().upper()
+        if size_name == "ONSLAUGHT":
+            return 4
+        if size_name == "STRIKE_FORCE":
+            return 3
+        return 2
+
+    def queue_siege_regiment_artillery_support_mode_request(
+        self,
+        *,
+        game=None,
+        player=None,
+        battle_round: int,
+    ) -> bool:
+        if not self.is_siege_regiment():
+            return False
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return False
+        if self.army is None:
+            return False
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return False
+        army_id = self._entity_id(self.army)
+        if not army_id:
+            return False
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+
+        if self._pending_artillery_support_request(
+            game,
+            decision_type=DECISION_CHOOSE_QUARRY,
+            ability_key=self._ARTILLERY_SUPPORT_MODE_ABILITY,
+            army_id=army_id,
+            battle_round=int(battle_round or 0),
+        ):
+            return False
+
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        max_units = self.siege_regiment_artillery_support_max_units(game=game)
+        options = []
+        for mode_key in ("creeping_barrage", "incendiary_bombardment", "smoke_shells"):
+            mode_label = str(self._ARTILLERY_SUPPORT_MODE_LABELS.get(mode_key, mode_key) or mode_key)
+            options.append(
+                DecisionOption.create(
+                    mode_label,
+                    payload={
+                        "artillery_support_mode": mode_key,
+                        "mode_key": mode_key,
+                    },
+                )
+            )
+        if not options:
+            return False
+
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Artillery Support: select Creeping Barrage, Incendiary Bombardment, or Smoke Shells.",
+            player_id=getattr(owner, "id", None),
+            options=options,
+            context={
+                "ability": self._ARTILLERY_SUPPORT_MODE_ABILITY,
+                "ability_name": "Artillery Support",
+                "army_id": army_id,
+                "battle_round": int(battle_round or 0),
+                "max_units": int(max_units),
+                "allowed_modes": ["creeping_barrage", "incendiary_bombardment", "smoke_shells"],
+                "optional": False,
+            },
+        )
+        request_decision = getattr(game, "request_decision", None)
+        if callable(request_decision):
+            request_decision(request)
+            return True
+        return False
+
+    def _queue_siege_regiment_unit_selection_request(
+        self,
+        *,
+        game=None,
+        player=None,
+        battle_round: int,
+        ability_key: str,
+        ability_name: str,
+        prompt: str,
+        allowed_units: list,
+        max_units: int,
+        allow_skip: bool,
+        required_units: int = 0,
+    ) -> bool:
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return False
+        if self.army is None:
+            return False
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return False
+        army_id = self._entity_id(self.army)
+        if not army_id:
+            return False
+        allowed_ids = [
+            unit_id
+            for unit_id in (self._entity_id(unit) for unit in list(allowed_units or []))
+            if unit_id
+        ]
+        allowed_ids = sorted({unit_id for unit_id in allowed_ids})
+        if not allowed_ids:
+            return False
+
+        from ..engine.decision_kinds import DECISION_SELECT_REALM_OF_CHAOS_UNITS
+        if self._pending_artillery_support_request(
+            game,
+            decision_type=DECISION_SELECT_REALM_OF_CHAOS_UNITS,
+            ability_key=ability_key,
+            army_id=army_id,
+            battle_round=int(battle_round or 0),
+        ):
+            return False
+
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        options = [DecisionOption.create("Confirm", payload={"action": "confirm"})]
+        if bool(allow_skip):
+            options.append(DecisionOption.create("None", payload={"action": "skip"}))
+
+        context = {
+            "ability": str(ability_key or ""),
+            "ability_name": str(ability_name or ""),
+            "army_id": army_id,
+            "battle_round": int(battle_round or 0),
+            "max_units": int(max(0, max_units)),
+            "allowed_unit_ids": list(allowed_ids),
+            "optional": bool(allow_skip),
+        }
+        if int(required_units or 0) > 0:
+            context["required_units"] = int(required_units)
+        if bool(allow_skip):
+            context["skip_label"] = "None (do not select units)"
+
+        request = DecisionRequest.create(
+            DECISION_SELECT_REALM_OF_CHAOS_UNITS,
+            prompt,
+            player_id=getattr(owner, "id", None),
+            options=options,
+            context=context,
+        )
+        request_decision = getattr(game, "request_decision", None)
+        if callable(request_decision):
+            request_decision(request)
+            return True
+        return False
+
+    def _clear_artillery_support_shaken(self, unit) -> None:
+        root = self._unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        remove_modifiers = getattr(root, "remove_characteristic_modifiers_by_source", None)
+        if callable(remove_modifiers):
+            remove_modifiers(self._ARTILLERY_SUPPORT_SHAKEN_MODIFIER_SOURCE)
+        modifiers = list(sr.get("charge_roll_modifiers", []) or [])
+        kept = []
+        for item in modifiers:
+            if isinstance(item, dict) and str(item.get("tag", "") or "") == self._ARTILLERY_SUPPORT_SHAKEN_TAG:
+                continue
+            kept.append(item)
+        if kept:
+            sr["charge_roll_modifiers"] = kept
+        else:
+            sr.pop("charge_roll_modifiers", None)
+        for key in (
+            "artillery_support_shaken_active",
+            "artillery_support_shaken_round",
+            "artillery_support_shaken_source",
+        ):
+            sr.pop(key, None)
+        root.special_rules = sr
+
+    def _clear_artillery_support_scattered(self, unit) -> None:
+        root = self._unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in (
+            "artillery_support_scattered_active",
+            "artillery_support_scattered_round",
+            "artillery_support_scattered_source",
+        ):
+            sr.pop(key, None)
+        root.special_rules = sr
+
+    def _clear_artillery_support_smoke_shells(self, unit) -> None:
+        root = self._unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in (
+            "artillery_support_smoke_shells_active",
+            "artillery_support_smoke_shells_round",
+            "artillery_support_smoke_shells_source",
+        ):
+            sr.pop(key, None)
+        root.special_rules = sr
+
+    def clear_artillery_support_effects(self, *, game=None) -> None:
+        for root in self._iter_game_unit_roots(game=game):
+            self._clear_artillery_support_shaken(root)
+            self._clear_artillery_support_scattered(root)
+            self._clear_artillery_support_smoke_shells(root)
+
+    def _apply_artillery_support_shaken(self, unit, *, battle_round: int, source: str) -> None:
+        root = self._unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        self._clear_artillery_support_shaken(root)
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+
+        source_name = str(source or "Creeping Barrage").strip() or "Creeping Barrage"
+        sr["artillery_support_shaken_active"] = True
+        sr["artillery_support_shaken_round"] = int(battle_round or 0)
+        sr["artillery_support_shaken_source"] = source_name
+
+        add_modifier = getattr(root, "add_characteristic_modifier", None)
+        if callable(add_modifier):
+            from ..utility.modifiers import Modifier, ModifierOp
+
+            add_modifier(
+                "movement",
+                Modifier(
+                    ModifierOp.ADD,
+                    -2,
+                    source=self._ARTILLERY_SUPPORT_SHAKEN_MODIFIER_SOURCE,
+                ),
+            )
+
+        modifiers = list(sr.get("charge_roll_modifiers", []) or [])
+        modifiers.append(
+            {
+                "value": -2,
+                "source": f"{source_name} (Shaken)",
+                "tag": self._ARTILLERY_SUPPORT_SHAKEN_TAG,
+            }
+        )
+        sr["charge_roll_modifiers"] = modifiers
+        root.special_rules = sr
+
+    def _apply_artillery_support_scattered(self, unit, *, battle_round: int, source: str) -> None:
+        root = self._unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["artillery_support_scattered_active"] = True
+        sr["artillery_support_scattered_round"] = int(battle_round or 0)
+        sr["artillery_support_scattered_source"] = str(source or "Incendiary Bombardment").strip() or "Incendiary Bombardment"
+        root.special_rules = sr
+
+    def _apply_artillery_support_smoke_shells(self, unit, *, battle_round: int, source: str) -> None:
+        root = self._unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["artillery_support_smoke_shells_active"] = True
+        sr["artillery_support_smoke_shells_round"] = int(battle_round or 0)
+        sr["artillery_support_smoke_shells_source"] = str(source or "Smoke Shells").strip() or "Smoke Shells"
+        root.special_rules = sr
+
+    @staticmethod
+    def _normalise_unit_ids(unit_ids: Iterable[str]) -> list[str]:
+        ids = {
+            str(unit_id or "").strip()
+            for unit_id in list(unit_ids or [])
+            if str(unit_id or "").strip()
+        }
+        return sorted(ids)
+
+    def _resolve_roots_from_ids(self, unit_ids: Iterable[str], *, candidates: list) -> list:
+        by_id = {
+            self._entity_id(root): root
+            for root in list(candidates or [])
+            if self._entity_id(root)
+        }
+        selected = []
+        for unit_id in self._normalise_unit_ids(unit_ids):
+            root = by_id.get(unit_id)
+            if root is not None:
+                selected.append(root)
+        return selected
+
+    def _apply_siege_regiment_creeping_barrage(
+        self,
+        *,
+        game=None,
+        player=None,
+        battle_round: int,
+    ) -> dict:
+        owner = player if player is not None else getattr(self.army, "player", None)
+        candidates = self._eligible_enemy_units_for_artillery_support(game=game, player=owner)
+        max_units = self.siege_regiment_artillery_support_max_units(game=game)
+        if not candidates:
+            return {
+                "mode": "creeping_barrage",
+                "max_units": int(max_units),
+                "candidate_unit_ids": [],
+                "successful_unit_ids": [],
+                "shaken_unit_ids": [],
+                "pending_selection": False,
+            }
+
+        rolls = []
+        successful = []
+        for enemy in list(candidates or []):
+            roll_value = int(get_roll("D6") or 0)
+            enemy_id = self._entity_id(enemy)
+            rolls.append({"unit_id": enemy_id, "roll": int(roll_value)})
+            if roll_value >= 5:
+                successful.append(enemy)
+        successful.sort(key=lambda unit: self._entity_id(unit))
+        successful_ids = [self._entity_id(unit) for unit in list(successful or []) if self._entity_id(unit)]
+
+        if len(successful_ids) <= int(max_units):
+            shaken_ids = self.apply_siege_regiment_creeping_barrage_selection(
+                successful_ids,
+                game=game,
+                player=owner,
+                battle_round=int(battle_round or 0),
+                allowed_unit_ids=successful_ids,
+            )
+            return {
+                "mode": "creeping_barrage",
+                "max_units": int(max_units),
+                "candidate_unit_ids": [self._entity_id(unit) for unit in list(candidates or []) if self._entity_id(unit)],
+                "successful_unit_ids": list(successful_ids),
+                "shaken_unit_ids": list(shaken_ids),
+                "rolls": rolls,
+                "pending_selection": False,
+            }
+
+        queued = self._queue_siege_regiment_unit_selection_request(
+            game=game,
+            player=owner,
+            battle_round=int(battle_round or 0),
+            ability_key=self._ARTILLERY_SUPPORT_CREEPING_SELECTION_ABILITY,
+            ability_name="Creeping Barrage",
+            prompt=(
+                "Creeping Barrage: select "
+                f"{int(max_units)} successful unit(s) to be shaken (Move -2\", Charge -2)."
+            ),
+            allowed_units=successful,
+            max_units=int(max_units),
+            allow_skip=False,
+            required_units=int(max_units),
+        )
+        return {
+            "mode": "creeping_barrage",
+            "max_units": int(max_units),
+            "candidate_unit_ids": [self._entity_id(unit) for unit in list(candidates or []) if self._entity_id(unit)],
+            "successful_unit_ids": list(successful_ids),
+            "shaken_unit_ids": [],
+            "rolls": rolls,
+            "pending_selection": bool(queued),
+            "required_units": int(max_units),
+        }
+
+    def apply_siege_regiment_artillery_support_mode(
+        self,
+        mode_key: str,
+        *,
+        game=None,
+        player=None,
+        battle_round: int = 0,
+    ) -> dict:
+        normalized = str(mode_key or "").strip().lower()
+        if normalized not in self._ARTILLERY_SUPPORT_MODE_LABELS:
+            return {}
+        owner = player if player is not None else getattr(self.army, "player", None)
+        game_obj = game if game is not None else getattr(owner, "game", None)
+        round_now = int(battle_round or getattr(game_obj, "turn", 0) or 0)
+        max_units = self.siege_regiment_artillery_support_max_units(game=game_obj)
+
+        if normalized == "creeping_barrage":
+            return self._apply_siege_regiment_creeping_barrage(
+                game=game_obj,
+                player=owner,
+                battle_round=round_now,
+            )
+
+        if normalized == "incendiary_bombardment":
+            candidates = self._eligible_enemy_units_for_artillery_support(game=game_obj, player=owner)
+            queued = self._queue_siege_regiment_unit_selection_request(
+                game=game_obj,
+                player=owner,
+                battle_round=round_now,
+                ability_key=self._ARTILLERY_SUPPORT_INCENDIARY_ABILITY,
+                ability_name="Incendiary Bombardment",
+                prompt=(
+                    "Incendiary Bombardment: select up to "
+                    f"{int(max_units)} enemy unit(s) more than 12\" away to become scattered."
+                ),
+                allowed_units=candidates,
+                max_units=int(max_units),
+                allow_skip=True,
+            )
+            return {
+                "mode": normalized,
+                "max_units": int(max_units),
+                "candidate_unit_ids": [self._entity_id(unit) for unit in list(candidates or []) if self._entity_id(unit)],
+                "pending_selection": bool(queued),
+            }
+
+        candidates = self._friendly_units_for_smoke_shells()
+        queued = self._queue_siege_regiment_unit_selection_request(
+            game=game_obj,
+            player=owner,
+            battle_round=round_now,
+            ability_key=self._ARTILLERY_SUPPORT_SMOKE_ABILITY,
+            ability_name="Smoke Shells",
+            prompt=(
+                "Smoke Shells: select up to "
+                f"{int(max_units)} friendly unit(s) to gain Stealth until the end of the battle round."
+            ),
+            allowed_units=candidates,
+            max_units=int(max_units),
+            allow_skip=True,
+        )
+        return {
+            "mode": normalized,
+            "max_units": int(max_units),
+            "candidate_unit_ids": [self._entity_id(unit) for unit in list(candidates or []) if self._entity_id(unit)],
+            "pending_selection": bool(queued),
+        }
+
+    def apply_siege_regiment_incendiary_bombardment_selection(
+        self,
+        unit_ids: Iterable[str],
+        *,
+        game=None,
+        player=None,
+        battle_round: int = 0,
+        allowed_unit_ids: Iterable[str] | None = None,
+    ) -> list[str]:
+        owner = player if player is not None else getattr(self.army, "player", None)
+        game_obj = game if game is not None else getattr(owner, "game", None)
+        round_now = int(battle_round or getattr(game_obj, "turn", 0) or 0)
+        max_units = self.siege_regiment_artillery_support_max_units(game=game_obj)
+        candidates = self._eligible_enemy_units_for_artillery_support(game=game_obj, player=owner)
+        if allowed_unit_ids is not None:
+            allowed = set(self._normalise_unit_ids(allowed_unit_ids))
+            candidates = [root for root in list(candidates or []) if self._entity_id(root) in allowed]
+        selected = self._resolve_roots_from_ids(unit_ids, candidates=candidates)[: int(max_units)]
+        applied_ids = []
+        for root in selected:
+            self._apply_artillery_support_scattered(
+                root,
+                battle_round=round_now,
+                source="Incendiary Bombardment",
+            )
+            root_id = self._entity_id(root)
+            if root_id:
+                applied_ids.append(root_id)
+        return applied_ids
+
+    def apply_siege_regiment_smoke_shells_selection(
+        self,
+        unit_ids: Iterable[str],
+        *,
+        game=None,
+        battle_round: int = 0,
+        allowed_unit_ids: Iterable[str] | None = None,
+    ) -> list[str]:
+        game_obj = game if game is not None else self._current_game()
+        round_now = int(battle_round or getattr(game_obj, "turn", 0) or 0)
+        max_units = self.siege_regiment_artillery_support_max_units(game=game_obj)
+        candidates = self._friendly_units_for_smoke_shells()
+        if allowed_unit_ids is not None:
+            allowed = set(self._normalise_unit_ids(allowed_unit_ids))
+            candidates = [root for root in list(candidates or []) if self._entity_id(root) in allowed]
+        selected = self._resolve_roots_from_ids(unit_ids, candidates=candidates)[: int(max_units)]
+        applied_ids = []
+        for root in selected:
+            self._apply_artillery_support_smoke_shells(
+                root,
+                battle_round=round_now,
+                source="Smoke Shells",
+            )
+            root_id = self._entity_id(root)
+            if root_id:
+                applied_ids.append(root_id)
+        return applied_ids
+
+    def apply_siege_regiment_creeping_barrage_selection(
+        self,
+        unit_ids: Iterable[str],
+        *,
+        game=None,
+        player=None,
+        battle_round: int = 0,
+        allowed_unit_ids: Iterable[str] | None = None,
+    ) -> list[str]:
+        owner = player if player is not None else getattr(self.army, "player", None)
+        game_obj = game if game is not None else getattr(owner, "game", None)
+        round_now = int(battle_round or getattr(game_obj, "turn", 0) or 0)
+        max_units = self.siege_regiment_artillery_support_max_units(game=game_obj)
+        candidates = self._eligible_enemy_units_for_artillery_support(game=game_obj, player=owner)
+        if allowed_unit_ids is not None:
+            allowed = set(self._normalise_unit_ids(allowed_unit_ids))
+            candidates = [root for root in list(candidates or []) if self._entity_id(root) in allowed]
+        selected = self._resolve_roots_from_ids(unit_ids, candidates=candidates)[: int(max_units)]
+        applied_ids = []
+        for root in selected:
+            self._apply_artillery_support_shaken(
+                root,
+                battle_round=round_now,
+                source="Creeping Barrage",
+            )
+            root_id = self._entity_id(root)
+            if root_id:
+                applied_ids.append(root_id)
+        return applied_ids
+
+    def siege_regiment_smoke_shells_stealth_applies(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        if not bool(sr.get("artillery_support_smoke_shells_active")):
+            return False
+        marked_round = self._safe_int(sr.get("artillery_support_smoke_shells_round", 0) or 0, 0)
+        if marked_round <= 0:
+            return True
+        game = self._current_game()
+        current_round = self._safe_int(getattr(game, "turn", 0) or 0, 0)
+        if current_round <= 0:
+            return True
+        return marked_round == current_round
+
+    def on_battle_round_start(self, battle_round: int, *, game=None) -> None:
+        game_obj = game if game is not None else self._current_game()
+        self.clear_artillery_support_effects(game=game_obj)
+        if not self.is_siege_regiment():
+            return
+        if game_obj is None or not bool(getattr(game_obj, "is_authoritative", True)):
+            return
+        owner = getattr(self.army, "player", None) if self.army is not None else None
+        if owner is None:
+            return
+        self.queue_siege_regiment_artillery_support_mode_request(
+            game=game_obj,
+            player=owner,
+            battle_round=int(battle_round or 0),
+        )
 
     def _unit_root(self, unit):
         if unit is None:

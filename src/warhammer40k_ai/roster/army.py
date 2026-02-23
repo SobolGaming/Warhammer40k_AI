@@ -2499,6 +2499,9 @@ class Army:
             # Orders per officer are tracked by battle round.
             for unit in list(getattr(self, "units", []) or []):
                 mgr._order_issued_state(unit, int(battle_round))
+        mgr = getattr(self, "astra_militarum_detachments", None)
+        if mgr is not None and hasattr(mgr, "on_battle_round_start"):
+            mgr.on_battle_round_start(int(battle_round), game=game)
         mgr = getattr(self, "voice_of_triarch", None)
         if mgr is not None:
             mgr.on_battle_round_start(int(battle_round), game=game)

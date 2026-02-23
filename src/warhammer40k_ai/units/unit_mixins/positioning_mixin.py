@@ -6352,6 +6352,11 @@ class PositioningMixin:
         stealth_opt_fn = getattr(adm_mgr, "stealth_optimisation_stealth_applies", None) if adm_mgr is not None else None
         if callable(stealth_opt_fn) and bool(stealth_opt_fn(self)):
             return True
+        # Astra Militarum: Siege Regiment (Smoke Shells).
+        am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+        smoke_fn = getattr(am_mgr, "siege_regiment_smoke_shells_stealth_applies", None) if am_mgr is not None else None
+        if callable(smoke_fn) and bool(smoke_fn(self)):
+            return True
         # Use cached result if available
         if 'stealth' in getattr(self, '_ability_cache', {}):
             found = self._ability_cache['stealth']

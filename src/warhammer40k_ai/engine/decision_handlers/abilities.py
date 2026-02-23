@@ -346,12 +346,15 @@ def _validate_select_realm_of_chaos_units(game: object, request: DecisionRequest
     errors = list(validate_option_choice(request, result))
     if errors:
         return errors
+    ctx = getattr(request, "context", {}) or {}
+    ability_key = str(ctx.get("ability", "") or "").strip().lower()
+    if is_skip_choice(request, result) and ability_key == "siege_regiment_creeping_barrage_selection":
+        return ("Creeping Barrage target selection cannot be skipped.",)
     if is_skip_choice(request, result):
         return ()
     unit_ids = result.payload.get("unit_ids")
     if not isinstance(unit_ids, list) or not unit_ids:
         return ("The Realm of Chaos requires unit_ids.",)
-    ctx = getattr(request, "context", {}) or {}
     max_units = ctx.get("max_units")
     if max_units is not None and len(unit_ids) > int(max_units):
         return ("Too many units selected for The Realm of Chaos.",)
@@ -375,7 +378,25 @@ def _validate_select_realm_of_chaos_units(game: object, request: DecisionRequest
     if outside_selected and len(seen) > 1:
         return ("Only one unit can be selected if it is outside the Shadow of Chaos.",)
 
-    ability_key = str(ctx.get("ability", "") or "").strip().lower()
+    if ability_key in {
+        "siege_regiment_incendiary_bombardment",
+        "siege_regiment_smoke_shells",
+        "siege_regiment_creeping_barrage_selection",
+    }:
+        player = resolve_player(game, request.player_id)
+        if player is None:
+            return ("Artillery Support requires a player.",)
+        army = getattr(player, "get_army", lambda: None)()
+        if army is None:
+            return ("Artillery Support requires an army.",)
+        mgr = getattr(army, "astra_militarum_detachments", None)
+        if mgr is None or not getattr(mgr, "is_siege_regiment", lambda: False)():
+            return ("Artillery Support requires the Siege Regiment detachment.",)
+        required_units = int(ctx.get("required_units", 0) or 0)
+        if required_units > 0 and len(seen) != required_units:
+            return (f"Artillery Support requires selecting exactly {required_units} unit(s).",)
+        return ()
+
     if ability_key == "subterranean_assault_trygon_character_selection":
         player = resolve_player(game, request.player_id)
         if player is None:
@@ -542,6 +563,138 @@ def _validate_select_realm_of_chaos_units(game: object, request: DecisionRequest
 def _apply_select_realm_of_chaos_units(game: object, request: DecisionRequest, result: DecisionResult):
     ctx = dict(getattr(request, "context", {}) or {})
     ability_key = str(ctx.get("ability", "") or "").strip().lower()
+
+    if ability_key in {
+        "siege_regiment_incendiary_bombardment",
+        "siege_regiment_smoke_shells",
+        "siege_regiment_creeping_barrage_selection",
+    }:
+        player = resolve_player(game, request.player_id)
+        if player is None:
+            raise RuntimeError("Artillery Support player not found.")
+        army = getattr(player, "get_army", lambda: None)()
+        if army is None:
+            raise RuntimeError("Artillery Support army not found.")
+        mgr = getattr(army, "astra_militarum_detachments", None)
+        if mgr is None:
+            raise RuntimeError("Artillery Support detachment manager not found.")
+
+        unit_ids = []
+        if not is_skip_choice(request, result):
+            unit_ids = sorted(
+                {
+                    str(uid or "").strip()
+                    for uid in list(result.payload.get("unit_ids") or [])
+                    if str(uid or "").strip()
+                }
+            )
+        allowed_ids = [
+            str(uid or "").strip()
+            for uid in list(ctx.get("allowed_unit_ids", []) or [])
+            if str(uid or "").strip()
+        ]
+        battle_round = int(ctx.get("battle_round", 0) or getattr(game, "turn", 0) or 0)
+        if ability_key == "siege_regiment_incendiary_bombardment":
+            apply_fn = getattr(mgr, "apply_siege_regiment_incendiary_bombardment_selection", None)
+            if not callable(apply_fn):
+                raise RuntimeError("Incendiary Bombardment apply function is unavailable.")
+            applied_ids = list(
+                apply_fn(
+                    unit_ids,
+                    game=game,
+                    player=player,
+                    battle_round=battle_round,
+                    allowed_unit_ids=allowed_ids,
+                )
+                or []
+            )
+            labels = []
+            for uid in list(applied_ids or []):
+                unit = resolve_unit(game, str(uid))
+                if unit is not None:
+                    labels.append(str(getattr(unit, "name", "Unit") or "Unit"))
+            if labels:
+                _log_action_for_players(
+                    game,
+                    player,
+                    "Incendiary Bombardment: "
+                    + ", ".join(labels)
+                    + " cannot have the Benefit of Cover until end of battle round.",
+                )
+            else:
+                _log_action_for_players(game, player, "Incendiary Bombardment: no units selected.")
+            units = []
+            for uid in list(applied_ids or []):
+                unit = resolve_unit(game, str(uid))
+                if unit is not None:
+                    units.append(unit)
+            return units
+
+        if ability_key == "siege_regiment_smoke_shells":
+            apply_fn = getattr(mgr, "apply_siege_regiment_smoke_shells_selection", None)
+            if not callable(apply_fn):
+                raise RuntimeError("Smoke Shells apply function is unavailable.")
+            applied_ids = list(
+                apply_fn(
+                    unit_ids,
+                    game=game,
+                    battle_round=battle_round,
+                    allowed_unit_ids=allowed_ids,
+                )
+                or []
+            )
+            labels = []
+            for uid in list(applied_ids or []):
+                unit = resolve_unit(game, str(uid))
+                if unit is not None:
+                    labels.append(str(getattr(unit, "name", "Unit") or "Unit"))
+            if labels:
+                _log_action_for_players(
+                    game,
+                    player,
+                    "Smoke Shells: " + ", ".join(labels) + " gain Stealth until end of battle round.",
+                )
+            else:
+                _log_action_for_players(game, player, "Smoke Shells: no units selected.")
+            units = []
+            for uid in list(applied_ids or []):
+                unit = resolve_unit(game, str(uid))
+                if unit is not None:
+                    units.append(unit)
+            return units
+
+        apply_fn = getattr(mgr, "apply_siege_regiment_creeping_barrage_selection", None)
+        if not callable(apply_fn):
+            raise RuntimeError("Creeping Barrage apply function is unavailable.")
+        applied_ids = list(
+            apply_fn(
+                unit_ids,
+                game=game,
+                player=player,
+                battle_round=battle_round,
+                allowed_unit_ids=allowed_ids,
+            )
+            or []
+        )
+        labels = []
+        for uid in list(applied_ids or []):
+            unit = resolve_unit(game, str(uid))
+            if unit is not None:
+                labels.append(str(getattr(unit, "name", "Unit") or "Unit"))
+        if labels:
+            _log_action_for_players(
+                game,
+                player,
+                "Creeping Barrage: " + ", ".join(labels) + " are shaken until end of battle round.",
+            )
+        else:
+            _log_action_for_players(game, player, "Creeping Barrage: no units were shaken.")
+        units = []
+        for uid in list(applied_ids or []):
+            unit = resolve_unit(game, str(uid))
+            if unit is not None:
+                units.append(unit)
+        return units
 
     if ability_key == "subterranean_assault_trygon_character_selection":
         player = resolve_player(game, request.player_id)
@@ -2453,6 +2606,34 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         return errors
     ctx = dict(getattr(request, "context", {}) or {})
     ability = str(ctx.get("ability", "") or "")
+    if ability == "siege_regiment_artillery_support_mode":
+        if is_skip_choice(request, result):
+            return ("Artillery Support mode selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Artillery Support army not found.",)
+        mgr = getattr(army, "astra_militarum_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_siege_regiment", lambda: False)()):
+            return ("Artillery Support requires the Siege Regiment detachment.",)
+        selected_mode = payload.get("artillery_support_mode")
+        if selected_mode is None:
+            selected_mode = payload.get("mode_key")
+        if selected_mode is None:
+            selected_mode = payload.get("choice_key")
+        if selected_mode is None:
+            return ("Artillery Support selection requires artillery_support_mode.",)
+        mode_key = str(selected_mode or "").strip().lower()
+        allowed_modes = {
+            str(v or "").strip().lower()
+            for v in list(ctx.get("allowed_modes", []) or [])
+            if str(v or "").strip()
+        }
+        if allowed_modes and mode_key not in allowed_modes:
+            return ("Selected Artillery Support mode is not an eligible option.",)
+        if mode_key not in {"creeping_barrage", "incendiary_bombardment", "smoke_shells"}:
+            return ("Artillery Support mode must be Creeping Barrage, Incendiary Bombardment, or Smoke Shells.",)
+        return ()
     if ability == "worthy_foes":
         if is_skip_choice(request, result):
             return ("Worthy Foes target selection cannot be skipped.",)
@@ -4298,6 +4479,41 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
 def _apply_choose_quarry(game: object, request: DecisionRequest, result: DecisionResult):
     ctx = dict(getattr(request, "context", {}) or {})
     ability = str(ctx.get("ability", "") or "")
+    if ability == "siege_regiment_artillery_support_mode":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "astra_militarum_detachments", None)
+        if mgr is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        mode_key = payload.get("artillery_support_mode")
+        if mode_key is None:
+            mode_key = payload.get("mode_key")
+        if mode_key is None:
+            mode_key = payload.get("choice_key")
+        mode_key = str(mode_key or "").strip().lower()
+        apply_fn = getattr(mgr, "apply_siege_regiment_artillery_support_mode", None)
+        if not callable(apply_fn):
+            return None
+        battle_round = int(ctx.get("battle_round", 0) or getattr(game, "turn", 0) or 0)
+        outcome = apply_fn(
+            mode_key,
+            game=game,
+            player=player,
+            battle_round=battle_round,
+        )
+        label_map = {
+            "creeping_barrage": "Creeping Barrage",
+            "incendiary_bombardment": "Incendiary Bombardment",
+            "smoke_shells": "Smoke Shells",
+        }
+        mode_label = str(label_map.get(mode_key, mode_key) or mode_key)
+        _log_action_for_players(game, player, f"Artillery Support: selected {mode_label}.")
+        return outcome
     if ability == "da_big_hunt_prey":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)
