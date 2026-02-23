@@ -178,6 +178,29 @@ class GamePhaseHandlersMixin:
                 continue
             build_request(game=self, player=p, phase_name=pname)
 
+    def _on_phase_start_custodes_detachment_rules(self, player=None, phase=None, **_kwargs) -> None:
+        """Resolve Adeptus Custodes command-phase detachment hooks (e.g. Creeping Dread)."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+
+        players = sorted(
+            list(getattr(self, "players", []) or []),
+            key=lambda p: str(getattr(p, "id", "") or ""),
+        )
+        for owner in players:
+            if owner is None or owner is player:
+                continue
+            army = self._get_player_army(owner)
+            if army is None:
+                continue
+            mgr = getattr(army, "adeptus_custodes_detachments", None)
+            apply_fn = getattr(mgr, "apply_creeping_dread_opponent_command_phase", None) if mgr is not None else None
+            if callable(apply_fn):
+                apply_fn(game=self, current_player=player)
+
     def _on_phase_start_optional_abilities(self, player=None, phase=None, **_kwargs) -> None:
         """
         Hook point for optional, player-decided abilities that trigger at specific timing windows.
@@ -194,6 +217,7 @@ class GamePhaseHandlersMixin:
         self._on_phase_start_chaos_daemons_detachment_rules(player=player, phase=phase)
         self._on_phase_start_space_marines_detachment_rules(player=player, phase=phase)
         self._on_phase_start_necrons_detachment_rules(player=player, phase=phase)
+        self._on_phase_start_custodes_detachment_rules(player=player, phase=phase)
         self._on_phase_start_vowed_target(player=player, phase=phase)
         self._on_phase_start_master_of_wolves(player=player, phase=phase)
         if pname:

@@ -999,6 +999,11 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"at the start of your command phase select one unit from your opponent(?: s|s) army",
             r"until the start of your next command phase each time a model in an adeptus custodes character unit from your army makes an attack that targets that enemy unit add 1 to the wound roll",
         ),
+        "Creeping Dread (Aura)": (
+            r"in the battle shock step of your opponents command phase if an enemy unit that is either a psyker unit or below its starting strength is within \d+ of one or more anathema psykana models from your army that enemy unit must take a battle shock test",
+            r"if that unit is below half strength it must subtract \d+ from its battle shock test this phase instead",
+            r"this means that all enemy psyker units within range of this aura ability and all enemy units within range of this aura ability that have lost one or more models must take a battle shock test in your opponents command phase not just those that are below half strength",
+        ),
         "Kindred Sorcery": (
             r"in your command phase you can select one of the abilities listed below to take effect until the start of your next command phase",
             r"you can only select each of these abilities once per battle",
@@ -2111,6 +2116,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Assemblage of Might": (
             "Supported",
             "Auric Champions: at the start of your Command phase select one enemy unit; until your next Command phase, ADEPTUS CUSTODES Character units gain +1 to wound when targeting that unit.",
+        ),
+        "Creeping Dread (Aura)": (
+            "Supported",
+            "Null Maiden Vigil: in your opponent's Command phase, enemy units within 12\" of ANATHEMA PSYKANA models must take Battle-shock tests if they are PSYKER or below Starting Strength; Below Half-strength targets take that test at -1.",
         ),
         "Kindred Sorcery": (
             "Supported",

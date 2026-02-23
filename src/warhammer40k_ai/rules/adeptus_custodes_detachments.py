@@ -12,6 +12,8 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
 
     _AGAINST_ALL_ODDS_RANGE = 6.0
     _ASSEMBLAGE_OF_MIGHT_SOURCE = "Assemblage of Might"
+    _CREEPING_DREAD_RANGE = 12.0
+    _CREEPING_DREAD_SOURCE = "Creeping Dread"
 
     def __init__(self, army=None):
         super().__init__(army=army)
@@ -27,6 +29,11 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Auric Champions")
+
+    def is_null_maiden_vigil(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Null Maiden Vigil")
 
     def _model_in_army(self, model) -> bool:
         if model is None or self.army is None:
@@ -87,6 +94,41 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
         if unit is None:
             return None
         return maybe_entity_id(unit) or str(id(unit))
+
+    def _iter_army_roots(self, army) -> list:
+        if army is None:
+            return []
+        out: list = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._root_unit(unit)
+            if root is None:
+                continue
+            root_id = str(maybe_entity_id(root) or id(root))
+            if root_id in seen:
+                continue
+            seen.add(root_id)
+            out.append(root)
+        out.sort(key=lambda unit: str(maybe_entity_id(unit) or id(unit)))
+        return out
+
+    def _unit_is_active(self, unit) -> bool:
+        if unit is None:
+            return False
+        is_alive = getattr(unit, "is_alive", None)
+        if callable(is_alive) and not bool(is_alive()):
+            return False
+        if not bool(getattr(unit, "deployed", True)):
+            return False
+        reserve_status = str(getattr(unit, "reserve_status", "deployed") or "deployed").strip().lower()
+        if reserve_status != "deployed":
+            return False
+        is_in_reserves = getattr(unit, "is_in_reserves", None)
+        if callable(is_in_reserves) and bool(is_in_reserves()):
+            return False
+        if bool(getattr(unit, "embarked_in", None)) or bool(getattr(unit, "is_embarked", False)):
+            return False
+        return True
 
     def _resolve_game_map(self, *, game=None, game_map=None):
         if game_map is not None:
@@ -229,6 +271,136 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
         if not self.is_assemblage_of_might_target(target_unit):
             return 0
         return 1
+
+    def _unit_is_anathema_psykana(self, unit) -> bool:
+        root = self._root_unit(unit)
+        if root is None:
+            return False
+        if self._unit_has_keyword(root, "ANATHEMA PSYKANA"):
+            return True
+        members = []
+        get_members = getattr(root, "get_attached_unit_members", None)
+        if callable(get_members):
+            members = list(get_members() or [])
+        if not members:
+            members = [root] + list(getattr(root, "attached_leaders", []) or [])
+        for member in list(members or []):
+            if member is None:
+                continue
+            if self._unit_has_keyword(member, "ANATHEMA PSYKANA"):
+                return True
+        return False
+
+    def _model_is_anathema_psykana(self, model) -> bool:
+        if model is None:
+            return False
+        unit = getattr(model, "parent_unit", None)
+        if self._unit_is_anathema_psykana(unit):
+            return True
+        has_any_keyword = getattr(model, "has_any_keyword", None)
+        if callable(has_any_keyword) and bool(has_any_keyword("ANATHEMA PSYKANA")):
+            return True
+        has_keyword = getattr(model, "has_keyword", None)
+        return bool(callable(has_keyword) and has_keyword("ANATHEMA PSYKANA"))
+
+    def _active_anathema_psykana_models(self) -> list:
+        if self.army is None:
+            return []
+        out: list = []
+        seen: set[str] = set()
+        for root in self._iter_army_roots(self.army):
+            if not self._unit_is_active(root):
+                continue
+            if not self._unit_is_anathema_psykana(root):
+                continue
+            get_models = getattr(root, "get_attached_unit_models", None)
+            if callable(get_models):
+                models = list(get_models() or [])
+            else:
+                models = list(getattr(root, "models", []) or [])
+            models.sort(key=lambda model: str(maybe_entity_id(model) or id(model)))
+            for model in models:
+                if model is None or not bool(getattr(model, "is_alive", False)):
+                    continue
+                if not self._model_is_anathema_psykana(model):
+                    continue
+                model_id = str(maybe_entity_id(model) or id(model))
+                if model_id in seen:
+                    continue
+                seen.add(model_id)
+                out.append(model)
+        out.sort(key=lambda model: str(maybe_entity_id(model) or id(model)))
+        return out
+
+    def apply_creeping_dread_opponent_command_phase(self, *, game=None, current_player=None) -> list:
+        if not self.is_null_maiden_vigil():
+            return []
+        if self.army is None:
+            return []
+        owner_player = getattr(self.army, "player", None)
+        if owner_player is None or current_player is None or current_player is owner_player:
+            return []
+        get_army = getattr(current_player, "get_army", None)
+        target_army = get_army() if callable(get_army) else None
+        if target_army is None:
+            return []
+
+        source_models = self._active_anathema_psykana_models()
+        if not source_models:
+            return []
+
+        try:
+            turn = int(getattr(game, "turn", 0) or 1)
+        except (TypeError, ValueError):
+            turn = 1
+
+        results: list[dict] = []
+        for target_root in self._iter_army_roots(target_army):
+            if not self._unit_is_active(target_root):
+                continue
+            is_psyker = self._unit_has_keyword(target_root, "PSYKER")
+            is_below_starting = bool(getattr(target_root, "is_below_starting_strength", lambda: False)())
+            if not (is_psyker or is_below_starting):
+                continue
+            in_range = any(
+                aura_utils.model_within_range_of_unit(
+                    source_model,
+                    target_root,
+                    self._CREEPING_DREAD_RANGE,
+                    use_attached_aggregate=True,
+                )
+                for source_model in source_models
+            )
+            if not in_range:
+                continue
+
+            is_below_half = bool(getattr(target_root, "is_below_half_strength", lambda: False)())
+            test_modifier = -1 if is_below_half else 0
+            if test_modifier:
+                special_rules = getattr(target_root, "special_rules", None)
+                if not isinstance(special_rules, dict):
+                    special_rules = {}
+                current = int(special_rules.get("battle_shock_test_modifier", 0) or 0)
+                special_rules["battle_shock_test_modifier"] = int(current + test_modifier)
+                reasons = list(special_rules.get("battle_shock_test_modifier_reasons", []) or [])
+                reasons.append(f"{self._CREEPING_DREAD_SOURCE}: -1 if Below Half-strength")
+                special_rules["battle_shock_test_modifier_reasons"] = reasons
+                target_root.special_rules = special_rules
+
+            take_test = getattr(target_root, "take_battle_shock_test", None)
+            if callable(take_test):
+                take_test(int(turn or 1))
+            results.append(
+                {
+                    "target_unit_id": str(maybe_entity_id(target_root) or ""),
+                    "target_name": str(getattr(target_root, "name", "") or "Unit"),
+                    "is_psyker": bool(is_psyker),
+                    "below_starting_strength": bool(is_below_starting),
+                    "below_half_strength": bool(is_below_half),
+                    "battle_shock_test_modifier": int(test_modifier),
+                }
+            )
+        return results
 
     def _assemblage_of_might_eligible_enemy_units(self, *, game=None, player=None) -> list:
         if not self.is_auric_champions():
