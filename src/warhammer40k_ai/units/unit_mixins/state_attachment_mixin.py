@@ -433,8 +433,9 @@ class StateAttachmentMixin:
         source: str,
         move_penalty: int,
         charge_penalty: int,
+        expires_phase: str = "COMMAND_PHASE",
     ) -> None:
-        """Apply pinned penalties (Move -X, Charge -Y) until start of owner's next turn."""
+        """Apply pinned penalties (Move -X, Charge -Y) until the configured owner phase start."""
         sr = getattr(self, "special_rules", None)
         if not isinstance(sr, dict):
             sr = {}
@@ -446,6 +447,7 @@ class StateAttachmentMixin:
         sr["pinned_source"] = str(source or "Pinned").strip() or "Pinned"
         sr["pinned_move_penalty"] = int(move_penalty or 0)
         sr["pinned_charge_penalty"] = int(charge_penalty or 0)
+        sr["pinned_expires_phase"] = str(expires_phase or "COMMAND_PHASE").strip().upper() or "COMMAND_PHASE"
         if hasattr(self, "add_characteristic_modifier"):
             from ...utility.modifiers import Modifier, ModifierOp
             self.add_characteristic_modifier(
@@ -486,6 +488,7 @@ class StateAttachmentMixin:
             "pinned_source",
             "pinned_move_penalty",
             "pinned_charge_penalty",
+            "pinned_expires_phase",
         ):
             sr.pop(key, None)
         self.special_rules = sr

@@ -1010,6 +1010,15 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"at the end of your command phase you can spend 3yp",
             r"if you do leagues of votann units from your army lose the hostile acquisition ability and gain the fortify takeover ability or vice versa",
         ),
+        "Assailed From Every Angle": (
+            r"leagues of votann units from your army have the following ability",
+            r"guerrilla adepts",
+            r"in your shooting phase just after this unit is selected to shoot this unit can use this ability",
+            r"if it does select one enemy unit excluding monsters and vehicles",
+            r"until the end of the phase attacks made by models in this unit can only target that enemy unit and only if it is an eligible target and after resolving those attacks if one or more of those attacks hit that enemy unit until the start of your next shooting phase that enemy unit is assailed(?: this simply labels that unit for the purposes of this ability and some enhancements and stratagems)?",
+            r"if that unit is already assailed until the start of your next shooting phase it is also pinned",
+            r"while a unit is pinned subtract \d+ from its move characteristic and subtract \d+ from charge rolls made for it",
+        ),
         "Worldblight": (
             r"if you control an objective marker at the end of your command phase and a death guard unit from your army excluding battle shocked units is within range of that objective marker that objective marker remains under your control until your opponents level of control over that objective marker is greater than yours at the end of a phase",
             r"in addition until you lose control of that objective marker it has the nurgles gift ability as if it were a death guard model from your army",
@@ -2119,6 +2128,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Ruthless Reinvestment": (
             "Supported",
             "Mercenary Oathband: Prioritised Efficiency no longer auto-switches by YP threshold; at the end of your Command phase you can spend 3 YP to toggle Hostile Acquisition/Fortify Takeover, with mode preserved until you toggle again.",
+        ),
+        "Assailed From Every Angle": (
+            "Supported",
+            "Persecution Prospect: in your Shooting phase when a LEAGUES OF VOTANN unit is selected to shoot, it can select one eligible enemy non-MONSTER/non-VEHICLE target (or skip) and attacks are locked to that target for the phase; if one or more attacks hit, the target is assailed until the start of your next Shooting phase, and if it was already assailed it is also pinned (Move -2, Charge -2) until the same timing.",
         ),
         "Worldblight": (
             "Supported",

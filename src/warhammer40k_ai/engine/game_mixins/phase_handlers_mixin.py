@@ -1510,10 +1510,44 @@ class GamePhaseHandlersMixin:
                     sr.pop(key, None)
                 unit.special_rules = sr
 
-    def _on_phase_start_pinned_cleanup(self, player=None, phase=None, **_kwargs) -> None:
-        """Clear Pinned effects at the start of the owner's Command phase."""
+    def _on_phase_start_persecution_prospect_assailed_cleanup(self, player=None, phase=None, **_kwargs) -> None:
+        """Clear Persecution Prospect assailed labels at the start of the owner's Shooting phase."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
-        if pname != "COMMAND_PHASE":
+        if pname != "SHOOTING_PHASE":
+            return
+        if player is None:
+            return
+        owner_id = str(getattr(player, "id", "") or "")
+        if not owner_id:
+            return
+        for p in list(self.players or []):
+            if p is None:
+                raise RuntimeError("Persecution Prospect assailed cleanup requires players.")
+            army = p.get_army()
+            if army is None:
+                raise RuntimeError(f"Persecution Prospect assailed cleanup requires an army for {p.name}.")
+            for unit in list(army.units):
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if str(sr.get("persecution_prospect_assailed_owner", "") or "") != owner_id:
+                    continue
+                if not bool(sr.get("persecution_prospect_assailed_active")):
+                    continue
+                for key in (
+                    "persecution_prospect_assailed_active",
+                    "persecution_prospect_assailed_owner",
+                    "persecution_prospect_assailed_turn",
+                    "persecution_prospect_assailed_source",
+                    "persecution_prospect_assailed_expires_phase",
+                ):
+                    sr.pop(key, None)
+                unit.special_rules = sr
+
+    def _on_phase_start_pinned_cleanup(self, player=None, phase=None, **_kwargs) -> None:
+        """Clear Pinned effects at the configured start phase for the effect owner."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname not in {"COMMAND_PHASE", "SHOOTING_PHASE"}:
             return
         if player is None:
             return
@@ -1532,6 +1566,9 @@ class GamePhaseHandlersMixin:
                     continue
                 if str(sr.get("pinned_owner", "") or "") != owner_id:
                     continue
+                expires_phase = str(sr.get("pinned_expires_phase", "COMMAND_PHASE") or "COMMAND_PHASE").strip().upper()
+                if expires_phase != pname:
+                    continue
                 if sr.get("pinned_active"):
                     clear_fn = getattr(unit, "clear_pinned", None)
                     if callable(clear_fn):
@@ -1544,6 +1581,7 @@ class GamePhaseHandlersMixin:
                             "pinned_source",
                             "pinned_move_penalty",
                             "pinned_charge_penalty",
+                            "pinned_expires_phase",
                         ):
                             sr.pop(key, None)
                         unit.special_rules = sr

@@ -46,6 +46,11 @@ class LeaguesOfVotannDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Mercenary Oathband")
 
+    def is_persecution_prospect(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Persecution Prospect")
+
     def is_needgaard_oathband(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
             return False
@@ -143,6 +148,14 @@ class LeaguesOfVotannDetachmentManager(DetachmentManagerBase):
 
     def _unit_is_infantry(self, unit) -> bool:
         return bool(unit is not None and self._unit_has_role_keyword(unit, "INFANTRY"))
+
+    def _unit_is_monster_or_vehicle(self, unit) -> bool:
+        if unit is None:
+            return False
+        return bool(
+            self._unit_has_role_keyword(unit, "MONSTER")
+            or self._unit_has_role_keyword(unit, "VEHICLE")
+        )
 
     def _unit_matches_iron_master_or_memnyr_keywords(self, unit) -> bool:
         if unit is None:
@@ -456,6 +469,39 @@ class LeaguesOfVotannDetachmentManager(DetachmentManagerBase):
             if self._unit_matches_optimal_application_shooter_keywords(member):
                 return True
         return False
+
+    def persecution_prospect_shooting_unit_eligible(self, unit) -> bool:
+        if not self.is_persecution_prospect():
+            return False
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        if not self._unit_is_votann(root):
+            return False
+        if not self._unit_is_on_battlefield(root):
+            return False
+        return True
+
+    def persecution_prospect_target_eligible(self, source_unit, target_unit) -> bool:
+        if not self.persecution_prospect_shooting_unit_eligible(source_unit):
+            return False
+        source_root = self._attached_root(source_unit)
+        target_root = self._attached_root(target_unit)
+        if source_root is None or target_root is None:
+            return False
+        if not self._unit_is_on_battlefield(target_root):
+            return False
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if source_army is None or target_army is None:
+            return False
+        if source_army is target_army:
+            return False
+        if self._unit_is_monster_or_vehicle(target_root):
+            return False
+        return True
 
     def fury_from_the_delve_grants_deep_strike(self, unit) -> bool:
         if not self.is_delve_assault_shift():

@@ -7551,6 +7551,250 @@ class GameShootingFightHandlersMixin:
             instance_key=f"{unit_id}:{turn}:{owner_id}:optimal_application",
         )
 
+    @staticmethod
+    def _clear_persecution_prospect_source_lock(unit) -> None:
+        if unit is None:
+            return
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in (
+            "persecution_prospect_guerrilla_active",
+            "persecution_prospect_guerrilla_target_unit_id",
+            "persecution_prospect_guerrilla_turn_owner",
+            "persecution_prospect_guerrilla_turn",
+            "persecution_prospect_guerrilla_source",
+        ):
+            sr.pop(key, None)
+        unit.special_rules = sr
+
+    def _on_shooting_targets_selected_persecution_prospect(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None:
+            return
+        if not target_units:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            root = attacking_unit
+        if root is None:
+            return
+        if not bool(getattr(root, "is_alive", lambda: False)()):
+            return
+        if not bool(getattr(root, "deployed", True)):
+            return
+        try:
+            if root.is_in_reserves() or root.is_embarked:
+                return
+        except Exception:
+            pass
+
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        player = getattr(army, "player", None) if army is not None else None
+        if player is None or player is not self.get_current_player():
+            return
+
+        detachment_mgr = getattr(army, "leagues_of_votann_detachments", None) if army is not None else None
+        eligible_source_fn = (
+            getattr(detachment_mgr, "persecution_prospect_shooting_unit_eligible", None)
+            if detachment_mgr is not None
+            else None
+        )
+        if not callable(eligible_source_fn) or not bool(eligible_source_fn(root)):
+            return
+
+        is_target_eligible_fn = (
+            getattr(detachment_mgr, "persecution_prospect_target_eligible", None)
+            if detachment_mgr is not None
+            else None
+        )
+        candidates = []
+        seen_ids = set()
+        for target in list(target_units or []):
+            if target is None:
+                continue
+            try:
+                target_root = target.get_attached_unit_root()
+            except Exception:
+                target_root = target
+            if target_root is None:
+                continue
+            if callable(is_target_eligible_fn):
+                if not bool(is_target_eligible_fn(root, target_root)):
+                    continue
+            target_id = str(get_entity_id(target_root) or "")
+            if not target_id or target_id in seen_ids:
+                continue
+            seen_ids.add(target_id)
+            candidates.append(target_root)
+        if not candidates:
+            return
+
+        owner_id = str(getattr(player, "id", "") or "")
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        unit_id = str(get_entity_id(root) or "")
+        if not unit_id:
+            return
+
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "persecution_prospect_guerrilla_adepts":
+                    continue
+                if str(ctx.get("unit_id", "") or "") != unit_id:
+                    continue
+                if str(ctx.get("turn_owner", "") or "") != owner_id:
+                    continue
+                if int(ctx.get("turn", turn) or turn) != int(turn or 0):
+                    continue
+                return
+
+        options = [DecisionOption.create("None", payload={"action": "skip"})]
+        for target in sorted(list(candidates), key=lambda u: str(maybe_entity_id(u) or "")):
+            options.append(
+                DecisionOption.create(
+                    str(getattr(target, "name", "Unit") or "Unit"),
+                    payload={"target_unit_id": get_entity_id(target)},
+                )
+            )
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"Assailed From Every Angle: select a target for {getattr(root, 'name', 'Unit')} (or None).",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={
+                "ability": "persecution_prospect_guerrilla_adepts",
+                "ability_name": "Assailed From Every Angle",
+                "phase": "Shooting phase",
+                "unit_id": unit_id,
+                "source_unit_id": unit_id,
+                "turn_owner": owner_id,
+                "turn": int(turn or 0),
+                "candidate_unit_ids": [str(get_entity_id(u) or "") for u in sorted(list(candidates), key=lambda c: str(maybe_entity_id(c) or ""))],
+            },
+        )
+        self.request_decision(request)
+
+    def _on_unit_shooting_resolved_persecution_prospect(self, attacker_unit=None, hits_by_target=None, **_kwargs) -> None:
+        if attacker_unit is None:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            root = attacker_unit
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("persecution_prospect_guerrilla_active")):
+            return
+
+        owner_id = str(sr.get("persecution_prospect_guerrilla_turn_owner", "") or "")
+        target_id = str(sr.get("persecution_prospect_guerrilla_target_unit_id", "") or "")
+        source_name = str(sr.get("persecution_prospect_guerrilla_source", "") or "Assailed From Every Angle").strip() or "Assailed From Every Angle"
+        try:
+            source_turn = int(sr.get("persecution_prospect_guerrilla_turn", 0) or 0)
+        except Exception:
+            source_turn = 0
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        current_player = self.get_current_player()
+        current_owner_id = str(getattr(current_player, "id", "") or "")
+        if not owner_id or not target_id or source_turn <= 0:
+            self._clear_persecution_prospect_source_lock(root)
+            return
+        if int(source_turn) != int(current_turn or 0):
+            self._clear_persecution_prospect_source_lock(root)
+            return
+        if current_owner_id and owner_id != current_owner_id:
+            self._clear_persecution_prospect_source_lock(root)
+            return
+
+        target_root = None
+        for target_unit, hits in list(dict(hits_by_target or {}).items()):
+            if target_unit is None or int(hits or 0) <= 0:
+                continue
+            try:
+                candidate = target_unit.get_attached_unit_root()
+            except Exception:
+                candidate = target_unit
+            if candidate is None:
+                continue
+            if str(get_entity_id(candidate) or "") != target_id:
+                continue
+            target_root = candidate
+            break
+
+        if target_root is None:
+            self._clear_persecution_prospect_source_lock(root)
+            return
+
+        target_sr = getattr(target_root, "special_rules", None)
+        if not isinstance(target_sr, dict):
+            target_sr = {}
+        already_assailed = bool(target_sr.get("persecution_prospect_assailed_active")) and str(
+            target_sr.get("persecution_prospect_assailed_owner", "") or ""
+        ) == owner_id
+        target_sr["persecution_prospect_assailed_active"] = True
+        target_sr["persecution_prospect_assailed_owner"] = owner_id
+        target_sr["persecution_prospect_assailed_turn"] = int(current_turn or 0)
+        target_sr["persecution_prospect_assailed_source"] = source_name
+        target_sr["persecution_prospect_assailed_expires_phase"] = "SHOOTING_PHASE"
+        target_root.special_rules = target_sr
+
+        attacker_player = getattr(root.get_parent_army(), "player", None) if hasattr(root, "get_parent_army") else None
+        if already_assailed:
+            apply_fn = getattr(target_root, "apply_pinned", None)
+            if callable(apply_fn):
+                apply_fn(
+                    owner_id=owner_id,
+                    turn=int(current_turn or 0),
+                    source=source_name,
+                    move_penalty=-2,
+                    charge_penalty=-2,
+                    expires_phase="SHOOTING_PHASE",
+                )
+            else:
+                pinned_sr = getattr(target_root, "special_rules", None)
+                if not isinstance(pinned_sr, dict):
+                    pinned_sr = {}
+                pinned_sr["pinned_active"] = True
+                pinned_sr["pinned_owner"] = owner_id
+                pinned_sr["pinned_turn"] = int(current_turn or 0)
+                pinned_sr["pinned_source"] = source_name
+                pinned_sr["pinned_move_penalty"] = -2
+                pinned_sr["pinned_charge_penalty"] = -2
+                pinned_sr["pinned_expires_phase"] = "SHOOTING_PHASE"
+                target_root.special_rules = pinned_sr
+            if attacker_player is not None:
+                from ...utility.event_bus import append_action
+
+                append_action(
+                    attacker_player,
+                    f"{source_name}: {getattr(target_root, 'name', 'Unit')} is pinned until the start of your next Shooting phase.",
+                )
+        else:
+            if attacker_player is not None:
+                from ...utility.event_bus import append_action
+
+                append_action(
+                    attacker_player,
+                    f"{source_name}: {getattr(target_root, 'name', 'Unit')} is assailed until the start of your next Shooting phase.",
+                )
+
+        self._clear_persecution_prospect_source_lock(root)
+
     def _on_unit_shooting_resolved_resource_transmutation(self, attacker_unit=None, killing_models_by_target=None, **_kwargs) -> None:
         if attacker_unit is None:
             return

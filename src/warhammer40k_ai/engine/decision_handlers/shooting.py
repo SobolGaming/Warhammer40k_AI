@@ -101,6 +101,31 @@ def _validate_declare_shots(game: object, request: DecisionRequest, result: Deci
         return ("Shooting declaration requires declarations list.",)
     ctan_profiles = []
     force_target_id = str(request.context.get("force_target_unit_id", "") or "")
+    if not force_target_id:
+        sr = getattr(unit, "special_rules", None)
+        if isinstance(sr, dict) and bool(sr.get("persecution_prospect_guerrilla_active")):
+            target_id = str(sr.get("persecution_prospect_guerrilla_target_unit_id", "") or "")
+            owner_id = str(sr.get("persecution_prospect_guerrilla_turn_owner", "") or "")
+            try:
+                marked_turn = int(sr.get("persecution_prospect_guerrilla_turn", 0) or 0)
+            except Exception:
+                marked_turn = 0
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                current_turn = 0
+            current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            current_owner = ""
+            current_player = getattr(game, "get_current_player", lambda: None)()
+            if current_player is not None:
+                current_owner = str(getattr(current_player, "id", "") or "")
+            if (
+                target_id
+                and current_phase == "SHOOTING_PHASE"
+                and (not owner_id or owner_id == current_owner)
+                and (marked_turn <= 0 or current_turn <= 0 or marked_turn == current_turn)
+            ):
+                force_target_id = target_id
     out_of_phase = bool(request.context.get("out_of_phase", False))
     for decl in declarations:
         if not isinstance(decl, dict):

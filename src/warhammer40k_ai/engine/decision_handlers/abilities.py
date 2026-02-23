@@ -3873,6 +3873,64 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not bool(valid):
             return (str(reason or "Here Be Loot selection is not valid."),)
         return ()
+    if ability == "persecution_prospect_guerrilla_adepts":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Assailed From Every Angle army not found.",)
+        mgr = getattr(army, "leagues_of_votann_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_persecution_prospect", lambda: False)()):
+            return ("Assailed From Every Angle requires Persecution Prospect detachment.",)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("source_unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Assailed From Every Angle source unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return ("Assailed From Every Angle source unit was not found.",)
+        source_id = str(get_entity_id(source_root) or "")
+        expected_source_id = str(ctx.get("unit_id", "") or "")
+        if expected_source_id and source_id and source_id != expected_source_id:
+            return ("Assailed From Every Angle source unit mismatch.",)
+        source_eligible = getattr(mgr, "persecution_prospect_shooting_unit_eligible", None)
+        if not callable(source_eligible) or not bool(source_eligible(source_root)):
+            return ("Assailed From Every Angle source unit is not eligible.",)
+        if is_skip_choice(request, result):
+            return ()
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return ("Assailed From Every Angle target unit was not found.",)
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return ("Assailed From Every Angle target unit was not found.",)
+        candidate_ids = {
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(v or "").strip()
+        }
+        target_id = str(get_entity_id(target_root) or "")
+        if candidate_ids and target_id not in candidate_ids:
+            return ("Assailed From Every Angle selected unit is not an eligible candidate.",)
+        target_eligible = getattr(mgr, "persecution_prospect_target_eligible", None)
+        if not callable(target_eligible) or not bool(target_eligible(source_root, target_root)):
+            return ("Assailed From Every Angle target must be an enemy non-MONSTER/non-VEHICLE unit.")
+        return ()
     if is_skip_choice(request, result):
         return ()
     if ability not in ("strategic_conqueror", "archons_will_objective"):
@@ -3934,6 +3992,88 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         )
         return {
             "target_unit_id": str(get_entity_id(target_root) or ""),
+            "source": ability_name,
+        }
+    if ability == "persecution_prospect_guerrilla_adepts":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "leagues_of_votann_detachments", None)
+        if mgr is None:
+            return None
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("source_unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return None
+        source_sr = getattr(source_root, "special_rules", None)
+        if not isinstance(source_sr, dict):
+            source_sr = {}
+        if is_skip_choice(request, result):
+            for key in (
+                "persecution_prospect_guerrilla_active",
+                "persecution_prospect_guerrilla_target_unit_id",
+                "persecution_prospect_guerrilla_turn_owner",
+                "persecution_prospect_guerrilla_turn",
+                "persecution_prospect_guerrilla_source",
+            ):
+                source_sr.pop(key, None)
+            source_root.special_rules = source_sr
+            return {
+                "action": "skip",
+                "source_unit_id": str(get_entity_id(source_root) or ""),
+            }
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return None
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return None
+        target_eligible = getattr(mgr, "persecution_prospect_target_eligible", None)
+        if not callable(target_eligible) or not bool(target_eligible(source_root, target_root)):
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        owner_id = str(getattr(player, "id", "") or "")
+        try:
+            turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        ability_name = str(ctx.get("ability_name", "") or "Assailed From Every Angle").strip() or "Assailed From Every Angle"
+        source_sr["persecution_prospect_guerrilla_active"] = True
+        source_sr["persecution_prospect_guerrilla_target_unit_id"] = str(get_entity_id(target_root) or "")
+        source_sr["persecution_prospect_guerrilla_turn_owner"] = owner_id
+        source_sr["persecution_prospect_guerrilla_turn"] = int(turn or 0)
+        source_sr["persecution_prospect_guerrilla_source"] = ability_name
+        source_root.special_rules = source_sr
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {getattr(source_root, 'name', 'Unit')} can only target {getattr(target_root, 'name', 'Unit')} this phase.",
+        )
+        return {
+            "target_unit_id": str(get_entity_id(target_root) or ""),
+            "source_unit_id": str(get_entity_id(source_root) or ""),
             "source": ability_name,
         }
     if ability == "dread_mob_try_dat_button":
