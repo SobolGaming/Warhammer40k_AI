@@ -947,6 +947,10 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"tyranid warriors see below and winged tyranid prime units from your army have a 5 invulnerable save",
             r"(?:keywords )?tyranid warriors with ranged bio weapons and tyranid warriors with melee bio weapons units from your army gain the tyranid warriors and battleline keywords and while such a unit is not battle shocked tyranid warriors models in that unit have an objective control characteristic of 3",
         ),
+        "Enraged Behemoths": (
+            r"each time a tyranids monster model from your army makes an attack add 1 to the hit roll if that model(?: s|s) unit is below its starting strength and add 1 to the wound roll as well if that model(?: s|s) unit is below half strength",
+            r"in addition while a tyranids monster unit from your army excluding battle shocked units is at its starting strength add 2 to the objective control characteristic of models in that unit",
+        ),
     }
     return {_norm(name): tuple(pats) for name, pats in raw.items()}
 
@@ -2082,6 +2086,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Leader-beasts": (
             "Supported",
             "Warrior Bioform Onslaught: Tyranid Warriors with Ranged/Melee Bio-weapons gain TYRANID WARRIORS and BATTLELINE; TYRANID WARRIORS models in those units have Objective Control 3 (Battle-shock core rule still sets OC to 0); TYRANID WARRIORS and WINGED TYRANID PRIME units gain a 5+ invulnerable save.",
+        ),
+        "Enraged Behemoths": (
+            "Supported",
+            "Crusher Stampede: TYRANIDS MONSTER models gain +1 to Hit while their unit is below Starting Strength and +1 to Wound while their unit is Below Half-strength; TYRANIDS MONSTER units that are at Starting Strength and not Battle-shocked gain +2 Objective Control.",
         ),
         "Get Stuck In": ("Supported", "War Horde: ORKS melee weapons gain Sustained Hits 1."),
         "Combat Doctrines": ("Supported", "Gladius Task Force: select each doctrine once per battle to grant move/charge eligibility."),

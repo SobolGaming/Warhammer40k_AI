@@ -714,6 +714,25 @@ class Unit(
             except Exception:
                 pass
 
+            # Tyranids: Enraged Behemoths (Crusher Stampede) +2 OC while
+            # TYRANIDS MONSTER unit is at Starting Strength and not Battle-shocked.
+            try:
+                tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+                bonus_fn = getattr(tyr_mgr, "enraged_behemoths_objective_control_bonus", None) if tyr_mgr is not None else None
+                if callable(bonus_fn):
+                    bonus, source = bonus_fn(model, unit=self)
+                    if int(bonus or 0) > 0:
+                        source_name = str(source or "Enraged Behemoths").strip() or "Enraged Behemoths"
+                        mods.append(
+                            Modifier(
+                                ModifierOp.ADD,
+                                int(bonus),
+                                source=f"detachment:{source_name}",
+                            )
+                        )
+            except Exception:
+                pass
+
             # Singular Purpose (TYRANIDS): while the selected source model is within range
             # of the selected objective marker, that model has OC 15 (or configured value).
             try:

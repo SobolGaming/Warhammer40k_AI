@@ -8072,6 +8072,19 @@ class WargearProfile:
             bonus, reason = bonus_fn(attacker, unit)
             if bonus:
                 _add_hit_mod(int(bonus), reason or f"+{int(bonus)} to hit from The Blood of Martyrs")
+        # Tyranids: Enraged Behemoths (Crusher Stampede).
+        unit = getattr(attacker, "parent_unit", None)
+        army = (
+            unit.get_parent_army()
+            if unit is not None and hasattr(unit, "get_parent_army") and hasattr(unit, "parent_army")
+            else None
+        )
+        mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+        bonus_fn = getattr(mgr, "enraged_behemoths_hit_bonus", None) if mgr is not None else None
+        if callable(bonus_fn):
+            bonus, reason = bonus_fn(attacker, unit)
+            if bonus:
+                _add_hit_mod(int(bonus), reason or f"+{int(bonus)} to hit from Enraged Behemoths")
         # Adeptus Custodes: Against All Odds (+1 to hit when isolated).
         unit = getattr(attacker, "parent_unit", None)
         army = None
@@ -12148,6 +12161,22 @@ class WargearProfile:
                 dice_modifier += int(bonus)
                 wound_result['modifiers'].append(
                     reason or f"+{int(bonus)} to wound from The Blood of Martyrs"
+                )
+        # Tyranids: Enraged Behemoths (Crusher Stampede).
+        unit = getattr(attacker, "parent_unit", None)
+        army = (
+            unit.get_parent_army()
+            if unit is not None and hasattr(unit, "get_parent_army") and hasattr(unit, "parent_army")
+            else None
+        )
+        mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+        bonus_fn = getattr(mgr, "enraged_behemoths_wound_bonus", None) if mgr is not None else None
+        if callable(bonus_fn):
+            bonus, reason = bonus_fn(attacker, unit)
+            if bonus:
+                dice_modifier += int(bonus)
+                wound_result['modifiers'].append(
+                    reason or f"+{int(bonus)} to wound from Enraged Behemoths"
                 )
         # Adeptus Custodes: Against All Odds (+1 to wound when isolated).
         unit = getattr(attacker, "parent_unit", None)

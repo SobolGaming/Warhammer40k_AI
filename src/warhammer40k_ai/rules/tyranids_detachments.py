@@ -53,6 +53,7 @@ _LEADER_BEASTS_TYRANID_WARRIOR_UNIT_NAMES = {
     "tyranid warriors with ranged bio weapons",
     "tyranid warriors with melee bio weapons",
 }
+_ENRAGED_BEHEMOTHS_SOURCE = "Enraged Behemoths"
 
 
 class TyranidsDetachmentManager(DetachmentManagerBase):
@@ -256,6 +257,14 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
             return False
         return True
 
+    def _unit_is_tyranids_monster(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if not self._unit_has_keyword_or_faction(root, "TYRANIDS", faction_id=self.faction_id):
+            return False
+        return self._unit_has_keyword(root, "MONSTER")
+
     def _attached_unit_has_keyword(self, unit, keyword: str) -> bool:
         root = self._unit_root(unit)
         if root is None:
@@ -317,6 +326,74 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
         if callable(has_any) and bool(has_any("INFANTRY")):
             return True
         return False
+
+    @staticmethod
+    def _model_is_monster(model) -> bool:
+        if model is None:
+            return False
+        if TyranidsDetachmentManager._model_keyword(model, "MONSTER"):
+            return True
+        parent = getattr(model, "parent_unit", None)
+        has_any = getattr(parent, "has_any_keyword", None) if parent is not None else None
+        if callable(has_any) and bool(has_any("MONSTER")):
+            return True
+        return False
+
+    def _enraged_behemoths_model_context(self, model, unit=None) -> tuple[bool, Any]:
+        if not self.is_crusher_stampede():
+            return False, None
+        if model is None:
+            return False, None
+        source_unit = unit if unit is not None else getattr(model, "parent_unit", None)
+        root = self._unit_root(source_unit)
+        if root is None:
+            return False, None
+        if not self._unit_in_army(root):
+            return False, None
+        if not self._unit_is_tyranids_monster(root):
+            return False, None
+        if not self._model_is_monster(model):
+            return False, None
+        return True, root
+
+    def enraged_behemoths_hit_bonus(self, model, unit=None) -> tuple[int, str]:
+        applies, root = self._enraged_behemoths_model_context(model, unit=unit)
+        if not applies or root is None:
+            return 0, ""
+        below_start = getattr(root, "is_below_starting_strength", None)
+        if not callable(below_start) or not bool(below_start()):
+            return 0, ""
+        return 1, f"{_ENRAGED_BEHEMOTHS_SOURCE} (+1 to hit below Starting Strength)"
+
+    def enraged_behemoths_wound_bonus(self, model, unit=None) -> tuple[int, str]:
+        applies, root = self._enraged_behemoths_model_context(model, unit=unit)
+        if not applies or root is None:
+            return 0, ""
+        below_half = getattr(root, "is_below_half_strength", None)
+        if not callable(below_half) or not bool(below_half()):
+            return 0, ""
+        return 1, f"{_ENRAGED_BEHEMOTHS_SOURCE} (+1 to wound below Half-strength)"
+
+    def enraged_behemoths_objective_control_bonus(self, model, *, unit=None) -> tuple[int, str]:
+        if not self.is_crusher_stampede():
+            return 0, ""
+        if model is None:
+            return 0, ""
+        source_unit = unit if unit is not None else getattr(model, "parent_unit", None)
+        root = self._unit_root(source_unit)
+        if root is None:
+            return 0, ""
+        if not self._unit_in_army(root):
+            return 0, ""
+        if not self._unit_is_tyranids_monster(root):
+            return 0, ""
+        is_bs = getattr(root, "is_battle_shocked", None)
+        if callable(is_bs) and bool(is_bs()):
+            return 0, ""
+        below_start = getattr(root, "is_below_starting_strength", None)
+        if callable(below_start) and bool(below_start()):
+            return 0, ""
+        return 2, f"{_ENRAGED_BEHEMOTHS_SOURCE} (+2 OC at Starting Strength)"
 
     @staticmethod
     def _wounds_snapshot(model) -> tuple[int, int]:
