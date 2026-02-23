@@ -17,6 +17,9 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
     _CREEPING_DREAD_RANGE = 12.0
     _CREEPING_DREAD_SOURCE = "Creeping Dread"
     _MARTIAL_MASTERY_SOURCE = "Martial Mastery"
+    _REVERED_COMPANIONS_SOURCE = "Revered Companions"
+    _REVERED_COMPANIONS_RANGE = 6.0
+    _REVERED_COMPANIONS_FNP_CONDITION = "against psychic attacks and mortal wounds"
 
     def __init__(self, army=None):
         super().__init__(army=army)
@@ -52,6 +55,11 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Solar Spearhead")
+
+    def is_talons_of_the_emperor(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Talons Of The Emperor")
 
     @staticmethod
     def _add_keyword_once(entity, keyword: str) -> None:
@@ -417,6 +425,106 @@ class AdeptusCustodesDetachmentManager(DetachmentManagerBase):
                 out.append(model)
         out.sort(key=lambda model: str(maybe_entity_id(model) or id(model)))
         return out
+
+    def _active_friendly_roots(self) -> list:
+        if self.army is None:
+            return []
+        out: list = []
+        for root in self._iter_army_roots(self.army):
+            if not self._unit_is_active(root):
+                continue
+            out.append(root)
+        return out
+
+    def _revered_companions_target_unit(self, model_or_unit):
+        if not self.is_talons_of_the_emperor():
+            return None
+        if model_or_unit is None:
+            return None
+        unit = getattr(model_or_unit, "parent_unit", None)
+        if unit is None:
+            unit = model_or_unit
+        root = self._root_unit(unit)
+        if root is None:
+            return None
+        if not self._unit_in_army(root):
+            return None
+        if not self._unit_is_custodes(root):
+            return None
+        return root
+
+    def revered_companions_null_aegis_fnp(
+        self,
+        unit,
+        *,
+        target_model=None,
+        game=None,
+        game_map=None,
+    ) -> tuple[int, str, str]:
+        del target_model
+        del game
+        del game_map
+        target_root = self._revered_companions_target_unit(unit)
+        if target_root is None:
+            return 0, "", ""
+        for source_root in self._active_friendly_roots():
+            if source_root is None:
+                continue
+            if not self._unit_is_anathema_psykana(source_root):
+                continue
+            if not aura_utils.unit_within_range_of_unit(
+                source_root,
+                target_root,
+                self._REVERED_COMPANIONS_RANGE,
+                use_attached_aggregate=True,
+            ):
+                continue
+            return 5, self._REVERED_COMPANIONS_FNP_CONDITION, self._REVERED_COMPANIONS_SOURCE
+        return 0, "", ""
+
+    def revered_companions_deadly_unity_hit_bonus(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        game=None,
+        game_map=None,
+    ) -> tuple[int, str]:
+        del target_unit
+        del game
+        del game_map
+        if not self.is_talons_of_the_emperor():
+            return 0, ""
+        if attacker_model is None:
+            return 0, ""
+        if not self._model_in_army(attacker_model):
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root = self._root_unit(attacker_unit)
+        if attacker_root is None:
+            return 0, ""
+        if not self._unit_in_army(attacker_root):
+            return 0, ""
+        if not self._unit_is_active(attacker_root):
+            return 0, ""
+        if not self._unit_is_anathema_psykana(attacker_root):
+            return 0, ""
+        for source_root in self._active_friendly_roots():
+            if source_root is None or source_root is attacker_root:
+                continue
+            if not self._unit_is_custodes(source_root):
+                continue
+            if self._unit_is_anathema_psykana(source_root):
+                continue
+            if not aura_utils.unit_within_range_of_unit(
+                source_root,
+                attacker_root,
+                self._REVERED_COMPANIONS_RANGE,
+                use_attached_aggregate=True,
+            ):
+                continue
+            return 1, self._REVERED_COMPANIONS_SOURCE
+        return 0, ""
 
     def _solar_spearhead_walker_candidates(self) -> list:
         if not self.is_solar_spearhead():

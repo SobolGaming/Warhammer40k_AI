@@ -8246,20 +8246,27 @@ class WargearProfile:
                 bonus, reason = synaptic_bonus_fn(attacker, unit=unit, game=game)
                 if bonus:
                     _add_hit_mod(int(bonus), reason or f"+{int(bonus)} to hit from Synaptic Imperatives")
-        # Adeptus Custodes: Against All Odds (+1 to hit when isolated).
+        # Adeptus Custodes detachment hit modifiers.
         unit = getattr(attacker, "parent_unit", None)
         army = None
         if unit is not None and hasattr(unit, "get_parent_army") and hasattr(unit, "parent_army"):
             army = unit.get_parent_army()
         mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
-        if mgr is not None and callable(getattr(mgr, "against_all_odds_hit_bonus", None)):
+        if mgr is not None:
             game = getattr(getattr(army, "player", None), "game", None)
             game_map = getattr(game, "map", None) if game is not None else None
             if game_map is None:
                 game_map = self._get_game_map_from_model(attacker)
-            bonus = int(mgr.against_all_odds_hit_bonus(attacker, target, game=game, game_map=game_map) or 0)
-            if bonus:
-                _add_hit_mod(bonus, f"+{bonus} to hit from Against All Odds")
+            against_all_odds_fn = getattr(mgr, "against_all_odds_hit_bonus", None)
+            if callable(against_all_odds_fn):
+                bonus = int(against_all_odds_fn(attacker, target, game=game, game_map=game_map) or 0)
+                if bonus:
+                    _add_hit_mod(bonus, f"+{bonus} to hit from Against All Odds")
+            deadly_unity_fn = getattr(mgr, "revered_companions_deadly_unity_hit_bonus", None)
+            if callable(deadly_unity_fn):
+                bonus, reason = deadly_unity_fn(attacker, target, game=game, game_map=game_map)
+                if bonus:
+                    _add_hit_mod(int(bonus), str(reason or f"+{int(bonus)} to hit from Revered Companions"))
         # Harbingers of Dread: Darkness (-1 to hit against Chaos Knights).
         try:
             target_army = target.get_parent_army()

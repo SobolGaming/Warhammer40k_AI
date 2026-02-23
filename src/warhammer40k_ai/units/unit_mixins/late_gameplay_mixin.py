@@ -1361,6 +1361,21 @@ class LateGameplayMixin:
                         result.append(entry)
         except Exception:
             pass
+        army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+        custodes_mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
+        null_aegis_fn = getattr(custodes_mgr, "revered_companions_null_aegis_fnp", None) if custodes_mgr is not None else None
+        if callable(null_aegis_fn):
+            null_aegis_value, null_aegis_condition, _null_aegis_source = null_aegis_fn(
+                self,
+                target_model=target_model,
+            )
+            if int(null_aegis_value or 0) > 0:
+                entry = (
+                    int(null_aegis_value),
+                    str(null_aegis_condition or "against psychic attacks and mortal wounds"),
+                )
+                if entry not in result:
+                    result.append(entry)
         try:
             # Truesilver Aegis (Aura): friendly GREY KNIGHTS units wholly within 6" gain FNP 6+ vs mortal wounds.
             if self.has_any_keyword("GREY KNIGHTS"):

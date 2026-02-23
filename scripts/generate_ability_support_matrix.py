@@ -1020,6 +1020,12 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"the selected units gain the character keyword",
             r"this means that the selected models can be given enhancements and one of them can be selected as your warlord",
         ),
+        "Revered Companions": (
+            r"anathema psykana units from your army gain the following the ability",
+            r"while an adeptus custodes unit is within 6 of this unit models in that unit have the feel no pain 5 ability against psychic attacks and mortal wounds",
+            r"all other adeptus custodes units from your army gain the following ability",
+            r"while an anathema psykana unit is within 6 of this unit each time a model in that anathema psykana unit makes an attack add 1 to the hit roll",
+        ),
         "Kindred Sorcery": (
             r"in your command phase you can select one of the abilities listed below to take effect until the start of your next command phase",
             r"you can only select each of these abilities once per battle",
@@ -2144,6 +2150,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Auric Armour": (
             "Supported",
             "Solar Spearhead: ADEPTUS CUSTODES VEHICLE units gain +2 Objective Control at Starting Strength (excluding AIRCRAFT and Battle-shocked units), re-roll Hit rolls of 1 while below Starting Strength, and re-roll Hit rolls of 1 plus Wound rolls of 1 while Below Half-strength; ADEPTUS CUSTODES WALKER units gain +2\" Move and +1 to Advance/Charge rolls; in the Muster Armies step, you can select up to two ADEPTUS CUSTODES WALKER units to gain the CHARACTER keyword.",
+        ),
+        "Revered Companions": (
+            "Supported",
+            "Talons Of The Emperor: ANATHEMA PSYKANA units project Null Aegis so nearby ADEPTUS CUSTODES units gain Feel No Pain 5+ against Psychic attacks and mortal wounds, and non-ANATHEMA ADEPTUS CUSTODES units project Deadly Unity so nearby ANATHEMA PSYKANA units gain +1 to Hit.",
         ),
         "Kindred Sorcery": (
             "Supported",
