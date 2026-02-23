@@ -6331,6 +6331,14 @@ class ActionsMovementMixin:
                     seen.add(rid)
                 deduped.append(root)
             target_units = deduped
+
+        army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+        orks_mgr = getattr(army, "orks_detachments", None) if army is not None else None
+        da_big_hunt_applies = getattr(orks_mgr, "da_big_hunt_charge_reroll_applies", None) if orks_mgr is not None else None
+        if callable(da_big_hunt_applies):
+            if da_big_hunt_applies(self, target_units=target_units, game=game):
+                return True
+
         conditional_found = False
         try:
             rule = self.get_selected_to_shoot_charge_reroll_rule()

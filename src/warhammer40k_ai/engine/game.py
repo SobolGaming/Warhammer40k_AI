@@ -7786,6 +7786,16 @@ class Game(
             mgr.on_command_phase_start(game=self, player=current_player)
             self.event_system.publish("necrons_command_phase_enhancement_prompt", player=current_player, game=self)
 
+        # Orks detachments: command-phase state resets and mandatory prey selection (Da Big Hunt).
+        mgr = getattr(army, "orks_detachments", None)
+        if mgr is not None and hasattr(mgr, "on_command_phase_start"):
+            mgr.on_command_phase_start(game=self, player=current_player)
+            build_prey_request = getattr(mgr, "build_da_big_hunt_prey_request", None)
+            if callable(build_prey_request):
+                prey_request = build_prey_request(game=self, player=current_player)
+                if prey_request is not None:
+                    self.request_decision(prey_request)
+
         # Orks: Waaagh! (expires at your next Command phase; prompt to call).
         mgr = getattr(army, "waaagh", None)
         if mgr is not None:

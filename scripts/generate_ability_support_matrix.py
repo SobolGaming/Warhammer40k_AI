@@ -611,6 +611,12 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"at the start of your command phase in a turn in which you have not called a waaagh if you have one or more warboss models on the battlefield or embarked within a transport that is on the battlefield you can call a waaagh for a second time this battle",
             r"when doing so that second waaagh only counts as having been called for warboss nobz and meganobz units from your army",
         ),
+        "Da Hunt Is On": (
+            r"at the start of your command phase select one monster vehicle or character unit from your opponents army",
+            r"until the start of your next command phase that enemy unit is your prey",
+            r"each time a beast snagga unit from your army declares a charge that includes your prey as one of the targets you can reroll the charge roll",
+            r"each time a beast snagga model from your army makes an attack that targets your prey improve the armour penetration characteristic of that attack by \d+",
+        ),
         "Get Stuck In": (
             r"melee weapons equipped by orks models from your army have the sustained hits \d+ ability",
         ),
@@ -2144,6 +2150,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Da Boss Is Watchin'": (
             "Supported",
             "Bully Boyz: after your first Waaagh!, a second Command phase Waaagh! can be called if a Warboss model is on the battlefield (including embarked in a battlefield Transport); that second Waaagh! only affects WARBOSS, Nobz, and Meganobz units.",
+        ),
+        "Da Hunt Is On": (
+            "Supported",
+            "Da Big Hunt: at the start of your Command phase, select an enemy MONSTER, VEHICLE, or CHARACTER as your Prey until your next Command phase; BEAST SNAGGA units can re-roll Charge rolls when declaring charges that include that Prey, and BEAST SNAGGA model attacks improve AP by 1 against that Prey.",
         ),
         "Get Stuck In": ("Supported", "War Horde: ORKS melee weapons gain Sustained Hits 1."),
         "Combat Doctrines": ("Supported", "Gladius Task Force: select each doctrine once per battle to grant move/charge eligibility."),

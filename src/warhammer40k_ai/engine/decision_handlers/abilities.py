@@ -2195,6 +2195,46 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         return errors
     ctx = dict(getattr(request, "context", {}) or {})
     ability = str(ctx.get("ability", "") or "")
+    if ability == "da_big_hunt_prey":
+        if is_skip_choice(request, result):
+            return ("Da Hunt Is On selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Da Hunt Is On army not found.",)
+        mgr = getattr(army, "orks_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_da_big_hunt", lambda: False)()):
+            return ("Da Hunt Is On requires Da Big Hunt detachment.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return ("Da Hunt Is On target unit was not found.",)
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return ("Da Hunt Is On target unit was not found.",)
+        target_id = str(get_entity_id(target_root) or "")
+        candidate_ids = {
+            str(v)
+            for v in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(v)
+        }
+        if candidate_ids and target_id not in candidate_ids:
+            return ("Da Hunt Is On target is not an eligible candidate.",)
+        is_valid_target = getattr(mgr, "is_valid_da_big_hunt_prey_target", None)
+        if not callable(is_valid_target):
+            return ("Da Hunt Is On target validation is unavailable.",)
+        if not bool(is_valid_target(target_root, player=player, game=game)):
+            return ("Da Hunt Is On target must be an enemy MONSTER, VEHICLE, or CHARACTER unit on the battlefield.",)
+        return ()
     if ability == "feed_the_swarm":
         payload = _option_payload(request, result)
         if is_skip_choice(request, result):
@@ -3447,6 +3487,46 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
 def _apply_choose_quarry(game: object, request: DecisionRequest, result: DecisionResult):
     ctx = dict(getattr(request, "context", {}) or {})
     ability = str(ctx.get("ability", "") or "")
+    if ability == "da_big_hunt_prey":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "orks_detachments", None)
+        if mgr is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return None
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return None
+        select_prey = getattr(mgr, "select_da_big_hunt_prey", None)
+        if not callable(select_prey):
+            return None
+        if not bool(select_prey(target_root, game=game, player=player)):
+            return None
+        ability_name = str(ctx.get("ability_name", "") or "Da Hunt Is On").strip() or "Da Hunt Is On"
+        target_name = str(getattr(target_root, "name", "Unit") or "Unit")
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: selected {target_name} as your Prey until your next Command phase.",
+        )
+        return {
+            "target_unit_id": str(get_entity_id(target_root) or ""),
+            "source": ability_name,
+        }
     if ability == "feed_the_swarm":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)

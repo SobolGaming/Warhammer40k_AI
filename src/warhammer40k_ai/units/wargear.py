@@ -2392,6 +2392,18 @@ class WargearProfile:
                     char_ap_bonus = 1
                 if char_ap_bonus:
                     ap_val -= int(char_ap_bonus)
+        attacker_unit = getattr(attacker, "parent_unit", None)
+        get_parent_army = getattr(attacker_unit, "get_parent_army", None) if attacker_unit is not None else None
+        army = get_parent_army() if callable(get_parent_army) else None
+        orks_mgr = getattr(army, "orks_detachments", None) if army is not None else None
+        da_big_hunt_ap_bonus_fn = getattr(orks_mgr, "da_big_hunt_ap_bonus", None) if orks_mgr is not None else None
+        if callable(da_big_hunt_ap_bonus_fn):
+            try:
+                da_big_hunt_ap_bonus = int(da_big_hunt_ap_bonus_fn(attacker, target, weapon_profile=self) or 0)
+            except (TypeError, ValueError):
+                da_big_hunt_ap_bonus = 0
+            if da_big_hunt_ap_bonus > 0:
+                ap_val -= int(da_big_hunt_ap_bonus)
         try:
             if self.parent_wargear and self.parent_wargear.is_ranged():
                 _s_bonus, sp_ap_bonus, _d_bonus, _a_bonus, _m_bonus, _source = self._supernova_launcher_bonuses(attacker)
