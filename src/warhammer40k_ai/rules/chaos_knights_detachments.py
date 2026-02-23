@@ -14,9 +14,11 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
     MALEFIC_SURGE_NAME = "Malefic Surge"
     MARKED_PREY_NAME = "Marked Prey"
     DARK_SACRIFICE_NAME = "Dark Sacrifice"
+    TYRANNICAL_COURT_NAME = "Tyrannical Court"
     DETACHMENT_INFERNAL_LANCE = "Infernal Lance"
     DETACHMENT_HOUNDPACK_LANCE = "Houndpack Lance"
     DETACHMENT_ICONOCLAST_FIEFDOM = "Iconoclast Fiefdom"
+    DETACHMENT_LORDS_OF_DREAD = "Lords of Dread"
     HOUNDPACK_CHARACTER_SELECTION_ABILITY = "houndpack_lance_character_selection"
     ICONOCLAST_DARK_SACRIFICE_ABILITY = "iconoclast_dark_sacrifice"
 
@@ -29,6 +31,7 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
         self.houndpack_marked_prey_owner_id: str = ""
         self._houndpack_character_unit_ids: set[str] = set()
         self._houndpack_character_selection_resolved: bool = False
+        self._lords_of_dread_claimed_for_dark_gods_used_round: int = 0
 
     def is_infernal_lance(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -44,6 +47,11 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches(self.DETACHMENT_ICONOCLAST_FIEFDOM)
+
+    def is_lords_of_dread(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches(self.DETACHMENT_LORDS_OF_DREAD)
 
     @staticmethod
     def _unit_root(unit):
@@ -121,6 +129,18 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
         if unit_army is None or player_army is None:
             return False
         return unit_army is not player_army
+
+    def _warlord_root(self):
+        army = self.army
+        if army is None:
+            return None
+        warlord = getattr(army, "warlord", None)
+        if warlord is None:
+            for unit in list(getattr(army, "units", []) or []):
+                if bool(getattr(unit, "is_warlord", False)):
+                    warlord = unit
+                    break
+        return self._unit_root(warlord)
 
     def _unit_is_damned(self, unit) -> bool:
         return self._unit_has_keyword(unit, "DAMNED")
@@ -548,6 +568,65 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
                 errors.append("Iconoclast Fiefdom (Wretched Thralls): DAMNED units cannot be your Warlord.")
                 break
         return errors
+
+    def tyrannical_court_objective_control_bonus(self, model, *, unit=None) -> tuple[int, str]:
+        if not self.is_lords_of_dread():
+            return 0, ""
+        if model is None:
+            return 0, ""
+        root = self._unit_root(unit or getattr(model, "parent_unit", None))
+        if root is None:
+            return 0, ""
+        if not self._unit_belongs_to_army(root):
+            return 0, ""
+        if not self._unit_is_chaos_knights(root):
+            return 0, ""
+        is_character = bool(getattr(model, "is_character", False))
+        if not is_character and not self._unit_has_keyword(root, "CHARACTER"):
+            return 0, ""
+        return 2, self.TYRANNICAL_COURT_NAME
+
+    def warlord_on_battlefield(self) -> bool:
+        if not self.is_lords_of_dread():
+            return False
+        warlord = self._warlord_root()
+        if warlord is None:
+            return False
+        if not self._unit_belongs_to_army(warlord):
+            return False
+        return self._unit_on_battlefield(warlord)
+
+    def can_use_tyrannical_court_claimed_for_dark_gods_discount(self, *, game=None) -> bool:
+        if not self.is_lords_of_dread():
+            return False
+        if not self.warlord_on_battlefield():
+            return False
+        game_obj = game
+        if game_obj is None:
+            game_obj = getattr(getattr(self.army, "player", None), "game", None) if self.army is not None else None
+        if game_obj is None:
+            return False
+        try:
+            battle_round = int(getattr(game_obj, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            return False
+        if battle_round <= 0:
+            return False
+        return int(self._lords_of_dread_claimed_for_dark_gods_used_round or 0) != battle_round
+
+    def mark_tyrannical_court_claimed_for_dark_gods_discount_used(self, *, game=None) -> None:
+        game_obj = game
+        if game_obj is None:
+            game_obj = getattr(getattr(self.army, "player", None), "game", None) if self.army is not None else None
+        if game_obj is None:
+            return
+        try:
+            battle_round = int(getattr(game_obj, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            return
+        if battle_round <= 0:
+            return
+        self._lords_of_dread_claimed_for_dark_gods_used_round = battle_round
 
     def apply_houndpack_lance_battleline_keywords(self, unit=None) -> None:
         if not self.is_houndpack_lance():

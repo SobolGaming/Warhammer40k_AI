@@ -628,6 +628,10 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"onslaught up to 750 pts",
             r"no damned models from your army can be your warlord",
         ),
+        "Tyrannical Court": (
+            r"improve the objective control characteristic of chaos knights character models from your army by 2",
+            r"(?:in addition )?once per battle round if your warlord is on the battlefield you can use the claimed for the dark gods stratagem for 0cp",
+        ),
         "Quicksilver Grace": (
             r"you can reroll advance rolls made for emperors children units from your army",
         ),
@@ -2658,6 +2662,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Dreaded Masters": (
             "Supported",
             "Iconoclast Fiefdom: Dread Tyrants aura grants DAMNED units within 9\" of friendly TITANIC CHAOS KNIGHTS re-roll Hit and Wound rolls of 1; Dark Sacrifice prompts once each time a CHAOS KNIGHTS unit is selected to shoot/fight to choose a friendly DAMNED unit within 6\" and either [LETHAL HITS] or [SUSTAINED HITS 1] until end of phase after destroying D3 (or D3+3 on failed Leadership) models; Wretched Thralls enforces DAMNED ally points cap by battle size and blocks DAMNED Warlords.",
+        ),
+        "Tyrannical Court": (
+            "Supported",
+            "Lords of Dread: Chaos Knights CHARACTER models gain +2 Objective Control, and once per battle round, if your Warlord is on the battlefield, you can use CLAIMED FOR THE DARK GODS for 0CP.",
         ),
         "Blood Tithe": (
             "Supported",

@@ -1520,6 +1520,29 @@ class Player:
         base = int(getattr(stratagem, "cp_cost", 0) or 0)
         return max(0, base)
 
+    def _preview_tyrannical_court_claimed_for_dark_gods_discount(self, *, stratagem=None) -> int:
+        """
+        Tyrannical Court (Lords of Dread):
+        Once per battle round, if your Warlord is on the battlefield, you can use
+        CLAIMED FOR THE DARK GODS for 0CP.
+        """
+        if stratagem is None:
+            return 0
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u != "CLAIMED FOR THE DARK GODS":
+            return 0
+        army = self.get_army()
+        ck_mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
+        can_fn = (
+            getattr(ck_mgr, "can_use_tyrannical_court_claimed_for_dark_gods_discount", None)
+            if ck_mgr is not None
+            else None
+        )
+        if not callable(can_fn) or not bool(can_fn(game=self.game)):
+            return 0
+        base = int(getattr(stratagem, "cp_cost", 0) or 0)
+        return max(0, base)
+
     def _should_use_optional_ability(self, key: str, context: dict) -> bool:
         """
         Check for one-shot override decisions for optional abilities.
@@ -1608,6 +1631,22 @@ class Player:
             if self._should_preview_optional_ability("UNPARALLELED_TACTICIAN", ctx, assume=assume_optional_discounts):
                 discount = base
                 reasons.append("Unparalleled Tactician: Into Darkness for 0CP.")
+                return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
+
+        tyrannical_court = self._preview_tyrannical_court_claimed_for_dark_gods_discount(stratagem=stratagem)
+        if tyrannical_court:
+            ctx = {
+                "ability_name": "Tyrannical Court",
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_preview_optional_ability(
+                "TYRANNICAL_COURT_CLAIMED_FOR_DARK_GODS",
+                ctx,
+                assume=assume_optional_discounts,
+            ):
+                discount = base
+                reasons.append("Tyrannical Court: Claimed for the Dark Gods for 0CP.")
                 return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
 
         faultless = self._preview_faultless_opportunist_discount(stratagem=stratagem, target_unit=target_unit)
@@ -1977,6 +2016,50 @@ class Player:
                     "discount": base,
                     "cost": cost,
                     "reasons": ["Unparalleled Tactician: Into Darkness for 0CP."],
+                    "increase": increase,
+                    "increase_reasons": increase_reasons,
+                }
+        tyrannical_court = self._preview_tyrannical_court_claimed_for_dark_gods_discount(stratagem=stratagem)
+        if tyrannical_court:
+            ctx = {
+                "ability_name": "Tyrannical Court",
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_use_optional_ability("TYRANNICAL_COURT_CLAIMED_FOR_DARK_GODS", ctx):
+                cost = 0
+                increase = 0
+                increase_reasons: list[str] = []
+                opponent = self._get_opponent_player()
+                if opponent is not None:
+                    inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                        target_unit=target_unit,
+                        stratagem=stratagem,
+                        current_cost=cost,
+                    )
+                    increase = int(inc_info.get("increase", 0) or 0)
+                    increase_reasons = list(inc_info.get("reasons", []) or [])
+                    if increase:
+                        cost = max(0, cost + increase)
+                self._pending_stratagem_cp_increase = {
+                    "increase": int(increase or 0),
+                    "reasons": increase_reasons,
+                    "stratagem_name": getattr(stratagem, "name", None) or "",
+                }
+                army = self.get_army()
+                ck_mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
+                mark_used = (
+                    getattr(ck_mgr, "mark_tyrannical_court_claimed_for_dark_gods_discount_used", None)
+                    if ck_mgr is not None
+                    else None
+                )
+                if callable(mark_used):
+                    mark_used(game=self.game)
+                return {
+                    "base": base,
+                    "discount": base,
+                    "cost": cost,
+                    "reasons": ["Tyrannical Court: Claimed for the Dark Gods for 0CP."],
                     "increase": increase,
                     "increase_reasons": increase_reasons,
                 }

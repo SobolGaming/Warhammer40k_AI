@@ -780,6 +780,22 @@ class Unit(
                         )
             except Exception:
                 pass
+            try:
+                ck_mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
+                bonus_fn = getattr(ck_mgr, "tyrannical_court_objective_control_bonus", None) if ck_mgr is not None else None
+                if callable(bonus_fn):
+                    bonus, source = bonus_fn(model, unit=self)
+                    if int(bonus or 0) > 0:
+                        source_name = str(source or "Tyrannical Court").strip() or "Tyrannical Court"
+                        mods.append(
+                            Modifier(
+                                ModifierOp.ADD,
+                                int(bonus),
+                                source=f"detachment:{source_name}",
+                            )
+                        )
+            except Exception:
+                pass
 
             # Singular Purpose (TYRANIDS): while the selected source model is within range
             # of the selected objective marker, that model has OC 15 (or configured value).
