@@ -3,8 +3,14 @@ from types import SimpleNamespace
 
 
 class TestActsOfFaith(unittest.TestCase):
-    def _make_army(self, faction_id: str, player):
-        army = SimpleNamespace(faction_id=faction_id, units=[], player=player)
+    def _make_army(self, faction_id: str, player, detachment_type: str = ""):
+        army = SimpleNamespace(
+            faction_id=faction_id,
+            detachment_type=detachment_type,
+            units=[],
+            player=player,
+            adepta_sororitas_detachments=None,
+        )
         return army
 
     def _make_unit(self, name: str, army, *, acts: bool = True, litany: bool = False, enhancement=None):
@@ -88,9 +94,10 @@ class TestActsOfFaith(unittest.TestCase):
 
         calls = {"count": 0}
 
-        def _provider(**_kwargs):
+        def _provider(**kwargs):
             calls["count"] += 1
-            return 6
+            pool = list(kwargs.get("pool", []) or [])
+            return max(pool) if pool else None
 
         game = SimpleNamespace(
             map=SimpleNamespace(miracle_dice_provider=_provider),
@@ -118,6 +125,48 @@ class TestActsOfFaith(unittest.TestCase):
         self.assertEqual(roll_2, 2)
         self.assertEqual(mgr.miracle_dice, [5])
         self.assertEqual(calls["count"], 1)
+
+    def test_army_of_faith_sacred_rites_allows_two_acts_of_faith_per_phase(self):
+        from warhammer40k_ai.rules import acts_of_faith as aof
+        from warhammer40k_ai.rules.adepta_sororitas_detachments import AdeptaSororitasDetachmentManager
+
+        calls = {"count": 0}
+
+        def _provider(**kwargs):
+            calls["count"] += 1
+            pool = list(kwargs.get("pool", []) or [])
+            return max(pool) if pool else None
+
+        game = SimpleNamespace(
+            map=SimpleNamespace(miracle_dice_provider=_provider),
+            phase=SimpleNamespace(name="SHOOTING_PHASE"),
+        )
+        player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
+        army = self._make_army("AS", player, detachment_type="Army of Faith")
+        army.adepta_sororitas_detachments = AdeptaSororitasDetachmentManager(army)
+        unit = self._make_unit("Sisters", army, acts=True)
+        army.units.append(unit)
+
+        mgr = aof.ActsOfFaithManager(army)
+        mgr.miracle_dice = [6, 5, 4]
+
+        old_get_dice_roll = aof.get_dice_roll
+        aof.get_dice_roll = lambda _faces=6: 2
+        try:
+            roll_1, _dice_1, used_1 = mgr.resolve_roll(unit, roll_type="hit", game=game, dice_count=1, die_faces=6)
+            roll_2, _dice_2, used_2 = mgr.resolve_roll(unit, roll_type="wound", game=game, dice_count=1, die_faces=6)
+            roll_3, _dice_3, used_3 = mgr.resolve_roll(unit, roll_type="save", game=game, dice_count=1, die_faces=6)
+        finally:
+            aof.get_dice_roll = old_get_dice_roll
+
+        self.assertTrue(used_1)
+        self.assertTrue(used_2)
+        self.assertFalse(used_3)
+        self.assertEqual(roll_1, 6)
+        self.assertEqual(roll_2, 5)
+        self.assertEqual(roll_3, 2)
+        self.assertEqual(mgr.miracle_dice, [4])
+        self.assertEqual(calls["count"], 2)
 
     def test_litany_reroll_on_unit_destroyed(self):
         from warhammer40k_ai.rules import acts_of_faith as aof

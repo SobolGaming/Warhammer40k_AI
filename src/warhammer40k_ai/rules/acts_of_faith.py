@@ -25,7 +25,7 @@ class ActsOfFaithManager:
     def __init__(self, army=None):
         self.army = army
         self.miracle_dice: list[int] = []
-        self._used_in_phase: dict[str, str] = {}
+        self._used_in_phase: dict[str, tuple[str, int]] = {}
 
     def _army_has_rule(self) -> bool:
         if self.army is None:
@@ -279,7 +279,29 @@ class ActsOfFaithManager:
             return False
         phase_key = self._phase_key(game)
         uid = self._unit_id(unit)
-        if phase_key and self._used_in_phase.get(uid) == phase_key:
+        max_acts = 1
+        try:
+            mgr = getattr(self.army, "adepta_sororitas_detachments", None) if self.army is not None else None
+            max_fn = getattr(mgr, "sacred_rites_max_acts_of_faith_per_phase", None) if mgr is not None else None
+            if callable(max_fn):
+                max_acts = max(1, int(max_fn(unit) or 1))
+        except Exception:
+            max_acts = 1
+
+        used_phase = ""
+        used_count = 0
+        entry = self._used_in_phase.get(uid)
+        if isinstance(entry, tuple):
+            used_phase = str(entry[0] or "")
+            try:
+                used_count = int(entry[1] or 0)
+            except Exception:
+                used_count = 0
+        elif entry is not None:
+            used_phase = str(entry or "")
+            used_count = 1
+
+        if phase_key and used_phase == phase_key and used_count >= int(max_acts):
             return False
         return True
 
@@ -287,7 +309,16 @@ class ActsOfFaithManager:
         uid = self._unit_id(unit)
         phase_key = self._phase_key(game)
         if uid:
-            self._used_in_phase[uid] = phase_key
+            used_count = 0
+            current = self._used_in_phase.get(uid)
+            if isinstance(current, tuple) and str(current[0] or "") == phase_key:
+                try:
+                    used_count = int(current[1] or 0)
+                except Exception:
+                    used_count = 0
+            elif current is not None and str(current or "") == phase_key:
+                used_count = 1
+            self._used_in_phase[uid] = (phase_key, int(used_count + 1))
 
     def _choose_miracle_die(self, unit, *, roll_type: str, dice_count: int, die_faces: int, game=None, needed=None) -> Optional[int]:
         if not self.can_use_act_of_faith(unit, game=game):

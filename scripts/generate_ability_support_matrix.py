@@ -302,6 +302,9 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"ranged weapons equipped by aeldari vehicle models from your army have the assault ability",
             r"you can reroll advance rolls made for aeldari vehicle fly units from your army",
         ),
+        "Sacred Rites": (
+            r"each adepta sororitas unit from your army can perform up to two acts of faith per phase instead of just one",
+        ),
         "Yriel's Own": (
             r"aeldari units in your army are eligible to declare a charge in a turn in which they advanced",
             r"in addition each time an anhrathe rangers or shroud runners unit from your army advances you can reroll the advance roll",
@@ -2594,6 +2597,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "The Blood of Martyrs": (
             "Supported",
             "Hallowed Martyrs: ADEPTA SORORITAS models gain +1 to hit below Starting Strength and +1 to wound below Half-strength.",
+        ),
+        "Sacred Rites": (
+            "Supported",
+            "Army of Faith: ADEPTA SORORITAS units can perform up to two Acts of Faith per phase instead of one.",
         ),
         "Maddened Ferocity": (
             "Supported",

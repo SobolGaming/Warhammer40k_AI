@@ -7,11 +7,17 @@ class AdeptaSororitasDetachmentManager(DetachmentManagerBase):
     faction_id = "AS"
 
     THE_BLOOD_OF_MARTYRS_NAME = "The Blood of Martyrs"
+    SACRED_RITES_NAME = "Sacred Rites"
 
     def is_hallowed_martyrs(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Hallowed Martyrs")
+
+    def is_army_of_faith(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Army of Faith")
 
     def unit_is_adepta_sororitas(self, unit) -> bool:
         if unit is None:
@@ -25,6 +31,18 @@ class AdeptaSororitasDetachmentManager(DetachmentManagerBase):
             if bool(model.has_any_keyword("ADEPTA SORORITAS")):
                 return True
         return self.unit_is_adepta_sororitas(unit)
+
+    def sacred_rites_max_acts_of_faith_per_phase(self, unit) -> int:
+        """
+        Army of Faith: ADEPTA SORORITAS units can perform up to two Acts of Faith per phase.
+        """
+        if not self.is_army_of_faith():
+            return 1
+        if unit is None:
+            return 1
+        if not self.unit_is_adepta_sororitas(unit):
+            return 1
+        return 2
 
     def blood_of_martyrs_hit_bonus(self, model, unit) -> tuple[int, str]:
         """
