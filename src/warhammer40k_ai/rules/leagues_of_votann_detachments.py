@@ -41,6 +41,11 @@ class LeaguesOfVotannDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Hearthfyre Arsenal")
 
+    def is_mercenary_oathband(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Mercenary Oathband")
+
     def is_needgaard_oathband(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
             return False
@@ -48,6 +53,9 @@ class LeaguesOfVotannDetachmentManager(DetachmentManagerBase):
             self._detachment_matches_normalized("Needgaârd Oathband")
             or self._detachment_matches_normalized("Needgaard Oathband")
         )
+
+    def ruthless_reinvestment_overrides_mode_updates(self) -> bool:
+        return self.is_mercenary_oathband()
 
     def _normalize_text(self, text: str) -> str:
         t = unicodedata.normalize("NFKD", str(text or ""))
@@ -310,6 +318,50 @@ class LeaguesOfVotannDetachmentManager(DetachmentManagerBase):
         if callable(get_current):
             return get_current() is player
         return False
+
+    def ruthless_reinvestment_toggle_used_this_turn(self, *, game, player=None) -> bool:
+        if not self.is_mercenary_oathband() or game is None:
+            return False
+        turn, owner_id = self._current_turn_context(game)
+        if player is not None and not owner_id:
+            owner_id = str(getattr(player, "id", "") or "")
+        if turn <= 0:
+            return False
+        try:
+            last_turn = int(getattr(self, "_ruthless_reinvestment_last_toggle_turn", 0) or 0)
+        except (TypeError, ValueError):
+            last_turn = 0
+        last_owner = str(getattr(self, "_ruthless_reinvestment_last_toggle_owner", "") or "")
+        if last_turn != int(turn):
+            return False
+        if owner_id:
+            return last_owner == owner_id
+        return True
+
+    def mark_ruthless_reinvestment_toggle_used(self, *, game, player=None) -> None:
+        if game is None:
+            return
+        turn, owner_id = self._current_turn_context(game)
+        if player is not None and not owner_id:
+            owner_id = str(getattr(player, "id", "") or "")
+        if turn <= 0:
+            return
+        self._ruthless_reinvestment_last_toggle_turn = int(turn)
+        self._ruthless_reinvestment_last_toggle_owner = str(owner_id or "")
+
+    def ruthless_reinvestment_can_toggle(self, *, game, player=None) -> bool:
+        if not self.is_mercenary_oathband():
+            return False
+        if game is None or self.army is None:
+            return False
+        army_player = getattr(self.army, "player", None)
+        if army_player is None:
+            return False
+        if player is not None and player is not army_player:
+            return False
+        if not self._player_is_current_turn_owner(game, army_player):
+            return False
+        return not self.ruthless_reinvestment_toggle_used_this_turn(game=game, player=army_player)
 
     def _iter_objective_locations(self, game) -> list:
         if game is None:

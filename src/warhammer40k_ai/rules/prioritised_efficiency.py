@@ -330,7 +330,24 @@ class PrioritisedEfficiencyManager:
             return False
         if player is None or getattr(self.army, "player", None) is not player:
             return False
+        lov_mgr = getattr(self.army, "leagues_of_votann_detachments", None) if self.army is not None else None
+        override_fn = getattr(lov_mgr, "ruthless_reinvestment_overrides_mode_updates", None) if lov_mgr is not None else None
+        if callable(override_fn) and bool(override_fn()):
+            return False
         desired = FORTIFY_TAKEOVER if int(self.yield_points or 0) >= 7 else HOSTILE_ACQUISITION
+        if desired.key == self.mode.key:
+            return False
+        self.mode = desired
+        try:
+            self.last_mode_turn = self._battle_round(game)
+        except Exception:
+            pass
+        return True
+
+    def toggle_mode(self, *, game=None) -> bool:
+        if not self._army_has_rule():
+            return False
+        desired = FORTIFY_TAKEOVER if self.mode.key == HOSTILE_ACQUISITION.key else HOSTILE_ACQUISITION
         if desired.key == self.mode.key:
             return False
         self.mode = desired

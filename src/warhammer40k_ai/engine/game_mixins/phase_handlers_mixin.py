@@ -5627,6 +5627,47 @@ class GamePhaseHandlersMixin:
             )
             self.request_decision(request)
 
+    def _on_phase_end_ruthless_reinvestment(self, player=None, phase=None, **_kwargs) -> None:
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        detachment_mgr = getattr(army, "leagues_of_votann_detachments", None)
+        can_toggle_fn = getattr(detachment_mgr, "ruthless_reinvestment_can_toggle", None) if detachment_mgr is not None else None
+        if not callable(can_toggle_fn) or not bool(can_toggle_fn(game=self, player=player)):
+            return
+        pe = getattr(army, "prioritised_efficiency", None)
+        if pe is None:
+            return
+        try:
+            if int(getattr(pe, "yield_points", 0) or 0) < 3:
+                return
+        except Exception:
+            return
+        owner_id = str(getattr(player, "id", "") or "")
+        turn = int(getattr(self, "turn", 0) or 0)
+        self._queue_optional_ability_confirmation(
+            player=player,
+            ability_key="ruthless_reinvestment",
+            ability_name="Ruthless Reinvestment",
+            message="Ruthless Reinvestment: spend 3 YP to toggle Hostile Acquisition/Fortify Takeover?",
+            context={
+                "ability_name": "Ruthless Reinvestment",
+                "phase": "Command phase",
+                "cost": 3,
+                "turn_owner": owner_id,
+                "turn": int(turn or 0),
+            },
+            payload={"cost": 3},
+            instance_key=f"ruthless_reinvestment:{owner_id}:{turn}",
+        )
+
     def _on_phase_start_opponent_shooting_phase_disrupt(self, player=None, phase=None, **_kwargs) -> None:
         """Start of opponent's Shooting phase: resolve Mischief and Confusion / Horrible Fascination."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

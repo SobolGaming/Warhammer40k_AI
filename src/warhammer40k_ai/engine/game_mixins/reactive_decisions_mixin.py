@@ -3420,6 +3420,7 @@ class GameReactiveDecisionsMixin:
             "geomantic_hunters",
             "resource_transmutation",
             "optimal_application",
+            "ruthless_reinvestment",
             "oathbound_speculator",
             "dead_reckoning",
             "warpmeld_sacrifice",
@@ -3783,6 +3784,46 @@ class GameReactiveDecisionsMixin:
                     mode=getattr(pe, "mode", None),
                     yield_points=int(getattr(pe, "yield_points", 0) or 0),
                     reason="Optimal Application",
+                )
+            return
+
+        if ability_key == "ruthless_reinvestment":
+            player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+            if player is None:
+                return
+            army = player.get_army()
+            pe = getattr(army, "prioritised_efficiency", None) if army is not None else None
+            if pe is None:
+                return
+            detachment_mgr = getattr(army, "leagues_of_votann_detachments", None) if army is not None else None
+            can_toggle_fn = getattr(detachment_mgr, "ruthless_reinvestment_can_toggle", None) if detachment_mgr is not None else None
+            if not callable(can_toggle_fn) or not bool(can_toggle_fn(game=self, player=player)):
+                return
+            try:
+                cost = int(payload.get("cost", ctx.get("cost", 3)) or 3)
+            except Exception:
+                cost = 3
+            cost = max(0, int(cost or 0))
+            if cost <= 0:
+                return
+            if not bool(getattr(pe, "spend_yield_points", lambda _a, game=None: False)(cost, game=self)):
+                return
+            toggled = bool(getattr(pe, "toggle_mode", lambda game=None: False)(game=self))
+            if not toggled:
+                return
+            mark_fn = getattr(detachment_mgr, "mark_ruthless_reinvestment_toggle_used", None) if detachment_mgr is not None else None
+            if callable(mark_fn):
+                mark_fn(game=self, player=player)
+            event_system = getattr(self, "event_system", None)
+            if event_system is not None:
+                event_system.publish(
+                    "prioritised_efficiency_updated",
+                    player=player,
+                    game=self,
+                    delta=-int(cost),
+                    mode=getattr(pe, "mode", None),
+                    yield_points=int(getattr(pe, "yield_points", 0) or 0),
+                    reason="Ruthless Reinvestment",
                 )
             return
 

@@ -446,12 +446,13 @@ def build_default_rule_providers() -> List[RuleProvider]:
             predicate=lambda ctxs, _g: any_manager(
                 ctxs,
                 "leagues_of_votann_detachments",
-                ("is_needgaard_oathband", "is_hearthband", "is_hearthfyre_arsenal"),
+                ("is_needgaard_oathband", "is_hearthband", "is_hearthfyre_arsenal", "is_mercenary_oathband"),
             ),
             subscriptions=[
                 ("unit_destroyed", "_on_unit_destroyed_martial_leverage"),
                 ("unit_destroyed", "_on_unit_destroyed_seized_opportunity"),
                 ("phase_end", "_on_phase_end_forgewrought_expertise"),
+                ("phase_end", "_on_phase_end_ruthless_reinvestment"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_oathbound_speculator"),
                 ("fight_unit_selected", "_on_fight_unit_selected_oathbound_speculator"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_iron_ambassador"),

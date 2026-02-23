@@ -1004,6 +1004,12 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"if you do until the end of the phase each time a model in that unit makes an attack reroll a hit roll of 1",
             r"up to 2 pts",
         ),
+        "Ruthless Reinvestment": (
+            r"your leagues of votann units do not have the hostile acquisition or fortify takeover abilities except as described in this rule",
+            r"at the start of the battle your leagues of votann units have the hostile acquisition ability",
+            r"at the end of your command phase you can spend 3yp",
+            r"if you do leagues of votann units from your army lose the hostile acquisition ability and gain the fortify takeover ability or vice versa",
+        ),
         "Worldblight": (
             r"if you control an objective marker at the end of your command phase and a death guard unit from your army excluding battle shocked units is within range of that objective marker that objective marker remains under your control until your opponents level of control over that objective marker is greater than yours at the end of a phase",
             r"in addition until you lose control of that objective marker it has the nurgles gift ability as if it were a death guard model from your army",
@@ -2109,6 +2115,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Optimal Application": (
             "Supported",
             "Hearthfyre Arsenal: at the end of your Command phase, gain up to 2 YP from controlled non-deployment-zone objectives with Iron-master/Memnyr Strategist models in range; in your Shooting phase, Brôkhyr/Ironkin Steeljacks/Arkanyst Evaluator units can spend 1 YP when selected to shoot to re-roll Hit rolls of 1 until end of phase.",
+        ),
+        "Ruthless Reinvestment": (
+            "Supported",
+            "Mercenary Oathband: Prioritised Efficiency no longer auto-switches by YP threshold; at the end of your Command phase you can spend 3 YP to toggle Hostile Acquisition/Fortify Takeover, with mode preserved until you toggle again.",
         ),
         "Worldblight": (
             "Supported",
