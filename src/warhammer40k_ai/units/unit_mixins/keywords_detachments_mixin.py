@@ -1944,6 +1944,26 @@ class KeywordsDetachmentsMixin:
         self._ability_cache['brazen_fury'] = applies
         return applies
 
+    def has_insurmountable_odds(self) -> bool:
+        """Check if the unit has the Insurmountable Odds detachment ability (Unending Swarm)."""
+        if "insurmountable_odds" in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache["insurmountable_odds"])
+        applies = False
+        try:
+            army = self.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+        if mgr is not None and callable(getattr(mgr, "insurmountable_odds_horde_move_applies", None)):
+            try:
+                applies = bool(mgr.insurmountable_odds_horde_move_applies(self))
+            except Exception:
+                applies = False
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache["insurmountable_odds"] = bool(applies)
+        return bool(applies)
+
     def has_righteous_zeal(self) -> bool:
         """Check if the unit has the Righteous Zeal datasheet ability."""
         if "righteous_zeal" in getattr(self, "_ability_cache", {}):
@@ -1959,7 +1979,9 @@ class KeywordsDetachmentsMixin:
         if 'horde_move' in getattr(self, '_ability_cache', {}):
             return self._ability_cache['horde_move']
 
-        found, _ = self._find_ability_with_patterns(["horde move"])
+        found = bool(self.has_insurmountable_odds())
+        if not found:
+            found, _ = self._find_ability_with_patterns(["horde move"])
         if not found:
             found = bool(self.has_righteous_zeal())
         if not hasattr(self, '_ability_cache'):

@@ -171,6 +171,26 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Warrior Bioform Onslaught")
 
+    def _unending_swarm_unit_is_endless_multitude(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if self._unit_has_keyword(root, "ENDLESS MULTITUDE"):
+            return True
+        return self._attached_unit_has_keyword(root, "ENDLESS MULTITUDE")
+
+    def insurmountable_odds_horde_move_applies(self, unit) -> bool:
+        if not self.is_unending_swarm():
+            return False
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        if not self._unit_is_tyranids(root):
+            return False
+        return self._unending_swarm_unit_is_endless_multitude(root)
+
     def _unit_in_army(self, unit) -> bool:
         if unit is None:
             return False

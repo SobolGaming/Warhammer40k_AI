@@ -9450,12 +9450,25 @@ class GameShootingFightHandlersMixin:
                     has_righteous_zeal = bool(has_righteous_zeal_fn())
                 except Exception:
                     has_righteous_zeal = False
+            has_insurmountable_odds = False
+            has_insurmountable_odds_fn = getattr(target, "has_insurmountable_odds", None)
+            if callable(has_insurmountable_odds_fn):
+                try:
+                    has_insurmountable_odds = bool(has_insurmountable_odds_fn())
+                except Exception:
+                    has_insurmountable_odds = False
             if has_righteous_zeal:
                 msg = (
                     "Righteous Zeal: Move D6+2\" as close as possible to the closest non-AIRCRAFT enemy unit.\n"
                     "This unit cannot make a Righteous Zeal move while Battle-shocked or within Engagement Range, and can only make one such move per phase."
                 )
                 source_name = "Righteous Zeal"
+            elif has_insurmountable_odds:
+                msg = (
+                    "Insurmountable Odds: Roll D6 and make a Surge move up to that distance as close as possible to the closest non-AIRCRAFT enemy unit.\n"
+                    "This unit can move within Engagement Range and cannot make this move while Battle-shocked."
+                )
+                source_name = "Insurmountable Odds"
             else:
                 msg = (
                     "Horde Move: Move D6\" as close as possible to the closest non-AIRCRAFT enemy unit.\n"

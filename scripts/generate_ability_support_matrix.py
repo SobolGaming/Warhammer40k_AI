@@ -943,6 +943,13 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"one destroyed infantry model excluding characters is returned to that unit with its full wounds remaining",
             r"if that unit is an endless multitude unit up to 3 destroyed models are returned instead",
         ),
+        "Insurmountable Odds": (
+            r"each time an enemy unit is selected to shoot after that unit has finished making its attacks if one or more models from one or more endless multitude units from your army were destroyed as a result of those attacks each such unit can make a surge move",
+            r"to do so roll one d6",
+            r"that unit can be moved a distance in inches up to the result but that unit must end that move as close as possible to the closest enemy unit excluding aircraft",
+            r"when doing so those models can be moved within engagement range of enemy units",
+            r"a unit cannot make a surge move while it is battle shocked",
+        ),
         "Leader-beasts": (
             r"tyranid warriors see below and winged tyranid prime units from your army have a 5 invulnerable save",
             r"(?:keywords )?tyranid warriors with ranged bio weapons and tyranid warriors with melee bio weapons units from your army gain the tyranid warriors and battleline keywords and while such a unit is not battle shocked tyranid warriors models in that unit have an objective control characteristic of 3",
@@ -2101,6 +2108,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Feed the Swarm": (
             "Supported",
             "Assimilation Swarm: in your Command phase, each eligible HARVESTER queues an optional CHOOSE_QUARRY regeneration decision (with None), then either heals one friendly TYRANIDS model by D3+1 or returns destroyed INFANTRY non-CHARACTER models (up to 3 for ENDLESS MULTITUDE); source/target per-phase limits are enforced, including Regenerating Monstrosity and Biophagic Flow range interactions.",
+        ),
+        "Insurmountable Odds": (
+            "Supported",
+            "Unending Swarm: after each enemy unit finishes shooting, each ENDLESS MULTITUDE unit from your army that lost models from those attacks can make a reactive Surge move by rolling D6 and moving up to that distance; the move must end as close as possible to the closest non-AIRCRAFT enemy unit, can enter Engagement Range, and is blocked while Battle-shocked.",
         ),
         "Leader-beasts": (
             "Supported",
