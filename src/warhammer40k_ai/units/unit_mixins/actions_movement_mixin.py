@@ -10370,6 +10370,9 @@ class ActionsMovementMixin:
             pass
         army = self.get_parent_army()
         mgr = getattr(army, "orks_detachments", None) if army is not None else None
+        more_dakka_fn = getattr(mgr, "more_dakka_assault_applies", None) if mgr is not None else None
+        if callable(more_dakka_fn) and bool(more_dakka_fn(self, attack_type="ranged", profile=profile)):
+            return True
         applies_fn = getattr(mgr, "kult_of_speed_adrenaline_junkies_applies", None) if mgr is not None else None
         if callable(applies_fn) and applies_fn(self):
             parent_wargear = getattr(profile, "parent_wargear", None)
@@ -10470,6 +10473,9 @@ class ActionsMovementMixin:
             return True
         army = self.get_parent_army()
         mgr = getattr(army, "orks_detachments", None) if army is not None else None
+        more_dakka_fn = getattr(mgr, "more_dakka_assault_applies", None) if mgr is not None else None
+        if callable(more_dakka_fn) and bool(more_dakka_fn(self, attack_type="ranged", profile=profile)):
+            return True
         applies_fn = getattr(mgr, "kult_of_speed_adrenaline_junkies_applies", None) if mgr is not None else None
         if callable(applies_fn) and applies_fn(self):
             parent_wargear = getattr(profile, "parent_wargear", None)

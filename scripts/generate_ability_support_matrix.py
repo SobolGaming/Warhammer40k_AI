@@ -620,6 +620,10 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Adrenaline Junkies": (
             r"speed freeks units from your army are eligible to shoot and declare a charge in a turn in which they advanced or fell back",
         ),
+        "Dakka! Dakka! Dakka!": (
+            r"ranged weapons equipped by orks infantry and orks walker models from your army have the assault ability",
+            r"while the waaagh is active for your army during your shooting phase ranged weapons equipped by orks infantry and orks walker models from your army have the sustained hits \d+ ability",
+        ),
         "Mob Mentality": (
             r"each time an attack targets a boyz unit from your army models in that unit have a \d+ invulnerable save against that attack",
             r"each time an attack targets a boyz unit from your army that contains 10 or more models models in that unit have a \d+ invulnerable save against that attack",
@@ -2182,6 +2186,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Adrenaline Junkies": (
             "Supported",
             "Kult of Speed: SPEED FREEKS units are eligible to shoot and declare a charge in turns when they Advanced or Fell Back.",
+        ),
+        "Dakka! Dakka! Dakka!": (
+            "Supported",
+            "More Dakka!: ORKS INFANTRY/WALKER ranged weapons count as ASSAULT, and while Waaagh! is active during your Shooting phase those models' ranged attacks gain Sustained Hits 1.",
         ),
         "Mob Mentality": (
             "Supported",
@@ -4075,6 +4083,10 @@ def _detachment_ability_support_by_id() -> Dict[str, Tuple[str, str]]:
         "000008871": (
             "Supported",
             "Kult of Speed: SPEED FREEKS units are eligible to shoot and declare a charge in turns when they Advanced or Fell Back.",
+        ),
+        "000009990": (
+            "Supported",
+            "More Dakka!: ORKS INFANTRY/WALKER ranged weapons count as ASSAULT, and while Waaagh! is active during your Shooting phase those models' ranged attacks gain Sustained Hits 1.",
         ),
         "000008820": (
             "Supported",

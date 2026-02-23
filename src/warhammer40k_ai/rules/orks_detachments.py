@@ -14,6 +14,8 @@ class OrksDetachmentManager(DetachmentManagerBase):
     _GREEN_TIDE_MOB_MENTALITY_SOURCE = "Mob Mentality"
     _KULT_OF_SPEED_SPEED_FREEKS_KEYWORD = "SPEED FREEKS"
     _KULT_OF_SPEED_ADRENALINE_JUNKIES_SOURCE = "Adrenaline Junkies"
+    _MORE_DAKKA_QUALIFYING_KEYWORDS = ("INFANTRY", "WALKER")
+    _MORE_DAKKA_SOURCE = "Dakka! Dakka! Dakka!"
     _DA_BIG_HUNT_PREY_KEYWORDS = ("MONSTER", "VEHICLE", "CHARACTER")
     _HERE_BE_LOOT_QUALIFYING_KEYWORDS = ("INFANTRY", "MOUNTED", "WALKER")
     _DREAD_MOB_BUTTON_SUSTAINED = "SUSTAINED_HITS_1"
@@ -72,6 +74,11 @@ class OrksDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Kult of Speed")
+
+    def is_more_dakka(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("More Dakka!")
 
     @staticmethod
     def _normalize_name(text: str) -> str:
@@ -248,6 +255,59 @@ class OrksDetachmentManager(DetachmentManagerBase):
         if not self._unit_contains_keyword(root, self._KULT_OF_SPEED_SPEED_FREEKS_KEYWORD):
             return False
         return True
+
+    def _more_dakka_unit_is_eligible(self, unit) -> bool:
+        if not self.is_more_dakka():
+            return False
+        if unit is None:
+            return False
+        root = self._unit_root(unit)
+        if root is None or not self._unit_belongs_to_army(root):
+            return False
+        if not self._unit_has_keyword_or_faction(root, "ORKS", faction_id=self.faction_id):
+            return False
+        if not self._unit_contains_any_keyword(root, self._MORE_DAKKA_QUALIFYING_KEYWORDS):
+            return False
+        return True
+
+    def more_dakka_assault_applies(self, unit, *, attack_type: str = "", profile=None) -> bool:
+        if not self._more_dakka_unit_is_eligible(unit):
+            return False
+        attack = str(attack_type or "").strip().lower()
+        if attack and attack != "ranged":
+            return False
+        if profile is not None:
+            parent_wargear = getattr(profile, "parent_wargear", None)
+            is_ranged_fn = getattr(parent_wargear, "is_ranged", None) if parent_wargear is not None else None
+            if callable(is_ranged_fn) and not bool(is_ranged_fn()):
+                return False
+        return True
+
+    def more_dakka_sustained_hits_value(self, attacker_model, *, attack_type: str = "", game=None) -> int:
+        if str(attack_type or "").strip().lower() not in ("", "ranged"):
+            return 0
+        attacker_unit = getattr(attacker_model, "parent_unit", None) if attacker_model is not None else None
+        root = self._unit_root(attacker_unit)
+        if not self._more_dakka_unit_is_eligible(root):
+            return 0
+        army = self.army
+        if army is None:
+            return 0
+        waaagh_mgr = getattr(army, "waaagh", None)
+        if waaagh_mgr is None:
+            return 0
+        if game is None:
+            player = getattr(army, "player", None)
+            game = getattr(player, "game", None) if player is not None else None
+        unit_is_affected_fn = getattr(waaagh_mgr, "unit_is_affected", None)
+        if not callable(unit_is_affected_fn):
+            return 0
+        if not bool(unit_is_affected_fn(root, game=game)):
+            return 0
+        phase_name = self._phase_key_from_game(game)
+        if phase_name and phase_name != "SHOOTING_PHASE":
+            return 0
+        return 1
 
     def _unit_contains_warboss_model(self, unit) -> bool:
         if unit is None:
