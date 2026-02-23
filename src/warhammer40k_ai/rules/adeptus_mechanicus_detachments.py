@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from typing import Optional
 
 from ..utility.dice import get_roll
 from ..utility.entity_ids import get_entity_id
@@ -13,6 +14,12 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
     _COHORT_CYBERNETICA_NAME = "Cohort Cybernetica"
     _CYBER_PSALM_PROGRAMMING_SOURCE = "Cyber-Psalm Programming"
     _LEGIO_CYBERNETICA_KEYWORD = "LEGIO CYBERNETICA"
+    _DATA_PSALM_CONCLAVE_NAME = "Data-Psalm Conclave"
+    _DATA_PSALM_ABILITY_KEY = "data_psalm_benediction"
+    _DATA_PSALM_SOURCE = "Benedictions Of The Omnissiah"
+    _DATA_PSALM_PANEGYRIC_KEY = "PANEGYRIC_PROCESSION"
+    _DATA_PSALM_CITATION_KEY = "CITATION_IN_SAVAGERY"
+    _CULT_MECHANICUS_KEYWORD = "CULT MECHANICUS"
 
     _RAD_BOMBARDMENT_ABILITY_KEY = "rad_bombardment"
     _RAD_BOMBARDMENT_CHOICE_KEY = "rad_bombardment_choice"
@@ -25,15 +32,150 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
     _RADIAL_SUFFUSION_ENHANCEMENT_NAME = "radial suffusion"
     _RADIAL_SUFFUSION_EXTRA_RANGE_IN = 6.0
 
+    def __init__(self, army=None):
+        super().__init__(army)
+        self.active_data_psalm_benediction_key: Optional[str] = None
+        self.data_psalm_selected_round: Optional[int] = None
+
     def is_rad_zone_corps(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Rad-Zone Corps")
 
+    def is_data_psalm_conclave(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches(self._DATA_PSALM_CONCLAVE_NAME)
+
     def is_cohort_cybernetica(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches(self._COHORT_CYBERNETICA_NAME)
+
+    @classmethod
+    def _normalize_data_psalm_choice_key(cls, choice_key: str) -> str:
+        raw = str(choice_key or "").strip().upper()
+        aliases = {
+            "PANEGYRIC": cls._DATA_PSALM_PANEGYRIC_KEY,
+            "PANEGYRIC_PROCESSION": cls._DATA_PSALM_PANEGYRIC_KEY,
+            "CITATION": cls._DATA_PSALM_CITATION_KEY,
+            "CITATION_IN_SAVAGERY": cls._DATA_PSALM_CITATION_KEY,
+        }
+        return aliases.get(raw, "")
+
+    @classmethod
+    def data_psalm_benedictions(cls) -> tuple[tuple[str, str], ...]:
+        return (
+            (cls._DATA_PSALM_PANEGYRIC_KEY, "Panegyric Procession"),
+            (cls._DATA_PSALM_CITATION_KEY, "Citation in Savagery"),
+        )
+
+    def can_select_data_psalm_benediction(self, *, game=None, battle_round: Optional[int] = None) -> bool:
+        if not self.is_data_psalm_conclave():
+            return False
+        if self.active_data_psalm_benediction_key:
+            return False
+        if battle_round is not None:
+            try:
+                return int(battle_round) == 1
+            except (TypeError, ValueError):
+                return False
+        if game is None:
+            return False
+        try:
+            return int(getattr(game, "turn", 0) or 0) == 1
+        except (TypeError, ValueError):
+            return False
+
+    def select_data_psalm_benediction(self, choice_key: str, *, battle_round: Optional[int] = None) -> bool:
+        if not self.can_select_data_psalm_benediction(battle_round=battle_round):
+            return False
+        normalized = self._normalize_data_psalm_choice_key(choice_key)
+        if not normalized:
+            return False
+        self.active_data_psalm_benediction_key = normalized
+        if battle_round is not None:
+            try:
+                self.data_psalm_selected_round = int(battle_round)
+            except (TypeError, ValueError):
+                self.data_psalm_selected_round = None
+        return True
+
+    def _data_psalm_benediction_active(self, choice_key: str) -> bool:
+        if not self.is_data_psalm_conclave():
+            return False
+        if not self.active_data_psalm_benediction_key:
+            return False
+        return self.active_data_psalm_benediction_key == self._normalize_data_psalm_choice_key(choice_key)
+
+    def _pending_data_psalm_benediction_request(self, game, army_id: str):
+        if game is None:
+            return None
+        queue = getattr(game, "decision_queue", None)
+        if queue is None:
+            return None
+        for req in list(getattr(queue, "list", lambda: [])() or []):
+            if str(getattr(req, "decision_type", "")) != "CHOOSE_QUARRY":
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "") != self._DATA_PSALM_ABILITY_KEY:
+                continue
+            if str(ctx.get("army_id", "") or "") != str(army_id or ""):
+                continue
+            return req
+        return None
+
+    def _build_data_psalm_benediction_request(self, game, *, battle_round: int):
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        if game is None:
+            return None
+        owner = getattr(self.army, "player", None)
+        if owner is None:
+            return None
+        army_id = self._entity_id(self.army)
+        options = [
+            DecisionOption.create(
+                label,
+                payload={
+                    "army_id": army_id,
+                    "choice_key": key,
+                },
+            )
+            for key, label in self.data_psalm_benedictions()
+        ]
+        if not options:
+            return None
+        return DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Benedictions of the Omnissiah: select one Benediction to be active for the battle.",
+            player_id=getattr(owner, "id", None),
+            options=options,
+            context={
+                "ability": self._DATA_PSALM_ABILITY_KEY,
+                "ability_name": self._DATA_PSALM_SOURCE,
+                "army_id": army_id,
+                "battle_round": int(battle_round),
+                "allowed_choice_keys": [key for key, _label in self.data_psalm_benedictions()],
+                "optional": False,
+            },
+        )
+
+    def _queue_data_psalm_benediction_request(self, game, *, battle_round: int) -> None:
+        if not self.is_data_psalm_conclave():
+            return
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return
+        if not self.can_select_data_psalm_benediction(game=game, battle_round=battle_round):
+            return
+        army_id = self._entity_id(self.army)
+        if self._pending_data_psalm_benediction_request(game, army_id) is not None:
+            return
+        request = self._build_data_psalm_benediction_request(game, battle_round=int(battle_round))
+        request_decision = getattr(game, "request_decision", None)
+        if callable(request_decision) and request is not None:
+            request_decision(request)
 
     @staticmethod
     def _entity_id(entity) -> str:
@@ -112,6 +254,151 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
         if self._unit_is_battle_shocked(root):
             return 0, ""
         return 1, self._CYBER_PSALM_PROGRAMMING_SOURCE
+
+    def _data_psalm_cult_mechanicus_root(self, unit):
+        if not self.is_data_psalm_conclave():
+            return None
+        root = self._attached_root(unit)
+        if root is None:
+            return None
+        if not self._unit_in_army(root):
+            return None
+        if not self._unit_has_keyword(root, self._CULT_MECHANICUS_KEYWORD):
+            return None
+        return root
+
+    @staticmethod
+    def _weapon_is_attack_type(weapon_profile, attack_type: str) -> bool:
+        if weapon_profile is None:
+            return False
+        parent = getattr(weapon_profile, "parent_wargear", None)
+        if parent is None:
+            return False
+        checker = getattr(parent, f"is_{attack_type}", None)
+        return bool(checker()) if callable(checker) else False
+
+    @staticmethod
+    def _weapon_effective_range_max(weapon_profile, attacker_model) -> float:
+        if weapon_profile is None:
+            return 0.0
+        fn = getattr(weapon_profile, "_effective_range_max", None)
+        if callable(fn):
+            try:
+                return float(fn(attacker_model) or 0.0)
+            except (TypeError, ValueError):
+                return 0.0
+        range_obj = getattr(weapon_profile, "range", None)
+        if range_obj is None:
+            return 0.0
+        try:
+            return float(getattr(range_obj, "max", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _unit_made_charge_move_this_turn(self, unit, *, game=None) -> bool:
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        round_state = getattr(root, "round_state", None)
+        if not bool(getattr(round_state, "charged_this_round", False)):
+            return False
+        charge_suppressed_fn = getattr(root, "charge_bonus_suppressed", None)
+        if callable(charge_suppressed_fn) and bool(charge_suppressed_fn(game=game)):
+            return False
+        return True
+
+    def data_psalm_panegyric_procession_ap_bonus(
+        self,
+        attacker_model,
+        *,
+        target_unit=None,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if not self._data_psalm_benediction_active(self._DATA_PSALM_PANEGYRIC_KEY):
+            return 0, ""
+        if attacker_model is None or target_unit is None:
+            return 0, ""
+        if not self._weapon_is_attack_type(weapon_profile, "ranged"):
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root = self._data_psalm_cult_mechanicus_root(attacker_unit)
+        if attacker_root is None:
+            return 0, ""
+        target_root = self._attached_root(target_unit)
+        if target_root is None:
+            return 0, ""
+        if game is None:
+            owner = getattr(self.army, "player", None)
+            game = getattr(owner, "game", None) if owner is not None else None
+        game_map = getattr(game, "map", None) if game is not None else None
+        if game_map is None:
+            return 0, ""
+        range_max = self._weapon_effective_range_max(weapon_profile, attacker_model)
+        if range_max <= 0.0:
+            return 0, ""
+        distance_fn = getattr(game_map, "get_distance_between_units", None)
+        if not callable(distance_fn):
+            return 0, ""
+        try:
+            distance = float(distance_fn(attacker_root, target_root))
+        except (TypeError, ValueError):
+            return 0, ""
+        if distance > (range_max / 2.0) + 1e-6:
+            return 0, ""
+        return 1, f"{self._DATA_PSALM_SOURCE} (Panegyric Procession)"
+
+    def _data_psalm_citation_in_savagery_bonus(
+        self,
+        attacker_model,
+        *,
+        unit=None,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if not self._data_psalm_benediction_active(self._DATA_PSALM_CITATION_KEY):
+            return 0, ""
+        if attacker_model is None:
+            return 0, ""
+        if not self._weapon_is_attack_type(weapon_profile, "melee"):
+            return 0, ""
+        source_unit = unit if unit is not None else getattr(attacker_model, "parent_unit", None)
+        source_root = self._data_psalm_cult_mechanicus_root(source_unit)
+        if source_root is None:
+            return 0, ""
+        if not self._unit_made_charge_move_this_turn(source_root, game=game):
+            return 0, ""
+        return 1, f"{self._DATA_PSALM_SOURCE} (Citation in Savagery)"
+
+    def data_psalm_citation_in_savagery_melee_strength_bonus(
+        self,
+        attacker_model,
+        *,
+        unit=None,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        return self._data_psalm_citation_in_savagery_bonus(
+            attacker_model,
+            unit=unit,
+            weapon_profile=weapon_profile,
+            game=game,
+        )
+
+    def data_psalm_citation_in_savagery_melee_attacks_bonus(
+        self,
+        attacker_model,
+        *,
+        unit=None,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        return self._data_psalm_citation_in_savagery_bonus(
+            attacker_model,
+            unit=unit,
+            weapon_profile=weapon_profile,
+            game=game,
+        )
 
     def _iter_player_unit_roots(self, player) -> list:
         if player is None:
@@ -448,16 +735,16 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
                         clear_battleshock()
 
     def on_battle_round_start(self, battle_round: int, *, game=None) -> None:
-        if not self.is_rad_zone_corps():
-            return
         if game is None:
             owner = getattr(self.army, "player", None)
             game = getattr(owner, "game", None) if owner is not None else None
         br = int(battle_round or 0)
-        self._clear_expired_taking_cover_state(game, battle_round=br)
-        if br != 1:
-            return
-        self._queue_rad_bombardment_requests(game, battle_round=br)
+        if self.is_rad_zone_corps():
+            self._clear_expired_taking_cover_state(game, battle_round=br)
+            if br == 1:
+                self._queue_rad_bombardment_requests(game, battle_round=br)
+        if self.is_data_psalm_conclave():
+            self._queue_data_psalm_benediction_request(game, battle_round=br)
 
     def on_command_phase_start(self, *, game=None, player=None) -> None:
         if not self.is_rad_zone_corps():

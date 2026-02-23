@@ -2359,6 +2359,24 @@ class WargearProfile:
                     ap_val -= int(bonded_ap_bonus)
         try:
             if self.parent_wargear and self.parent_wargear.is_ranged():
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+                bonus_fn = getattr(mgr, "data_psalm_panegyric_procession_ap_bonus", None) if mgr is not None else None
+                if callable(bonus_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    ap_bonus, _source = bonus_fn(
+                        attacker,
+                        target_unit=target,
+                        weapon_profile=self,
+                        game=game,
+                    )
+                    if int(ap_bonus or 0) > 0:
+                        ap_val -= int(ap_bonus)
+        except Exception:
+            pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_ranged():
                 outcast_source = self._aeldari_outcast_ambush_source(attacker)
                 if outcast_source:
                     ap_val -= 1
@@ -4042,6 +4060,32 @@ class WargearProfile:
                                 ModifierOp.ADD,
                                 int(bonus),
                                 source="detachment:desperate_for_redemption_absolution_attacks",
+                            )
+                        )
+                        attack_result.attacks_special_modifiers.append(
+                            f"{source_name} +{int(bonus)}A (melee)"
+                        )
+        except Exception:
+            pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+                bonus_fn = getattr(mgr, "data_psalm_citation_in_savagery_melee_attacks_bonus", None) if mgr is not None else None
+                if callable(bonus_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    bonus, source = bonus_fn(attacker, unit=unit, weapon_profile=self, game=game)
+                    if int(bonus or 0):
+                        source_name = (
+                            str(source or "Benedictions Of The Omnissiah (Citation in Savagery)").strip()
+                            or "Benedictions Of The Omnissiah (Citation in Savagery)"
+                        )
+                        atk_mods.append(
+                            Modifier(
+                                ModifierOp.ADD,
+                                int(bonus),
+                                source="detachment:benedictions_of_the_omnissiah_citation_attacks",
                             )
                         )
                         attack_result.attacks_special_modifiers.append(
@@ -11569,6 +11613,26 @@ class WargearProfile:
                         source_name = (
                             str(source or "Desperate for Redemption (Absolution in Battle)").strip()
                             or "Desperate for Redemption (Absolution in Battle)"
+                        )
+                        wound_result.setdefault("modifiers", []).append(
+                            f"+{int(s_bonus)}S from {source_name}"
+                        )
+        except Exception:
+            pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee() and isinstance(strength, int):
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+                bonus_fn = getattr(mgr, "data_psalm_citation_in_savagery_melee_strength_bonus", None) if mgr is not None else None
+                if callable(bonus_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    s_bonus, source = bonus_fn(attacker, unit=unit, weapon_profile=self, game=game)
+                    if int(s_bonus or 0):
+                        strength = strength + int(s_bonus)
+                        source_name = (
+                            str(source or "Benedictions Of The Omnissiah (Citation in Savagery)").strip()
+                            or "Benedictions Of The Omnissiah (Citation in Savagery)"
                         )
                         wound_result.setdefault("modifiers", []).append(
                             f"+{int(s_bonus)}S from {source_name}"

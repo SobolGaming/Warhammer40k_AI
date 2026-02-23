@@ -203,6 +203,7 @@ Command phase:
 - bondsman_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="bondsman"`, `source_unit_id`)
 - feed_the_swarm_dialog: CHOOSE_QUARRY {option_key | skip} (context `ability="feed_the_swarm"`, `ability_name="Feed the Swarm"`, `phase="Command phase"`, `army_id`, `source_unit_id`, `source_unit_name`, `option_keys[]`, `turn_owner_id`, `turn`)
 - synaptic_imperatives_dialog: CHOOSE_QUARRY {choice_key | skip} (context `ability="synaptic_imperatives"`, `ability_name="Synaptic Imperatives"`, `army_id`, `battle_round`, `allowed_choice_keys[]`, `optional=true`)
+- data_psalm_benediction_dialog: CHOOSE_QUARRY {choice_key} (context `ability="data_psalm_benediction"`, `ability_name="Benedictions Of The Omnissiah"`, `army_id`, `battle_round`, `allowed_choice_keys[]`, `optional=false`)
 - necrons_command_phase_dialog: CHOOSE_QUARRY {target_unit_id} (context `necrons_command_phase_enhancement=true`, `source_unit_id`, `ability`, `effect_key`, `effect_value`)
 - worthy_foes_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="worthy_foes"`, `ability_name="Worthy Foes"`, `army_id`)
 - cosmic_distortion_dialog: SELECT_REALM_OF_CHAOS_UNITS {unit_ids | skip} (context `ability="cosmic_distortion_phase_surge"`, `ability_name="Cosmic Distortion"`, `army_id`, `phase_key`, `phase_name`, `allowed_unit_ids[]`, `max_units`)

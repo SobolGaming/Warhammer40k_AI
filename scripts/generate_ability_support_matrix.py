@@ -419,6 +419,11 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"add 2 to the move characteristic of models in legio cybernetica units from your army",
             r"(?:in addition )?unless that unit is battle shocked add 1 to the objective control characteristic of models in that unit",
         ),
+        "Benedictions Of The Omnissiah": (
+            r"at the start of the first battle round select one of the following benedictions of the omnissiah to be active for cult mechanicus units from your army until the end of the battle",
+            r"(?:panegyric procession )?each time a cult mechanicus model from your army makes a ranged attack that targets a unit within half range improve the armour penetration characteristic of that attack by 1",
+            r"(?:citation in savagery )?each time a cult mechanicus unit from your army is selected to fight if that unit made a charge move this turn until the end of the phase add 1 to the strength and attacks characteristics of melee weapons equipped by models in that unit",
+        ),
         "Warp Rifts": (
             r"each time a legiones daemonica unit from your army is set up on the battlefield using the deep strike ability .* it can be set up anywhere that is more than 6 horizontally away from all enemy models instead of more than 9",
         ),
@@ -2672,6 +2677,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Cyber-Psalm Programming": (
             "Supported",
             "Cohort Cybernetica: models in friendly LEGIO CYBERNETICA units gain +2\" Move, and while their unit is not Battle-shocked they gain +1 Objective Control.",
+        ),
+        "Benedictions Of The Omnissiah": (
+            "Supported",
+            "Data-Psalm Conclave: at the start of battle round 1 you select Panegyric Procession or Citation in Savagery; Panegyric improves AP by 1 for CULT MECHANICUS ranged attacks within half range, and Citation grants CULT MECHANICUS charged units +1 Strength and +1 Attacks for melee weapons while resolving fight attacks.",
         ),
         "The Blood of Martyrs": (
             "Supported",

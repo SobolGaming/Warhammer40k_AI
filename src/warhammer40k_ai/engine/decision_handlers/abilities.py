@@ -3832,6 +3832,38 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not in_engagement:
             return ("Data-spike target must be within Engagement Range of the source unit.",)
         return ()
+    if ability == "data_psalm_benediction":
+        if is_skip_choice(request, result):
+            return ("Benedictions of the Omnissiah selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        source_army = _resolve_army(game, request, payload)
+        if source_army is None:
+            return ("Benedictions of the Omnissiah army not found.",)
+        mgr = getattr(source_army, "adeptus_mechanicus_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_data_psalm_conclave", lambda: False)()):
+            return ("Benedictions of the Omnissiah requires a Data-Psalm Conclave army.",)
+
+        normalize_fn = getattr(mgr, "_normalize_data_psalm_choice_key", None)
+        raw_choice = str(payload.get("choice_key") or payload.get("data_psalm_benediction_key") or "").strip().upper()
+        choice = str(normalize_fn(raw_choice) if callable(normalize_fn) else raw_choice or "")
+        if not choice:
+            return ("Benedictions of the Omnissiah choice must be Panegyric Procession or Citation in Savagery.",)
+
+        allowed_choices = [str(v or "").strip().upper() for v in list(ctx.get("allowed_choice_keys", []) or []) if str(v or "").strip()]
+        if callable(normalize_fn):
+            allowed_choices = [str(normalize_fn(v) or "").strip().upper() for v in allowed_choices]
+        allowed_choices = [v for v in allowed_choices if v]
+        if allowed_choices and choice not in allowed_choices:
+            return ("Benedictions of the Omnissiah choice is not legal for this request.",)
+
+        try:
+            battle_round = int(ctx.get("battle_round", 0) or getattr(game, "turn", 0) or 0)
+        except Exception:
+            battle_round = int(getattr(game, "turn", 0) or 0)
+        can_select_fn = getattr(mgr, "can_select_data_psalm_benediction", None)
+        if callable(can_select_fn) and not bool(can_select_fn(game=game, battle_round=battle_round)):
+            return ("Benedictions of the Omnissiah can only be selected once at the start of battle round 1.",)
+        return ()
     if ability == "rad_bombardment":
         if is_skip_choice(request, result):
             return ("Rad-bombardment cannot be skipped.",)
@@ -5592,6 +5624,36 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             "source_model_id": source_model_id_resolved,
             "target_model_id": target_model_id,
         }
+    if ability == "data_psalm_benediction":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        source_army = _resolve_army(game, request, payload)
+        if source_army is None:
+            return None
+        mgr = getattr(source_army, "adeptus_mechanicus_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_data_psalm_conclave", lambda: False)()):
+            return None
+
+        choice = str(payload.get("choice_key") or payload.get("data_psalm_benediction_key") or "").strip().upper()
+        try:
+            battle_round = int(ctx.get("battle_round", 0) or getattr(game, "turn", 0) or 0)
+        except Exception:
+            battle_round = int(getattr(game, "turn", 0) or 0)
+
+        select_fn = getattr(mgr, "select_data_psalm_benediction", None)
+        if not callable(select_fn):
+            return None
+        applied = bool(select_fn(choice, battle_round=battle_round))
+        if applied:
+            label = _option_label(request, result) or choice.replace("_", " ").title()
+            player = getattr(source_army, "player", None)
+            _log_action_for_players(
+                game,
+                player,
+                f"Benedictions of the Omnissiah: {label} selected (Battle Round {int(battle_round)}).",
+            )
+        return applied
     if ability == "rad_bombardment":
         if is_skip_choice(request, result):
             return None
