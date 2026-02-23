@@ -29,6 +29,8 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
     _NOOSPHERIC_ACTIVE_FLAG_KEY = "noospheric_transference_halo_override_active"
     _NOOSPHERIC_SOURCE_FLAG_KEY = "noospheric_transference_source"
     _NOOSPHERIC_OVERRIDE_FLAG_KEY = "noospheric_transference_override_key"
+    _SKITARII_HUNTER_COHORT_NAME = "Skitarii Hunter Cohort"
+    _STEALTH_OPTIMISATION_SOURCE = "Stealth Optimisation"
     _DATA_PSALM_CONCLAVE_NAME = "Data-Psalm Conclave"
     _DATA_PSALM_ABILITY_KEY = "data_psalm_benediction"
     _DATA_PSALM_SOURCE = "Benedictions Of The Omnissiah"
@@ -81,6 +83,11 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches(self._HALOSCREED_BATTLE_CLADE_NAME)
+
+    def is_skitarii_hunter_cohort(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches(self._SKITARII_HUNTER_COHORT_NAME)
 
     @classmethod
     def _normalize_data_psalm_choice_key(cls, choice_key: str) -> str:
@@ -1208,6 +1215,64 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
         if not self._noospheric_override_active(self._NOOSPHERIC_MUTED_KEY):
             return False
         return self._unit_selected_for_noospheric(unit)
+
+    def _unit_is_ironstrider_ballistarii(self, unit) -> bool:
+        if unit is None:
+            return False
+        if self._unit_has_keyword(unit, "IRONSTRIDER BALLISTARII"):
+            return True
+        name = str(getattr(unit, "name", "") or "").strip().lower()
+        return "ironstrider ballistarii" in name
+
+    def _unit_is_skitarii_hunter_stealth_eligible(self, unit) -> bool:
+        if unit is None:
+            return False
+        has_skitarii = self._unit_has_keyword(unit, "SKITARII")
+        has_infantry_or_mounted = self._unit_has_keyword(unit, "INFANTRY") or self._unit_has_keyword(unit, "MOUNTED")
+        if has_skitarii and has_infantry_or_mounted:
+            return True
+        return self._unit_is_ironstrider_ballistarii(unit)
+
+    def stealth_optimisation_stealth_applies(self, unit) -> bool:
+        if not self.is_skitarii_hunter_cohort():
+            return False
+        root = self._attached_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return False
+        return self._unit_is_skitarii_hunter_stealth_eligible(root)
+
+    def stealth_optimisation_benefit_of_cover(
+        self,
+        target_model,
+        *,
+        attacker_model=None,
+        attack_type: str = "",
+        game=None,
+    ) -> tuple[bool, str]:
+        _ = game
+        if not self.is_skitarii_hunter_cohort():
+            return False, ""
+        if str(attack_type or "").strip().lower() not in ("", "ranged"):
+            return False, ""
+        if target_model is None or attacker_model is None:
+            return False, ""
+        target_unit = getattr(target_model, "parent_unit", None)
+        target_root = self._attached_root(target_unit)
+        if target_root is None or not self._unit_in_army(target_root):
+            return False, ""
+        has_sicarian_keyword = self._unit_has_keyword(target_root, "SICARIAN")
+        target_name = str(getattr(target_root, "name", "") or "").strip().lower()
+        if not has_sicarian_keyword and "sicarian" not in target_name:
+            return False, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root = self._attached_root(attacker_unit)
+        if attacker_root is not None and self._unit_in_army(attacker_root):
+            return False, ""
+        from ..utility.aura_utils import model_within_range_of_unit
+
+        if model_within_range_of_unit(attacker_model, target_root, 12.0, use_attached_aggregate=True):
+            return False, ""
+        return True, f"{self._STEALTH_OPTIMISATION_SOURCE} (Sicarian cover beyond 12\")"
 
     def _iter_player_unit_roots(self, player) -> list:
         if player is None:

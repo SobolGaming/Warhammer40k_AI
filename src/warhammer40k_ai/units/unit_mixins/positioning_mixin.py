@@ -6349,6 +6349,9 @@ class PositioningMixin:
             game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
             if bool(muted_fn(self, game=game)):
                 return True
+        stealth_opt_fn = getattr(adm_mgr, "stealth_optimisation_stealth_applies", None) if adm_mgr is not None else None
+        if callable(stealth_opt_fn) and bool(stealth_opt_fn(self)):
+            return True
         # Use cached result if available
         if 'stealth' in getattr(self, '_ability_cache', {}):
             found = self._ability_cache['stealth']

@@ -15852,6 +15852,36 @@ class WargearProfile:
                             attack_instance["benefit_of_cover_source"] = ", ".join(parts) if parts else existing
         except Exception:
             pass
+        # Adeptus Mechanicus: Skitarii Hunter Cohort (Stealth Optimisation) grants cover to SICARIAN
+        # targets against ranged attacks from attackers beyond 12".
+        t_unit = getattr(target_model, "parent_unit", None)
+        get_parent_army = getattr(t_unit, "get_parent_army", None) if t_unit is not None else None
+        army = get_parent_army() if callable(get_parent_army) else None
+        adm_mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+        cover_fn = getattr(adm_mgr, "stealth_optimisation_benefit_of_cover", None) if adm_mgr is not None else None
+        if callable(cover_fn):
+            is_melee_attack = bool(
+                self.parent_wargear is not None and callable(getattr(self.parent_wargear, "is_melee", None))
+                and self.parent_wargear.is_melee()
+            )
+            attack_type = "melee" if is_melee_attack else "ranged"
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            has_cover, source = cover_fn(
+                target_model,
+                attacker_model=attack_instance.get("attacker_model") if isinstance(attack_instance, dict) else None,
+                attack_type=attack_type,
+                game=game,
+            )
+            if has_cover:
+                attack_instance.setdefault("benefit_of_cover", True)
+                source_name = str(source or "Stealth Optimisation").strip() or "Stealth Optimisation"
+                existing_source = str(attack_instance.get("benefit_of_cover_source", "") or "").strip()
+                if not existing_source:
+                    attack_instance["benefit_of_cover_source"] = source_name
+                elif source_name.lower() not in {
+                    part.strip().lower() for part in existing_source.split(",") if part.strip()
+                }:
+                    attack_instance["benefit_of_cover_source"] = f"{existing_source}, {source_name}"
         # Orks: Taktikal Brigade (Lissen 'Ere - Sneaky Stalkin') grants Benefit of Cover to eligible models.
         try:
             t_unit = getattr(target_model, "parent_unit", None)

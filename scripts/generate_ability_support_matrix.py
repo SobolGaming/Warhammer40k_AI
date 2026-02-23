@@ -440,6 +440,11 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"this unit is eligible to declare a charge in a turn in which it advanced",
             r"models in this unit have the stealth ability",
         ),
+        "Stealth Optimisation": (
+            r"skitarii infantry skitarii mounted and ironstrider ballistarii units from your army have the stealth ability and each time a ranged attack targets a sicarian unit from your army unless the attacking model is within 12 the target has the benefit of cover against that attack",
+            r"skitarii infantry skitarii mounted and ironstrider ballistarii units from your army have the stealth ability",
+            r"each time a ranged attack targets a sicarian unit from your army unless the attacking model is within 12 the target has the benefit of cover against that attack",
+        ),
         "Warp Rifts": (
             r"each time a legiones daemonica unit from your army is set up on the battlefield using the deep strike ability .* it can be set up anywhere that is more than 6 horizontally away from all enemy models instead of more than 9",
         ),
@@ -2705,6 +2710,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Noospheric Transference": (
             "Supported",
             "Haloscreed Battle Clade: in your Command phase you select units for HALO OVERRIDE based on battle size (Incursion 1, Strike Force 2, Onslaught 3), then select one override ability; Electromotive gives +2\" Move, Microactuator gives +1 Toughness, Predation allows charging after Advancing, and Muted grants Stealth until your next Command phase.",
+        ),
+        "Stealth Optimisation": (
+            "Supported",
+            "Skitarii Hunter Cohort: SKITARII INFANTRY/SKITARII MOUNTED and IRONSTRIDER BALLISTARII units gain Stealth, and SICARIAN units gain Benefit of Cover against ranged attacks unless the attacking model is within 12\".",
         ),
         "The Blood of Martyrs": (
             "Supported",

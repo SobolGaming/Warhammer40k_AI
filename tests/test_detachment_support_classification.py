@@ -674,6 +674,18 @@ class TestDetachmentSupportClassification(unittest.TestCase):
         self.assertEqual(status, "Supported")
         self.assertIn("haloscreed battle clade", notes.lower())
 
+    def test_stealth_optimisation_is_supported(self):
+        gsm, detachment_abilities = self._seed_support_maps()
+        row = next(r for r in detachment_abilities if str(r.get("name", "") or "") == "Stealth Optimisation")
+        status, notes = gsm._classify_ability(
+            row.get("name", ""),
+            row.get("description", ""),
+            ability_id=row.get("id", ""),
+            faction_id=row.get("faction_id", ""),
+        )
+        self.assertEqual(status, "Supported")
+        self.assertIn("skitarii hunter cohort", notes.lower())
+
     def test_rad_bombardment_is_supported(self):
         gsm, detachment_abilities = self._seed_support_maps()
         row = next(r for r in detachment_abilities if str(r.get("name", "") or "") == "Rad-bombardment")
