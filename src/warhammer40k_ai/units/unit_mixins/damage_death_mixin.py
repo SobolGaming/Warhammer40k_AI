@@ -819,6 +819,41 @@ class DamageDeathMixin:
             # Fail-safe: don't break death processing
             pass
 
+        # Chaos Daemons (Blood Legion): WRATH UNDENIABLE (defer fight-on-death on a 4+ for melee kills).
+        if game_map is not None:
+            army = self.get_parent_army()
+            game = army.player.game if (army is not None and getattr(army, "player", None) is not None) else None
+            phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            if phase_name == "FIGHT_PHASE":
+                root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+                sr = getattr(root, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("blood_legion_wrath_undeniable_active"):
+                    exp = str(sr.get("blood_legion_wrath_undeniable_expires_phase", "") or "").strip().upper()
+                    if not exp or exp == phase_name:
+                        if not bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+                            wp = getattr(self, "_last_destroyed_by_weapon_profile", None)
+                            parent = getattr(wp, "parent_wargear", None)
+                            is_melee = False
+                            is_melee_fn = getattr(parent, "is_melee", None)
+                            if callable(is_melee_fn):
+                                is_melee = bool(is_melee_fn())
+                            if is_melee:
+                                threshold = int(sr.get("blood_legion_wrath_undeniable_threshold", 4) or 4)
+                                roll = int(get_roll("D6"))
+                                if army is not None and getattr(army, "player", None) is not None:
+                                    from ...utility.event_bus import append_dice
+
+                                    label = str(sr.get("blood_legion_wrath_undeniable_source", "") or "Wrath Undeniable").strip()
+                                    append_dice(army.player, f"{label} roll: {roll} for {self.name}")
+                                if roll >= threshold:
+                                    pending = getattr(root, "_blood_legion_wrath_undeniable_pending_models", None)
+                                    if not isinstance(pending, list):
+                                        pending = []
+                                    if model not in pending:
+                                        pending.append(model)
+                                    root._blood_legion_wrath_undeniable_pending_models = pending
+                                    return
+
         # ORKS: Orks Is Never Beaten (defer fight-on-death until attacker finishes attacks).
         try:
             if game_map is not None:

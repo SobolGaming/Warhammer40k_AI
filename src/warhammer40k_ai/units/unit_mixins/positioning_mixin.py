@@ -165,6 +165,10 @@ class PositioningMixin:
             except Exception:
                 pass
             try:
+                root._resolve_blood_legion_wrath_undeniable_queue(game_map=game_map)
+            except Exception:
+                pass
+            try:
                 root._resolve_orks_is_never_beaten_queue(game_map=game_map)
             except Exception:
                 pass
@@ -225,6 +229,10 @@ class PositioningMixin:
     def _resolve_immortal_fury_queue(self, game_map: Optional['Map'] = None) -> None:
         """Resolve deferred Immortal Fury fights after an attacker finishes its attacks."""
         self._resolve_deferred_fight_on_death_queue("_immortal_fury_pending_models", game_map=game_map)
+
+    def _resolve_blood_legion_wrath_undeniable_queue(self, game_map: Optional['Map'] = None) -> None:
+        """Resolve deferred Wrath Undeniable fights after an attacker finishes its attacks."""
+        self._resolve_deferred_fight_on_death_queue("_blood_legion_wrath_undeniable_pending_models", game_map=game_map)
 
     def _resolve_orks_is_never_beaten_queue(self, game_map: Optional['Map'] = None) -> None:
         """Resolve deferred Orks Is Never Beaten fights after an attacker finishes its attacks."""

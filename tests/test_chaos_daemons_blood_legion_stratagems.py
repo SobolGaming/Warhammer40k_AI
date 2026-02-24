@@ -149,6 +149,28 @@ def test_blood_legion_step2_stratagem_descriptors_registered():
     assert str(by_name_sheathed.stratagem_id) == "000009816007"
 
 
+def test_blood_legion_step3_stratagem_descriptors_registered():
+    blood_begets = get_stratagem_tool_descriptor(stratagem_id="000009816005")
+    assert blood_begets is not None
+    assert blood_begets.name == "Blood Begets Skulls"
+    assert blood_begets.effect == "charge_after_advance"
+    assert int(blood_begets.cp_cost) == 1
+
+    wrath = get_stratagem_tool_descriptor(stratagem_id="000009816002")
+    assert wrath is not None
+    assert wrath.name == "Wrath Undeniable"
+    assert wrath.effect == "fight_on_death_after_attacks"
+    assert int(wrath.cp_cost) == 1
+
+    by_name_blood_begets = get_stratagem_tool_descriptor(name="BLOOD BEGETS SKULLS")
+    assert by_name_blood_begets is not None
+    assert str(by_name_blood_begets.stratagem_id) == "000009816005"
+
+    by_name_wrath = get_stratagem_tool_descriptor(name="WRATH UNDENIABLE")
+    assert by_name_wrath is not None
+    assert str(by_name_wrath.stratagem_id) == "000009816002"
+
+
 def test_gore_hungry_onslaught_applies_movement_phase_move_types_and_cleans_up():
     game, daemon_player, enemy_player, daemon_army, enemy_army = _build_game()
     daemon_unit = _make_unit(
@@ -402,3 +424,127 @@ def test_sheathed_in_brass_queues_reaction_and_sets_save_characteristic_until_ph
     game.event_system.publish("phase_end", player=enemy_player, phase=BattleRoundPhases.SHOOTING_PHASE)
     rules = dict(getattr(daemon_unit, "special_rules", {}) or {})
     assert "blood_legion_sheathed_in_brass_active" not in rules
+
+
+def test_blood_begets_skulls_grants_charge_after_advance_until_phase_end():
+    game, daemon_player, enemy_player, daemon_army, enemy_army = _build_game()
+    daemon_unit = _make_unit(
+        "Bloodletters",
+        keywords=["KHORNE", "INFANTRY"],
+        faction_keywords=["LEGIONES DAEMONICA"],
+    )
+    enemy_unit = _make_unit("Enemy Unit", keywords=["INFANTRY"])
+    daemon_army.add_unit(daemon_unit)
+    enemy_army.add_unit(enemy_unit)
+    game.map.units.extend([daemon_unit, enemy_unit])
+    _deploy_unit(daemon_unit, 0.0, 0.0)
+    _deploy_unit(enemy_unit, 8.0, 0.0)
+
+    game.turn = 2
+    game.phase = BattleRoundPhases.CHARGE_PHASE
+    game.current_player_index = 0
+    game.event_system.publish("phase_start", player=daemon_player, phase=BattleRoundPhases.CHARGE_PHASE)
+
+    daemon_unit.round_state.advanced_this_round = True
+    daemon_unit.round_state.attempted_charge_this_round = True
+    blood_begets_name = _find_stratagem_name(daemon_player, "BLOOD BEGETS SKULLS")
+    not_ok = daemon_player.stratagems.use(
+        blood_begets_name,
+        unit=daemon_unit,
+        phase_name="Charge phase",
+    )
+    assert not_ok is False
+
+    daemon_unit.round_state.attempted_charge_this_round = False
+    assert daemon_unit.can_charge_after_advance() is False
+    ok = daemon_player.stratagems.use(
+        blood_begets_name,
+        unit=daemon_unit,
+        phase_name="Charge phase",
+    )
+    assert ok is True
+    assert daemon_player.command_points == 4
+    assert daemon_unit.can_charge_after_advance() is True
+
+    rules = dict(getattr(daemon_unit, "special_rules", {}) or {})
+    assert bool(rules.get("blood_legion_blood_begets_skulls_active", False)) is True
+    assert bool(rules.get("warp_surge_charge_after_advance", False)) is True
+
+    game.event_system.publish("phase_end", player=daemon_player, phase=BattleRoundPhases.CHARGE_PHASE)
+    rules = dict(getattr(daemon_unit, "special_rules", {}) or {})
+    assert "blood_legion_blood_begets_skulls_active" not in rules
+    assert "warp_surge_charge_after_advance" not in rules
+    assert daemon_unit.can_charge_after_advance() is False
+
+
+def test_wrath_undeniable_queues_reaction_and_defers_fight_on_death(monkeypatch):
+    game, daemon_player, enemy_player, daemon_army, enemy_army = _build_game()
+    daemon_unit = _make_unit(
+        "Bloodletters",
+        keywords=["KHORNE", "INFANTRY"],
+        faction_keywords=["LEGIONES DAEMONICA"],
+    )
+    enemy_unit = _make_unit("Enemy Fighters", keywords=["INFANTRY"])
+    daemon_army.add_unit(daemon_unit)
+    enemy_army.add_unit(enemy_unit)
+    game.map.units.extend([daemon_unit, enemy_unit])
+    _deploy_unit(daemon_unit, 0.0, 0.0)
+    _deploy_unit(enemy_unit, 1.0, 0.0)
+
+    game.turn = 2
+    game.phase = BattleRoundPhases.FIGHT_PHASE
+    game.current_player_index = 1
+    game.event_system.publish("phase_start", player=enemy_player, phase=BattleRoundPhases.FIGHT_PHASE)
+
+    game.event_system.publish("fight_targets_selected", attacking_unit=enemy_unit, target_units=[daemon_unit])
+    pending = daemon_player.stratagems.get_pending_reactions()
+    wrath_reactions = [
+        reaction
+        for reaction in list(pending or [])
+        if _normalize_name(str(reaction.get("stratagem", "") or "")) == "WRATH UNDENIABLE"
+    ]
+    assert len(wrath_reactions) == 1
+    assert daemon_unit in list(wrath_reactions[0].get("candidates", []) or [])
+
+    wrath_name = _find_stratagem_name(daemon_player, "WRATH UNDENIABLE")
+    ok = daemon_player.stratagems.use(
+        wrath_name,
+        unit=daemon_unit,
+        attacking_unit=enemy_unit,
+        target_units=[daemon_unit],
+        phase_name="Fight phase",
+        dequeue=True,
+    )
+    assert ok is True
+    assert daemon_player.command_points == 4
+
+    rules = dict(getattr(daemon_unit, "special_rules", {}) or {})
+    assert bool(rules.get("blood_legion_wrath_undeniable_active", False)) is True
+    assert int(rules.get("blood_legion_wrath_undeniable_threshold", 0) or 0) == 4
+
+    monkeypatch.setattr("warhammer40k_ai.units.unit_mixins.damage_death_mixin.get_roll", lambda _expr: 4)
+    daemon_unit._last_destroyed_by_weapon_profile = SimpleNamespace(
+        parent_wargear=SimpleNamespace(is_melee=lambda: True),
+    )
+    model = daemon_unit.models[0]
+    model._wounds = 0
+    daemon_unit._handle_model_destroyed(model, game.map)
+    pending_models = list(getattr(daemon_unit, "_blood_legion_wrath_undeniable_pending_models", []) or [])
+    assert model in pending_models
+
+    called = {}
+
+    def _fake_try_fight_on_death(*, model, game_map):
+        called["model"] = model
+        called["game_map"] = game_map
+        return True
+
+    monkeypatch.setattr(daemon_unit, "_try_fight_on_death", _fake_try_fight_on_death)
+    daemon_unit.end_attack_resolution(game_map=game.map)
+    assert called.get("model") is model
+    assert called.get("game_map") is game.map
+    assert list(getattr(daemon_unit, "_blood_legion_wrath_undeniable_pending_models", []) or []) == []
+
+    game.event_system.publish("phase_end", player=enemy_player, phase=BattleRoundPhases.FIGHT_PHASE)
+    rules = dict(getattr(daemon_unit, "special_rules", {}) or {})
+    assert "blood_legion_wrath_undeniable_active" not in rules

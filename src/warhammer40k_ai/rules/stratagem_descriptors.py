@@ -210,6 +210,25 @@ _SCINTILLATING_LEGION_STRATAGEM_BY_NAME = {
 }
 
 _BLOOD_LEGION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009816005": StratagemToolDescriptor(
+        stratagem_id="000009816005",
+        name="Blood Begets Skulls",
+        timing="charge_phase",
+        target="khorne_legiones_daemonica_unit_not_yet_selected_to_charge",
+        duration="until_end_of_phase",
+        effect="charge_after_advance",
+        cp_cost=1,
+    ),
+    "000009816002": StratagemToolDescriptor(
+        stratagem_id="000009816002",
+        name="Wrath Undeniable",
+        timing="fight_phase_after_enemy_targets_selected",
+        target="khorne_legiones_daemonica_unit_targeted",
+        duration="until_end_of_phase",
+        effect="fight_on_death_after_attacks",
+        cp_cost=1,
+        effect_params={"attack_type": "melee", "fight_on_death_after_attacks": True, "threshold": 4},
+    ),
     "000009816003": StratagemToolDescriptor(
         stratagem_id="000009816003",
         name="Gore-Hungry Onslaught",

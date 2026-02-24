@@ -333,6 +333,15 @@ class ChaosDaemonsStratagemMixin:
         candidates.sort(key=self._chaos_daemons_sort_key)
         return candidates
 
+    def _blood_legion_blood_begets_skulls_candidates(self) -> List[Any]:
+        candidates: List[Any] = []
+        for root in self._blood_legion_khorne_battlefield_unit_candidates():
+            if bool(getattr(getattr(root, "round_state", None), "attempted_charge_this_round", False)):
+                continue
+            candidates.append(root)
+        candidates.sort(key=self._chaos_daemons_sort_key)
+        return candidates
+
     def _blood_legion_fools_flight_candidates(self, enemy_unit: Any) -> List[Any]:
         if self.game is None:
             return []
@@ -576,6 +585,42 @@ class ChaosDaemonsStratagemMixin:
         candidates.sort(key=self._chaos_daemons_sort_key)
         return candidates
 
+    def _blood_legion_wrath_undeniable_candidates(self, *, attacking_unit: Any, target_units: List[Any]) -> List[Any]:
+        attacker_root = self._chaos_daemons_root(attacking_unit)
+        if attacker_root is None:
+            return []
+        attacker_army = getattr(attacker_root, "get_parent_army", lambda: None)()
+        if attacker_army is None or getattr(attacker_army, "player", None) is self.player:
+            return []
+        valid_ids = {self._chaos_daemons_sort_key(candidate) for candidate in self._blood_legion_khorne_battlefield_unit_candidates()}
+        candidates: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._chaos_daemons_root(unit)
+            if root is None:
+                continue
+            uid = self._chaos_daemons_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if uid not in valid_ids:
+                continue
+            is_alive = getattr(root, "is_alive", None)
+            if callable(is_alive):
+                if not bool(is_alive()):
+                    continue
+            elif not bool(getattr(root, "is_alive", True)):
+                continue
+            if not bool(getattr(root, "deployed", False)):
+                continue
+            parent_army = getattr(root, "get_parent_army", lambda: None)()
+            if parent_army is None or getattr(parent_army, "player", None) is not self.player:
+                continue
+            candidates.append(root)
+        candidates.sort(key=self._chaos_daemons_sort_key)
+        return candidates
+
     def _queue_blood_legion_shooting_target_reactions(self, *, attacking_unit: Any, target_units: List[Any]) -> None:
         if self.player is None or self.game is None:
             return
@@ -609,6 +654,53 @@ class ChaosDaemonsStratagemMixin:
         payload = {
             "event": "shooting_targets_selected",
             "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": int(getattr(stratagem, "cp_cost", 0) or 0),
+            "attacking_unit": attacking_unit,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_blood_legion_fight_target_reactions(self, *, attacking_unit: Any, target_units: List[Any]) -> None:
+        if self.player is None or self.game is None:
+            return
+        if not self._is_blood_legion_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "fight phase":
+            return
+        attacker_root = self._chaos_daemons_root(attacking_unit)
+        if attacker_root is None:
+            return
+        attacker_army = getattr(attacker_root, "get_parent_army", lambda: None)()
+        if attacker_army is None or getattr(attacker_army, "player", None) is self.player:
+            return
+        stratagem = self.get_by_name("WRATH UNDENIABLE")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if (stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._blood_legion_wrath_undeniable_candidates(
+            attacking_unit=attacking_unit,
+            target_units=list(target_units or []),
+        )
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "fight_targets_selected":
+                continue
+            if self._chaos_daemons_normalize_stratagem_name(reaction.get("stratagem", "")) != "WRATH UNDENIABLE":
+                continue
+            if reaction.get("attacking_unit") is attacking_unit:
+                return
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
             "stratagem": stratagem.name,
             "cp_cost": int(getattr(stratagem, "cp_cost", 0) or 0),
             "attacking_unit": attacking_unit,
@@ -683,6 +775,10 @@ class ChaosDaemonsStratagemMixin:
 
     def _use_chaos_daemons_blood_legion_stratagem(self, stratagem: Any, **kwargs) -> bool | None:
         name_u = self._chaos_daemons_normalize_stratagem_name(getattr(stratagem, "name", ""))
+        if name_u == "BLOOD BEGETS SKULLS":
+            return self._use_blood_legion_blood_begets_skulls(stratagem, **kwargs)
+        if name_u == "WRATH UNDENIABLE":
+            return self._use_blood_legion_wrath_undeniable(stratagem, **kwargs)
         if name_u == "SKULLS BEGET BLOOD":
             return self._use_blood_legion_skulls_beget_blood(stratagem, **kwargs)
         if name_u == "SHEATHED IN BRASS":
@@ -692,6 +788,116 @@ class ChaosDaemonsStratagemMixin:
         if name_u == "FOOLS' FLIGHT":
             return self._use_blood_legion_fools_flight(stratagem, **kwargs)
         return None
+
+    def _use_blood_legion_blood_begets_skulls(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_blood_legion_detachment():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            return False
+        root = self._chaos_daemons_root(unit)
+        if root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "charge phase":
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return False
+        if candidates:
+            candidate_ids = {self._chaos_daemons_sort_key(self._chaos_daemons_root(candidate)) for candidate in candidates}
+            if self._chaos_daemons_sort_key(root) not in candidate_ids:
+                return False
+        valid_ids = {self._chaos_daemons_sort_key(candidate) for candidate in self._blood_legion_blood_begets_skulls_candidates()}
+        if self._chaos_daemons_sort_key(root) not in valid_ids:
+            return False
+        cp_cost = self._chaos_daemons_effective_cp_cost(stratagem, target_unit=root)
+        if not self.player.spend_command_points(cp_cost, reason=f"Stratagem: {stratagem.name}", source="stratagem"):
+            return False
+        special_rules = getattr(root, "special_rules", None)
+        if not isinstance(special_rules, dict):
+            special_rules = {}
+        added_charge_after_advance = not bool(special_rules.get("warp_surge_charge_after_advance", False))
+        special_rules["warp_surge_charge_after_advance"] = True
+        if added_charge_after_advance:
+            special_rules["blood_legion_blood_begets_skulls_added_charge_after_advance"] = True
+        special_rules["blood_legion_blood_begets_skulls_active"] = True
+        special_rules["blood_legion_blood_begets_skulls_expires_phase"] = "CHARGE_PHASE"
+        special_rules["blood_legion_blood_begets_skulls_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        special_rules["blood_legion_blood_begets_skulls_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        special_rules["blood_legion_blood_begets_skulls_source"] = stratagem.name
+        root.special_rules = special_rules
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
+        return True
+
+    def _use_blood_legion_wrath_undeniable(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_blood_legion_detachment():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        attacking_unit = kwargs.get("attacking_unit")
+        target_units = list(kwargs.get("target_units") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None or attacking_unit is None:
+            normalized_name = self._chaos_daemons_normalize_stratagem_name(getattr(stratagem, "name", ""))
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if self._chaos_daemons_normalize_stratagem_name(reaction.get("stratagem", "")) != normalized_name:
+                    continue
+                if unit is None:
+                    unit = reaction.get("unit") or reaction.get("target_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if attacking_unit is None:
+                    attacking_unit = reaction.get("attacking_unit")
+                if not target_units:
+                    target_units = list(reaction.get("target_units") or [])
+                break
+        if unit is None or attacking_unit is None:
+            return False
+        root = self._chaos_daemons_root(unit)
+        if root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            return False
+        attacker_root = self._chaos_daemons_root(attacking_unit)
+        if attacker_root is None:
+            return False
+        attacker_army = getattr(attacker_root, "get_parent_army", lambda: None)()
+        if attacker_army is None or getattr(attacker_army, "player", None) is self.player:
+            return False
+        valid_ids = {
+            self._chaos_daemons_sort_key(candidate)
+            for candidate in self._blood_legion_wrath_undeniable_candidates(
+                attacking_unit=attacker_root,
+                target_units=list(target_units or candidates or [root]),
+            )
+        }
+        if self._chaos_daemons_sort_key(root) not in valid_ids:
+            return False
+        cp_cost = self._chaos_daemons_effective_cp_cost(stratagem, target_unit=root)
+        if not self.player.spend_command_points(cp_cost, reason=f"Stratagem: {stratagem.name}", source="stratagem"):
+            return False
+        special_rules = getattr(root, "special_rules", None)
+        if not isinstance(special_rules, dict):
+            special_rules = {}
+        special_rules["blood_legion_wrath_undeniable_active"] = True
+        special_rules["blood_legion_wrath_undeniable_threshold"] = 4
+        special_rules["blood_legion_wrath_undeniable_expires_phase"] = "FIGHT_PHASE"
+        special_rules["blood_legion_wrath_undeniable_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        special_rules["blood_legion_wrath_undeniable_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        special_rules["blood_legion_wrath_undeniable_source"] = stratagem.name
+        root.special_rules = special_rules
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
+        return True
 
     def _use_blood_legion_skulls_beget_blood(self, stratagem: Any, **kwargs) -> bool:
         if not self._is_blood_legion_detachment():
@@ -910,7 +1116,7 @@ class ChaosDaemonsStratagemMixin:
 
     def _cleanup_blood_legion_phase_end_effects(self, *, phase: Any) -> None:
         phase_name = str(getattr(phase, "name", "") or "").strip().upper()
-        if phase_name not in ("MOVEMENT_PHASE", "CHARGE_PHASE", "SHOOTING_PHASE"):
+        if phase_name not in ("MOVEMENT_PHASE", "CHARGE_PHASE", "SHOOTING_PHASE", "FIGHT_PHASE"):
             return
         if self.player is None:
             return
@@ -952,6 +1158,21 @@ class ChaosDaemonsStratagemMixin:
                     ):
                         special_rules.pop(key, None)
                     changed = True
+            if phase_name == "CHARGE_PHASE":
+                expires_phase = str(special_rules.get("blood_legion_blood_begets_skulls_expires_phase", "") or "").strip().upper()
+                if special_rules.get("blood_legion_blood_begets_skulls_active") and (not expires_phase or expires_phase == phase_name):
+                    if bool(special_rules.get("blood_legion_blood_begets_skulls_added_charge_after_advance", False)):
+                        special_rules.pop("warp_surge_charge_after_advance", None)
+                    for key in (
+                        "blood_legion_blood_begets_skulls_active",
+                        "blood_legion_blood_begets_skulls_added_charge_after_advance",
+                        "blood_legion_blood_begets_skulls_expires_phase",
+                        "blood_legion_blood_begets_skulls_turn_owner",
+                        "blood_legion_blood_begets_skulls_turn",
+                        "blood_legion_blood_begets_skulls_source",
+                    ):
+                        special_rules.pop(key, None)
+                    changed = True
             if phase_name == "SHOOTING_PHASE":
                 expires_phase = str(special_rules.get("blood_legion_sheathed_in_brass_expires_phase", "") or "").strip().upper()
                 if special_rules.get("blood_legion_sheathed_in_brass_active") and (not expires_phase or expires_phase == phase_name):
@@ -965,5 +1186,21 @@ class ChaosDaemonsStratagemMixin:
                     ):
                         special_rules.pop(key, None)
                     changed = True
+            if phase_name == "FIGHT_PHASE":
+                expires_phase = str(special_rules.get("blood_legion_wrath_undeniable_expires_phase", "") or "").strip().upper()
+                if special_rules.get("blood_legion_wrath_undeniable_active") and (not expires_phase or expires_phase == phase_name):
+                    for key in (
+                        "blood_legion_wrath_undeniable_active",
+                        "blood_legion_wrath_undeniable_threshold",
+                        "blood_legion_wrath_undeniable_expires_phase",
+                        "blood_legion_wrath_undeniable_turn_owner",
+                        "blood_legion_wrath_undeniable_turn",
+                        "blood_legion_wrath_undeniable_source",
+                    ):
+                        special_rules.pop(key, None)
+                    changed = True
+                pending_models = getattr(root, "_blood_legion_wrath_undeniable_pending_models", None)
+                if isinstance(pending_models, list) and pending_models:
+                    root._blood_legion_wrath_undeniable_pending_models = []
             if changed:
                 root.special_rules = special_rules
