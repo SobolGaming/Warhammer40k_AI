@@ -3972,6 +3972,99 @@ class GamePhaseHandlersMixin:
                 continue
             mgr.on_phase_start(game=self)
 
+    def _on_phase_start_prescient_redeployment(self, player=None, phase=None, **_kwargs) -> None:
+        """Augurium Task Force: optional Movement phase strategic-reserves redeploy after Gate of Infinity."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "MOVEMENT_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        try:
+            battle_round = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            battle_round = 0
+
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        gk_mgr = getattr(army, "grey_knights_detachments", None)
+        if gk_mgr is None or not bool(getattr(gk_mgr, "is_augurium_task_force", lambda: False)()):
+            return
+        gate_mgr = getattr(army, "gate_of_infinity", None)
+        if gate_mgr is None or not bool(getattr(gate_mgr, "_army_has_gate", lambda: False)()):
+            return
+        can_offer = getattr(gate_mgr, "can_offer_prescient_redeployment", None)
+        if not callable(can_offer):
+            return
+        if not bool(
+            can_offer(
+                current_player_id=str(getattr(player, "id", "") or ""),
+                battle_round=int(battle_round),
+            )
+        ):
+            return
+
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                if str(getattr(req, "player_id", "") or "") != str(getattr(player, "id", "") or ""):
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") == "prescient_redeployment":
+                    return
+
+        eligible = list(gate_mgr.get_eligible_units(game=self, player=player) or [])
+        if not eligible:
+            return
+
+        def _unit_sort_key(unit) -> str:
+            try:
+                return str(get_entity_id(unit) or "")
+            except Exception:
+                return str(getattr(unit, "name", "") or "")
+
+        try:
+            max_units = int(getattr(gate_mgr, "_last_gate_window_max_units", 0) or 0)
+        except Exception:
+            max_units = 0
+        try:
+            selected_last = int(getattr(gate_mgr, "_last_gate_window_selected", 0) or 0)
+        except Exception:
+            selected_last = 0
+
+        options = [DecisionOption.create("None", payload={"action": "skip"})]
+        for unit in sorted(list(eligible), key=_unit_sort_key):
+            options.append(
+                DecisionOption.create(
+                    str(getattr(unit, "name", "Unit") or "Unit"),
+                    payload={"target_unit_id": get_entity_id(unit)},
+                )
+            )
+        if len(options) <= 1:
+            return
+
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Prescient Redeployment: select one eligible GREY KNIGHTS unit to place into Strategic Reserves (or None).",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={
+                "ability": "prescient_redeployment",
+                "ability_name": "Prescient Redeployment",
+                "phase": "Movement phase",
+                "optional": True,
+                "army_id": str(get_entity_id(army) or ""),
+                "max_units": int(max_units),
+                "selected_last_gate": int(selected_last),
+                "remaining_capacity": max(0, int(max_units) - int(selected_last)),
+            },
+        )
+        self.request_decision(request)
+
     def _on_phase_start_thousand_sons_flow_of_magic(self, player=None, phase=None, **_kwargs) -> None:
         if phase is None:
             return
@@ -8649,6 +8742,13 @@ class GamePhaseHandlersMixin:
             max_units = int(mgr.get_max_units_for_battlefield(self))
             if max_units <= 0:
                 continue
+            begin_gate_window = getattr(mgr, "begin_gate_window", None)
+            if callable(begin_gate_window):
+                begin_gate_window(
+                    game=self,
+                    turn_owner_id=str(getattr(player, "id", "") or ""),
+                    max_units=int(max_units),
+                )
             eligible = list(mgr.get_eligible_units(game=self, player=opp) or [])
             if not eligible:
                 continue

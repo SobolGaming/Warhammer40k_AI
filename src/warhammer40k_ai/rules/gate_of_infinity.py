@@ -14,6 +14,57 @@ class GateOfInfinityManager:
 
     def __init__(self, army=None):
         self.army = army
+        self._last_gate_window_seq = 0
+        self._last_gate_window_turn_owner_id = ""
+        self._last_gate_window_battle_round = 0
+        self._last_gate_window_max_units = 0
+        self._last_gate_window_selected = 0
+        self._prescient_consumed_window_seq = 0
+
+    def begin_gate_window(self, *, game=None, turn_owner_id: str = "", max_units: int = 0) -> None:
+        self._last_gate_window_seq = int(getattr(self, "_last_gate_window_seq", 0) or 0) + 1
+        self._last_gate_window_turn_owner_id = str(turn_owner_id or "")
+        try:
+            self._last_gate_window_battle_round = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            self._last_gate_window_battle_round = 0
+        try:
+            self._last_gate_window_max_units = max(0, int(max_units or 0))
+        except Exception:
+            self._last_gate_window_max_units = 0
+        self._last_gate_window_selected = 0
+        self._prescient_consumed_window_seq = 0
+
+    def record_gate_selection_count(self, count: int = 1) -> None:
+        try:
+            delta = max(0, int(count or 0))
+        except Exception:
+            delta = 0
+        self._last_gate_window_selected = int(getattr(self, "_last_gate_window_selected", 0) or 0) + delta
+
+    def can_offer_prescient_redeployment(self, *, current_player_id: str = "", battle_round: int = 0) -> bool:
+        try:
+            round_num = int(battle_round or 0)
+        except Exception:
+            round_num = 0
+        if round_num < 2:
+            return False
+        seq = int(getattr(self, "_last_gate_window_seq", 0) or 0)
+        if seq <= 0:
+            return False
+        if int(getattr(self, "_prescient_consumed_window_seq", 0) or 0) == seq:
+            return False
+        max_units = int(getattr(self, "_last_gate_window_max_units", 0) or 0)
+        selected = int(getattr(self, "_last_gate_window_selected", 0) or 0)
+        if max_units <= 0 or selected >= max_units:
+            return False
+        turn_owner_id = str(getattr(self, "_last_gate_window_turn_owner_id", "") or "")
+        if turn_owner_id and str(current_player_id or "") == turn_owner_id:
+            return False
+        return True
+
+    def mark_prescient_redeployment_consumed(self) -> None:
+        self._prescient_consumed_window_seq = int(getattr(self, "_last_gate_window_seq", 0) or 0)
 
     def _army_has_gate(self) -> bool:
         if self.army is None:
@@ -186,7 +237,7 @@ class GateOfInfinityManager:
             out.append(root)
         return out
 
-    def send_units_to_strategic_reserves(self, units, *, game=None) -> list:
+    def send_units_to_strategic_reserves(self, units, *, game=None, reason: str = "") -> list:
         moved = []
         game_map = getattr(game, "map", None) if game is not None else None
         for unit in list(units or []):
@@ -233,6 +284,8 @@ class GateOfInfinityManager:
                 except Exception:
                     pass
             moved.append(root)
+        if str(reason or "").strip().lower() == "gate_of_infinity" and moved:
+            self.record_gate_selection_count(len(moved))
         return moved
 
     def auto_gate_units(self, *, game=None, player=None) -> list:

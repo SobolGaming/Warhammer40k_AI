@@ -2692,6 +2692,58 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         return errors
     ctx = dict(getattr(request, "context", {}) or {})
     ability = str(ctx.get("ability", "") or "")
+    if ability == "prescient_redeployment":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Prescient Redeployment army not found.",)
+        gk_mgr = getattr(army, "grey_knights_detachments", None)
+        if gk_mgr is None or not bool(getattr(gk_mgr, "is_augurium_task_force", lambda: False)()):
+            return ("Prescient Redeployment requires Augurium Task Force.",)
+        gate_mgr = getattr(army, "gate_of_infinity", None)
+        if gate_mgr is None or not bool(getattr(gate_mgr, "_army_has_gate", lambda: False)()):
+            return ("Prescient Redeployment requires Gate of Infinity.",)
+        can_offer = getattr(gate_mgr, "can_offer_prescient_redeployment", None)
+        if callable(can_offer):
+            try:
+                battle_round = int(ctx.get("battle_round", 0) or getattr(game, "turn", 0) or 0)
+            except Exception:
+                battle_round = int(getattr(game, "turn", 0) or 0)
+            if not bool(
+                can_offer(
+                    current_player_id=str(getattr(request, "player_id", "") or ""),
+                    battle_round=int(battle_round),
+                )
+            ):
+                return ("Prescient Redeployment cannot be used right now.",)
+        if is_skip_choice(request, result):
+            return ()
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return ("Prescient Redeployment target unit was not found.",)
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return ("Prescient Redeployment target unit was not found.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        candidates = list(gate_mgr.get_eligible_units(game=game, player=player) or [])
+        candidate_ids = {
+            str(get_entity_id(unit) or "")
+            for unit in candidates
+            if unit is not None
+        }
+        target_id = str(get_entity_id(target_root) or "")
+        if target_id not in candidate_ids:
+            return ("Prescient Redeployment selected unit is not an eligible Gate of Infinity target.",)
+        return ()
     if ability == "siege_regiment_artillery_support_mode":
         if is_skip_choice(request, result):
             return ("Artillery Support mode selection cannot be skipped.",)
@@ -4877,6 +4929,55 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
 def _apply_choose_quarry(game: object, request: DecisionRequest, result: DecisionResult):
     ctx = dict(getattr(request, "context", {}) or {})
     ability = str(ctx.get("ability", "") or "")
+    if ability == "prescient_redeployment":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        gate_mgr = getattr(army, "gate_of_infinity", None)
+        if gate_mgr is None:
+            return None
+        mark_consumed = getattr(gate_mgr, "mark_prescient_redeployment_consumed", None)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        if is_skip_choice(request, result):
+            if callable(mark_consumed):
+                mark_consumed()
+            _log_action_for_players(game, player, "Prescient Redeployment: no unit selected.")
+            return None
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return None
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return None
+        moved = list(
+            gate_mgr.send_units_to_strategic_reserves(
+                [target_root],
+                game=game,
+                reason="prescient_redeployment",
+            )
+            or []
+        )
+        if not moved:
+            return None
+        if callable(mark_consumed):
+            mark_consumed()
+        chosen = moved[0]
+        _log_action_for_players(
+            game,
+            player,
+            f"Prescient Redeployment: {getattr(chosen, 'name', 'Unit')} placed into Strategic Reserves.",
+        )
+        return chosen
     if ability == "siege_regiment_artillery_support_mode":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)

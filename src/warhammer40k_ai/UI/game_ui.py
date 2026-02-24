@@ -5334,6 +5334,81 @@ class GameView:
                 return
 
             ability = str(ctx.get("ability", "") or "")
+            if ability == "prescient_redeployment":
+                from ..utility.decision_utils import resolve_decision_command
+                from .decision_ui_utils import option_id_for_action, first_option_id
+
+                dlg = getattr(self, "prescient_redeployment_dialog", None)
+                if dlg is None:
+                    try:
+                        from .dialogs import QuarrySelectionDialog
+                        self.prescient_redeployment_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+                        dlg = self.prescient_redeployment_dialog
+                    except Exception:
+                        dlg = None
+
+                skip_id = option_id_for_action(request, "skip")
+                default_id = skip_id or first_option_id(request)
+                if dlg is None:
+                    if default_id:
+                        resolve_decision_command(
+                            self.game,
+                            request,
+                            default_id,
+                            player_id=getattr(player, "id", None),
+                            result_payload={"skipped": True} if default_id == skip_id else {},
+                        )
+                    return
+
+                try:
+                    selected_last = int(ctx.get("selected_last_gate", 0) or 0)
+                except Exception:
+                    selected_last = 0
+                try:
+                    max_units = int(ctx.get("max_units", 0) or 0)
+                except Exception:
+                    max_units = 0
+
+                def _on_confirm(option_id: str):
+                    resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                def _on_cancel():
+                    if default_id:
+                        resolve_decision_command(
+                            self.game,
+                            request,
+                            default_id,
+                            player_id=getattr(player, "id", None),
+                            result_payload={"skipped": True} if default_id == skip_id else {},
+                        )
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                subtitle = "Select one eligible GREY KNIGHTS unit to place into Strategic Reserves."
+                if max_units > 0:
+                    subtitle = f"Gate of Infinity last turn: {selected_last}/{max_units} selected."
+
+                dlg.show(
+                    title=str(ctx.get("ability_name", "") or "Prescient Redeployment"),
+                    header="Select one eligible unit (or None).",
+                    subtitle=subtitle,
+                    on_confirm=_on_confirm,
+                    on_cancel=_on_cancel,
+                    decision_request=request,
+                    show_cancel=True,
+                )
+                try:
+                    self.dialog_manager.open(dlg, modal=True)
+                except Exception:
+                    pass
+                return
+
             if ability in ("opponent_shooting_phase_disrupt", "unearthly_power", "risen_rubricae"):
                 from ..utility.decision_utils import resolve_decision_command
                 from .decision_ui_utils import option_id_for_action, first_option_id
@@ -8185,7 +8260,7 @@ class GameView:
             except Exception:
                 unit = value
             try:
-                mgr.send_units_to_strategic_reserves([unit], game=game)
+                mgr.send_units_to_strategic_reserves([unit], game=game, reason="gate_of_infinity")
             except Exception:
                 pass
             try:

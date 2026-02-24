@@ -366,6 +366,152 @@ class TestGreyKnightsDetachments(unittest.TestCase):
         finally:
             wargear_mod.get_roll = original_roll
 
+    def test_prescient_redeployment_queues_and_moves_unit_to_reserves(self):
+        from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from warhammer40k_ai.engine.phase import BattleRoundPhases
+        from warhammer40k_ai.utility.decision_utils import resolve_decision_command
+        from warhammer40k_ai.utility.entity_ids import get_entity_id
+        from warhammer40k_ai.utility.ability_support import ABILITY_GATE_OF_INFINITY
+
+        game, army_gk, army_enemy, player = _build_game(detachment_type="Augurium Task Force")
+        enemy_player = army_enemy.player
+        army_gk.gate_of_infinity._army_has_gate = lambda: True
+
+        gate = {
+            "name": "Gate of Infinity",
+            "id": ABILITY_GATE_OF_INFINITY,
+            "description": "Gate of Infinity",
+            "type": "Faction",
+            "parameter": "",
+        }
+        unit = _make_unit(
+            "Strike Squad",
+            keywords=["INFANTRY"],
+            faction_keywords=["GREY KNIGHTS"],
+            abilities=[gate],
+        )
+        army_gk.add_unit(unit)
+        army_gk.gate_of_infinity.get_eligible_units = lambda **_kwargs: [unit]
+
+        enemy = _make_unit(
+            "Enemy",
+            keywords=["INFANTRY"],
+            faction_keywords=["ENEMY"],
+        )
+        army_enemy.add_unit(enemy)
+        unit.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        enemy.models[0].set_location(24.0, 0.0, 0.0, 0.0)
+        game.map.units = [unit, enemy]
+        game.rebuild_entity_registry()
+
+        game.phase = BattleRoundPhases.FIGHT_PHASE
+        game._on_phase_end_gate_of_infinity(player=enemy_player, phase=BattleRoundPhases.FIGHT_PHASE)
+
+        game.phase = BattleRoundPhases.MOVEMENT_PHASE
+        game._on_phase_start_prescient_redeployment(player=player, phase=BattleRoundPhases.MOVEMENT_PHASE)
+
+        pending = [
+            req
+            for req in list(game.decision_queue.list() or [])
+            if str(getattr(req, "decision_type", "") or "") == DECISION_CHOOSE_QUARRY
+            and str((getattr(req, "context", {}) or {}).get("ability", "") or "") == "prescient_redeployment"
+        ]
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+
+        unit_id = str(get_entity_id(unit) or "")
+        option = next(
+            opt
+            for opt in list(getattr(request, "options", []) or [])
+            if str((getattr(opt, "payload", {}) or {}).get("target_unit_id", "") or "") == unit_id
+        )
+        result = resolve_decision_command(game, request, option.option_id, player_id=player.id)
+        self.assertTrue(bool(getattr(result, "ok", False)))
+        self.assertEqual(str(getattr(unit, "reserve_status", "") or ""), "strategic_reserves")
+        self.assertNotIn(unit, list(getattr(game.map, "units", []) or []))
+
+    def test_prescient_redeployment_not_available_when_gate_was_maxed(self):
+        from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from warhammer40k_ai.engine.phase import BattleRoundPhases
+        from warhammer40k_ai.utility.ability_support import ABILITY_GATE_OF_INFINITY
+
+        game, army_gk, army_enemy, player = _build_game(detachment_type="Augurium Task Force")
+        enemy_player = army_enemy.player
+        army_gk.gate_of_infinity._army_has_gate = lambda: True
+
+        gate = {
+            "name": "Gate of Infinity",
+            "id": ABILITY_GATE_OF_INFINITY,
+            "description": "Gate of Infinity",
+            "type": "Faction",
+            "parameter": "",
+        }
+        unit = _make_unit(
+            "Strike Squad",
+            keywords=["INFANTRY"],
+            faction_keywords=["GREY KNIGHTS"],
+            abilities=[gate],
+        )
+        army_gk.add_unit(unit)
+        game.map.units = [unit]
+        game.rebuild_entity_registry()
+
+        gate_mgr = army_gk.gate_of_infinity
+        gate_mgr.begin_gate_window(game=game, turn_owner_id=enemy_player.id, max_units=1)
+        gate_mgr.record_gate_selection_count(1)
+
+        game.phase = BattleRoundPhases.MOVEMENT_PHASE
+        game._on_phase_start_prescient_redeployment(player=player, phase=BattleRoundPhases.MOVEMENT_PHASE)
+
+        pending = [
+            req
+            for req in list(game.decision_queue.list() or [])
+            if str(getattr(req, "decision_type", "") or "") == DECISION_CHOOSE_QUARRY
+            and str((getattr(req, "context", {}) or {}).get("ability", "") or "") == "prescient_redeployment"
+        ]
+        self.assertEqual(pending, [])
+
+    def test_prescient_redeployment_requires_battle_round_two_or_later(self):
+        from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from warhammer40k_ai.engine.phase import BattleRoundPhases
+        from warhammer40k_ai.utility.ability_support import ABILITY_GATE_OF_INFINITY
+
+        game, army_gk, army_enemy, player = _build_game(detachment_type="Augurium Task Force")
+        enemy_player = army_enemy.player
+        game.turn = 1
+        army_gk.gate_of_infinity._army_has_gate = lambda: True
+
+        gate = {
+            "name": "Gate of Infinity",
+            "id": ABILITY_GATE_OF_INFINITY,
+            "description": "Gate of Infinity",
+            "type": "Faction",
+            "parameter": "",
+        }
+        unit = _make_unit(
+            "Strike Squad",
+            keywords=["INFANTRY"],
+            faction_keywords=["GREY KNIGHTS"],
+            abilities=[gate],
+        )
+        army_gk.add_unit(unit)
+        game.map.units = [unit]
+        game.rebuild_entity_registry()
+
+        gate_mgr = army_gk.gate_of_infinity
+        gate_mgr.begin_gate_window(game=game, turn_owner_id=enemy_player.id, max_units=3)
+
+        game.phase = BattleRoundPhases.MOVEMENT_PHASE
+        game._on_phase_start_prescient_redeployment(player=player, phase=BattleRoundPhases.MOVEMENT_PHASE)
+
+        pending = [
+            req
+            for req in list(game.decision_queue.list() or [])
+            if str(getattr(req, "decision_type", "") or "") == DECISION_CHOOSE_QUARRY
+            and str((getattr(req, "context", {}) or {}).get("ability", "") or "") == "prescient_redeployment"
+        ]
+        self.assertEqual(pending, [])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -765,6 +765,11 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time a model in a grey knights unit from your army makes a ranged attack that targets a visible target or makes a melee attack reroll a hit roll of \d+",
             r"if that unit is a purifier squad and or is wholly within your armys hallowed ground you can reroll the hit roll instead",
         ),
+        "Prescient Redeployment": (
+            r"from the second battle round onwards at the start of your movement phase if you did not select the maximum number of grey knights units from your army using the gate of infinity ability at the end of your opponents previous turn you can select one grey knights unit from your army that is on the battlefield that could have been selected using the gate of infinity ability",
+            r"remove that unit from the battlefield and place it into strategic reserves",
+            r"this means that your unit can retain its position on the battlefield at the end of your command phase and then be placed into strategic reserves at the start of your movement phase to set it up again in your reinforcements step in another position",
+        ),
         "Relentless Onslaught": (
             r"each time a necrons model from your army makes an attack that targets a unit within range of one or more objective markers add \d+ to the hit roll",
             r"in addition ranged weapons equipped by necrons vehicle and necrons mounted models excluding titanic models from your army have the assault ability",
@@ -2754,6 +2759,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
             "phase-start control of No Man's Land/opponent deployment zone objectives) grant GREY KNIGHTS hit re-rolls "
             "of 1 on visible ranged attacks or melee; PURIFIER SQUAD or units wholly within Hallowed Ground can re-roll "
             "the Hit roll instead.",
+        ),
+        "Prescient Redeployment": (
+            "Supported",
+            "Augurium Task Force: from battle round 2 onward at the start of your Movement phase, if fewer than the Gate of Infinity max units were selected at the end of the opponent's previous turn, choose one eligible GREY KNIGHTS unit to enter Strategic Reserves.",
         ),
         "Warp Rifts": (
             "Supported",

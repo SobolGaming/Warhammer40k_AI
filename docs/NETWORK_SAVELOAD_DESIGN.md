@@ -242,6 +242,7 @@ Movement:
 - vowed_target_dialog: CHOOSE_QUARRY {mode, objective_ids[1+], signature} (context `ability="vowed_target_selection"`, `ability_name="Vowed Target"`, `phase="Movement phase"`, `army_id`, `player_id`, `battle_round`, `candidate_signatures`)
 - movement_phase_wound_bonus_target_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="movement_phase_visible_wound_bonus"`, `unit_id`, `model_id`, `range`, `keyword`, `bonus`)
 - movement_phase_hit_bonus_target_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="movement_phase_visible_hit_bonus"`, `unit_id`, `model_id`, `range`, `keyword`, `bonus`)
+- prescient_redeployment_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="prescient_redeployment"`, `ability_name="Prescient Redeployment"`, `phase="Movement phase"`, `optional=true`, `max_units`, `selected_last_gate`, `remaining_capacity`)
 - misfortune_target_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="misfortune"`, `source_unit_id`, `model_id`, `range`, `penalty`)
 - nurgles_rot_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="nurgles_rot"`, `source_unit_id`, `model_id`, `range`, `penalty`)
 - diseased_influence_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="diseased_influence"`, `ability_name`, `source_unit_id`, `moving_unit_id`, `turn`, `optional=true`)

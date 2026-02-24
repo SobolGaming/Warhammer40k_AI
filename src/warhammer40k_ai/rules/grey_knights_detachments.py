@@ -23,6 +23,11 @@ class GreyKnightsDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Hallowed Conclave")
 
+    def is_augurium_task_force(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Augurium Task Force")
+
     def is_warpbane_task_force(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
             return False
