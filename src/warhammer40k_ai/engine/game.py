@@ -5862,7 +5862,13 @@ class Game(
             return
         apply_tokens(attacker_unit, count=1)
 
-    def _on_unit_destroyed_phase_kill_tracking(self, unit=None, destroyed_by_unit=None, **_kwargs) -> None:
+    def _on_unit_destroyed_phase_kill_tracking(
+        self,
+        unit=None,
+        destroyed_by_unit=None,
+        destroyed_by_model=None,
+        **_kwargs,
+    ) -> None:
         """Track units that destroyed enemy units during Shooting/Fight phases."""
         if unit is None or destroyed_by_unit is None:
             return
@@ -5876,6 +5882,42 @@ class Game(
             root = destroyed_by_unit
         if root is None:
             return
+
+        # Blood Legion enhancement: Gateway Unto Damnation kill tracking.
+        attacker_model_id = str(get_entity_id(destroyed_by_model) or "") if destroyed_by_model is not None else ""
+        if attacker_model_id:
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = [root]
+            if not members:
+                members = [root]
+            try:
+                members = sorted(members, key=lambda u: str(get_entity_id(u) or ""))
+            except Exception:
+                members = list(members)
+            for member in members:
+                if member is None:
+                    continue
+                member_sr = getattr(member, "special_rules", None)
+                if not isinstance(member_sr, dict) or not bool(member_sr.get("enhancement_gateway_unto_damnation")):
+                    continue
+                bearer_model_id = str(member_sr.get("enhancement_bearer_model_id", "") or "")
+                if bearer_model_id and bearer_model_id != attacker_model_id:
+                    continue
+                try:
+                    current = int(
+                        member_sr.get(
+                            "enhancement_gateway_unto_damnation_destroyed_enemy_units_this_battle",
+                            0,
+                        )
+                        or 0
+                    )
+                except Exception:
+                    current = 0
+                member_sr["enhancement_gateway_unto_damnation_destroyed_enemy_units_this_battle"] = int(current + 1)
+                member.special_rules = member_sr
+                break
 
         turn = int(getattr(self, "turn", 0) or 0)
         turn_owner = self.get_current_player()

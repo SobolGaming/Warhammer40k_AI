@@ -7227,6 +7227,96 @@ class GameShootingFightHandlersMixin:
             return bool(has_keyword("TITANIC"))
         return False
 
+    def _on_fight_unit_selected_furys_cage(self, unit=None, selecting_player=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        if not self.is_fight_phase():
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        if not root.is_alive() or not getattr(root, "deployed", True):
+            return
+        try:
+            if root.is_in_reserves() or root.is_embarked:
+                return
+        except Exception:
+            pass
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        owner = getattr(army, "player", None) if army is not None else None
+        if owner is None:
+            return
+        if selecting_player is not None and selecting_player is not owner:
+            return
+
+        _root, source_member, source_sr = self._attached_member_with_enhancement_flag(
+            root,
+            "enhancement_furys_cage",
+        )
+        if source_member is None:
+            return
+
+        bearer = getattr(source_member, "_get_enhancement_bearer_model", lambda: None)()
+        if bearer is None or not bool(getattr(bearer, "is_alive", True)):
+            return
+
+        source_unit_id = str(get_entity_id(source_member) or "")
+        model_id = str(get_entity_id(bearer) or "")
+        if not source_unit_id or not model_id:
+            return
+
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        owner_id = str(getattr(owner, "id", "") or "")
+        phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper() or "FIGHT_PHASE"
+        if bool(source_sr.get("enhancement_furys_cage_active")):
+            active_owner = str(source_sr.get("enhancement_furys_cage_turn_owner", "") or "")
+            try:
+                active_turn = int(source_sr.get("enhancement_furys_cage_turn", 0) or 0)
+            except Exception:
+                active_turn = 0
+            active_phase = str(source_sr.get("enhancement_furys_cage_expires_phase", "") or "").strip().upper()
+            if (
+                (not active_owner or active_owner == owner_id)
+                and (not active_turn or active_turn == turn)
+                and (not active_phase or active_phase == phase_name)
+            ):
+                return
+
+        ability_name = (
+            str(source_sr.get("enhancement_furys_cage_source", "") or "Fury's Cage").strip()
+            or "Fury's Cage"
+        )
+        self._queue_optional_ability_confirmation(
+            player=owner,
+            ability_key="furys_cage",
+            ability_name=ability_name,
+            message=f"Use {ability_name} for {getattr(bearer, 'name', 'Model')}?",
+            context={
+                "ability_name": ability_name,
+                "phase": "Fight phase",
+                "unit_id": source_unit_id,
+                "source_unit_id": source_unit_id,
+                "model_id": model_id,
+                "turn_owner": owner_id,
+                "turn": int(turn or 0),
+            },
+            payload={
+                "unit_id": source_unit_id,
+                "source_unit_id": source_unit_id,
+                "model_id": model_id,
+            },
+            instance_key=f"{model_id}:furys_cage:{int(turn or 0)}:{owner_id}",
+        )
+
     def _on_unit_shooting_resolved_quake_multigenerator(
         self,
         attacker_unit=None,

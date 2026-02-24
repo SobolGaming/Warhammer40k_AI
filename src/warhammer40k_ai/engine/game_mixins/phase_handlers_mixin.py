@@ -9730,6 +9730,16 @@ class GamePhaseHandlersMixin:
                 if exp and exp == pname:
                     for k in ("seductive_gambit_active", "seductive_gambit_expires_phase"):
                         sr.pop(k, None)
+                exp = str(sr.get("enhancement_furys_cage_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "enhancement_furys_cage_active",
+                        "enhancement_furys_cage_turn",
+                        "enhancement_furys_cage_turn_owner",
+                        "enhancement_furys_cage_expires_phase",
+                        "enhancement_furys_cage_active_model_id",
+                    ):
+                        sr.pop(k, None)
                 effects = sr.get("advance_no_roll_effects")
                 if isinstance(effects, list) and effects:
                     kept = []

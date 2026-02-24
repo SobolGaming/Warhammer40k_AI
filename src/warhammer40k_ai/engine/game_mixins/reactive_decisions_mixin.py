@@ -3425,6 +3425,7 @@ class GameReactiveDecisionsMixin:
             "dead_reckoning",
             "warpmeld_sacrifice",
             "possessed_blade_fight",
+            "furys_cage",
             "aeldari_strength_from_death_lethal_surge",
             "our_time_is_nigh",
             "desperate_devotion",
@@ -4067,6 +4068,85 @@ class GameReactiveDecisionsMixin:
             sr["enhancement_possessed_blade_source"] = (
                 str(ctx.get("ability_name", "") or "Possessed Blade").strip() or "Possessed Blade"
             )
+            unit.special_rules = sr
+            return
+
+        if ability_key == "furys_cage":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or ctx.get("source_unit_id") or "")
+            model_id = str(payload.get("model_id") or ctx.get("model_id") or "")
+            if not unit_id or not model_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            model = self._resolve_model_by_id(model_id)
+            if unit is None or model is None:
+                return
+            if not bool(getattr(model, "is_alive", True)):
+                return
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict) or not sr.get("enhancement_furys_cage"):
+                return
+            bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "")
+            if bearer_id and bearer_id != model_id:
+                return
+            phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+            if not phase_name:
+                phase_name = str(ctx.get("phase", "") or "").strip().upper()
+            if not phase_name:
+                phase_name = "FIGHT_PHASE"
+            player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+            if player is None:
+                try:
+                    player = unit.get_parent_army().player
+                except Exception:
+                    player = None
+            owner_id = str(getattr(player, "id", "") or "")
+            try:
+                turn = int(getattr(self, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+
+            mortal_roll = int(get_roll("D3") or 0)
+            mortal_wounds = max(1, int(mortal_roll) + 1)
+            applied_wounds = 0
+            for _ in range(int(mortal_wounds)):
+                if not bool(getattr(model, "is_alive", True)):
+                    break
+                model.take_damage(
+                    1,
+                    is_mortal=True,
+                    weapon_profile=None,
+                    game_map=getattr(self, "map", None),
+                    damage_source="enhancement_furys_cage",
+                )
+                applied_wounds += 1
+
+            ability_name = str(ctx.get("ability_name", "") or "Fury's Cage").strip() or "Fury's Cage"
+            if player is not None:
+                append_dice(
+                    player,
+                    f"{ability_name}: D3+1 mortal wounds ({int(mortal_roll)}+1) -> {int(mortal_wounds)}.",
+                )
+                append_action(
+                    player,
+                    f"{ability_name}: {getattr(model, 'name', 'Model')} suffers {int(applied_wounds)} mortal wounds.",
+                )
+
+            if bool(getattr(model, "is_alive", True)):
+                sr["enhancement_furys_cage_active"] = True
+                sr["enhancement_furys_cage_turn"] = int(turn or 0)
+                sr["enhancement_furys_cage_turn_owner"] = owner_id
+                sr["enhancement_furys_cage_expires_phase"] = phase_name
+                sr["enhancement_furys_cage_active_model_id"] = model_id
+                sr["enhancement_furys_cage_source"] = ability_name
+            else:
+                for key in (
+                    "enhancement_furys_cage_active",
+                    "enhancement_furys_cage_turn",
+                    "enhancement_furys_cage_turn_owner",
+                    "enhancement_furys_cage_expires_phase",
+                    "enhancement_furys_cage_active_model_id",
+                ):
+                    sr.pop(key, None)
             unit.special_rules = sr
             return
 

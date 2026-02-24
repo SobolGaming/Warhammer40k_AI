@@ -464,6 +464,21 @@ def _legion_of_excess_aura_attacker_valid(attacker_unit) -> bool:
     return True
 
 
+def _blood_legion_aura_attacker_valid(attacker_unit) -> bool:
+    if attacker_unit is None:
+        return False
+    try:
+        if not bool(attacker_unit.has_any_keyword("LEGIONES DAEMONICA")):
+            return False
+        if not bool(attacker_unit.has_any_keyword("KHORNE")):
+            return False
+        if bool(attacker_unit.has_any_keyword("MONSTER")):
+            return False
+    except Exception:
+        return False
+    return True
+
+
 def _excluded_by_target_keywords(target_unit, excluded_keywords: Iterable[str]) -> bool:
     for kw in excluded_keywords:
         k = str(kw or "").strip()
@@ -2383,6 +2398,28 @@ def get_aura_weapon_keyword_bonuses(attacker_unit, weapon_profile, *, game_map=N
     applied_aura_names: set[str] = set()
 
     for source in list(game_map.get_friendly_units(attacker_unit)):
+        source_sr = getattr(source, "special_rules", None)
+        if isinstance(source_sr, dict) and bool(source_sr.get("enhancement_slaughterthirst_aura")):
+            aura_key = _norm_name("Slaughterthirst (Aura)")
+            if not aura_key or aura_key not in applied_aura_names:
+                try:
+                    aura_range = float(source_sr.get("enhancement_slaughterthirst_aura_range", 6.0) or 6.0)
+                except Exception:
+                    aura_range = 6.0
+                if (
+                    _blood_legion_aura_attacker_valid(attacker_unit)
+                    and _unit_within_aura_range(source, attacker_unit, float(max(0.0, aura_range)))
+                ):
+                    if aura_key:
+                        applied_aura_names.add(aura_key)
+                    rules.append(
+                        {
+                            "attack_type": "melee",
+                            "keyword": "LANCE",
+                            "source": str(source_sr.get("enhancement_slaughterthirst_aura_source", "") or "Slaughterthirst (Aura)").strip()
+                            or "Slaughterthirst (Aura)",
+                        }
+                    )
         for ab in _iter_possible_abilities(source):
             spec = _cached_parse_aura_spec("_parse_melee_weapon_sustained_hits_aura", ab, _parse_melee_weapon_sustained_hits_aura)
             if not spec:

@@ -1292,6 +1292,66 @@ _SHADOW_LEGION_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SHADOW_LEGION_DESCRIPTORS.values()
 }
 
+_BLOOD_LEGION_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009815002": EnhancementToolDescriptor(
+        enhancement_id="000009815002",
+        name="Slaughterthirst (Aura)",
+        timing="passive_aura",
+        target="friendly_khorne_legiones_daemonica_units_within_range_excluding_monsters",
+        duration="constant",
+        effect="grant_weapon_keywords",
+        range_in=6.0,
+        effect_params={
+            "attack_type": "melee",
+            "keywords": ("LANCE",),
+            "required_keywords_all": ("LEGIONES DAEMONICA", "KHORNE"),
+            "excluded_keywords_any": ("MONSTER",),
+        },
+    ),
+    "000009815003": EnhancementToolDescriptor(
+        enhancement_id="000009815003",
+        name="Fury's Cage",
+        timing="when_selected_to_fight",
+        target="bearer",
+        duration="until_end_of_phase",
+        effect="optional_self_mortal_then_full_hit_wound_rerolls",
+        effect_params={
+            "self_mortal_wounds_roll": "D3+1",
+            "attack_type": "melee",
+            "reroll_hit": "full",
+            "reroll_wound": "full",
+            "optional": True,
+        },
+    ),
+    "000009815004": EnhancementToolDescriptor(
+        enhancement_id="000009815004",
+        name="Brazenmaw",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="charge_roll_bonus",
+        effect_params={"charge_roll_bonus": 2},
+    ),
+    "000009815005": EnhancementToolDescriptor(
+        enhancement_id="000009815005",
+        name="Gateway Unto Damnation",
+        timing="on_bearer_destroyed_and_on_enemy_unit_destroyed_by_bearer",
+        target="bearer",
+        duration="battle",
+        effect="deadly_demise_trigger_and_damage_override_after_kill",
+        effect_params={
+            "trigger_roll": "D6",
+            "success_on": 2,
+            "base_damage_after_kill": "D3+3",
+            "requires_destroyed_enemy_units_this_battle": 1,
+        },
+    ),
+}
+
+_BLOOD_LEGION_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _BLOOD_LEGION_DESCRIPTORS.values()
+}
+
 _LEGION_OF_EXCESS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009806002": EnhancementToolDescriptor(
         enhancement_id="000009806002",
@@ -1757,6 +1817,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SHADOW_LEGION_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _BLOOD_LEGION_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _LEGION_OF_EXCESS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -1811,6 +1874,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _CARNIVAL_OF_EXCESS_BY_NAME.get(key)
         or _DAEMONIC_INCURSION_BY_NAME.get(key)
         or _SHADOW_LEGION_BY_NAME.get(key)
+        or _BLOOD_LEGION_BY_NAME.get(key)
         or _LEGION_OF_EXCESS_BY_NAME.get(key)
         or _PLAGUE_LEGION_BY_NAME.get(key)
         or _SCINTILLATING_LEGION_BY_NAME.get(key)

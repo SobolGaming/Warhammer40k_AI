@@ -1263,6 +1263,21 @@ class DamageDeathMixin:
                 trigger_threshold = int(sr.get("enhancement_violent_demise_trigger_threshold", 2) or 2)
                 damage_expr = str(sr.get("enhancement_violent_demise_damage_dice", "") or "D3+1")
                 damage_dice = DiceCollection.from_string(damage_expr)
+        if isinstance(sr, dict) and sr.get("enhancement_gateway_unto_damnation"):
+            bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "")
+            dying_id = str(get_entity_id(dying_model) or "")
+            if not bearer_id or (dying_id and dying_id == bearer_id):
+                trigger_threshold = int(sr.get("enhancement_gateway_unto_damnation_trigger_threshold", 2) or 2)
+                try:
+                    destroyed_units = int(
+                        sr.get("enhancement_gateway_unto_damnation_destroyed_enemy_units_this_battle", 0) or 0
+                    )
+                except Exception:
+                    destroyed_units = 0
+                if destroyed_units >= 1:
+                    damage_expr = str(sr.get("enhancement_gateway_unto_damnation_damage_dice", "") or "D3+3")
+                    damage_dice = DiceCollection.from_string(damage_expr)
+        trigger_threshold = int(max(2, min(6, int(trigger_threshold or 6))))
 
         # Thousand Sons (Warpforged Cabal): Warpfire Infusion.
         # Deadly Demise triggers on 5+ while the destroyed VEHICLE model is within 6" of a friendly TS PSYKER.

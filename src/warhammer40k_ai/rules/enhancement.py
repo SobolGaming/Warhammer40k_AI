@@ -424,6 +424,10 @@ class Enhancement:
         except Exception:
             is_shadow_legion = False
         try:
+            is_blood_legion = bool(cd_mgr and cd_mgr.is_blood_legion_detachment())
+        except Exception:
+            is_blood_legion = False
+        try:
             is_legion_of_excess = bool(cd_mgr and cd_mgr.is_legion_of_excess_detachment())
         except Exception:
             is_legion_of_excess = False
@@ -2222,6 +2226,76 @@ class Enhancement:
         if name == "synaptic linchpin" or enh_id == "000008348004":
             unit.special_rules["enhancement_synaptic_linchpin"] = True
             unit.special_rules["enhancement_synaptic_linchpin_range"] = 9.0
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "slaughterthirst (aura)" or enh_id == "000009815002":
+            if not is_blood_legion:
+                return
+            unit.special_rules["enhancement_slaughterthirst_aura"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            range_val = params.get("range", getattr(desc, "range_in", 6.0) if desc is not None else 6.0)
+            try:
+                aura_range = float(range_val if range_val is not None else 6.0)
+            except Exception:
+                aura_range = 6.0
+            unit.special_rules["enhancement_slaughterthirst_aura_range"] = float(max(0.0, aura_range))
+            unit.special_rules["enhancement_slaughterthirst_aura_source"] = "Slaughterthirst (Aura)"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "fury's cage" or enh_id == "000009815003":
+            if not is_blood_legion:
+                return
+            unit.special_rules["enhancement_furys_cage"] = True
+            unit.special_rules["enhancement_furys_cage_source"] = "Fury's Cage"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "brazenmaw" or enh_id == "000009815004":
+            if not is_blood_legion:
+                return
+            unit.special_rules["enhancement_brazenmaw"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            bonus = _coerce_int(params.get("charge_roll_bonus", 2) or 2, default=2)
+            bonus = int(max(0, bonus))
+            if bonus:
+                mods = list(unit.special_rules.get("charge_roll_modifiers", []) or [])
+                tag = "enhancement:brazenmaw"
+                exists = False
+                for item in mods:
+                    if isinstance(item, dict) and str(item.get("tag", "") or "") == tag:
+                        exists = True
+                        break
+                if not exists:
+                    mods.append(
+                        {
+                            "value": int(bonus),
+                            "source": "Brazenmaw",
+                            "tag": tag,
+                        }
+                    )
+                unit.special_rules["charge_roll_modifiers"] = mods
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "gateway unto damnation" or enh_id == "000009815005":
+            if not is_blood_legion:
+                return
+            unit.special_rules["enhancement_gateway_unto_damnation"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            trigger_threshold = _coerce_int(params.get("success_on", 2) or 2, default=2)
+            damage_dice = str(params.get("base_damage_after_kill", "") or "D3+3").strip().upper() or "D3+3"
+            unit.special_rules["enhancement_gateway_unto_damnation_trigger_threshold"] = int(
+                max(2, min(6, trigger_threshold))
+            )
+            unit.special_rules["enhancement_gateway_unto_damnation_damage_dice"] = damage_dice
+            unit.special_rules["enhancement_gateway_unto_damnation_source"] = "Gateway Unto Damnation"
+            if "enhancement_gateway_unto_damnation_destroyed_enemy_units_this_battle" not in unit.special_rules:
+                unit.special_rules["enhancement_gateway_unto_damnation_destroyed_enemy_units_this_battle"] = 0
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 

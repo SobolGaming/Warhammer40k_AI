@@ -10698,6 +10698,112 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Fury's Cage: bearer melee attacks can re-roll the Hit roll (optional).
+        try:
+            if rerolls_allowed and "reroll" not in hit_result:
+                is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+                if is_melee:
+                    unit = attacker.parent_unit
+                    try:
+                        root = unit.get_attached_unit_root()
+                    except Exception:
+                        root = unit
+                    try:
+                        members = list(root.get_attached_unit_members() or [])
+                    except Exception:
+                        members = [root]
+                    if not members:
+                        members = [root]
+                    try:
+                        members = sorted(members, key=lambda u: str(get_entity_id(u) or ""))
+                    except Exception:
+                        members = list(members)
+                    try:
+                        attacker_model_id = str(get_entity_id(attacker) or "")
+                    except Exception:
+                        attacker_model_id = str(getattr(attacker, "_id", None) or getattr(attacker, "id", None) or "")
+                    for member in list(members or []):
+                        if member is None:
+                            continue
+                        sr = getattr(member, "special_rules", None)
+                        if not isinstance(sr, dict) or not bool(sr.get("enhancement_furys_cage_active")):
+                            continue
+                        source_model_id = str(
+                            sr.get("enhancement_furys_cage_active_model_id", "")
+                            or sr.get("enhancement_bearer_model_id", "")
+                            or ""
+                        )
+                        if source_model_id and attacker_model_id and source_model_id != attacker_model_id:
+                            continue
+                        applies = True
+                        try:
+                            army = member.get_parent_army()
+                        except Exception:
+                            army = None
+                        owner_id = str(sr.get("enhancement_furys_cage_turn_owner", "") or "")
+                        try:
+                            effect_turn = int(sr.get("enhancement_furys_cage_turn", 0) or 0)
+                        except Exception:
+                            effect_turn = 0
+                        exp = str(sr.get("enhancement_furys_cage_expires_phase", "") or "").strip().upper()
+                        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                        if game is not None:
+                            if owner_id:
+                                current_owner = str(getattr(getattr(game, "get_current_player", lambda: None)(), "id", "") or "")
+                                if current_owner and current_owner != owner_id:
+                                    applies = False
+                            if applies and effect_turn:
+                                try:
+                                    if int(getattr(game, "turn", 0) or 0) != effect_turn:
+                                        applies = False
+                                except Exception:
+                                    applies = False
+                            if applies and exp:
+                                phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                                if phase_name and phase_name != exp:
+                                    applies = False
+                        if not applies:
+                            continue
+                        try:
+                            success = (dice_roll != 1) and (self.skill > 0) and (dice_roll >= final_needed)
+                        except Exception:
+                            success = False
+                        do_reroll = False
+                        try:
+                            player = army.player if army is not None else None
+                            is_human = bool(getattr(player, "has_control", lambda: False)())
+                            provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None) if game is not None else None
+                        except Exception:
+                            is_human = False
+                            provider = None
+                            player = None
+                        source = str(sr.get("enhancement_furys_cage_source", "") or "Fury's Cage").strip() or "Fury's Cage"
+                        if is_human and callable(provider):
+                            try:
+                                do_reroll = bool(provider(
+                                    player=player,
+                                    unit=unit,
+                                    roll_type="hit",
+                                    value=dice_roll,
+                                    dice=None,
+                                    needed=final_needed,
+                                    success=success,
+                                    reason=source,
+                                ))
+                            except Exception:
+                                do_reroll = False
+                        else:
+                            do_reroll = (not success)
+                        if do_reroll:
+                            rr = _reroll_hit()
+                            hit_result.setdefault("special_effects", []).append(f"{source}: re-roll Hit roll")
+                            hit_result["reroll"] = rr
+                            dice_roll = rr
+                            reroll_used = True
+                        break
+        except Exception:
+            pass
+
         # Seductive Gambit: melee attacks can re-roll the Hit roll (optional).
         try:
             if rerolls_allowed and "reroll" not in hit_result:
@@ -14767,6 +14873,135 @@ class WargearProfile:
                         wound_result["reroll"] = rr
                         dice_roll = rr
                         reroll_used = True
+        except Exception:
+            pass
+
+        # Fury's Cage: bearer melee attacks can re-roll the Wound roll (optional).
+        try:
+            if rerolls_allowed and "reroll" not in wound_result:
+                is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+                if is_melee:
+                    unit = attacker.parent_unit
+                    try:
+                        root = unit.get_attached_unit_root()
+                    except Exception:
+                        root = unit
+                    try:
+                        members = list(root.get_attached_unit_members() or [])
+                    except Exception:
+                        members = [root]
+                    if not members:
+                        members = [root]
+                    try:
+                        members = sorted(members, key=lambda u: str(get_entity_id(u) or ""))
+                    except Exception:
+                        members = list(members)
+                    try:
+                        attacker_model_id = str(get_entity_id(attacker) or "")
+                    except Exception:
+                        attacker_model_id = str(getattr(attacker, "_id", None) or getattr(attacker, "id", None) or "")
+                    for member in list(members or []):
+                        if member is None:
+                            continue
+                        sr = getattr(member, "special_rules", None)
+                        if not isinstance(sr, dict) or not bool(sr.get("enhancement_furys_cage_active")):
+                            continue
+                        source_model_id = str(
+                            sr.get("enhancement_furys_cage_active_model_id", "")
+                            or sr.get("enhancement_bearer_model_id", "")
+                            or ""
+                        )
+                        if source_model_id and attacker_model_id and source_model_id != attacker_model_id:
+                            continue
+                        applies = True
+                        try:
+                            army = member.get_parent_army()
+                        except Exception:
+                            army = None
+                        owner_id = str(sr.get("enhancement_furys_cage_turn_owner", "") or "")
+                        try:
+                            effect_turn = int(sr.get("enhancement_furys_cage_turn", 0) or 0)
+                        except Exception:
+                            effect_turn = 0
+                        exp = str(sr.get("enhancement_furys_cage_expires_phase", "") or "").strip().upper()
+                        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                        if game is not None:
+                            if owner_id:
+                                current_owner = str(getattr(getattr(game, "get_current_player", lambda: None)(), "id", "") or "")
+                                if current_owner and current_owner != owner_id:
+                                    applies = False
+                            if applies and effect_turn:
+                                try:
+                                    if int(getattr(game, "turn", 0) or 0) != effect_turn:
+                                        applies = False
+                                except Exception:
+                                    applies = False
+                            if applies and exp:
+                                phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                                if phase_name and phase_name != exp:
+                                    applies = False
+                        if not applies:
+                            continue
+
+                        needed = 0
+                        try:
+                            s_val = strength
+                            t_val = target_toughness
+                            if isinstance(s_val, int) and isinstance(t_val, int):
+                                if s_val >= 2 * t_val:
+                                    needed = 2
+                                elif s_val > t_val:
+                                    needed = 3
+                                elif s_val == t_val:
+                                    needed = 4
+                                elif s_val * 2 <= t_val:
+                                    needed = 6
+                                else:
+                                    needed = 5
+                        except Exception:
+                            needed = 0
+                        final_needed = needed
+                        try:
+                            final_needed = int(min(max(int(final_needed) - int(dice_modifier), 2), 6))
+                        except Exception:
+                            pass
+                        try:
+                            success = (dice_roll != 1) and (bool(final_needed) and dice_roll >= int(final_needed))
+                        except Exception:
+                            success = False
+                        do_reroll = False
+                        try:
+                            player = army.player if army is not None else None
+                            is_human = bool(getattr(player, "has_control", lambda: False)())
+                            provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None) if game is not None else None
+                        except Exception:
+                            is_human = False
+                            provider = None
+                            player = None
+                        source = str(sr.get("enhancement_furys_cage_source", "") or "Fury's Cage").strip() or "Fury's Cage"
+                        if is_human and callable(provider):
+                            try:
+                                do_reroll = bool(provider(
+                                    player=player,
+                                    unit=unit,
+                                    roll_type="wound",
+                                    value=dice_roll,
+                                    dice=None,
+                                    needed=final_needed,
+                                    success=success,
+                                    reason=source,
+                                ))
+                            except Exception:
+                                do_reroll = False
+                        else:
+                            do_reroll = (not success)
+                        if do_reroll:
+                            rr = _reroll_wound()
+                            wound_result.setdefault("special_effects", []).append(f"{source}: re-roll Wound roll")
+                            wound_result["reroll"] = rr
+                            dice_roll = rr
+                            reroll_used = True
+                        break
         except Exception:
             pass
 
