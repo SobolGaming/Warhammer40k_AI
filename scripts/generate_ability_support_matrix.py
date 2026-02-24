@@ -1148,6 +1148,9 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"ranged weapons equipped by adeptus arbites inquisitor inquisitorial agents and ordo hereticus models from your army have the ignores cover ability",
             r"each time an adeptus arbites inquisitor inquisitorial agents or ordo hereticus model from your army makes an attack that targets a chaos unit containing 5 or more models that attack has the sustained hits 1 ability",
         ),
+        "Destroy the Daemonic": (
+            r"each time an inquisitor inquisitorial agents or ordo malleus model from your army makes an attack reroll a hit roll of 1 and if the target of that attack is a daemon unit reroll a wound roll of 1 as well",
+        ),
         "Creeping Dread (Aura)": (
             r"in the battle shock step of your opponents command phase if an enemy unit that is either a psyker unit or below its starting strength is within \d+ of one or more anathema psykana models from your army that enemy unit must take a battle shock test",
             r"if that unit is below half strength it must subtract \d+ from its battle shock test this phase instead",
@@ -4534,6 +4537,10 @@ def _detachment_ability_support_by_id() -> Dict[str, Tuple[str, str]]:
         "000009129": (
             "Supported",
             "Ordo Hereticus Purgation Force: Root out Heresy grants [IGNORES COVER] to ranged weapons of ADEPTUS ARBITES/INQUISITOR/INQUISITORIAL AGENTS/ORDO HERETICUS models and grants [SUSTAINED HITS 1] when those models attack CHAOS units containing 5+ models.",
+        ),
+        "000009133": (
+            "Supported",
+            "Ordo Malleus Daemon Hunters: Destroy the Daemonic grants re-roll Hit rolls of 1 for INQUISITOR/INQUISITORIAL AGENTS/ORDO MALLEUS model attacks, and grants re-roll Wound rolls of 1 as well when those attacks target DAEMON units.",
         ),
         "000009137": (
             "Supported",

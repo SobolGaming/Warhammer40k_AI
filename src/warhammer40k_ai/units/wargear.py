@@ -9390,6 +9390,26 @@ class WargearProfile:
                     reroll_value_reasons.append(f"{source_name}: re-roll Hit roll of 1")
         except Exception:
             pass
+        # Imperial Agents: Ordo Malleus Daemon Hunters (Destroy the Daemonic).
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+            ia_mgr = getattr(army, "imperial_agents_detachments", None) if army is not None else None
+            reroll_fn = getattr(ia_mgr, "destroy_the_daemonic_hit_reroll_ones", None) if ia_mgr is not None else None
+            if callable(reroll_fn):
+                reroll_hit_ones, source = reroll_fn(
+                    attacker,
+                    attacker_unit=unit,
+                    target_unit=target,
+                    weapon_profile=self,
+                    attack_instance=attack_instance,
+                )
+                if bool(reroll_hit_ones):
+                    reroll_hit_values.add(1)
+                    source_name = str(source or "Destroy the Daemonic").strip() or "Destroy the Daemonic"
+                    reroll_value_reasons.append(f"{source_name}: re-roll Hit roll of 1")
+        except Exception:
+            pass
 
         hit_result["reroll_values"] = list(sorted(reroll_hit_values))
         hit_result["reroll_value_reasons"] = list(reroll_value_reasons)
@@ -13662,6 +13682,26 @@ class WargearProfile:
                 if bool(reroll_wound_ones):
                     reroll_wound_values.add(1)
                     source_name = str(source or "Auric Armour").strip() or "Auric Armour"
+                    reroll_value_reasons.append(f"{source_name}: re-roll Wound roll of 1")
+        except Exception:
+            pass
+        # Imperial Agents: Ordo Malleus Daemon Hunters (Destroy the Daemonic).
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+            ia_mgr = getattr(army, "imperial_agents_detachments", None) if army is not None else None
+            reroll_fn = getattr(ia_mgr, "destroy_the_daemonic_wound_reroll_ones", None) if ia_mgr is not None else None
+            if callable(reroll_fn):
+                reroll_wound_ones, source = reroll_fn(
+                    attacker,
+                    target,
+                    attacker_unit=unit,
+                    weapon_profile=self,
+                    attack_instance=attack_instance,
+                )
+                if bool(reroll_wound_ones):
+                    reroll_wound_values.add(1)
+                    source_name = str(source or "Destroy the Daemonic").strip() or "Destroy the Daemonic"
                     reroll_value_reasons.append(f"{source_name}: re-roll Wound roll of 1")
         except Exception:
             pass

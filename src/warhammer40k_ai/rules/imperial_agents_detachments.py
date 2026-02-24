@@ -22,6 +22,13 @@ class ImperialAgentsDetachmentManager(DetachmentManagerBase):
         "INQUISITORIAL AGENTS",
         "ORDO HERETICUS",
     )
+    _ORDO_MALLEUS_DAEMON_HUNTERS_DETACHMENT_NAME = "Ordo Malleus Daemon Hunters"
+    _DESTROY_THE_DAEMONIC_NAME = "Destroy the Daemonic"
+    _DESTROY_THE_DAEMONIC_MODEL_KEYWORDS = (
+        "INQUISITOR",
+        "INQUISITORIAL AGENTS",
+        "ORDO MALLEUS",
+    )
     _EXTREMIS_DETACHMENT_NAME = "Veiled Blade Elimination Force"
     _EXTREMIS_SURCHARGE_BY_UNIT_NAME = {
         "callidus assassin": 40,
@@ -61,6 +68,11 @@ class ImperialAgentsDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches(self._ORDO_HERETICUS_PURGATION_FORCE_DETACHMENT_NAME)
+
+    def is_ordo_malleus_daemon_hunters(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches(self._ORDO_MALLEUS_DAEMON_HUNTERS_DETACHMENT_NAME)
 
     def is_veiled_blade_elimination_force(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -641,6 +653,52 @@ class ImperialAgentsDetachmentManager(DetachmentManagerBase):
         if int(self._unit_alive_model_count(target_root) or 0) < 5:
             return 0, ""
         return 1, self._ROOT_OUT_HERESY_NAME
+
+    def _destroy_the_daemonic_model_applies(self, model, *, attacker_unit=None) -> bool:
+        if not self.is_ordo_malleus_daemon_hunters():
+            return False
+        source_unit = self._unit_root(attacker_unit if attacker_unit is not None else getattr(model, "parent_unit", None))
+        if source_unit is None:
+            return False
+        if model is None or not self._model_in_army(model) or not self._unit_in_army(source_unit):
+            return False
+        return self._model_has_any_keyword(model, self._DESTROY_THE_DAEMONIC_MODEL_KEYWORDS)
+
+    def destroy_the_daemonic_hit_reroll_ones(
+        self,
+        model,
+        *,
+        attacker_unit=None,
+        target_unit=None,
+        weapon_profile=None,
+        attack_instance=None,
+    ) -> tuple[bool, str]:
+        del target_unit, weapon_profile, attack_instance
+        if not self._destroy_the_daemonic_model_applies(model, attacker_unit=attacker_unit):
+            return False, ""
+        return True, self._DESTROY_THE_DAEMONIC_NAME
+
+    def destroy_the_daemonic_wound_reroll_ones(
+        self,
+        model,
+        target_unit,
+        *,
+        attacker_unit=None,
+        weapon_profile=None,
+        attack_instance=None,
+    ) -> tuple[bool, str]:
+        del weapon_profile, attack_instance
+        if not self._destroy_the_daemonic_model_applies(model, attacker_unit=attacker_unit):
+            return False, ""
+        target_root = self._unit_root(target_unit)
+        if target_root is None:
+            return False, ""
+        owner = getattr(self.army, "player", None) if self.army is not None else None
+        if owner is not None and not self._unit_is_enemy_of_player(target_root, owner):
+            return False, ""
+        if not self._unit_has_keyword(target_root, "DAEMON"):
+            return False, ""
+        return True, self._DESTROY_THE_DAEMONIC_NAME
 
     def _iter_unique_army_roots(self) -> list:
         if self.army is None:
