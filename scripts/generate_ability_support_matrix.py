@@ -356,6 +356,14 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"add 1 to the strength characteristic of melee weapons equipped by this model",
             r"improve the ballistic skill characteristic of ranged weapons equipped by this model by 1",
         ),
+        "Masters of Misdirection": (
+            r"in the declare battle formations step you can select a number of legionaries and cultist mob units from your army",
+            r"until the end of the battle those units and any character units attached to them excluding epic heroes have the infiltrators ability",
+            r"the maximum number of units you can select in this way depends on the battle size as shown below",
+            r"incursion up to 2 units up to 2 units",
+            r"strike force up to 3 units up to 3 units",
+            r"onslaught up to 4 units up to 4 units",
+        ),
         "Yriel's Own": (
             r"aeldari units in your army are eligible to declare a charge in a turn in which they advanced",
             r"in addition each time an anhrathe rangers or shroud runners unit from your army advances you can reroll the advance roll",
@@ -2494,6 +2502,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Experimental Augmentations": (
             "Supported",
             "Creations of Bile: at the start of battle, select one augmentation or roll two D6 (with optional Fabius Bile rerolls); duplicate results do not stack, and eligible HERETIC ASTARTES INFANTRY models excluding DAMNED gain the selected Move/Toughness/WS/BS/Attacks/Strength bonuses for the battle.",
+        ),
+        "Masters of Misdirection": (
+            "Supported",
+            "Deceptors: in the Declare Battle Formations step, select eligible LEGIONARIES/CULTIST MOB units (battle-size caps enforced per unit type); selected units gain Infiltrators until end of battle, and attached non-EPIC HERO CHARACTER units also gain Infiltrators while attached.",
         ),
         "Mechanised Murder": ("Supported", "Rapid Evisceration: reroll Hit/Wound rolls of 1 for eligible units."),
         "Daemonic Empowerment": (

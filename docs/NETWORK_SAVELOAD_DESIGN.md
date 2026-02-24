@@ -180,6 +180,7 @@ Deployment / Pre-battle:
 - aeldari_guileful_strategist_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="aeldari_guileful_strategist"`, `redeploy_action`, `remaining`)
 - auric_armour_walker_selection_dialog: SELECT_REALM_OF_CHAOS_UNITS {unit_ids | skip} (context `ability="solar_spearhead_walker_character_selection"`, `ability_name="Auric Armour"`, `phase="Muster Armies step"`, `army_id`, `allowed_unit_ids[]`, `max_units=2`)
 - houndpack_lance_character_selection_dialog: SELECT_REALM_OF_CHAOS_UNITS {unit_ids} (context `ability="houndpack_lance_character_selection"`, `ability_name="Marked Prey"`, `phase="Muster Armies step"`, `army_id`, `allowed_unit_ids[]`, `max_units=3`, `required_units=3`)
+- masters_of_misdirection_selection_dialog: SELECT_REALM_OF_CHAOS_UNITS {unit_ids | skip} (context `ability="deceptors_masters_of_misdirection_selection"`, `ability_name="Masters of Misdirection"`, `phase="Declare Battle Formations step"`, `army_id`, `allowed_unit_ids[]`, `max_units`, `max_units_per_type`)
 
 Command phase:
 - shadow_in_the_warp_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="shadow_in_the_warp"`)
@@ -458,6 +459,7 @@ Faction / Detachment / Ability choices:
 - quarry_selection_dialog (Artillery Support mode): CHOOSE_QUARRY {artillery_support_mode} (context `ability="siege_regiment_artillery_support_mode"`, `ability_name="Artillery Support"`, `army_id`, `battle_round`, `allowed_modes[]`, `max_units`)
 - realm_of_chaos_units_dialog (Artillery Support selections): SELECT_REALM_OF_CHAOS_UNITS {unit_ids | skip} (context `ability="siege_regiment_incendiary_bombardment"` or `ability="siege_regiment_smoke_shells"` or `ability="siege_regiment_creeping_barrage_selection"`, `ability_name`, `army_id`, `battle_round`, `allowed_unit_ids[]`, `max_units`, optional `required_units`)
 - realm_of_chaos_units_dialog (Houndpack Lance CHARACTER selection): SELECT_REALM_OF_CHAOS_UNITS {unit_ids} (context `ability="houndpack_lance_character_selection"`, `ability_name="Marked Prey"`, `phase="Muster Armies step"`, `army_id`, `allowed_unit_ids[]`, `max_units=3`, `required_units=3`)
+- realm_of_chaos_units_dialog (Masters of Misdirection selection): SELECT_REALM_OF_CHAOS_UNITS {unit_ids | skip} (context `ability="deceptors_masters_of_misdirection_selection"`, `ability_name="Masters of Misdirection"`, `phase="Declare Battle Formations step"`, `army_id`, `allowed_unit_ids[]`, `max_units`, `max_units_per_type`)
 - quarry_selection_dialog (Iconoclast Dark Sacrifice): CHOOSE_QUARRY {damned_unit_id + sacrifice_mode | skip} (context `ability="iconoclast_dark_sacrifice"`, `ability_name="Dark Sacrifice"`, `source_unit_id`, `trigger="shooting"|"fight"`, `candidate_damned_unit_ids[]`, `allowed_modes[]`, `optional=true`)
 - quarry_selection_dialog (Shadow Assignment): SHADOW_ASSIGNMENT {unit_id, replacement_datasheet_id | skip} (context `ability="shadow_assignment"`, `ability_name="Shadow Assignment"`)
 - quarry_selection_dialog (Risen Rubricae): CHOOSE_QUARRY {selected_unit_ids[]} (context `ability="risen_rubricae"`, `ability_name="Risen Rubricae"`, `source_unit_id`, `enhancement_id`)

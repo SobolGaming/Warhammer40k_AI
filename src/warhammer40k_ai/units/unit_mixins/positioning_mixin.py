@@ -6281,6 +6281,34 @@ class PositioningMixin:
             root = self
         try:
             rsr = getattr(root, "special_rules", None)
+            if isinstance(rsr, dict) and rsr.get("masters_of_misdirection_infiltrators"):
+                if self is root:
+                    found = True
+                else:
+                    members = []
+                    get_members = getattr(root, "get_attached_unit_members", None)
+                    if callable(get_members):
+                        members = list(get_members() or [])
+                    if not members:
+                        members = [root]
+                    if self in members:
+                        is_character = False
+                        has_any_keyword = getattr(self, "has_any_keyword", None)
+                        if callable(has_any_keyword):
+                            is_character = bool(has_any_keyword("CHARACTER"))
+                        if not is_character:
+                            has_keyword = getattr(self, "has_keyword", None)
+                            if callable(has_keyword):
+                                is_character = bool(has_keyword("CHARACTER"))
+                        is_epic_hero = False
+                        if callable(has_any_keyword):
+                            is_epic_hero = bool(has_any_keyword("EPIC HERO"))
+                        if not is_epic_hero:
+                            has_keyword = getattr(self, "has_keyword", None)
+                            if callable(has_keyword):
+                                is_epic_hero = bool(has_keyword("EPIC HERO"))
+                        if is_character and not is_epic_hero:
+                            found = True
             if isinstance(rsr, dict) and rsr.get("risen_rubricae_infiltrators"):
                 if self is root:
                     found = True

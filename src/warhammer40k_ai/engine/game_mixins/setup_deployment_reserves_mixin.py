@@ -1929,6 +1929,18 @@ class GameSetupDeploymentReservesMixin:
             units = list(getattr(army, "units", []) or [])
             build_risen_rubricae_requests(self, units, queue_requests=True)
 
+        # Chaos Space Marines Deceptors: select Masters of Misdirection units.
+        for p in list(self.players or []):
+            if p is None:
+                raise RuntimeError("Missing player during Declare Battle Formations.")
+            army = p.get_army()
+            if army is None:
+                raise RuntimeError(f"Missing army for {p.name} during Declare Battle Formations.")
+            mgr = getattr(army, "chaos_space_marines_detachments", None)
+            queue_fn = getattr(mgr, "queue_masters_of_misdirection_selection_request", None) if mgr is not None else None
+            if callable(queue_fn):
+                queue_fn(game=self, player=p)
+
         # Validate leader attachment limits per army
         for p in list(self.players or []):
             if p is None:

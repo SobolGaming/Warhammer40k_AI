@@ -86,7 +86,7 @@ For UI mapping, see `docs/NETWORK_SAVELOAD_DESIGN.md`.
 - `CHOOSE_BLOOD_TITHE` — Choose Blood Tithe reward.
 - `CHOOSE_IDOL_OF_KHORNE` — Choose Idol of Khorne effect.
 - `SELECT_VESSEL_OF_WRATH_MODELS` — Choose Vessel of Wrath models.
-- `SELECT_REALM_OF_CHAOS_UNITS` — Choose up to two units for The Realm of Chaos.
+- `SELECT_REALM_OF_CHAOS_UNITS` — Choose one or more eligible units for ability-specific selection dialogs (e.g., The Realm of Chaos, Auric Armour, Houndpack Lance, Masters of Misdirection).
 - `CHOOSE_IMPOSSIBLE_ECLIPSE_ZONE` — Choose Shadow of Chaos area for Impossible Eclipse.
 - `CHOOSE_VESSEL_OF_WRATH_BLESSING` — Choose Vessel of Wrath blessing.
 - `CHOOSE_RITUALS` — Choose rituals.

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
+from ..utility.entity_ids import get_entity_id
 from ..utility.dice import get_roll
 from .detachment_manager import DetachmentManagerBase
 
@@ -70,7 +71,10 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     DETACHMENT_CABAL_OF_CHAOS = "Cabal of Chaos"
     DETACHMENT_CHAOS_CULT = "Chaos Cult"
     DETACHMENT_CREATIONS_OF_BILE = "Creations of Bile"
+    DETACHMENT_DECEPTORS = "Deceptors"
     DETACHMENT_RENEGADE_RAIDERS = "Renegade Raiders"
+    _MASTERS_OF_MISDIRECTION_SELECTION_ABILITY = "deceptors_masters_of_misdirection_selection"
+    _MASTERS_OF_MISDIRECTION_SOURCE = "Masters of Misdirection"
     _DESPERATE_DEVOTION_ALLOWED_ACTIONS = {"move", "advance", "charge"}
     _EXPERIMENTAL_AUGMENTATION_REROLL_MODES = {"keep", "reroll_first", "reroll_second", "reroll_both"}
 
@@ -83,6 +87,8 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         self.experimental_augmentations_rolls: list[int] = []
         self.experimental_augmentations_pending_rolls: list[int] = []
         self.experimental_augmentations_pending_round: Optional[int] = None
+        self._masters_of_misdirection_selection_resolved: bool = False
+        self.masters_of_misdirection_selected_unit_ids: set[str] = set()
 
     def is_cabal_of_chaos(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -98,6 +104,11 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches(self.DETACHMENT_CREATIONS_OF_BILE)
+
+    def is_deceptors(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches(self.DETACHMENT_DECEPTORS)
 
     def is_renegade_raiders(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -138,6 +149,24 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
             seen.add(key)
             roots.append(root)
         return roots
+
+    @staticmethod
+    def _clear_unit_ability_cache(unit) -> None:
+        if unit is None:
+            return
+        root = unit
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        if callable(get_root):
+            maybe_root = get_root()
+            if maybe_root is not None:
+                root = maybe_root
+        invalidate = getattr(root, "_invalidate_ability_cache", None)
+        if callable(invalidate):
+            invalidate()
+            return
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict):
+            cache.clear()
 
     def _unit_in_army(self, unit) -> bool:
         root = self._unit_root(unit)
@@ -742,6 +771,223 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
             keywords = list(getattr(root, "keywords", []) or [])
             keywords.append("Battleline")
             root.keywords = keywords
+
+    @classmethod
+    def _is_legionaries_unit(cls, unit) -> bool:
+        return cls._normalize_name(str(getattr(unit, "name", "") or "")) == "legionaries"
+
+    @classmethod
+    def _is_cultist_mob_unit(cls, unit) -> bool:
+        return cls._normalize_name(str(getattr(unit, "name", "") or "")) == "cultist mob"
+
+    @classmethod
+    def _masters_of_misdirection_unit_kind(cls, unit) -> str:
+        if cls._is_legionaries_unit(unit):
+            return "legionaries"
+        if cls._is_cultist_mob_unit(unit):
+            return "cultist_mob"
+        return ""
+
+    def _masters_of_misdirection_candidates(self) -> list:
+        if self.army is None:
+            return []
+        candidates = []
+        for root in self._iter_unique_roots(getattr(self.army, "units", []) or []):
+            if not self._unit_in_army(root):
+                continue
+            kind = self._masters_of_misdirection_unit_kind(root)
+            if not kind:
+                continue
+            candidates.append((kind, root))
+        candidates.sort(
+            key=lambda entry: (
+                0 if entry[0] == "legionaries" else 1,
+                self._normalize_name(getattr(entry[1], "name", "")),
+                str(get_entity_id(entry[1]) or self._unit_root_key(entry[1])),
+            )
+        )
+        return [unit for _kind, unit in candidates]
+
+    def masters_of_misdirection_max_units_per_type(self, *, game=None) -> int:
+        size_name = ""
+        if game is not None:
+            battlefield = getattr(game, "battlefield", None)
+            size = getattr(battlefield, "size", None)
+            size_name = str(getattr(size, "name", size) or "")
+        size_key = str(size_name or "").strip().upper().replace(" ", "_")
+        if "INCURSION" in size_key:
+            return 2
+        if "ONSLAUGHT" in size_key:
+            return 4
+        return 3
+
+    def _pending_masters_of_misdirection_request(self, game, *, army_id: str) -> bool:
+        if game is None:
+            return False
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        from ..engine.decision_kinds import DECISION_SELECT_REALM_OF_CHAOS_UNITS
+
+        target_army_id = str(army_id or "")
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != DECISION_SELECT_REALM_OF_CHAOS_UNITS:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "").strip().lower() != self._MASTERS_OF_MISDIRECTION_SELECTION_ABILITY:
+                continue
+            if target_army_id and str(ctx.get("army_id", "") or "") != target_army_id:
+                continue
+            return True
+        return False
+
+    def queue_masters_of_misdirection_selection_request(self, *, game=None, player=None) -> None:
+        if not self.is_deceptors():
+            return
+        if self.army is None:
+            return
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return
+        if self._masters_of_misdirection_selection_resolved:
+            return
+
+        from ..engine.decision_kinds import DECISION_SELECT_REALM_OF_CHAOS_UNITS
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return
+        candidates = list(self._masters_of_misdirection_candidates() or [])
+        if not candidates:
+            self._masters_of_misdirection_selection_resolved = True
+            self.masters_of_misdirection_selected_unit_ids = set()
+            return
+        army_id = str(get_entity_id(self.army) or "")
+        if self._pending_masters_of_misdirection_request(game, army_id=army_id):
+            return
+
+        candidate_ids = [str(get_entity_id(unit) or "") for unit in candidates if str(get_entity_id(unit) or "")]
+        if not candidate_ids:
+            self._masters_of_misdirection_selection_resolved = True
+            self.masters_of_misdirection_selected_unit_ids = set()
+            return
+
+        max_per_type = int(self.masters_of_misdirection_max_units_per_type(game=game) or 0)
+        if max_per_type <= 0:
+            self._masters_of_misdirection_selection_resolved = True
+            self.masters_of_misdirection_selected_unit_ids = set()
+            return
+
+        request = DecisionRequest.create(
+            DECISION_SELECT_REALM_OF_CHAOS_UNITS,
+            "Masters of Misdirection: select eligible LEGIONARIES and CULTIST MOB units to gain Infiltrators.",
+            player_id=getattr(owner, "id", None),
+            options=[
+                DecisionOption.create("Confirm", payload={"action": "confirm"}),
+                DecisionOption.create("None", payload={"action": "skip"}),
+            ],
+            context={
+                "army_id": army_id,
+                "ability": self._MASTERS_OF_MISDIRECTION_SELECTION_ABILITY,
+                "ability_name": self._MASTERS_OF_MISDIRECTION_SOURCE,
+                "phase": "Declare Battle Formations step",
+                "max_units": int(max_per_type * 2),
+                "max_units_per_type": int(max_per_type),
+                "allowed_unit_ids": list(candidate_ids),
+                "title": self._MASTERS_OF_MISDIRECTION_SOURCE,
+                "subtitle": (
+                    f"Select up to {int(max_per_type)} LEGIONARIES and up to {int(max_per_type)} CULTIST MOB units."
+                ),
+                "instruction": (
+                    "Selected units, and attached non-EPIC HERO CHARACTER units, gain Infiltrators until end of battle."
+                ),
+                "skip_label": "None (do not select units)",
+            },
+        )
+        if hasattr(game, "request_decision"):
+            game.request_decision(request)
+
+    def masters_of_misdirection_selection_is_valid(self, unit_ids, *, game=None) -> tuple[bool, str]:
+        if not self.is_deceptors():
+            return False, "Masters of Misdirection requires the Deceptors detachment."
+        if unit_ids is None:
+            return True, ""
+        if not isinstance(unit_ids, list):
+            return False, "Masters of Misdirection selection requires unit_ids."
+        selected = sorted({str(uid or "").strip() for uid in list(unit_ids or []) if str(uid or "").strip()})
+        max_per_type = int(self.masters_of_misdirection_max_units_per_type(game=game) or 0)
+        if max_per_type <= 0:
+            return False, "Masters of Misdirection selection limits are unavailable."
+        if len(selected) > int(max_per_type * 2):
+            return False, "Masters of Misdirection selected too many units."
+
+        candidates_by_id = {
+            str(get_entity_id(unit) or ""): unit
+            for unit in list(self._masters_of_misdirection_candidates() or [])
+            if str(get_entity_id(unit) or "")
+        }
+        legionaries_count = 0
+        cultist_count = 0
+        for unit_id in selected:
+            root = candidates_by_id.get(unit_id)
+            if root is None:
+                return False, "Masters of Misdirection selection contains an ineligible unit."
+            kind = self._masters_of_misdirection_unit_kind(root)
+            if kind == "legionaries":
+                legionaries_count += 1
+            elif kind == "cultist_mob":
+                cultist_count += 1
+            else:
+                return False, "Masters of Misdirection selection contains an ineligible unit."
+        if legionaries_count > max_per_type:
+            return False, f"Masters of Misdirection can select at most {max_per_type} Legionaries units."
+        if cultist_count > max_per_type:
+            return False, f"Masters of Misdirection can select at most {max_per_type} Cultist Mob units."
+        return True, ""
+
+    def apply_masters_of_misdirection_selection(self, unit_ids, *, game=None) -> list[str]:
+        selected = sorted({str(uid or "").strip() for uid in list(unit_ids or []) if str(uid or "").strip()})
+        valid, _reason = self.masters_of_misdirection_selection_is_valid(selected, game=game)
+        if not valid:
+            return []
+
+        all_roots = self._iter_unique_roots(getattr(self.army, "units", []) or []) if self.army is not None else []
+        for root in all_roots:
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            updated = dict(sr)
+            updated.pop("masters_of_misdirection_infiltrators", None)
+            updated.pop("masters_of_misdirection_source", None)
+            if updated != sr:
+                root.special_rules = updated
+                self._clear_unit_ability_cache(root)
+
+        candidates_by_id = {
+            str(get_entity_id(unit) or ""): unit
+            for unit in list(self._masters_of_misdirection_candidates() or [])
+            if str(get_entity_id(unit) or "")
+        }
+        applied_ids: list[str] = []
+        for unit_id in selected:
+            root = candidates_by_id.get(unit_id)
+            if root is None:
+                continue
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            updated = dict(sr)
+            updated["masters_of_misdirection_infiltrators"] = True
+            updated["masters_of_misdirection_source"] = self._MASTERS_OF_MISDIRECTION_SOURCE
+            root.special_rules = updated
+            self._clear_unit_ability_cache(root)
+            applied_ids.append(unit_id)
+
+        self.masters_of_misdirection_selected_unit_ids = set(applied_ids)
+        self._masters_of_misdirection_selection_resolved = True
+        if self.army is not None:
+            setattr(self.army, "masters_of_misdirection_selected_unit_ids", list(applied_ids))
+        return list(applied_ids)
 
     def validate_detachment_rules(self) -> list[str]:
         if self.is_chaos_cult():
