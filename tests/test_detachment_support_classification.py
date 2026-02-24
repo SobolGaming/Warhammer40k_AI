@@ -770,6 +770,18 @@ class TestDetachmentSupportClassification(unittest.TestCase):
         self.assertEqual(status, "Supported")
         self.assertIn("pactbound zealots", notes.lower())
 
+    def test_stitchflesh_abominations_is_supported(self):
+        gsm, detachment_abilities = self._seed_support_maps()
+        row = next(r for r in detachment_abilities if str(r.get("name", "") or "") == "Stitchflesh Abominations")
+        status, notes = gsm._classify_ability(
+            row.get("name", ""),
+            row.get("description", ""),
+            ability_id=row.get("id", ""),
+            faction_id=row.get("faction_id", ""),
+        )
+        self.assertEqual(status, "Supported")
+        self.assertIn("covenite coterie", notes.lower())
+
 
 if __name__ == "__main__":
     unittest.main()

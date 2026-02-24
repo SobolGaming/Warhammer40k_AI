@@ -648,6 +648,9 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"add \d+ to the strength characteristic of melee weapons equipped by wych cult models from your army",
             r"improve the leadership characteristic of wych cult models from your army by \d+ and improve the ballistic skill characteristic of ranged weapons equipped by wych cult models from your army by \d+",
         ),
+        "Stitchflesh Abominations": (
+            r"each time an attack targets a haemonculus covens unit from your army if the strength characteristic of that attack is greater than the toughness characteristic of your unit subtract 1 from the wound roll",
+        ),
         "Malefic Surge": (
             r"in your command phase one or more chaos knights units from your army can make a malefic surge",
             r"each one that does must first take a leadership test",
@@ -2888,6 +2891,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
             "Supported",
             "Spectacle of Spite: select one Combat Drug (once per drug per battle) or roll 2D6 to apply two; "
             "Wych Cult models gain the corresponding bonuses until your next Command phase.",
+        ),
+        "Stitchflesh Abominations": (
+            "Supported",
+            "Covenite Coterie: each time an attack targets a friendly HAEMONCULUS COVENS unit, if the attack Strength is greater than that unit's Toughness, subtract 1 from the Wound roll.",
         ),
         "Malefic Surge": (
             "Supported",

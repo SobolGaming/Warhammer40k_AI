@@ -3434,6 +3434,19 @@ class WargearProfile:
                     if not atk_type or entry_attack_type in ("any", atk_type):
                         out.append(dict(extra_entry))
 
+            drukhari_mgr = getattr(army, "drukhari_detachments", None) if army is not None else None
+            stitchflesh_entry_fn = (
+                getattr(drukhari_mgr, "stitchflesh_abominations_defensive_wound_mod_entry", None)
+                if drukhari_mgr is not None
+                else None
+            )
+            if callable(stitchflesh_entry_fn):
+                extra_entry = stitchflesh_entry_fn(root)
+                if isinstance(extra_entry, dict):
+                    entry_attack_type = str(extra_entry.get("attack_type") or "any").strip().lower()
+                    if not atk_type or entry_attack_type in ("any", atk_type):
+                        out.append(dict(extra_entry))
+
             # If no leaders or no enhancement, fall through.
         return out
 

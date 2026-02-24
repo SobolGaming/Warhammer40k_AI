@@ -66,6 +66,7 @@ COMBAT_DRUG_BY_ROLL = {d.roll: d for d in COMBAT_DRUGS}
 
 class DrukhariDetachmentManager(DetachmentManagerBase):
     faction_id = "DRU"
+    DETACHMENT_COVENITE_COTERIE = "Covenite Coterie"
 
     def __init__(self, army=None):
         super().__init__(army)
@@ -73,13 +74,62 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
         self.combat_drug_active_round: Optional[int] = None
         self.combat_drug_used_keys: list[str] = []
 
+    def is_covenite_coterie(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches(self.DETACHMENT_COVENITE_COTERIE)
+
     def is_spectacle_of_spite(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Spectacle of Spite")
 
+    @staticmethod
+    def _unit_root(unit):
+        if unit is None:
+            return None
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        if callable(get_root):
+            root = get_root()
+            if root is not None:
+                return root
+        return unit
+
+    def _unit_in_army(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None or self.army is None:
+            return False
+        get_parent_army = getattr(root, "get_parent_army", None)
+        if not callable(get_parent_army):
+            return False
+        return get_parent_army() is self.army
+
+    def _unit_is_haemonculus_covens(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        return self._unit_has_keyword(root, "HAEMONCULUS COVENS")
+
     def _army_has_combat_drugs(self) -> bool:
         return self.is_spectacle_of_spite()
+
+    def stitchflesh_abominations_defensive_wound_mod_entry(self, target_unit) -> Optional[dict]:
+        if not self.is_covenite_coterie():
+            return None
+        root = self._unit_root(target_unit)
+        if root is None:
+            return None
+        if not self._unit_in_army(root):
+            return None
+        if not self._unit_is_haemonculus_covens(root):
+            return None
+        return {
+            "value": 1,
+            "attack_type": "any",
+            "source": "Stitchflesh Abominations",
+            "requires_strength_gt_toughness": True,
+            "tag": "detachment:stitchflesh_abominations",
+        }
 
     def _is_active_round(self, game=None) -> bool:
         if self.combat_drug_active_round is None:
