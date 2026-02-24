@@ -1754,6 +1754,42 @@ def _desc_block(rules_text: str, engine_text: str) -> str:
     body = f"<strong>Rules:</strong> {rules}<br/><strong>Engine:</strong> {engine}"
     return _details("Description", body)
 
+
+def _stratagem_rules_summary(description: str) -> str:
+    text = _strip_html(description or "")
+    if not text:
+        return "-"
+
+    parts: Dict[str, str] = {}
+    labels = ("WHEN", "TARGET", "EFFECT")
+    for label in labels:
+        marker = rf"\b{label}\s*:"
+        pattern = rf"{marker}\s*(.*?)(?=(?:\bWHEN\b|\bTARGET\b|\bEFFECT\b|\bRESTRICTIONS?\b)\s*:|$)"
+        m = re.search(pattern, text, flags=re.IGNORECASE)
+        if not m:
+            continue
+        value = re.sub(r"\s+", " ", m.group(1)).strip(" .;")
+        if value:
+            parts[label] = value
+
+    if parts:
+        out: List[str] = []
+        if "WHEN" in parts:
+            out.append(f"When: {parts['WHEN']}.")
+        if "TARGET" in parts:
+            out.append(f"Target: {parts['TARGET']}.")
+        if "EFFECT" in parts:
+            out.append(f"Effect: {parts['EFFECT']}.")
+        return " ".join(out)
+
+    fallback = re.split(r"\bRESTRICTIONS?\b\s*:", text, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+    return fallback or "-"
+
+
+def _stratagem_note_block(description: str, status: str, notes: str) -> str:
+    return _desc_block(_stratagem_rules_summary(description), _engine_notes(status, notes))
+
+
 def _engine_block(engine_text: str) -> str:
     engine = _escape(engine_text or "-")
     return f"<strong>Engine:</strong> {engine}"
@@ -11209,7 +11245,7 @@ def _stratagem_support(
         else:
             note = notes.get(name_u, f"Fight phase: consolidate up to {max_dist}\".")
         return ("Implemented", note, name_u)
-    return ("Not implemented", "No effect logic currently wired.", name_u)
+    return ("Not implemented", "Not implemented in engine.", name_u)
 
 
 def _extract_restrictions(desc_html: str) -> List[str]:
@@ -11672,7 +11708,7 @@ def _build_faction_content(
                                 _escape(s.get("cp_cost", "")),
                                 _escape(s.get("turn", "")),
                                 _escape(s.get("phase", "")),
-                                _escape(notes),
+                                _stratagem_note_block(str(s.get("description", "") or ""), status, notes),
                             ],
                             status,
                         )
@@ -12198,7 +12234,7 @@ def _build_matrix() -> str:
                     _escape(s.get("cp_cost", "")),
                     _escape(s.get("turn", "")),
                     _escape(s.get("phase", "")),
-                    _escape(notes),
+                    _stratagem_note_block(str(s.get("description", "") or ""), status, notes),
                 ],
                 status,
             )
