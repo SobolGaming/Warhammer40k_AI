@@ -253,7 +253,11 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ENDLESS PURSUIT OF VIOLENCE",
     "HORRIFYING VIOLENCE",
     "FATEBORNE NIGHTMARES",
+    "FOOLS' FLIGHT",
+    "FOOLS\u2019 FLIGHT",
     "FICKLEFIRE",
+    "GORE-HUNGRY ONSLAUGHT",
+    "GORE\u2011HUNGRY ONSLAUGHT",
     "FLICKERING REALITY",
     "IMMORTAL FURY",
     "FURY UNLEASHED",
@@ -417,6 +421,8 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "DAEMONIC INVULNERABILITY",
     "DELIRIUM UNMADE",
     "ENDLESS PURSUIT OF VIOLENCE",
+    "FOOLS' FLIGHT",
+    "FOOLS\u2019 FLIGHT",
     "FLICKERING REALITY",
     "IN THE SHADOW OF BRASS IDOLS",
     "THE REALM OF CHAOS",
@@ -1457,6 +1463,7 @@ class StratagemManager(
             "ISHA'S FURY",
             "ISHA\u2019S FURY",
             "WEAVING STRIDE",
+            "FOOLS' FLIGHT",
         }:
             add("unit_move_ended", self._on_unit_move_ended)
         if names & {"ANTI-GRAV REPULSION", "ANTI‑GRAV REPULSION", "BLIND GRENADES", "A DEADLY SNARE"}:
@@ -1728,6 +1735,7 @@ class StratagemManager(
             "FATEBORNE NIGHTMARES",
             "FICKLEFIRE",
             "FLICKERING REALITY",
+            "GORE-HUNGRY ONSLAUGHT",
             "IMPOSSIBLE ECLIPSE",
             "PRETERNATURAL AGILITY",
             "PYROGENESIS",
@@ -4103,6 +4111,7 @@ class StratagemManager(
             "DENIZENS OF THE WARP": "Target: LEGIONES DAEMONICA unit (arriving via Deep Strike)",
             "DRAUGHT OF TERROR": "Target: LEGIONES DAEMONICA unit (not yet shot/fought)",
             "DELIRIUM UNMADE": "Target: up to two TZEENTCH LEGIONES DAEMONICA units (end of opponent Fight phase)",
+            "FOOLS' FLIGHT": "Target: LEGIONES DAEMONICA KHORNE unit within 6\" of enemy unit that Fell Back and eligible to charge it",
             "PLAGUESURGE": "Target: your DEATH GUARD WARLORD",
             "LEECHSPORE ERUPTION": "Target: wounded DEATH GUARD model; select enemy unit within 3\"",
             "OVERWHELMING GENEROSITY": "Target: DEATH GUARD CHARACTER unit; mark one visible enemy unit",
@@ -4127,6 +4136,8 @@ class StratagemManager(
             "IN THE SHADOW OF BRASS IDOLS": "Target: JAKHALS or GOREMONGERS unit targeted by enemy attacks",
             "ASPIRE TO INFAMY": "Target: KHORNE BERZERKERS or JAKHALS within 8\" of friendly WORLD EATERS CHARACTER",
             "BRAZEN CONTEMPT": "Target: WORLD EATERS unit targeted by attacking enemy unit",
+            "GORE-HUNGRY ONSLAUGHT": "Target: LEGIONES DAEMONICA KHORNE unit",
+            "GORE\u2011HUNGRY ONSLAUGHT": "Target: LEGIONES DAEMONICA KHORNE unit",
             "GORY DEDICATION": "Target: WORLD EATERS unit that made melee kills this phase",
             "MEET FORCE WITH FORCE": "Target: WORLD EATERS INFANTRY/MOUNTED/DAEMON PRINCE unit that lost wounds",
             "OVERSHADOWED BY NONE": "Target: WORLD EATERS INFANTRY/MOUNTED/DAEMON PRINCE unit (not fought)",
@@ -6173,6 +6184,11 @@ class StratagemManager(
                         root.special_rules = sr
         except Exception:
             raise
+        # Chaos Daemons: Blood Legion GORE-HUNGRY ONSLAUGHT (expires at end of Movement/Charge phase).
+        try:
+            self._cleanup_blood_legion_phase_end_effects(phase=phase)
+        except Exception:
+            raise
         # World Eaters (Goretrack Onslaught): Smash Through / Full-Throttle Assault cleanup at end of Movement phase.
         try:
             phase_name = getattr(phase, "name", None)
@@ -7296,6 +7312,7 @@ class StratagemManager(
         self._queue_aeldari_corsair_move_end_reactions(unit=unit, action=action)
         self._queue_aeldari_serpents_move_end_reactions(unit=unit, action=action)
         self._queue_aeldari_ghosts_move_end_reactions(unit=unit, action=action)
+        self._queue_blood_legion_move_end_reactions(unit=unit, action=action)
         self._queue_votann_needgaard_move_end_reactions(unit=unit, action=action)
         self._queue_imperial_knights_valourstrike_move_end_reactions(unit=unit, action=action)
 
@@ -11753,6 +11770,9 @@ class StratagemManager(
         imperial_agents_result = self._use_imperial_agents_veiled_blade_stratagem(s, **kwargs)
         if imperial_agents_result is not None:
             return imperial_agents_result
+        chaos_daemons_blood_legion_result = self._use_chaos_daemons_blood_legion_stratagem(s, **kwargs)
+        if chaos_daemons_blood_legion_result is not None:
+            return chaos_daemons_blood_legion_result
         # Adeptus Custodes (Lions of the Emperor): GILDED CHAMPION
         if name_u == "GILDED CHAMPION":
             model = kwargs.get("model") or self._resolve_gilded_champion_model(kwargs)

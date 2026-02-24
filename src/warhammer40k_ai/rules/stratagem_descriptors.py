@@ -209,6 +209,43 @@ _SCINTILLATING_LEGION_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SCINTILLATING_LEGION_STRATAGEM_DESCRIPTORS.values()
 }
 
+_BLOOD_LEGION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009816003": StratagemToolDescriptor(
+        stratagem_id="000009816003",
+        name="Gore-Hungry Onslaught",
+        timing="movement_or_charge_phase",
+        target="khorne_legiones_daemonica_unit",
+        duration="until_end_of_phase",
+        effect="move_through_terrain",
+        cp_cost=1,
+        effect_params={
+            "move_types_by_phase": {
+                "movement": ["move", "advance", "fall_back"],
+                "charge": ["charge"],
+            }
+        },
+    ),
+    "000009816006": StratagemToolDescriptor(
+        stratagem_id="000009816006",
+        name="Fools' Flight",
+        timing="opponent_movement_phase_after_enemy_fall_back",
+        target="khorne_legiones_daemonica_unit_within_6_of_falling_back_enemy",
+        duration="immediate",
+        effect="out_of_turn_charge_without_charge_bonus",
+        cp_cost=2,
+        range_in=6.0,
+        effect_params={
+            "count_as_charged": False,
+            "force_single_target": True,
+            "trigger_action": "fall_back",
+        },
+    ),
+}
+
+_BLOOD_LEGION_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _BLOOD_LEGION_STRATAGEM_DESCRIPTORS.values()
+}
+
 _GORETRACK_ONSLAUGHT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010087007": StratagemToolDescriptor(
         stratagem_id="000010087007",
@@ -2820,6 +2857,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _SCINTILLATING_LEGION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _BLOOD_LEGION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _GORETRACK_ONSLAUGHT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -2929,6 +2969,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         _INFERNAL_LANCE_STRATAGEM_BY_NAME.get(key)
         or _DAEMONIC_INCURSION_STRATAGEM_BY_NAME.get(key)
         or _SCINTILLATING_LEGION_STRATAGEM_BY_NAME.get(key)
+        or _BLOOD_LEGION_STRATAGEM_BY_NAME.get(key)
         or _GORETRACK_ONSLAUGHT_STRATAGEM_BY_NAME.get(key)
         or _POSSESSED_SLAUGHTERBAND_STRATAGEM_BY_NAME.get(key)
         or _HOST_OF_ASCENSION_STRATAGEM_BY_NAME.get(key)
