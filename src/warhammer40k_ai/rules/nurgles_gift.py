@@ -227,10 +227,15 @@ class NurglesGiftManager:
             return
         req = DecisionRequest.create(
             DECISION_CHOOSE_PLAGUE,
-            "Select a Nurgle's Gift Plague.",
+            "Nurgle's Gift: select one Plague.",
             player_id=getattr(player, "id", None),
             options=req_options,
-            context={"army_id": army_id},
+            context={
+                "ability": "nurgles_gift_declare",
+                "ability_name": "Nurgle's Gift",
+                "army_id": army_id,
+                "optional": False,
+            },
         )
         if hasattr(game, "request_decision"):
             game.request_decision(req)

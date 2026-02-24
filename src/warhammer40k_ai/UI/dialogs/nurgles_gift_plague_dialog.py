@@ -8,7 +8,7 @@ from .base_dialog import BaseDialog, PANEL_BG, PANEL_BORDER, TEXT_PRIMARY, TEXT_
 
 
 class NurglesGiftPlagueDialog(BaseDialog):
-    """Modal dialog to select a Nurgle's Gift Plague during Declare Battle Formations."""
+    """Modal dialog for Nurgle's Gift / plague selection decisions."""
 
     def __init__(self, screen_width: int, screen_height: int):
         super().__init__(screen_width, screen_height, width=560, height=420, draggable=True)
@@ -19,6 +19,7 @@ class NurglesGiftPlagueDialog(BaseDialog):
         self._on_cancel: Optional[Callable[[], None]] = None
         self.decision_request = None
         self._option_entries: List[dict] = []
+        self._header_text = "Select one Plague."
 
         self.add_button("confirm", 10, self.height - 50, 160, 35)
         self.add_button("cancel", self.width - 160, self.height - 50, 140, 35)
@@ -38,6 +39,19 @@ class NurglesGiftPlagueDialog(BaseDialog):
             from ..decision_ui_utils import option_entries
 
             self._option_entries = option_entries(self.decision_request)
+        ctx = dict(getattr(self.decision_request, "context", {}) or {}) if self.decision_request is not None else {}
+        ability = str(ctx.get("ability", "") or "").strip().lower()
+        has_skip_option = any(
+            bool((entry.get("payload", {}) or {}).get("skip"))
+            or str((entry.get("payload", {}) or {}).get("action", "") or "").strip().lower() == "skip"
+            for entry in list(self._option_entries or [])
+        )
+        if ability == "manifold_maladies":
+            self._header_text = "Manifold Maladies: select one Plague (or None)."
+        elif has_skip_option:
+            self._header_text = "Select one Plague (or None)."
+        else:
+            self._header_text = "Select one Plague."
         self.selected_idx = 0 if self._option_entries else None
         self._on_confirm = on_confirm
         self._on_cancel = on_cancel
@@ -50,6 +64,7 @@ class NurglesGiftPlagueDialog(BaseDialog):
         self._on_cancel = None
         self.decision_request = None
         self._option_entries = []
+        self._header_text = "Select one Plague."
 
     def _handle_button_click(self, button_name: str) -> bool:
         if button_name == "cancel":
@@ -115,7 +130,7 @@ class NurglesGiftPlagueDialog(BaseDialog):
 
         self.draw_title_bar(screen, self.title)
 
-        header = self.font_small.render("Select one Plague (cannot be changed):", True, TEXT_SECONDARY)
+        header = self.font_small.render(self._header_text, True, TEXT_SECONDARY)
         screen.blit(header, (self.x + 15, self.y + self.title_bar_height + 10))
 
         row_h = 80

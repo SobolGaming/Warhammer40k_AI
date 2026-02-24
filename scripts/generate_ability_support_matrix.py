@@ -285,6 +285,10 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time a unit from your army performs the swift as the wind agile manoeuvre until the end of the phase add an additional \d+ to the move characteristic of models in that unit",
             r"each time a unit from your army performs an agile manoeuvre that involves rolling a d6 add \d+ to the result",
         ),
+        "Manifold Maladies": (
+            r"at the start of the battle round you can select one of the plagues listed in nurgle(?:s| s) gift",
+            r"until the end of the battle that is your chosen plague instead of any previously chosen plague",
+        ),
         "Ride the Wind": (
             r"in addition at the end of your opponents turn you can select a number of asuryani mounted or vyper units from your army excluding units within engagement range of one or more enemy units then remove those units from the battlefield and place them into strategic reserves",
             r"the maximum number of units you can select depends on the battle size as shown below",
@@ -2575,6 +2579,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Deadly Vectors": (
             "Supported",
             "Death Lord's Chosen: in your opponent's Command phase, each Afflicted enemy unit rolls 2D6 (-1 if Below Half-strength), and on 6 or less that unit suffers D3 mortal wounds.",
+        ),
+        "Manifold Maladies": (
+            "Supported",
+            "Champions of Contagion: at the start of each battle round, queue an optional Plague selection decision (with None) to replace your active Nurgle's Gift Plague for the rest of the battle.",
         ),
         "Verminous Haze": (
             "Supported",

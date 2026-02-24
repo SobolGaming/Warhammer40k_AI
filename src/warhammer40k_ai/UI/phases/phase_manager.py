@@ -1372,10 +1372,15 @@ class SetupPhaseHandler(BasePhaseHandler):
                         return None
                     req = DecisionRequest.create(
                         DECISION_CHOOSE_PLAGUE,
-                        "Select Nurgle's Gift plague.",
+                        "Nurgle's Gift: select one Plague.",
                         player_id=getattr(player, "id", None),
                         options=req_options,
-                        context={"army_id": army_id},
+                        context={
+                            "ability": "nurgles_gift_declare",
+                            "ability_name": "Nurgle's Gift",
+                            "army_id": army_id,
+                            "optional": False,
+                        },
                     )
                     self.game.request_decision(req)
                     return req
@@ -1979,10 +1984,15 @@ class SetupPhaseHandler(BasePhaseHandler):
                     return
                 req = DecisionRequest.create(
                     DECISION_CHOOSE_PLAGUE,
-                    "Select Nurgle's Gift plague.",
+                    "Nurgle's Gift: select one Plague.",
                     player_id=getattr(player, "id", None),
                     options=options,
-                    context={"army_id": army_id},
+                    context={
+                        "ability": "nurgles_gift_declare",
+                        "ability_name": "Nurgle's Gift",
+                        "army_id": army_id,
+                        "optional": False,
+                    },
                 )
                 self.game.request_decision(req)
 

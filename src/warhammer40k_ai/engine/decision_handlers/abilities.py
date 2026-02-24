@@ -2618,25 +2618,92 @@ def _validate_choose_plague(game: object, request: DecisionRequest, result: Deci
     errors = list(validate_option_choice(request, result))
     if errors:
         return errors
-    if is_skip_choice(request, result):
-        return ()
     payload = _option_payload(request, result)
-    choice = payload.get("choice_key") or payload.get("key")
-    if choice is None:
-        return ("Plague choice requires key.",)
     army = _resolve_army(game, request, payload)
     if army is None or getattr(army, "nurgles_gift", None) is None:
         return ("Nurgle's Gift manager not found.",)
+    ctx = dict(getattr(request, "context", {}) or {})
+    ability = str(ctx.get("ability", "") or "").strip().lower()
+    if ability == "manifold_maladies":
+        dg_mgr = getattr(army, "death_guard_detachments", None)
+        can_select = getattr(dg_mgr, "can_select_manifold_maladies", None) if dg_mgr is not None else None
+        battle_round = payload.get("battle_round")
+        if battle_round is None:
+            battle_round = ctx.get("battle_round")
+        if not callable(can_select) or not bool(can_select(game=game, battle_round=battle_round)):
+            return ("Manifold Maladies cannot be selected right now.",)
+        if is_skip_choice(request, result):
+            return ()
+        choice = payload.get("choice_key") or payload.get("key")
+        if choice is None:
+            return ("Plague choice requires key.",)
+        choice_key = str(choice or "").strip().upper()
+        allowed_keys = {
+            str(v or "").strip().upper()
+            for v in list(ctx.get("allowed_choice_keys", []) or [])
+            if str(v or "").strip()
+        }
+        if allowed_keys and choice_key not in allowed_keys:
+            return ("Selected Plague is not in this request's candidate list.",)
+        try:
+            from ...rules.nurgles_gift import DEFAULT_PLAGUES
+        except Exception:
+            DEFAULT_PLAGUES = ()
+        valid_keys = {str(getattr(plague, "key", "") or "").strip().upper() for plague in list(DEFAULT_PLAGUES)}
+        if choice_key not in valid_keys:
+            return ("Invalid Plague choice.",)
+        return ()
+    if is_skip_choice(request, result):
+        return ()
+    choice = payload.get("choice_key") or payload.get("key")
+    if choice is None:
+        return ("Plague choice requires key.",)
     return ()
 
 
 def _apply_choose_plague(game: object, request: DecisionRequest, result: DecisionResult):
-    if is_skip_choice(request, result):
-        return None
     payload = _option_payload(request, result)
     army = _resolve_army(game, request, payload)
     if army is None:
         raise RuntimeError("Nurgle's Gift army not found.")
+    ctx = dict(getattr(request, "context", {}) or {})
+    ability = str(ctx.get("ability", "") or "").strip().lower()
+    if ability == "manifold_maladies":
+        dg_mgr = getattr(army, "death_guard_detachments", None)
+        if dg_mgr is None:
+            raise RuntimeError("Death Guard detachment manager not found.")
+        select_fn = getattr(dg_mgr, "select_manifold_maladies", None)
+        if not callable(select_fn):
+            raise RuntimeError("Manifold Maladies selector is unavailable.")
+        battle_round = payload.get("battle_round")
+        if battle_round is None:
+            battle_round = ctx.get("battle_round")
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        ability_name = str(ctx.get("ability_name", "") or "Manifold Maladies").strip() or "Manifold Maladies"
+        if is_skip_choice(request, result):
+            applied = bool(select_fn("", battle_round=battle_round))
+            if applied:
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"{ability_name}: none selected (Battle Round {battle_round}).",
+                )
+            return None
+        choice = payload.get("choice_key") or payload.get("key")
+        applied = bool(select_fn(choice, battle_round=battle_round))
+        if not applied:
+            raise RuntimeError("Manifold Maladies selection failed.")
+        label = _option_label(request, result) or str(choice)
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {label} (Battle Round {battle_round}).",
+        )
+        return str(choice)
+    if is_skip_choice(request, result):
+        return None
     mgr = getattr(army, "nurgles_gift", None)
     if mgr is None:
         raise RuntimeError("Nurgle's Gift manager not found.")

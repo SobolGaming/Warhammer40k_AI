@@ -4269,6 +4269,13 @@ class GameView:
             from ..utility.decision_utils import resolve_decision_command
             from .decision_ui_utils import first_option_id
 
+            ctx = dict(getattr(request, "context", {}) or {})
+            ability = str(ctx.get("ability", "") or "").strip().lower()
+            if ability == "manifold_maladies":
+                self.nurgles_gift_dialog.title = f"Manifold Maladies - {player.name}"
+            else:
+                self.nurgles_gift_dialog.title = f"Nurgle's Gift - {player.name}"
+
             def _on_confirm(option_id: str):
                 resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
                 try:

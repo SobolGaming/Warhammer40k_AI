@@ -169,7 +169,7 @@ Deployment / Pre-battle:
 - transport_assignment_dialog: ASSIGN_TRANSPORT {unit_id, transport_id}
 - shadow_assignment_dialog (quarry_selection_dialog): SHADOW_ASSIGNMENT {unit_id, replacement_datasheet_id | skip} (context `ability="shadow_assignment"`)
 - hover_mode_prompt (yes_no_dialog): CONFIRM_YES_NO {unit_id, choice} (context `ability="hover_mode"`)
-- nurgles_gift_plague_dialog: CHOOSE_PLAGUE {choice_id} (context `army_id`) (Declare Battle Formations)
+- nurgles_gift_plague_dialog: CHOOSE_PLAGUE {choice_id | skip} (context `army_id`; `ability="nurgles_gift_declare"` for Declare Battle Formations, or `ability="manifold_maladies"` with `battle_round` for start-of-battle-round detachment choice)
 - daemonic_allegiance_dialog: CHOOSE_DAEMONIC_ALLEGIANCE {unit_id, keyword}
 - start_of_battle_keyword_dialog: CHOOSE_START_OF_BATTLE_KEYWORD {keyword} (context `model_id`, `unit_id`, `ability_name`, `ability_key`)
 - possessed_blade_weapon_dialog: CHOOSE_QUARRY {weapon_name} (context `ability="possessed_blade"`, `unit_id`, `model_id`, `ability_name`)
@@ -455,7 +455,7 @@ Faction / Detachment / Ability choices:
 - gilded_champion_dialog: USE_GILDED_CHAMPION {action="use" | action="skip", model_id, ability_key}
 - careen_choice_dialog: USE_CAREEN {choice="normal" | choice="fall_back" | action="skip", unit_id, model_id}
 - miracle_dice_dialog: USE_MIRACLE_DIE {die_value | skip} (context `unit_id`, `roll_type`, `dice_count`, `die_faces`, `pool`, `needed`)
-- nurgles_gift_plague_dialog: CHOOSE_PLAGUE {choice_id}
+- nurgles_gift_plague_dialog: CHOOSE_PLAGUE {choice_id | skip} (context `ability="nurgles_gift_declare"` or `ability="manifold_maladies"`, optional `battle_round`)
 - pledge_selection_dialog: CHOOSE_PLEDGE {choice_id} (context `army_id`, `battle_round`, `max_value`, `ability_name="Pledges to the Dark Prince"`)
 - quarry_selection_dialog: CHOOSE_QUARRY {target_unit_id | objective_id | mode | selected_unit_ids[] | skip} (context may include `ability`, `ability_name`, `effect_key`, `source_unit_id`, `prey_reroll_hit`, `prey_reroll_wound`, `prey_melee_only`, `prey_keyword`, `prey_repick_on_destroyed`, `source_model_id`, `singular_purpose_reroll_hit`, `singular_purpose_reroll_wound`, `singular_purpose_objective_fnp`, `singular_purpose_objective_oc`)
 - quarry_selection_dialog (Experimental Augmentations choice): CHOOSE_QUARRY {mode="manual"+choice_key | mode="random"+choice_key="ROLL"} (context `ability="experimental_augmentations_choice"`, `ability_name="Experimental Augmentations"`, `army_id`, `battle_round`, `available_choice_keys[]`)

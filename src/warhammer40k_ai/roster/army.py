@@ -2560,6 +2560,9 @@ class Army:
         mgr = getattr(self, "tyranids_detachments", None)
         if mgr is not None:
             mgr.on_battle_round_start(int(battle_round), game=game)
+        mgr = getattr(self, "death_guard_detachments", None)
+        if mgr is not None and hasattr(mgr, "on_battle_round_start"):
+            mgr.on_battle_round_start(int(battle_round), game=game)
         mgr = getattr(self, "tau_empire_detachments", None)
         if mgr is not None:
             mgr.on_battle_round_start(int(battle_round), game=game)

@@ -1,15 +1,27 @@
 from __future__ import annotations
 
+from typing import Optional
+
 from ..utility.entity_ids import get_entity_id
 from ..utility.dice import get_roll
 from .detachment_manager import DetachmentManagerBase
-from .nurgles_gift import NurglesGiftManager
+from .nurgles_gift import DEFAULT_PLAGUES, NurglesGiftManager
 
 
 class DeathGuardDetachmentManager(DetachmentManagerBase):
     faction_id = "DG"
+    _MANIFOLD_MALADIES_SOURCE = "Manifold Maladies"
     _WORLD_BLIGHT_SOURCE = "worldblight"
     _VERMINOUS_HAZE_SCOUT_DISTANCE = 5.0
+
+    def __init__(self, army=None):
+        super().__init__(army=army)
+        self.manifold_maladies_resolved_round: Optional[int] = None
+
+    def is_champions_of_contagion(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Champions of Contagion")
 
     def is_flyblown_host(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -25,6 +37,165 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Virulent Vectorium")
+
+    def _resolve_battle_round(self, *, game=None, battle_round=None) -> Optional[int]:
+        if battle_round is not None:
+            try:
+                return int(battle_round)
+            except (TypeError, ValueError):
+                return None
+        if game is None:
+            player = getattr(self.army, "player", None) if self.army is not None else None
+            game = getattr(player, "game", None) if player is not None else None
+        if game is None:
+            return None
+        try:
+            return int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _is_valid_plague_choice(choice_key: str) -> bool:
+        key = str(choice_key or "").strip().upper()
+        if not key:
+            return False
+        return any(str(getattr(plague, "key", "")).strip().upper() == key for plague in list(DEFAULT_PLAGUES))
+
+    def can_select_manifold_maladies(self, *, game=None, battle_round=None) -> bool:
+        if not self.is_champions_of_contagion():
+            return False
+        round_value = self._resolve_battle_round(game=game, battle_round=battle_round)
+        if round_value is None:
+            return False
+        if self.manifold_maladies_resolved_round is not None and int(self.manifold_maladies_resolved_round) == int(round_value):
+            return False
+        gift_mgr = getattr(self.army, "nurgles_gift", None) if self.army is not None else None
+        if gift_mgr is None:
+            return False
+        return bool(getattr(gift_mgr, "_army_has_gift", lambda: False)())
+
+    def select_manifold_maladies(self, choice, *, battle_round=None) -> bool:
+        if not self.is_champions_of_contagion():
+            return False
+        round_value = self._resolve_battle_round(battle_round=battle_round)
+        if round_value is None:
+            return False
+        if self.manifold_maladies_resolved_round is not None and int(self.manifold_maladies_resolved_round) == int(round_value):
+            return False
+        gift_mgr = getattr(self.army, "nurgles_gift", None) if self.army is not None else None
+        if gift_mgr is None:
+            return False
+        choice_key = str(choice or "").strip().upper()
+        if choice_key in ("", "NONE", "SKIP"):
+            self.manifold_maladies_resolved_round = int(round_value)
+            return True
+        if not self._is_valid_plague_choice(choice_key):
+            return False
+        gift_mgr.active_plague_key = choice_key
+        self.manifold_maladies_resolved_round = int(round_value)
+        return True
+
+    def _pending_manifold_maladies_request(self, game, *, army_id: str, battle_round: int):
+        if game is None:
+            return None
+        queue = getattr(game, "decision_queue", None)
+        if queue is None:
+            return None
+        from ..engine.decision_kinds import DECISION_CHOOSE_PLAGUE
+
+        for req in list(getattr(queue, "list", lambda: [])() or []):
+            if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_PLAGUE:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "").strip().lower() != "manifold_maladies":
+                continue
+            if str(ctx.get("army_id", "") or "") != str(army_id):
+                continue
+            if int(ctx.get("battle_round", 0) or 0) != int(battle_round):
+                continue
+            return req
+        return None
+
+    def build_manifold_maladies_request(self, *, game=None, player=None, battle_round=None):
+        if not self.is_champions_of_contagion():
+            return None
+        if game is None or player is None:
+            return None
+        if not bool(getattr(game, "is_authoritative", True)):
+            return None
+        round_value = self._resolve_battle_round(game=game, battle_round=battle_round)
+        if round_value is None:
+            return None
+        if not self.can_select_manifold_maladies(game=game, battle_round=round_value):
+            return None
+        from ..engine.decision_kinds import DECISION_CHOOSE_PLAGUE
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        army_id = str(get_entity_id(self.army) or "") if self.army is not None else ""
+        if self._pending_manifold_maladies_request(game, army_id=army_id, battle_round=int(round_value)):
+            return None
+
+        options = [
+            DecisionOption.create(
+                "None",
+                payload={
+                    "action": "skip",
+                    "skip": True,
+                    "choice_key": "",
+                    "army_id": army_id,
+                    "battle_round": int(round_value),
+                },
+            )
+        ]
+        for plague in list(DEFAULT_PLAGUES):
+            options.append(
+                DecisionOption.create(
+                    str(getattr(plague, "name", "Plague") or "Plague"),
+                    payload={
+                        "choice_key": str(getattr(plague, "key", "") or ""),
+                        "summary": str(getattr(plague, "summary", "") or ""),
+                        "army_id": army_id,
+                        "battle_round": int(round_value),
+                    },
+                )
+            )
+
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_PLAGUE,
+            "Manifold Maladies: select one Plague (or None).",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={
+                "ability": "manifold_maladies",
+                "ability_name": self._MANIFOLD_MALADIES_SOURCE,
+                "army_id": army_id,
+                "battle_round": int(round_value),
+                "allowed_choice_keys": [str(getattr(plague, "key", "") or "") for plague in list(DEFAULT_PLAGUES)],
+                "optional": True,
+            },
+        )
+        if hasattr(game, "request_decision"):
+            game.request_decision(request)
+        return request
+
+    def on_battle_round_start(self, battle_round: int, *, game=None) -> None:
+        round_value = self._resolve_battle_round(game=game, battle_round=battle_round)
+        if round_value is None:
+            return
+        if (
+            self.manifold_maladies_resolved_round is not None
+            and int(self.manifold_maladies_resolved_round) != int(round_value)
+        ):
+            self.manifold_maladies_resolved_round = None
+        if not self.is_champions_of_contagion():
+            self.manifold_maladies_resolved_round = None
+            return
+        if not bool(getattr(game, "is_authoritative", True)):
+            return
+        player = getattr(self.army, "player", None) if self.army is not None else None
+        if player is None:
+            return
+        self.build_manifold_maladies_request(game=game, player=player, battle_round=round_value)
 
     def _unit_in_army(self, unit) -> bool:
         if unit is None or self.army is None:
