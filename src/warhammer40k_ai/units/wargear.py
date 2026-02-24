@@ -8467,6 +8467,19 @@ class WargearProfile:
                     _add_hit_mod(int(bonus), reason)
         except Exception:
             pass
+        # Chaos Space Marines: Huron's Marauders - Tyrannical Motivation.
+        try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            army = attacker_unit.get_parent_army() if attacker_unit is not None else None
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            bonus_fn = getattr(mgr, "tyrannical_motivation_hit_bonus", None) if mgr is not None else None
+            if callable(bonus_fn):
+                bonus, source = bonus_fn(attacker, game=game)
+                if bonus:
+                    _add_hit_mod(int(bonus), f"+{int(bonus)} to hit from {str(source or 'Tyrannical Motivation').strip()}")
+        except Exception:
+            pass
         # Aeldari: Guardian Battlehost - Defend at All Costs (+1 to hit near objectives).
         try:
             unit = attacker.parent_unit

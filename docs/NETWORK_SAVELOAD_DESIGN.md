@@ -194,6 +194,7 @@ Command phase:
 - combat_drugs_dialog: CHOOSE_COMBAT_DRUGS {choice_key} (context `army_id`, `battle_round`)
 - experimental_augmentations_dialog: CHOOSE_QUARRY {mode="manual"+choice_key | mode="random"+choice_key="ROLL"} (context `ability="experimental_augmentations_choice"`, `ability_name="Experimental Augmentations"`, `army_id`, `battle_round`, `available_choice_keys[]`, `optional=false`)
 - experimental_augmentations_reroll_dialog: CHOOSE_QUARRY {reroll_mode} (context `ability="experimental_augmentations_reroll"`, `ability_name="Experimental Augmentations"`, `army_id`, `battle_round`, `initial_rolls[]`, `available_reroll_modes[]`, `optional=false`)
+- tyrannical_motivation_dialog: CHOOSE_QUARRY {choice_key} (context `ability="tyrannical_motivation_choice"`, `ability_name="Tyrannical Motivation"`, `army_id`, `battle_round`, `allowed_choice_keys[]`, `optional=false`)
 - warmaster_dialog: CHOOSE_WARMASTER_ABILITY {choice_key} (context `unit_id`, `battle_round`, `player_id`, `expires_round`)
 - voice_of_triarch_dialog: CHOOSE_QUARRY {choice_key} (context `ability="voice_of_triarch"`, `source_unit_id`, `battle_round`, `expires_round`, `player_id`, `allowed_choice_keys`)
 - blood_tithe_dialog: CHOOSE_BLOOD_TITHE {ability_key | skip} (context `army_id`, `timing`)

@@ -29,6 +29,13 @@ def next_phase(game: "Game") -> None:
     current_phase_value = game.phase.value
     next_phase_value = (current_phase_value + 1) % len(BattleRoundPhases)
     game.phase = BattleRoundPhases(next_phase_value)
+    if next_phase_value != 0:
+        try:
+            refresh_csm_fn = getattr(game, "_refresh_csm_tyrannical_motivation_phase_state", None)
+            if callable(refresh_csm_fn):
+                refresh_csm_fn()
+        except Exception:
+            pass
     # Publish phase start for stratagem triggers
     try:
         game.event_system.publish("phase_start", player=game.get_current_player(), phase=game.phase)

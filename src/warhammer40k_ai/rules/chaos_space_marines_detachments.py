@@ -74,9 +74,14 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     DETACHMENT_DECEPTORS = "Deceptors"
     DETACHMENT_DREAD_TALONS = "Dread Talons"
     DETACHMENT_FELLHAMMER_SIEGE_HOST = "Fellhammer Siege-host"
+    DETACHMENT_HURONS_MARAUDERS = "Huron's Marauders"
     DETACHMENT_RENEGADE_RAIDERS = "Renegade Raiders"
     _MASTERS_OF_MISDIRECTION_SELECTION_ABILITY = "deceptors_masters_of_misdirection_selection"
     _MASTERS_OF_MISDIRECTION_SOURCE = "Masters of Misdirection"
+    _TYRANNICAL_MOTIVATION_ABILITY = "tyrannical_motivation_choice"
+    _TYRANNICAL_MOTIVATION_SOURCE = "Tyrannical Motivation"
+    _TYRANNICAL_MOTIVATION_CHOICE_HURONS_ELITE = "HURONS_ELITE"
+    _TYRANNICAL_MOTIVATION_CHOICE_MOBILE_MARAUDERS = "MOBILE_MARAUDERS"
     _DESPERATE_DEVOTION_ALLOWED_ACTIONS = {"move", "advance", "charge"}
     _EXPERIMENTAL_AUGMENTATION_REROLL_MODES = {"keep", "reroll_first", "reroll_second", "reroll_both"}
 
@@ -91,6 +96,10 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         self.experimental_augmentations_pending_round: Optional[int] = None
         self._masters_of_misdirection_selection_resolved: bool = False
         self.masters_of_misdirection_selected_unit_ids: set[str] = set()
+        self.tyrannical_motivation_choice_key: str = ""
+        self._tyrannical_motivation_phase_signature: tuple[str, int, str] | None = None
+        self._tyrannical_motivation_phase_hit_bonus_unit_ids: set[str] = set()
+        self._tyrannical_motivation_phase_mobile_unit_ids: set[str] = set()
 
     def is_cabal_of_chaos(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -121,6 +130,11 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches(self.DETACHMENT_FELLHAMMER_SIEGE_HOST)
+
+    def is_hurons_marauders(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches(self.DETACHMENT_HURONS_MARAUDERS)
 
     def is_renegade_raiders(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -335,6 +349,343 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
             "requires_strength_gt_toughness": True,
             "tag": "detachment:iron_fortitude",
         }
+
+    @classmethod
+    def _tyrannical_motivation_choice_label(cls, choice_key: str) -> str:
+        key = str(choice_key or "").strip().upper()
+        if key == cls._TYRANNICAL_MOTIVATION_CHOICE_HURONS_ELITE:
+            return "Huron's Elite"
+        if key == cls._TYRANNICAL_MOTIVATION_CHOICE_MOBILE_MARAUDERS:
+            return "Mobile Marauders"
+        return key
+
+    @classmethod
+    def _is_huron_blackheart_unit(cls, unit) -> bool:
+        return cls._normalize_name(str(getattr(unit, "name", "") or "")) == "huron blackheart"
+
+    def _unit_is_heretic_astartes_infantry(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if not self._unit_has_keyword(root, "HERETIC ASTARTES"):
+            return False
+        if not self._unit_has_keyword(root, "INFANTRY"):
+            return False
+        return True
+
+    def _tyrannical_motivation_unit_id(self, unit) -> str:
+        root = self._unit_root(unit)
+        if root is None:
+            return ""
+        return str(get_entity_id(root) or self._unit_root_key(root))
+
+    def _clear_tyrannical_motivation_phase_snapshot(self) -> None:
+        self._tyrannical_motivation_phase_signature = None
+        self._tyrannical_motivation_phase_hit_bonus_unit_ids = set()
+        self._tyrannical_motivation_phase_mobile_unit_ids = set()
+
+    def clear_tyrannical_motivation_choice(self) -> None:
+        self.tyrannical_motivation_choice_key = ""
+        self._clear_tyrannical_motivation_phase_snapshot()
+
+    def can_select_tyrannical_motivation_choice(self, *, game=None, player=None) -> bool:
+        if not self.is_hurons_marauders() or self.army is None:
+            return False
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return False
+        army_player = getattr(self.army, "player", None)
+        if army_player is not None:
+            if str(getattr(army_player, "id", "") or "") != str(getattr(owner, "id", "") or ""):
+                return False
+        resolved_game = self._resolve_game(game=game)
+        if resolved_game is None:
+            return False
+        phase_name = self._current_phase_name(game=resolved_game)
+        if phase_name and phase_name != "COMMAND_PHASE":
+            return False
+        current_owner = str(self._current_turn_owner_id(game=resolved_game, player=owner) or "")
+        if current_owner and current_owner != str(getattr(owner, "id", "") or ""):
+            return False
+        return True
+
+    def _pending_tyrannical_motivation_choice_request(self, game, *, army_id: str, battle_round: int) -> bool:
+        if game is None:
+            return False
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "").strip().lower() != self._TYRANNICAL_MOTIVATION_ABILITY:
+                continue
+            if str(ctx.get("army_id", "") or "") != str(army_id or ""):
+                continue
+            ctx_round = int(ctx.get("battle_round", battle_round) or battle_round)
+            if int(ctx_round) == int(battle_round):
+                return True
+        return False
+
+    def queue_tyrannical_motivation_choice_request(self, *, game=None, player=None) -> None:
+        if not self.is_hurons_marauders() or self.army is None:
+            return
+        resolved_game = self._resolve_game(game=game)
+        if resolved_game is None or not bool(getattr(resolved_game, "is_authoritative", True)):
+            return
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return
+        if not self.can_select_tyrannical_motivation_choice(game=resolved_game, player=owner):
+            return
+        self.clear_tyrannical_motivation_choice()
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        army_id = str(get_entity_id(self.army) or "")
+        battle_round = int(self._current_turn(game=resolved_game) or 0)
+        if self._pending_tyrannical_motivation_choice_request(
+            resolved_game,
+            army_id=army_id,
+            battle_round=battle_round,
+        ):
+            return
+
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Tyrannical Motivation: select Huron's Elite or Mobile Marauders.",
+            player_id=getattr(owner, "id", None),
+            options=[
+                DecisionOption.create(
+                    "Huron's Elite",
+                    payload={
+                        "choice_key": self._TYRANNICAL_MOTIVATION_CHOICE_HURONS_ELITE,
+                        "summary": "HERETIC ASTARTES INFANTRY units gain +1 to hit until your next Command phase.",
+                        "army_id": army_id,
+                    },
+                ),
+                DecisionOption.create(
+                    "Mobile Marauders",
+                    payload={
+                        "choice_key": self._TYRANNICAL_MOTIVATION_CHOICE_MOBILE_MARAUDERS,
+                        "summary": "HERETIC ASTARTES INFANTRY units can shoot and charge after Falling Back until your next Command phase.",
+                        "army_id": army_id,
+                    },
+                ),
+            ],
+            context={
+                "ability": self._TYRANNICAL_MOTIVATION_ABILITY,
+                "ability_name": self._TYRANNICAL_MOTIVATION_SOURCE,
+                "phase": "Command phase",
+                "army_id": army_id,
+                "battle_round": int(battle_round),
+                "allowed_choice_keys": [
+                    self._TYRANNICAL_MOTIVATION_CHOICE_HURONS_ELITE,
+                    self._TYRANNICAL_MOTIVATION_CHOICE_MOBILE_MARAUDERS,
+                ],
+            },
+        )
+        if hasattr(resolved_game, "request_decision"):
+            resolved_game.request_decision(request)
+
+    def select_tyrannical_motivation_choice(self, choice_key: str, *, game=None, player=None) -> dict:
+        if not self.can_select_tyrannical_motivation_choice(game=game, player=player):
+            return {"ok": False, "reason": "Tyrannical Motivation cannot be selected right now."}
+        choice = str(choice_key or "").strip().upper()
+        allowed = {
+            self._TYRANNICAL_MOTIVATION_CHOICE_HURONS_ELITE,
+            self._TYRANNICAL_MOTIVATION_CHOICE_MOBILE_MARAUDERS,
+        }
+        if choice not in allowed:
+            return {"ok": False, "reason": "Tyrannical Motivation choice is invalid."}
+        self.tyrannical_motivation_choice_key = choice
+        self._clear_tyrannical_motivation_phase_snapshot()
+        self.refresh_tyrannical_motivation_phase_state(game=game, force=True)
+        return {
+            "ok": True,
+            "choice_key": choice,
+            "label": self._tyrannical_motivation_choice_label(choice),
+            "source": self._TYRANNICAL_MOTIVATION_SOURCE,
+        }
+
+    def _iter_huron_blackheart_source_units(self) -> list:
+        if self.army is None:
+            return []
+        sources = []
+        seen: set[str] = set()
+        for root in self._iter_unique_roots(getattr(self.army, "units", []) or []):
+            members_fn = getattr(root, "get_attached_unit_members", None)
+            members = list(members_fn() or []) if callable(members_fn) else [root]
+            if not members:
+                members = [root]
+            for member in members:
+                if member is None:
+                    continue
+                if not self._is_huron_blackheart_unit(member):
+                    continue
+                if not self._unit_on_battlefield(member):
+                    continue
+                is_alive = getattr(member, "is_alive", None)
+                if callable(is_alive) and not bool(is_alive()):
+                    continue
+                key = str(get_entity_id(member) or self._unit_root_key(member))
+                if key in seen:
+                    continue
+                seen.add(key)
+                sources.append(member)
+        sources.sort(key=lambda unit: str(get_entity_id(unit) or self._unit_root_key(unit)))
+        return sources
+
+    def _unit_visible_to_friendly_huron(self, unit, *, game=None) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if not self._unit_on_battlefield(root):
+            return False
+        sources = list(self._iter_huron_blackheart_source_units() or [])
+        if not sources:
+            return False
+        resolved_game = self._resolve_game(game=game)
+        if resolved_game is None:
+            return False
+        resolved_map = getattr(resolved_game, "map", None)
+        can_see_unit_fn = getattr(resolved_game, "_model_can_see_unit", None)
+        can_see_model_fn = getattr(resolved_map, "can_model_see_model", None) if resolved_map is not None else None
+        if not callable(can_see_unit_fn) and not callable(can_see_model_fn):
+            return False
+
+        target_models_fn = getattr(root, "get_attached_unit_models", None)
+        target_models = list(target_models_fn() or []) if callable(target_models_fn) else list(getattr(root, "models", []) or [])
+        for source in sources:
+            source_root = self._unit_root(source)
+            if source_root is root:
+                return True
+            source_models_fn = getattr(source, "get_attached_unit_models", None)
+            source_models = list(source_models_fn() or []) if callable(source_models_fn) else list(getattr(source, "models", []) or [])
+            for sm in source_models:
+                if sm is None:
+                    continue
+                try:
+                    if not getattr(sm, "is_alive", True):
+                        continue
+                except Exception:
+                    continue
+                if callable(can_see_unit_fn):
+                    try:
+                        if bool(can_see_unit_fn(sm, root, game_map=resolved_map)):
+                            return True
+                    except Exception:
+                        pass
+                if callable(can_see_unit_fn):
+                    continue
+                if callable(can_see_model_fn):
+                    for tm in target_models:
+                        if tm is None:
+                            continue
+                        try:
+                            if not getattr(tm, "is_alive", True):
+                                continue
+                        except Exception:
+                            continue
+                        try:
+                            if bool(can_see_model_fn(sm, tm)):
+                                return True
+                        except Exception:
+                            continue
+        return False
+
+    def refresh_tyrannical_motivation_phase_state(self, *, game=None, force: bool = False) -> None:
+        if not self.is_hurons_marauders() or self.army is None:
+            self._clear_tyrannical_motivation_phase_snapshot()
+            return
+        resolved_game = self._resolve_game(game=game)
+        phase_signature = (
+            str(self._current_phase_name(game=resolved_game) or ""),
+            int(self._current_turn(game=resolved_game) or 0),
+            str(self._current_turn_owner_id(game=resolved_game) or ""),
+        )
+        if (not force) and phase_signature == self._tyrannical_motivation_phase_signature:
+            return
+        self._tyrannical_motivation_phase_signature = phase_signature
+        self._tyrannical_motivation_phase_hit_bonus_unit_ids = set()
+        self._tyrannical_motivation_phase_mobile_unit_ids = set()
+
+        choice_key = str(self.tyrannical_motivation_choice_key or "").strip().upper()
+        if choice_key not in {
+            self._TYRANNICAL_MOTIVATION_CHOICE_HURONS_ELITE,
+            self._TYRANNICAL_MOTIVATION_CHOICE_MOBILE_MARAUDERS,
+        }:
+            return
+
+        for root in self._iter_unique_roots(getattr(self.army, "units", []) or []):
+            if not self._unit_in_army(root):
+                continue
+            if not self._unit_is_heretic_astartes_infantry(root):
+                continue
+            unit_id = self._tyrannical_motivation_unit_id(root)
+            if not unit_id:
+                continue
+            if not self._unit_visible_to_friendly_huron(root, game=resolved_game):
+                continue
+            if choice_key == self._TYRANNICAL_MOTIVATION_CHOICE_HURONS_ELITE:
+                self._tyrannical_motivation_phase_mobile_unit_ids.add(unit_id)
+            else:
+                self._tyrannical_motivation_phase_hit_bonus_unit_ids.add(unit_id)
+
+    def _tyrannical_motivation_effects_for_unit(self, unit, *, game=None) -> tuple[bool, bool]:
+        if not self.is_hurons_marauders():
+            return False, False
+        root = self._unit_root(unit)
+        if root is None:
+            return False, False
+        if not self._unit_in_army(root):
+            return False, False
+        if not self._unit_is_heretic_astartes_infantry(root):
+            return False, False
+
+        choice_key = str(self.tyrannical_motivation_choice_key or "").strip().upper()
+        if choice_key not in {
+            self._TYRANNICAL_MOTIVATION_CHOICE_HURONS_ELITE,
+            self._TYRANNICAL_MOTIVATION_CHOICE_MOBILE_MARAUDERS,
+        }:
+            return False, False
+
+        self.refresh_tyrannical_motivation_phase_state(game=game)
+        unit_id = self._tyrannical_motivation_unit_id(root)
+        if not unit_id:
+            return False, False
+        has_hit_bonus = bool(choice_key == self._TYRANNICAL_MOTIVATION_CHOICE_HURONS_ELITE)
+        has_mobile_marauders = bool(choice_key == self._TYRANNICAL_MOTIVATION_CHOICE_MOBILE_MARAUDERS)
+        if unit_id in self._tyrannical_motivation_phase_hit_bonus_unit_ids:
+            has_hit_bonus = True
+        if unit_id in self._tyrannical_motivation_phase_mobile_unit_ids:
+            has_mobile_marauders = True
+        return has_hit_bonus, has_mobile_marauders
+
+    def tyrannical_motivation_hit_bonus(self, attacker_model, *, game=None) -> tuple[int, str]:
+        unit = getattr(attacker_model, "parent_unit", None) if attacker_model is not None else None
+        has_hit_bonus, _has_mobile = self._tyrannical_motivation_effects_for_unit(unit, game=game)
+        if not has_hit_bonus:
+            return 0, ""
+        return 1, f"{self._TYRANNICAL_MOTIVATION_SOURCE} (Huron's Elite)"
+
+    def tyrannical_motivation_can_shoot_after_fall_back(self, unit, profile=None, *, game=None) -> bool:
+        _has_hit_bonus, has_mobile = self._tyrannical_motivation_effects_for_unit(unit, game=game)
+        if not has_mobile:
+            return False
+        parent = getattr(profile, "parent_wargear", None) if profile is not None else None
+        is_ranged = getattr(parent, "is_ranged", None) if parent is not None else None
+        if callable(is_ranged):
+            return bool(is_ranged())
+        return True
+
+    def tyrannical_motivation_can_charge_after_fall_back(self, unit, *, game=None) -> bool:
+        _has_hit_bonus, has_mobile = self._tyrannical_motivation_effects_for_unit(unit, game=game)
+        return bool(has_mobile)
 
     @staticmethod
     def _normalize_name(value: str) -> str:

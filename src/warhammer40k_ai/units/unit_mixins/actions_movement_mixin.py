@@ -10682,6 +10682,16 @@ class ActionsMovementMixin:
                         return True
                 return False
             return True
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            apply_fn = getattr(mgr, "tyrannical_motivation_can_shoot_after_fall_back", None) if mgr is not None else None
+            if callable(apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(apply_fn(self, profile=profile, game=game)):
+                    return True
+        except Exception:
+            pass
         army = self.get_parent_army()
         mgr = getattr(army, "orks_detachments", None) if army is not None else None
         more_dakka_fn = getattr(mgr, "more_dakka_assault_applies", None) if mgr is not None else None
@@ -11046,6 +11056,16 @@ class ActionsMovementMixin:
         applies_fn = getattr(mgr, "kult_of_speed_adrenaline_junkies_applies", None) if mgr is not None else None
         if callable(applies_fn) and applies_fn(self):
             return True
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            apply_fn = getattr(mgr, "tyrannical_motivation_can_charge_after_fall_back", None) if mgr is not None else None
+            if callable(apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(apply_fn(self, game=game)):
+                    return True
+        except Exception:
+            pass
         try:
             army = self.get_parent_army()
             mgr = getattr(army, "space_marines_detachments", None) if army is not None else None

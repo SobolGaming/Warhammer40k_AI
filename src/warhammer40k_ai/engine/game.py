@@ -1515,6 +1515,30 @@ class Game(
         )
         self.request_decision(req)
 
+    def _maybe_prompt_csm_tyrannical_motivation(self) -> None:
+        player = self.get_current_player()
+        if player is None:
+            raise RuntimeError("Tyrannical Motivation prompt requires current player.")
+        army = player.get_army()
+        if army is None:
+            raise RuntimeError("Tyrannical Motivation prompt requires an army.")
+        mgr = getattr(army, "chaos_space_marines_detachments", None)
+        queue_fn = getattr(mgr, "queue_tyrannical_motivation_choice_request", None) if mgr is not None else None
+        if callable(queue_fn):
+            queue_fn(game=self, player=player)
+
+    def _refresh_csm_tyrannical_motivation_phase_state(self) -> None:
+        for player in list(getattr(self, "players", []) or []):
+            if player is None:
+                continue
+            army = player.get_army()
+            if army is None:
+                continue
+            mgr = getattr(army, "chaos_space_marines_detachments", None)
+            refresh_fn = getattr(mgr, "refresh_tyrannical_motivation_phase_state", None) if mgr is not None else None
+            if callable(refresh_fn):
+                refresh_fn(game=self)
+
     def _maybe_prompt_power_from_pain_command_phase(self) -> None:
         player = self.get_current_player()
         if player is None:
@@ -8085,7 +8109,9 @@ class Game(
 
         # Abaddon: The Warmaster selection at the start of your Command phase.
         self._maybe_prompt_csm_warmaster(current_player)
+        self._maybe_prompt_csm_tyrannical_motivation()
         self._maybe_prompt_csm_experimental_augmentations()
+        self._refresh_csm_tyrannical_motivation_phase_state()
 
         # Space Marines: Oath of Moment target selection at the start of your Command phase.
         mgr = getattr(army, "oath_of_moment", None)

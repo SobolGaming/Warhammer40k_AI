@@ -2967,6 +2967,38 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
             if available and choice not in available:
                 return ("Experimental Augmentations choice is not in this request's candidate list.",)
         return ()
+    if ability == "tyrannical_motivation_choice":
+        if is_skip_choice(request, result):
+            return ("Tyrannical Motivation selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Tyrannical Motivation army not found.",)
+        mgr = getattr(army, "chaos_space_marines_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_hurons_marauders", lambda: False)()):
+            return ("Tyrannical Motivation requires Huron's Marauders.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        can_select = getattr(mgr, "can_select_tyrannical_motivation_choice", None)
+        if not callable(can_select) or not bool(can_select(game=game, player=player)):
+            return ("Tyrannical Motivation cannot be selected right now.",)
+        choice = payload.get("choice_key")
+        if choice is None:
+            choice = payload.get("key")
+        if choice is None:
+            return ("Tyrannical Motivation selection requires choice_key.",)
+        choice_key = str(choice or "").strip().upper()
+        allowed_keys = {
+            str(v or "").strip().upper()
+            for v in list(ctx.get("allowed_choice_keys", []) or [])
+            if str(v or "").strip()
+        }
+        if allowed_keys and choice_key not in allowed_keys:
+            return ("Selected Tyrannical Motivation choice is not in this request's candidate list.",)
+        if choice_key not in {"HURONS_ELITE", "MOBILE_MARAUDERS"}:
+            return ("Tyrannical Motivation choice must be HURONS_ELITE or MOBILE_MARAUDERS.",)
+        return ()
     if ability == "experimental_augmentations_reroll":
         if is_skip_choice(request, result):
             return ("Experimental Augmentations reroll selection cannot be skipped.",)
@@ -5416,6 +5448,33 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             player,
             f"{ability_name}: rolled {rolls_text}; active augmentations {selected_label or 'none'}.",
         )
+        return dict(outcome)
+    if ability == "tyrannical_motivation_choice":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "chaos_space_marines_detachments", None)
+        if mgr is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        choice_key = str(payload.get("choice_key", "") or payload.get("key", "")).strip().upper()
+        if not choice_key:
+            return None
+        select_fn = getattr(mgr, "select_tyrannical_motivation_choice", None)
+        if not callable(select_fn):
+            return None
+        outcome = select_fn(choice_key, game=game, player=player)
+        if not isinstance(outcome, dict) or not bool(outcome.get("ok", False)):
+            return None
+        refresh_fn = getattr(game, "_refresh_csm_tyrannical_motivation_phase_state", None)
+        if callable(refresh_fn):
+            refresh_fn()
+        ability_name = str(ctx.get("ability_name", "") or "Tyrannical Motivation").strip() or "Tyrannical Motivation"
+        label = str((outcome or {}).get("label", "") or choice_key).strip() or choice_key
+        _log_action_for_players(game, player, f"{ability_name}: selected {label}.")
         return dict(outcome)
     if ability == "experimental_augmentations_reroll":
         payload = _option_payload(request, result)

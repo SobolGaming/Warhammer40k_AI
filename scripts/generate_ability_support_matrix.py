@@ -372,6 +372,14 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Iron Fortitude": (
             r"each time a ranged attack targets a heretic astartes unit from your army excluding damned units if the strength characteristic of that attack is greater than the toughness characteristic of that unit subtract 1 from the wound roll",
         ),
+        "Tyrannical Motivation": (
+            r"in your command phase select one of the following abilities",
+            r"until the start of your next command phase each heretic astartes infantry unit from your army has that ability",
+            r"at the start of each phase if such a unit is visible to a friendly huron blackheart model until the end of the phase it has both of the following abilities",
+            r"each time a model in this unit makes an attack add 1 to the hit roll",
+            r"this unit is eligible to shoot and declare a charge in a turn in which it fell back",
+            r"if a unit is gaining eligibility to shoot and declare a charge in a turn in which it fell back as a result of being visible to huron blackheart.*unless it is visible again at the start of the respective phase",
+        ),
         "Yriel's Own": (
             r"aeldari units in your army are eligible to declare a charge in a turn in which they advanced",
             r"in addition each time an anhrathe rangers or shroud runners unit from your army advances you can reroll the advance roll",
@@ -2522,6 +2530,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Iron Fortitude": (
             "Supported",
             "Fellhammer Siege-host: each time a ranged attack targets a friendly HERETIC ASTARTES unit (excluding DAMNED), if the attack Strength is greater than that unit's Toughness, subtract 1 from the Wound roll.",
+        ),
+        "Tyrannical Motivation": (
+            "Supported",
+            "Huron's Marauders: in your Command phase choose Huron's Elite (+1 to hit for HERETIC ASTARTES INFANTRY) or Mobile Marauders (shoot/charge after Falling Back for HERETIC ASTARTES INFANTRY) until your next Command phase; at each phase start, units visible to a friendly Huron Blackheart gain both abilities for that phase.",
         ),
         "Mechanised Murder": ("Supported", "Rapid Evisceration: reroll Hit/Wound rolls of 1 for eligible units."),
         "Daemonic Empowerment": (
