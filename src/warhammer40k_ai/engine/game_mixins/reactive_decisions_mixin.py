@@ -4122,11 +4122,13 @@ class GameReactiveDecisionsMixin:
 
             ability_name = str(ctx.get("ability_name", "") or "Fury's Cage").strip() or "Fury's Cage"
             if player is not None:
-                append_dice(
+                from ...utility.event_bus import append_action as _append_action, append_dice as _append_dice
+
+                _append_dice(
                     player,
                     f"{ability_name}: D3+1 mortal wounds ({int(mortal_roll)}+1) -> {int(mortal_wounds)}.",
                 )
-                append_action(
+                _append_action(
                     player,
                     f"{ability_name}: {getattr(model, 'name', 'Model')} suffers {int(applied_wounds)} mortal wounds.",
                 )
