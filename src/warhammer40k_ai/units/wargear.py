@@ -8071,6 +8071,22 @@ class WargearProfile:
             if bonus:
                 source_name = str(source or "Integrated Tactics").strip() or "Integrated Tactics"
                 _add_hit_mod(int(bonus), f"+{int(bonus)} from {source_name}")
+        # Genestealer Cults: Final Day (Psionic Parasitism) selected TYRANIDS unit gets +1 to hit.
+        psionic_bonus_fn = getattr(gsc_mgr, "final_day_psionic_parasitism_hit_bonus", None) if gsc_mgr is not None else None
+        if callable(psionic_bonus_fn):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            bonus, source = psionic_bonus_fn(attacker, game=game, weapon_profile=self)
+            if bonus:
+                source_name = str(source or "Psionic Parasitism").strip() or "Psionic Parasitism"
+                _add_hit_mod(int(bonus), f"+{int(bonus)} from {source_name}")
+        # Genestealer Cults: Final Day (Catalyst Aura) GSC attacks get +1 to hit vs enemies within 6" of friendly TYRANIDS.
+        catalyst_bonus_fn = getattr(gsc_mgr, "final_day_catalyst_hit_bonus", None) if gsc_mgr is not None else None
+        if callable(catalyst_bonus_fn):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            bonus, source = catalyst_bonus_fn(attacker, target, game=game, weapon_profile=self)
+            if bonus:
+                source_name = str(source or "Catalyst (Aura)").strip() or "Catalyst (Aura)"
+                _add_hit_mod(int(bonus), f"+{int(bonus)} from {source_name}")
 
         # Master of Mechanisms: selected friendly VEHICLE gets +1 to hit until next Command phase.
         sr = getattr(getattr(attacker, "parent_unit", None), "special_rules", None)

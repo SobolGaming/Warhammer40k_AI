@@ -4974,6 +4974,79 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not callable(target_eligible) or not bool(target_eligible(source_root, target_root, game=game)):
             return ("Integrated Tactics target must be an enemy unit within 18\" and visible to the source unit.")
         return ()
+    if ability == "final_day_psionic_parasitism":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Psionic Parasitism army not found.",)
+        mgr = getattr(army, "genestealer_cults_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_final_day", lambda: False)()):
+            return ("Psionic Parasitism requires Final Day detachment.",)
+        source_unit = resolve_unit(
+            game,
+            payload.get("synapse_unit_id")
+            or payload.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("synapse_unit_id")
+            or ctx.get("source_unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Psionic Parasitism source unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return ("Psionic Parasitism source unit was not found.",)
+        source_id = str(get_entity_id(source_root) or "")
+        expected_source_id = str(ctx.get("unit_id", "") or "")
+        if expected_source_id and source_id and source_id != expected_source_id:
+            return ("Psionic Parasitism source unit mismatch.",)
+        source_eligible = getattr(mgr, "final_day_psionic_parasitism_synapse_eligible", None)
+        if not callable(source_eligible) or not bool(source_eligible(source_root)):
+            return ("Psionic Parasitism source unit is not eligible.",)
+        if is_skip_choice(request, result):
+            return ()
+        gsc_unit = resolve_unit(game, payload.get("gsc_unit_id") or ctx.get("gsc_unit_id"))
+        if gsc_unit is None:
+            return ("Psionic Parasitism requires a GENESTEALER CULTS unit selection.",)
+        tyranids_unit = resolve_unit(game, payload.get("tyranids_unit_id") or ctx.get("tyranids_unit_id"))
+        if tyranids_unit is None:
+            return ("Psionic Parasitism requires a TYRANIDS unit selection.",)
+        gsc_root = (
+            gsc_unit.get_attached_unit_root()
+            if hasattr(gsc_unit, "get_attached_unit_root")
+            else gsc_unit
+        )
+        tyranids_root = (
+            tyranids_unit.get_attached_unit_root()
+            if hasattr(tyranids_unit, "get_attached_unit_root")
+            else tyranids_unit
+        )
+        if gsc_root is None or tyranids_root is None:
+            return ("Psionic Parasitism selected units were not found.",)
+        candidate_pairs = list(ctx.get("candidate_pairs", []) or [])
+        if candidate_pairs:
+            allowed = {
+                (
+                    str(item.get("gsc_unit_id", "") or ""),
+                    str(item.get("tyranids_unit_id", "") or ""),
+                )
+                for item in candidate_pairs
+                if isinstance(item, dict)
+            }
+            pair_key = (
+                str(get_entity_id(gsc_root) or ""),
+                str(get_entity_id(tyranids_root) or ""),
+            )
+            if pair_key not in allowed:
+                return ("Psionic Parasitism selected unit pair is not an eligible candidate.",)
+        pair_eligible = getattr(mgr, "final_day_psionic_parasitism_pair_eligible", None)
+        if not callable(pair_eligible) or not bool(pair_eligible(source_root, gsc_root, tyranids_root, game=game)):
+            return ("Psionic Parasitism selected units must both be within 9\" of and visible to the source SYNAPSE unit.")
+        return ()
     if ability == "bondsman":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)
@@ -5489,6 +5562,100 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 f"{ability_name}: {getattr(source_root, 'name', 'Unit')} can only target "
                 f"{getattr(target_root, 'name', 'Unit')} this phase; "
                 f"{getattr(target_root, 'name', 'Unit')} is caught in overlapping fire."
+            ),
+        )
+        return outcome
+    if ability == "final_day_psionic_parasitism":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "genestealer_cults_detachments", None)
+        if mgr is None:
+            return None
+        source_unit = resolve_unit(
+            game,
+            payload.get("synapse_unit_id")
+            or payload.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("synapse_unit_id")
+            or ctx.get("source_unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        ability_name = str(ctx.get("ability_name", "") or "Psionic Parasitism").strip() or "Psionic Parasitism"
+        skip = is_skip_choice(request, result)
+        gsc_root = None
+        tyranids_root = None
+        if not skip:
+            gsc_unit = resolve_unit(game, payload.get("gsc_unit_id") or ctx.get("gsc_unit_id"))
+            if gsc_unit is None:
+                return None
+            tyranids_unit = resolve_unit(game, payload.get("tyranids_unit_id") or ctx.get("tyranids_unit_id"))
+            if tyranids_unit is None:
+                return None
+            gsc_root = (
+                gsc_unit.get_attached_unit_root()
+                if hasattr(gsc_unit, "get_attached_unit_root")
+                else gsc_unit
+            )
+            tyranids_root = (
+                tyranids_unit.get_attached_unit_root()
+                if hasattr(tyranids_unit, "get_attached_unit_root")
+                else tyranids_unit
+            )
+            if gsc_root is None or tyranids_root is None:
+                return None
+
+        mortal_wounds = 0
+        if not skip:
+            from ...utility.dice import get_roll
+            from ...utility.event_bus import append_dice
+
+            mortal_wounds = max(0, int(get_roll("D3") or 0) + 1)
+            if player is not None:
+                append_dice(player, f"{ability_name}: D3+1 = {int(mortal_wounds)}")
+
+        apply_fn = getattr(mgr, "apply_final_day_psionic_parasitism_choice", None)
+        if not callable(apply_fn):
+            return None
+        outcome = apply_fn(
+            source_root,
+            gsc_unit=gsc_root,
+            tyranids_unit=tyranids_root,
+            skip=bool(skip),
+            game=game,
+            player=player,
+            mortal_wounds=int(mortal_wounds),
+        )
+        if not isinstance(outcome, dict):
+            return None
+        if bool(skip):
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: no units selected for {getattr(source_root, 'name', 'Unit')}.",
+            )
+            return outcome
+
+        healed = int(outcome.get("healed_wounds", 0) or 0)
+        _log_action_for_players(
+            game,
+            player,
+            (
+                f"{ability_name}: {getattr(gsc_root, 'name', 'Unit')} suffers {int(mortal_wounds)} mortal wounds; "
+                f"{getattr(tyranids_root, 'name', 'Unit')} regains up to {int(healed)} wounds and gains +1 to hit."
             ),
         )
         return outcome

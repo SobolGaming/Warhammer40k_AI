@@ -51,6 +51,23 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
         "tech priest enginseer",
         "ministorum priest",
     )
+    _FINAL_DAY_PSIONIC_PARASITISM_RULE_NAME = "Psionic Parasitism"
+    _FINAL_DAY_PSIONIC_ACTIVE_KEY = "gsc_final_day_psionic_parasitism_active"
+    _FINAL_DAY_PSIONIC_BONUS_KEY = "gsc_final_day_psionic_parasitism_hit_bonus"
+    _FINAL_DAY_PSIONIC_OWNER_KEY = "gsc_final_day_psionic_parasitism_owner"
+    _FINAL_DAY_PSIONIC_TURN_KEY = "gsc_final_day_psionic_parasitism_turn"
+    _FINAL_DAY_PSIONIC_SOURCE_KEY = "gsc_final_day_psionic_parasitism_source"
+    _FINAL_DAY_CATALYST_RULE_NAME = "Catalyst (Aura)"
+    _FINAL_DAY_GSC_EXCLUDED_NAME_TOKENS = (
+        "purestrain genestealer",
+        "patriarch",
+    )
+    _FINAL_DAY_TYRANID_REQUIRED_KEYWORD = "VANGUARD INVADER"
+    _FINAL_DAY_TYRANID_FORBIDDEN_KEYWORDS = (
+        "AIRCRAFT",
+        "BROODLORD",
+        "GENESTEALERS",
+    )
 
     @staticmethod
     def _attached_root(unit):
@@ -76,6 +93,33 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
 
     def _unit_is_astra_militarum(self, unit) -> bool:
         return self._unit_has_keyword(unit, "ASTRA MILITARUM")
+
+    def _unit_is_tyranids(self, unit) -> bool:
+        return self._unit_has_keyword(unit, "TYRANIDS")
+
+    @staticmethod
+    def _unit_has_ability_name(unit, ability_name: str) -> bool:
+        target = str(ability_name or "").strip().lower()
+        if not target:
+            return False
+        pools = [
+            list(getattr(unit, "possible_abilities", []) or []),
+            list(getattr(unit, "abilities", []) or []),
+        ]
+        for pool in pools:
+            for ability in pool:
+                name = ability if isinstance(ability, str) else getattr(ability, "name", "")
+                if str(name or "").strip().lower() == target:
+                    return True
+        return False
+
+    def _unit_is_tyranids_synapse(self, unit) -> bool:
+        root = self._attached_root(unit)
+        if root is None or not self._unit_is_tyranids(root):
+            return False
+        if self._unit_has_keyword(root, "SYNAPSE"):
+            return True
+        return self._unit_has_ability_name(root, "Synapse")
 
     @staticmethod
     def _unit_points(unit) -> int:
@@ -255,6 +299,11 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Brood Brother Auxilia")
+
+    def is_final_day(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Final Day")
 
     def _integrated_tactics_source_eligible(self, unit) -> bool:
         if not self.is_brood_brother_auxilia():
@@ -496,6 +545,325 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
             return 0, ""
         return 1, self._INTEGRATED_TACTICS_RULE_NAME
 
+    def _final_day_is_eligible_gsc_target(self, unit) -> bool:
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        if not self._unit_is_on_battlefield(root):
+            return False
+        if not self._unit_is_genestealer_cults(root):
+            return False
+        name_tokens = self._unit_name_tokens(root)
+        for token in self._FINAL_DAY_GSC_EXCLUDED_NAME_TOKENS:
+            if token in name_tokens:
+                return False
+        return True
+
+    def _final_day_is_eligible_tyranid_target(self, unit) -> bool:
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        if not self._unit_is_on_battlefield(root):
+            return False
+        return bool(self._unit_is_tyranids(root))
+
+    def final_day_psionic_parasitism_synapse_eligible(self, unit) -> bool:
+        if not self.is_final_day():
+            return False
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        if not self._unit_is_on_battlefield(root):
+            return False
+        return bool(self._unit_is_tyranids_synapse(root))
+
+    def final_day_psionic_parasitism_synapse_units(self) -> list:
+        if not self.is_final_day():
+            return []
+        out: dict[str, object] = {}
+        for root in self._iter_unit_roots():
+            if not self.final_day_psionic_parasitism_synapse_eligible(root):
+                continue
+            unit_id = str(get_entity_id(root) or "")
+            if unit_id:
+                out[unit_id] = root
+        return [out[k] for k in sorted(out.keys())]
+
+    def final_day_psionic_parasitism_pair_eligible(
+        self,
+        synapse_unit,
+        gsc_unit,
+        tyranids_unit,
+        *,
+        game=None,
+        game_map=None,
+    ) -> bool:
+        if not self.final_day_psionic_parasitism_synapse_eligible(synapse_unit):
+            return False
+        synapse_root = self._attached_root(synapse_unit)
+        gsc_root = self._attached_root(gsc_unit)
+        tyr_root = self._attached_root(tyranids_unit)
+        if synapse_root is None or gsc_root is None or tyr_root is None:
+            return False
+        if not self._final_day_is_eligible_gsc_target(gsc_root):
+            return False
+        if not self._final_day_is_eligible_tyranid_target(tyr_root):
+            return False
+        local_map = self._resolve_game_map(game, game_map=game_map)
+        if local_map is not None:
+            get_distance = getattr(local_map, "get_distance_between_units", None)
+            if callable(get_distance):
+                try:
+                    gsc_distance = float(get_distance(synapse_root, gsc_root))
+                    tyr_distance = float(get_distance(synapse_root, tyr_root))
+                except (TypeError, ValueError):
+                    return False
+                if gsc_distance > 9.0 or tyr_distance > 9.0:
+                    return False
+            has_los = getattr(synapse_root, "_attacking_unit_has_any_los_to_target_unit", None)
+            if callable(has_los):
+                if not bool(has_los(gsc_root, local_map)):
+                    return False
+                if not bool(has_los(tyr_root, local_map)):
+                    return False
+        return True
+
+    def final_day_psionic_parasitism_pair_candidates_for_synapse(self, synapse_unit, *, game=None, game_map=None) -> list[tuple]:
+        if not self.final_day_psionic_parasitism_synapse_eligible(synapse_unit):
+            return []
+        synapse_root = self._attached_root(synapse_unit)
+        if synapse_root is None:
+            return []
+        roots = self._iter_unit_roots()
+        gsc_targets = [root for root in roots if self._final_day_is_eligible_gsc_target(root)]
+        tyr_targets = [root for root in roots if self._final_day_is_eligible_tyranid_target(root)]
+        local_map = self._resolve_game_map(game, game_map=game_map)
+        pairs: dict[str, tuple] = {}
+        for gsc_root in gsc_targets:
+            gsc_id = str(get_entity_id(gsc_root) or "")
+            if not gsc_id:
+                continue
+            for tyr_root in tyr_targets:
+                tyr_id = str(get_entity_id(tyr_root) or "")
+                if not tyr_id:
+                    continue
+                if not self.final_day_psionic_parasitism_pair_eligible(
+                    synapse_root,
+                    gsc_root,
+                    tyr_root,
+                    game=game,
+                    game_map=local_map,
+                ):
+                    continue
+                pairs[f"{gsc_id}:{tyr_id}"] = (gsc_root, tyr_root)
+        return [pairs[k] for k in sorted(pairs.keys())]
+
+    def _heal_one_model_in_unit(self, unit, amount: int) -> tuple[int, str]:
+        root = self._attached_root(unit)
+        if root is None:
+            return 0, ""
+        try:
+            heal_amount = int(amount or 0)
+        except (TypeError, ValueError):
+            heal_amount = 0
+        if heal_amount <= 0:
+            return 0, ""
+        models = self._iter_attached_models(root)
+        for model in models:
+            is_alive = getattr(model, "is_alive", True)
+            if callable(is_alive):
+                is_alive = is_alive()
+            if not bool(is_alive):
+                continue
+            current_wounds = int(getattr(model, "wounds", 0) or 0)
+            base_wounds = int(getattr(model, "_base_wounds", current_wounds) or current_wounds)
+            missing = int(base_wounds - current_wounds)
+            if missing <= 0:
+                continue
+            healed = min(int(heal_amount), int(missing))
+            heal_fn = getattr(model, "heal", None)
+            if callable(heal_fn):
+                heal_fn(int(healed))
+            else:
+                setattr(model, "wounds", int(current_wounds + healed))
+            return int(healed), str(get_entity_id(model) or "")
+        return 0, ""
+
+    def apply_final_day_psionic_parasitism_choice(
+        self,
+        synapse_unit,
+        *,
+        gsc_unit=None,
+        tyranids_unit=None,
+        skip: bool = False,
+        game=None,
+        player=None,
+        mortal_wounds: int = 0,
+    ) -> dict | None:
+        if not self.final_day_psionic_parasitism_synapse_eligible(synapse_unit):
+            return None
+        synapse_root = self._attached_root(synapse_unit)
+        if synapse_root is None:
+            return None
+        if skip:
+            return {
+                "action": "skip",
+                "synapse_unit_id": str(get_entity_id(synapse_root) or ""),
+            }
+
+        gsc_root = self._attached_root(gsc_unit)
+        tyr_root = self._attached_root(tyranids_unit)
+        if gsc_root is None or tyr_root is None:
+            return None
+        if not self.final_day_psionic_parasitism_pair_eligible(synapse_root, gsc_root, tyr_root, game=game):
+            return None
+
+        try:
+            mortal = int(mortal_wounds or 0)
+        except (TypeError, ValueError):
+            mortal = 0
+        if mortal < 0:
+            mortal = 0
+
+        game_map = getattr(game, "map", None) if game is not None else None
+        if mortal > 0:
+            apply_mortals = getattr(synapse_root, "_apply_mortal_wounds_to_unit", None)
+            if callable(apply_mortals):
+                apply_mortals(gsc_root, int(mortal), game_map=game_map)
+
+        healed, healed_model_id = self._heal_one_model_in_unit(tyr_root, int(mortal))
+        owner_player = player if player is not None else getattr(self.army, "player", None)
+        owner_id = str(getattr(owner_player, "id", "") or "")
+        try:
+            turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            turn = 0
+        tyr_sr = getattr(tyr_root, "special_rules", None)
+        if not isinstance(tyr_sr, dict):
+            tyr_sr = {}
+        tyr_sr[self._FINAL_DAY_PSIONIC_ACTIVE_KEY] = True
+        tyr_sr[self._FINAL_DAY_PSIONIC_BONUS_KEY] = 1
+        tyr_sr[self._FINAL_DAY_PSIONIC_OWNER_KEY] = owner_id
+        tyr_sr[self._FINAL_DAY_PSIONIC_TURN_KEY] = int(turn or 0)
+        tyr_sr[self._FINAL_DAY_PSIONIC_SOURCE_KEY] = self._FINAL_DAY_PSIONIC_PARASITISM_RULE_NAME
+        tyr_root.special_rules = tyr_sr
+
+        return {
+            "action": "mark",
+            "synapse_unit_id": str(get_entity_id(synapse_root) or ""),
+            "gsc_unit_id": str(get_entity_id(gsc_root) or ""),
+            "tyranids_unit_id": str(get_entity_id(tyr_root) or ""),
+            "mortal_wounds": int(mortal),
+            "healed_wounds": int(healed),
+            "healed_model_id": healed_model_id,
+            "source": self._FINAL_DAY_PSIONIC_PARASITISM_RULE_NAME,
+        }
+
+    def final_day_psionic_parasitism_hit_bonus(self, attacker_model, *, game=None, weapon_profile=None) -> tuple[int, str]:
+        del weapon_profile  # Unused; parity with other hooks.
+        if not self.is_final_day():
+            return 0, ""
+        if attacker_model is None:
+            return 0, ""
+        attacker_root = self._attached_root(getattr(attacker_model, "parent_unit", None))
+        if attacker_root is None:
+            return 0, ""
+        if not self._unit_in_army(attacker_root):
+            return 0, ""
+        if not self._unit_is_tyranids(attacker_root):
+            return 0, ""
+        sr = getattr(attacker_root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(self._FINAL_DAY_PSIONIC_ACTIVE_KEY)):
+            return 0, ""
+        if game is not None:
+            effect_owner = str(sr.get(self._FINAL_DAY_PSIONIC_OWNER_KEY, "") or "")
+            try:
+                effect_turn = int(sr.get(self._FINAL_DAY_PSIONIC_TURN_KEY, 0) or 0)
+            except (TypeError, ValueError):
+                effect_turn = 0
+            phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            current_player = getattr(game, "get_current_player", lambda: None)()
+            current_owner = str(getattr(current_player, "id", "") or "")
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            if (
+                phase_name == "MOVEMENT_PHASE"
+                and effect_owner
+                and current_owner == effect_owner
+                and current_turn
+                and effect_turn
+                and current_turn > effect_turn
+            ):
+                return 0, ""
+        bonus = int(sr.get(self._FINAL_DAY_PSIONIC_BONUS_KEY, 1) or 1)
+        if bonus <= 0:
+            return 0, ""
+        source_name = str(sr.get(self._FINAL_DAY_PSIONIC_SOURCE_KEY, "") or self._FINAL_DAY_PSIONIC_PARASITISM_RULE_NAME)
+        return int(bonus), source_name
+
+    def final_day_catalyst_hit_bonus(self, attacker_model, target_unit, *, game=None, weapon_profile=None) -> tuple[int, str]:
+        del weapon_profile  # Unused; parity with other hooks.
+        if not self.is_final_day():
+            return 0, ""
+        if attacker_model is None or target_unit is None or game is None:
+            return 0, ""
+        game_map = getattr(game, "map", None)
+        if game_map is None:
+            return 0, ""
+        attacker_root = self._attached_root(getattr(attacker_model, "parent_unit", None))
+        target_root = self._attached_root(target_unit)
+        if attacker_root is None or target_root is None:
+            return 0, ""
+        if not self._unit_in_army(attacker_root):
+            return 0, ""
+        if not self._unit_is_genestealer_cults(attacker_root):
+            return 0, ""
+        if self._unit_is_tyranids(attacker_root):
+            return 0, ""
+        target_army = getattr(target_root, "get_parent_army", lambda: None)()
+        if target_army is self.army:
+            return 0, ""
+        get_distance = getattr(game_map, "get_distance_between_units", None)
+        if not callable(get_distance):
+            return 0, ""
+        for tyr_root in self._iter_unit_roots():
+            if not self._unit_is_tyranids(tyr_root):
+                continue
+            if not self._unit_is_on_battlefield(tyr_root):
+                continue
+            try:
+                distance = float(get_distance(tyr_root, target_root))
+            except (TypeError, ValueError):
+                continue
+            if distance <= 6.0:
+                return 1, self._FINAL_DAY_CATALYST_RULE_NAME
+        return 0, ""
+
+    def _clear_final_day_psionic_bonus(self, unit) -> None:
+        root = self._attached_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in (
+            self._FINAL_DAY_PSIONIC_ACTIVE_KEY,
+            self._FINAL_DAY_PSIONIC_BONUS_KEY,
+            self._FINAL_DAY_PSIONIC_OWNER_KEY,
+            self._FINAL_DAY_PSIONIC_TURN_KEY,
+            self._FINAL_DAY_PSIONIC_SOURCE_KEY,
+        ):
+            sr.pop(key, None)
+        root.special_rules = sr
+
     def _brood_brothers_forbidden_unit_reasons(self, unit) -> list[str]:
         if unit is None:
             return []
@@ -509,6 +877,30 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
         for token in self._BROOD_BROTHERS_FORBIDDEN_NAME_TOKENS:
             if token and token in name_token:
                 reasons.append(token.upper())
+        unique: list[str] = []
+        seen: set[str] = set()
+        for reason in reasons:
+            key = str(reason or "").strip().upper()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            unique.append(key)
+        return unique
+
+    def _final_day_forbidden_tyranid_reasons(self, unit) -> list[str]:
+        if unit is None:
+            return []
+        reasons: list[str] = []
+        if not self._unit_has_keyword(unit, self._FINAL_DAY_TYRANID_REQUIRED_KEYWORD):
+            reasons.append(f"MISSING {self._FINAL_DAY_TYRANID_REQUIRED_KEYWORD}")
+        for keyword in self._FINAL_DAY_TYRANID_FORBIDDEN_KEYWORDS:
+            if self._unit_has_keyword(unit, keyword):
+                reasons.append(keyword)
+        name_token = self._name_token(getattr(unit, "name", ""))
+        if "broodlord" in name_token:
+            reasons.append("BROODLORD")
+        if "genestealers" in name_token:
+            reasons.append("GENESTEALERS")
         unique: list[str] = []
         seen: set[str] = set()
         for reason in reasons:
@@ -550,46 +942,77 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
 
     def validate_detachment_rules(self) -> list[str]:
         errors: list[str] = []
-        if not self.is_brood_brother_auxilia():
-            return errors
         army = self.army
         if army is None:
             return errors
 
-        self.apply_brood_brothers_voice_of_command_loss()
+        if self.is_brood_brother_auxilia():
+            self.apply_brood_brothers_voice_of_command_loss()
 
-        cap, size_label = self._brood_brothers_points_cap(int(getattr(army, "points_limit", 0) or 0))
-        brood_brothers_points = 0
-        for unit in self._iter_unit_roots():
-            if not self._unit_is_astra_militarum(unit):
-                continue
-            brood_brothers_points += self._unit_points(unit)
-            forbidden = self._brood_brothers_forbidden_unit_reasons(unit)
-            if not forbidden:
-                continue
-            name = str(getattr(unit, "name", "") or "Unit").strip() or "Unit"
-            errors.append(
-                "Brood Brother Auxilia: ASTRA MILITARUM unit "
-                f"'{name}' is not allowed ({', '.join(forbidden)})."
-            )
-
-        if int(brood_brothers_points) > int(cap):
-            errors.append(
-                "Brood Brother Auxilia: combined ASTRA MILITARUM points "
-                f"({int(brood_brothers_points)}) exceed the {size_label} cap of {int(cap)}."
-            )
-
-        warlord = getattr(army, "warlord", None)
-        if warlord is None:
+            cap, size_label = self._brood_brothers_points_cap(int(getattr(army, "points_limit", 0) or 0))
+            brood_brothers_points = 0
             for unit in self._iter_unit_roots():
-                if bool(getattr(unit, "is_warlord", False)):
-                    warlord = unit
-                    break
-        warlord_root = self._attached_root(warlord)
-        if warlord_root is not None and not self._unit_is_genestealer_cults(warlord_root):
-            errors.append(
-                "Brood Brother Auxilia: a GENESTEALER CULTS model from your army must be your WARLORD."
-            )
+                if not self._unit_is_astra_militarum(unit):
+                    continue
+                brood_brothers_points += self._unit_points(unit)
+                forbidden = self._brood_brothers_forbidden_unit_reasons(unit)
+                if not forbidden:
+                    continue
+                name = str(getattr(unit, "name", "") or "Unit").strip() or "Unit"
+                errors.append(
+                    "Brood Brother Auxilia: ASTRA MILITARUM unit "
+                    f"'{name}' is not allowed ({', '.join(forbidden)})."
+                )
+
+            if int(brood_brothers_points) > int(cap):
+                errors.append(
+                    "Brood Brother Auxilia: combined ASTRA MILITARUM points "
+                    f"({int(brood_brothers_points)}) exceed the {size_label} cap of {int(cap)}."
+                )
+
+            warlord = getattr(army, "warlord", None)
+            if warlord is None:
+                for unit in self._iter_unit_roots():
+                    if bool(getattr(unit, "is_warlord", False)):
+                        warlord = unit
+                        break
+            warlord_root = self._attached_root(warlord)
+            if warlord_root is not None and not self._unit_is_genestealer_cults(warlord_root):
+                errors.append(
+                    "Brood Brother Auxilia: a GENESTEALER CULTS model from your army must be your WARLORD."
+                )
+
+        if self.is_final_day():
+            cap, size_label = self._brood_brothers_points_cap(int(getattr(army, "points_limit", 0) or 0))
+            tyranids_points = 0
+            for unit in self._iter_unit_roots():
+                if not self._unit_is_tyranids(unit):
+                    continue
+                tyranids_points += self._unit_points(unit)
+                forbidden = self._final_day_forbidden_tyranid_reasons(unit)
+                if not forbidden:
+                    continue
+                name = str(getattr(unit, "name", "") or "Unit").strip() or "Unit"
+                errors.append(
+                    "Final Day: TYRANIDS unit "
+                    f"'{name}' is not allowed ({', '.join(forbidden)})."
+                )
+
+            if int(tyranids_points) > int(cap):
+                errors.append(
+                    "Final Day: combined TYRANIDS points "
+                    f"({int(tyranids_points)}) exceed the {size_label} cap of {int(cap)}."
+                )
+
+            warlord = getattr(army, "warlord", None)
+            if warlord is None:
+                for unit in self._iter_unit_roots():
+                    if bool(getattr(unit, "is_warlord", False)):
+                        warlord = unit
+                        break
+            warlord_root = self._attached_root(warlord)
+            if warlord_root is not None and self._unit_is_tyranids(warlord_root):
+                errors.append("Final Day: no TYRANIDS models from your army can be your WARLORD.")
         return errors
 
     def _is_hypermorphic_fury_eligible_unit(self, unit) -> bool:
@@ -831,6 +1254,30 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
                 keywords=self._A_CHINK_KEYWORDS,
                 attack_type="ranged",
             )
+
+    def cleanup_on_phase_start(self, phase, active_player) -> None:
+        phase_name = str(getattr(phase, "name", phase) or "").strip().upper()
+        if not self.is_final_day() or phase_name != "MOVEMENT_PHASE":
+            return
+        owner_id = str(getattr(active_player, "id", "") or "")
+        game = getattr(getattr(self.army, "player", None), "game", None) if self.army is not None else None
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        for root in self._iter_unit_roots():
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get(self._FINAL_DAY_PSIONIC_ACTIVE_KEY)):
+                continue
+            if owner_id and str(sr.get(self._FINAL_DAY_PSIONIC_OWNER_KEY, "") or "") not in ("", owner_id):
+                continue
+            try:
+                effect_turn = int(sr.get(self._FINAL_DAY_PSIONIC_TURN_KEY, 0) or 0)
+            except (TypeError, ValueError):
+                effect_turn = 0
+            if current_turn and effect_turn and current_turn <= effect_turn:
+                continue
+            self._clear_final_day_psionic_bonus(root)
 
     def cleanup_on_phase_end(self, phase, active_player) -> None:
         phase_name = str(getattr(phase, "name", phase) or "").strip().upper()

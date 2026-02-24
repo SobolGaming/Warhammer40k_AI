@@ -1610,6 +1610,137 @@ class GamePhaseHandlersMixin:
                             sr.pop(key, None)
                         unit.special_rules = sr
 
+    def _on_phase_start_genestealer_cults_final_day_cleanup(self, player=None, phase=None, **_kwargs) -> None:
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "MOVEMENT_PHASE":
+            return
+        if player is None:
+            return
+        army = player.get_army()
+        if army is None:
+            return
+        mgr = getattr(army, "genestealer_cults_detachments", None)
+        cleanup_fn = getattr(mgr, "cleanup_on_phase_start", None) if mgr is not None else None
+        if callable(cleanup_fn):
+            cleanup_fn(phase, player)
+
+    def _on_phase_end_genestealer_cults_final_day_psionic_parasitism(self, player=None, phase=None, **_kwargs) -> None:
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "MOVEMENT_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        army = player.get_army()
+        if army is None:
+            return
+        mgr = getattr(army, "genestealer_cults_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_final_day", lambda: False)()):
+            return
+
+        synapse_units_fn = getattr(mgr, "final_day_psionic_parasitism_synapse_units", None)
+        pair_candidates_fn = getattr(mgr, "final_day_psionic_parasitism_pair_candidates_for_synapse", None)
+        if not callable(synapse_units_fn) or not callable(pair_candidates_fn):
+            return
+
+        owner_id = str(getattr(player, "id", "") or "")
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            turn = 0
+
+        queued_synapse_ids: set[str] = set()
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "final_day_psionic_parasitism":
+                    continue
+                if str(ctx.get("turn_owner", "") or "") != owner_id:
+                    continue
+                try:
+                    req_turn = int(ctx.get("turn", turn) or turn)
+                except (TypeError, ValueError):
+                    req_turn = int(turn or 0)
+                if req_turn != int(turn or 0):
+                    continue
+                synapse_id = str(ctx.get("unit_id", "") or "")
+                if synapse_id:
+                    queued_synapse_ids.add(synapse_id)
+
+        synapse_units = sorted(
+            list(synapse_units_fn() or []),
+            key=lambda u: str(maybe_entity_id(u) or ""),
+        )
+        for synapse in synapse_units:
+            synapse_id = str(get_entity_id(synapse) or "")
+            if not synapse_id or synapse_id in queued_synapse_ids:
+                continue
+            raw_pairs = list(pair_candidates_fn(synapse, game=self) or [])
+            if not raw_pairs:
+                continue
+
+            pairs_by_key: dict[str, tuple] = {}
+            for pair in raw_pairs:
+                if not isinstance(pair, (list, tuple)) or len(pair) != 2:
+                    continue
+                gsc_unit, tyr_unit = pair
+                gsc_id = str(get_entity_id(gsc_unit) or "")
+                tyr_id = str(get_entity_id(tyr_unit) or "")
+                if not gsc_id or not tyr_id:
+                    continue
+                pairs_by_key[f"{gsc_id}:{tyr_id}"] = (gsc_unit, tyr_unit)
+            if not pairs_by_key:
+                continue
+
+            sorted_pairs = [pairs_by_key[k] for k in sorted(pairs_by_key.keys())]
+            options = [DecisionOption.create("None", payload={"action": "skip"})]
+            candidate_pairs: list[dict[str, str]] = []
+            for gsc_unit, tyr_unit in sorted_pairs:
+                gsc_id = str(get_entity_id(gsc_unit) or "")
+                tyr_id = str(get_entity_id(tyr_unit) or "")
+                gsc_name = str(getattr(gsc_unit, "name", "Unit") or "Unit")
+                tyr_name = str(getattr(tyr_unit, "name", "Unit") or "Unit")
+                options.append(
+                    DecisionOption.create(
+                        f"{gsc_name} -> {tyr_name}",
+                        payload={
+                            "gsc_unit_id": gsc_id,
+                            "tyranids_unit_id": tyr_id,
+                        },
+                    )
+                )
+                candidate_pairs.append(
+                    {
+                        "gsc_unit_id": gsc_id,
+                        "tyranids_unit_id": tyr_id,
+                    }
+                )
+
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                (
+                    f"Psionic Parasitism: select GENESTEALER CULTS/TYRANIDS units for "
+                    f"{getattr(synapse, 'name', 'Unit')} (or None)."
+                ),
+                player_id=getattr(player, "id", None),
+                options=options,
+                context={
+                    "ability": "final_day_psionic_parasitism",
+                    "ability_name": "Psionic Parasitism",
+                    "phase": "Movement phase",
+                    "unit_id": synapse_id,
+                    "synapse_unit_id": synapse_id,
+                    "turn_owner": owner_id,
+                    "turn": int(turn or 0),
+                    "candidate_pairs": candidate_pairs,
+                    "optional": True,
+                },
+            )
+            self.request_decision(request)
+            queued_synapse_ids.add(synapse_id)
+
     def _on_phase_end_aflame_cleanup(self, player=None, phase=None, **_kwargs) -> None:
         """Clear Aflame effects at the end of the opponent's next turn (end of Fight phase)."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

@@ -1155,6 +1155,17 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"a genestealer cults model must be your warlord and astra militarum models from your army lose the voice of command ability if they have it",
             r"you cannot include units with any of the following keywords in your army using this rule",
         ),
+        "Psionic Parasitism": (
+            r"at the end of your movement phase for each tyranids synapse unit from your army you can select one friendly genestealer cults unit excluding purestrain genestealer and patriarch units and one friendly tyranids unit each within 9 of and visible to that synapse unit",
+            r"if you do that genestealer cults unit from your army suffers d3 1 mortal wounds and one model in the selected tyranids unit regains up to that many lost wounds and until the start of your next movement phase each time a model in the selected tyranids unit makes an attack add 1 to the hit roll",
+            r"tyranids units from your army have the following ability",
+            r"while an enemy unit is within 6 of this unit each time a friendly genestealer cults unit makes an attack that targets that enemy unit add 1 to the hit roll",
+            r"the combined points cost of such units depends on your battle size",
+            r"no tyranids models from your army can be your warlord",
+            r"incursion up to \d+ pts",
+            r"strike force up to \d+ pts",
+            r"onslaught up to \d+ pts",
+        ),
         "Relentless Rage": (
             r"each time a world eaters unit from your army makes a charge move until the end of the turn add \d+ to the attacks characteristic and add \d+ to the strength characteristic of melee weapons equipped by models in that unit",
         ),
@@ -2339,6 +2350,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "BROOD BROTHERS": (
             "Supported",
             "Brood Brother Auxilia: ASTRA MILITARUM ally points caps are validated by battle size, forbidden allied keywords are rejected, a GENESTEALER CULTS model must be WARLORD, and allied ASTRA MILITARUM units lose Voice of Command.",
+        ),
+        "Psionic Parasitism": (
+            "Supported",
+            "Final Day: end-of-Movement optional SYNAPSE pair selections are queued as deterministic decisions (GENESTEALER CULTS target plus TYRANIDS target, or skip), selected GENESTEALER CULTS units suffer D3+1 mortal wounds, selected TYRANIDS units heal up to that amount and gain +1 to hit until the start of their owner's next Movement phase, TYRANIDS Catalyst aura (+1 to hit for friendly GENESTEALER CULTS attacks vs enemies within 6\") is enforced, and Final Day TYRANIDS ally restrictions/points caps/WARLORD limits are validated.",
         ),
         "Against All Odds": (
             "Supported",
