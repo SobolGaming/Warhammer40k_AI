@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from warhammer40k_ai.engine.battlefield import Battlefield, BattlefieldSize
 from warhammer40k_ai.engine.game import Game
 from warhammer40k_ai.engine.phase import BattleRoundPhases
@@ -7,6 +9,7 @@ from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.rules.stratagem_descriptors import get_stratagem_tool_descriptor
 from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.units.wargear import WargearProfile
 
 
 class _MockDatasheet:
@@ -122,6 +125,28 @@ def test_blood_legion_step1_stratagem_descriptors_registered():
     by_name_fools = get_stratagem_tool_descriptor(name="FOOLS' FLIGHT")
     assert by_name_fools is not None
     assert str(by_name_fools.stratagem_id) == "000009816006"
+
+
+def test_blood_legion_step2_stratagem_descriptors_registered():
+    skulls = get_stratagem_tool_descriptor(stratagem_id="000009816004")
+    assert skulls is not None
+    assert skulls.name == "Skulls Beget Blood"
+    assert skulls.effect == "mortal_wound_burst"
+    assert int(skulls.cp_cost) == 1
+
+    sheathed = get_stratagem_tool_descriptor(stratagem_id="000009816007")
+    assert sheathed is not None
+    assert sheathed.name == "Sheathed in Brass"
+    assert sheathed.effect == "set_save_characteristic"
+    assert int(sheathed.cp_cost) == 1
+
+    by_name_skulls = get_stratagem_tool_descriptor(name="SKULLS BEGET BLOOD")
+    assert by_name_skulls is not None
+    assert str(by_name_skulls.stratagem_id) == "000009816004"
+
+    by_name_sheathed = get_stratagem_tool_descriptor(name="SHEATHED IN BRASS")
+    assert by_name_sheathed is not None
+    assert str(by_name_sheathed.stratagem_id) == "000009816007"
 
 
 def test_gore_hungry_onslaught_applies_movement_phase_move_types_and_cleans_up():
@@ -259,3 +284,121 @@ def test_fools_flight_queues_on_enemy_fall_back_and_uses_out_of_turn_charge(monk
         "count_as_charged": False,
     }
 
+
+def test_skulls_beget_blood_rolls_six_dice_and_applies_mortal_wounds(monkeypatch):
+    game, daemon_player, enemy_player, daemon_army, enemy_army = _build_game()
+    daemon_unit = _make_unit(
+        "Bloodletters",
+        keywords=["KHORNE", "INFANTRY"],
+        faction_keywords=["LEGIONES DAEMONICA"],
+    )
+    enemy_unit = _make_unit("Enemy Unit", keywords=["INFANTRY"])
+    daemon_army.add_unit(daemon_unit)
+    enemy_army.add_unit(enemy_unit)
+    game.map.units.extend([daemon_unit, enemy_unit])
+    _deploy_unit(daemon_unit, 0.0, 0.0)
+    _deploy_unit(enemy_unit, 7.0, 0.0)
+
+    game.turn = 2
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.current_player_index = 0
+    game.event_system.publish("phase_start", player=daemon_player, phase=BattleRoundPhases.SHOOTING_PHASE)
+
+    monkeypatch.setattr(game, "_model_can_see_unit", lambda model, unit, game_map=None: True)
+    rolls = iter([4, 1, 4, 6, 2, 3])
+    monkeypatch.setattr("warhammer40k_ai.utility.dice.get_roll", lambda _expr: next(rolls))
+
+    applied = {}
+
+    def _fake_apply_mortal_wounds(target_unit, amount, game_map=None):
+        applied["target"] = target_unit
+        applied["amount"] = int(amount)
+
+    monkeypatch.setattr(daemon_unit, "_apply_mortal_wounds_to_unit", _fake_apply_mortal_wounds)
+
+    skulls_name = _find_stratagem_name(daemon_player, "SKULLS BEGET BLOOD")
+    ok = daemon_player.stratagems.use(
+        skulls_name,
+        unit=daemon_unit,
+        enemy_unit=enemy_unit,
+        phase_name="Shooting phase",
+    )
+    assert ok is True
+    assert daemon_player.command_points == 4
+    assert applied == {
+        "target": enemy_unit,
+        "amount": 3,
+    }
+
+
+def test_sheathed_in_brass_queues_reaction_and_sets_save_characteristic_until_phase_end():
+    game, daemon_player, enemy_player, daemon_army, enemy_army = _build_game()
+    daemon_unit = _make_unit(
+        "Bloodletters",
+        keywords=["KHORNE", "INFANTRY"],
+        faction_keywords=["LEGIONES DAEMONICA"],
+    )
+    for model in list(getattr(daemon_unit, "models", []) or []):
+        model.save = 5
+    enemy_unit = _make_unit("Enemy Shooters", keywords=["INFANTRY"])
+    daemon_army.add_unit(daemon_unit)
+    enemy_army.add_unit(enemy_unit)
+    game.map.units.extend([daemon_unit, enemy_unit])
+    _deploy_unit(daemon_unit, 0.0, 0.0)
+    _deploy_unit(enemy_unit, 10.0, 0.0)
+
+    game.turn = 2
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.current_player_index = 1
+    game.event_system.publish("phase_start", player=enemy_player, phase=BattleRoundPhases.SHOOTING_PHASE)
+
+    game.event_system.publish("shooting_targets_selected", attacking_unit=enemy_unit, target_units=[daemon_unit])
+    pending = daemon_player.stratagems.get_pending_reactions()
+    sheathed_reactions = [
+        reaction
+        for reaction in list(pending or [])
+        if _normalize_name(str(reaction.get("stratagem", "") or "")) == "SHEATHED IN BRASS"
+    ]
+    assert len(sheathed_reactions) == 1
+    assert daemon_unit in list(sheathed_reactions[0].get("candidates", []) or [])
+
+    sheathed_name = _find_stratagem_name(daemon_player, "SHEATHED IN BRASS")
+    ok = daemon_player.stratagems.use(
+        sheathed_name,
+        unit=daemon_unit,
+        attacking_unit=enemy_unit,
+        target_units=[daemon_unit],
+        phase_name="Shooting phase",
+        dequeue=True,
+    )
+    assert ok is True
+    assert daemon_player.command_points == 4
+
+    rules = dict(getattr(daemon_unit, "special_rules", {}) or {})
+    assert bool(rules.get("blood_legion_sheathed_in_brass_active", False)) is True
+    assert int(rules.get("blood_legion_sheathed_in_brass_save_characteristic", 0) or 0) == 3
+
+    profile = WargearProfile(
+        profile_name="Ranged",
+        wargear_data={
+            "range": "24",
+            "A": "1",
+            "BS_WS": "3+",
+            "S": "4",
+            "AP": "0",
+            "D": "1",
+            "description": "",
+        },
+        parent_wargear=SimpleNamespace(name="Test Gun", is_melee=lambda: False, is_ranged=lambda: True),
+    )
+    save_result = profile._save_with_tracking(
+        daemon_unit.models[0],
+        {"attacker_unit": enemy_unit},
+        ap=-2,
+    )
+    assert int(save_result.get("base_save", 0) or 0) == 3
+    assert int(save_result.get("final_save", 0) or 0) == 5
+
+    game.event_system.publish("phase_end", player=enemy_player, phase=BattleRoundPhases.SHOOTING_PHASE)
+    rules = dict(getattr(daemon_unit, "special_rules", {}) or {})
+    assert "blood_legion_sheathed_in_brass_active" not in rules

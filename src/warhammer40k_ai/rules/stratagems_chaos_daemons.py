@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, List
 
+from ..utility import dice as dice_module
 from ..utility.entity_ids import get_entity_id
 
 
@@ -369,6 +370,256 @@ class ChaosDaemonsStratagemMixin:
         candidates.sort(key=self._chaos_daemons_sort_key)
         return candidates
 
+    def _blood_legion_unit_is_engaged(self, unit: Any) -> bool:
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        root = self._chaos_daemons_root(unit)
+        if game_map is None or root is None:
+            return False
+        get_enemy_units = getattr(game_map, "get_enemy_units", None)
+        if not callable(get_enemy_units):
+            return False
+        for enemy in list(get_enemy_units(root) or []):
+            enemy_root = self._chaos_daemons_root(enemy)
+            if enemy_root is None:
+                continue
+            is_alive = getattr(enemy_root, "is_alive", None)
+            if callable(is_alive):
+                if not bool(is_alive()):
+                    continue
+            elif not bool(getattr(enemy_root, "is_alive", True)):
+                continue
+            if not bool(getattr(enemy_root, "deployed", False)):
+                continue
+            if bool(game_map.is_within_engagement_range(root, enemy_root)):
+                return True
+        return False
+
+    def _blood_legion_enemy_engaged_with_friendly(self, enemy_unit: Any) -> bool:
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        enemy_root = self._chaos_daemons_root(enemy_unit)
+        if game_map is None or enemy_root is None:
+            return False
+        get_enemy_units = getattr(game_map, "get_enemy_units", None)
+        if not callable(get_enemy_units):
+            return False
+        for other in list(get_enemy_units(enemy_root) or []):
+            other_root = self._chaos_daemons_root(other)
+            if other_root is None:
+                continue
+            parent_army = getattr(other_root, "get_parent_army", lambda: None)()
+            if parent_army is None or getattr(parent_army, "player", None) is not self.player:
+                continue
+            is_alive = getattr(other_root, "is_alive", None)
+            if callable(is_alive):
+                if not bool(is_alive()):
+                    continue
+            elif not bool(getattr(other_root, "is_alive", True)):
+                continue
+            if not bool(getattr(other_root, "deployed", False)):
+                continue
+            if bool(game_map.is_within_engagement_range(enemy_root, other_root)):
+                return True
+        return False
+
+    def _blood_legion_source_can_see_enemy(self, source_unit: Any, enemy_unit: Any) -> bool:
+        game = getattr(self, "game", None)
+        game_map = getattr(game, "map", None) if game is not None else None
+        source_root = self._chaos_daemons_root(source_unit)
+        enemy_root = self._chaos_daemons_root(enemy_unit)
+        if game_map is None or source_root is None or enemy_root is None:
+            return False
+        source_models = list(getattr(source_root, "get_attached_unit_models", lambda: [])() or [])
+        can_see_unit = getattr(game, "_model_can_see_unit", None)
+        if callable(can_see_unit):
+            for model in source_models:
+                is_alive = getattr(model, "is_alive", True)
+                if callable(is_alive):
+                    if not bool(is_alive()):
+                        continue
+                elif not bool(is_alive):
+                    continue
+                if bool(can_see_unit(model, enemy_root, game_map=game_map)):
+                    return True
+            return False
+        has_los = getattr(source_root, "_has_line_of_sight_to_target", None)
+        if callable(has_los):
+            for model in source_models:
+                is_alive = getattr(model, "is_alive", True)
+                if callable(is_alive):
+                    if not bool(is_alive()):
+                        continue
+                elif not bool(is_alive):
+                    continue
+                if bool(has_los(model, enemy_root, game_map)):
+                    return True
+            return False
+        can_model_see_model = getattr(game_map, "can_model_see_model", None)
+        if callable(can_model_see_model):
+            enemy_models = list(getattr(enemy_root, "get_alive_models", lambda: [])() or [])
+            for source_model in source_models:
+                source_alive = getattr(source_model, "is_alive", True)
+                if callable(source_alive):
+                    if not bool(source_alive()):
+                        continue
+                elif not bool(source_alive):
+                    continue
+                for enemy_model in enemy_models:
+                    enemy_alive = getattr(enemy_model, "is_alive", True)
+                    if callable(enemy_alive):
+                        if not bool(enemy_alive()):
+                            continue
+                    elif not bool(enemy_alive):
+                        continue
+                    if bool(can_model_see_model(source_model, enemy_model)):
+                        return True
+            return False
+        return True
+
+    def _is_khorne_legiones_infantry_or_mounted_unit(self, unit: Any) -> bool:
+        root = self._chaos_daemons_root(unit)
+        if root is None:
+            return False
+        if not self._is_khorne_legiones_unit(root):
+            return False
+        has_any_keyword = getattr(root, "has_any_keyword", None)
+        if not callable(has_any_keyword):
+            return False
+        return bool(has_any_keyword("INFANTRY") or has_any_keyword("MOUNTED"))
+
+    def _blood_legion_skulls_beget_blood_source_candidates(self) -> List[Any]:
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        if game_map is None:
+            return []
+        candidates: List[Any] = []
+        for root in self._blood_legion_khorne_battlefield_unit_candidates():
+            if not self._is_khorne_legiones_infantry_or_mounted_unit(root):
+                continue
+            if bool(getattr(getattr(root, "round_state", None), "fell_back_this_round", False)):
+                continue
+            if self._blood_legion_unit_is_engaged(root):
+                continue
+            candidates.append(root)
+        candidates.sort(key=self._chaos_daemons_sort_key)
+        return candidates
+
+    def _blood_legion_skulls_beget_blood_enemy_candidates(self, source_unit: Any) -> List[Any]:
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        source_root = self._chaos_daemons_root(source_unit)
+        if game_map is None or source_root is None:
+            return []
+        get_enemy_units = getattr(game_map, "get_enemy_units", None)
+        if not callable(get_enemy_units):
+            return []
+        candidates: List[Any] = []
+        seen: set[str] = set()
+        for enemy in list(get_enemy_units(source_root) or []):
+            enemy_root = self._chaos_daemons_root(enemy)
+            if enemy_root is None:
+                continue
+            uid = self._chaos_daemons_sort_key(enemy_root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            is_alive = getattr(enemy_root, "is_alive", None)
+            if callable(is_alive):
+                if not bool(is_alive()):
+                    continue
+            elif not bool(getattr(enemy_root, "is_alive", True)):
+                continue
+            if not bool(getattr(enemy_root, "deployed", False)):
+                continue
+            if self._blood_legion_enemy_engaged_with_friendly(enemy_root):
+                continue
+            distance = float(game_map.get_distance_between_units(source_root, enemy_root))
+            if distance > 8.0:
+                continue
+            if not self._blood_legion_source_can_see_enemy(source_root, enemy_root):
+                continue
+            candidates.append(enemy_root)
+        candidates.sort(key=self._chaos_daemons_sort_key)
+        return candidates
+
+    def _blood_legion_sheathed_in_brass_candidates(self, *, attacking_unit: Any, target_units: List[Any]) -> List[Any]:
+        attacker_root = self._chaos_daemons_root(attacking_unit)
+        if attacker_root is None:
+            return []
+        attacker_army = getattr(attacker_root, "get_parent_army", lambda: None)()
+        if attacker_army is None or getattr(attacker_army, "player", None) is self.player:
+            return []
+        valid_ids = {self._chaos_daemons_sort_key(candidate) for candidate in self._blood_legion_khorne_battlefield_unit_candidates()}
+        candidates: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._chaos_daemons_root(unit)
+            if root is None:
+                continue
+            uid = self._chaos_daemons_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if uid not in valid_ids:
+                continue
+            is_alive = getattr(root, "is_alive", None)
+            if callable(is_alive):
+                if not bool(is_alive()):
+                    continue
+            elif not bool(getattr(root, "is_alive", True)):
+                continue
+            if not bool(getattr(root, "deployed", False)):
+                continue
+            parent_army = getattr(root, "get_parent_army", lambda: None)()
+            if parent_army is None or getattr(parent_army, "player", None) is not self.player:
+                continue
+            candidates.append(root)
+        candidates.sort(key=self._chaos_daemons_sort_key)
+        return candidates
+
+    def _queue_blood_legion_shooting_target_reactions(self, *, attacking_unit: Any, target_units: List[Any]) -> None:
+        if self.player is None or self.game is None:
+            return
+        if not self._is_blood_legion_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        stratagem = self.get_by_name("SHEATHED IN BRASS")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if (stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._blood_legion_sheathed_in_brass_candidates(
+            attacking_unit=attacking_unit,
+            target_units=list(target_units or []),
+        )
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "shooting_targets_selected":
+                continue
+            if self._chaos_daemons_normalize_stratagem_name(reaction.get("stratagem", "")) != "SHEATHED IN BRASS":
+                continue
+            if reaction.get("attacking_unit") is attacking_unit:
+                return
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": int(getattr(stratagem, "cp_cost", 0) or 0),
+            "attacking_unit": attacking_unit,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
     def _queue_blood_legion_move_end_reactions(self, *, unit: Any, action: str) -> None:
         if str(action or "").strip().lower() != "fall_back":
             return
@@ -432,11 +683,123 @@ class ChaosDaemonsStratagemMixin:
 
     def _use_chaos_daemons_blood_legion_stratagem(self, stratagem: Any, **kwargs) -> bool | None:
         name_u = self._chaos_daemons_normalize_stratagem_name(getattr(stratagem, "name", ""))
+        if name_u == "SKULLS BEGET BLOOD":
+            return self._use_blood_legion_skulls_beget_blood(stratagem, **kwargs)
+        if name_u == "SHEATHED IN BRASS":
+            return self._use_blood_legion_sheathed_in_brass(stratagem, **kwargs)
         if name_u == "GORE-HUNGRY ONSLAUGHT":
             return self._use_blood_legion_gore_hungry_onslaught(stratagem, **kwargs)
         if name_u == "FOOLS' FLIGHT":
             return self._use_blood_legion_fools_flight(stratagem, **kwargs)
         return None
+
+    def _use_blood_legion_skulls_beget_blood(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_blood_legion_detachment():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            return False
+        root = self._chaos_daemons_root(unit)
+        if root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return False
+        source_ids = {self._chaos_daemons_sort_key(candidate) for candidate in self._blood_legion_skulls_beget_blood_source_candidates()}
+        if self._chaos_daemons_sort_key(root) not in source_ids:
+            return False
+        enemy_unit = kwargs.get("enemy_unit") or kwargs.get("enemy_target") or kwargs.get("target_enemy")
+        enemy_candidates = self._blood_legion_skulls_beget_blood_enemy_candidates(root)
+        if enemy_unit is None and len(enemy_candidates) == 1:
+            enemy_unit = enemy_candidates[0]
+        if enemy_unit is None:
+            return False
+        enemy_root = self._chaos_daemons_root(enemy_unit)
+        if enemy_root is None:
+            return False
+        enemy_ids = {self._chaos_daemons_sort_key(candidate) for candidate in enemy_candidates}
+        if self._chaos_daemons_sort_key(enemy_root) not in enemy_ids:
+            return False
+        cp_cost = self._chaos_daemons_effective_cp_cost(stratagem, target_unit=root)
+        if not self.player.spend_command_points(cp_cost, reason=f"Stratagem: {stratagem.name}", source="stratagem"):
+            return False
+        rolls = [int(dice_module.get_roll("D6") or 0) for _ in range(6)]
+        mortal_wounds = int(sum(1 for roll in rolls if int(roll or 0) >= 4))
+        if mortal_wounds > 0:
+            apply_mortal_wounds = getattr(root, "_apply_mortal_wounds_to_unit", None)
+            if callable(apply_mortal_wounds):
+                apply_mortal_wounds(enemy_root, int(mortal_wounds), game_map=getattr(self.game, "map", None))
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
+        return True
+
+    def _use_blood_legion_sheathed_in_brass(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_blood_legion_detachment():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        attacking_unit = kwargs.get("attacking_unit")
+        target_units = list(kwargs.get("target_units") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None or attacking_unit is None:
+            normalized_name = self._chaos_daemons_normalize_stratagem_name(getattr(stratagem, "name", ""))
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if self._chaos_daemons_normalize_stratagem_name(reaction.get("stratagem", "")) != normalized_name:
+                    continue
+                if unit is None:
+                    unit = reaction.get("unit") or reaction.get("target_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if attacking_unit is None:
+                    attacking_unit = reaction.get("attacking_unit")
+                if not target_units:
+                    target_units = list(reaction.get("target_units") or [])
+                break
+        if unit is None or attacking_unit is None:
+            return False
+        root = self._chaos_daemons_root(unit)
+        if root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "shooting phase":
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return False
+        valid_ids = {
+            self._chaos_daemons_sort_key(candidate)
+            for candidate in self._blood_legion_sheathed_in_brass_candidates(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or candidates or [root]),
+            )
+        }
+        if self._chaos_daemons_sort_key(root) not in valid_ids:
+            return False
+        cp_cost = self._chaos_daemons_effective_cp_cost(stratagem, target_unit=root)
+        if not self.player.spend_command_points(cp_cost, reason=f"Stratagem: {stratagem.name}", source="stratagem"):
+            return False
+        special_rules = getattr(root, "special_rules", None)
+        if not isinstance(special_rules, dict):
+            special_rules = {}
+        special_rules["blood_legion_sheathed_in_brass_active"] = True
+        special_rules["blood_legion_sheathed_in_brass_save_characteristic"] = 3
+        special_rules["blood_legion_sheathed_in_brass_expires_phase"] = "SHOOTING_PHASE"
+        special_rules["blood_legion_sheathed_in_brass_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        special_rules["blood_legion_sheathed_in_brass_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        special_rules["blood_legion_sheathed_in_brass_source"] = stratagem.name
+        root.special_rules = special_rules
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
+        return True
 
     def _use_blood_legion_gore_hungry_onslaught(self, stratagem: Any, **kwargs) -> bool:
         unit = kwargs.get("unit") or kwargs.get("target_unit")
@@ -547,7 +910,7 @@ class ChaosDaemonsStratagemMixin:
 
     def _cleanup_blood_legion_phase_end_effects(self, *, phase: Any) -> None:
         phase_name = str(getattr(phase, "name", "") or "").strip().upper()
-        if phase_name not in ("MOVEMENT_PHASE", "CHARGE_PHASE"):
+        if phase_name not in ("MOVEMENT_PHASE", "CHARGE_PHASE", "SHOOTING_PHASE"):
             return
         if self.player is None:
             return
@@ -567,26 +930,40 @@ class ChaosDaemonsStratagemMixin:
             special_rules = getattr(root, "special_rules", None)
             if not isinstance(special_rules, dict):
                 continue
-            expires_phase = str(special_rules.get("blood_legion_gore_hungry_onslaught_expires_phase", "") or "").strip().upper()
-            if not special_rules.get("blood_legion_gore_hungry_onslaught_active"):
-                continue
-            if expires_phase and expires_phase != phase_name:
-                continue
-            added = set(special_rules.get("blood_legion_gore_hungry_onslaught_added_phase_move_terrain_only_types") or [])
-            if added:
-                current = list(special_rules.get("bearer_unit_phase_move_terrain_only_types") or [])
-                kept = [move_type for move_type in current if move_type not in added]
-                if kept:
-                    special_rules["bearer_unit_phase_move_terrain_only_types"] = kept
-                else:
-                    special_rules.pop("bearer_unit_phase_move_terrain_only_types", None)
-            for key in (
-                "blood_legion_gore_hungry_onslaught_active",
-                "blood_legion_gore_hungry_onslaught_expires_phase",
-                "blood_legion_gore_hungry_onslaught_turn_owner",
-                "blood_legion_gore_hungry_onslaught_turn",
-                "blood_legion_gore_hungry_onslaught_source",
-                "blood_legion_gore_hungry_onslaught_added_phase_move_terrain_only_types",
-            ):
-                special_rules.pop(key, None)
-            root.special_rules = special_rules
+            changed = False
+            if phase_name in ("MOVEMENT_PHASE", "CHARGE_PHASE"):
+                expires_phase = str(special_rules.get("blood_legion_gore_hungry_onslaught_expires_phase", "") or "").strip().upper()
+                if special_rules.get("blood_legion_gore_hungry_onslaught_active") and (not expires_phase or expires_phase == phase_name):
+                    added = set(special_rules.get("blood_legion_gore_hungry_onslaught_added_phase_move_terrain_only_types") or [])
+                    if added:
+                        current = list(special_rules.get("bearer_unit_phase_move_terrain_only_types") or [])
+                        kept = [move_type for move_type in current if move_type not in added]
+                        if kept:
+                            special_rules["bearer_unit_phase_move_terrain_only_types"] = kept
+                        else:
+                            special_rules.pop("bearer_unit_phase_move_terrain_only_types", None)
+                    for key in (
+                        "blood_legion_gore_hungry_onslaught_active",
+                        "blood_legion_gore_hungry_onslaught_expires_phase",
+                        "blood_legion_gore_hungry_onslaught_turn_owner",
+                        "blood_legion_gore_hungry_onslaught_turn",
+                        "blood_legion_gore_hungry_onslaught_source",
+                        "blood_legion_gore_hungry_onslaught_added_phase_move_terrain_only_types",
+                    ):
+                        special_rules.pop(key, None)
+                    changed = True
+            if phase_name == "SHOOTING_PHASE":
+                expires_phase = str(special_rules.get("blood_legion_sheathed_in_brass_expires_phase", "") or "").strip().upper()
+                if special_rules.get("blood_legion_sheathed_in_brass_active") and (not expires_phase or expires_phase == phase_name):
+                    for key in (
+                        "blood_legion_sheathed_in_brass_active",
+                        "blood_legion_sheathed_in_brass_save_characteristic",
+                        "blood_legion_sheathed_in_brass_expires_phase",
+                        "blood_legion_sheathed_in_brass_turn_owner",
+                        "blood_legion_sheathed_in_brass_turn",
+                        "blood_legion_sheathed_in_brass_source",
+                    ):
+                        special_rules.pop(key, None)
+                    changed = True
+            if changed:
+                root.special_rules = special_rules

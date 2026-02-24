@@ -240,6 +240,35 @@ _BLOOD_LEGION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "trigger_action": "fall_back",
         },
     ),
+    "000009816004": StratagemToolDescriptor(
+        stratagem_id="000009816004",
+        name="Skulls Beget Blood",
+        timing="shooting_phase",
+        target="khorne_legiones_daemonica_infantry_or_mounted_not_fell_back_not_engaged",
+        duration="immediate",
+        effect="mortal_wound_burst",
+        cp_cost=1,
+        range_in=8.0,
+        effect_params={
+            "roll_count": 6,
+            "success_on": 4,
+            "mortal_wounds_per_success": 1,
+            "target_must_be_visible": True,
+            "target_must_not_be_engaged_with_friendly": True,
+        },
+    ),
+    "000009816007": StratagemToolDescriptor(
+        stratagem_id="000009816007",
+        name="Sheathed in Brass",
+        timing="opponent_shooting_phase_after_targets_selected",
+        target="khorne_legiones_daemonica_unit_targeted",
+        duration="until_end_of_phase",
+        effect="set_save_characteristic",
+        cp_cost=1,
+        effect_params={
+            "save_characteristic": 3,
+        },
+    ),
 }
 
 _BLOOD_LEGION_STRATAGEM_BY_NAME = {

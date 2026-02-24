@@ -17047,6 +17047,24 @@ class WargearProfile:
                         save_result["special_effects"].append(f"Save characteristic set ({save_reason})")
         except Exception:
             save_base = target_model.save
+        # Chaos Daemons (Blood Legion): SHEATHED IN BRASS sets Save characteristic to 3+ this phase.
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            t_root = t_unit.get_attached_unit_root() if (t_unit is not None and hasattr(t_unit, "get_attached_unit_root")) else t_unit
+            sr = getattr(t_root, "special_rules", None) if t_root is not None else None
+            if isinstance(sr, dict) and bool(sr.get("blood_legion_sheathed_in_brass_active")):
+                phase_key = self._resolve_phase_key(
+                    attacker_unit=attack_instance.get("attacker_unit"),
+                    target_unit=t_root,
+                )
+                expires_phase = str(sr.get("blood_legion_sheathed_in_brass_expires_phase", "") or "").strip().upper()
+                if not expires_phase or not phase_key or phase_key == expires_phase:
+                    save_base = int(sr.get("blood_legion_sheathed_in_brass_save_characteristic", 3) or 3)
+                    save_result["base_save"] = int(save_base)
+                    source = str(sr.get("blood_legion_sheathed_in_brass_source", "") or "SHEATHED IN BRASS").strip()
+                    save_result["special_effects"].append(f"Save characteristic set ({source})")
+        except Exception:
+            pass
         # Astra Militarum: Recon Element (Masters of Camouflage) can improve Save characteristic
         # by 1 (to a maximum of 3+) when another cover source is also present.
         try:

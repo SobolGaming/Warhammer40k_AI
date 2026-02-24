@@ -258,6 +258,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "FICKLEFIRE",
     "GORE-HUNGRY ONSLAUGHT",
     "GORE\u2011HUNGRY ONSLAUGHT",
+    "SKULLS BEGET BLOOD",
+    "SHEATHED IN BRASS",
     "FLICKERING REALITY",
     "IMMORTAL FURY",
     "FURY UNLEASHED",
@@ -423,6 +425,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "ENDLESS PURSUIT OF VIOLENCE",
     "FOOLS' FLIGHT",
     "FOOLS\u2019 FLIGHT",
+    "SHEATHED IN BRASS",
     "FLICKERING REALITY",
     "IN THE SHADOW OF BRASS IDOLS",
     "THE REALM OF CHAOS",
@@ -1579,6 +1582,7 @@ class StratagemManager(
             "'ARD AS NAILS",
             "\u2019ARD AS NAILS",
             "DAEMONIC INVULNERABILITY",
+            "SHEATHED IN BRASS",
             "AEGIS ETERNAL",
             "CONTEMPTUOUS DISREGARD",
             "REACTIVE DISEMBARKATION",
@@ -1736,6 +1740,7 @@ class StratagemManager(
             "FICKLEFIRE",
             "FLICKERING REALITY",
             "GORE-HUNGRY ONSLAUGHT",
+            "SHEATHED IN BRASS",
             "IMPOSSIBLE ECLIPSE",
             "PRETERNATURAL AGILITY",
             "PYROGENESIS",
@@ -4112,6 +4117,8 @@ class StratagemManager(
             "DRAUGHT OF TERROR": "Target: LEGIONES DAEMONICA unit (not yet shot/fought)",
             "DELIRIUM UNMADE": "Target: up to two TZEENTCH LEGIONES DAEMONICA units (end of opponent Fight phase)",
             "FOOLS' FLIGHT": "Target: LEGIONES DAEMONICA KHORNE unit within 6\" of enemy unit that Fell Back and eligible to charge it",
+            "SHEATHED IN BRASS": "Target: LEGIONES DAEMONICA KHORNE unit selected as a target of enemy shooting attacks",
+            "SKULLS BEGET BLOOD": "Target: LEGIONES DAEMONICA KHORNE INFANTRY/MOUNTED unit (not Fell Back, not in Engagement Range); select visible enemy within 8\" not in Engagement Range of your units",
             "PLAGUESURGE": "Target: your DEATH GUARD WARLORD",
             "LEECHSPORE ERUPTION": "Target: wounded DEATH GUARD model; select enemy unit within 3\"",
             "OVERWHELMING GENEROSITY": "Target: DEATH GUARD CHARACTER unit; mark one visible enemy unit",
@@ -8392,6 +8399,13 @@ class StratagemManager(
             raise
         try:
             self._queue_imperial_agents_veiled_blade_shooting_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_blood_legion_shooting_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )
