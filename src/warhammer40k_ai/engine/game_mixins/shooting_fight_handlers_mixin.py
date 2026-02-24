@@ -6136,6 +6136,103 @@ class GameShootingFightHandlersMixin:
                     pending_model_ids.add(model_id)
                 break
 
+    def _on_fight_unit_selected_channelled_force(self, unit=None, selecting_player=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        if str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper() != "FIGHT_PHASE":
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        if not root.is_alive() or not getattr(root, "deployed", True):
+            return
+        if root.is_in_reserves() or root.is_embarked:
+            return
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        owner = getattr(army, "player", None) if army is not None else None
+        if owner is None:
+            return
+        if selecting_player is not None and selecting_player is not owner:
+            return
+        gk_mgr = getattr(army, "grey_knights_detachments", None) if army is not None else None
+        applies_fn = getattr(gk_mgr, "channelled_force_applies", None) if gk_mgr is not None else None
+        if not callable(applies_fn) or not bool(applies_fn(root, game=self)):
+            return
+        leadership_fn = getattr(root, "pass_leadership_check", None)
+        if not callable(leadership_fn):
+            return
+
+        unit_id = str(get_entity_id(root) or "")
+        owner_id = str(getattr(owner, "id", "") or "")
+        try:
+            battle_round = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            battle_round = 0
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "channelled_force":
+                    continue
+                if str(ctx.get("unit_id", "") or "") != unit_id:
+                    continue
+                if str(ctx.get("turn_owner_id", "") or "") != owner_id:
+                    continue
+                if int(ctx.get("battle_round", battle_round) or battle_round) != battle_round:
+                    continue
+                return
+
+        options = [
+            DecisionOption.create(
+                "None",
+                payload={
+                    "action": "skip",
+                    "unit_id": unit_id,
+                    "summary": "Do not take the Leadership test.",
+                },
+            ),
+            DecisionOption.create(
+                "Lethal Hits",
+                payload={
+                    "unit_id": unit_id,
+                    "choice": "LETHAL_HITS",
+                    "summary": "On pass: psychic melee weapons gain [LETHAL HITS] until end of phase.",
+                },
+            ),
+            DecisionOption.create(
+                "Sustained Hits 1",
+                payload={
+                    "unit_id": unit_id,
+                    "choice": "SUSTAINED_HITS_1",
+                    "summary": "On pass: psychic melee weapons gain [SUSTAINED HITS 1] until end of phase.",
+                },
+            ),
+        ]
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"Channelled Force: choose an effect for {getattr(root, 'name', 'Unit')} (or None).",
+            player_id=getattr(owner, "id", None),
+            options=options,
+            context={
+                "ability": "channelled_force",
+                "ability_name": "Channelled Force",
+                "phase": "Fight phase",
+                "unit_id": unit_id,
+                "battle_round": int(battle_round or 0),
+                "turn_owner_id": owner_id,
+                "candidate_choices": ["LETHAL_HITS", "SUSTAINED_HITS_1"],
+                "optional": True,
+            },
+        )
+        self.request_decision(request)
+
     def _on_fight_unit_selected_harbinger_of_death(self, unit=None, **_kwargs) -> None:
         if unit is None:
             return

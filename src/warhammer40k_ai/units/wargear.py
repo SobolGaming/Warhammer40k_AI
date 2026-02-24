@@ -7391,6 +7391,27 @@ class WargearProfile:
                         )
         except Exception:
             pass
+        # Grey Knights (Banishers): Channelled Force.
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            gk_mgr = getattr(army, "grey_knights_detachments", None) if army is not None else None
+            channelled_fn = getattr(gk_mgr, "channelled_force_bonus", None) if gk_mgr is not None else None
+            if callable(channelled_fn):
+                channelled_lethal, channelled_sustained, channelled_source = channelled_fn(
+                    attacker,
+                    weapon_profile=self,
+                    game=None,
+                )
+                if channelled_lethal:
+                    bonus_lethal = True
+                if int(channelled_sustained or 0) > 0:
+                    _set_bonus_sustained(
+                        int(channelled_sustained or 0),
+                        str(channelled_source or "Channelled Force"),
+                    )
+        except Exception:
+            pass
         # Imperial Agents (Ordo Xenos Alien Hunters): Deathwatch Mission Tactics.
         try:
             unit = getattr(attacker, "parent_unit", None)

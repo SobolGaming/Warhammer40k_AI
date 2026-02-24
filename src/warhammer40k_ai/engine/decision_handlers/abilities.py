@@ -3425,6 +3425,46 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not callable(is_valid) or not bool(is_valid(pack_key, game=game)):
             return ("Master of Wolves choice is not legal right now.",)
         return ()
+    if ability == "channelled_force":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, payload.get("unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Channelled Force source unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return ("Channelled Force source unit was not found.",)
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        if source_army is None:
+            return ("Channelled Force source army was not found.",)
+        gk_mgr = getattr(source_army, "grey_knights_detachments", None)
+        if gk_mgr is None or not bool(getattr(gk_mgr, "is_banishers", lambda: False)()):
+            return ("Channelled Force requires the Banishers detachment.",)
+        applies_fn = getattr(gk_mgr, "channelled_force_applies", None)
+        if not callable(applies_fn) or not bool(applies_fn(source_root, game=game)):
+            return ("The selected unit is not eligible for Channelled Force.",)
+        leadership_fn = getattr(source_root, "pass_leadership_check", None)
+        if not callable(leadership_fn):
+            return ("Channelled Force requires a Leadership test handler.",)
+        if is_skip_choice(request, result):
+            return ()
+        choice = str(payload.get("choice") or payload.get("choice_key") or payload.get("key") or "").strip().upper()
+        normalize_fn = getattr(gk_mgr, "_normalize_channelled_force_choice", None)
+        if callable(normalize_fn):
+            choice = str(normalize_fn(choice) or "").strip().upper()
+        if choice not in {"LETHAL_HITS", "SUSTAINED_HITS_1"}:
+            return ("Channelled Force choice must be Lethal Hits or Sustained Hits 1.",)
+        candidate_choices = {
+            str(v or "").strip().upper()
+            for v in list(ctx.get("candidate_choices", []) or [])
+            if str(v or "").strip()
+        }
+        if candidate_choices and choice not in candidate_choices:
+            return ("Channelled Force choice is not an eligible candidate.",)
+        return ()
     if ability == "master_of_wolves_ferocious_strike":
         payload = _option_payload(request, result)
         source_unit = resolve_unit(game, payload.get("unit_id") or ctx.get("unit_id"))
@@ -5780,6 +5820,82 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         return {
             "unit_id": str(get_entity_id(source_root) or ""),
             "choice": choice,
+            "source": ability_name,
+        }
+    if ability == "channelled_force":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, payload.get("unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return None
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        gk_mgr = getattr(source_army, "grey_knights_detachments", None) if source_army is not None else None
+        if gk_mgr is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None and source_army is not None:
+            player = getattr(source_army, "player", None)
+        ability_name = str(ctx.get("ability_name", "") or "Channelled Force").strip() or "Channelled Force"
+        if is_skip_choice(request, result):
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {getattr(source_root, 'name', 'Unit')} selected none.",
+            )
+            return {
+                "unit_id": str(get_entity_id(source_root) or ""),
+                "choice": "",
+                "skipped": True,
+                "source": ability_name,
+            }
+        choice = str(payload.get("choice") or payload.get("choice_key") or payload.get("key") or "").strip().upper()
+        normalize_fn = getattr(gk_mgr, "_normalize_channelled_force_choice", None)
+        if callable(normalize_fn):
+            choice = str(normalize_fn(choice) or "").strip().upper()
+        if choice not in {"LETHAL_HITS", "SUSTAINED_HITS_1"}:
+            return None
+        leadership_fn = getattr(source_root, "pass_leadership_check", None)
+        if not callable(leadership_fn):
+            return None
+        passed = bool(leadership_fn())
+        applied = False
+        if passed:
+            apply_choice = getattr(gk_mgr, "apply_channelled_force_choice", None)
+            if callable(apply_choice):
+                applied = bool(apply_choice(source_root, choice, game=game, player=player))
+        if passed and applied:
+            label = "Lethal Hits" if choice == "LETHAL_HITS" else "Sustained Hits 1"
+            _log_action_for_players(
+                game,
+                player,
+                (
+                    f"{ability_name}: {getattr(source_root, 'name', 'Unit')} passed its Leadership test and "
+                    f"selected {label} for psychic melee weapons until end of phase."
+                ),
+            )
+        elif passed:
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {getattr(source_root, 'name', 'Unit')} passed its Leadership test, but no effect was applied.",
+            )
+        else:
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {getattr(source_root, 'name', 'Unit')} failed its Leadership test; no effect applied.",
+            )
+        return {
+            "unit_id": str(get_entity_id(source_root) or ""),
+            "choice": choice,
+            "leadership_passed": bool(passed),
+            "applied": bool(applied),
             "source": ability_name,
         }
     if ability == "great_wolf_watches_charge":

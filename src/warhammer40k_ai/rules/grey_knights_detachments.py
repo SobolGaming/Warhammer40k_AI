@@ -28,6 +28,11 @@ class GreyKnightsDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Augurium Task Force")
 
+    def is_banishers(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Banishers")
+
     def is_warpbane_task_force(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
             return False
@@ -375,3 +380,185 @@ class GreyKnightsDetachmentManager(DetachmentManagerBase):
             except Exception:
                 continue
         return True
+
+    @staticmethod
+    def _normalize_channelled_force_choice(choice: str) -> str:
+        raw = str(choice or "").strip().upper().replace("-", "_").replace(" ", "_")
+        if raw in {"LETHAL", "LETHAL_HITS", "LETHALHITS"}:
+            return "LETHAL_HITS"
+        if raw in {"SUSTAINED", "SUSTAINED_HITS", "SUSTAINED_HITS_1", "SUSTAINEDHITS1"}:
+            return "SUSTAINED_HITS_1"
+        return raw
+
+    def _attached_root(self, unit):
+        if unit is None:
+            return None
+        try:
+            return unit.get_attached_unit_root()
+        except Exception:
+            return unit
+
+    def _channelled_force_root_is_eligible(self, unit) -> bool:
+        if not self.is_banishers():
+            return False
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        try:
+            if root.get_parent_army() is not self.army:
+                return False
+        except Exception:
+            return False
+        if not self._is_grey_knights_unit(root):
+            return False
+        if not self._unit_is_active(root):
+            return False
+        return True
+
+    def channelled_force_has_psychic_melee_weapons(self, unit) -> bool:
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        get_models = getattr(root, "get_attached_unit_models", None)
+        if callable(get_models):
+            models = list(get_models() or [])
+        else:
+            models = list(getattr(root, "models", []) or [])
+        try:
+            models = sorted(models, key=lambda m: str(get_entity_id(m) or ""))
+        except Exception:
+            models = list(models)
+        for model in list(models or []):
+            if model is None or not bool(getattr(model, "is_alive", True)):
+                continue
+            for wargear in list(getattr(model, "wargear", []) or []):
+                if wargear is None:
+                    continue
+                is_melee = getattr(wargear, "is_melee", None)
+                if not callable(is_melee) or not bool(is_melee()):
+                    continue
+                profiles = getattr(wargear, "profiles", None)
+                if isinstance(profiles, dict):
+                    profile_values = list(profiles.values())
+                else:
+                    profile_values = []
+                for profile in list(profile_values or []):
+                    if profile is None:
+                        continue
+                    is_psychic = getattr(profile, "is_psychic", None)
+                    if callable(is_psychic) and bool(is_psychic()):
+                        return True
+        return False
+
+    def channelled_force_applies(self, unit, *, game=None) -> bool:
+        _ = game
+        if not self._channelled_force_root_is_eligible(unit):
+            return False
+        return True
+
+    def clear_channelled_force_state(self, unit) -> None:
+        root = self._attached_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in (
+            "channelled_force_lethal_hits_active",
+            "channelled_force_sustained_hits_active",
+            "channelled_force_expires_phase",
+            "channelled_force_turn",
+            "channelled_force_turn_owner",
+            "channelled_force_source",
+        ):
+            sr.pop(key, None)
+        root.special_rules = sr
+
+    def apply_channelled_force_choice(self, unit, choice: str, *, game=None, player=None) -> bool:
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        if not self._channelled_force_root_is_eligible(root):
+            return False
+        choice_key = self._normalize_channelled_force_choice(choice)
+        if choice_key not in {"LETHAL_HITS", "SUSTAINED_HITS_1"}:
+            return False
+        game_obj = game
+        if game_obj is None:
+            army_player = getattr(self.army, "player", None)
+            game_obj = getattr(army_player, "game", None) if army_player is not None else None
+        try:
+            turn_now = int(getattr(game_obj, "turn", 0) or 0) if game_obj is not None else 0
+        except Exception:
+            turn_now = 0
+        owner_id = str(getattr(player, "id", "") or "")
+        if not owner_id and game_obj is not None:
+            current = getattr(game_obj, "get_current_player", lambda: None)()
+            owner_id = str(getattr(current, "id", "") or "")
+        if not owner_id:
+            owner_id = str(getattr(getattr(self.army, "player", None), "id", "") or "")
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        if choice_key == "LETHAL_HITS":
+            sr["channelled_force_lethal_hits_active"] = True
+        elif choice_key == "SUSTAINED_HITS_1":
+            sr["channelled_force_sustained_hits_active"] = True
+        sr["channelled_force_expires_phase"] = "FIGHT_PHASE"
+        sr["channelled_force_turn"] = int(turn_now or 0)
+        sr["channelled_force_turn_owner"] = owner_id
+        sr["channelled_force_source"] = "Channelled Force"
+        root.special_rules = sr
+        return True
+
+    def channelled_force_bonus(self, attacker_model, *, weapon_profile=None, game=None) -> tuple[bool, int, str]:
+        if attacker_model is None:
+            return False, 0, ""
+        unit = getattr(attacker_model, "parent_unit", None)
+        root = self._attached_root(unit)
+        if root is None:
+            return False, 0, ""
+        if not self._channelled_force_root_is_eligible(root):
+            return False, 0, ""
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            if parent is None or not bool(getattr(parent, "is_melee", lambda: False)()):
+                return False, 0, ""
+            is_psychic = getattr(weapon_profile, "is_psychic", None)
+            if not callable(is_psychic) or not bool(is_psychic()):
+                return False, 0, ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False, 0, ""
+        lethal = bool(sr.get("channelled_force_lethal_hits_active"))
+        sustained = bool(sr.get("channelled_force_sustained_hits_active"))
+        if not lethal and not sustained:
+            return False, 0, ""
+        game_obj = game
+        if game_obj is None:
+            army_player = getattr(self.army, "player", None)
+            game_obj = getattr(army_player, "game", None) if army_player is not None else None
+        if game_obj is not None:
+            exp = str(sr.get("channelled_force_expires_phase", "") or "").strip().upper()
+            if exp:
+                phase_name = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+                if phase_name and phase_name != exp:
+                    return False, 0, ""
+            owner_id = str(sr.get("channelled_force_turn_owner", "") or "")
+            if owner_id:
+                current = getattr(game_obj, "get_current_player", lambda: None)()
+                current_owner = str(getattr(current, "id", "") or "")
+                if current_owner and current_owner != owner_id:
+                    return False, 0, ""
+            try:
+                effect_turn = int(sr.get("channelled_force_turn", 0) or 0)
+            except Exception:
+                effect_turn = 0
+            try:
+                current_turn = int(getattr(game_obj, "turn", 0) or 0)
+            except Exception:
+                current_turn = 0
+            if effect_turn and current_turn and effect_turn != current_turn:
+                return False, 0, ""
+        source = str(sr.get("channelled_force_source", "") or "Channelled Force").strip() or "Channelled Force"
+        return bool(lethal), (1 if sustained else 0), source

@@ -304,6 +304,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("phase_start", "_on_phase_start_master_of_mechanisms_cleanup"),
                 ("phase_start", "_on_phase_start_master_of_mechanisms"),
                 ("fight_unit_selected", "_on_fight_unit_selected_hammer_aflame"),
+                ("fight_unit_selected", "_on_fight_unit_selected_channelled_force"),
             ],
         )
     )

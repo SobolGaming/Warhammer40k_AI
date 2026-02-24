@@ -512,6 +512,145 @@ class TestGreyKnightsDetachments(unittest.TestCase):
         ]
         self.assertEqual(pending, [])
 
+    def test_channelled_force_passed_test_applies_to_psychic_melee_only(self):
+        from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from warhammer40k_ai.engine.phase import BattleRoundPhases
+        from warhammer40k_ai.units.wargear import WargearProfile
+        from warhammer40k_ai.utility.decision_utils import resolve_decision_value
+
+        game, army_gk, army_enemy, player = _build_game(detachment_type="Banishers")
+        unit = _make_unit(
+            "Strike Squad",
+            keywords=["INFANTRY"],
+            faction_keywords=["GREY KNIGHTS"],
+        )
+        unit.pass_leadership_check = lambda: True
+        unit.deployed = True
+        army_gk.add_unit(unit)
+
+        target = _make_unit(
+            "Enemy",
+            keywords=["INFANTRY"],
+            faction_keywords=["ENEMY"],
+        )
+        army_enemy.add_unit(target)
+        game.rebuild_entity_registry()
+        game.phase = BattleRoundPhases.FIGHT_PHASE
+
+        game.event_system.publish("fight_unit_selected", unit=unit, selecting_player=player)
+
+        request = next(
+            req
+            for req in list(game.decision_queue.list() or [])
+            if str(getattr(req, "decision_type", "") or "") == DECISION_CHOOSE_QUARRY
+            and str((getattr(req, "context", {}) or {}).get("ability", "") or "") == "channelled_force"
+        )
+        option = next(
+            opt
+            for opt in list(getattr(request, "options", []) or [])
+            if str((getattr(opt, "payload", {}) or {}).get("choice", "") or "") == "LETHAL_HITS"
+        )
+        _value, apply_result = resolve_decision_value(game, request, option.option_id, player_id=player.id)
+        self.assertTrue(bool(getattr(apply_result, "ok", False)))
+
+        psychic_parent = SimpleNamespace(name="Psychic Blade", is_melee=lambda: True, is_ranged=lambda: False)
+        psychic_profile = WargearProfile(
+            profile_name="Psychic",
+            wargear_data={
+                "range": "Melee",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "5",
+                "AP": "-2",
+                "D": "2",
+                "description": "",
+            },
+            parent_wargear=psychic_parent,
+        )
+        psychic_profile.is_psychic = lambda: True
+
+        mundane_parent = SimpleNamespace(name="Mundane Blade", is_melee=lambda: True, is_ranged=lambda: False)
+        mundane_profile = WargearProfile(
+            profile_name="Mundane",
+            wargear_data={
+                "range": "Melee",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "5",
+                "AP": "-2",
+                "D": "2",
+                "description": "",
+            },
+            parent_wargear=mundane_parent,
+        )
+        mundane_profile.is_psychic = lambda: False
+
+        psychic_attack = {}
+        psychic_hit = psychic_profile._hit_target_with_tracking(
+            target,
+            unit.models[0],
+            psychic_attack,
+            roll_value=6,
+            allow_rerolls=False,
+            log_roll=False,
+        )
+        self.assertTrue(bool(psychic_attack.get("lethal_hit", False)))
+        self.assertTrue(any("Lethal Hits" in str(s) for s in list(psychic_hit.get("special_effects", []) or [])))
+
+        mundane_attack = {}
+        mundane_profile._hit_target_with_tracking(
+            target,
+            unit.models[0],
+            mundane_attack,
+            roll_value=6,
+            allow_rerolls=False,
+            log_roll=False,
+        )
+        self.assertFalse(bool(mundane_attack.get("lethal_hit", False)))
+
+    def test_channelled_force_failed_test_applies_no_bonus(self):
+        from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from warhammer40k_ai.engine.phase import BattleRoundPhases
+        from warhammer40k_ai.utility.decision_utils import resolve_decision_value
+
+        game, army_gk, army_enemy, player = _build_game(detachment_type="Banishers")
+        unit = _make_unit(
+            "Strike Squad",
+            keywords=["INFANTRY"],
+            faction_keywords=["GREY KNIGHTS"],
+        )
+        unit.pass_leadership_check = lambda: False
+        unit.deployed = True
+        army_gk.add_unit(unit)
+
+        target = _make_unit(
+            "Enemy",
+            keywords=["INFANTRY"],
+            faction_keywords=["ENEMY"],
+        )
+        army_enemy.add_unit(target)
+        game.rebuild_entity_registry()
+        game.phase = BattleRoundPhases.FIGHT_PHASE
+
+        game.event_system.publish("fight_unit_selected", unit=unit, selecting_player=player)
+
+        request = next(
+            req
+            for req in list(game.decision_queue.list() or [])
+            if str(getattr(req, "decision_type", "") or "") == DECISION_CHOOSE_QUARRY
+            and str((getattr(req, "context", {}) or {}).get("ability", "") or "") == "channelled_force"
+        )
+        option = next(
+            opt
+            for opt in list(getattr(request, "options", []) or [])
+            if str((getattr(opt, "payload", {}) or {}).get("choice", "") or "") == "SUSTAINED_HITS_1"
+        )
+        _value, apply_result = resolve_decision_value(game, request, option.option_id, player_id=player.id)
+        self.assertTrue(bool(getattr(apply_result, "ok", False)))
+
+        self.assertFalse(bool(unit.special_rules.get("channelled_force_sustained_hits_active")))
+        self.assertFalse(bool(unit.special_rules.get("channelled_force_lethal_hits_active")))
+
 
 if __name__ == "__main__":
     unittest.main()

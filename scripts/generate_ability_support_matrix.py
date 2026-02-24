@@ -765,6 +765,13 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time a model in a grey knights unit from your army makes a ranged attack that targets a visible target or makes a melee attack reroll a hit roll of \d+",
             r"if that unit is a purifier squad and or is wholly within your armys hallowed ground you can reroll the hit roll instead",
         ),
+        "Channelled Force": (
+            r"each time a grey knights unit from your army is selected to fight that unit can take a leadership test",
+            r"if that test is passed select one of the following rules",
+            r"until the end of the phase that unit has that rule",
+            r"melee weapons equipped by models in this unit with the psychic ability also have the sustained hits 1 ability",
+            r"melee weapons equipped by models in this unit with the psychic ability also have the lethal hits ability",
+        ),
         "Prescient Redeployment": (
             r"from the second battle round onwards at the start of your movement phase if you did not select the maximum number of grey knights units from your army using the gate of infinity ability at the end of your opponents previous turn you can select one grey knights unit from your army that is on the battlefield that could have been selected using the gate of infinity ability",
             r"remove that unit from the battlefield and place it into strategic reserves",
@@ -2759,6 +2766,11 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
             "phase-start control of No Man's Land/opponent deployment zone objectives) grant GREY KNIGHTS hit re-rolls "
             "of 1 on visible ranged attacks or melee; PURIFIER SQUAD or units wholly within Hallowed Ground can re-roll "
             "the Hit roll instead.",
+        ),
+        "Channelled Force": (
+            "Supported",
+            "Banishers: each time an eligible GREY KNIGHTS unit is selected to fight, choose None or a Leadership-test option; "
+            "on a passed test, psychic melee weapons gain either [LETHAL HITS] or [SUSTAINED HITS 1] until end of phase.",
         ),
         "Prescient Redeployment": (
             "Supported",

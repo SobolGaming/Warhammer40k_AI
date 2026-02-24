@@ -5409,6 +5409,75 @@ class GameView:
                     pass
                 return
 
+            if ability == "channelled_force":
+                from ..utility.decision_utils import resolve_decision_command
+                from .decision_ui_utils import option_id_for_action, first_option_id
+
+                dlg = getattr(self, "channelled_force_dialog", None)
+                if dlg is None:
+                    try:
+                        from .dialogs import QuarrySelectionDialog
+                        self.channelled_force_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+                        dlg = self.channelled_force_dialog
+                    except Exception:
+                        dlg = None
+
+                skip_id = option_id_for_action(request, "skip")
+                default_id = skip_id or first_option_id(request)
+                if dlg is None:
+                    if default_id:
+                        resolve_decision_command(
+                            self.game,
+                            request,
+                            default_id,
+                            player_id=getattr(player, "id", None),
+                            result_payload={"skipped": True} if default_id == skip_id else {},
+                        )
+                    return
+
+                source_unit = self._resolve_unit_by_id(ctx.get("unit_id"))
+                source_name = str(getattr(source_unit, "name", "") or "").strip()
+                header = "Choose one effect (or None)."
+                if source_name:
+                    header = f"{source_name}: choose one effect (or None)."
+                subtitle = "Selected choice takes a Leadership test; on pass, psychic melee weapons gain that rule until end of phase."
+
+                def _on_confirm(option_id: str):
+                    resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                def _on_cancel():
+                    if default_id:
+                        resolve_decision_command(
+                            self.game,
+                            request,
+                            default_id,
+                            player_id=getattr(player, "id", None),
+                            result_payload={"skipped": True} if default_id == skip_id else {},
+                        )
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                dlg.show(
+                    title=str(ctx.get("ability_name", "") or "Channelled Force"),
+                    header=header,
+                    subtitle=subtitle,
+                    on_confirm=_on_confirm,
+                    on_cancel=_on_cancel,
+                    decision_request=request,
+                    show_cancel=True,
+                )
+                try:
+                    self.dialog_manager.open(dlg, modal=True)
+                except Exception:
+                    pass
+                return
+
             if ability in ("opponent_shooting_phase_disrupt", "unearthly_power", "risen_rubricae"):
                 from ..utility.decision_utils import resolve_decision_command
                 from .decision_ui_utils import option_id_for_action, first_option_id

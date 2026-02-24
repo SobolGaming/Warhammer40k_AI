@@ -357,6 +357,7 @@ Fight:
 - dance_of_death_dialog: CHOOSE_DANCE_OF_DEATH {choice} (context `unit_id`, `phase_name`, `ability_name`)
 - dread_mob_try_dat_button_fight_dialog: CHOOSE_QUARRY {button_mode, button_effect?} (context `ability="dread_mob_try_dat_button"`, `ability_name="Try Dat Button!"`, `army_id`, `unit_id`, `phase_name`, `trigger="fight"`, `candidate_button_modes[]`, `candidate_button_effects[]`, `optional=false`)
 - harbinger_of_death_dialog: CHOOSE_HARBINGER_OF_DEATH {choice} (context `unit_id`, `model_id`, `weapon_name`, `ability_name`)
+- channelled_force_dialog: CHOOSE_QUARRY {choice | skip} (context `ability="channelled_force"`, `ability_name="Channelled Force"`, `unit_id`, `phase="Fight phase"`, `candidate_choices[]`, `optional=true`)
 - herald_of_ynnead_target_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="herald_of_ynnead"`, `attacker_unit_id`, `model_id`, `keyword`, `ability_name`)
 - strength_from_death_lethal_reprisal_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="aeldari_strength_from_death_lethal_reprisal"`, `ability_name`, `turn`, `turn_owner_id`)
 - strength_from_death_lethal_intent_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="aeldari_strength_from_death_lethal_intent"`, `ability_name`, `turn`, `turn_owner_id`, `optional=true`)
