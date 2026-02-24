@@ -1575,6 +1575,11 @@ class Army:
             for msg in list(we_mgr.validate_detachment_rules() or []):
                 if msg:
                     raise ArmyValidationError(str(msg))
+        dg_mgr = getattr(self, "death_guard_detachments", None)
+        if dg_mgr is not None and hasattr(dg_mgr, "validate_detachment_rules"):
+            for msg in list(dg_mgr.validate_detachment_rules() or []):
+                if msg:
+                    raise ArmyValidationError(str(msg))
         cd_mgr = getattr(self, "chaos_daemons_detachments", None)
         if cd_mgr is not None:
             for msg in list(cd_mgr.validate_detachment_rules() or []):

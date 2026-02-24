@@ -299,6 +299,16 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"battle size battle rounds incursion 2 ?3 strike force 2 ?3 ?4 onslaught 2 ?3 ?4 ?5",
             r"poxwalkers units from your army gain the battleline keyword",
         ),
+        "Reverberant Rancidity": (
+            r"while a plague legions unit from your army is within 7 of one or more death guard units from your army that plague legions unit has the nurgles gift ability",
+            r"while a death guard unit from your army is within 7 of one or more plague legions units from your army add 3 to that death guard units contagion range",
+            r"you can include plague legions units in your army even though they do not have the death guard faction keyword",
+            r"the combined points cost of such units you can include in your army is",
+            r"incursion up to 500 pts",
+            r"strike force up to 1000 pts",
+            r"onslaught up to 1500 pts",
+            r"no plague legions models from your army can be your warlord",
+        ),
         "Ride the Wind": (
             r"in addition at the end of your opponents turn you can select a number of asuryani mounted or vyper units from your army excluding units within engagement range of one or more enemy units then remove those units from the battlefield and place them into strategic reserves",
             r"the maximum number of units you can select depends on the battle size as shown below",
@@ -2601,6 +2611,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Numberless Horde": (
             "Supported",
             "Shamblerot Vectorium: in your Command phase, spawn a new Poxwalkers unit at Starting Strength 10 into Strategic Reserves in battle rounds allowed by battle size (2-3 Incursion, 2-4 Strike Force, 2-5 Onslaught), and Poxwalkers units gain Battleline.",
+        ),
+        "Reverberant Rancidity": (
+            "Supported",
+            "Tallyband Summoners: PLAGUE LEGIONS units within 7\" of friendly DEATH GUARD units gain Nurgle's Gift as contagion sources, DEATH GUARD units within 7\" of friendly PLAGUE LEGIONS units add 3\" to Contagion Range, PLAGUE LEGIONS ally points caps are enforced by battle size, and PLAGUE LEGIONS units cannot be WARLORD.",
         ),
         "Verminous Haze": (
             "Supported",

@@ -16,6 +16,9 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
     _NUMBERLESS_HORDE_SOURCE = "Numberless Horde"
     _NUMBERLESS_HORDE_POXWALKERS_NAME = "Poxwalkers"
     _NUMBERLESS_HORDE_STARTING_STRENGTH = 10
+    _REVERBERANT_RANCIDITY_SOURCE = "Reverberant Rancidity"
+    _REVERBERANT_RANCIDITY_RANGE = 7.0
+    _REVERBERANT_RANCIDITY_CONTAGION_BONUS = 3.0
     _WORLD_BLIGHT_SOURCE = "worldblight"
     _VERMINOUS_HAZE_SCOUT_DISTANCE = 5.0
 
@@ -55,6 +58,11 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Shamblerot Vectorium")
+
+    def is_tallyband_summoners(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Tallyband Summoners")
 
     def _resolve_battle_round(self, *, game=None, battle_round=None) -> Optional[int]:
         if battle_round is not None:
@@ -687,6 +695,94 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
             return False
         return self._unit_has_keyword_or_faction(unit, "DEATH GUARD", faction_id=self.faction_id)
 
+    def _unit_is_plague_legions(self, unit) -> bool:
+        if unit is None:
+            return False
+        return self._unit_has_keyword(unit, "PLAGUE LEGIONS")
+
+    @staticmethod
+    def _unit_points(unit) -> int:
+        if unit is None:
+            return 0
+        get_cost = getattr(unit, "get_unit_cost", None)
+        if callable(get_cost):
+            try:
+                return int(get_cost() or 0)
+            except (TypeError, ValueError, AttributeError):
+                return 0
+        try:
+            return int(getattr(unit, "points", 0) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    @staticmethod
+    def _tallyband_summoners_plague_legions_points_cap(points_limit: int) -> tuple[int, str]:
+        if points_limit <= 1000:
+            return 500, "Incursion"
+        if points_limit <= 2000:
+            return 1000, "Strike Force"
+        return 1500, "Onslaught"
+
+    def _unit_is_reverberant_rancidity_eligible(self, unit) -> bool:
+        if unit is None:
+            return False
+        if not self._unit_in_army(unit):
+            return False
+        return self._unit_eligible_for_deadly_vectors(unit)
+
+    def _reverberant_rancidity_has_nearby_unit(self, source_unit, *, keyword: str) -> bool:
+        if source_unit is None or not keyword:
+            return False
+        if not self._unit_is_reverberant_rancidity_eligible(source_unit):
+            return False
+        from ..utility import aura_utils as _aura_utils
+
+        for root in self._iter_unique_attached_roots():
+            if root is None or root is source_unit:
+                continue
+            if not self._unit_is_reverberant_rancidity_eligible(root):
+                continue
+            if not self._unit_has_keyword(root, keyword):
+                continue
+            if _aura_utils.unit_within_range_of_unit(
+                source_unit,
+                root,
+                float(self._REVERBERANT_RANCIDITY_RANGE),
+                use_attached_aggregate=True,
+            ):
+                return True
+        return False
+
+    def reverberant_rancidity_grants_nurgles_gift_source(self, unit, *, game=None, game_map=None) -> bool:
+        del game
+        del game_map
+        if not self.is_tallyband_summoners():
+            return False
+        if unit is None:
+            return False
+        root = unit.get_attached_unit_root()
+        if root is None:
+            return False
+        if not self._unit_is_plague_legions(root):
+            return False
+        return self._reverberant_rancidity_has_nearby_unit(root, keyword="DEATH GUARD")
+
+    def reverberant_rancidity_contagion_range_bonus_for_unit(self, unit, *, game=None, game_map=None) -> float:
+        del game
+        del game_map
+        if not self.is_tallyband_summoners():
+            return 0.0
+        if unit is None:
+            return 0.0
+        root = unit.get_attached_unit_root()
+        if root is None:
+            return 0.0
+        if not self._unit_is_death_guard(root):
+            return 0.0
+        if not self._reverberant_rancidity_has_nearby_unit(root, keyword="PLAGUE LEGIONS"):
+            return 0.0
+        return float(self._REVERBERANT_RANCIDITY_CONTAGION_BONUS)
+
     def _iter_unique_attached_roots(self):
         if self.army is None:
             return
@@ -902,3 +998,38 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
             loc.set_sticky_control(player, source=self._WORLD_BLIGHT_SOURCE)
             loc.worldblight_controller = player
             loc.worldblight_source = self._WORLD_BLIGHT_SOURCE
+
+    def validate_detachment_rules(self) -> list[str]:
+        errors: list[str] = []
+        if not self.is_tallyband_summoners():
+            return errors
+        if self.army is None:
+            return errors
+
+        points_limit = int(getattr(self.army, "points_limit", 0) or 0)
+        cap, size_label = self._tallyband_summoners_plague_legions_points_cap(points_limit)
+        plague_legions_points = 0
+        for unit in list(getattr(self.army, "units", []) or []):
+            if unit is None:
+                continue
+            if not self._unit_is_plague_legions(unit):
+                continue
+            plague_legions_points += self._unit_points(unit)
+        if plague_legions_points > cap:
+            errors.append(
+                f"Tallyband Summoners ({self._REVERBERANT_RANCIDITY_SOURCE}): "
+                f"PLAGUE LEGIONS points ({plague_legions_points}) exceed the {size_label} cap of {cap}."
+            )
+
+        warlord = getattr(self.army, "warlord", None)
+        if warlord is None:
+            for unit in list(getattr(self.army, "units", []) or []):
+                if bool(getattr(unit, "is_warlord", False)):
+                    warlord = unit
+                    break
+        if warlord is not None and self._unit_is_plague_legions(warlord):
+            errors.append(
+                f"Tallyband Summoners ({self._REVERBERANT_RANCIDITY_SOURCE}): "
+                "PLAGUE LEGIONS models cannot be your WARLORD."
+            )
+        return errors

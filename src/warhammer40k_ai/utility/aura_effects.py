@@ -1318,13 +1318,40 @@ def _beacons_of_rage(attacker_unit, target_unit, weapon_profile, source_unit) ->
         wound_reason = ("+1 to wound from Beacons of Rage (Aura) vs Below Half-strength",)
     return AuraAttackModifiers(hit=hit, wound=wound, hit_reasons=(hit_reason,), wound_reasons=wound_reason)
 
-def _nurgles_gift(attacker_unit, target_unit, source_unit) -> AuraAttackModifiers:
+def _source_is_nurgles_gift_source(source_unit, *, game_map=None) -> bool:
+    if source_unit is None:
+        return False
+    has_explicit_nurgles_gift_ability = any(
+        _norm_name(str(getattr(ab, "name", "") or "")) == _norm_name("Nurgle's Gift (Aura)")
+        for ab in _iter_possible_abilities(source_unit)
+    )
+    source_army = source_unit.get_parent_army() if hasattr(source_unit, "get_parent_army") else None
+    mgr = getattr(source_army, "nurgles_gift", None) if source_army is not None else None
+    if mgr is None:
+        return bool(has_explicit_nurgles_gift_ability)
+    if not bool(getattr(mgr, "_army_has_gift", lambda: False)()):
+        return bool(has_explicit_nurgles_gift_ability)
+    valid_fn = getattr(mgr, "_unit_is_valid_contagion_source", None)
+    if not callable(valid_fn):
+        return bool(has_explicit_nurgles_gift_ability)
+    return bool(valid_fn(source_unit, game_map=game_map) or has_explicit_nurgles_gift_ability)
+
+
+def _nurgles_gift(attacker_unit, target_unit, source_unit, *, game_map=None) -> AuraAttackModifiers:
     """
     Nurgle's Gift (Aura): While an enemy unit is within Contagion Range of this unit, subtract 1 from Toughness.
     We implement the baseline Contagion Range scaling by battle round (3/6/9).
     """
+    if not _source_is_nurgles_gift_source(source_unit, game_map=game_map):
+        return AuraAttackModifiers()
     br = _get_battle_round_from_unit(source_unit) or _get_battle_round_from_unit(attacker_unit)
-    rng = nurgles_gift_contagion_range(br)
+    rng = float(nurgles_gift_contagion_range(br))
+    source_army = source_unit.get_parent_army() if hasattr(source_unit, "get_parent_army") else None
+    mgr = getattr(source_army, "nurgles_gift", None) if source_army is not None else None
+    if mgr is not None:
+        get_range_fn = getattr(mgr, "get_contagion_range", None)
+        if callable(get_range_fn):
+            rng = float(get_range_fn(br, source_unit=source_unit, game_map=game_map))
     if not unit_within_range_of_unit(source_unit, target_unit, rng, use_attached_aggregate=True):
         return AuraAttackModifiers()
     return AuraAttackModifiers(
@@ -1351,6 +1378,7 @@ def get_aura_attack_modifiers(attacker_unit, target_unit, weapon_profile, *, gam
 
     out = AuraAttackModifiers()
     applied_aura_names: set[str] = set()
+    nurgles_gift_aura_key = _norm_name("Nurgle's Gift (Aura)")
     friendly_units = list(game_map.get_friendly_units(attacker_unit))
 
     # Chaos Knights (Iconoclast Fiefdom): Dread Tyrants (Aura)
@@ -1380,12 +1408,26 @@ def get_aura_attack_modifiers(attacker_unit, target_unit, weapon_profile, *, gam
         break
 
     for source in friendly_units:
+        if nurgles_gift_aura_key not in applied_aura_names and _source_is_nurgles_gift_source(source, game_map=game_map):
+            ng_mods = _nurgles_gift(attacker_unit, target_unit, source, game_map=game_map)
+            if int(getattr(ng_mods, "target_toughness_delta", 0) or 0):
+                out = out.merge(ng_mods)
+                applied_aura_names.add(nurgles_gift_aura_key)
+
         for ab in _iter_possible_abilities(source):
             if not _is_aura_ability(ab):
                 continue
 
             ab_name = str(getattr(ab, "name", "") or "")
             if _requires_own_shooting_phase(ab) and not _attacker_in_own_shooting_phase(attacker_unit):
+                continue
+            if _norm_name(ab_name) == nurgles_gift_aura_key:
+                if nurgles_gift_aura_key in applied_aura_names:
+                    continue
+                ng_mods = _nurgles_gift(attacker_unit, target_unit, source, game_map=game_map)
+                if int(getattr(ng_mods, "target_toughness_delta", 0) or 0):
+                    out = out.merge(ng_mods)
+                    applied_aura_names.add(nurgles_gift_aura_key)
                 continue
             aura_key = _norm_name(ab_name)
             # 10e: the same Aura ability never applies more than once to a unit, even if there are
@@ -1397,11 +1439,6 @@ def get_aura_attack_modifiers(attacker_unit, target_unit, weapon_profile, *, gam
 
             if _norm_name(ab_name) == _norm_name("Beacons of Rage (Aura)"):
                 out = out.merge(_beacons_of_rage(attacker_unit, target_unit, weapon_profile, source))
-                continue
-
-            # Nurgle's Gift (Aura) debuff (enemy-targeted).
-            if _norm_name(ab_name) == _norm_name("Nurgle's Gift (Aura)"):
-                out = out.merge(_nurgles_gift(attacker_unit, target_unit, source))
                 continue
 
             # Belakor Shadow Form: Shadow Lord (Aura, Psychic) => re-roll Hit rolls of 1.

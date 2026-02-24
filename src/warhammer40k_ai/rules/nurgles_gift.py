@@ -101,20 +101,34 @@ class NurglesGiftManager:
         except Exception:
             return False
 
-    def _unit_is_valid_contagion_source(self, unit) -> bool:
+    def _unit_is_valid_contagion_source(self, unit, *, game=None, game_map=None) -> bool:
         if unit is None:
             return False
-        if not self._unit_is_death_guard(unit):
+        source = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+        if source is None:
             return False
-        try:
-            if not bool(getattr(unit, "deployed", False)):
-                return False
-        except Exception:
+        has_nurgles_gift_source = self._unit_is_death_guard(source)
+        if not has_nurgles_gift_source:
+            dg_mgr = getattr(self.army, "death_guard_detachments", None) if self.army is not None else None
+            grants_fn = (
+                getattr(dg_mgr, "reverberant_rancidity_grants_nurgles_gift_source", None)
+                if dg_mgr is not None
+                else None
+            )
+            if callable(grants_fn):
+                has_nurgles_gift_source = bool(grants_fn(source, game=game, game_map=game_map))
+        if not has_nurgles_gift_source:
             return False
-        try:
-            if hasattr(unit, "is_alive") and callable(unit.is_alive):
-                return bool(unit.is_alive())
-        except Exception:
+
+        if not bool(getattr(source, "deployed", False)):
+            return False
+        is_alive_fn = getattr(source, "is_alive", None)
+        if callable(is_alive_fn) and not bool(is_alive_fn()):
+            return False
+        if bool(getattr(source, "is_embarked", False)) or bool(getattr(source, "embarked_in", None)):
+            return False
+        in_reserves_fn = getattr(source, "is_in_reserves", None)
+        if callable(in_reserves_fn) and bool(in_reserves_fn()):
             return False
         return True
 
@@ -166,10 +180,20 @@ class NurglesGiftManager:
                 return True
         return False
 
-    def get_contagion_range(self, battle_round: int) -> float:
+    def get_contagion_range(self, battle_round: int, *, source_unit=None, game=None, game_map=None) -> float:
         base = float(nurgles_gift_contagion_range(battle_round))
         bonus = 3.0 if self._army_has_gift_of_poxes_source() else 0.0
-        return float(base + bonus + self._plaguesurge_bonus_for_current_state())
+        detachment_bonus = 0.0
+        if source_unit is not None and self.army is not None:
+            dg_mgr = getattr(self.army, "death_guard_detachments", None)
+            bonus_fn = (
+                getattr(dg_mgr, "reverberant_rancidity_contagion_range_bonus_for_unit", None)
+                if dg_mgr is not None
+                else None
+            )
+            if callable(bonus_fn):
+                detachment_bonus = float(bonus_fn(source_unit, game=game, game_map=game_map) or 0.0)
+        return float(base + bonus + self._plaguesurge_bonus_for_current_state() + detachment_bonus)
 
     def get_active_plague(self) -> Optional[NurglesPlague]:
         if not self.active_plague_key:
@@ -372,15 +396,15 @@ class NurglesGiftManager:
             if plague is None:
                 continue
 
-            rng = mgr.get_contagion_range(br)
             try:
                 sources = list(getattr(enemy_army, "units", []) or [])
             except Exception:
                 sources = [u for u in enemy_units if getattr(u, "get_parent_army", lambda: None)() is enemy_army]
 
             for source in sources:
-                if not mgr._unit_is_valid_contagion_source(source):
+                if not mgr._unit_is_valid_contagion_source(source, game=game, game_map=game_map):
                     continue
+                rng = mgr.get_contagion_range(br, source_unit=source, game=game, game_map=game_map)
                 if _aura_utils.unit_within_range_of_unit(source, unit, rng, use_attached_aggregate=True):
                     return plague
 
