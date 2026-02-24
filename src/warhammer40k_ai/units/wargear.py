@@ -9268,6 +9268,26 @@ class WargearProfile:
                     reroll_value_reasons.append(f"{source_name}: re-roll Hit roll of 1")
         except Exception:
             pass
+        # Imperial Knights: Questor Forgepact (Cogbound Alliance - Divine Inspiration).
+        unit = getattr(attacker, "parent_unit", None)
+        army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+        ik_mgr = getattr(army, "imperial_knights_detachments", None) if army is not None else None
+        divine_inspiration_fn = (
+            getattr(ik_mgr, "forgepact_divine_inspiration_reroll_hit_wound_ones", None)
+            if ik_mgr is not None
+            else None
+        )
+        if callable(divine_inspiration_fn):
+            reroll_hit_ones, _reroll_wound_ones, source = divine_inspiration_fn(
+                attacker,
+                target_unit=target,
+                weapon_profile=self,
+                game=getattr(getattr(army, "player", None), "game", None) if army is not None else None,
+            )
+            if bool(reroll_hit_ones):
+                reroll_hit_values.add(1)
+                source_name = str(source or "Divine Inspiration").strip() or "Divine Inspiration"
+                reroll_value_reasons.append(f"{source_name}: re-roll Hit roll of 1")
         # Astra Militarum: Bridgehead Strike (Only the Best) re-roll Hit roll of 1
         # for ASTRA MILITARUM INFANTRY models making ranged attacks.
         try:
@@ -13558,6 +13578,26 @@ class WargearProfile:
                     reroll_value_reasons.append(f"{source_name}: re-roll Wound roll of 1")
         except Exception:
             pass
+        # Imperial Knights: Questor Forgepact (Cogbound Alliance - Divine Inspiration).
+        unit = getattr(attacker, "parent_unit", None)
+        army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+        ik_mgr = getattr(army, "imperial_knights_detachments", None) if army is not None else None
+        divine_inspiration_fn = (
+            getattr(ik_mgr, "forgepact_divine_inspiration_reroll_hit_wound_ones", None)
+            if ik_mgr is not None
+            else None
+        )
+        if callable(divine_inspiration_fn):
+            _reroll_hit_ones, reroll_wound_ones, source = divine_inspiration_fn(
+                attacker,
+                target_unit=target,
+                weapon_profile=self,
+                game=getattr(getattr(army, "player", None), "game", None) if army is not None else None,
+            )
+            if bool(reroll_wound_ones):
+                reroll_wound_values.add(1)
+                source_name = str(source or "Divine Inspiration").strip() or "Divine Inspiration"
+                reroll_value_reasons.append(f"{source_name}: re-roll Wound roll of 1")
         # Adeptus Custodes (Solar Spearhead): Auric Armour.
         try:
             unit = getattr(attacker, "parent_unit", None)

@@ -1580,6 +1580,11 @@ class Army:
             for msg in list(ne_mgr.validate_detachment_rules() or []):
                 if msg:
                     raise ArmyValidationError(str(msg))
+        ik_mgr = getattr(self, "imperial_knights_detachments", None)
+        if ik_mgr is not None and hasattr(ik_mgr, "validate_detachment_rules"):
+            for msg in list(ik_mgr.validate_detachment_rules() or []):
+                if msg:
+                    raise ArmyValidationError(str(msg))
         ck_mgr = getattr(self, "chaos_knights_detachments", None)
         if ck_mgr is not None and hasattr(ck_mgr, "validate_detachment_rules"):
             for msg in list(ck_mgr.validate_detachment_rules() or []):

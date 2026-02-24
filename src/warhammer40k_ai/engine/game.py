@@ -7893,6 +7893,11 @@ class Game(
         if mgr is not None and hasattr(mgr, "on_command_phase_start"):
             mgr.on_command_phase_start(game=self, player=current_player)
 
+        # Imperial Knights detachments: command-phase hooks (e.g., Questor Forgepact Sacristan Pledge).
+        mgr = getattr(army, "imperial_knights_detachments", None)
+        if mgr is not None and hasattr(mgr, "on_command_phase_start"):
+            mgr.on_command_phase_start(game=self, player=current_player)
+
         # Imperial Knights: Bondsman selection at the start of your Command phase.
         mgr = getattr(army, "bondsman", None)
         if mgr is not None:

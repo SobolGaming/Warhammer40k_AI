@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import re
 from typing import Optional
 
+from ..utility.dice import get_roll
 from ..utility.entity_ids import get_entity_id
+from ..utility.event_bus import append_action
 from .detachment_manager import DetachmentManagerBase
 
 
@@ -10,8 +13,17 @@ class ImperialKnightsDetachmentManager(DetachmentManagerBase):
     faction_id = "QI"
     DETACHMENT_VALOURSTRIKE_LANCE = "Valourstrike Lance"
     DETACHMENT_GATE_WARDEN_LANCE = "Gate Warden Lance"
+    DETACHMENT_QUESTOR_FORGEPACT = "Questor Forgepact"
     DAUNTLESS_DEFENDERS_NAME = "Dauntless Defenders"
     DAUNTLESS_DEFENDERS_ABILITY_KEY = "gate_warden_dauntless_defenders_foundation"
+    COGBOUND_ALLIANCE_NAME = "Cogbound Alliance"
+    FORGEPACT_ALLOWED_ADMECH_UNIT_NAMES = (
+        "tech priest dominus",
+        "tech priest manipulus",
+        "skitarii marshal",
+        "skitarii rangers",
+        "skitarii vanguard",
+    )
 
     def __init__(self, army=None):
         super().__init__(army)
@@ -28,9 +40,19 @@ class ImperialKnightsDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches(self.DETACHMENT_GATE_WARDEN_LANCE)
 
+    def is_questor_forgepact(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches(self.DETACHMENT_QUESTOR_FORGEPACT)
+
     @staticmethod
     def _entity_id(entity) -> str:
         return str(get_entity_id(entity) or "")
+
+    @staticmethod
+    def _normalize_unit_name(name: str) -> str:
+        text = re.sub(r"[^a-z0-9]+", " ", str(name or "").lower())
+        return re.sub(r"\s+", " ", text).strip()
 
     @staticmethod
     def _attached_root(unit):
@@ -51,6 +73,128 @@ class ImperialKnightsDetachmentManager(DetachmentManagerBase):
 
     def _unit_is_imperial_knights(self, unit) -> bool:
         return self._unit_has_keyword_or_faction(unit, "IMPERIAL KNIGHTS", faction_id=self.faction_id)
+
+    def _unit_is_adeptus_mechanicus(self, unit) -> bool:
+        if unit is None:
+            return False
+        if self._unit_has_keyword_or_faction(unit, "ADEPTUS MECHANICUS"):
+            return True
+        normalized = self._normalize_unit_name(getattr(unit, "name", ""))
+        return normalized in set(self.FORGEPACT_ALLOWED_ADMECH_UNIT_NAMES)
+
+    def _unit_is_tech_priest(self, unit) -> bool:
+        if unit is None:
+            return False
+        if self._unit_has_keyword(unit, "TECH-PRIEST"):
+            return True
+        normalized = self._normalize_unit_name(getattr(unit, "name", ""))
+        return normalized.startswith("tech priest ")
+
+    def _unit_on_battlefield(self, unit) -> bool:
+        root = self._attached_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return False
+        if not bool(getattr(root, "deployed", True)):
+            return False
+        if bool(getattr(root, "is_embarked", False)) or getattr(root, "embarked_in", None) is not None:
+            return False
+        is_in_reserves = getattr(root, "is_in_reserves", None)
+        if callable(is_in_reserves) and bool(is_in_reserves()):
+            return False
+        is_alive = getattr(root, "is_alive", None)
+        if callable(is_alive) and not bool(is_alive()):
+            return False
+        return True
+
+    def _iter_army_roots(self) -> list:
+        if self.army is None:
+            return []
+        roots: list = []
+        seen_ids: set[str] = set()
+        for unit in list(getattr(self.army, "units", []) or []):
+            root = self._attached_root(unit)
+            if root is None or not self._unit_in_army(root):
+                continue
+            root_id = self._entity_id(root)
+            if root_id and root_id in seen_ids:
+                continue
+            if root_id:
+                seen_ids.add(root_id)
+            roots.append(root)
+        roots.sort(key=lambda u: self._entity_id(u))
+        return roots
+
+    @staticmethod
+    def _battle_size_points_cap(points_limit: int) -> int:
+        limit = int(points_limit or 0)
+        if limit <= 0:
+            return 0
+        if limit <= 1000:
+            return 250
+        if limit <= 2000:
+            return 500
+        return 750
+
+    def _distance_between_units(self, source_unit, target_unit, *, game=None, game_map=None) -> Optional[float]:
+        source_root = self._attached_root(source_unit)
+        target_root = self._attached_root(target_unit)
+        if source_root is None or target_root is None:
+            return None
+        resolved_game = self._resolve_game(game)
+        resolved_map = game_map
+        if resolved_map is None and resolved_game is not None:
+            resolved_map = getattr(resolved_game, "map", None)
+        get_distance = getattr(resolved_map, "get_distance_between_units", None) if resolved_map is not None else None
+        if callable(get_distance):
+            try:
+                return float(get_distance(source_root, target_root))
+            except (TypeError, ValueError):
+                return None
+        closest_model = getattr(source_root, "return_closest_model_in_unit", None)
+        if callable(closest_model):
+            try:
+                _model, distance = closest_model(target_root)
+                return float(distance)
+            except (TypeError, ValueError):
+                return None
+        return None
+
+    def _unit_within_distance(self, source_unit, target_unit, *, max_distance: float, game=None, game_map=None) -> bool:
+        distance = self._distance_between_units(source_unit, target_unit, game=game, game_map=game_map)
+        if distance is None:
+            return False
+        return float(distance) <= float(max_distance) + 1e-6
+
+    @staticmethod
+    def _heal_most_damaged_model_in_unit(unit, amount: int) -> int:
+        if unit is None:
+            return 0
+        heal_amount = int(amount or 0)
+        if heal_amount <= 0:
+            return 0
+        models = [m for m in list(getattr(unit, "models", []) or []) if bool(getattr(m, "is_alive", True))]
+        if not models:
+            return 0
+        candidate = None
+        max_missing = 0
+        for model in models:
+            base_wounds = int(getattr(model, "_base_wounds", getattr(model, "wounds", 0)) or 0)
+            current_wounds = int(getattr(model, "wounds", 0) or 0)
+            missing = max(0, int(base_wounds - current_wounds))
+            if missing <= 0:
+                continue
+            if missing > max_missing:
+                max_missing = missing
+                candidate = model
+        if candidate is None or max_missing <= 0:
+            return 0
+        base_wounds = int(getattr(candidate, "_base_wounds", getattr(candidate, "wounds", 0)) or 0)
+        current_wounds = int(getattr(candidate, "wounds", 0) or 0)
+        applied = min(int(heal_amount), max(0, int(base_wounds - current_wounds)))
+        if applied <= 0:
+            return 0
+        candidate.wounds = int(current_wounds + applied)
+        return int(applied)
 
     def _model_in_army(self, model) -> bool:
         if model is None:
@@ -470,6 +614,142 @@ class ImperialKnightsDetachmentManager(DetachmentManagerBase):
                     return True
             return False
         return True
+
+    def _forgepact_allied_units(self) -> list:
+        return [unit for unit in self._iter_army_roots() if self._unit_is_adeptus_mechanicus(unit)]
+
+    def _forgepact_points_cap(self) -> int:
+        if self.army is None:
+            return 0
+        return self._battle_size_points_cap(int(getattr(self.army, "points_limit", 0) or 0))
+
+    def _validate_forgepact_allies(self) -> list[str]:
+        errors: list[str] = []
+        allied_units = self._forgepact_allied_units()
+        if not allied_units:
+            return errors
+        allowed_names = set(self.FORGEPACT_ALLOWED_ADMECH_UNIT_NAMES)
+        total_points = 0
+        for unit in allied_units:
+            normalized_name = self._normalize_unit_name(getattr(unit, "name", ""))
+            if normalized_name not in allowed_names:
+                errors.append(
+                    f"Questor Forgepact: unit '{getattr(unit, 'name', 'Unknown')}' is not an allowed Forge World ally."
+                )
+            if bool(getattr(unit, "is_warlord", False)):
+                errors.append(
+                    f"Questor Forgepact: ADEPTUS MECHANICUS unit '{getattr(unit, 'name', 'Unknown')}' cannot be your Warlord."
+                )
+            get_cost = getattr(unit, "get_unit_cost", None)
+            if callable(get_cost):
+                total_points += int(get_cost() or 0)
+        points_cap = self._forgepact_points_cap()
+        if points_cap <= 0 or total_points > points_cap:
+            errors.append(
+                f"Questor Forgepact: Forge World allies total {int(total_points)} points (cap {int(points_cap)})."
+            )
+        return errors
+
+    def _forgepact_has_tech_priest_support(self, unit, *, game=None, game_map=None) -> bool:
+        if not self._unit_on_battlefield(unit):
+            return False
+        for ally in self._iter_army_roots():
+            if not self._unit_is_tech_priest(ally):
+                continue
+            if not self._unit_on_battlefield(ally):
+                continue
+            if self._unit_within_distance(unit, ally, max_distance=3.0, game=game, game_map=game_map):
+                return True
+        return False
+
+    def _forgepact_nearby_imperial_knights_support(self, unit, *, game=None, game_map=None) -> bool:
+        if not self._unit_on_battlefield(unit):
+            return False
+        source_root = self._attached_root(unit)
+        source_id = self._entity_id(source_root)
+        for ally in self._iter_army_roots():
+            if not self._unit_is_imperial_knights(ally):
+                continue
+            if not self._unit_on_battlefield(ally):
+                continue
+            if source_id and self._entity_id(ally) == source_id:
+                continue
+            if self._unit_within_distance(unit, ally, max_distance=6.0, game=game, game_map=game_map):
+                return True
+        return False
+
+    def _apply_forgepact_sacristan_pledges(self, *, game=None, player=None) -> None:
+        if not self.is_questor_forgepact():
+            return
+        owner = getattr(self.army, "player", None) if self.army is not None else None
+        if owner is None:
+            return
+        if player is not None and player is not owner:
+            return
+        resolved_game = self._resolve_game(game)
+        resolved_map = getattr(resolved_game, "map", None) if resolved_game is not None else None
+        for unit in self._iter_army_roots():
+            if not self._unit_is_imperial_knights(unit):
+                continue
+            if not self._unit_on_battlefield(unit):
+                continue
+            heal_amount = 1
+            source_label = "Sacristan Pledge"
+            if self._forgepact_has_tech_priest_support(unit, game=resolved_game, game_map=resolved_map):
+                heal_amount = max(1, int(get_roll("D3") or 0))
+                source_label = f"Sacristan Pledge (Tech-Priest support D3={int(heal_amount)})"
+            healed = self._heal_most_damaged_model_in_unit(unit, int(heal_amount))
+            if healed > 0:
+                append_action(
+                    owner,
+                    f"{getattr(unit, 'name', 'Imperial Knights unit')}: {source_label}, regained {int(healed)} lost wound(s).",
+                )
+
+    def forgepact_divine_inspiration_reroll_hit_wound_ones(
+        self,
+        attacker_model,
+        *,
+        target_unit=None,
+        weapon_profile=None,
+        game=None,
+        game_map=None,
+    ) -> tuple[bool, bool, str]:
+        if not self.is_questor_forgepact():
+            return False, False, ""
+        if attacker_model is None:
+            return False, False, ""
+        if weapon_profile is not None and not self._weapon_is_ranged(weapon_profile):
+            return False, False, ""
+        if weapon_profile is None:
+            return False, False, ""
+        if not self._model_in_army(attacker_model):
+            return False, False, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root = self._attached_root(attacker_unit)
+        if attacker_root is None or not self._unit_is_adeptus_mechanicus(attacker_root):
+            return False, False, ""
+        if not self._unit_on_battlefield(attacker_root):
+            return False, False, ""
+        resolved_game = self._resolve_game(game)
+        resolved_map = game_map
+        if resolved_map is None and resolved_game is not None:
+            resolved_map = getattr(resolved_game, "map", None)
+        reroll_hit_ones = True
+        reroll_wound_ones = self._forgepact_nearby_imperial_knights_support(
+            attacker_root,
+            game=resolved_game,
+            game_map=resolved_map,
+        )
+        return reroll_hit_ones, reroll_wound_ones, "Divine Inspiration"
+
+    def on_command_phase_start(self, *, game=None, player=None) -> None:
+        self._apply_forgepact_sacristan_pledges(game=game, player=player)
+
+    def validate_detachment_rules(self) -> list[str]:
+        errors: list[str] = []
+        if self.is_questor_forgepact():
+            errors.extend(self._validate_forgepact_allies())
+        return errors
 
     def bold_gallantry_assault_applies(self, unit, weapon_profile=None) -> bool:
         if not self.is_valourstrike_lance():

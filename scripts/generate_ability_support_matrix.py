@@ -784,6 +784,19 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"by a primary mission rule just after it is removed select a new objective marker on the battlefield to be one of your foundations",
             r"each time one of your foundations is removed from the battlefield .* select a new objective marker on the battlefield to be one of your foundations",
         ),
+        "Cogbound Alliance": (
+            r"imperial knights units from your army have the following the ability",
+            r"in your command phase one model in this unit regains 1 lost wound",
+            r"if this unit is within 3 of one or more friendly tech priest models one model in this unit regains up to d3 lost wounds instead",
+            r"adeptus mechanicus units from your army have the following ability",
+            r"each time a model in this unit makes a ranged attack reroll a hit roll of 1",
+            r"if this unit is within 6 of one or more friendly imperial knights units reroll a wound roll of 1 as well",
+            r"the combined points cost of such units depends on your battle size",
+            r"no adeptus mechanicus models from your army can be your warlord",
+            r"incursion up to 250 pts",
+            r"strike force up to 500 pts",
+            r"onslaught up to 750 pts",
+        ),
         "Da Boss Is Watchin'": (
             r"at the start of your command phase in a turn in which you have not called a waaagh if you have one or more warboss models on the battlefield or embarked within a transport that is on the battlefield you can call a waaagh for a second time this battle",
             r"when doing so that second waaagh only counts as having been called for warboss nobz and meganobz units from your army",
@@ -2757,6 +2770,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Dauntless Defenders": (
             "Supported",
             "Gate Warden Lance: start-of-first-battle-round selection of two foundation objective markers defines a defensive line; IMPERIAL KNIGHTS units on that line gain [SUSTAINED HITS 1] and can ignore Hit roll modifiers against visible targets, and removed foundations prompt deterministic replacement objective selection.",
+        ),
+        "Cogbound Alliance": (
+            "Supported",
+            "Questor Forgepact: Command phase Sacristan Pledge heals one lost wound for each IMPERIAL KNIGHTS unit (D3 while within 3\" of a friendly TECH-PRIEST), ADEPTUS MECHANICUS units gain Divine Inspiration re-roll Hit rolls of 1 for ranged attacks with re-roll Wound rolls of 1 while within 6\" of friendly IMPERIAL KNIGHTS units, and Forge World ally list/points cap/warlord restrictions are validated.",
         ),
         "Annihilation Protocol": (
             "Supported",
