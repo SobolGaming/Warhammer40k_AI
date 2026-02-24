@@ -266,28 +266,55 @@ class NurglesGiftManager:
             except Exception:
                 game = None
 
+        def _resolve_source_army(owner_id: str):
+            if game is None or not owner_id:
+                return None
+            for p in list(getattr(game, "players", []) or []):
+                if p is None:
+                    continue
+                if str(getattr(p, "id", "") or "") != owner_id:
+                    continue
+                source_army = getattr(p, "army", None)
+                if source_army is None and hasattr(p, "get_army"):
+                    source_army = p.get_army()
+                if source_army is not None:
+                    return source_army
+            return None
+
         # Datasheet effects can mark units as Afflicted outside contagion range checks.
         sr = getattr(unit, "special_rules", None)
         if isinstance(sr, dict) and sr.get("post_shoot_afflicted_active"):
             owner_id = str(sr.get("post_shoot_afflicted_owner", "") or "")
-            source_army = None
-            if game is not None and owner_id:
-                for p in list(getattr(game, "players", []) or []):
-                    if p is None:
-                        continue
-                    if str(getattr(p, "id", "") or "") != owner_id:
-                        continue
-                    source_army = getattr(p, "army", None)
-                    if source_army is None and hasattr(p, "get_army"):
-                        source_army = p.get_army()
-                    if source_army is not None:
-                        break
+            source_army = _resolve_source_army(owner_id)
             if source_army is not None:
                 mgr = getattr(source_army, "nurgles_gift", None)
                 if mgr is not None:
                     plague = mgr.get_active_plague()
                     if plague is not None:
                         return plague
+
+        if isinstance(sr, dict) and sr.get("miasmic_bombardment_active"):
+            owner_id = str(sr.get("miasmic_bombardment_owner", "") or "")
+            round_matches = True
+            if game is not None:
+                try:
+                    current_round = int(getattr(game, "turn", 0) or 0)
+                except Exception:
+                    current_round = 0
+                try:
+                    marked_round = int(sr.get("miasmic_bombardment_round", 0) or 0)
+                except Exception:
+                    marked_round = 0
+                if marked_round and current_round and marked_round != current_round:
+                    round_matches = False
+            if round_matches:
+                source_army = _resolve_source_army(owner_id)
+                if source_army is not None:
+                    mgr = getattr(source_army, "nurgles_gift", None)
+                    if mgr is not None:
+                        plague = mgr.get_active_plague()
+                        if plague is not None:
+                            return plague
 
         if game_map is None:
             if game is not None:

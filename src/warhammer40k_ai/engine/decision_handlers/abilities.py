@@ -451,6 +451,24 @@ def _validate_select_realm_of_chaos_units(game: object, request: DecisionRequest
         if not bool(valid):
             return (str(reason or "Houndpack Lance selection is invalid."),)
         return ()
+    if ability_key == "miasmic_bombardment":
+        player = resolve_player(game, request.player_id)
+        if player is None:
+            return ("Miasmic Bombardment requires a player.",)
+        army = getattr(player, "get_army", lambda: None)()
+        if army is None:
+            return ("Miasmic Bombardment requires an army.",)
+        mgr = getattr(army, "death_guard_detachments", None)
+        if mgr is None or not getattr(mgr, "is_mortarions_hammer", lambda: False)():
+            return ("Miasmic Bombardment requires Mortarion's Hammer.",)
+        validate_fn = getattr(mgr, "miasmic_bombardment_selection_is_valid", None)
+        if not callable(validate_fn):
+            return ("Miasmic Bombardment validation is unavailable.",)
+        battle_round = int(ctx.get("battle_round", 0) or getattr(game, "turn", 0) or 0)
+        valid, reason = validate_fn(list(seen), game=game, battle_round=battle_round)
+        if not bool(valid):
+            return (str(reason or "Miasmic Bombardment selection is invalid."),)
+        return ()
     if ability_key == "deceptors_masters_of_misdirection_selection":
         player = resolve_player(game, request.player_id)
         if player is None:
@@ -799,6 +817,47 @@ def _apply_select_realm_of_chaos_units(game: object, request: DecisionRequest, r
             unit = resolve_unit(game, str(uid))
             if unit is not None:
                 units.append(unit)
+        return units
+    if ability_key == "miasmic_bombardment":
+        player = resolve_player(game, request.player_id)
+        if player is None:
+            raise RuntimeError("Miasmic Bombardment player not found.")
+        army = getattr(player, "get_army", lambda: None)()
+        if army is None:
+            raise RuntimeError("Miasmic Bombardment army not found.")
+        mgr = getattr(army, "death_guard_detachments", None)
+        if mgr is None:
+            raise RuntimeError("Miasmic Bombardment detachment manager not found.")
+        unit_ids = []
+        if not is_skip_choice(request, result):
+            unit_ids = sorted(
+                {
+                    str(uid or "").strip()
+                    for uid in list(result.payload.get("unit_ids") or [])
+                    if str(uid or "").strip()
+                }
+            )
+        battle_round = int(ctx.get("battle_round", 0) or getattr(game, "turn", 0) or 0)
+        apply_fn = getattr(mgr, "apply_miasmic_bombardment_selection", None)
+        if not callable(apply_fn):
+            raise RuntimeError("Miasmic Bombardment apply function is unavailable.")
+        applied_ids = list(apply_fn(unit_ids, game=game, battle_round=battle_round) or [])
+        labels = []
+        units = []
+        for uid in list(applied_ids or []):
+            unit = resolve_unit(game, str(uid))
+            if unit is None:
+                continue
+            units.append(unit)
+            labels.append(str(getattr(unit, "name", "Unit") or "Unit"))
+        if labels:
+            _log_action_for_players(
+                game,
+                player,
+                "Miasmic Bombardment: " + ", ".join(labels) + " are Afflicted until end of battle round.",
+            )
+        else:
+            _log_action_for_players(game, player, "Miasmic Bombardment: no units selected.")
         return units
     if ability_key == "deceptors_masters_of_misdirection_selection":
         player = resolve_player(game, request.player_id)

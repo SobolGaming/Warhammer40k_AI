@@ -289,6 +289,11 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"at the start of the battle round you can select one of the plagues listed in nurgle(?:s| s) gift",
             r"until the end of the battle that is your chosen plague instead of any previously chosen plague",
         ),
+        "Miasmic Bombardment": (
+            r"at the start of the battle round select a number of enemy units more than 12(?: away)? from every model from your army that is on the battlefield",
+            r"until the end of the battle round those enemy units are afflicted",
+            r"the maximum number of units you can select in this way depends on the battle size as shown below",
+        ),
         "Ride the Wind": (
             r"in addition at the end of your opponents turn you can select a number of asuryani mounted or vyper units from your army excluding units within engagement range of one or more enemy units then remove those units from the battlefield and place them into strategic reserves",
             r"the maximum number of units you can select depends on the battle size as shown below",
@@ -2583,6 +2588,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Manifold Maladies": (
             "Supported",
             "Champions of Contagion: at the start of each battle round, queue an optional Plague selection decision (with None) to replace your active Nurgle's Gift Plague for the rest of the battle.",
+        ),
+        "Miasmic Bombardment": (
+            "Supported",
+            "Mortarion's Hammer: at the start of each battle round, select enemy units to become Afflicted if they are more than 12\" from every model in your army on the battlefield (battle-size cap enforced) until end of battle round.",
         ),
         "Verminous Haze": (
             "Supported",

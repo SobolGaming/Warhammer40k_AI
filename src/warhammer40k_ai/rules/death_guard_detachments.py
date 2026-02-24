@@ -11,12 +11,15 @@ from .nurgles_gift import DEFAULT_PLAGUES, NurglesGiftManager
 class DeathGuardDetachmentManager(DetachmentManagerBase):
     faction_id = "DG"
     _MANIFOLD_MALADIES_SOURCE = "Manifold Maladies"
+    _MIASMIC_BOMBARDMENT_SOURCE = "Miasmic Bombardment"
+    _MIASMIC_BOMBARDMENT_RANGE = 12.0
     _WORLD_BLIGHT_SOURCE = "worldblight"
     _VERMINOUS_HAZE_SCOUT_DISTANCE = 5.0
 
     def __init__(self, army=None):
         super().__init__(army=army)
         self.manifold_maladies_resolved_round: Optional[int] = None
+        self.miasmic_bombardment_resolved_round: Optional[int] = None
 
     def is_champions_of_contagion(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -37,6 +40,11 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Virulent Vectorium")
+
+    def is_mortarions_hammer(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Mortarion's Hammer")
 
     def _resolve_battle_round(self, *, game=None, battle_round=None) -> Optional[int]:
         if battle_round is not None:
@@ -187,15 +195,313 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
             and int(self.manifold_maladies_resolved_round) != int(round_value)
         ):
             self.manifold_maladies_resolved_round = None
-        if not self.is_champions_of_contagion():
-            self.manifold_maladies_resolved_round = None
-            return
+        if (
+            self.miasmic_bombardment_resolved_round is not None
+            and int(self.miasmic_bombardment_resolved_round) != int(round_value)
+        ):
+            self.miasmic_bombardment_resolved_round = None
         if not bool(getattr(game, "is_authoritative", True)):
             return
         player = getattr(self.army, "player", None) if self.army is not None else None
         if player is None:
             return
-        self.build_manifold_maladies_request(game=game, player=player, battle_round=round_value)
+        if self.is_champions_of_contagion():
+            self.build_manifold_maladies_request(game=game, player=player, battle_round=round_value)
+        else:
+            self.manifold_maladies_resolved_round = None
+
+        if self.is_mortarions_hammer():
+            self.build_miasmic_bombardment_request(game=game, player=player, battle_round=round_value)
+        else:
+            self.miasmic_bombardment_resolved_round = None
+            self._clear_miasmic_bombardment_marks(game=game)
+
+    def _miasmic_bombardment_max_units(self, *, game=None) -> int:
+        points_limit = 0
+        battlefield = getattr(game, "battlefield", None) if game is not None else None
+        if battlefield is not None:
+            try:
+                points_limit = int(getattr(battlefield, "points", 0) or 0)
+            except (TypeError, ValueError):
+                points_limit = 0
+        if points_limit <= 0:
+            try:
+                points_limit = int(getattr(self.army, "points_limit", 0) or 0)
+            except (TypeError, ValueError):
+                points_limit = 0
+        if points_limit <= 1000:
+            return 1
+        if points_limit <= 2000:
+            return 2
+        return 3
+
+    def _collect_miasmic_bombardment_candidates(self, *, game=None) -> list:
+        if game is None or self.army is None:
+            return []
+        from ..utility import aura_utils as _aura_utils
+
+        friendly_sources = [
+            root
+            for root in list(self._iter_unique_attached_roots() or [])
+            if self._unit_eligible_for_deadly_vectors(root)
+        ]
+        owner = getattr(self.army, "player", None)
+        candidates_by_id: dict[str, object] = {}
+        for player in list(getattr(game, "players", []) or []):
+            if player is None or player is owner:
+                continue
+            enemy_army = getattr(player, "army", None)
+            if enemy_army is None and hasattr(player, "get_army"):
+                enemy_army = player.get_army()
+            for root in list(self._iter_unique_enemy_roots(enemy_army) or []):
+                root_id = str(get_entity_id(root) or "")
+                if not root_id or root_id in candidates_by_id:
+                    continue
+                if not self._unit_eligible_for_deadly_vectors(root):
+                    continue
+                too_close = False
+                for source in friendly_sources:
+                    if _aura_utils.unit_within_range_of_unit(
+                        source,
+                        root,
+                        float(self._MIASMIC_BOMBARDMENT_RANGE),
+                        use_attached_aggregate=True,
+                    ):
+                        too_close = True
+                        break
+                if too_close:
+                    continue
+                candidates_by_id[root_id] = root
+        return [candidates_by_id[uid] for uid in sorted(candidates_by_id)]
+
+    def _pending_miasmic_bombardment_request(self, game, *, army_id: str, battle_round: int):
+        if game is None:
+            return None
+        queue = getattr(game, "decision_queue", None)
+        if queue is None:
+            return None
+        from ..engine.decision_kinds import DECISION_SELECT_REALM_OF_CHAOS_UNITS
+
+        for req in list(getattr(queue, "list", lambda: [])() or []):
+            if str(getattr(req, "decision_type", "") or "") != DECISION_SELECT_REALM_OF_CHAOS_UNITS:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "").strip().lower() != "miasmic_bombardment":
+                continue
+            if str(ctx.get("army_id", "") or "") != str(army_id):
+                continue
+            if int(ctx.get("battle_round", 0) or 0) != int(battle_round):
+                continue
+            return req
+        return None
+
+    @staticmethod
+    def _clear_miasmic_bombardment_mark(unit) -> None:
+        if unit is None:
+            return
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        changed = False
+        for key in (
+            "miasmic_bombardment_active",
+            "miasmic_bombardment_owner",
+            "miasmic_bombardment_round",
+            "miasmic_bombardment_source",
+        ):
+            if key in sr:
+                sr.pop(key, None)
+                changed = True
+        if changed:
+            unit.special_rules = sr
+
+    def _clear_miasmic_bombardment_marks(self, *, game=None, keep_round: int = 0) -> None:
+        if game is None or self.army is None:
+            return
+        owner = getattr(self.army, "player", None)
+        owner_id = str(getattr(owner, "id", "") or "")
+        if not owner_id:
+            return
+        keep_round_value = int(keep_round or 0)
+        for player in list(getattr(game, "players", []) or []):
+            if player is None or player is owner:
+                continue
+            enemy_army = getattr(player, "army", None)
+            if enemy_army is None and hasattr(player, "get_army"):
+                enemy_army = player.get_army()
+            for root in list(self._iter_unique_enemy_roots(enemy_army) or []):
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if not bool(sr.get("miasmic_bombardment_active", False)):
+                    continue
+                if str(sr.get("miasmic_bombardment_owner", "") or "") != owner_id:
+                    continue
+                try:
+                    marked_round = int(sr.get("miasmic_bombardment_round", 0) or 0)
+                except (TypeError, ValueError):
+                    marked_round = 0
+                if keep_round_value > 0 and marked_round == keep_round_value:
+                    continue
+                self._clear_miasmic_bombardment_mark(root)
+
+    def can_select_miasmic_bombardment(self, *, game=None, battle_round=None) -> bool:
+        if not self.is_mortarions_hammer():
+            return False
+        if game is None:
+            player = getattr(self.army, "player", None) if self.army is not None else None
+            game = getattr(player, "game", None) if player is not None else None
+        if game is None:
+            return False
+        round_value = self._resolve_battle_round(game=game, battle_round=battle_round)
+        if round_value is None:
+            return False
+        if (
+            self.miasmic_bombardment_resolved_round is not None
+            and int(self.miasmic_bombardment_resolved_round) == int(round_value)
+        ):
+            return False
+        candidates = list(self._collect_miasmic_bombardment_candidates(game=game) or [])
+        if not candidates:
+            return False
+        return int(self._miasmic_bombardment_max_units(game=game) or 0) > 0
+
+    def miasmic_bombardment_selection_is_valid(self, unit_ids, *, game=None, battle_round=None) -> tuple[bool, str]:
+        if not self.is_mortarions_hammer():
+            return False, "Miasmic Bombardment requires Mortarion's Hammer."
+        if game is None:
+            player = getattr(self.army, "player", None) if self.army is not None else None
+            game = getattr(player, "game", None) if player is not None else None
+        if game is None:
+            return False, "Miasmic Bombardment requires a game context."
+        round_value = self._resolve_battle_round(game=game, battle_round=battle_round)
+        if round_value is None or int(round_value) <= 0:
+            return False, "Miasmic Bombardment requires a valid battle round."
+        if (
+            self.miasmic_bombardment_resolved_round is not None
+            and int(self.miasmic_bombardment_resolved_round) == int(round_value)
+        ):
+            return False, "Miasmic Bombardment has already resolved this battle round."
+        if not isinstance(unit_ids, list):
+            return False, "Miasmic Bombardment selection requires unit_ids."
+
+        selected_ids = sorted({str(uid or "").strip() for uid in list(unit_ids or []) if str(uid or "").strip()})
+        max_units = int(self._miasmic_bombardment_max_units(game=game) or 0)
+        if len(selected_ids) > max(0, max_units):
+            return False, f"Miasmic Bombardment can select at most {int(max_units)} unit(s)."
+
+        candidate_ids = {
+            str(get_entity_id(unit) or "")
+            for unit in list(self._collect_miasmic_bombardment_candidates(game=game) or [])
+            if str(get_entity_id(unit) or "")
+        }
+        for uid in selected_ids:
+            if uid not in candidate_ids:
+                return False, "Miasmic Bombardment selection contains an ineligible unit."
+        return True, ""
+
+    def apply_miasmic_bombardment_selection(self, unit_ids, *, game=None, battle_round: int = 0) -> list[str]:
+        round_value = self._resolve_battle_round(game=game, battle_round=battle_round)
+        if round_value is None:
+            return []
+        valid, _reason = self.miasmic_bombardment_selection_is_valid(
+            unit_ids,
+            game=game,
+            battle_round=round_value,
+        )
+        if not valid:
+            return []
+
+        selected_ids = sorted({str(uid or "").strip() for uid in list(unit_ids or []) if str(uid or "").strip()})
+        max_units = int(self._miasmic_bombardment_max_units(game=game) or 0)
+        candidates_by_id = {
+            str(get_entity_id(unit) or ""): unit
+            for unit in list(self._collect_miasmic_bombardment_candidates(game=game) or [])
+            if str(get_entity_id(unit) or "")
+        }
+
+        self._clear_miasmic_bombardment_marks(game=game)
+        owner = getattr(self.army, "player", None) if self.army is not None else None
+        owner_id = str(getattr(owner, "id", "") or "")
+        applied_ids: list[str] = []
+        for uid in list(selected_ids)[: max(0, int(max_units))]:
+            unit = candidates_by_id.get(str(uid))
+            if unit is None:
+                continue
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["miasmic_bombardment_active"] = True
+            sr["miasmic_bombardment_owner"] = owner_id
+            sr["miasmic_bombardment_round"] = int(round_value)
+            sr["miasmic_bombardment_source"] = self._MIASMIC_BOMBARDMENT_SOURCE
+            unit.special_rules = sr
+            applied_ids.append(str(uid))
+
+        self.miasmic_bombardment_resolved_round = int(round_value)
+        return applied_ids
+
+    def build_miasmic_bombardment_request(self, *, game=None, player=None, battle_round=None):
+        if not self.is_mortarions_hammer():
+            return None
+        if game is None or player is None:
+            return None
+        if not bool(getattr(game, "is_authoritative", True)):
+            return None
+        round_value = self._resolve_battle_round(game=game, battle_round=battle_round)
+        if round_value is None:
+            return None
+        if (
+            self.miasmic_bombardment_resolved_round is not None
+            and int(self.miasmic_bombardment_resolved_round) == int(round_value)
+        ):
+            return None
+
+        army_id = str(get_entity_id(self.army) or "") if self.army is not None else ""
+        if self._pending_miasmic_bombardment_request(game, army_id=army_id, battle_round=int(round_value)):
+            return None
+
+        self._clear_miasmic_bombardment_marks(game=game, keep_round=int(round_value))
+        candidates = list(self._collect_miasmic_bombardment_candidates(game=game) or [])
+        candidate_ids = sorted(
+            {str(get_entity_id(unit) or "") for unit in candidates if str(get_entity_id(unit) or "")}
+        )
+        max_units = min(
+            int(self._miasmic_bombardment_max_units(game=game) or 0),
+            len(candidate_ids),
+        )
+        if max_units <= 0 or not candidate_ids:
+            self.miasmic_bombardment_resolved_round = int(round_value)
+            return None
+
+        from ..engine.decision_kinds import DECISION_SELECT_REALM_OF_CHAOS_UNITS
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        request = DecisionRequest.create(
+            DECISION_SELECT_REALM_OF_CHAOS_UNITS,
+            "Miasmic Bombardment: select enemy units to become Afflicted.",
+            player_id=getattr(player, "id", None),
+            options=[
+                DecisionOption.create("Confirm", payload={"action": "confirm"}),
+                DecisionOption.create("None", payload={"action": "skip", "skip": True}),
+            ],
+            context={
+                "ability": "miasmic_bombardment",
+                "ability_name": self._MIASMIC_BOMBARDMENT_SOURCE,
+                "army_id": army_id,
+                "battle_round": int(round_value),
+                "max_units": int(max_units),
+                "allowed_unit_ids": list(candidate_ids),
+                "optional": True,
+                "title": self._MIASMIC_BOMBARDMENT_SOURCE,
+                "subtitle": f"Select up to {int(max_units)} enemy unit(s) more than 12\" away.",
+                "instruction": "Selected units are Afflicted until end of battle round.",
+                "skip_label": "None (do not select units)",
+            },
+        )
+        if hasattr(game, "request_decision"):
+            game.request_decision(request)
+        return request
 
     def _unit_in_army(self, unit) -> bool:
         if unit is None or self.army is None:
