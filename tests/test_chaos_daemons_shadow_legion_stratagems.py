@@ -18,12 +18,15 @@ class _MockDatasheet:
         keywords=None,
         faction_keywords=None,
         toughness: str = "4",
+        model_count: int = 1,
     ) -> None:
         self.name = name
         self.faction_data = {"name": "Test Faction"}
         self.keywords = list(keywords or [])
         self.faction_keywords = list(faction_keywords or [])
-        self.datasheets_unit_composition = [{"description": "1 Test Model"}]
+        count = int(model_count)
+        model_label = "Test Model" if count == 1 else "Test Models"
+        self.datasheets_unit_composition = [{"description": f"{count} {model_label}"}]
         self.datasheets_models_cost = [{"description": "1 model", "cost": 100}]
         self.datasheets_models = [
             {
@@ -66,6 +69,7 @@ def _make_unit(
     keywords=None,
     faction_keywords=None,
     toughness: str = "4",
+    model_count: int = 1,
 ) -> Unit:
     unit = Unit(
         _MockDatasheet(
@@ -73,6 +77,7 @@ def _make_unit(
             keywords=keywords,
             faction_keywords=faction_keywords,
             toughness=toughness,
+            model_count=model_count,
         )
     )
     unit.deployed = True
@@ -283,3 +288,196 @@ def test_binding_shadow_queues_on_phase_end_and_moves_units_to_reserves():
     assert shadow_player.command_points == 4
     assert heretic.reserve_status == "strategic_reserves"
     assert daemon.reserve_status == "strategic_reserves"
+
+
+def test_shadow_legion_step2_stratagem_descriptors_registered():
+    death_denied = get_stratagem_tool_descriptor(stratagem_id="000009979004")
+    assert death_denied is not None
+    assert death_denied.name == "Death Denied"
+    assert death_denied.effect == "heal_and_tzeentch_return_model"
+    assert int(death_denied.cp_cost) == 1
+
+    encroaching = get_stratagem_tool_descriptor(stratagem_id="000009979005")
+    assert encroaching is not None
+    assert encroaching.name == "Encroaching Darkness"
+    assert encroaching.effect == "ranged_weapons_gain_ignores_cover"
+    assert int(encroaching.cp_cost) == 1
+
+    by_name_death_denied = get_stratagem_tool_descriptor(name="DEATH DENIED")
+    assert by_name_death_denied is not None
+    assert str(by_name_death_denied.stratagem_id) == "000009979004"
+
+    by_name_encroaching = get_stratagem_tool_descriptor(name="ENCROACHING DARKNESS")
+    assert by_name_encroaching is not None
+    assert str(by_name_encroaching.stratagem_id) == "000009979005"
+
+
+def test_death_denied_heals_and_returns_tzeentch_model():
+    game, shadow_player, _enemy_player, shadow_army, _enemy_army = _build_game()
+    tzeentch_unit = _make_unit(
+        "Pink Horrors",
+        keywords=["LEGIONES DAEMONICA", "TZEENTCH"],
+        model_count=2,
+    )
+    shadow_army.add_unit(tzeentch_unit)
+    game.map.units.append(tzeentch_unit)
+    _deploy_unit(tzeentch_unit, 0.0, 0.0)
+
+    alive_model = tzeentch_unit.models[0]
+    alive_model.wounds = max(1, int(getattr(alive_model, "_base_wounds", 2) or 2) - 1)
+    destroyed_model = tzeentch_unit.models[1]
+    tzeentch_unit.remove_model(destroyed_model)
+
+    game.turn = 2
+    game.phase = BattleRoundPhases.COMMAND_PHASE
+    game.current_player_index = 0
+    game.event_system.publish("phase_start", player=shadow_player, phase=BattleRoundPhases.COMMAND_PHASE)
+
+    death_denied_name = _find_stratagem_name(shadow_player, "DEATH DENIED")
+    ok = shadow_player.stratagems.use(
+        death_denied_name,
+        unit=tzeentch_unit,
+        phase_name="Command phase",
+    )
+    assert ok is True
+    assert shadow_player.command_points == 4
+    assert len(list(tzeentch_unit.models or [])) == 2
+    assert destroyed_model not in list(getattr(tzeentch_unit, "models_lost", []) or [])
+    assert int(alive_model.wounds or 0) == int(getattr(alive_model, "_base_wounds", 0) or 0)
+
+
+def test_death_denied_rejects_invalid_return_model_without_spending_cp():
+    game, shadow_player, _enemy_player, shadow_army, enemy_army = _build_game()
+    tzeentch_unit = _make_unit(
+        "Pink Horrors",
+        keywords=["LEGIONES DAEMONICA", "TZEENTCH"],
+        model_count=2,
+    )
+    enemy_unit = _make_unit("Enemy Unit", keywords=["INFANTRY"])
+    shadow_army.add_unit(tzeentch_unit)
+    enemy_army.add_unit(enemy_unit)
+    game.map.units.extend([tzeentch_unit, enemy_unit])
+    _deploy_unit(tzeentch_unit, 0.0, 0.0)
+    _deploy_unit(enemy_unit, 5.0, 0.0)
+
+    alive_model = tzeentch_unit.models[0]
+    alive_model.wounds = max(1, int(getattr(alive_model, "_base_wounds", 2) or 2) - 1)
+    destroyed_model = tzeentch_unit.models[1]
+    tzeentch_unit.remove_model(destroyed_model)
+
+    game.turn = 2
+    game.phase = BattleRoundPhases.COMMAND_PHASE
+    game.current_player_index = 0
+    game.event_system.publish("phase_start", player=shadow_player, phase=BattleRoundPhases.COMMAND_PHASE)
+
+    death_denied_name = _find_stratagem_name(shadow_player, "DEATH DENIED")
+    ok = shadow_player.stratagems.use(
+        death_denied_name,
+        unit=tzeentch_unit,
+        phase_name="Command phase",
+        return_model=enemy_unit.models[0],
+    )
+    assert ok is False
+    assert shadow_player.command_points == 5
+    assert destroyed_model in list(getattr(tzeentch_unit, "models_lost", []) or [])
+
+
+def test_encroaching_darkness_grants_ignores_cover_until_shooting_phase_end():
+    game, shadow_player, _enemy_player, shadow_army, enemy_army = _build_game()
+    heretic = _make_unit("Legionaries", keywords=["HERETIC ASTARTES"])
+    daemon = _make_unit("Daemonettes", keywords=["LEGIONES DAEMONICA"])
+    target = _make_unit("Enemy Unit", keywords=["INFANTRY"])
+    shadow_army.add_unit(heretic)
+    shadow_army.add_unit(daemon)
+    enemy_army.add_unit(target)
+    game.map.units.extend([heretic, daemon, target])
+    _deploy_unit(heretic, 0.0, 0.0)
+    _deploy_unit(daemon, 2.0, 0.0)
+    _deploy_unit(target, 10.0, 0.0)
+
+    heretic.arrived_from_reserves_this_turn = True
+    daemon.arrived_from_reserves_this_turn = True
+
+    game.turn = 2
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.current_player_index = 0
+    game.event_system.publish("phase_start", player=shadow_player, phase=BattleRoundPhases.SHOOTING_PHASE)
+
+    encroaching_name = _find_stratagem_name(shadow_player, "ENCROACHING DARKNESS")
+    ok = shadow_player.stratagems.use(
+        encroaching_name,
+        units=[heretic, daemon],
+        phase_name="Shooting phase",
+    )
+    assert ok is True
+    assert shadow_player.command_points == 4
+
+    weapon = Wargear(
+        {
+            "name": "Test Gun",
+            "type": "Ranged",
+            "range": "24",
+            "A": "1",
+            "BS_WS": "3+",
+            "S": "4",
+            "AP": "0",
+            "D": "1",
+            "description": "",
+        }
+    )
+    profile = weapon.profiles["default"]
+
+    attack_instance = {}
+    profile._hit_target_with_tracking(
+        target,
+        heretic.models[0],
+        attack_instance,
+        roll_value=4,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert bool(attack_instance.get("ignores_cover")) is True
+
+    game.event_system.publish("phase_end", player=shadow_player, phase=BattleRoundPhases.SHOOTING_PHASE)
+    rules = dict(getattr(heretic, "special_rules", {}) or {})
+    assert "shadow_legion_encroaching_darkness_active" not in rules
+    assert "shadow_legion_encroaching_darkness_ignores_cover_active" not in rules
+
+    post_attack = {}
+    profile._hit_target_with_tracking(
+        target,
+        heretic.models[0],
+        post_attack,
+        roll_value=4,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert bool(post_attack.get("ignores_cover", False)) is False
+
+
+def test_encroaching_darkness_rejects_two_heretic_targets():
+    game, shadow_player, _enemy_player, shadow_army, _enemy_army = _build_game()
+    heretic_a = _make_unit("Legionaries A", keywords=["HERETIC ASTARTES"])
+    heretic_b = _make_unit("Legionaries B", keywords=["HERETIC ASTARTES"])
+    shadow_army.add_unit(heretic_a)
+    shadow_army.add_unit(heretic_b)
+    game.map.units.extend([heretic_a, heretic_b])
+    _deploy_unit(heretic_a, 0.0, 0.0)
+    _deploy_unit(heretic_b, 2.0, 0.0)
+
+    heretic_a.arrived_from_reserves_this_turn = True
+    heretic_b.arrived_from_reserves_this_turn = True
+
+    game.turn = 2
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.current_player_index = 0
+    game.event_system.publish("phase_start", player=shadow_player, phase=BattleRoundPhases.SHOOTING_PHASE)
+
+    encroaching_name = _find_stratagem_name(shadow_player, "ENCROACHING DARKNESS")
+    ok = shadow_player.stratagems.use(
+        encroaching_name,
+        units=[heretic_a, heretic_b],
+        phase_name="Shooting phase",
+    )
+    assert ok is False
+    assert shadow_player.command_points == 5

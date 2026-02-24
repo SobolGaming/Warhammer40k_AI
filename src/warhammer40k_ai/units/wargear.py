@@ -7417,6 +7417,36 @@ class WargearProfile:
             except Exception:
                 pass
             try:
+                unit = getattr(attacker, "parent_unit", None)
+                root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+                sr = getattr(root, "special_rules", None) if root is not None else None
+                if isinstance(sr, dict) and sr.get("shadow_legion_encroaching_darkness_ignores_cover_active"):
+                    applies = True
+                    exp = str(sr.get("shadow_legion_encroaching_darkness_expires_phase", "") or "").strip().upper()
+                    if exp:
+                        try:
+                            army = root.get_parent_army() if root is not None else None
+                            game = getattr(getattr(army, "player", None), "game", None)
+                            pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+                        except Exception:
+                            pname = ""
+                        if pname and pname != exp:
+                            applies = False
+                    turn = int(sr.get("shadow_legion_encroaching_darkness_turn", 0) or 0)
+                    if turn:
+                        try:
+                            army = root.get_parent_army() if root is not None else None
+                            game = getattr(getattr(army, "player", None), "game", None)
+                            current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                        except Exception:
+                            current_turn = 0
+                        if current_turn and current_turn != turn:
+                            applies = False
+                    if applies:
+                        attack_instance["ignores_cover"] = True
+            except Exception:
+                pass
+            try:
                 sr = getattr(attacker.parent_unit, "special_rules", None)
                 if isinstance(sr, dict) and sr.get("imperial_knights_judicants_helm_ignores_cover_ranged"):
                     attack_instance["ignores_cover"] = True
