@@ -7548,6 +7548,17 @@ class ActionsMovementMixin:
             army = None
         if army is None:
             return True
+        try:
+            csm_mgr = getattr(army, "chaos_space_marines_detachments", None)
+            blocks_dark_pacts = (
+                getattr(csm_mgr, "slaves_to_none_disables_dark_pacts", None)
+                if csm_mgr is not None
+                else None
+            )
+            if callable(blocks_dark_pacts) and bool(blocks_dark_pacts(self)):
+                return False
+        except Exception:
+            pass
         fid = str(getattr(army, "faction_id", "") or "").strip().upper()
         if fid and fid != "CSM" and not first_prince:
             return False
@@ -10563,6 +10574,9 @@ class ActionsMovementMixin:
         try:
             army = self.get_parent_army()
             mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            if mgr is not None and callable(getattr(mgr, "slaves_to_none_assault_applies", None)):
+                if mgr.slaves_to_none_assault_applies(self, profile):
+                    return True
             if mgr is not None and callable(getattr(mgr, "raiders_and_reavers_assault_applies", None)):
                 if mgr.raiders_and_reavers_assault_applies(self, profile):
                     return True
@@ -10695,6 +10709,11 @@ class ActionsMovementMixin:
             if callable(apply_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if bool(apply_fn(self, profile=profile, game=game)):
+                    return True
+            twisted_apply_fn = getattr(mgr, "twisted_doctrine_can_shoot_after_fall_back", None) if mgr is not None else None
+            if callable(twisted_apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(twisted_apply_fn(self, profile=profile, game=game)):
                     return True
         except Exception:
             pass
@@ -11045,6 +11064,16 @@ class ActionsMovementMixin:
                 return True
         except Exception:
             pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            twisted_apply_fn = getattr(mgr, "twisted_doctrine_can_charge_after_advance", None) if mgr is not None else None
+            if callable(twisted_apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(twisted_apply_fn(self, game=game)):
+                    return True
+        except Exception:
+            pass
         spec_fn = getattr(self, "_advance_and_charge_once_per_battle_spec", None)
         if callable(spec_fn):
             return spec_fn() is not None
@@ -11069,6 +11098,11 @@ class ActionsMovementMixin:
             if callable(apply_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if bool(apply_fn(self, game=game)):
+                    return True
+            twisted_apply_fn = getattr(mgr, "twisted_doctrine_can_charge_after_fall_back", None) if mgr is not None else None
+            if callable(twisted_apply_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if bool(twisted_apply_fn(self, game=game)):
                     return True
         except Exception:
             pass

@@ -78,16 +78,24 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     DETACHMENT_NIGHTMARE_HUNT = "Nightmare Hunt"
     DETACHMENT_PACTBOUND_ZEALOTS = "Pactbound Zealots"
     DETACHMENT_RENEGADE_RAIDERS = "Renegade Raiders"
+    DETACHMENT_RENEGADE_WARBAND = "Renegade Warband"
     _MASTERS_OF_MISDIRECTION_SELECTION_ABILITY = "deceptors_masters_of_misdirection_selection"
     _MASTERS_OF_MISDIRECTION_SOURCE = "Masters of Misdirection"
     _TYRANNICAL_MOTIVATION_ABILITY = "tyrannical_motivation_choice"
     _TYRANNICAL_MOTIVATION_SOURCE = "Tyrannical Motivation"
     _TYRANNICAL_MOTIVATION_CHOICE_HURONS_ELITE = "HURONS_ELITE"
     _TYRANNICAL_MOTIVATION_CHOICE_MOBILE_MARAUDERS = "MOBILE_MARAUDERS"
+    _RENEGADE_WARBAND_VENDETTA_ABILITY = "renegade_warband_vendetta_target"
+    _RENEGADE_WARBAND_VENDETTA_SOURCE = "Vendetta"
+    _RENEGADE_WARBAND_TWISTED_DOCTRINE_ABILITY = "renegade_warband_twisted_doctrine"
+    _RENEGADE_WARBAND_TWISTED_DOCTRINE_SOURCE = "Twisted Doctrine"
+    _RENEGADE_WARBAND_TWISTED_DOCTRINE_FALL_BACK_CHOICE = "FALL_BACK_SHOOT_AND_CHARGE"
+    _RENEGADE_WARBAND_TWISTED_DOCTRINE_ADVANCE_CHOICE = "ADVANCE_CHARGE"
     _PACTBOUND_MARKS = ("KHORNE", "TZEENTCH", "NURGLE", "SLAANESH", "CHAOS UNDIVIDED")
     _PACTBOUND_MARK_SOURCE = "Marks of Chaos"
     _DESPERATE_DEVOTION_ALLOWED_ACTIONS = {"move", "advance", "charge"}
     _EXPERIMENTAL_AUGMENTATION_REROLL_MODES = {"keep", "reroll_first", "reroll_second", "reroll_both"}
+    _TWISTED_DOCTRINE_ALLOWED_ACTIONS = {"move", "advance", "fall_back", "set_up"}
 
     def __init__(self, army=None):
         super().__init__(army)
@@ -104,6 +112,7 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         self._tyrannical_motivation_phase_signature: tuple[str, int, str] | None = None
         self._tyrannical_motivation_phase_hit_bonus_unit_ids: set[str] = set()
         self._tyrannical_motivation_phase_mobile_unit_ids: set[str] = set()
+        self.renegade_warband_vendetta_target_unit_id: str = ""
 
     def is_cabal_of_chaos(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -154,6 +163,11 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches(self.DETACHMENT_RENEGADE_RAIDERS)
+
+    def is_renegade_warband(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches(self.DETACHMENT_RENEGADE_WARBAND)
 
     @staticmethod
     def _unit_root(unit):
@@ -233,6 +247,15 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         if root is None:
             return False
         return self._unit_has_keyword(root, "DAMNED")
+
+    def _unit_is_battle_shocked(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        is_battle_shocked = getattr(root, "is_battle_shocked", None)
+        if callable(is_battle_shocked):
+            return bool(is_battle_shocked())
+        return False
 
     def _unit_has_dark_pacts(self, unit) -> bool:
         root = self._unit_root(unit)
@@ -773,6 +796,482 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     def tyrannical_motivation_can_charge_after_fall_back(self, unit, *, game=None) -> bool:
         _has_hit_bonus, has_mobile = self._tyrannical_motivation_effects_for_unit(unit, game=game)
         return bool(has_mobile)
+
+    def clear_renegade_warband_vendetta_target(self) -> None:
+        self.renegade_warband_vendetta_target_unit_id = ""
+
+    def _iter_enemy_units_for_player(self, *, game=None, player=None) -> list:
+        resolved_game = self._resolve_game(game=game)
+        if resolved_game is None:
+            return []
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return []
+        get_enemy_units = getattr(resolved_game, "get_enemy_units", None)
+        if not callable(get_enemy_units):
+            return []
+        enemies = list(get_enemy_units(owner) or [])
+        out: list = []
+        seen: set[str] = set()
+        for unit in enemies:
+            root = self._unit_root(unit)
+            if root is None:
+                continue
+            unit_id = str(get_entity_id(root) or self._unit_root_key(root))
+            if not unit_id or unit_id in seen:
+                continue
+            is_alive = getattr(root, "is_alive", None)
+            if callable(is_alive) and not bool(is_alive()):
+                continue
+            out.append(root)
+            seen.add(unit_id)
+        out.sort(key=lambda unit: str(get_entity_id(unit) or self._unit_root_key(unit)))
+        return out
+
+    def vendetta_candidate_enemy_units(self, *, game=None, player=None) -> list:
+        if not self.is_renegade_warband() or self.army is None:
+            return []
+        return self._iter_enemy_units_for_player(game=game, player=player)
+
+    def _pending_vendetta_choice_request(self, game, *, army_id: str, battle_round: int) -> bool:
+        if game is None:
+            return False
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "").strip().lower() != self._RENEGADE_WARBAND_VENDETTA_ABILITY:
+                continue
+            if str(ctx.get("army_id", "") or "") != str(army_id or ""):
+                continue
+            try:
+                ctx_round = int(ctx.get("battle_round", battle_round) or battle_round)
+            except (TypeError, ValueError):
+                ctx_round = int(battle_round or 0)
+            if int(ctx_round) == int(battle_round):
+                return True
+        return False
+
+    def can_select_vendetta_target(self, *, game=None, player=None) -> bool:
+        if not self.is_renegade_warband() or self.army is None:
+            return False
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return False
+        army_player = getattr(self.army, "player", None)
+        if army_player is not None:
+            if str(getattr(army_player, "id", "") or "") != str(getattr(owner, "id", "") or ""):
+                return False
+        resolved_game = self._resolve_game(game=game)
+        if resolved_game is None:
+            return False
+        phase_name = self._current_phase_name(game=resolved_game)
+        if phase_name and phase_name != "COMMAND_PHASE":
+            return False
+        current_owner = str(self._current_turn_owner_id(game=resolved_game, player=owner) or "")
+        if current_owner and current_owner != str(getattr(owner, "id", "") or ""):
+            return False
+        return True
+
+    def queue_renegade_warband_vendetta_choice_request(self, *, game=None, player=None) -> None:
+        if not self.is_renegade_warband() or self.army is None:
+            return
+        resolved_game = self._resolve_game(game=game)
+        if resolved_game is None or not bool(getattr(resolved_game, "is_authoritative", True)):
+            return
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return
+        if not self.can_select_vendetta_target(game=resolved_game, player=owner):
+            return
+
+        self.clear_renegade_warband_vendetta_target()
+
+        candidates = list(self.vendetta_candidate_enemy_units(game=resolved_game, player=owner) or [])
+        if not candidates:
+            return
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        army_id = str(get_entity_id(self.army) or "")
+        battle_round = int(self._current_turn(game=resolved_game) or 0)
+        if self._pending_vendetta_choice_request(
+            resolved_game,
+            army_id=army_id,
+            battle_round=battle_round,
+        ):
+            return
+
+        options: list[DecisionOption] = []
+        candidate_ids: list[str] = []
+        for unit in candidates:
+            unit_id = str(get_entity_id(unit) or "")
+            if not unit_id:
+                continue
+            candidate_ids.append(unit_id)
+            options.append(
+                DecisionOption.create(
+                    str(getattr(unit, "name", "Enemy Unit") or "Enemy Unit"),
+                    payload={
+                        "target_unit_id": unit_id,
+                        "army_id": army_id,
+                    },
+                )
+            )
+        if not options:
+            return
+
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Vendetta: select one enemy unit.",
+            player_id=getattr(owner, "id", None),
+            options=options,
+            context={
+                "ability": self._RENEGADE_WARBAND_VENDETTA_ABILITY,
+                "ability_name": self._RENEGADE_WARBAND_VENDETTA_SOURCE,
+                "phase": "Command phase",
+                "army_id": army_id,
+                "battle_round": int(battle_round),
+                "candidate_unit_ids": list(candidate_ids),
+                "optional": False,
+            },
+        )
+        if hasattr(resolved_game, "request_decision"):
+            resolved_game.request_decision(request)
+
+    def vendetta_target_is_valid(self, target_unit_id: str, *, game=None, player=None) -> bool:
+        target_id = str(target_unit_id or "").strip()
+        if not target_id:
+            return False
+        candidates = list(self.vendetta_candidate_enemy_units(game=game, player=player) or [])
+        candidate_ids = {str(get_entity_id(unit) or "") for unit in candidates}
+        return target_id in candidate_ids
+
+    def select_vendetta_target(self, target_unit_id: str, *, game=None, player=None) -> dict:
+        if not self.can_select_vendetta_target(game=game, player=player):
+            return {"ok": False, "reason": "Vendetta target cannot be selected right now."}
+        target_id = str(target_unit_id or "").strip()
+        if not self.vendetta_target_is_valid(target_id, game=game, player=player):
+            return {"ok": False, "reason": "Vendetta target is invalid."}
+        self.renegade_warband_vendetta_target_unit_id = target_id
+        target_name = ""
+        for unit in list(self.vendetta_candidate_enemy_units(game=game, player=player) or []):
+            if str(get_entity_id(unit) or "") == target_id:
+                target_name = str(getattr(unit, "name", "") or "").strip()
+                break
+        return {
+            "ok": True,
+            "target_unit_id": target_id,
+            "target_name": target_name or "Enemy Unit",
+            "source": self._RENEGADE_WARBAND_VENDETTA_SOURCE,
+        }
+
+    def vendetta_reroll_hit_applies(self, attacker_model, target_unit, *, game=None) -> tuple[bool, str]:
+        if not self.is_renegade_warband():
+            return False, ""
+        if attacker_model is None or target_unit is None:
+            return False, ""
+        if not self._model_in_army(attacker_model):
+            return False, ""
+        if not self._model_is_heretic_astartes(attacker_model):
+            return False, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        if self._unit_is_damned(attacker_unit):
+            return False, ""
+        target_root = self._unit_root(target_unit)
+        if target_root is None:
+            return False, ""
+        stored_target_id = str(self.renegade_warband_vendetta_target_unit_id or "").strip()
+        if not stored_target_id:
+            return False, ""
+        if str(get_entity_id(target_root) or "") != stored_target_id:
+            return False, ""
+        is_alive = getattr(target_root, "is_alive", None)
+        if callable(is_alive) and not bool(is_alive()):
+            return False, ""
+        return True, self._RENEGADE_WARBAND_VENDETTA_SOURCE
+
+    def twisted_doctrine_can_trigger(
+        self,
+        unit,
+        *,
+        action: str,
+        game=None,
+        player=None,
+        set_up_as_reinforcements: bool = False,
+    ) -> bool:
+        if not self.is_renegade_warband():
+            return False
+        action_key = str(action or "").strip().lower()
+        if action_key not in self._TWISTED_DOCTRINE_ALLOWED_ACTIONS:
+            return False
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        if not self._unit_on_battlefield(root):
+            return False
+        if not self._unit_is_heretic_astartes(root):
+            return False
+        if self._unit_is_battle_shocked(root):
+            return False
+        if action_key == "set_up" and bool(set_up_as_reinforcements):
+            arrived = getattr(root, "arrived_from_reserves_this_turn", None)
+            if arrived is not None and not bool(arrived):
+                return False
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return False
+        phase_name = self._current_phase_name(game=game)
+        if phase_name and phase_name != "MOVEMENT_PHASE":
+            return False
+        current_owner = str(self._current_turn_owner_id(game=game, player=owner) or "")
+        if current_owner and current_owner != str(getattr(owner, "id", "") or ""):
+            return False
+        return True
+
+    def _pending_twisted_doctrine_choice_request(
+        self,
+        game,
+        *,
+        unit_id: str,
+        instance_key: str,
+    ) -> bool:
+        if game is None:
+            return False
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "").strip().lower() != self._RENEGADE_WARBAND_TWISTED_DOCTRINE_ABILITY:
+                continue
+            if str(ctx.get("unit_id", "") or "") != str(unit_id or ""):
+                continue
+            if str(ctx.get("ability_instance", "") or "").strip().lower() != str(instance_key or "").strip().lower():
+                continue
+            return True
+        return False
+
+    def queue_twisted_doctrine_choice_request(
+        self,
+        unit,
+        *,
+        action: str,
+        game=None,
+        player=None,
+        set_up_as_reinforcements: bool = False,
+    ) -> None:
+        root = self._unit_root(unit)
+        if root is None:
+            return
+        resolved_game = self._resolve_game(game=game)
+        if resolved_game is None or not bool(getattr(resolved_game, "is_authoritative", True)):
+            return
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return
+        action_key = str(action or "").strip().lower()
+        if not self.twisted_doctrine_can_trigger(
+            root,
+            action=action_key,
+            game=resolved_game,
+            player=owner,
+            set_up_as_reinforcements=set_up_as_reinforcements,
+        ):
+            return
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        unit_id = str(get_entity_id(root) or "")
+        if not unit_id:
+            return
+        turn = int(self._current_turn(game=resolved_game) or 0)
+        phase_name = str(self._current_phase_name(game=resolved_game) or "")
+        owner_id = str(self._current_turn_owner_id(game=resolved_game, player=owner) or "")
+        instance_key = (
+            f"{unit_id}:{turn}:{phase_name}:{owner_id}:{action_key}:"
+            f"{int(bool(set_up_as_reinforcements))}:twisted_doctrine"
+        )
+        if self._pending_twisted_doctrine_choice_request(
+            resolved_game,
+            unit_id=unit_id,
+            instance_key=instance_key,
+        ):
+            return
+
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            (
+                f"Twisted Doctrine: choose an effect for {getattr(root, 'name', 'Unit')} "
+                "or select None."
+            ),
+            player_id=getattr(owner, "id", None),
+            options=[
+                DecisionOption.create(
+                    "Shoot and charge after Falling Back",
+                    payload={
+                        "choice_key": self._RENEGADE_WARBAND_TWISTED_DOCTRINE_FALL_BACK_CHOICE,
+                        "unit_id": unit_id,
+                        "trigger_action": action_key,
+                        "set_up_as_reinforcements": bool(set_up_as_reinforcements),
+                    },
+                ),
+                DecisionOption.create(
+                    "Charge after Advancing",
+                    payload={
+                        "choice_key": self._RENEGADE_WARBAND_TWISTED_DOCTRINE_ADVANCE_CHOICE,
+                        "unit_id": unit_id,
+                        "trigger_action": action_key,
+                        "set_up_as_reinforcements": bool(set_up_as_reinforcements),
+                    },
+                ),
+                DecisionOption.create(
+                    "None",
+                    payload={
+                        "action": "skip",
+                        "skip": True,
+                        "unit_id": unit_id,
+                        "trigger_action": action_key,
+                        "set_up_as_reinforcements": bool(set_up_as_reinforcements),
+                    },
+                ),
+            ],
+            context={
+                "ability": self._RENEGADE_WARBAND_TWISTED_DOCTRINE_ABILITY,
+                "ability_name": self._RENEGADE_WARBAND_TWISTED_DOCTRINE_SOURCE,
+                "phase": "Movement phase",
+                "unit_id": unit_id,
+                "trigger_action": action_key,
+                "set_up_as_reinforcements": bool(set_up_as_reinforcements),
+                "turn": int(turn),
+                "turn_owner_id": owner_id,
+                "ability_instance": instance_key,
+                "allowed_choice_keys": [
+                    self._RENEGADE_WARBAND_TWISTED_DOCTRINE_FALL_BACK_CHOICE,
+                    self._RENEGADE_WARBAND_TWISTED_DOCTRINE_ADVANCE_CHOICE,
+                ],
+                "optional": True,
+            },
+        )
+        if hasattr(resolved_game, "request_decision"):
+            resolved_game.request_decision(request)
+
+    def _twisted_doctrine_active_state(self, unit, *, game=None) -> tuple[bool, bool]:
+        if not self.is_renegade_warband():
+            return False, False
+        root = self._unit_root(unit)
+        if root is None:
+            return False, False
+        if not self._unit_in_army(root):
+            return False, False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False, False
+        if not bool(sr.get("renegade_warband_twisted_doctrine_active", False)):
+            return False, False
+        expected_owner = str(sr.get("renegade_warband_twisted_doctrine_turn_owner", "") or "").strip()
+        expected_turn = int(sr.get("renegade_warband_twisted_doctrine_turn", 0) or 0)
+        current_owner = str(self._current_turn_owner_id(game=game) or "")
+        current_turn = int(self._current_turn(game=game) or 0)
+        if expected_owner and current_owner and expected_owner != current_owner:
+            return False, False
+        if expected_turn and current_turn and expected_turn != current_turn:
+            return False, False
+        fall_back_mode = bool(sr.get("renegade_warband_twisted_doctrine_fall_back_mode", False))
+        advance_mode = bool(sr.get("renegade_warband_twisted_doctrine_advance_mode", False))
+        return fall_back_mode, advance_mode
+
+    def activate_twisted_doctrine(
+        self,
+        unit,
+        *,
+        choice_key: str,
+        action: str,
+        game=None,
+        player=None,
+        set_up_as_reinforcements: bool = False,
+    ) -> dict:
+        root = self._unit_root(unit)
+        if root is None:
+            return {"ok": False, "reason": "Unit not found."}
+        if not self.twisted_doctrine_can_trigger(
+            root,
+            action=action,
+            game=game,
+            player=player,
+            set_up_as_reinforcements=set_up_as_reinforcements,
+        ):
+            return {"ok": False, "reason": "Twisted Doctrine cannot trigger for this unit/action."}
+        key = str(choice_key or "").strip().upper()
+        if key not in {
+            self._RENEGADE_WARBAND_TWISTED_DOCTRINE_FALL_BACK_CHOICE,
+            self._RENEGADE_WARBAND_TWISTED_DOCTRINE_ADVANCE_CHOICE,
+        }:
+            return {"ok": False, "reason": "Twisted Doctrine choice is invalid."}
+
+        take_test = getattr(root, "take_battle_shock_test", None)
+        if callable(take_test):
+            take_test(int(self._current_turn(game=game) or 1))
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        updated = dict(sr)
+        updated["renegade_warband_twisted_doctrine_active"] = True
+        updated["renegade_warband_twisted_doctrine_turn"] = int(self._current_turn(game=game) or 0)
+        updated["renegade_warband_twisted_doctrine_turn_owner"] = str(
+            self._current_turn_owner_id(game=game, player=player) or ""
+        )
+        updated["renegade_warband_twisted_doctrine_source"] = self._RENEGADE_WARBAND_TWISTED_DOCTRINE_SOURCE
+        updated["renegade_warband_twisted_doctrine_action"] = str(action or "").strip().lower()
+        if key == self._RENEGADE_WARBAND_TWISTED_DOCTRINE_FALL_BACK_CHOICE:
+            updated["renegade_warband_twisted_doctrine_fall_back_mode"] = True
+        if key == self._RENEGADE_WARBAND_TWISTED_DOCTRINE_ADVANCE_CHOICE:
+            updated["renegade_warband_twisted_doctrine_advance_mode"] = True
+        root.special_rules = updated
+
+        label = "Shoot and charge after Falling Back"
+        if key == self._RENEGADE_WARBAND_TWISTED_DOCTRINE_ADVANCE_CHOICE:
+            label = "Charge after Advancing"
+        return {
+            "ok": True,
+            "unit_id": str(get_entity_id(root) or ""),
+            "choice_key": key,
+            "label": label,
+            "source": self._RENEGADE_WARBAND_TWISTED_DOCTRINE_SOURCE,
+            "is_battle_shocked": bool(self._unit_is_battle_shocked(root)),
+        }
+
+    def twisted_doctrine_can_shoot_after_fall_back(self, unit, profile=None, *, game=None) -> bool:
+        fall_back_mode, _advance_mode = self._twisted_doctrine_active_state(unit, game=game)
+        if not fall_back_mode:
+            return False
+        parent = getattr(profile, "parent_wargear", None) if profile is not None else None
+        is_ranged = getattr(parent, "is_ranged", None) if parent is not None else None
+        if callable(is_ranged):
+            return bool(is_ranged())
+        return True
+
+    def twisted_doctrine_can_charge_after_fall_back(self, unit, *, game=None) -> bool:
+        fall_back_mode, _advance_mode = self._twisted_doctrine_active_state(unit, game=game)
+        return bool(fall_back_mode)
+
+    def twisted_doctrine_can_charge_after_advance(self, unit, *, game=None) -> bool:
+        _fall_back_mode, advance_mode = self._twisted_doctrine_active_state(unit, game=game)
+        return bool(advance_mode)
 
     @staticmethod
     def _normalize_name(value: str) -> str:
@@ -1815,6 +2314,36 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         if self.is_pactbound_zealots():
             errors.extend(self._validate_pactbound_zealots_rules())
         return errors
+
+    def slaves_to_none_disables_dark_pacts(self, unit=None) -> bool:
+        if not self.is_renegade_warband():
+            return False
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        return bool(self._unit_is_heretic_astartes(root))
+
+    def slaves_to_none_assault_applies(self, unit, weapon_profile=None) -> bool:
+        if not self.is_renegade_warband():
+            return False
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        if not self._unit_is_heretic_astartes(root):
+            return False
+        if weapon_profile is None:
+            return True
+        parent = getattr(weapon_profile, "parent_wargear", None)
+        if parent is None:
+            return False
+        is_ranged = getattr(parent, "is_ranged", None)
+        if callable(is_ranged):
+            return bool(is_ranged())
+        return False
 
     def raiders_and_reavers_assault_applies(self, unit, weapon_profile=None) -> bool:
         if not self.is_renegade_raiders():

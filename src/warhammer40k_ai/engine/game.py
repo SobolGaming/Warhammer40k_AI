@@ -1548,6 +1548,18 @@ class Game(
         if callable(queue_fn):
             queue_fn(game=self, player=player)
 
+    def _maybe_prompt_csm_vendetta(self) -> None:
+        player = self.get_current_player()
+        if player is None:
+            raise RuntimeError("Vendetta prompt requires current player.")
+        army = player.get_army()
+        if army is None:
+            raise RuntimeError("Vendetta prompt requires an army.")
+        mgr = getattr(army, "chaos_space_marines_detachments", None)
+        queue_fn = getattr(mgr, "queue_renegade_warband_vendetta_choice_request", None) if mgr is not None else None
+        if callable(queue_fn):
+            queue_fn(game=self, player=player)
+
     def _refresh_csm_tyrannical_motivation_phase_state(self) -> None:
         for player in list(getattr(self, "players", []) or []):
             if player is None:
@@ -3289,13 +3301,70 @@ class Game(
             instance_key=f"{unit_id}:{turn}:{phase_name}:{owner_id}:desperate_devotion:{action_key}",
         )
 
+    def _queue_csm_twisted_doctrine(
+        self,
+        *,
+        unit=None,
+        action: str | None = None,
+        set_up_as_reinforcements: bool = False,
+    ) -> None:
+        if unit is None:
+            return
+        action_key = str(action or "").strip().lower()
+        if action_key not in {"move", "advance", "fall_back", "set_up"}:
+            return
+        root = unit
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        if callable(get_root):
+            try:
+                resolved = get_root()
+            except (AttributeError, RuntimeError, TypeError):
+                resolved = None
+            if resolved is not None:
+                root = resolved
+        if root is None:
+            return
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        if army is None:
+            return
+        mgr = getattr(army, "chaos_space_marines_detachments", None)
+        queue_fn = getattr(mgr, "queue_twisted_doctrine_choice_request", None) if mgr is not None else None
+        if not callable(queue_fn):
+            return
+        player = getattr(army, "player", None)
+        if player is None:
+            return
+        queue_fn(
+            root,
+            action=action_key,
+            game=self,
+            player=player,
+            set_up_as_reinforcements=bool(set_up_as_reinforcements),
+        )
+
     def _on_unit_move_started_detachment_rules(self, unit=None, action: str | None = None, **_kwargs) -> None:
         if unit is None:
             return
         action_key = str(action or "").strip().lower()
-        if action_key not in {"move", "advance"}:
+        if action_key not in {"move", "advance", "fall_back"}:
             return
-        self._queue_chaos_cult_desperate_devotion(unit=unit, action=action_key)
+        if action_key in {"move", "advance"}:
+            self._queue_chaos_cult_desperate_devotion(unit=unit, action=action_key)
+        self._queue_csm_twisted_doctrine(unit=unit, action=action_key)
+
+    def _on_unit_set_up_csm_detachment_rules(
+        self,
+        unit=None,
+        set_up_as_reinforcements: bool = False,
+        **_kwargs,
+    ) -> None:
+        if unit is None:
+            return
+        self._queue_csm_twisted_doctrine(
+            unit=unit,
+            action="set_up",
+            set_up_as_reinforcements=bool(set_up_as_reinforcements),
+        )
 
     def _on_charge_declared_detachment_rules(self, unit=None, **_kwargs) -> None:
         if unit is None:
@@ -8144,6 +8213,7 @@ class Game(
         # Abaddon: The Warmaster selection at the start of your Command phase.
         self._maybe_prompt_csm_warmaster(current_player)
         self._maybe_prompt_csm_tyrannical_motivation()
+        self._maybe_prompt_csm_vendetta()
         self._maybe_prompt_csm_experimental_augmentations()
         self._refresh_csm_tyrannical_motivation_phase_state()
 

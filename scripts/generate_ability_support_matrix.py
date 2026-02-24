@@ -752,6 +752,22 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"ranged weapons equipped by heretic astartes models from your army have the assault ability",
             r"each time a heretic astartes model from your army makes an attack that targets a unit within range of an objective marker improve the armour penetration characteristic of that attack by \d+",
         ),
+        "Slaves to None": (
+            r"heretic astartes models from your army lose the dark pacts ability",
+            r"ranged weapons equipped by heretic astartes models from your army have the assault ability",
+        ),
+        "Vendetta": (
+            r"at the start of your command phase select one unit from your opponent(?:s| s) army",
+            r"until the start of your next command phase that enemy unit is your vendetta target",
+            r"each time a heretic astartes model from your army excluding damned models makes an attack that targets your vendetta target you can reroll the hit roll",
+        ),
+        "Twisted Doctrine": (
+            r"in your movement phase each time you set up or select a heretic astartes unit excluding battle shocked units from your army to move it can choose to default to doctrine",
+            r"if it does it must first take a battle shock test",
+            r"then select one of the following",
+            r"until the end of the turn this unit is eligible to shoot and declare a charge in a turn in which it fell back",
+            r"until the end of the turn this unit is eligible to declare a charge in a turn in which it advanced",
+        ),
         "Defend at All Costs": (
             r"each time a dire avenger guardian support weapon or war walker model from your army makes an attack if that models unit and or the target unit are within range of one or more objective markers add \d+ to the hit roll",
         ),
@@ -2573,6 +2589,18 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Tyrannical Motivation": (
             "Supported",
             "Huron's Marauders: in your Command phase choose Huron's Elite (+1 to hit for HERETIC ASTARTES INFANTRY) or Mobile Marauders (shoot/charge after Falling Back for HERETIC ASTARTES INFANTRY) until your next Command phase; at each phase start, units visible to a friendly Huron Blackheart gain both abilities for that phase.",
+        ),
+        "Slaves to None": (
+            "Supported",
+            "Renegade Warband: HERETIC ASTARTES units from your army lose access to Dark Pacts, and ranged weapons equipped by HERETIC ASTARTES models from your army gain [ASSAULT].",
+        ),
+        "Vendetta": (
+            "Supported",
+            "Renegade Warband: at the start of your Command phase, select one enemy unit as your Vendetta target until your next Command phase; HERETIC ASTARTES models from your army (excluding DAMNED) can re-roll Hit rolls when attacking that target.",
+        ),
+        "Twisted Doctrine": (
+            "Supported",
+            "Renegade Warband: in your Movement phase, each time an eligible HERETIC ASTARTES unit is set up or selected to move it can take a Battle-shock test and choose one mode until end of turn (shoot/charge after Falling Back, or charge after Advancing).",
         ),
         "Mechanised Murder": ("Supported", "Rapid Evisceration: reroll Hit/Wound rolls of 1 for eligible units."),
         "Daemonic Empowerment": (

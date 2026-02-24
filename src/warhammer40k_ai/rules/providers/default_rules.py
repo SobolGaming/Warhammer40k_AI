@@ -75,6 +75,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("unit_set_up", "_on_unit_set_up_genestealer_cults_detachments"),
                 ("unit_set_up", "_on_unit_set_up_tyranids_detachments"),
                 ("unit_set_up", "_on_unit_set_up_orks_detachments"),
+                ("unit_set_up", "_on_unit_set_up_csm_detachment_rules"),
                 ("unit_set_up", "_on_unit_set_up_setup_reactive_shoot_or_charge"),
                 ("unit_disembarked", "_on_unit_disembarked_setup_reactive_shoot_or_charge"),
                 ("unit_move_ended", "_on_unit_move_ended_loping_speed"),

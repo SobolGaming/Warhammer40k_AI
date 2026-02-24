@@ -9349,6 +9349,12 @@ class WargearProfile:
                 reroll_hit_values.add(1)
                 source_name = str(source or "Marks of Chaos").strip() or "Marks of Chaos"
                 reroll_value_reasons.append(f"{source_name}: re-roll Hit rolls of 1")
+        vendetta_reroll_fn = getattr(csm_mgr, "vendetta_reroll_hit_applies", None) if csm_mgr is not None else None
+        if callable(vendetta_reroll_fn):
+            reroll_full, source = vendetta_reroll_fn(attacker, target)
+            if bool(reroll_full):
+                source_name = str(source or "Vendetta").strip() or "Vendetta"
+                reroll_full_reasons.append(f"{source_name}: re-roll Hit roll")
         # Contextual reroll sources carried on the attack instance (best-effort).
         try:
             if bool(attack_instance.get("furious_onslaught_applies")):

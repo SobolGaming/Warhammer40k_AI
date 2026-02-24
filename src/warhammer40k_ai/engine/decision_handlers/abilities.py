@@ -3062,6 +3062,97 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if choice_key not in {"HURONS_ELITE", "MOBILE_MARAUDERS"}:
             return ("Tyrannical Motivation choice must be HURONS_ELITE or MOBILE_MARAUDERS.",)
         return ()
+    if ability == "renegade_warband_vendetta_target":
+        if is_skip_choice(request, result):
+            return ("Vendetta target selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Vendetta army not found.",)
+        mgr = getattr(army, "chaos_space_marines_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_renegade_warband", lambda: False)()):
+            return ("Vendetta requires Renegade Warband.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        can_select = getattr(mgr, "can_select_vendetta_target", None)
+        if not callable(can_select) or not bool(can_select(game=game, player=player)):
+            return ("Vendetta target cannot be selected right now.",)
+        target_unit_id = str(
+            payload.get("target_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("target_unit_id")
+            or ""
+        ).strip()
+        if not target_unit_id:
+            return ("Vendetta selection requires target_unit_id.",)
+        candidate_ids = {
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(v or "").strip()
+        }
+        if candidate_ids and target_unit_id not in candidate_ids:
+            return ("Vendetta selection contains an ineligible target.",)
+        validate_target = getattr(mgr, "vendetta_target_is_valid", None)
+        if not callable(validate_target) or not bool(validate_target(target_unit_id, game=game, player=player)):
+            return ("Vendetta selected target is invalid.",)
+        return ()
+    if ability == "renegade_warband_twisted_doctrine":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Twisted Doctrine army not found.",)
+        mgr = getattr(army, "chaos_space_marines_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_renegade_warband", lambda: False)()):
+            return ("Twisted Doctrine requires Renegade Warband.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "").strip()
+        if not unit_id:
+            return ("Twisted Doctrine requires unit_id.",)
+        unit = resolve_unit(game, unit_id)
+        if unit is None:
+            return ("Twisted Doctrine unit was not found.",)
+        action = str(payload.get("trigger_action") or ctx.get("trigger_action") or "").strip().lower()
+        if not action:
+            action = "move"
+        set_up_as_reinforcements = bool(
+            payload.get("set_up_as_reinforcements", ctx.get("set_up_as_reinforcements", False))
+        )
+        can_trigger = getattr(mgr, "twisted_doctrine_can_trigger", None)
+        if not callable(can_trigger):
+            return ("Twisted Doctrine validation is unavailable.",)
+        if not bool(
+            can_trigger(
+                unit,
+                action=action,
+                game=game,
+                player=player,
+                set_up_as_reinforcements=set_up_as_reinforcements,
+            )
+        ):
+            if is_skip_choice(request, result):
+                return ()
+            return ("Twisted Doctrine cannot trigger for this unit/action.",)
+        if is_skip_choice(request, result):
+            return ()
+        choice = payload.get("choice_key")
+        if choice is None:
+            choice = payload.get("key")
+        if choice is None:
+            return ("Twisted Doctrine selection requires choice_key.",)
+        choice_key = str(choice or "").strip().upper()
+        allowed_keys = {
+            str(v or "").strip().upper()
+            for v in list(ctx.get("allowed_choice_keys", []) or [])
+            if str(v or "").strip()
+        }
+        if allowed_keys and choice_key not in allowed_keys:
+            return ("Selected Twisted Doctrine choice is not in this request's candidate list.",)
+        if choice_key not in {"FALL_BACK_SHOOT_AND_CHARGE", "ADVANCE_CHARGE"}:
+            return ("Twisted Doctrine choice must be FALL_BACK_SHOOT_AND_CHARGE or ADVANCE_CHARGE.",)
+        return ()
     if ability == "experimental_augmentations_reroll":
         if is_skip_choice(request, result):
             return ("Experimental Augmentations reroll selection cannot be skipped.",)
@@ -5538,6 +5629,92 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         ability_name = str(ctx.get("ability_name", "") or "Tyrannical Motivation").strip() or "Tyrannical Motivation"
         label = str((outcome or {}).get("label", "") or choice_key).strip() or choice_key
         _log_action_for_players(game, player, f"{ability_name}: selected {label}.")
+        return dict(outcome)
+    if ability == "renegade_warband_vendetta_target":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "chaos_space_marines_detachments", None)
+        if mgr is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        target_unit_id = str(
+            payload.get("target_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("target_unit_id")
+            or ""
+        ).strip()
+        if not target_unit_id:
+            return None
+        select_fn = getattr(mgr, "select_vendetta_target", None)
+        if not callable(select_fn):
+            return None
+        outcome = select_fn(target_unit_id, game=game, player=player)
+        if not isinstance(outcome, dict) or not bool(outcome.get("ok", False)):
+            return None
+        ability_name = str(ctx.get("ability_name", "") or "Vendetta").strip() or "Vendetta"
+        target_name = str((outcome or {}).get("target_name", "") or "Enemy Unit").strip() or "Enemy Unit"
+        _log_action_for_players(game, player, f"{ability_name}: selected {target_name} as your Vendetta target.")
+        return dict(outcome)
+    if ability == "renegade_warband_twisted_doctrine":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "chaos_space_marines_detachments", None)
+        if mgr is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "").strip()
+        if not unit_id:
+            return None
+        unit = resolve_unit(game, unit_id)
+        if unit is None:
+            return None
+        root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+        if root is None:
+            return None
+        ability_name = str(ctx.get("ability_name", "") or "Twisted Doctrine").strip() or "Twisted Doctrine"
+        if is_skip_choice(request, result):
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {getattr(root, 'name', 'Unit')} did not Default to Doctrine.",
+            )
+            return {"ok": True, "skipped": True}
+        choice_key = str(payload.get("choice_key", "") or payload.get("key", "")).strip().upper()
+        if not choice_key:
+            return None
+        action = str(payload.get("trigger_action") or ctx.get("trigger_action") or "").strip().lower()
+        if not action:
+            action = "move"
+        set_up_as_reinforcements = bool(
+            payload.get("set_up_as_reinforcements", ctx.get("set_up_as_reinforcements", False))
+        )
+        activate_fn = getattr(mgr, "activate_twisted_doctrine", None)
+        if not callable(activate_fn):
+            return None
+        outcome = activate_fn(
+            root,
+            choice_key=choice_key,
+            action=action,
+            game=game,
+            player=player,
+            set_up_as_reinforcements=set_up_as_reinforcements,
+        )
+        if not isinstance(outcome, dict) or not bool(outcome.get("ok", False)):
+            return None
+        label = str((outcome or {}).get("label", "") or choice_key).strip() or choice_key
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {getattr(root, 'name', 'Unit')} selected {label}.",
+        )
         return dict(outcome)
     if ability == "experimental_augmentations_reroll":
         payload = _option_payload(request, result)
