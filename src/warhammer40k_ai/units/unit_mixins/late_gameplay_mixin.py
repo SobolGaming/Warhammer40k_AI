@@ -1376,6 +1376,14 @@ class LateGameplayMixin:
                 )
                 if entry not in result:
                     result.append(entry)
+        gsc_mgr = getattr(army, "genestealer_cults_detachments", None) if army is not None else None
+        xenocreed_fnp_fn = getattr(gsc_mgr, "xenocreed_unquestioning_fanaticism_fnp", None) if gsc_mgr is not None else None
+        if callable(xenocreed_fnp_fn):
+            xenocreed_fnp_value, _xenocreed_source = xenocreed_fnp_fn(self, target_model=target_model)
+            if int(xenocreed_fnp_value or 0) > 0:
+                entry = (int(xenocreed_fnp_value), None)
+                if entry not in result:
+                    result.append(entry)
         try:
             # Truesilver Aegis (Aura): friendly GREY KNIGHTS units wholly within 6" gain FNP 6+ vs mortal wounds.
             if self.has_any_keyword("GREY KNIGHTS"):

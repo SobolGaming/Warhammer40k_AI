@@ -1170,6 +1170,10 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"while a genestealer cults mounted or genestealer cults vehicle model from your army is not battle shocked add 1 to its objective control characteristic",
             r"in addition at the end of your command phase if one or more atalan jackals units from your army are within range of an objective marker you control that objective marker remains under your control until your opponent(?: s|s) level of control over that objective marker is greater than yours at the end of a phase",
         ),
+        "Unquestioning Fanaticism": (
+            r"for each acolyte hybrids hybrid metamorphs and neophyte hybrids unit from your army while one or more character models are leading that unit you can reroll advance and charge rolls made for it",
+            r"if that character model is a magus primus or acolyte iconward that model has the feel no pain 3 ability while leading that unit",
+        ),
         "Relentless Rage": (
             r"each time a world eaters unit from your army makes a charge move until the end of the turn add \d+ to the attacks characteristic and add \d+ to the strength characteristic of melee weapons equipped by models in that unit",
         ),
@@ -2362,6 +2366,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Rapid Takeover": (
             "Supported",
             "Outlander Claw: GENESTEALER CULTS MOUNTED and VEHICLE models gain +1 Objective Control while not Battle-shocked, and at the end of your Command phase objective markers you control and that are within range of one or more friendly Atalan Jackals units become sticky until opponent level of control is greater at a phase end.",
+        ),
+        "Unquestioning Fanaticism": (
+            "Supported",
+            "Xenocreed Congregation: ACOLYTE HYBRIDS, HYBRID METAMORPHS, and NEOPHYTE HYBRIDS units with one or more attached CHARACTER leaders can re-roll Advance and Charge rolls, and MAGUS/PRIMUS/ACOLYTE ICONWARD leader models in those attached units gain Feel No Pain 3+ while leading.",
         ),
         "Against All Odds": (
             "Supported",

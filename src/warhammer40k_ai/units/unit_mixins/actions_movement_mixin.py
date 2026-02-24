@@ -5189,6 +5189,16 @@ class ActionsMovementMixin:
                     return True
         except Exception:
             pass
+        army = self.get_parent_army()
+        gsc_mgr = getattr(army, "genestealer_cults_detachments", None) if army is not None else None
+        xenocreed_reroll_advance = (
+            getattr(gsc_mgr, "xenocreed_unquestioning_fanaticism_reroll_advance_applies", None)
+            if gsc_mgr is not None
+            else None
+        )
+        if callable(xenocreed_reroll_advance):
+            if bool(xenocreed_reroll_advance(self)):
+                return True
         try:
             for u in list(self.get_attached_unit_members() or []):
                 sr = getattr(u, "special_rules", None)
@@ -6368,6 +6378,16 @@ class ActionsMovementMixin:
                     return True
         except Exception:
             pass
+        army = self.get_parent_army()
+        gsc_mgr = getattr(army, "genestealer_cults_detachments", None) if army is not None else None
+        xenocreed_reroll_charge = (
+            getattr(gsc_mgr, "xenocreed_unquestioning_fanaticism_reroll_charge_applies", None)
+            if gsc_mgr is not None
+            else None
+        )
+        if callable(xenocreed_reroll_charge):
+            if bool(xenocreed_reroll_charge(self)):
+                return True
         try:
             if self._spearhead_striker_charge_reroll_active(game=game):
                 return True

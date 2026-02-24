@@ -71,6 +71,17 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
     _RAPID_TAKEOVER_RULE_NAME = "Rapid Takeover"
     _RAPID_TAKEOVER_STICKY_SOURCE = "rapid_takeover"
     _RAPID_TAKEOVER_ATALAN_JACKALS_TOKEN = "atalan jackals"
+    _UNQUESTIONING_FANATICISM_RULE_NAME = "Unquestioning Fanaticism"
+    _UNQUESTIONING_FANATICISM_ELIGIBLE_UNIT_PREFIXES = (
+        "acolyte hybrids",
+        "hybrid metamorphs",
+        "neophyte hybrids",
+    )
+    _UNQUESTIONING_FANATICISM_FNP_LEADER_TOKENS = (
+        "magus",
+        "primus",
+        "acolyte iconward",
+    )
 
     @staticmethod
     def _attached_root(unit):
@@ -326,6 +337,11 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Outlander Claw")
 
+    def is_xenocreed_congregation(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Xenocreed Congregation")
+
     def outlander_claw_rapid_takeover_objective_control_bonus(self, model, *, unit=None) -> tuple[int, str]:
         if not self.is_outlander_claw():
             return 0, ""
@@ -408,6 +424,97 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
                     loc.controlling_player = player
                 applied += 1
         return int(applied)
+
+    def _xenocreed_unquestioning_fanaticism_bodyguard_eligible(self, unit) -> bool:
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        if not self._unit_is_genestealer_cults(root):
+            return False
+        tokens = self._unit_name_tokens(root)
+        for token in tokens:
+            for prefix in self._UNQUESTIONING_FANATICISM_ELIGIBLE_UNIT_PREFIXES:
+                if token.startswith(prefix):
+                    return True
+        return False
+
+    def _xenocreed_attached_character_leaders(self, unit) -> list:
+        root = self._attached_root(unit)
+        if root is None:
+            return []
+        leaders = sorted(
+            [leader for leader in list(getattr(root, "attached_leaders", []) or []) if leader is not None],
+            key=lambda leader: str(get_entity_id(leader) or ""),
+        )
+        out: list = []
+        for leader in leaders:
+            if not self._unit_in_army(leader):
+                continue
+            if not bool(getattr(leader, "is_attached_leader", False)):
+                continue
+            models = list(getattr(leader, "models", []) or [])
+            if not models:
+                continue
+            has_alive_model = False
+            has_character_model = False
+            for model in models:
+                if model is None:
+                    continue
+                is_alive = getattr(model, "is_alive", True)
+                if callable(is_alive):
+                    is_alive = is_alive()
+                if not bool(is_alive):
+                    continue
+                has_alive_model = True
+                if bool(getattr(model, "is_character", False)):
+                    has_character_model = True
+                    break
+            if not has_alive_model:
+                continue
+            if not has_character_model and not self._unit_has_keyword(leader, "CHARACTER"):
+                continue
+            out.append(leader)
+        return out
+
+    def xenocreed_unquestioning_fanaticism_reroll_advance_applies(self, unit) -> bool:
+        if not self.is_xenocreed_congregation():
+            return False
+        if not self._xenocreed_unquestioning_fanaticism_bodyguard_eligible(unit):
+            return False
+        return bool(self._xenocreed_attached_character_leaders(unit))
+
+    def xenocreed_unquestioning_fanaticism_reroll_charge_applies(self, unit) -> bool:
+        return self.xenocreed_unquestioning_fanaticism_reroll_advance_applies(unit)
+
+    def xenocreed_unquestioning_fanaticism_fnp(self, unit, *, target_model=None) -> tuple[int, str]:
+        if not self.is_xenocreed_congregation():
+            return 0, ""
+        if target_model is None:
+            return 0, ""
+        root = self._attached_root(unit)
+        if root is None:
+            return 0, ""
+        if not self._xenocreed_unquestioning_fanaticism_bodyguard_eligible(root):
+            return 0, ""
+        if not self._xenocreed_attached_character_leaders(root):
+            return 0, ""
+
+        model_unit = getattr(target_model, "parent_unit", None)
+        model_root = self._attached_root(model_unit)
+        if model_unit is None or model_root is not root:
+            return 0, ""
+        if not bool(getattr(model_unit, "is_attached_leader", False)):
+            return 0, ""
+        if not bool(getattr(target_model, "is_character", False)) and not self._unit_has_keyword(model_unit, "CHARACTER"):
+            return 0, ""
+
+        leader_tokens = self._unit_name_tokens(model_unit)
+        for token in leader_tokens:
+            if token in self._UNQUESTIONING_FANATICISM_FNP_LEADER_TOKENS:
+                return 3, self._UNQUESTIONING_FANATICISM_RULE_NAME
+        return 0, ""
 
     def _integrated_tactics_source_eligible(self, unit) -> bool:
         if not self.is_brood_brother_auxilia():
