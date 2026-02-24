@@ -11216,6 +11216,8 @@ def _stratagem_support(
         "DEATH DENIED": "Your Command phase: selected SHADOW LEGION unit heals one model up to 3 lost wounds; if it has TZEENTCH, return up to one destroyed non-CHARACTER model to that unit at full wounds.",
         "CHANNELLED WRATH": "Fight phase: SHADOW LEGION unit that has not been selected to fight gains [LANCE] on melee weapons until end of phase; if it has KHORNE, improve melee AP by 1 as well.",
         "ENCROACHING DARKNESS": "Your Shooting phase: select up to one SHADOW LEGION HERETIC ASTARTES unit and up to one SHADOW LEGION LEGIONES DAEMONICA unit that arrived from Reserves this turn; selected units gain [IGNORES COVER] on ranged weapons until end of phase.",
+        "SHADE PATH": "Opponent Charge phase reaction after an enemy declares a charge: selected SHADOW LEGION charge target applies -2 to that enemy's Charge rolls this phase; if the selected unit has NURGLE, that enemy also takes a Battle-shock test.",
+        "SPITEFUL DEMISE": "Any phase reaction when a SHADOW LEGION unit is destroyed: for each enemy unit within Engagement Range of the last model, roll D6 (+2 if the destroyed unit has SLAANESH); on 4-5 deal D3 mortal wounds, on 6+ deal 3 mortal wounds.",
         "DELIRIUM UNMADE": "End of opponent Fight phase: select up to two TZEENTCH LEGIONES DAEMONICA units; if selecting two units or any engaged unit, spend 1 Flux; units enter Strategic Reserves.",
         "DENIZENS OF THE WARP": "Movement phase: Deep Strike arrival can be set up more than 6\" horizontally from enemies this phase.",
         "DRAUGHT OF TERROR": "Shooting/Fight phase: LEGIONES DAEMONICA unit gains +1 AP and re-rolls Wound rolls vs Battle-shocked targets until end of phase.",
@@ -11242,6 +11244,15 @@ def _stratagem_support(
     }
 
     # Some stratagem names are reused across detachments and require detachment-specific notes.
+    if name_u == "SPITEFUL DEMISE":
+        if det_u == "SHADOW LEGION":
+            return (
+                "Implemented",
+                "Any phase reaction when a SHADOW LEGION unit is destroyed: for each enemy unit within Engagement Range of the last model, roll D6 (+2 if the destroyed unit has SLAANESH); on 4-5 deal D3 mortal wounds, on 6+ deal 3 mortal wounds.",
+                name_u,
+            )
+        return ("Not implemented", "Not implemented in engine.", name_u)
+
     if name_u == "SOULSIGHT" and det_u == "DEVOTED OF YNNEAD":
         return (
             "Implemented",

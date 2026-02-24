@@ -253,6 +253,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "CHANNELLED WRATH",
     "DEATH DENIED",
     "ENCROACHING DARKNESS",
+    "SHADE PATH",
+    "SPITEFUL DEMISE",
     "DELIRIUM UNMADE",
     "ENDLESS PURSUIT OF VIOLENCE",
     "HORRIFYING VIOLENCE",
@@ -428,6 +430,8 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "CORRUPT REALSPACE",
     "DAEMONIC INVULNERABILITY",
     "BINDING SHADOW",
+    "SHADE PATH",
+    "SPITEFUL DEMISE",
     "DELIRIUM UNMADE",
     "ENDLESS PURSUIT OF VIOLENCE",
     "FOOLS' FLIGHT",
@@ -1477,7 +1481,7 @@ class StratagemManager(
             "FOOLS' FLIGHT",
         }:
             add("unit_move_ended", self._on_unit_move_ended)
-        if names & {"ANTI-GRAV REPULSION", "ANTI‑GRAV REPULSION", "BLIND GRENADES", "A DEADLY SNARE"}:
+        if names & {"ANTI-GRAV REPULSION", "ANTI‑GRAV REPULSION", "BLIND GRENADES", "A DEADLY SNARE", "SHADE PATH"}:
             add("charge_declared", self._on_charge_declared)
         if names & {"FIRES OF COVENANT", "A CHALLENGE MET"}:
             add("unit_set_up", self._on_unit_set_up)
@@ -1488,6 +1492,7 @@ class StratagemManager(
             "BLOODY VENGEANCE",
             "DRAWN TO THE SLAUGHTER",
             "PALL OF DREAD",
+            "SPITEFUL DEMISE",
             "VAUL'S VENGEANCE",
             "HEIGHTENED JEALOUSY",
             "INTO THE BREACH",
@@ -1751,6 +1756,7 @@ class StratagemManager(
             "FLICKERING REALITY",
             "CHANNELLED WRATH",
             "ENCROACHING DARKNESS",
+            "SHADE PATH",
             "BLOOD BEGETS SKULLS",
             "GORE-HUNGRY ONSLAUGHT",
             "SHEATHED IN BRASS",
@@ -4134,6 +4140,8 @@ class StratagemManager(
             "DELIRIUM UNMADE": "Target: up to two TZEENTCH LEGIONES DAEMONICA units (end of opponent Fight phase)",
             "CHANNELLED WRATH": "Target: SHADOW LEGION unit that has not been selected to fight this phase; melee weapons gain [LANCE] (KHORNE also improves AP by 1) until end of phase",
             "ENCROACHING DARKNESS": "Target: up to one SHADOW LEGION HERETIC ASTARTES unit and up to one SHADOW LEGION LEGIONES DAEMONICA unit that arrived from Reserves this turn; ranged weapons gain [IGNORES COVER] until end of phase",
+            "SHADE PATH": "Target: SHADOW LEGION unit selected as a target of an enemy charge; that enemy charge roll is worsened by 2 (and takes a Battle-shock test if your unit has NURGLE)",
+            "SPITEFUL DEMISE": "Target: just-destroyed SHADOW LEGION unit; roll for each enemy within Engagement Range of the last model (SLAANESH adds 2) to inflict D3/3 mortal wounds",
             "BLOOD BEGETS SKULLS": "Target: LEGIONES DAEMONICA KHORNE unit that has not been selected to charge this phase",
             "FOOLS' FLIGHT": "Target: LEGIONES DAEMONICA KHORNE unit within 6\" of enemy unit that Fell Back and eligible to charge it",
             "SHEATHED IN BRASS": "Target: LEGIONES DAEMONICA KHORNE unit selected as a target of enemy shooting attacks",
@@ -6216,7 +6224,7 @@ class StratagemManager(
             self._cleanup_blood_legion_phase_end_effects(phase=phase)
         except Exception:
             raise
-        # Chaos Daemons: Shadow Legion CHANNELLED WRATH (expires at end of Fight phase).
+        # Chaos Daemons: Shadow Legion phase-end cleanup (SHADE PATH / ENCROACHING DARKNESS / CHANNELLED WRATH).
         try:
             self._cleanup_shadow_legion_phase_end_effects(phase=phase)
         except Exception:
@@ -7354,6 +7362,10 @@ class StratagemManager(
         self._queue_imperial_knights_valourstrike_move_end_reactions(unit=unit, action=action)
 
     def _on_charge_declared(self, unit=None, target_units=None, **_kwargs):
+        self._queue_shadow_legion_charge_declared_reactions(
+            charging_unit=unit,
+            target_units=list(target_units or []),
+        )
         self._queue_aeldari_armoured_charge_declared_reactions(
             charging_unit=unit,
             target_units=list(target_units or []),
@@ -11453,6 +11465,11 @@ class StratagemManager(
             )
         except Exception:
             raise
+        self._queue_shadow_legion_unit_destroyed_reactions(
+            unit=unit,
+            last_model=last_model,
+            destroyed_by_unit=kwargs.get("destroyed_by_unit"),
+        )
         # EMPEROR'S CHILDREN: track units that destroyed enemies in their Fight phase.
         try:
             destroyed_by_unit = kwargs.get("destroyed_by_unit")

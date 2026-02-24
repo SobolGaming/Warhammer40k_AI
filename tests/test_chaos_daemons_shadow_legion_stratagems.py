@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from unittest.mock import patch
+
 from warhammer40k_ai.engine.battlefield import Battlefield, BattlefieldSize
 from warhammer40k_ai.engine.game import Game
 from warhammer40k_ai.engine.phase import BattleRoundPhases
@@ -481,3 +483,177 @@ def test_encroaching_darkness_rejects_two_heretic_targets():
     )
     assert ok is False
     assert shadow_player.command_points == 5
+
+
+def test_shadow_legion_step3_stratagem_descriptors_registered():
+    shade_path = get_stratagem_tool_descriptor(stratagem_id="000009979006")
+    assert shade_path is not None
+    assert shade_path.name == "Shade Path"
+    assert shade_path.effect == "enemy_charge_roll_modifier_and_nurgle_battleshock"
+    assert int(shade_path.cp_cost) == 2
+
+    spiteful = get_stratagem_tool_descriptor(stratagem_id="000009979002")
+    assert spiteful is not None
+    assert spiteful.name == "Spiteful Demise"
+    assert spiteful.effect == "engagement_mortal_wound_burst"
+    assert int(spiteful.cp_cost) == 1
+
+    by_name_shade = get_stratagem_tool_descriptor(name="SHADE PATH")
+    assert by_name_shade is not None
+    assert str(by_name_shade.stratagem_id) == "000009979006"
+
+    by_name_spiteful = get_stratagem_tool_descriptor(name="SPITEFUL DEMISE")
+    assert by_name_spiteful is not None
+    assert str(by_name_spiteful.stratagem_id) == "000009979002"
+
+
+def test_shade_path_queues_on_charge_declared_applies_modifier_and_cleans_up():
+    game, shadow_player, enemy_player, shadow_army, enemy_army = _build_game()
+    nurgle_target = _make_unit("Nurgle Legionaries", keywords=["HERETIC ASTARTES", "NURGLE"])
+    enemy_charger = _make_unit("Enemy Charger", keywords=["INFANTRY"])
+    shadow_army.add_unit(nurgle_target)
+    enemy_army.add_unit(enemy_charger)
+    game.map.units.extend([nurgle_target, enemy_charger])
+    _deploy_unit(nurgle_target, 0.0, 0.0)
+    _deploy_unit(enemy_charger, 6.0, 0.0)
+
+    battle_shock_calls = {"count": 0}
+
+    def _record_battle_shock(_turn):
+        battle_shock_calls["count"] += 1
+
+    enemy_charger.take_battle_shock_test = _record_battle_shock
+
+    game.turn = 2
+    game.phase = BattleRoundPhases.CHARGE_PHASE
+    game.current_player_index = 1
+    game.event_system.publish("phase_start", player=enemy_player, phase=BattleRoundPhases.CHARGE_PHASE)
+
+    game.event_system.publish("charge_declared", unit=enemy_charger, target_units=[nurgle_target])
+    pending = shadow_player.stratagems.get_pending_reactions()
+    shade_reactions = [
+        reaction
+        for reaction in list(pending or [])
+        if _normalize_name(str(reaction.get("stratagem", "") or "")) == "SHADE PATH"
+    ]
+    assert len(shade_reactions) == 1
+
+    shade_name = _find_stratagem_name(shadow_player, "SHADE PATH")
+    ok = shadow_player.stratagems.use(
+        shade_name,
+        unit=nurgle_target,
+        charging_unit=enemy_charger,
+        target_units=[nurgle_target],
+        phase_name="Charge phase",
+        dequeue=True,
+    )
+    assert ok is True
+    assert shadow_player.command_points == 3
+    assert battle_shock_calls["count"] == 1
+
+    modifiers = list(game.get_charge_roll_modifiers(enemy_charger, target_unit=nurgle_target) or [])
+    assert any(int(value) == -2 and "SHADE PATH" in str(source or "").upper() for value, source in modifiers)
+
+    game.event_system.publish("phase_end", player=enemy_player, phase=BattleRoundPhases.CHARGE_PHASE)
+    modifiers_after = list(game.get_charge_roll_modifiers(enemy_charger, target_unit=nurgle_target) or [])
+    assert not any(int(value) == -2 and "SHADE PATH" in str(source or "").upper() for value, source in modifiers_after)
+
+
+def test_shade_path_rejects_unit_not_selected_as_charge_target():
+    game, shadow_player, enemy_player, shadow_army, enemy_army = _build_game()
+    target_a = _make_unit("Target A", keywords=["HERETIC ASTARTES"])
+    target_b = _make_unit("Target B", keywords=["HERETIC ASTARTES"])
+    enemy_charger = _make_unit("Enemy Charger", keywords=["INFANTRY"])
+    shadow_army.add_unit(target_a)
+    shadow_army.add_unit(target_b)
+    enemy_army.add_unit(enemy_charger)
+    game.map.units.extend([target_a, target_b, enemy_charger])
+    _deploy_unit(target_a, 0.0, 0.0)
+    _deploy_unit(target_b, 2.0, 0.0)
+    _deploy_unit(enemy_charger, 6.0, 0.0)
+
+    game.turn = 2
+    game.phase = BattleRoundPhases.CHARGE_PHASE
+    game.current_player_index = 1
+    game.event_system.publish("phase_start", player=enemy_player, phase=BattleRoundPhases.CHARGE_PHASE)
+
+    shade_name = _find_stratagem_name(shadow_player, "SHADE PATH")
+    ok = shadow_player.stratagems.use(
+        shade_name,
+        unit=target_b,
+        charging_unit=enemy_charger,
+        target_units=[target_a],
+        phase_name="Charge phase",
+    )
+    assert ok is False
+    assert shadow_player.command_points == 5
+
+
+def test_spiteful_demise_queues_on_unit_destroyed_and_deals_mortal_wounds():
+    game, shadow_player, _enemy_player, shadow_army, enemy_army = _build_game()
+    doomed = _make_unit("Doomed Unit", keywords=["LEGIONES DAEMONICA", "SLAANESH"])
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"])
+    shadow_army.add_unit(doomed)
+    enemy_army.add_unit(enemy)
+    game.map.units.extend([doomed, enemy])
+    _deploy_unit(doomed, 0.0, 0.0)
+    _deploy_unit(enemy, 0.5, 0.0)
+
+    enemy_model = enemy.models[0]
+    enemy_model._base_wounds = 10
+    enemy_model.base_wounds = 10
+    enemy_model.wounds = 10
+
+    game.turn = 2
+    game.phase = BattleRoundPhases.FIGHT_PHASE
+    game.current_player_index = 0
+    game.event_system.publish("phase_start", player=shadow_player, phase=BattleRoundPhases.FIGHT_PHASE)
+
+    doomed_model = doomed.models[0]
+    doomed.remove_model(doomed_model, game_map=game.map)
+
+    pending = shadow_player.stratagems.get_pending_reactions()
+    spiteful_reactions = [
+        reaction
+        for reaction in list(pending or [])
+        if _normalize_name(str(reaction.get("stratagem", "") or "")) == "SPITEFUL DEMISE"
+    ]
+    assert len(spiteful_reactions) == 1
+
+    spiteful_name = _find_stratagem_name(shadow_player, "SPITEFUL DEMISE")
+    with patch("warhammer40k_ai.rules.stratagems_chaos_daemons.dice_module.get_roll", return_value=4):
+        ok = shadow_player.stratagems.use(
+            spiteful_name,
+            destroyed_unit=doomed,
+            last_model=doomed_model,
+            phase_name="Fight phase",
+            dequeue=True,
+        )
+    assert ok is True
+    assert shadow_player.command_points == 4
+    assert int(enemy_model.wounds or 0) == 7
+
+
+def test_spiteful_demise_not_queued_when_no_enemy_in_engagement_range():
+    game, shadow_player, _enemy_player, shadow_army, enemy_army = _build_game()
+    doomed = _make_unit("Doomed Unit", keywords=["LEGIONES DAEMONICA", "SLAANESH"])
+    enemy = _make_unit("Enemy Unit", keywords=["INFANTRY"])
+    shadow_army.add_unit(doomed)
+    enemy_army.add_unit(enemy)
+    game.map.units.extend([doomed, enemy])
+    _deploy_unit(doomed, 0.0, 0.0)
+    _deploy_unit(enemy, 8.0, 0.0)
+
+    game.turn = 2
+    game.phase = BattleRoundPhases.FIGHT_PHASE
+    game.current_player_index = 0
+    game.event_system.publish("phase_start", player=shadow_player, phase=BattleRoundPhases.FIGHT_PHASE)
+
+    doomed.remove_model(doomed.models[0], game_map=game.map)
+    pending = shadow_player.stratagems.get_pending_reactions()
+    spiteful_reactions = [
+        reaction
+        for reaction in list(pending or [])
+        if _normalize_name(str(reaction.get("stratagem", "") or "")) == "SPITEFUL DEMISE"
+    ]
+    assert spiteful_reactions == []

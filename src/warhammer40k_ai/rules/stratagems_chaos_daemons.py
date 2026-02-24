@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Any, List
 
 from ..utility import dice as dice_module
+from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
+from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL, ENGAGEMENT_RANGE_VERTICAL
 from ..utility.entity_ids import get_entity_id
 
 
@@ -287,6 +289,236 @@ class ChaosDaemonsStratagemMixin:
             candidates.append(unit)
         candidates.sort(key=self._chaos_daemons_sort_key)
         return candidates
+
+    def _shadow_legion_shade_path_candidates(self, target_units: List[Any]) -> List[Any]:
+        target_ids: set[str] = set()
+        for entry in list(target_units or []):
+            root = self._chaos_daemons_root(entry)
+            if root is None:
+                continue
+            uid = self._chaos_daemons_sort_key(root)
+            if uid:
+                target_ids.add(uid)
+        if not target_ids:
+            return []
+        candidates: List[Any] = []
+        for unit in self._shadow_legion_battlefield_unit_candidates():
+            uid = self._chaos_daemons_sort_key(unit)
+            if uid and uid in target_ids:
+                candidates.append(unit)
+        candidates.sort(key=self._chaos_daemons_sort_key)
+        return candidates
+
+    def _shadow_legion_spiteful_demise_enemy_candidates(
+        self,
+        *,
+        destroyed_unit: Any,
+        last_model: Any = None,
+        destroyed_model_base: Any = None,
+    ) -> List[Any]:
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        if game_map is None:
+            return []
+        source_base = destroyed_model_base
+        if source_base is None and last_model is not None:
+            source_base = getattr(last_model, "model_base", None)
+        if source_base is None:
+            return []
+        source_root = self._chaos_daemons_root(destroyed_unit)
+        if source_root is None:
+            return []
+        source_army = getattr(source_root, "get_parent_army", lambda: None)()
+        source_player = getattr(source_army, "player", None) if source_army is not None else None
+        if source_player is None:
+            return []
+
+        candidates: List[Any] = []
+        seen: set[str] = set()
+        for enemy in list(getattr(game_map, "units", []) or []):
+            enemy_root = self._chaos_daemons_root(enemy)
+            if enemy_root is None:
+                continue
+            enemy_id = self._chaos_daemons_sort_key(enemy_root)
+            if enemy_id and enemy_id in seen:
+                continue
+            if enemy_id:
+                seen.add(enemy_id)
+            enemy_army = getattr(enemy_root, "get_parent_army", lambda: None)()
+            if enemy_army is None or getattr(enemy_army, "player", None) is source_player:
+                continue
+            is_alive = getattr(enemy_root, "is_alive", None)
+            if callable(is_alive):
+                if not bool(is_alive()):
+                    continue
+            elif not bool(getattr(enemy_root, "is_alive", True)):
+                continue
+            if not bool(getattr(enemy_root, "deployed", False)):
+                continue
+            in_reserves = getattr(enemy_root, "is_in_reserves", None)
+            if callable(in_reserves) and bool(in_reserves()):
+                continue
+            has_engagement = False
+            for enemy_model in list(getattr(enemy_root, "models", []) or []):
+                if enemy_model is None:
+                    continue
+                enemy_alive = getattr(enemy_model, "is_alive", None)
+                if callable(enemy_alive):
+                    if not bool(enemy_alive()):
+                        continue
+                elif enemy_alive is not None and not bool(enemy_alive):
+                    continue
+                enemy_base = getattr(enemy_model, "model_base", None)
+                if enemy_base is None:
+                    continue
+                try:
+                    horizontal = float(horizontal_distance_between_bases_2d(source_base, enemy_base))
+                    vertical = float(vertical_distance_between_bases(source_base, enemy_base))
+                except (AttributeError, TypeError, ValueError):
+                    continue
+                if horizontal <= float(ENGAGEMENT_RANGE_HORIZONTAL) + 1e-6 and vertical <= float(ENGAGEMENT_RANGE_VERTICAL) + 1e-6:
+                    has_engagement = True
+                    break
+            if has_engagement:
+                candidates.append(enemy_root)
+        candidates.sort(key=self._chaos_daemons_sort_key)
+        return candidates
+
+    def _queue_shadow_legion_charge_declared_reactions(
+        self,
+        *,
+        charging_unit: Any,
+        target_units: List[Any],
+    ) -> None:
+        if self.player is None or self.game is None:
+            return
+        if not self._is_shadow_legion_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "charge phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        charging_root = self._chaos_daemons_root(charging_unit)
+        if charging_root is None:
+            return
+        enemy_army = getattr(charging_root, "get_parent_army", lambda: None)()
+        if enemy_army is None or getattr(enemy_army, "player", None) is self.player:
+            return
+        is_alive = getattr(charging_root, "is_alive", None)
+        if callable(is_alive):
+            if not bool(is_alive()):
+                return
+        elif not bool(getattr(charging_root, "is_alive", True)):
+            return
+        if not bool(getattr(charging_root, "deployed", True)):
+            return
+        stratagem = self.get_by_name("SHADE PATH")
+        if stratagem is None:
+            return
+        cp_cost = int(getattr(stratagem, "cp_cost", 0) or 0)
+        if int(getattr(self.player, "command_points", 0) or 0) < cp_cost:
+            return
+        if (stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+
+        resolved_targets: List[Any] = []
+        seen_targets: set[str] = set()
+        for target in list(target_units or []):
+            root = self._chaos_daemons_root(target)
+            if root is None:
+                continue
+            uid = self._chaos_daemons_sort_key(root)
+            if uid and uid in seen_targets:
+                continue
+            if uid:
+                seen_targets.add(uid)
+            resolved_targets.append(root)
+        candidates = self._shadow_legion_shade_path_candidates(resolved_targets)
+        if not candidates:
+            return
+        charging_id = self._chaos_daemons_sort_key(charging_root)
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "charge_declared":
+                continue
+            if self._chaos_daemons_normalize_stratagem_name(reaction.get("stratagem", "")) != "SHADE PATH":
+                continue
+            pending_charging_id = self._chaos_daemons_sort_key(self._chaos_daemons_root(reaction.get("charging_unit")))
+            if pending_charging_id and pending_charging_id == charging_id:
+                return
+        payload = {
+            "event": "charge_declared",
+            "phase_name": "Charge phase",
+            "stratagem": stratagem.name,
+            "cp_cost": cp_cost,
+            "charging_unit": charging_root,
+            "enemy_unit": charging_root,
+            "target_units": resolved_targets,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_shadow_legion_unit_destroyed_reactions(
+        self,
+        *,
+        unit: Any,
+        last_model: Any = None,
+        destroyed_by_unit: Any = None,
+    ) -> None:
+        if self.player is None or self.game is None:
+            return
+        if not self._is_shadow_legion_detachment():
+            return
+        root = self._chaos_daemons_root(unit)
+        if root is None:
+            return
+        army = getattr(root, "get_parent_army", lambda: None)()
+        if army is None or getattr(army, "player", None) is not self.player:
+            return
+        if not self._is_shadow_legion_unit(root):
+            return
+        stratagem = self.get_by_name("SPITEFUL DEMISE")
+        if stratagem is None:
+            return
+        cp_cost = int(getattr(stratagem, "cp_cost", 0) or 0)
+        if int(getattr(self.player, "command_points", 0) or 0) < cp_cost:
+            return
+        if (stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        destroyed_model_base = getattr(last_model, "model_base", None) if last_model is not None else None
+        enemy_candidates = self._shadow_legion_spiteful_demise_enemy_candidates(
+            destroyed_unit=root,
+            last_model=last_model,
+            destroyed_model_base=destroyed_model_base,
+        )
+        if not enemy_candidates:
+            return
+        root_id = self._chaos_daemons_sort_key(root)
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "unit_destroyed":
+                continue
+            if self._chaos_daemons_normalize_stratagem_name(reaction.get("stratagem", "")) != "SPITEFUL DEMISE":
+                continue
+            pending_id = self._chaos_daemons_sort_key(self._chaos_daemons_root(reaction.get("unit")))
+            if pending_id and pending_id == root_id:
+                return
+        payload = {
+            "event": "unit_destroyed",
+            "phase_name": str(getattr(self, "_current_phase_name", "") or ""),
+            "stratagem": stratagem.name,
+            "cp_cost": cp_cost,
+            "unit": root,
+            "target_unit": root,
+            "destroyed_unit": root,
+            "last_model": last_model,
+            "destroyed_model_base": destroyed_model_base,
+            "destroyed_by_unit": destroyed_by_unit,
+            "enemy_unit": destroyed_by_unit,
+            "enemy_candidates": enemy_candidates,
+        }
+        self._queue_reaction(payload)
 
     def _queue_shadow_legion_binding_shadow_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
         if self.player is None or self.game is None:
@@ -1002,6 +1234,10 @@ class ChaosDaemonsStratagemMixin:
 
     def _use_chaos_daemons_shadow_legion_stratagem(self, stratagem: Any, **kwargs) -> bool | None:
         name_u = self._chaos_daemons_normalize_stratagem_name(getattr(stratagem, "name", ""))
+        if name_u == "SPITEFUL DEMISE":
+            return self._use_shadow_legion_spiteful_demise(stratagem, **kwargs)
+        if name_u == "SHADE PATH":
+            return self._use_shadow_legion_shade_path(stratagem, **kwargs)
         if name_u == "DEATH DENIED":
             return self._use_shadow_legion_death_denied(stratagem, **kwargs)
         if name_u == "ENCROACHING DARKNESS":
@@ -1219,6 +1455,191 @@ class ChaosDaemonsStratagemMixin:
             special_rules["shadow_legion_encroaching_darkness_turn"] = turn
             special_rules["shadow_legion_encroaching_darkness_source"] = str(getattr(stratagem, "name", "") or "ENCROACHING DARKNESS")
             root.special_rules = special_rules
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
+        return True
+
+    def _use_shadow_legion_shade_path(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_shadow_legion_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "charge phase":
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return False
+
+        charging_unit = kwargs.get("charging_unit") or kwargs.get("enemy_unit") or kwargs.get("attacking_unit")
+        target_units = list(kwargs.get("target_units") or [])
+        candidates = list(kwargs.get("candidates") or [])
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+
+        normalized_name = self._chaos_daemons_normalize_stratagem_name(getattr(stratagem, "name", ""))
+        for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+            if self._chaos_daemons_normalize_stratagem_name(reaction.get("stratagem", "")) != normalized_name:
+                continue
+            if charging_unit is None:
+                charging_unit = reaction.get("charging_unit") or reaction.get("enemy_unit") or reaction.get("attacking_unit")
+            if not target_units:
+                target_units = list(reaction.get("target_units") or [])
+            if not candidates:
+                candidates = list(reaction.get("candidates") or [])
+            if unit is None:
+                unit = reaction.get("unit") or reaction.get("target_unit")
+            break
+
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            return False
+        target_root = self._chaos_daemons_root(unit)
+        if target_root is None:
+            return False
+        charging_root = self._chaos_daemons_root(charging_unit)
+        if charging_root is None:
+            return False
+        charging_army = getattr(charging_root, "get_parent_army", lambda: None)()
+        if charging_army is None or getattr(charging_army, "player", None) is self.player:
+            return False
+        charging_alive = getattr(charging_root, "is_alive", None)
+        if callable(charging_alive):
+            if not bool(charging_alive()):
+                return False
+        elif not bool(getattr(charging_root, "is_alive", True)):
+            return False
+        if not bool(getattr(charging_root, "deployed", True)):
+            return False
+
+        valid_candidates = self._shadow_legion_shade_path_candidates(target_units)
+        if not valid_candidates and candidates:
+            valid_candidates = self._resolve_shadow_legion_selected_units(candidates=candidates)
+        valid_ids = {self._chaos_daemons_sort_key(entry) for entry in list(valid_candidates or [])}
+        target_id = self._chaos_daemons_sort_key(target_root)
+        if target_id not in valid_ids:
+            return False
+        if candidates:
+            candidate_ids = {self._chaos_daemons_sort_key(self._chaos_daemons_root(entry)) for entry in candidates}
+            if target_id not in candidate_ids:
+                return False
+
+        cp_cost = self._chaos_daemons_effective_cp_cost(stratagem, target_unit=target_root)
+        if not self.player.spend_command_points(cp_cost, reason=f"Stratagem: {stratagem.name}", source="stratagem"):
+            return False
+
+        charging_rules = getattr(charging_root, "special_rules", None)
+        if not isinstance(charging_rules, dict):
+            charging_rules = {}
+        mods = list(charging_rules.get("charge_roll_modifiers", []) or [])
+        kept_mods: List[Any] = []
+        for entry in mods:
+            if not isinstance(entry, dict):
+                kept_mods.append(entry)
+                continue
+            if str(entry.get("source_key", "") or "") != "shadow_legion_shade_path":
+                kept_mods.append(entry)
+                continue
+            existing_targets = {str(value).strip() for value in list(entry.get("target_unit_ids", []) or []) if str(value).strip()}
+            if target_id and existing_targets and target_id not in existing_targets:
+                kept_mods.append(entry)
+        kept_mods.append(
+            {
+                "value": -2,
+                "source": str(getattr(stratagem, "name", "") or "SHADE PATH"),
+                "source_key": "shadow_legion_shade_path",
+                "expires_phase": "CHARGE_PHASE",
+                "target_unit_ids": [target_id] if target_id else [],
+            }
+        )
+        charging_rules["charge_roll_modifiers"] = kept_mods
+        charging_root.special_rules = charging_rules
+
+        if bool(getattr(target_root, "has_any_keyword", lambda *_: False)("NURGLE")):
+            take_test = getattr(charging_root, "take_battle_shock_test", None)
+            if callable(take_test):
+                take_test(int(getattr(self.game, "turn", 0) or 0))
+
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
+        return True
+
+    def _use_shadow_legion_spiteful_demise(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_shadow_legion_detachment():
+            return False
+        destroyed_unit = kwargs.get("destroyed_unit") or kwargs.get("unit") or kwargs.get("target_unit")
+        last_model = kwargs.get("last_model") or kwargs.get("destroyed_model")
+        destroyed_model_base = kwargs.get("destroyed_model_base")
+        enemy_candidates = list(kwargs.get("enemy_candidates") or [])
+
+        normalized_name = self._chaos_daemons_normalize_stratagem_name(getattr(stratagem, "name", ""))
+        for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+            if self._chaos_daemons_normalize_stratagem_name(reaction.get("stratagem", "")) != normalized_name:
+                continue
+            if destroyed_unit is None:
+                destroyed_unit = reaction.get("destroyed_unit") or reaction.get("unit") or reaction.get("target_unit")
+            if last_model is None:
+                last_model = reaction.get("last_model") or reaction.get("destroyed_model")
+            if destroyed_model_base is None:
+                destroyed_model_base = reaction.get("destroyed_model_base")
+            if not enemy_candidates:
+                enemy_candidates = list(reaction.get("enemy_candidates") or [])
+            break
+
+        root = self._chaos_daemons_root(destroyed_unit)
+        if root is None:
+            return False
+        army = getattr(root, "get_parent_army", lambda: None)()
+        if army is None or getattr(army, "player", None) is not self.player:
+            return False
+        if not self._is_shadow_legion_unit(root):
+            return False
+
+        if not enemy_candidates:
+            enemy_candidates = self._shadow_legion_spiteful_demise_enemy_candidates(
+                destroyed_unit=root,
+                last_model=last_model,
+                destroyed_model_base=destroyed_model_base,
+            )
+        if not enemy_candidates:
+            return False
+
+        cp_cost = self._chaos_daemons_effective_cp_cost(stratagem, target_unit=root)
+        if not self.player.spend_command_points(cp_cost, reason=f"Stratagem: {stratagem.name}", source="stratagem"):
+            return False
+
+        bonus = 2 if bool(getattr(root, "has_any_keyword", lambda *_: False)("SLAANESH")) else 0
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        for enemy in list(enemy_candidates or []):
+            enemy_root = self._chaos_daemons_root(enemy)
+            if enemy_root is None:
+                continue
+            enemy_army = getattr(enemy_root, "get_parent_army", lambda: None)()
+            if enemy_army is None or getattr(enemy_army, "player", None) is self.player:
+                continue
+            enemy_alive = getattr(enemy_root, "is_alive", None)
+            if callable(enemy_alive):
+                if not bool(enemy_alive()):
+                    continue
+            elif not bool(getattr(enemy_root, "is_alive", True)):
+                continue
+            if not bool(getattr(enemy_root, "deployed", True)):
+                continue
+            roll = int(dice_module.get_roll("D6") or 0) + int(bonus)
+            mortal_wounds = 0
+            if roll >= 6:
+                mortal_wounds = 3
+            elif roll >= 4:
+                mortal_wounds = int(dice_module.get_roll("D3") or 0)
+            if mortal_wounds <= 0:
+                continue
+            root._apply_mortal_wounds_to_unit(
+                enemy_root,
+                int(mortal_wounds),
+                game_map=game_map,
+                attacker_unit=root,
+            )
+
         if kwargs.get("dequeue") is True:
             self._dequeue_reaction_by_name(stratagem.name)
         self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
@@ -1764,8 +2185,56 @@ class ChaosDaemonsStratagemMixin:
 
     def _cleanup_shadow_legion_phase_end_effects(self, *, phase: Any) -> None:
         phase_name = str(getattr(phase, "name", "") or "").strip().upper()
-        if phase_name not in {"SHOOTING_PHASE", "FIGHT_PHASE"}:
+        if phase_name not in {"CHARGE_PHASE", "SHOOTING_PHASE", "FIGHT_PHASE"}:
             return
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+
+        if phase_name == "CHARGE_PHASE":
+            for player in list(getattr(game, "players", []) or []):
+                army = getattr(player, "get_army", lambda: None)()
+                if army is None:
+                    continue
+                seen: set[str] = set()
+                for unit in list(getattr(army, "units", []) or []):
+                    root = self._chaos_daemons_root(unit)
+                    if root is None:
+                        continue
+                    uid = self._chaos_daemons_sort_key(root)
+                    if uid and uid in seen:
+                        continue
+                    if uid:
+                        seen.add(uid)
+                    special_rules = getattr(root, "special_rules", None)
+                    if not isinstance(special_rules, dict):
+                        continue
+                    mods = special_rules.get("charge_roll_modifiers")
+                    if not isinstance(mods, list):
+                        continue
+                    kept: List[Any] = []
+                    changed = False
+                    for item in mods:
+                        if not isinstance(item, dict):
+                            kept.append(item)
+                            continue
+                        if str(item.get("source_key", "") or "") != "shadow_legion_shade_path":
+                            kept.append(item)
+                            continue
+                        expires_phase = str(item.get("expires_phase", "") or "").strip().upper()
+                        if expires_phase and expires_phase != phase_name:
+                            kept.append(item)
+                            continue
+                        changed = True
+                    if not changed:
+                        continue
+                    if kept:
+                        special_rules["charge_roll_modifiers"] = kept
+                    elif "charge_roll_modifiers" in special_rules:
+                        special_rules.pop("charge_roll_modifiers", None)
+                    root.special_rules = special_rules
+            return
+
         if self.player is None:
             return
         army = self.player.get_army()
