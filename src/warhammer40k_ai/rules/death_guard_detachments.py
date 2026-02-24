@@ -13,6 +13,9 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
     _MANIFOLD_MALADIES_SOURCE = "Manifold Maladies"
     _MIASMIC_BOMBARDMENT_SOURCE = "Miasmic Bombardment"
     _MIASMIC_BOMBARDMENT_RANGE = 12.0
+    _NUMBERLESS_HORDE_SOURCE = "Numberless Horde"
+    _NUMBERLESS_HORDE_POXWALKERS_NAME = "Poxwalkers"
+    _NUMBERLESS_HORDE_STARTING_STRENGTH = 10
     _WORLD_BLIGHT_SOURCE = "worldblight"
     _VERMINOUS_HAZE_SCOUT_DISTANCE = 5.0
 
@@ -20,6 +23,8 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
         super().__init__(army=army)
         self.manifold_maladies_resolved_round: Optional[int] = None
         self.miasmic_bombardment_resolved_round: Optional[int] = None
+        self.numberless_horde_spawned_rounds: set[int] = set()
+        self._numberless_horde_cached_datasheet = None
 
     def is_champions_of_contagion(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -45,6 +50,11 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Mortarion's Hammer")
+
+    def is_shamblerot_vectorium(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Shamblerot Vectorium")
 
     def _resolve_battle_round(self, *, game=None, battle_round=None) -> Optional[int]:
         if battle_round is not None:
@@ -215,6 +225,170 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
         else:
             self.miasmic_bombardment_resolved_round = None
             self._clear_miasmic_bombardment_marks(game=game)
+
+        if self.is_shamblerot_vectorium():
+            self.apply_shamblerot_vectorium_poxwalkers_battleline_keywords()
+        else:
+            self.numberless_horde_spawned_rounds = set()
+
+    def _numberless_horde_points_limit(self, *, game=None) -> int:
+        points_limit = 0
+        if self.army is not None:
+            try:
+                points_limit = int(getattr(self.army, "points_limit", 0) or 0)
+            except (TypeError, ValueError):
+                points_limit = 0
+        if points_limit > 0:
+            return points_limit
+        battlefield = getattr(game, "battlefield", None) if game is not None else None
+        if battlefield is None:
+            return 0
+        try:
+            return int(getattr(battlefield, "points", 0) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def _numberless_horde_spawn_rounds(self, *, game=None) -> tuple[int, ...]:
+        points_limit = int(self._numberless_horde_points_limit(game=game) or 0)
+        if points_limit <= 1000:
+            return (2, 3)
+        if points_limit <= 2000:
+            return (2, 3, 4)
+        return (2, 3, 4, 5)
+
+    def _unit_is_poxwalkers(self, unit) -> bool:
+        if unit is None:
+            return False
+        if self._unit_has_keyword(unit, "POXWALKERS"):
+            return True
+        return "poxwalker" in self._norm(getattr(unit, "name", ""))
+
+    def apply_shamblerot_vectorium_poxwalkers_battleline_keywords(self, unit=None) -> None:
+        if not self.is_shamblerot_vectorium() or self.army is None:
+            return
+        entries = list(getattr(self.army, "units", []) or []) if unit is None else [unit]
+        for entry in entries:
+            root = entry.get_attached_unit_root() if entry is not None else None
+            if root is None or not self._unit_in_army(root):
+                continue
+            if not self._unit_is_poxwalkers(root):
+                continue
+            keywords = list(getattr(root, "keywords", []) or [])
+            if any(str(token or "").strip().lower() == "battleline" for token in keywords):
+                continue
+            keywords.append("Battleline")
+            root.keywords = keywords
+
+    def _numberless_horde_poxwalkers_datasheet(self):
+        if self._numberless_horde_cached_datasheet is not None:
+            return self._numberless_horde_cached_datasheet
+        if self.army is not None:
+            for unit in list(getattr(self.army, "units", []) or []):
+                if unit is None or not self._unit_is_poxwalkers(unit):
+                    continue
+                datasheet = getattr(unit, "_datasheet", None)
+                if datasheet is not None:
+                    self._numberless_horde_cached_datasheet = datasheet
+                    return datasheet
+        from ..waha_helper.waha_helper import WahaHelper
+
+        helper = WahaHelper()
+        datasheet = helper.get_full_datasheet_info_by_name(
+            self._NUMBERLESS_HORDE_POXWALKERS_NAME,
+            faction_id=self.faction_id,
+        )
+        if datasheet is not None:
+            self._numberless_horde_cached_datasheet = datasheet
+        return datasheet
+
+    def _create_numberless_horde_poxwalkers_unit(self):
+        datasheet = self._numberless_horde_poxwalkers_datasheet()
+        if datasheet is None:
+            return None
+        from ..units.unit import Unit as UnitClass
+
+        try:
+            unit = UnitClass(datasheet, quantity=int(self._NUMBERLESS_HORDE_STARTING_STRENGTH))
+        except TypeError:
+            unit = UnitClass(datasheet)
+        unit.spawned_in_battle = True
+        return unit
+
+    def _prepare_numberless_horde_unit(self, unit, *, game=None) -> bool:
+        if unit is None or self.army is None:
+            return False
+        set_parent = getattr(unit, "set_parent_army", None)
+        if callable(set_parent):
+            set_parent(self.army)
+        else:
+            unit.parent_army = self.army
+        set_reserve = getattr(unit, "set_reserve_status", None)
+        if callable(set_reserve):
+            set_reserve("strategic_reserves")
+        else:
+            unit.reserve_status = "strategic_reserves"
+        mark_midgame = getattr(unit, "mark_entered_reserves_midgame", None)
+        if callable(mark_midgame):
+            mark_midgame(game=game)
+        unit.deployed = True
+        unit.reserve_turn_deployed = None
+        unit.arrived_from_reserves_this_turn = False
+        self.army.add_unit(unit)
+        self.apply_shamblerot_vectorium_poxwalkers_battleline_keywords(unit)
+        game_map = getattr(game, "map", None) if game is not None else None
+        if game_map is not None and hasattr(game_map, "units") and unit in game_map.units:
+            game_map.units.remove(unit)
+        return True
+
+    def spawn_numberless_horde_unit(self, *, game=None, battle_round=None):
+        if not self.is_shamblerot_vectorium():
+            return None
+        round_value = self._resolve_battle_round(game=game, battle_round=battle_round)
+        if round_value is None or int(round_value) <= 0:
+            return None
+        if int(round_value) not in set(self._numberless_horde_spawn_rounds(game=game)):
+            return None
+        if int(round_value) in set(int(v) for v in list(self.numberless_horde_spawned_rounds or set())):
+            return None
+        unit = self._create_numberless_horde_poxwalkers_unit()
+        if unit is None:
+            return None
+        if not self._prepare_numberless_horde_unit(unit, game=game):
+            return None
+        self.numberless_horde_spawned_rounds.add(int(round_value))
+        return unit
+
+    def on_command_phase_start(self, *, game=None, player=None) -> None:
+        if not self.is_shamblerot_vectorium():
+            return
+        owner = getattr(self.army, "player", None) if self.army is not None else None
+        if owner is None or player is not owner:
+            return
+        if game is None:
+            game = getattr(owner, "game", None)
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_name and phase_name != "COMMAND_PHASE":
+            return
+        self.apply_shamblerot_vectorium_poxwalkers_battleline_keywords()
+        round_value = self._resolve_battle_round(game=game)
+        if round_value is None:
+            return
+        spawned = self.spawn_numberless_horde_unit(game=game, battle_round=int(round_value))
+        if spawned is None:
+            return
+        event_system = getattr(game, "event_system", None)
+        if event_system is not None:
+            event_system.publish(
+                "action_log",
+                player=owner,
+                message=(
+                    f"{self._NUMBERLESS_HORDE_SOURCE}: added "
+                    f"{getattr(spawned, 'name', self._NUMBERLESS_HORDE_POXWALKERS_NAME)} "
+                    "to Strategic Reserves at Starting Strength 10."
+                ),
+            )
 
     def _miasmic_bombardment_max_units(self, *, game=None) -> int:
         points_limit = 0

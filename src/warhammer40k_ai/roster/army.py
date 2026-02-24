@@ -444,6 +444,14 @@ class Army:
         apply_fn = getattr(we_mgr, "apply_cult_of_blood_battleline_keywords", None) if we_mgr is not None else None
         if callable(apply_fn):
             apply_fn(unit)
+        dg_mgr = getattr(self, "death_guard_detachments", None)
+        apply_fn = (
+            getattr(dg_mgr, "apply_shamblerot_vectorium_poxwalkers_battleline_keywords", None)
+            if dg_mgr is not None
+            else None
+        )
+        if callable(apply_fn):
+            apply_fn(unit)
         orks_mgr = getattr(self, "orks_detachments", None)
         apply_fn = getattr(orks_mgr, "apply_dread_mob_gretchin_battleline_keywords", None) if orks_mgr is not None else None
         if callable(apply_fn):

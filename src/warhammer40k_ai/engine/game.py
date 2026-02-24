@@ -8332,6 +8332,11 @@ class Game(
         if mgr is not None and hasattr(mgr, "on_command_phase_start"):
             mgr.on_command_phase_start(game=self, player=current_player)
 
+        # Death Guard detachments: command-phase hooks (e.g., Numberless Horde).
+        mgr = getattr(army, "death_guard_detachments", None)
+        if mgr is not None and hasattr(mgr, "on_command_phase_start"):
+            mgr.on_command_phase_start(game=self, player=current_player)
+
         # Adeptus Mechanicus: Rad-bombardment Fallout (Rad-Zone Corps).
         mgr = getattr(army, "adeptus_mechanicus_detachments", None)
         if mgr is not None and hasattr(mgr, "on_command_phase_start"):

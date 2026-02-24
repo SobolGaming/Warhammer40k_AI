@@ -294,6 +294,11 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"until the end of the battle round those enemy units are afflicted",
             r"the maximum number of units you can select in this way depends on the battle size as shown below",
         ),
+        "Numberless Horde": (
+            r"in your command phase in each of the following battle rounds depending on your chosen battle size add a new poxwalkers unit with a starting strength of 10 to your army in strategic reserves",
+            r"battle size battle rounds incursion 2 ?3 strike force 2 ?3 ?4 onslaught 2 ?3 ?4 ?5",
+            r"poxwalkers units from your army gain the battleline keyword",
+        ),
         "Ride the Wind": (
             r"in addition at the end of your opponents turn you can select a number of asuryani mounted or vyper units from your army excluding units within engagement range of one or more enemy units then remove those units from the battlefield and place them into strategic reserves",
             r"the maximum number of units you can select depends on the battle size as shown below",
@@ -2592,6 +2597,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Miasmic Bombardment": (
             "Supported",
             "Mortarion's Hammer: at the start of each battle round, select enemy units to become Afflicted if they are more than 12\" from every model in your army on the battlefield (battle-size cap enforced) until end of battle round.",
+        ),
+        "Numberless Horde": (
+            "Supported",
+            "Shamblerot Vectorium: in your Command phase, spawn a new Poxwalkers unit at Starting Strength 10 into Strategic Reserves in battle rounds allowed by battle size (2-3 Incursion, 2-4 Strike Force, 2-5 Onslaught), and Poxwalkers units gain Battleline.",
         ),
         "Verminous Haze": (
             "Supported",
