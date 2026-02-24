@@ -651,6 +651,15 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Stitchflesh Abominations": (
             r"each time an attack targets a haemonculus covens unit from your army if the strength characteristic of that attack is greater than the toughness characteristic of your unit subtract 1 from the wound roll",
         ),
+        "Murderous Agenda": (
+            r"at the start of the first battle round select one of the contracts below then select one unit from your opponents army that matches the contract description in that contract",
+            r"until that contract is completed that unit is your contract unit and kabal and blades for hire units from your army have the ability stated in that contract",
+            r"at the start of your command phase if your contract unit is destroyed that contract is completed and you gain 3 pain tokens",
+            r"at the start of your command phase this contract is completed if all non character models in that unit are destroyed",
+            r"each time a kabal or blades for hire model in this unit makes an attack that targets the contract unit that attack has the precision ability",
+            r"each time a kabal or blades for hire model in this unit makes an attack that targets an infantry or mounted unit that attack has the sustained hits 1 ability",
+            r"each time a kabal or blades for hire model in this unit makes an attack that targets a monster or vehicle unit that attack has the lethal hits ability",
+        ),
         "Malefic Surge": (
             r"in your command phase one or more chaos knights units from your army can make a malefic surge",
             r"each one that does must first take a leadership test",
@@ -2895,6 +2904,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Stitchflesh Abominations": (
             "Supported",
             "Covenite Coterie: each time an attack targets a friendly HAEMONCULUS COVENS unit, if the attack Strength is greater than that unit's Toughness, subtract 1 from the Wound roll.",
+        ),
+        "Murderous Agenda": (
+            "Supported",
+            "Kabalite Cartel: at the start of the first battle round, select Trophy Hunters, Sow Fear and Terror, or Show of Strength and an eligible enemy Contract unit; while active, KABAL/BLADES FOR HIRE attacks gain the contract keyword effect (Precision vs Contract target, Sustained Hits 1 vs INFANTRY/MOUNTED, or Lethal Hits vs MONSTER/VEHICLE), and at the start of your Command phase the contract completes when its condition is met and grants 3 Pain tokens.",
         ),
         "Malefic Surge": (
             "Supported",

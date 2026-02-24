@@ -437,6 +437,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("_army_has_power_from_pain",),
             ),
             subscriptions=[
+                ("battle_round_started", "_on_battle_round_started_drukhari"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_power_from_pain"),
                 ("fight_unit_selected", "_on_fight_unit_selected_power_from_pain"),
                 ("unit_move_started", "_on_unit_move_started_power_from_pain"),

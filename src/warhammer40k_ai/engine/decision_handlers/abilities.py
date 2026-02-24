@@ -21,6 +21,7 @@ from ..decision_kinds import (
     DECISION_CHOOSE_ANGELIC_LEGACY,
     DECISION_CHOOSE_GRAND_COVEN,
     DECISION_CHOOSE_COMBAT_DRUGS,
+    DECISION_CHOOSE_MURDEROUS_AGENDA,
     DECISION_CHOOSE_HYPER_ADAPTATION,
     DECISION_CHOOSE_FRENZY_TARGET,
     DECISION_CHOOSE_HARBINGER,
@@ -2181,6 +2182,68 @@ def _apply_choose_combat_drugs(game: object, request: DecisionRequest, result: D
                     player,
                     f"Pharmacophex ({uname}): {selected_name or selected_key} already active; no additional effect (dice: {roll}).",
                 )
+    except Exception:
+        pass
+    return applied
+
+
+def _validate_choose_murderous_agenda(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    if is_skip_choice(request, result):
+        return ()
+    payload = _option_payload(request, result)
+    contract_key = payload.get("contract_key") or payload.get("choice_key") or payload.get("key")
+    target_unit_id = payload.get("target_unit_id")
+    if not contract_key:
+        return ("Murderous Agenda selection requires contract_key.",)
+    if not target_unit_id:
+        return ("Murderous Agenda selection requires target_unit_id.",)
+    army = _resolve_army(game, request, payload)
+    mgr = getattr(army, "drukhari_detachments", None) if army is not None else None
+    if mgr is None or not bool(getattr(mgr, "is_kabalite_cartel", lambda: False)()):
+        return ("Murderous Agenda requires the Kabalite Cartel detachment.",)
+    validate_fn = getattr(mgr, "murderous_agenda_selection_is_valid", None)
+    if callable(validate_fn):
+        player = getattr(army, "player", None)
+        valid, reason = validate_fn(contract_key, target_unit_id, game=game, player=player)
+        if not valid:
+            return (str(reason or "Murderous Agenda selection is invalid."),)
+    return ()
+
+
+def _apply_choose_murderous_agenda(game: object, request: DecisionRequest, result: DecisionResult):
+    if is_skip_choice(request, result):
+        return None
+    payload = _option_payload(request, result)
+    army = _resolve_army(game, request, payload)
+    if army is None:
+        raise RuntimeError("Murderous Agenda army not found.")
+    mgr = getattr(army, "drukhari_detachments", None)
+    if mgr is None:
+        raise RuntimeError("Murderous Agenda manager not found.")
+
+    contract_key = payload.get("contract_key") or payload.get("choice_key") or payload.get("key")
+    target_unit_id = payload.get("target_unit_id")
+    select_fn = getattr(mgr, "select_murderous_agenda", None)
+    player = getattr(army, "player", None)
+    if not callable(select_fn):
+        raise RuntimeError("Murderous Agenda selector not found.")
+    applied = bool(select_fn(contract_key, target_unit_id, game=game, player=player))
+
+    try:
+        if applied:
+            contract_name_fn = getattr(mgr, "_murderous_agenda_contract_name", None)
+            contract_name = contract_name_fn(contract_key) if callable(contract_name_fn) else str(contract_key or "")
+            target_label = _option_label(request, result) or str(target_unit_id)
+            if target_label:
+                target_label = str(target_label).split(":", 1)[-1].strip() if ":" in str(target_label) else str(target_label)
+            _log_action_for_players(
+                game,
+                player,
+                f"Murderous Agenda: {contract_name} -> {target_label or target_unit_id}",
+            )
     except Exception:
         pass
     return applied
@@ -14832,6 +14895,11 @@ register_decision_handler(
     DECISION_CHOOSE_COMBAT_DRUGS,
     validate=_validate_choose_combat_drugs,
     apply=_apply_choose_combat_drugs,
+)
+register_decision_handler(
+    DECISION_CHOOSE_MURDEROUS_AGENDA,
+    validate=_validate_choose_murderous_agenda,
+    apply=_apply_choose_murderous_agenda,
 )
 register_decision_handler(
     DECISION_CHOOSE_HYPER_ADAPTATION,

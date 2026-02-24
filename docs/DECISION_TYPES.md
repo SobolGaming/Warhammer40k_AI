@@ -99,6 +99,7 @@ For UI mapping, see `docs/NETWORK_SAVELOAD_DESIGN.md`.
 - `CHOOSE_ANGELIC_LEGACY` — Choose two Angelic Legacy abilities (Angelic Inheritors).
 - `CHOOSE_GRAND_COVEN` — Choose Grand Coven option.
 - `CHOOSE_COMBAT_DRUGS` — Choose Combat Drugs.
+- `CHOOSE_MURDEROUS_AGENDA` — Choose Murderous Agenda contract and target unit.
 - `CHOOSE_HYPER_ADAPTATION` — Choose Hyper-adaptation.
 - `CHOOSE_FRENZY_TARGET` — Choose Frenzy target.
 - `CHOOSE_HARBINGER` — Choose Harbinger.

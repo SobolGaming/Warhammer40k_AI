@@ -5,6 +5,7 @@ from typing import Optional
 
 from .detachment_manager import DetachmentManagerBase
 from ..utility.dice import get_roll
+from ..utility.entity_ids import get_entity_id
 
 
 @dataclass(frozen=True)
@@ -67,17 +68,31 @@ COMBAT_DRUG_BY_ROLL = {d.roll: d for d in COMBAT_DRUGS}
 class DrukhariDetachmentManager(DetachmentManagerBase):
     faction_id = "DRU"
     DETACHMENT_COVENITE_COTERIE = "Covenite Coterie"
+    DETACHMENT_KABALITE_CARTEL = "Kabalite Cartel"
+    MURDEROUS_AGENDA_CONTRACT_TROPHY_HUNTERS = "TROPHY_HUNTERS"
+    MURDEROUS_AGENDA_CONTRACT_SOW_FEAR_AND_TERROR = "SOW_FEAR_AND_TERROR"
+    MURDEROUS_AGENDA_CONTRACT_SHOW_OF_STRENGTH = "SHOW_OF_STRENGTH"
+    MURDEROUS_AGENDA_SOURCE = "Murderous Agenda"
 
     def __init__(self, army=None):
         super().__init__(army)
         self.combat_drug_active_keys: set[str] = set()
         self.combat_drug_active_round: Optional[int] = None
         self.combat_drug_used_keys: list[str] = []
+        self.murderous_agenda_contract_key: str = ""
+        self.murderous_agenda_contract_target_unit_id: str = ""
+        self.murderous_agenda_contract_completed: bool = False
+        self.murderous_agenda_reward_paid: bool = False
 
     def is_covenite_coterie(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches(self.DETACHMENT_COVENITE_COTERIE)
+
+    def is_kabalite_cartel(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches(self.DETACHMENT_KABALITE_CARTEL)
 
     def is_spectacle_of_spite(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -109,6 +124,31 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
         if root is None:
             return False
         return self._unit_has_keyword(root, "HAEMONCULUS COVENS")
+
+    def _unit_root_id(self, unit) -> str:
+        root = self._unit_root(unit)
+        if root is None:
+            return ""
+        return str(get_entity_id(root) or "")
+
+    def _unit_on_battlefield(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        is_alive = getattr(root, "is_alive", None)
+        if callable(is_alive) and not bool(is_alive()):
+            return False
+        if not bool(getattr(root, "deployed", False)):
+            return False
+        if bool(getattr(root, "is_embarked", False)):
+            return False
+        if getattr(root, "embarked_in", None) is not None:
+            return False
+        in_reserves = getattr(root, "is_in_reserves", None)
+        if callable(in_reserves) and bool(in_reserves()):
+            return False
+        reserve_status = str(getattr(root, "reserve_status", "deployed") or "deployed").strip().lower()
+        return reserve_status == "deployed"
 
     def _army_has_combat_drugs(self) -> bool:
         return self.is_spectacle_of_spite()
@@ -374,3 +414,323 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
                 }
             )
         return out
+
+    @classmethod
+    def _murderous_agenda_contract_name(cls, contract_key: str) -> str:
+        key = str(contract_key or "").strip().upper()
+        if key == cls.MURDEROUS_AGENDA_CONTRACT_TROPHY_HUNTERS:
+            return "Trophy Hunters"
+        if key == cls.MURDEROUS_AGENDA_CONTRACT_SOW_FEAR_AND_TERROR:
+            return "Sow Fear and Terror"
+        if key == cls.MURDEROUS_AGENDA_CONTRACT_SHOW_OF_STRENGTH:
+            return "Show of Strength"
+        return key
+
+    @classmethod
+    def _murderous_agenda_contract_keys(cls) -> tuple[str, ...]:
+        return (
+            cls.MURDEROUS_AGENDA_CONTRACT_TROPHY_HUNTERS,
+            cls.MURDEROUS_AGENDA_CONTRACT_SOW_FEAR_AND_TERROR,
+            cls.MURDEROUS_AGENDA_CONTRACT_SHOW_OF_STRENGTH,
+        )
+
+    def _murderous_agenda_has_selection(self) -> bool:
+        return bool(self.murderous_agenda_contract_key and self.murderous_agenda_contract_target_unit_id)
+
+    def _iter_attached_members(self, unit) -> list:
+        root = self._unit_root(unit)
+        if root is None:
+            return []
+        members_fn = getattr(root, "get_attached_unit_members", None)
+        if callable(members_fn):
+            members = list(members_fn() or [])
+            if members:
+                return [m for m in members if m is not None]
+        return [root]
+
+    def _unit_is_character_only(self, unit) -> bool:
+        members = self._iter_attached_members(unit)
+        if not members:
+            return False
+        for member in members:
+            if not self._unit_has_keyword(member, "CHARACTER"):
+                return False
+        return True
+
+    def _unit_has_alive_non_character_models(self, unit) -> bool:
+        for member in self._iter_attached_members(unit):
+            if self._unit_has_keyword(member, "CHARACTER"):
+                continue
+            for model in list(getattr(member, "models", []) or []):
+                if bool(getattr(model, "is_alive", False)):
+                    return True
+        return False
+
+    @staticmethod
+    def _model_has_keyword(model, keyword: str) -> bool:
+        if model is None:
+            return False
+        has_any = getattr(model, "has_any_keyword", None)
+        if callable(has_any) and bool(has_any(keyword)):
+            return True
+        has_keyword = getattr(model, "has_keyword", None)
+        if callable(has_keyword) and bool(has_keyword(keyword)):
+            return True
+        return False
+
+    def _model_is_kabal_or_blades_for_hire(self, model) -> bool:
+        if model is None:
+            return False
+        if self._model_has_keyword(model, "KABAL"):
+            return True
+        if self._model_has_keyword(model, "BLADES FOR HIRE"):
+            return True
+        unit = getattr(model, "parent_unit", None)
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        return bool(self._unit_has_keyword(root, "KABAL") or self._unit_has_keyword(root, "BLADES FOR HIRE"))
+
+    def _collect_murderous_agenda_candidates(self, contract_key: str, *, game=None, player=None) -> list:
+        key = str(contract_key or "").strip().upper()
+        if key not in self._murderous_agenda_contract_keys():
+            return []
+        if not self.is_kabalite_cartel():
+            return []
+        if game is None or player is None:
+            return []
+        get_enemy_units = getattr(game, "get_enemy_units", None)
+        if not callable(get_enemy_units):
+            return []
+
+        candidates = []
+        seen_ids: set[str] = set()
+        for enemy in list(get_enemy_units(player) or []):
+            root = self._unit_root(enemy)
+            if root is None:
+                continue
+            root_id = self._unit_root_id(root)
+            if not root_id or root_id in seen_ids:
+                continue
+            seen_ids.add(root_id)
+            if not self._unit_on_battlefield(root):
+                continue
+            if key == self.MURDEROUS_AGENDA_CONTRACT_TROPHY_HUNTERS:
+                if not self._unit_has_keyword(root, "CHARACTER"):
+                    continue
+            elif key == self.MURDEROUS_AGENDA_CONTRACT_SOW_FEAR_AND_TERROR:
+                if not (self._unit_has_keyword(root, "INFANTRY") or self._unit_has_keyword(root, "MOUNTED")):
+                    continue
+                if self._unit_is_character_only(root):
+                    continue
+            elif key == self.MURDEROUS_AGENDA_CONTRACT_SHOW_OF_STRENGTH:
+                if not (self._unit_has_keyword(root, "MONSTER") or self._unit_has_keyword(root, "VEHICLE")):
+                    continue
+            candidates.append(root)
+        candidates.sort(key=lambda unit: (self._norm(getattr(unit, "name", "")), self._unit_root_id(unit)))
+        return candidates
+
+    def build_murderous_agenda_request(self, *, game=None, player=None):
+        if not self.is_kabalite_cartel():
+            return None
+        if game is None or player is None or self.army is None:
+            return None
+        if getattr(self.army, "player", None) is not player:
+            return None
+        if not bool(getattr(game, "is_authoritative", True)):
+            return None
+        if self._murderous_agenda_has_selection():
+            return None
+        battle_round = int(getattr(game, "turn", 0) or 0)
+        if battle_round != 1:
+            return None
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_MURDEROUS_AGENDA
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        queue = getattr(game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_MURDEROUS_AGENDA:
+                    continue
+                if str(getattr(req, "player_id", "") or "") != str(getattr(player, "id", "") or ""):
+                    continue
+                return None
+
+        options = []
+        candidate_bindings = []
+        for contract_key in self._murderous_agenda_contract_keys():
+            candidates = self._collect_murderous_agenda_candidates(contract_key, game=game, player=player)
+            contract_name = self._murderous_agenda_contract_name(contract_key)
+            for candidate in candidates:
+                target_unit_id = self._unit_root_id(candidate)
+                if not target_unit_id:
+                    continue
+                candidate_bindings.append({"contract_key": contract_key, "target_unit_id": target_unit_id})
+                options.append(
+                    DecisionOption.create(
+                        f"{contract_name}: {str(getattr(candidate, 'name', 'Unit') or 'Unit')}",
+                        payload={"contract_key": contract_key, "target_unit_id": target_unit_id},
+                    )
+                )
+        if not options:
+            return None
+        army_id = str(get_entity_id(self.army) or "")
+        return DecisionRequest.create(
+            DECISION_CHOOSE_MURDEROUS_AGENDA,
+            "Murderous Agenda: select a Contract and target unit.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={
+                "ability": "murderous_agenda",
+                "ability_name": self.MURDEROUS_AGENDA_SOURCE,
+                "army_id": army_id,
+                "battle_round": battle_round,
+                "candidate_bindings": list(candidate_bindings),
+            },
+        )
+
+    def murderous_agenda_selection_is_valid(self, contract_key: str, target_unit_id: str, *, game=None, player=None) -> tuple[bool, str]:
+        if not self.is_kabalite_cartel():
+            return False, "Murderous Agenda requires the Kabalite Cartel detachment."
+        if self._murderous_agenda_has_selection():
+            return False, "Murderous Agenda has already been selected."
+        key = str(contract_key or "").strip().upper()
+        if key not in self._murderous_agenda_contract_keys():
+            return False, "Murderous Agenda selection has an invalid contract."
+        tid = str(target_unit_id or "").strip()
+        if not tid:
+            return False, "Murderous Agenda selection requires a target unit."
+        candidates = self._collect_murderous_agenda_candidates(key, game=game, player=player)
+        candidate_ids = {self._unit_root_id(unit) for unit in candidates}
+        if tid not in candidate_ids:
+            return False, "Murderous Agenda selection target is not eligible for the chosen contract."
+        return True, ""
+
+    def select_murderous_agenda(self, contract_key: str, target_unit_id: str, *, game=None, player=None) -> bool:
+        valid, _reason = self.murderous_agenda_selection_is_valid(contract_key, target_unit_id, game=game, player=player)
+        if not valid:
+            return False
+        self.murderous_agenda_contract_key = str(contract_key or "").strip().upper()
+        self.murderous_agenda_contract_target_unit_id = str(target_unit_id or "").strip()
+        self.murderous_agenda_contract_completed = False
+        self.murderous_agenda_reward_paid = False
+        return True
+
+    def _resolve_unit_by_id(self, unit_id: str, *, game=None):
+        uid = str(unit_id or "").strip()
+        if not uid:
+            return None
+        if game is not None:
+            registry = getattr(game, "entity_registry", None)
+            if registry is not None:
+                get_fn = getattr(registry, "get", None)
+                if callable(get_fn):
+                    unit = get_fn(uid, kind="unit")
+                    if unit is not None:
+                        return unit
+        return None
+
+    def _murderous_agenda_target_destroyed(self, target_unit) -> bool:
+        root = self._unit_root(target_unit)
+        if root is None:
+            return True
+        is_alive = getattr(root, "is_alive", None)
+        if callable(is_alive):
+            return not bool(is_alive())
+        return not any(bool(getattr(model, "is_alive", False)) for model in list(getattr(root, "models", []) or []))
+
+    def resolve_murderous_agenda_completion(self, *, game=None) -> bool:
+        if not self.is_kabalite_cartel():
+            return False
+        if not self._murderous_agenda_has_selection() or self.murderous_agenda_contract_completed:
+            return False
+        target_unit = self._resolve_unit_by_id(self.murderous_agenda_contract_target_unit_id, game=game)
+        completed = self._murderous_agenda_target_destroyed(target_unit)
+        if (
+            not completed
+            and self.murderous_agenda_contract_key == self.MURDEROUS_AGENDA_CONTRACT_SOW_FEAR_AND_TERROR
+            and target_unit is not None
+        ):
+            completed = not self._unit_has_alive_non_character_models(target_unit)
+        if not completed:
+            return False
+        self.murderous_agenda_contract_completed = True
+        if not self.murderous_agenda_reward_paid:
+            pfp = getattr(self.army, "power_from_pain", None) if self.army is not None else None
+            gain_tokens = getattr(pfp, "gain_tokens", None) if pfp is not None else None
+            if callable(gain_tokens):
+                gain_tokens(3, reason=f"{self.MURDEROUS_AGENDA_SOURCE} completed")
+            self.murderous_agenda_reward_paid = True
+        return True
+
+    def murderous_agenda_weapon_keyword_bonuses(self, model, target_unit) -> list[dict]:
+        if not self.is_kabalite_cartel():
+            return []
+        if not self._murderous_agenda_has_selection() or self.murderous_agenda_contract_completed:
+            return []
+        if model is None or target_unit is None:
+            return []
+        if not self._model_in_army(model):
+            return []
+        if not self._model_is_kabal_or_blades_for_hire(model):
+            return []
+
+        target_root = self._unit_root(target_unit)
+        if target_root is None:
+            return []
+        rules: list[dict] = []
+        contract_key = str(self.murderous_agenda_contract_key or "").strip().upper()
+        target_id = self._unit_root_id(target_root)
+
+        if contract_key == self.MURDEROUS_AGENDA_CONTRACT_TROPHY_HUNTERS:
+            if target_id and target_id == str(self.murderous_agenda_contract_target_unit_id or ""):
+                rules.append(
+                    {
+                        "attack_type": "any",
+                        "keyword": "PRECISION",
+                        "source": f"{self.MURDEROUS_AGENDA_SOURCE} ({self._murderous_agenda_contract_name(contract_key)})",
+                    }
+                )
+        elif contract_key == self.MURDEROUS_AGENDA_CONTRACT_SOW_FEAR_AND_TERROR:
+            if self._unit_has_keyword(target_root, "INFANTRY") or self._unit_has_keyword(target_root, "MOUNTED"):
+                rules.append(
+                    {
+                        "attack_type": "any",
+                        "keyword": "SUSTAINED HITS 1",
+                        "source": f"{self.MURDEROUS_AGENDA_SOURCE} ({self._murderous_agenda_contract_name(contract_key)})",
+                    }
+                )
+        elif contract_key == self.MURDEROUS_AGENDA_CONTRACT_SHOW_OF_STRENGTH:
+            if self._unit_has_keyword(target_root, "MONSTER") or self._unit_has_keyword(target_root, "VEHICLE"):
+                rules.append(
+                    {
+                        "attack_type": "any",
+                        "keyword": "LETHAL HITS",
+                        "source": f"{self.MURDEROUS_AGENDA_SOURCE} ({self._murderous_agenda_contract_name(contract_key)})",
+                    }
+                )
+        return rules
+
+    def on_battle_round_start(self, *, battle_round: int, game=None, player=None) -> None:
+        if not self.is_kabalite_cartel():
+            return
+        if game is None or player is None or self.army is None:
+            return
+        if getattr(self.army, "player", None) is not player:
+            return
+        if int(battle_round or 0) != 1:
+            return
+        if self._murderous_agenda_has_selection():
+            return
+        request = self.build_murderous_agenda_request(game=game, player=player)
+        if request is not None and hasattr(game, "request_decision"):
+            game.request_decision(request)
+
+    def on_command_phase_start(self, *, game=None, player=None) -> None:
+        if game is None or player is None or self.army is None:
+            return
+        if getattr(self.army, "player", None) is not player:
+            return
+        if self.is_kabalite_cartel():
+            self.resolve_murderous_agenda_completion(game=game)

@@ -3106,6 +3106,26 @@ class PositioningMixin:
         if target is not None:
             source_unit = getattr(model, "parent_unit", None) or self
             source_army = source_unit.get_parent_army() if hasattr(source_unit, "get_parent_army") else None
+            drukhari_mgr = getattr(source_army, "drukhari_detachments", None) if source_army is not None else None
+            murderous_agenda_fn = (
+                getattr(drukhari_mgr, "murderous_agenda_weapon_keyword_bonuses", None)
+                if drukhari_mgr is not None
+                else None
+            )
+            if callable(murderous_agenda_fn):
+                for entry in list(murderous_agenda_fn(model, target) or []):
+                    if not isinstance(entry, dict):
+                        continue
+                    keyword = str(entry.get("keyword", "") or "").strip().upper()
+                    if not keyword:
+                        continue
+                    rules = list(rules or []) + [
+                        {
+                            "attack_type": str(entry.get("attack_type", "any") or "any").strip().lower(),
+                            "keyword": keyword,
+                            "source": str(entry.get("source", "") or "Murderous Agenda"),
+                        }
+                    ]
             mgr = getattr(source_army, "chaos_knights_detachments", None) if source_army is not None else None
             sustained_fn = getattr(mgr, "marked_prey_sustained_hits_value", None) if mgr is not None else None
             if callable(sustained_fn):
