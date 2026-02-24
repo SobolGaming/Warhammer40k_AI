@@ -1144,6 +1144,10 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"select one objective marker on the battlefield",
             r"until the start of your next command phase while an agents of the imperium unit from your army is within range of that objective marker improve the leadership and objective control characteristics of models in that unit by 1 and models in that unit have a 5 invulnerable save",
         ),
+        "Root out Heresy": (
+            r"ranged weapons equipped by adeptus arbites inquisitor inquisitorial agents and ordo hereticus models from your army have the ignores cover ability",
+            r"each time an adeptus arbites inquisitor inquisitorial agents or ordo hereticus model from your army makes an attack that targets a chaos unit containing 5 or more models that attack has the sustained hits 1 ability",
+        ),
         "Creeping Dread (Aura)": (
             r"in the battle shock step of your opponents command phase if an enemy unit that is either a psyker unit or below its starting strength is within \d+ of one or more anathema psykana models from your army that enemy unit must take a battle shock test",
             r"if that unit is below half strength it must subtract \d+ from its battle shock test this phase instead",
@@ -4527,6 +4531,10 @@ def _datasheet_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[str, str
 
 def _detachment_ability_support_by_id() -> Dict[str, Tuple[str, str]]:
     return {
+        "000009129": (
+            "Supported",
+            "Ordo Hereticus Purgation Force: Root out Heresy grants [IGNORES COVER] to ranged weapons of ADEPTUS ARBITES/INQUISITOR/INQUISITORIAL AGENTS/ORDO HERETICUS models and grants [SUSTAINED HITS 1] when those models attack CHAOS units containing 5+ models.",
+        ),
         "000009137": (
             "Supported",
             "Imperialis Fleet: At all Costs command-phase choice fully implemented with Eliminate target selection (+1 to hit vs selected enemy unit) and Acquire objective selection (+1 Objective Control, +1 Leadership improvement, and 5+ invulnerable save while in range) until your next Command phase.",

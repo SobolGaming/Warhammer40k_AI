@@ -14,6 +14,14 @@ class ImperialAgentsDetachmentManager(DetachmentManagerBase):
     _AT_ALL_COSTS_ABILITY_KEY = "imperialis_fleet_at_all_costs"
     _AT_ALL_COSTS_MODE_ELIMINATE = "eliminate"
     _AT_ALL_COSTS_MODE_ACQUIRE = "acquire"
+    _ORDO_HERETICUS_PURGATION_FORCE_DETACHMENT_NAME = "Ordo Hereticus Purgation Force"
+    _ROOT_OUT_HERESY_NAME = "Root out Heresy"
+    _ROOT_OUT_HERESY_MODEL_KEYWORDS = (
+        "ADEPTUS ARBITES",
+        "INQUISITOR",
+        "INQUISITORIAL AGENTS",
+        "ORDO HERETICUS",
+    )
     _EXTREMIS_DETACHMENT_NAME = "Veiled Blade Elimination Force"
     _EXTREMIS_SURCHARGE_BY_UNIT_NAME = {
         "callidus assassin": 40,
@@ -48,6 +56,11 @@ class ImperialAgentsDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches(self._IMPERIALIS_FLEET_DETACHMENT_NAME)
+
+    def is_ordo_hereticus_purgation_force(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches(self._ORDO_HERETICUS_PURGATION_FORCE_DETACHMENT_NAME)
 
     def is_veiled_blade_elimination_force(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -114,6 +127,45 @@ class ImperialAgentsDetachmentManager(DetachmentManagerBase):
         if root is None:
             return False
         return self._unit_has_keyword(root, "AGENTS OF THE IMPERIUM")
+
+    def _unit_has_any_keyword(self, unit, keywords: tuple[str, ...]) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        for keyword in list(keywords or ()):
+            if self._unit_has_keyword(root, str(keyword)):
+                return True
+        return False
+
+    def _model_has_any_keyword(self, model, keywords: tuple[str, ...]) -> bool:
+        if model is None:
+            return False
+        has_any = getattr(model, "has_any_keyword", None)
+        if callable(has_any):
+            for keyword in list(keywords or ()):
+                if bool(has_any(str(keyword))):
+                    return True
+        source_unit = self._unit_root(getattr(model, "parent_unit", None))
+        return self._unit_has_any_keyword(source_unit, keywords)
+
+    def _unit_alive_model_count(self, unit) -> int:
+        root = self._unit_root(unit)
+        if root is None:
+            return 0
+        get_attached_models = getattr(root, "get_attached_unit_models", None)
+        if callable(get_attached_models):
+            models = list(get_attached_models() or [])
+        else:
+            models = list(getattr(root, "models", []) or [])
+        count = 0
+        for model in list(models or []):
+            if model is None:
+                continue
+            if bool(getattr(model, "_pending_placement", False)):
+                continue
+            if bool(getattr(model, "is_alive", True)):
+                count += 1
+        return int(count)
 
     def _iter_enemy_units_on_battlefield(self, *, game=None, player=None) -> list:
         if game is None:
@@ -552,6 +604,43 @@ class ImperialAgentsDetachmentManager(DetachmentManagerBase):
         if not self._unit_within_acquire_objective(source_unit, game=game, game_map=game_map):
             return 0, ""
         return 5, f"{self._AT_ALL_COSTS_NAME} (Acquire)"
+
+    def root_out_heresy_ranged_ignores_cover(self, model, *, attacker_unit=None, weapon_profile=None) -> tuple[bool, str]:
+        del weapon_profile
+        if not self.is_ordo_hereticus_purgation_force():
+            return False, ""
+        source_unit = self._unit_root(attacker_unit if attacker_unit is not None else getattr(model, "parent_unit", None))
+        if source_unit is None:
+            return False, ""
+        if model is None or not self._model_in_army(model) or not self._unit_in_army(source_unit):
+            return False, ""
+        if not self._model_has_any_keyword(model, self._ROOT_OUT_HERESY_MODEL_KEYWORDS):
+            return False, ""
+        return True, self._ROOT_OUT_HERESY_NAME
+
+    def root_out_heresy_sustained_hits_bonus(self, model, target_unit, *, attacker_unit=None) -> tuple[int, str]:
+        if not self.is_ordo_hereticus_purgation_force():
+            return 0, ""
+        if target_unit is None:
+            return 0, ""
+        source_unit = self._unit_root(attacker_unit if attacker_unit is not None else getattr(model, "parent_unit", None))
+        if source_unit is None:
+            return 0, ""
+        if model is None or not self._model_in_army(model) or not self._unit_in_army(source_unit):
+            return 0, ""
+        if not self._model_has_any_keyword(model, self._ROOT_OUT_HERESY_MODEL_KEYWORDS):
+            return 0, ""
+        target_root = self._unit_root(target_unit)
+        if target_root is None:
+            return 0, ""
+        owner = getattr(self.army, "player", None) if self.army is not None else None
+        if owner is not None and not self._unit_is_enemy_of_player(target_root, owner):
+            return 0, ""
+        if not self._unit_has_keyword(target_root, "CHAOS"):
+            return 0, ""
+        if int(self._unit_alive_model_count(target_root) or 0) < 5:
+            return 0, ""
+        return 1, self._ROOT_OUT_HERESY_NAME
 
     def _iter_unique_army_roots(self) -> list:
         if self.army is None:

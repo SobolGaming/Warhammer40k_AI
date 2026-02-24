@@ -7247,6 +7247,17 @@ class WargearProfile:
             except Exception:
                 pass
             try:
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                mgr = getattr(army, "imperial_agents_detachments", None) if army is not None else None
+                ignores_cover_fn = getattr(mgr, "root_out_heresy_ranged_ignores_cover", None) if mgr is not None else None
+                if callable(ignores_cover_fn):
+                    applies, _source = ignores_cover_fn(attacker, attacker_unit=unit, weapon_profile=self)
+                    if bool(applies):
+                        attack_instance["ignores_cover"] = True
+            except Exception:
+                pass
+            try:
                 tsr = getattr(target, "special_rules", None)
                 if isinstance(tsr, dict) and tsr.get("pain_no_cover_active"):
                     attack_instance["ignores_cover"] = True
@@ -7378,6 +7389,21 @@ class WargearProfile:
                             int(ferocious_sustained or 0),
                             str(ferocious_source or "Ferocious Strike"),
                         )
+        except Exception:
+            pass
+        # Imperial Agents (Ordo Hereticus Purgation Force): Root out Heresy.
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            ia_mgr = getattr(army, "imperial_agents_detachments", None) if army is not None else None
+            sustained_fn = getattr(ia_mgr, "root_out_heresy_sustained_hits_bonus", None) if ia_mgr is not None else None
+            if callable(sustained_fn):
+                sustained_value, sustained_source = sustained_fn(attacker, target, attacker_unit=unit)
+                if int(sustained_value or 0) > 0:
+                    _set_bonus_sustained(
+                        int(sustained_value or 0),
+                        str(sustained_source or "Root out Heresy"),
+                    )
         except Exception:
             pass
 
