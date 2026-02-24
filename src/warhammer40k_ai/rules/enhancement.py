@@ -424,6 +424,10 @@ class Enhancement:
         except Exception:
             is_shadow_legion = False
         try:
+            is_legion_of_excess = bool(cd_mgr and cd_mgr.is_legion_of_excess_detachment())
+        except Exception:
+            is_legion_of_excess = False
+        try:
             is_plague_legion = bool(cd_mgr and cd_mgr.is_plague_legion_detachment())
         except Exception:
             is_plague_legion = False
@@ -2276,6 +2280,73 @@ class Enhancement:
             unit.special_rules["enhancement_malice_made_manifest_mortal_mid"] = mortal_mid
             unit.special_rules["enhancement_malice_made_manifest_mortal_high"] = int(max(0, mortal_high))
             unit.special_rules["enhancement_malice_made_manifest_source"] = "Malice Made Manifest"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "false majesty (aura)" or enh_id == "000009806002":
+            if not is_legion_of_excess:
+                return
+            unit.special_rules["enhancement_false_majesty_aura"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            range_val = params.get("range", getattr(desc, "range_in", 6.0) if desc is not None else 6.0)
+            try:
+                aura_range = float(range_val if range_val is not None else 6.0)
+            except Exception:
+                aura_range = 6.0
+            unit.special_rules["enhancement_false_majesty_aura_range"] = float(max(0.0, aura_range))
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "dreaming crown (aura)" or enh_id == "000009806003":
+            if not is_legion_of_excess:
+                return
+            unit.special_rules["enhancement_dreaming_crown_aura"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            range_val = params.get("range", getattr(desc, "range_in", 6.0) if desc is not None else 6.0)
+            try:
+                aura_range = float(range_val if range_val is not None else 6.0)
+            except Exception:
+                aura_range = 6.0
+            unit.special_rules["enhancement_dreaming_crown_aura_range"] = float(max(0.0, aura_range))
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "avatar of perfection" or enh_id == "000009806004":
+            if not is_legion_of_excess:
+                return
+            unit.special_rules["enhancement_avatar_of_perfection"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            range_val = params.get("isolation_range", getattr(desc, "range_in", 6.0) if desc is not None else 6.0)
+            try:
+                isolation_range = float(range_val if range_val is not None else 6.0)
+            except Exception:
+                isolation_range = 6.0
+            unit.special_rules["enhancement_avatar_of_perfection_range"] = float(max(0.0, isolation_range))
+            unit.special_rules["enhancement_avatar_of_perfection_reroll_advance"] = bool(
+                params.get("reroll_advance", True)
+            )
+            unit.special_rules["enhancement_avatar_of_perfection_reroll_charge"] = bool(
+                params.get("reroll_charge", True)
+            )
+            unit.special_rules["enhancement_avatar_of_perfection_ignore_move_modifiers"] = bool(
+                params.get("ignore_move_modifiers", True)
+            )
+            unit.special_rules["enhancement_avatar_of_perfection_ignore_advance_modifiers"] = bool(
+                params.get("ignore_advance_modifiers", True)
+            )
+            unit.special_rules["enhancement_avatar_of_perfection_ignore_charge_modifiers"] = bool(
+                params.get("ignore_charge_modifiers", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "soul glutton" or enh_id == "000009806005":
+            if not is_legion_of_excess:
+                return
+            unit.special_rules["enhancement_soul_glutton"] = True
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 

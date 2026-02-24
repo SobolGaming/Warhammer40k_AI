@@ -9948,6 +9948,114 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         if len(targets) == 1:
             return targets[0]
         return list(targets)
+    if ability == "soul_glutton":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(
+            game,
+            ctx.get("source_unit_id") or ctx.get("unit_id") or payload.get("source_unit_id") or payload.get("unit_id"),
+        )
+        if source_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            try:
+                player = source_root.get_parent_army().player
+            except Exception:
+                player = None
+        ability_name = str(ctx.get("ability_name", "") or "Soul Glutton").strip() or "Soul Glutton"
+        if is_skip_choice(request, result):
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {getattr(source_root, 'name', 'Unit')} selected none.",
+            )
+            return None
+        model_id = str(payload.get("model_id") or ctx.get("model_id") or "").strip()
+        model = resolve_model(game, model_id) if model_id else None
+        if model is None:
+            sr = getattr(source_root, "special_rules", None)
+            bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "") if isinstance(sr, dict) else ""
+            try:
+                models = list(source_root.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(source_root, "models", []) or [])
+            for cand in list(models or []):
+                if not getattr(cand, "is_alive", True):
+                    continue
+                if bearer_id and str(getattr(cand, "_id", "") or "") != bearer_id:
+                    continue
+                model = cand
+                break
+        if model is None:
+            return None
+        try:
+            from ...utility.dice import get_roll
+            from ...utility.event_bus import append_dice
+        except Exception:
+            get_roll = None
+            append_dice = None
+        heal_roll = int(get_roll("D3") or 0) if callable(get_roll) else 0
+        before = 0
+        after = 0
+        try:
+            before = int(getattr(model, "wounds", 0) or 0)
+        except Exception:
+            before = 0
+        if heal_roll > 0:
+            healed_via_method = False
+            heal_fn = getattr(model, "heal", None)
+            if callable(heal_fn):
+                try:
+                    heal_fn(int(heal_roll))
+                    healed_via_method = True
+                except Exception:
+                    healed_via_method = False
+            if not healed_via_method:
+                try:
+                    base_wounds = int(getattr(model, "_base_wounds", before) or before)
+                except Exception:
+                    base_wounds = int(before)
+                try:
+                    model.wounds = int(min(base_wounds, int(before) + int(heal_roll)))
+                except Exception:
+                    pass
+        try:
+            after = int(getattr(model, "wounds", before) or before)
+        except Exception:
+            after = int(before)
+        healed = max(0, int(after) - int(before))
+        if healed > 0:
+            event_system = getattr(game, "event_system", None)
+            if event_system is not None:
+                event_system.publish(
+                    "model_healed",
+                    model=model,
+                    unit=source_root,
+                    amount=int(healed),
+                    reason=ability_name,
+                )
+        if callable(append_dice) and player is not None:
+            append_dice(player, f"{ability_name}: D3={int(heal_roll)}")
+        if healed > 0:
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {getattr(model, 'name', 'Model')} regains {int(healed)} wounds.",
+            )
+        else:
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: no wounds were regained.",
+            )
+        return model
     if is_skip_choice(request, result):
         return None
     payload = _option_payload(request, result)
@@ -15181,6 +15289,12 @@ def _apply_choose_advance_modifier_ignores(game: object, request: DecisionReques
         pass
     try:
         filt = getattr(unit, "_filter_bestial_aspect_roll_modifiers", None)
+        if callable(filt):
+            mods = filt(mods, kind="advance")
+    except Exception:
+        pass
+    try:
+        filt = getattr(unit, "_filter_avatar_of_perfection_roll_modifiers", None)
         if callable(filt):
             mods = filt(mods, kind="advance")
     except Exception:

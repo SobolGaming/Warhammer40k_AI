@@ -85,14 +85,23 @@ def _maybe_request_move_modifier_choice(game: object, unit: object, *, action_ty
             bestial_aspect = bool(unit._bestial_aspect_unholy_hunger_active(game_map=getattr(game, "map", None)))
     except Exception:
         bestial_aspect = False
-    if not internal_rivalries and not driven_by_rage and not bestial_aspect:
+    avatar_of_perfection = False
+    try:
+        active_fn = getattr(unit, "_avatar_of_perfection_ignore_modifiers_active", None)
+        if callable(active_fn):
+            avatar_of_perfection = bool(active_fn(kind="move"))
+    except Exception:
+        avatar_of_perfection = False
+    if not internal_rivalries and not driven_by_rage and not bestial_aspect and not avatar_of_perfection:
         return
     if internal_rivalries:
         ability_name = INTERNAL_RIVALRIES_NAME
     elif driven_by_rage:
         ability_name = DRIVEN_BY_ULTIMATE_RAGE_NAME
-    else:
+    elif bestial_aspect:
         ability_name = "Bestial Aspect"
+    else:
+        ability_name = "Avatar of Perfection"
     try:
         if getattr(unit.round_state, "move_modifier_choice", None):
             return

@@ -449,6 +449,21 @@ def _weapon_is_melee(weapon_profile) -> bool:
     return bool(pw.is_melee())
 
 
+def _legion_of_excess_aura_attacker_valid(attacker_unit) -> bool:
+    if attacker_unit is None:
+        return False
+    try:
+        if not bool(attacker_unit.has_any_keyword("LEGIONES DAEMONICA")):
+            return False
+        if not bool(attacker_unit.has_any_keyword("SLAANESH")):
+            return False
+        if bool(attacker_unit.has_any_keyword("MONSTER")):
+            return False
+    except Exception:
+        return False
+    return True
+
+
 def _excluded_by_target_keywords(target_unit, excluded_keywords: Iterable[str]) -> bool:
     for kw in excluded_keywords:
         k = str(kw or "").strip()
@@ -1413,6 +1428,49 @@ def get_aura_attack_modifiers(attacker_unit, target_unit, weapon_profile, *, gam
             if int(getattr(ng_mods, "target_toughness_delta", 0) or 0):
                 out = out.merge(ng_mods)
                 applied_aura_names.add(nurgles_gift_aura_key)
+
+        source_sr = getattr(source, "special_rules", None)
+        if isinstance(source_sr, dict):
+            if bool(source_sr.get("enhancement_false_majesty_aura")):
+                aura_key = _norm_name("False Majesty (Aura)")
+                if not aura_key or aura_key not in applied_aura_names:
+                    try:
+                        aura_range = float(source_sr.get("enhancement_false_majesty_aura_range", 6.0) or 6.0)
+                    except Exception:
+                        aura_range = 6.0
+                    if (
+                        _weapon_is_melee(weapon_profile)
+                        and _legion_of_excess_aura_attacker_valid(attacker_unit)
+                        and _unit_within_aura_range(source, attacker_unit, float(max(0.0, aura_range)))
+                    ):
+                        if aura_key:
+                            applied_aura_names.add(aura_key)
+                        out = out.merge(
+                            AuraAttackModifiers(
+                                wound=1,
+                                wound_reasons=("+1 to wound from False Majesty (Aura)",),
+                            )
+                        )
+            if bool(source_sr.get("enhancement_dreaming_crown_aura")):
+                aura_key = _norm_name("Dreaming Crown (Aura)")
+                if not aura_key or aura_key not in applied_aura_names:
+                    try:
+                        aura_range = float(source_sr.get("enhancement_dreaming_crown_aura_range", 6.0) or 6.0)
+                    except Exception:
+                        aura_range = 6.0
+                    if (
+                        _weapon_is_melee(weapon_profile)
+                        and _legion_of_excess_aura_attacker_valid(attacker_unit)
+                        and _unit_within_aura_range(source, attacker_unit, float(max(0.0, aura_range)))
+                    ):
+                        if aura_key:
+                            applied_aura_names.add(aura_key)
+                        out = out.merge(
+                            AuraAttackModifiers(
+                                hit=1,
+                                hit_reasons=("+1 to hit from Dreaming Crown (Aura)",),
+                            )
+                        )
 
         for ab in _iter_possible_abilities(source):
             if not _is_aura_ability(ab):

@@ -8933,18 +8933,131 @@ class GamePhaseHandlersMixin:
                     f"Blood Tainted: {int(sticky_applied)} objective marker(s) remain under your control.",
                 )
 
+    def _on_phase_start_chaos_daemons_legion_of_excess_enhancements(
+        self,
+        *,
+        phase_name: str,
+        army,
+    ) -> None:
+        if army is None or not phase_name:
+            return
+        from ...utility.aura_utils import model_within_range_of_unit
+        from ...utility.entity_ids import get_entity_id
+
+        turn_owner = self.get_current_player()
+        owner_id = str(getattr(turn_owner, "id", "") or "")
+        turn = int(getattr(self, "turn", 0) or 0)
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        friendly_roots: list = []
+        seen: set[str] = set()
+        for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            uid = str(get_entity_id(root) or "")
+            if not uid or uid in seen:
+                continue
+            seen.add(uid)
+            if not getattr(root, "is_alive", lambda: False)():
+                continue
+            if not getattr(root, "deployed", True):
+                continue
+            try:
+                if root.is_in_reserves() or root.is_embarked:
+                    continue
+            except Exception:
+                pass
+            friendly_roots.append(root)
+
+        for root in list(friendly_roots or []):
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict) or not sr.get("enhancement_avatar_of_perfection"):
+                continue
+            bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "")
+            try:
+                models = list(root.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(root, "models", []) or [])
+            bearer_model = None
+            for model in list(models or []):
+                if bearer_id and str(getattr(model, "_id", "") or "") != bearer_id:
+                    continue
+                if not getattr(model, "is_alive", True):
+                    continue
+                bearer_model = model
+                break
+            if bearer_model is None:
+                sr["enhancement_avatar_of_perfection_active"] = False
+                root.special_rules = sr
+                continue
+            try:
+                isolation_range = float(sr.get("enhancement_avatar_of_perfection_range", 6.0) or 6.0)
+            except Exception:
+                isolation_range = 6.0
+            has_other_friendly_within_range = False
+            for other in list(friendly_roots or []):
+                if other is None or other is root:
+                    continue
+                try:
+                    if model_within_range_of_unit(
+                        bearer_model,
+                        other,
+                        float(max(0.0, isolation_range)),
+                        use_attached_aggregate=True,
+                    ):
+                        has_other_friendly_within_range = True
+                        break
+                except Exception:
+                    continue
+            sr["enhancement_avatar_of_perfection_active"] = not bool(has_other_friendly_within_range)
+            sr["enhancement_avatar_of_perfection_turn_owner"] = owner_id
+            sr["enhancement_avatar_of_perfection_turn"] = int(turn or 0)
+            sr["enhancement_avatar_of_perfection_phase"] = str(phase_name)
+            root.special_rules = sr
+
     def _on_phase_start_chaos_daemons_enhancements(self, player=None, phase=None, **_kwargs) -> None:
-        """Chaos Daemons Plague Legion enhancements that trigger at the start of the Shooting phase."""
+        """Chaos Daemons enhancement hooks for Legion of Excess and Plague Legion start-of-phase effects."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
-        if pname != "SHOOTING_PHASE":
+        if not pname:
             return
         if player is None or player is not self.get_current_player():
             return
+
+        # Avatar of Perfection evaluates at the start of each phase for all Legion of Excess armies.
+        for candidate_player in list(getattr(self, "players", []) or []):
+            if candidate_player is None:
+                continue
+            candidate_army = candidate_player.get_army()
+            if candidate_army is None:
+                continue
+            candidate_mgr = getattr(candidate_army, "chaos_daemons_detachments", None)
+            if candidate_mgr is None:
+                continue
+            if bool(getattr(candidate_mgr, "is_legion_of_excess_detachment", lambda: False)()):
+                self._on_phase_start_chaos_daemons_legion_of_excess_enhancements(
+                    phase_name=pname,
+                    army=candidate_army,
+                )
+
         army = player.get_army()
         if army is None:
             raise RuntimeError(f"Chaos Daemons enhancement hooks require an army for {getattr(player, 'name', 'Player')}.")
         mgr = getattr(army, "chaos_daemons_detachments", None)
-        if mgr is None or not mgr.is_plague_legion_detachment():
+        if mgr is None:
+            return
+
+        if pname != "SHOOTING_PHASE":
+            return
+        if not mgr.is_plague_legion_detachment():
             return
         game_map = getattr(self, "map", None)
         if game_map is None:
@@ -9008,6 +9121,153 @@ class GamePhaseHandlersMixin:
                 candidates=candidates,
                 spec={"source": "Maggot Maws", "range": 6},
             )
+
+    def _on_phase_end_chaos_daemons_enhancements(self, player=None, phase=None, **_kwargs) -> None:
+        """Chaos Daemons Legion of Excess end-of-Fight enhancement hooks."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "FIGHT_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..decisions import DecisionOption, DecisionRequest
+        from ...utility.entity_ids import get_entity_id
+
+        owner_player = self.get_current_player()
+        owner_id = str(getattr(owner_player, "id", "") or "")
+        turn = int(getattr(self, "turn", 0) or 0)
+
+        pending_model_ids: set[str] = set()
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "soul_glutton":
+                    continue
+                mid = str(ctx.get("model_id", "") or "")
+                if mid:
+                    pending_model_ids.add(mid)
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        def _queue_soul_glutton_for_army(army, controlling_player) -> None:
+            processed_roots: set[str] = set()
+            for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+                if unit is None:
+                    continue
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                uid = str(get_entity_id(root) or "")
+                if not uid or uid in processed_roots:
+                    continue
+                processed_roots.add(uid)
+                if not getattr(root, "is_alive", lambda: False)():
+                    continue
+                if not getattr(root, "deployed", True):
+                    continue
+                try:
+                    if root.is_in_reserves() or root.is_embarked:
+                        continue
+                except Exception:
+                    pass
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict) or not sr.get("enhancement_soul_glutton"):
+                    continue
+                try:
+                    phase_kills = int(sr.get("enhancement_soul_glutton_phase_kills", 0) or 0)
+                except Exception:
+                    phase_kills = 0
+                if phase_kills <= 0:
+                    continue
+                phase_marker = str(sr.get("enhancement_soul_glutton_phase", "") or "").strip().upper()
+                if phase_marker and phase_marker != "FIGHT_PHASE":
+                    continue
+                owner_marker = str(sr.get("enhancement_soul_glutton_turn_owner", "") or "")
+                if owner_marker and owner_marker != owner_id:
+                    continue
+                try:
+                    turn_marker = int(sr.get("enhancement_soul_glutton_turn", 0) or 0)
+                except Exception:
+                    turn_marker = 0
+                if turn_marker and turn_marker != int(turn or 0):
+                    continue
+                bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "")
+                try:
+                    models = list(root.get_attached_unit_models() or [])
+                except Exception:
+                    models = list(getattr(root, "models", []) or [])
+                bearer_model = None
+                for model in list(models or []):
+                    if bearer_id and str(getattr(model, "_id", "") or "") != bearer_id:
+                        continue
+                    if not getattr(model, "is_alive", True):
+                        continue
+                    bearer_model = model
+                    break
+                if bearer_model is None:
+                    for key in (
+                        "enhancement_soul_glutton_phase_kills",
+                        "enhancement_soul_glutton_phase",
+                        "enhancement_soul_glutton_turn",
+                        "enhancement_soul_glutton_turn_owner",
+                    ):
+                        sr.pop(key, None)
+                    root.special_rules = sr
+                    continue
+                model_id = str(get_entity_id(bearer_model) or "")
+                for key in (
+                    "enhancement_soul_glutton_phase_kills",
+                    "enhancement_soul_glutton_phase",
+                    "enhancement_soul_glutton_turn",
+                    "enhancement_soul_glutton_turn_owner",
+                ):
+                    sr.pop(key, None)
+                root.special_rules = sr
+                if not model_id or model_id in pending_model_ids:
+                    continue
+                request = DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    "Soul Glutton: roll D3 for the bearer to regain lost wounds?",
+                    player_id=getattr(controlling_player, "id", None),
+                    options=[
+                        DecisionOption.create("None", payload={"action": "skip"}),
+                        DecisionOption.create("Use Soul Glutton", payload={"action": "use", "model_id": model_id}),
+                    ],
+                    context={
+                        "ability": "soul_glutton",
+                        "ability_name": "Soul Glutton",
+                        "phase": "Fight phase",
+                        "unit_id": str(get_entity_id(root) or ""),
+                        "source_unit_id": str(get_entity_id(root) or ""),
+                        "model_id": model_id,
+                        "turn_owner": owner_id,
+                        "turn": int(turn or 0),
+                    },
+                )
+                self.request_decision(request)
+                pending_model_ids.add(model_id)
+
+        for candidate_player in list(getattr(self, "players", []) or []):
+            if candidate_player is None:
+                continue
+            army = candidate_player.get_army()
+            if army is None:
+                continue
+            mgr = getattr(army, "chaos_daemons_detachments", None)
+            if mgr is None or not bool(getattr(mgr, "is_legion_of_excess_detachment", lambda: False)()):
+                continue
+            _queue_soul_glutton_for_army(army, candidate_player)
 
     def _on_phase_end_gate_of_infinity(self, player=None, phase=None, **_kwargs) -> None:
         """Grey Knights: Gate of Infinity at the end of the opponent's Fight phase."""

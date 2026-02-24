@@ -1292,6 +1292,74 @@ _SHADOW_LEGION_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SHADOW_LEGION_DESCRIPTORS.values()
 }
 
+_LEGION_OF_EXCESS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009806002": EnhancementToolDescriptor(
+        enhancement_id="000009806002",
+        name="False Majesty (Aura)",
+        timing="passive_aura",
+        target="friendly_slaanesh_legiones_daemonica_units_within_range_excluding_monsters",
+        duration="constant",
+        effect="melee_wound_roll_bonus",
+        range_in=6.0,
+        effect_params={
+            "attack_type": "melee",
+            "wound_bonus": 1,
+            "required_keywords_all": ("LEGIONES DAEMONICA", "SLAANESH"),
+            "excluded_keywords_any": ("MONSTER",),
+        },
+    ),
+    "000009806003": EnhancementToolDescriptor(
+        enhancement_id="000009806003",
+        name="Dreaming Crown (Aura)",
+        timing="passive_aura",
+        target="friendly_slaanesh_legiones_daemonica_units_within_range_excluding_monsters",
+        duration="constant",
+        effect="melee_hit_roll_bonus",
+        range_in=6.0,
+        effect_params={
+            "attack_type": "melee",
+            "hit_bonus": 1,
+            "required_keywords_all": ("LEGIONES DAEMONICA", "SLAANESH"),
+            "excluded_keywords_any": ("MONSTER",),
+        },
+    ),
+    "000009806004": EnhancementToolDescriptor(
+        enhancement_id="000009806004",
+        name="Avatar of Perfection",
+        timing="phase_start_conditional",
+        target="bearer",
+        duration="until_end_of_phase",
+        effect="phase_isolation_grants_rerolls_and_modifier_choice",
+        range_in=6.0,
+        effect_params={
+            "isolation_range": 6.0,
+            "requires_no_other_friendly_units_within_range": True,
+            "reroll_advance": True,
+            "reroll_charge": True,
+            "ignore_move_modifiers": True,
+            "ignore_advance_modifiers": True,
+            "ignore_charge_modifiers": True,
+        },
+    ),
+    "000009806005": EnhancementToolDescriptor(
+        enhancement_id="000009806005",
+        name="Soul Glutton",
+        timing="fight_phase_end",
+        target="bearer",
+        duration="instant_optional",
+        effect="heal_on_bearer_melee_kills",
+        effect_params={
+            "requires_melee_kills_this_phase": True,
+            "heal_roll": "D3",
+            "optional": True,
+        },
+    ),
+}
+
+_LEGION_OF_EXCESS_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _LEGION_OF_EXCESS_DESCRIPTORS.values()
+}
+
 _PLAGUE_LEGION_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009819002": EnhancementToolDescriptor(
         enhancement_id="000009819002",
@@ -1689,6 +1757,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SHADOW_LEGION_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _LEGION_OF_EXCESS_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _PLAGUE_LEGION_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -1740,6 +1811,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _CARNIVAL_OF_EXCESS_BY_NAME.get(key)
         or _DAEMONIC_INCURSION_BY_NAME.get(key)
         or _SHADOW_LEGION_BY_NAME.get(key)
+        or _LEGION_OF_EXCESS_BY_NAME.get(key)
         or _PLAGUE_LEGION_BY_NAME.get(key)
         or _SCINTILLATING_LEGION_BY_NAME.get(key)
         or _GRAND_COVEN_BY_NAME.get(key)

@@ -434,16 +434,25 @@ def handle_advance_roll(game: object, state: DiceRollState):
             bestial_aspect = bool(unit._bestial_aspect_unholy_hunger_active(game_map=getattr(game, "map", None)))
     except Exception:
         bestial_aspect = False
+    avatar_of_perfection = False
+    try:
+        active_fn = getattr(unit, "_avatar_of_perfection_ignore_modifiers_active", None)
+        if callable(active_fn):
+            avatar_of_perfection = bool(active_fn(kind="advance"))
+    except Exception:
+        avatar_of_perfection = False
     if internal_rivalries:
         ability_name = INTERNAL_RIVALRIES_NAME
     elif driven_by_rage:
         ability_name = DRIVEN_BY_ULTIMATE_RAGE_NAME
-    else:
+    elif bestial_aspect:
         ability_name = "Bestial Aspect"
+    else:
+        ability_name = "Avatar of Perfection"
 
     if (
         bool(getattr(game, "is_authoritative", True))
-        and (internal_rivalries or driven_by_rage or bestial_aspect)
+        and (internal_rivalries or driven_by_rage or bestial_aspect or avatar_of_perfection)
         and options_for_signed_pairs is not None
     ):
         try:
@@ -552,11 +561,23 @@ def handle_charge_roll(game: object, state: DiceRollState):
         callable(driven_by_ultimate_rage_applies)
         and driven_by_ultimate_rage_applies(unit, game_map=getattr(game, "map", None))
     )
-    ability_name = INTERNAL_RIVALRIES_NAME if internal_rivalries else DRIVEN_BY_ULTIMATE_RAGE_NAME
+    avatar_of_perfection = False
+    try:
+        active_fn = getattr(unit, "_avatar_of_perfection_ignore_modifiers_active", None)
+        if callable(active_fn):
+            avatar_of_perfection = bool(active_fn(kind="charge"))
+    except Exception:
+        avatar_of_perfection = False
+    if internal_rivalries:
+        ability_name = INTERNAL_RIVALRIES_NAME
+    elif driven_by_rage:
+        ability_name = DRIVEN_BY_ULTIMATE_RAGE_NAME
+    else:
+        ability_name = "Avatar of Perfection"
 
     if (
         bool(getattr(game, "is_authoritative", True))
-        and (internal_rivalries or driven_by_rage)
+        and (internal_rivalries or driven_by_rage or avatar_of_perfection)
         and options_for_signed_pairs is not None
     ):
         target_ids = list(spec.get("target_unit_ids", []) or [])

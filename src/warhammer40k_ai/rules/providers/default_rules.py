@@ -509,6 +509,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
             predicate=lambda ctxs, _g: any_faction(ctxs, "CD"),
             subscriptions=[
                 ("phase_start", "_on_phase_start_chaos_daemons_enhancements"),
+                ("phase_end", "_on_phase_end_chaos_daemons_enhancements"),
                 ("phase_end", "_on_phase_end_movement_phase_symphony_of_pain"),
                 ("battle_shock_test_resolved", "_on_battle_shock_test_resolved_maggot_maws"),
             ],

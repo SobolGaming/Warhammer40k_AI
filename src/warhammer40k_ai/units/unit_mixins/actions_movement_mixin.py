@@ -5200,6 +5200,14 @@ class ActionsMovementMixin:
             if bool(xenocreed_reroll_advance(self)):
                 return True
         try:
+            active_fn = getattr(self, "_avatar_of_perfection_phase_active", None)
+            if callable(active_fn) and bool(active_fn()):
+                sr = getattr(self.get_attached_unit_root(), "special_rules", None)
+                if isinstance(sr, dict) and bool(sr.get("enhancement_avatar_of_perfection_reroll_advance", True)):
+                    return True
+        except Exception:
+            pass
+        try:
             for u in list(self.get_attached_unit_members() or []):
                 sr = getattr(u, "special_rules", None)
                 if not isinstance(sr, dict):
@@ -5276,6 +5284,57 @@ class ActionsMovementMixin:
             if current and exp != current:
                 return False
         return True
+
+    def _avatar_of_perfection_phase_active(self) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not sr.get("enhancement_avatar_of_perfection_active"):
+            return False
+        try:
+            game = self.get_parent_army().player.game
+        except Exception:
+            game = None
+        if game is None:
+            return False
+        phase_expected = str(sr.get("enhancement_avatar_of_perfection_phase", "") or "").strip().upper()
+        if phase_expected:
+            phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            if phase_name and phase_name != phase_expected:
+                return False
+        owner = str(sr.get("enhancement_avatar_of_perfection_turn_owner", "") or "")
+        try:
+            turn = int(sr.get("enhancement_avatar_of_perfection_turn", 0) or 0)
+        except Exception:
+            turn = 0
+        if owner:
+            cur_player = getattr(game, "get_current_player", lambda: None)()
+            if str(getattr(cur_player, "id", "") or "") != owner:
+                return False
+        if turn and int(getattr(game, "turn", 0) or 0) != int(turn):
+            return False
+        return True
+
+    def _avatar_of_perfection_ignore_modifiers_active(self, *, kind: str) -> bool:
+        if not self._avatar_of_perfection_phase_active():
+            return False
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        kind_key = str(kind or "").strip().lower()
+        if kind_key == "move":
+            return bool(sr.get("enhancement_avatar_of_perfection_ignore_move_modifiers", True))
+        if kind_key == "advance":
+            return bool(sr.get("enhancement_avatar_of_perfection_ignore_advance_modifiers", True))
+        if kind_key == "charge":
+            return bool(sr.get("enhancement_avatar_of_perfection_ignore_charge_modifiers", True))
+        return False
 
     def _preternatural_agility_ignore_modifiers_active(self) -> bool:
         try:
@@ -5582,6 +5641,67 @@ class ActionsMovementMixin:
                 pass
         return kept
 
+    def _filter_avatar_of_perfection_roll_modifiers(self, modifiers, *, kind: str) -> list[tuple[int, str]]:
+        if not modifiers:
+            return list(modifiers or [])
+        kind_key = str(kind or "").strip().lower()
+        if kind_key not in ("advance", "charge"):
+            return list(modifiers or [])
+        try:
+            if not self._avatar_of_perfection_ignore_modifiers_active(kind=kind_key):
+                return list(modifiers or [])
+        except Exception:
+            return list(modifiers or [])
+        from ...utility.modifier_choice import (
+            CHOICE_KEEP_ALL,
+            CHOICE_IGNORE_NEGATIVE,
+            CHOICE_IGNORE_POSITIVE,
+            CHOICE_IGNORE_ALL,
+            filter_signed_modifiers,
+        )
+        try:
+            choice = getattr(self.round_state, f"{kind_key}_modifier_choice", None)
+        except Exception:
+            choice = None
+        if not choice:
+            choice = CHOICE_KEEP_ALL
+        if choice == CHOICE_KEEP_ALL:
+            return list(modifiers or [])
+
+        kept, ignored = filter_signed_modifiers(modifiers, str(choice))
+        if ignored:
+            try:
+                sr = getattr(self, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                ignored_sources = tuple(sorted(str(s or "") for _v, s in ignored if str(s or "").strip()))
+                kept_sources = tuple(sorted(str(s or "") for _v, s in kept if str(s or "").strip()))
+                sig = (ignored_sources, kept_sources, str(choice))
+                key = f"avatar_of_perfection_{kind_key}_mod_signature"
+                if sr.get(key) != sig:
+                    sr[key] = sig
+                    self.special_rules = sr
+                    from ...utility.event_bus import append_action
+
+                    pn = self.get_parent_army().player
+                    label = "Advance roll" if kind_key == "advance" else "Charge roll"
+                    ignored_text = ", ".join(s for s in ignored_sources if s) or "unnamed sources"
+                    tag = (
+                        "negative"
+                        if choice == CHOICE_IGNORE_NEGATIVE
+                        else "positive"
+                        if choice == CHOICE_IGNORE_POSITIVE
+                        else "all"
+                    )
+                    append_action(pn, f"Avatar of Perfection: ignored {tag} {label} modifiers ({ignored_text}).")
+                    if kept_sources:
+                        kept_text = ", ".join(s for s in kept_sources if s)
+                        if kept_text:
+                            append_action(pn, f"Avatar of Perfection: applied {label} modifiers ({kept_text}).")
+            except Exception:
+                pass
+        return kept
+
     def _collect_advance_roll_modifiers(self) -> list[tuple[int, str]]:
         if bool(getattr(self, "has_siege_crawler", lambda: False)()):
             return []
@@ -5693,6 +5813,7 @@ class ActionsMovementMixin:
         mods = self._filter_driven_by_ultimate_rage_roll_modifiers(mods, kind="advance")
         mods = self._filter_bestial_aspect_roll_modifiers(mods, kind="advance")
         mods = self._filter_preternatural_agility_roll_modifiers(mods, kind="advance")
+        mods = self._filter_avatar_of_perfection_roll_modifiers(mods, kind="advance")
         for val, source in mods:
             if not val:
                 continue
@@ -6483,6 +6604,14 @@ class ActionsMovementMixin:
         if callable(taktikal_get_stuck_in):
             if bool(taktikal_get_stuck_in(self, game=game)):
                 return True
+        try:
+            active_fn = getattr(self, "_avatar_of_perfection_phase_active", None)
+            if callable(active_fn) and bool(active_fn()):
+                sr = getattr(self.get_attached_unit_root(), "special_rules", None)
+                if isinstance(sr, dict) and bool(sr.get("enhancement_avatar_of_perfection_reroll_charge", True)):
+                    return True
+        except Exception:
+            pass
 
         conditional_found = False
         try:
