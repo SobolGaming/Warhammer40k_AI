@@ -4696,6 +4696,36 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not callable(target_eligible) or not bool(target_eligible(source_root, target_root)):
             return ("Assailed From Every Angle target must be an enemy non-MONSTER/non-VEHICLE unit.")
         return ()
+    if ability == "bondsman":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Bondsman army not found.",)
+        mgr = getattr(army, "bondsman", None)
+        if mgr is None:
+            return ("Bondsman manager not found.",)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Bondsman source unit was not found.",)
+        if is_skip_choice(request, result):
+            return ()
+        validate_payload = getattr(mgr, "validate_bondsman_payload", None)
+        if not callable(validate_payload):
+            return ("Bondsman validation is unavailable.",)
+        valid, reason, _targets = validate_payload(
+            source_unit,
+            payload,
+            game_map=getattr(game, "map", None),
+        )
+        if not bool(valid):
+            return (str(reason or "Bondsman selection is not valid."),)
+        return ()
     if is_skip_choice(request, result):
         return ()
     if ability not in ("strategic_conqueror", "archons_will_objective"):
@@ -8289,6 +8319,55 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         except Exception:
             pass
         return None
+    if ability == "bondsman":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        mgr = getattr(army, "bondsman", None) if army is not None else None
+        if mgr is None:
+            return None
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return None
+        player = getattr(army, "player", None) if army is not None else None
+        if is_skip_choice(request, result):
+            _log_action_for_players(
+                game,
+                player,
+                f"Bondsman: {getattr(source_unit, 'name', 'Unit')} selected none.",
+            )
+            return None
+        apply_payload = getattr(mgr, "apply_bondsman_payload", None)
+        if not callable(apply_payload):
+            return None
+        valid, _reason, targets = apply_payload(
+            source_unit,
+            payload,
+            game_map=getattr(game, "map", None),
+        )
+        if not bool(valid):
+            return None
+        if not targets:
+            _log_action_for_players(
+                game,
+                player,
+                f"Bondsman: {getattr(source_unit, 'name', 'Unit')} selected none.",
+            )
+            return None
+        target_names = ", ".join(str(getattr(unit, "name", "Unit") or "Unit") for unit in list(targets))
+        _log_action_for_players(
+            game,
+            player,
+            f"Bondsman: {getattr(source_unit, 'name', 'Unit')} -> {target_names}",
+        )
+        if len(targets) == 1:
+            return targets[0]
+        return list(targets)
     if is_skip_choice(request, result):
         return None
     payload = _option_payload(request, result)
@@ -11737,22 +11816,6 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 tname = str(getattr(chosen, "name", "Unit") or "Unit")
                 source_name = str(ctx.get("ability_name", "") or "Oath of Moment").strip() or "Oath of Moment"
                 _log_action_for_players(game, player, f"{source_name}: selected {tname} as target.")
-            except Exception:
-                pass
-    if ability_key == "bondsman":
-        army = _resolve_army(game, request, payload)
-        mgr = getattr(army, "bondsman", None) if army is not None else None
-        source_unit = resolve_unit(game, ctx.get("source_unit_id"))
-        if mgr is not None and source_unit is not None and chosen is not None:
-            try:
-                mgr.apply_bondsman_effects(source_unit, chosen)
-            except Exception:
-                pass
-            try:
-                player = getattr(army, "player", None)
-                sname = str(getattr(source_unit, "name", "Unit") or "Unit")
-                tname = str(getattr(chosen, "name", "Unit") or "Unit")
-                _log_action_for_players(game, player, f"Bondsman: {sname} -> {tname}")
             except Exception:
                 pass
     return chosen

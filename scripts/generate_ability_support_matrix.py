@@ -772,6 +772,11 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Bold Gallantry": (
             r"each time an imperial knights unit from your army advances until the end of the turn ranged weapons equipped by imperial knights models from your army have the assault ability",
         ),
+        "Knightly Teachings": (
+            r"each time a model from your army uses its bondsman ability if no other model from your army has used that bondsman ability that turn you can select up to three friendly armiger models instead of one within 12 of that model or within 15 of that model while your army is honoured you still cannot select a model that is already being affected by a bondsman ability",
+            r"until the start of your next command phase those models are affected by that bondsman ability",
+            r"(?:keywords )?armiger models from your army gain the battleline keyword",
+        ),
         "Dauntless Defenders": (
             r"at the start of the first battle round select two objective markers on the battlefield to be your foundations",
             r"when you draw a line from any part of one of your foundations to the other if any part of a model s base or any part of a model s hull for a model without a base crosses that line that model s unit is said to be on your defensive line",
@@ -2776,6 +2781,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Bold Gallantry": (
             "Supported",
             "Valourstrike Lance: IMPERIAL KNIGHTS ranged weapons count as [ASSAULT] when checking Advance-and-shoot eligibility.",
+        ),
+        "Knightly Teachings": (
+            "Supported",
+            "Spearhead-At-Arms: first use each turn of a given Bondsman ability can target up to three eligible friendly ARMIGER units, later uses of that same Bondsman ability that turn are restricted to one target, target range is 12\" (15\" while Honoured), already-affected Bondsman targets are excluded, and ARMIGER units gain BATTLELINE.",
         ),
         "Dauntless Defenders": (
             "Supported",

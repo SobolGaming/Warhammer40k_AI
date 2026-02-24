@@ -463,6 +463,10 @@ class Army:
         apply_fn = getattr(ck_mgr, "apply_houndpack_lance_battleline_keywords", None) if ck_mgr is not None else None
         if callable(apply_fn):
             apply_fn(unit)
+        ik_mgr = getattr(self, "imperial_knights_detachments", None)
+        apply_fn = getattr(ik_mgr, "apply_spearhead_at_arms_battleline_keywords", None) if ik_mgr is not None else None
+        if callable(apply_fn):
+            apply_fn(unit)
         apply_fn = getattr(ae_mgr, "apply_ride_the_wind_battleline_keywords", None) if ae_mgr is not None else None
         if callable(apply_fn):
             apply_fn(unit)

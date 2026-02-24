@@ -13,10 +13,12 @@ class ImperialKnightsDetachmentManager(DetachmentManagerBase):
     faction_id = "QI"
     DETACHMENT_VALOURSTRIKE_LANCE = "Valourstrike Lance"
     DETACHMENT_GATE_WARDEN_LANCE = "Gate Warden Lance"
+    DETACHMENT_SPEARHEAD_AT_ARMS = "Spearhead-At-Arms"
     DETACHMENT_QUESTOR_FORGEPACT = "Questor Forgepact"
     DETACHMENT_QUESTORIS_COMPANIONS = "Questoris Companions"
     DAUNTLESS_DEFENDERS_NAME = "Dauntless Defenders"
     DAUNTLESS_DEFENDERS_ABILITY_KEY = "gate_warden_dauntless_defenders_foundation"
+    KNIGHTLY_TEACHINGS_NAME = "Knightly Teachings"
     COGBOUND_ALLIANCE_NAME = "Cogbound Alliance"
     VALOURS_REWARD_NAME = "Valour's Reward"
     HEROES_OF_LEGEND_NAME = "Heroes of Legend"
@@ -48,6 +50,11 @@ class ImperialKnightsDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches(self.DETACHMENT_GATE_WARDEN_LANCE)
+
+    def is_spearhead_at_arms(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches(self.DETACHMENT_SPEARHEAD_AT_ARMS)
 
     def is_questor_forgepact(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -88,6 +95,9 @@ class ImperialKnightsDetachmentManager(DetachmentManagerBase):
     def _unit_is_imperial_knights(self, unit) -> bool:
         return self._unit_has_keyword_or_faction(unit, "IMPERIAL KNIGHTS", faction_id=self.faction_id)
 
+    def _unit_is_armiger(self, unit) -> bool:
+        return self._unit_has_keyword(unit, "ARMIGER")
+
     def _unit_is_adeptus_mechanicus(self, unit) -> bool:
         if unit is None:
             return False
@@ -119,6 +129,23 @@ class ImperialKnightsDetachmentManager(DetachmentManagerBase):
         if callable(is_alive) and not bool(is_alive()):
             return False
         return True
+
+    def apply_spearhead_at_arms_battleline_keywords(self, unit=None) -> None:
+        if not self.is_spearhead_at_arms():
+            return
+        roots = [self._attached_root(unit)] if unit is not None else list(self._iter_army_roots())
+        for root in roots:
+            if root is None or not self._unit_in_army(root):
+                continue
+            if not self._unit_is_imperial_knights(root):
+                continue
+            if not self._unit_is_armiger(root):
+                continue
+            keywords = list(getattr(root, "keywords", []) or [])
+            if any(str(keyword).strip().upper() == "BATTLELINE" for keyword in keywords):
+                continue
+            keywords.append("Battleline")
+            root.keywords = keywords
 
     def _iter_army_roots(self) -> list:
         if self.army is None:
@@ -838,11 +865,14 @@ class ImperialKnightsDetachmentManager(DetachmentManagerBase):
             queue_oath(game=game, player=owner)
 
     def on_command_phase_start(self, *, game=None, player=None) -> None:
+        self.apply_spearhead_at_arms_battleline_keywords()
         self._apply_forgepact_sacristan_pledges(game=game, player=player)
         self._process_heroes_of_legend_start_of_turn(game=game, player=player)
 
     def validate_detachment_rules(self) -> list[str]:
         errors: list[str] = []
+        if self.is_spearhead_at_arms():
+            self.apply_spearhead_at_arms_battleline_keywords()
         if self.is_questor_forgepact():
             errors.extend(self._validate_forgepact_allies())
         return errors

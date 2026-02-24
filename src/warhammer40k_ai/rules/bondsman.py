@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from itertools import combinations
 
 from ..utility.ability_support import ABILITY_BONDSMAN, army_has_ability_id
 from ..utility.entity_ids import get_entity_id, maybe_entity_id
@@ -37,6 +38,101 @@ class BondsmanManager:
 
     def __init__(self, army=None):
         self.army = army
+        self._used_bondsman_ability_keys: set[str] = set()
+
+    @staticmethod
+    def _unit_sort_key(unit) -> str:
+        token = maybe_entity_id(unit)
+        if token:
+            return str(token)
+        return str(getattr(unit, "name", "") or "")
+
+    @staticmethod
+    def _root_unit(unit):
+        if unit is None:
+            return None
+        root_getter = getattr(unit, "get_attached_unit_root", None)
+        if callable(root_getter):
+            return root_getter()
+        return unit
+
+    def _detachment_manager(self):
+        if self.army is None:
+            return None
+        return getattr(self.army, "imperial_knights_detachments", None)
+
+    def _is_spearhead_at_arms(self) -> bool:
+        detachment_mgr = self._detachment_manager()
+        check = getattr(detachment_mgr, "is_spearhead_at_arms", None)
+        return bool(callable(check) and check())
+
+    def _army_is_honoured(self) -> bool:
+        if self.army is None:
+            return False
+        code_mgr = getattr(self.army, "code_chivalric", None)
+        if code_mgr is not None and bool(getattr(code_mgr, "honoured", False)):
+            return True
+        return bool(getattr(self.army, "code_chivalric_honoured", False))
+
+    def _bondsman_target_range(self, source_unit) -> float:
+        del source_unit
+        if not self._is_spearhead_at_arms():
+            return 12.0
+        if self._army_is_honoured():
+            return 15.0
+        return 12.0
+
+    def _bondsman_ability_keys_for_unit(self, unit) -> tuple[str, ...]:
+        keys = []
+        for name in self._bondsman_ability_names(unit):
+            key = _norm(name).replace(" (bondsman)", "").strip()
+            if key and key not in keys:
+                keys.append(key)
+        keys.sort()
+        return tuple(keys)
+
+    def _bondsman_primary_ability_key(self, unit) -> str:
+        keys = self._bondsman_ability_keys_for_unit(unit)
+        if not keys:
+            return ""
+        return str(keys[0])
+
+    def _bondsman_target_cap(self, source_unit) -> int:
+        if not self._is_spearhead_at_arms():
+            return 1
+        ability_key = self._bondsman_primary_ability_key(source_unit)
+        if not ability_key:
+            return 1
+        if ability_key in self._used_bondsman_ability_keys:
+            return 1
+        return 3
+
+    def _mark_bondsman_ability_used(self, source_unit) -> None:
+        ability_key = self._bondsman_primary_ability_key(source_unit)
+        if ability_key:
+            self._used_bondsman_ability_keys.add(str(ability_key))
+
+    @staticmethod
+    def _selected_target_ids_from_payload(payload: dict | None) -> list[str]:
+        data = dict(payload or {})
+        selected_ids: list[str] = []
+        raw_selected = data.get("selected_unit_ids")
+        if isinstance(raw_selected, (list, tuple)):
+            for value in list(raw_selected):
+                token = str(value or "").strip()
+                if token and token not in selected_ids:
+                    selected_ids.append(token)
+        if selected_ids:
+            return selected_ids
+        token = str(
+            data.get("target_unit_id")
+            or data.get("unit_id")
+            or data.get("target")
+            or ""
+        ).strip()
+        if token:
+            selected_ids.append(token)
+        return selected_ids
 
     def _army_has_bondsman(self) -> bool:
         if self.army is None:
@@ -167,46 +263,140 @@ class BondsmanManager:
         for unit in list(getattr(self.army, "units", []) or []):
             if self._unit_is_valid_source(unit):
                 sources.append(unit)
-        sources.sort(key=lambda u: str(getattr(u, "name", "")))
+        sources.sort(key=self._unit_sort_key)
         return sources
 
-    def get_eligible_armigers(self, source_unit, *, game_map=None) -> list:
+    def get_eligible_armigers(self, source_unit, *, game_map=None, max_distance: float | None = None) -> list:
         if self.army is None or source_unit is None:
             return []
         if not self._unit_is_valid_source(source_unit):
             return []
+        source_root = self._root_unit(source_unit)
+        distance_limit = float(max_distance) if max_distance is not None else float(self._bondsman_target_range(source_root))
         eligible = []
         for unit in list(getattr(self.army, "units", []) or []):
-            if not self._unit_is_armiger(unit):
+            root = self._root_unit(unit)
+            if not self._unit_is_armiger(root):
                 continue
-            if unit is source_unit:
+            if root is source_root:
                 continue
             try:
-                if hasattr(unit, "is_alive") and callable(unit.is_alive) and not unit.is_alive():
+                if hasattr(root, "is_alive") and callable(root.is_alive) and not root.is_alive():
                     continue
             except Exception:
                 continue
             try:
-                if hasattr(unit, "deployed") and not bool(getattr(unit, "deployed", True)):
+                if hasattr(root, "deployed") and not bool(getattr(root, "deployed", True)):
                     continue
             except Exception:
                 pass
             try:
-                sr = getattr(unit, "special_rules", None)
+                sr = getattr(root, "special_rules", None)
                 if isinstance(sr, dict) and sr.get("bondsman_active"):
                     continue
             except Exception:
                 pass
             if game_map is not None:
                 try:
-                    dist = float(game_map.get_distance_between_units(source_unit, unit))
-                    if dist > 12.0:
+                    dist = float(game_map.get_distance_between_units(source_root, root))
+                    if dist > float(distance_limit):
                         continue
                 except Exception:
                     pass
-            eligible.append(unit)
-        eligible.sort(key=lambda u: str(getattr(u, "name", "")))
-        return eligible
+            eligible.append(root)
+        deduped = []
+        seen_ids: set[str] = set()
+        for unit in list(eligible):
+            unit_id = maybe_entity_id(unit)
+            if unit_id:
+                key = str(unit_id)
+                if key in seen_ids:
+                    continue
+                seen_ids.add(key)
+            deduped.append(unit)
+        deduped.sort(key=self._unit_sort_key)
+        return deduped
+
+    def _bondsman_target_option_payloads(self, targets, *, max_targets: int) -> list[tuple[str, dict]]:
+        entries: list[tuple[str, str, object]] = []
+        for target in list(targets or []):
+            target_root = self._root_unit(target)
+            target_id = maybe_entity_id(target_root)
+            if not target_id:
+                continue
+            label = str(getattr(target_root, "name", "Unit") or "Unit")
+            entries.append((str(target_id), label, target_root))
+        entries.sort(key=lambda item: self._unit_sort_key(item[2]))
+        if not entries:
+            return []
+        option_payloads: list[tuple[str, dict]] = []
+        select_cap = max(1, min(int(max_targets or 1), len(entries)))
+        for size in range(1, int(select_cap) + 1):
+            for combo in combinations(entries, size):
+                selected_ids = [str(item[0]) for item in combo]
+                selected_names = [str(item[1]) for item in combo]
+                payload = {
+                    "target_unit_id": str(selected_ids[0]),
+                    "selected_unit_ids": list(selected_ids),
+                }
+                if len(selected_names) == 1:
+                    label = selected_names[0]
+                else:
+                    label = ", ".join(selected_names)
+                option_payloads.append((label, payload))
+        return option_payloads
+
+    def validate_bondsman_choice(self, source_unit, selected_unit_ids: list[str], *, game_map=None) -> tuple[bool, str, list]:
+        source_root = self._root_unit(source_unit)
+        if self.army is None or source_root is None:
+            return False, "Bondsman source unit was not found.", []
+        if not self._unit_is_valid_source(source_root):
+            return False, "Bondsman source unit is not eligible.", []
+        selected_ids: list[str] = []
+        for value in list(selected_unit_ids or []):
+            token = str(value or "").strip()
+            if token and token not in selected_ids:
+                selected_ids.append(token)
+        if not selected_ids:
+            return True, "", []
+        target_cap = int(self._bondsman_target_cap(source_root))
+        if len(selected_ids) > max(1, target_cap):
+            if target_cap >= 3:
+                return False, "Bondsman selection cannot exceed three friendly Armiger units.", []
+            return False, "That Bondsman ability can only target one Armiger after it has already been used this turn.", []
+        eligible_units = self.get_eligible_armigers(source_root, game_map=game_map)
+        eligible_by_id = {
+            str(unit_id): unit
+            for unit in list(eligible_units or [])
+            for unit_id in [maybe_entity_id(unit)]
+            if unit_id
+        }
+        resolved_targets = []
+        for unit_id in list(selected_ids):
+            target = eligible_by_id.get(str(unit_id))
+            if target is None:
+                return False, "Bondsman selection contains an ineligible Armiger target.", []
+            resolved_targets.append(target)
+        return True, "", resolved_targets
+
+    def validate_bondsman_payload(self, source_unit, payload: dict | None, *, game_map=None) -> tuple[bool, str, list]:
+        selected_ids = self._selected_target_ids_from_payload(payload)
+        return self.validate_bondsman_choice(source_unit, selected_ids, game_map=game_map)
+
+    def apply_bondsman_payload(self, source_unit, payload: dict | None, *, game_map=None) -> tuple[bool, str, list]:
+        valid, reason, targets = self.validate_bondsman_payload(source_unit, payload, game_map=game_map)
+        if not valid:
+            return False, str(reason), []
+        if not targets:
+            return True, "", []
+        applied_targets = []
+        for target in list(targets):
+            if self.apply_bondsman_effects(source_unit, target):
+                applied_targets.append(target)
+        if not applied_targets:
+            return False, "Bondsman effects could not be applied.", []
+        self._mark_bondsman_ability_used(source_unit)
+        return True, "", list(applied_targets)
 
     def apply_bondsman_effects(self, source_unit, target_unit) -> bool:
         if source_unit is None or target_unit is None:
@@ -274,6 +464,7 @@ class BondsmanManager:
 
     def on_command_phase_start(self, *, game=None, player=None) -> None:
         self.clear_bondsman_effects()
+        self._used_bondsman_ability_keys.clear()
         if not self._army_has_bondsman():
             return
         if game is None or not bool(getattr(game, "is_authoritative", True)):
@@ -284,20 +475,24 @@ class BondsmanManager:
             game_map = getattr(game, "map", None)
         except Exception:
             game_map = None
+        try:
+            from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+            from ..engine.decisions import DecisionOption, DecisionRequest
+        except Exception:
+            return
         for source in self.get_bondsman_sources():
-            targets = self.get_eligible_armigers(source, game_map=game_map)
+            source_root = self._root_unit(source)
+            targets = self.get_eligible_armigers(source_root, game_map=game_map)
             if not targets:
                 continue
+            target_cap = int(self._bondsman_target_cap(source_root))
             if len(targets) == 1:
-                self.apply_bondsman_effects(source, targets[0])
+                if self.apply_bondsman_effects(source_root, targets[0]):
+                    self._mark_bondsman_ability_used(source_root)
                 continue
-            try:
-                from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
-                from ..engine.decisions import DecisionOption, DecisionRequest
-                from ..utility.entity_ids import get_entity_id
-            except Exception:
+            source_id = maybe_entity_id(source_root)
+            if not source_id:
                 continue
-            source_id = get_entity_id(source)
             queue = getattr(game, "decision_queue", None)
             if queue is not None and hasattr(queue, "list"):
                 for req in list(queue.list() or []):
@@ -307,20 +502,32 @@ class BondsmanManager:
                     if str(ctx.get("ability", "")) == "bondsman" and str(ctx.get("source_unit_id", "")) == str(source_id):
                         break
                 else:
+                    options = self._bondsman_target_option_payloads(targets, max_targets=target_cap)
+                    if not options:
+                        continue
                     req_options = [DecisionOption.create("Skip", payload={"action": "skip"})]
-                    for target in targets:
-                        req_options.append(
-                            DecisionOption.create(
-                                getattr(target, "name", "Unit"),
-                                payload={"target_unit_id": get_entity_id(target)},
-                            )
-                        )
+                    for label, payload in options:
+                        req_options.append(DecisionOption.create(label, payload=payload))
+                    ability_key = self._bondsman_primary_ability_key(source_root)
+                    candidate_ids = [
+                        str(maybe_entity_id(target) or "")
+                        for target in list(targets or [])
+                        if str(maybe_entity_id(target) or "")
+                    ]
                     req = DecisionRequest.create(
                         DECISION_CHOOSE_QUARRY,
-                        "Select Bondsman target.",
+                        f"Select up to {int(target_cap)} Bondsman target(s)." if int(target_cap) > 1 else "Select Bondsman target.",
                         player_id=getattr(player, "id", None),
                         options=req_options,
-                        context={"source_unit_id": source_id, "ability": "bondsman"},
+                        context={
+                            "source_unit_id": str(source_id),
+                            "ability": "bondsman",
+                            "ability_name": "Bondsman",
+                            "bondsman_ability_key": str(ability_key),
+                            "max_targets": int(target_cap),
+                            "candidate_unit_ids": list(candidate_ids),
+                            "optional": True,
+                        },
                     )
                     if hasattr(game, "request_decision"):
                         game.request_decision(req)
