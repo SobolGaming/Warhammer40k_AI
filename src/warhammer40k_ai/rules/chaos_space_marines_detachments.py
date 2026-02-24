@@ -75,6 +75,7 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     DETACHMENT_DREAD_TALONS = "Dread Talons"
     DETACHMENT_FELLHAMMER_SIEGE_HOST = "Fellhammer Siege-host"
     DETACHMENT_HURONS_MARAUDERS = "Huron's Marauders"
+    DETACHMENT_NIGHTMARE_HUNT = "Nightmare Hunt"
     DETACHMENT_RENEGADE_RAIDERS = "Renegade Raiders"
     _MASTERS_OF_MISDIRECTION_SELECTION_ABILITY = "deceptors_masters_of_misdirection_selection"
     _MASTERS_OF_MISDIRECTION_SOURCE = "Masters of Misdirection"
@@ -135,6 +136,11 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches(self.DETACHMENT_HURONS_MARAUDERS)
+
+    def is_nightmare_hunt(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches(self.DETACHMENT_NIGHTMARE_HUNT)
 
     def is_renegade_raiders(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -269,8 +275,16 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
             return True
         return self._unit_is_heretic_astartes(getattr(model, "parent_unit", None))
 
+    def _uses_csm_terror_forced_battleshock_clause(self) -> bool:
+        return bool(self.is_dread_talons() or self.is_nightmare_hunt())
+
+    def csm_terror_forced_battleshock_source(self) -> str:
+        if self.is_nightmare_hunt():
+            return "Terror Made Manifest"
+        return "Terror Descends"
+
     def terror_descends_source_units(self) -> list:
-        if not self.is_dread_talons() or self.army is None:
+        if not self._uses_csm_terror_forced_battleshock_clause() or self.army is None:
             return []
         sources = []
         for root in self._iter_unique_roots(getattr(self.army, "units", []) or []):
@@ -296,7 +310,7 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         return sources
 
     def terror_descends_target_in_range(self, target_unit) -> bool:
-        if not self.is_dread_talons():
+        if not self._uses_csm_terror_forced_battleshock_clause():
             return False
         root = self._unit_root(target_unit)
         if root is None:
@@ -323,12 +337,22 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
             special_rules = {}
         updated = dict(special_rules)
         updated["battle_shock_suppress_other_tests_phase"] = str(phase_name or "COMMAND_PHASE").strip().upper()
-        updated["battle_shock_suppress_other_tests_source"] = "Terror Descends"
+        updated["battle_shock_suppress_other_tests_source"] = self.csm_terror_forced_battleshock_source()
         if bool(allow_current_test):
             updated["battle_shock_allow_suppressed_test"] = True
         else:
             updated.pop("battle_shock_allow_suppressed_test", None)
         root.special_rules = updated
+
+    def csm_terror_forced_battleshock_test_modifier(self, target_unit) -> tuple[int, str]:
+        if not self.is_nightmare_hunt():
+            return 0, ""
+        root = self._unit_root(target_unit)
+        if root is None:
+            return 0, ""
+        if not self.terror_descends_target_in_range(root):
+            return 0, ""
+        return -1, "Terror Made Manifest"
 
     def iron_fortitude_defensive_wound_mod_entry(self, target_unit) -> Optional[dict]:
         if not self.is_fellhammer_siege_host():
@@ -349,6 +373,61 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
             "requires_strength_gt_toughness": True,
             "tag": "detachment:iron_fortitude",
         }
+
+    def terror_made_manifest_hit_bonus(self, attacker_model, target_unit) -> tuple[int, str]:
+        if not self.is_nightmare_hunt():
+            return 0, ""
+        if attacker_model is None or target_unit is None:
+            return 0, ""
+        if not self._model_in_army(attacker_model):
+            return 0, ""
+        if not self._model_is_heretic_astartes(attacker_model):
+            return 0, ""
+        target_root = self._unit_root(target_unit)
+        if target_root is None:
+            return 0, ""
+        is_below_half_strength = getattr(target_root, "is_below_half_strength", None)
+        if not callable(is_below_half_strength) or not bool(is_below_half_strength()):
+            return 0, ""
+        return 1, "Terror Made Manifest"
+
+    def terror_made_manifest_attacker_battle_shocked_hit_penalty(self, attacker_model, target_unit) -> tuple[int, str]:
+        if not self.is_nightmare_hunt():
+            return 0, ""
+        if attacker_model is None or target_unit is None:
+            return 0, ""
+        target_root = self._unit_root(target_unit)
+        if target_root is None:
+            return 0, ""
+        if not self._unit_in_army(target_root):
+            return 0, ""
+        if not self._unit_is_heretic_astartes(target_root):
+            return 0, ""
+        unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root = self._unit_root(unit)
+        if attacker_root is None:
+            return 0, ""
+        is_battle_shocked = getattr(attacker_root, "is_battle_shocked", None)
+        if not callable(is_battle_shocked) or not bool(is_battle_shocked()):
+            return 0, ""
+        return 1, "Terror Made Manifest"
+
+    def terror_made_manifest_wound_bonus(self, attacker_model, target_unit) -> tuple[int, str]:
+        if not self.is_nightmare_hunt():
+            return 0, ""
+        if attacker_model is None or target_unit is None:
+            return 0, ""
+        if not self._model_in_army(attacker_model):
+            return 0, ""
+        if not self._model_is_heretic_astartes(attacker_model):
+            return 0, ""
+        target_root = self._unit_root(target_unit)
+        if target_root is None:
+            return 0, ""
+        is_battle_shocked = getattr(target_root, "is_battle_shocked", None)
+        if not callable(is_battle_shocked) or not bool(is_battle_shocked()):
+            return 0, ""
+        return 1, "Terror Made Manifest"
 
     @classmethod
     def _tyrannical_motivation_choice_label(cls, choice_key: str) -> str:

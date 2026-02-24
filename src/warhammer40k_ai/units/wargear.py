@@ -8480,6 +8480,30 @@ class WargearProfile:
                     _add_hit_mod(int(bonus), f"+{int(bonus)} to hit from {str(source or 'Tyrannical Motivation').strip()}")
         except Exception:
             pass
+        # Chaos Space Marines: Nightmare Hunt - Terror Made Manifest.
+        attacker_unit = getattr(attacker, "parent_unit", None)
+        get_parent_army = getattr(attacker_unit, "get_parent_army", None) if attacker_unit is not None else None
+        attacker_army = get_parent_army() if callable(get_parent_army) else None
+        attacker_mgr = getattr(attacker_army, "chaos_space_marines_detachments", None) if attacker_army is not None else None
+        attacker_bonus_fn = getattr(attacker_mgr, "terror_made_manifest_hit_bonus", None) if attacker_mgr is not None else None
+        if callable(attacker_bonus_fn):
+            bonus, source = attacker_bonus_fn(attacker, target)
+            if int(bonus or 0):
+                source_name = str(source or "Terror Made Manifest").strip() or "Terror Made Manifest"
+                _add_hit_mod(int(bonus), f"+{int(bonus)} to hit from {source_name}")
+        target_get_army = getattr(target, "get_parent_army", None) if target is not None else None
+        target_army = target_get_army() if callable(target_get_army) else getattr(target, "parent_army", None)
+        target_mgr = getattr(target_army, "chaos_space_marines_detachments", None) if target_army is not None else None
+        target_penalty_fn = (
+            getattr(target_mgr, "terror_made_manifest_attacker_battle_shocked_hit_penalty", None)
+            if target_mgr is not None
+            else None
+        )
+        if callable(target_penalty_fn):
+            penalty, source = target_penalty_fn(attacker, target)
+            if int(penalty or 0):
+                source_name = str(source or "Terror Made Manifest").strip() or "Terror Made Manifest"
+                _add_hit_mod(-abs(int(penalty)), f"-{abs(int(penalty))} to hit from {source_name}")
         # Aeldari: Guardian Battlehost - Defend at All Costs (+1 to hit near objectives).
         try:
             unit = attacker.parent_unit
@@ -13147,6 +13171,18 @@ class WargearProfile:
                         pass
         except Exception:
             pass
+        # Chaos Space Marines: Nightmare Hunt - Terror Made Manifest.
+        attacker_unit = getattr(attacker, "parent_unit", None)
+        attacker_get_army = getattr(attacker_unit, "get_parent_army", None) if attacker_unit is not None else None
+        attacker_army = attacker_get_army() if callable(attacker_get_army) else None
+        csm_mgr = getattr(attacker_army, "chaos_space_marines_detachments", None) if attacker_army is not None else None
+        csm_bonus_fn = getattr(csm_mgr, "terror_made_manifest_wound_bonus", None) if csm_mgr is not None else None
+        if callable(csm_bonus_fn):
+            bonus, source = csm_bonus_fn(attacker, target)
+            if int(bonus or 0):
+                source_name = str(source or "Terror Made Manifest").strip() or "Terror Made Manifest"
+                dice_modifier += int(bonus)
+                wound_result["modifiers"].append(f"+{int(bonus)} to wound from {source_name}")
         # Leagues of Votann: Prioritised Efficiency (Fortify Takeover -1 to wound vs non-vehicle).
         try:
             target_army = target.get_parent_army()

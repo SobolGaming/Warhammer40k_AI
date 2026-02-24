@@ -635,10 +635,15 @@ class Game(
             if army is None:
                 continue
             mgr = getattr(army, "chaos_space_marines_detachments", None)
-            if mgr is None or not getattr(mgr, "is_dread_talons", lambda: False)():
+            if mgr is None:
+                continue
+            is_dread_talons = bool(getattr(mgr, "is_dread_talons", lambda: False)())
+            is_nightmare_hunt = bool(getattr(mgr, "is_nightmare_hunt", lambda: False)())
+            if not (is_dread_talons or is_nightmare_hunt):
                 continue
             in_range_fn = getattr(mgr, "terror_descends_target_in_range", None)
             suppress_fn = getattr(mgr, "terror_descends_apply_test_suppression", None)
+            test_modifier_fn = getattr(mgr, "csm_terror_forced_battleshock_test_modifier", None)
             if not callable(in_range_fn) or not callable(suppress_fn):
                 continue
 
@@ -683,6 +688,22 @@ class Game(
                 )
                 if already_tested:
                     continue
+
+                if callable(test_modifier_fn):
+                    test_modifier, source = test_modifier_fn(root)
+                    if int(test_modifier or 0):
+                        target_sr = getattr(root, "special_rules", None)
+                        if not isinstance(target_sr, dict):
+                            target_sr = {}
+                        target_sr = dict(target_sr)
+                        current = int(target_sr.get("battle_shock_test_modifier", 0) or 0)
+                        target_sr["battle_shock_test_modifier"] = int(current + int(test_modifier))
+                        source_name = str(source or "").strip()
+                        if source_name:
+                            reasons = list(target_sr.get("battle_shock_test_modifier_reasons", []) or [])
+                            reasons.append(source_name)
+                            target_sr["battle_shock_test_modifier_reasons"] = reasons
+                        root.special_rules = target_sr
 
                 take_test = getattr(root, "take_battle_shock_test", None)
                 if callable(take_test):
@@ -8301,8 +8322,8 @@ class Game(
                 uid = get_entity_id(unit)
                 tested_ids.add(uid)
 
-        # Chaos Space Marines Dread Talons: Terror Descends marks affected units so they do
-        # not take additional Battle-shock tests in this Command phase.
+        # Chaos Space Marines terror detachments: Dread Talons/Nightmare Hunt force tests for
+        # in-range enemy units and mark affected units to suppress additional tests this phase.
         self._apply_csm_dread_talons_terror_descends_forced_tests(current_player, tested_ids)
         # Belakor: Pall of Despair can force additional tests for eligible enemy units.
         self._apply_pall_of_despair_forced_tests(current_player, tested_ids)

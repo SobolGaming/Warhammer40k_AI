@@ -369,6 +369,13 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time an enemy unit within 12 of one or more heretic astartes units from your army takes a battle shock test subtract 1 from the result",
             r"enemy units affected by this detachment rule do not need to take any other battle shock tests in the same phase",
         ),
+        "Terror Made Manifest": (
+            r"in the battle shock step of your opponent(?:s| s) command phase if an enemy unit that is below its starting strength is within 12 of one or more heretic astartes units from your army that enemy unit must take a battle shock test subtracting 1 from the result",
+            r"enemy units affected by this detachment rule do not need to take any other battle shock tests in the same phase",
+            r"each time a heretic astartes model from your army makes an attack that targets a unit that is below half strength add 1 to the hit roll",
+            r"each time an attack targets a heretic astartes unit from your army if the attacking model is battle shocked subtract 1 from the hit roll",
+            r"each time a heretic astartes model from your army makes an attack that targets a battle shocked unit add 1 to the wound roll",
+        ),
         "Iron Fortitude": (
             r"each time a ranged attack targets a heretic astartes unit from your army excluding damned units if the strength characteristic of that attack is greater than the toughness characteristic of that unit subtract 1 from the wound roll",
         ),
@@ -2526,6 +2533,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Terror Descends (Aura)": (
             "Supported",
             "Dread Talons: in the Battle-shock step of your opponent's Command phase, below-Starting Strength enemy units within 12\" of friendly HERETIC ASTARTES sources are forced to take a Battle-shock test, affected units are flagged to suppress further Battle-shock tests in that phase, and in-range Battle-shock tests use the detachment's -1 test modifier support.",
+        ),
+        "Terror Made Manifest": (
+            "Supported",
+            "Nightmare Hunt: in the Battle-shock step of your opponent's Command phase, below-Starting Strength enemy units within 12\" of friendly HERETIC ASTARTES sources are forced to take a Battle-shock test at -1 and are marked to suppress further tests in that phase; HERETIC ASTARTES attacks gain +1 to hit vs Below Half-strength targets and +1 to wound vs Battle-shocked targets, and attacks made by Battle-shocked models suffer -1 to hit against friendly HERETIC ASTARTES units.",
         ),
         "Iron Fortitude": (
             "Supported",
