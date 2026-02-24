@@ -6406,6 +6406,51 @@ class GameShootingFightHandlersMixin:
                 sr.pop("red_thirst_expires_phase", None)
             member.special_rules = sr
 
+    def _on_fight_unit_selected_hypermorphic_fury(self, unit=None, selecting_player=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        owner = getattr(army, "player", None) if army is not None else None
+        if owner is None:
+            return
+        if selecting_player is not None and selecting_player is not owner:
+            return
+        mgr = getattr(army, "genestealer_cults_detachments", None)
+        bonus_fn = getattr(mgr, "hypermorphic_fury_melee_attacks_bonus", None) if mgr is not None else None
+        if not callable(bonus_fn):
+            return
+
+        bonus, source = bonus_fn(root, game=self)
+        source_name = str(source or "Hypermorphic Fury").strip() or "Hypermorphic Fury"
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            if int(bonus or 0):
+                sr["hypermorphic_fury_melee_attacks_bonus"] = int(bonus or 0)
+                sr["hypermorphic_fury_source"] = source_name
+                sr["hypermorphic_fury_expires_phase"] = "FIGHT_PHASE"
+            else:
+                sr.pop("hypermorphic_fury_melee_attacks_bonus", None)
+                sr.pop("hypermorphic_fury_source", None)
+                sr.pop("hypermorphic_fury_expires_phase", None)
+            member.special_rules = sr
+
     def _on_fight_unit_selected_enemy_melee_hit_penalty(self, unit=None, **_kwargs) -> None:
         if unit is None:
             return

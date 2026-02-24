@@ -9,6 +9,12 @@ from .detachment_manager import DetachmentManagerBase
 class GenestealerCultsDetachmentManager(DetachmentManagerBase):
     faction_id = "GC"
 
+    _HYPERMORPHIC_FURY_RULE_NAME = "Hypermorphic Fury"
+    _HYPERMORPHIC_FURY_ELIGIBLE_NAME_TOKENS = (
+        "aberrants",
+        "biophagus",
+        "purestrain genestealers",
+    )
     _A_PERFECT_AMBUSH_RULE_NAME = "A Perfect Ambush"
     _A_PERFECT_AMBUSH_SR_KEY = "gsc_a_perfect_ambush_effects"
     _A_PERFECT_AMBUSH_KEY_PREFIX = "gsc_a_perfect_ambush"
@@ -66,9 +72,28 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
         )
 
     @staticmethod
-    def _weapon_name_token(weapon_name: str) -> str:
-        token = re.sub(r"[^a-z0-9]+", " ", str(weapon_name or "").lower())
+    def _name_token(name: str) -> str:
+        token = re.sub(r"[^a-z0-9]+", " ", str(name or "").lower())
         return re.sub(r"\s+", " ", token).strip()
+
+    @classmethod
+    def _weapon_name_token(cls, weapon_name: str) -> str:
+        return cls._name_token(weapon_name)
+
+    def _unit_name_tokens(self, unit) -> set[str]:
+        root = self._attached_root(unit)
+        if root is None:
+            return set()
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if not members:
+            members = [root]
+        out: set[str] = set()
+        for member in members:
+            token = self._name_token(getattr(member, "name", ""))
+            if token:
+                out.add(token)
+        return out
 
     def _model_weapon_names(self, model, *, attack_type: str = "any") -> list[str]:
         attack = str(attack_type or "any").strip().lower()
@@ -97,6 +122,49 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Host of Ascension")
+
+    def is_biosanctic_broodsurge(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Biosanctic Broodsurge")
+
+    def _is_hypermorphic_fury_eligible_unit(self, unit) -> bool:
+        if not self.is_biosanctic_broodsurge():
+            return False
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        if not self._unit_is_genestealer_cults(root):
+            return False
+        names = self._unit_name_tokens(root)
+        for token in self._HYPERMORPHIC_FURY_ELIGIBLE_NAME_TOKENS:
+            if token in names:
+                return True
+        return False
+
+    def hypermorphic_fury_charge_roll_bonus(self, unit, *, target_units=None, game=None) -> tuple[int, str]:
+        del target_units  # Unused; present for parity with other detachment manager hooks.
+        del game  # Unused; present for parity with other detachment manager hooks.
+        if not self._is_hypermorphic_fury_eligible_unit(unit):
+            return 0, ""
+        return 1, self._HYPERMORPHIC_FURY_RULE_NAME
+
+    def hypermorphic_fury_melee_attacks_bonus(self, unit, *, game=None) -> tuple[int, str]:
+        if not self._is_hypermorphic_fury_eligible_unit(unit):
+            return 0, ""
+        root = self._attached_root(unit)
+        if root is None:
+            return 0, ""
+        round_state = getattr(root, "round_state", None)
+        if not bool(getattr(round_state, "charged_this_round", False)):
+            return 0, ""
+        if game is not None:
+            phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            if phase_name and phase_name != "FIGHT_PHASE":
+                return 0, ""
+        return 1, self._HYPERMORPHIC_FURY_RULE_NAME
 
     def _clear_temporary_weapon_keyword_effects(
         self,

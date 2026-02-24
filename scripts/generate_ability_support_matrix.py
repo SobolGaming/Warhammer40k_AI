@@ -1134,6 +1134,10 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "A Perfect Ambush": (
             r"each time a genestealer cults unit from your army is set up on the battlefield as reinforcements until the end of your next fight phase weapons equipped by models in that unit have the sustained hits \d+ and ignores cover abilities",
         ),
+        "Hypermorphic Fury": (
+            r"add \d+ to charge rolls made for aberrants biophagus and purestrain genestealers units from your army",
+            r"in addition each time such a unit is selected to fight if it made a charge move this turn until the end of the phase add \d+ to the attacks characteristic of melee weapons equipped by models in that unit",
+        ),
         "Relentless Rage": (
             r"each time a world eaters unit from your army makes a charge move until the end of the turn add \d+ to the attacks characteristic and add \d+ to the strength characteristic of melee weapons equipped by models in that unit",
         ),
@@ -2306,6 +2310,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "A Perfect Ambush": (
             "Supported",
             "Host of Ascension: each time a GENESTEALER CULTS unit is set up as Reinforcements, its models' weapons gain [SUSTAINED HITS 1] and [IGNORES COVER] until the end of that player's next Fight phase.",
+        ),
+        "Hypermorphic Fury": (
+            "Supported",
+            "Biosanctic Broodsurge: ABERRANTS/BIOPHAGUS/PURESTRAIN GENESTEALERS units gain +1 to Charge rolls, and when selected to fight after charging their melee weapons gain +1 Attacks until end of phase.",
         ),
         "Against All Odds": (
             "Supported",

@@ -153,6 +153,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("fight_unit_selected", "_on_fight_unit_selected_enemy_melee_hit_penalty"),
                 ("fight_unit_selected", "_on_fight_unit_selected_selected_to_fight_reroll_choice"),
                 ("fight_unit_selected", "_on_fight_unit_selected_harbinger_of_death"),
+                ("fight_unit_selected", "_on_fight_unit_selected_hypermorphic_fury"),
                 ("fight_unit_selected", "_on_fight_unit_selected_orks_try_dat_button"),
                 ("fight_targets_selected", "_on_fight_targets_selected_boon_of_death"),
                 ("fight_targets_selected", "_on_fight_targets_selected_repair_barge"),

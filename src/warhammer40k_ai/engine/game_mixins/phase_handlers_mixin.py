@@ -8839,6 +8839,14 @@ class GamePhaseHandlersMixin:
                         "red_thirst_expires_phase",
                     ):
                         sr.pop(k, None)
+                exp = str(sr.get("hypermorphic_fury_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "hypermorphic_fury_melee_attacks_bonus",
+                        "hypermorphic_fury_source",
+                        "hypermorphic_fury_expires_phase",
+                    ):
+                        sr.pop(k, None)
                 exp = str(sr.get("fight_selected_enemy_melee_hit_penalty_expires_phase", "") or "").strip().upper()
                 if exp and exp == pname:
                     for k in (

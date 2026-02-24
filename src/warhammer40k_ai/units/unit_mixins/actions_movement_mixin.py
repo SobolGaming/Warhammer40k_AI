@@ -6627,6 +6627,18 @@ class ActionsMovementMixin:
             bonus, source = necrons_bonus_fn(root, target_units=targets, game=game)
             if int(bonus or 0):
                 modifiers.append((int(bonus or 0), str(source or "Annihilation Protocol")))
+
+        gsc_mgr = getattr(army, "genestealer_cults_detachments", None) if army is not None else None
+        gsc_bonus_fn = (
+            getattr(gsc_mgr, "hypermorphic_fury_charge_roll_bonus", None)
+            if gsc_mgr is not None
+            else None
+        )
+        if callable(gsc_bonus_fn):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            bonus, source = gsc_bonus_fn(root, target_units=targets, game=game)
+            if int(bonus or 0):
+                modifiers.append((int(bonus or 0), str(source or "Hypermorphic Fury")))
         return modifiers
 
     def _defensive_charge_roll_penalty_specs(self) -> list[dict]:
