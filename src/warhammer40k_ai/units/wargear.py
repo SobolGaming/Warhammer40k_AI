@@ -3390,21 +3390,16 @@ class WargearProfile:
                     continue
             out.append(entry)
         if key == "defensive_wound_mods":
-            try:
-                root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
-            except Exception:
+            get_root = getattr(target_unit, "get_attached_unit_root", None)
+            root = get_root() if callable(get_root) else target_unit
+            if root is None:
                 root = target_unit
-            try:
-                leaders = list(getattr(root, "attached_leaders", []) or [])
-            except Exception:
-                leaders = []
+
+            leaders = list(getattr(root, "attached_leaders", []) or [])
             if leaders:
-                try:
-                    from ..utility.keyword_utils import unit_has_keyword
-                    is_aspect = unit_has_keyword(root, "ASPECT WARRIORS")
-                except Exception:
-                    is_aspect = False
-                if is_aspect:
+                from ..utility.keyword_utils import unit_has_keyword
+
+                if unit_has_keyword(root, "ASPECT WARRIORS"):
                     for leader in leaders:
                         sr = getattr(leader, "special_rules", None)
                         if not isinstance(sr, dict):
@@ -3422,6 +3417,23 @@ class WargearProfile:
                             }
                         )
                         break
+
+            army = None
+            get_parent_army = getattr(root, "get_parent_army", None)
+            if callable(get_parent_army):
+                army = get_parent_army()
+            if army is None:
+                army = getattr(root, "parent_army", None)
+
+            csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            iron_entry_fn = getattr(csm_mgr, "iron_fortitude_defensive_wound_mod_entry", None) if csm_mgr is not None else None
+            if callable(iron_entry_fn):
+                extra_entry = iron_entry_fn(root)
+                if isinstance(extra_entry, dict):
+                    entry_attack_type = str(extra_entry.get("attack_type") or "any").strip().lower()
+                    if not atk_type or entry_attack_type in ("any", atk_type):
+                        out.append(dict(extra_entry))
+
             # If no leaders or no enhancement, fall through.
         return out
 

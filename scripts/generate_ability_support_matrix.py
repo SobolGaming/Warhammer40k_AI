@@ -369,6 +369,9 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time an enemy unit within 12 of one or more heretic astartes units from your army takes a battle shock test subtract 1 from the result",
             r"enemy units affected by this detachment rule do not need to take any other battle shock tests in the same phase",
         ),
+        "Iron Fortitude": (
+            r"each time a ranged attack targets a heretic astartes unit from your army excluding damned units if the strength characteristic of that attack is greater than the toughness characteristic of that unit subtract 1 from the wound roll",
+        ),
         "Yriel's Own": (
             r"aeldari units in your army are eligible to declare a charge in a turn in which they advanced",
             r"in addition each time an anhrathe rangers or shroud runners unit from your army advances you can reroll the advance roll",
@@ -2515,6 +2518,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Terror Descends (Aura)": (
             "Supported",
             "Dread Talons: in the Battle-shock step of your opponent's Command phase, below-Starting Strength enemy units within 12\" of friendly HERETIC ASTARTES sources are forced to take a Battle-shock test, affected units are flagged to suppress further Battle-shock tests in that phase, and in-range Battle-shock tests use the detachment's -1 test modifier support.",
+        ),
+        "Iron Fortitude": (
+            "Supported",
+            "Fellhammer Siege-host: each time a ranged attack targets a friendly HERETIC ASTARTES unit (excluding DAMNED), if the attack Strength is greater than that unit's Toughness, subtract 1 from the Wound roll.",
         ),
         "Mechanised Murder": ("Supported", "Rapid Evisceration: reroll Hit/Wound rolls of 1 for eligible units."),
         "Daemonic Empowerment": (

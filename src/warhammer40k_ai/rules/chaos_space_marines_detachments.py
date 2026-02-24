@@ -73,6 +73,7 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     DETACHMENT_CREATIONS_OF_BILE = "Creations of Bile"
     DETACHMENT_DECEPTORS = "Deceptors"
     DETACHMENT_DREAD_TALONS = "Dread Talons"
+    DETACHMENT_FELLHAMMER_SIEGE_HOST = "Fellhammer Siege-host"
     DETACHMENT_RENEGADE_RAIDERS = "Renegade Raiders"
     _MASTERS_OF_MISDIRECTION_SELECTION_ABILITY = "deceptors_masters_of_misdirection_selection"
     _MASTERS_OF_MISDIRECTION_SOURCE = "Masters of Misdirection"
@@ -115,6 +116,11 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches(self.DETACHMENT_DREAD_TALONS)
+
+    def is_fellhammer_siege_host(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches(self.DETACHMENT_FELLHAMMER_SIEGE_HOST)
 
     def is_renegade_raiders(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -309,6 +315,26 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         else:
             updated.pop("battle_shock_allow_suppressed_test", None)
         root.special_rules = updated
+
+    def iron_fortitude_defensive_wound_mod_entry(self, target_unit) -> Optional[dict]:
+        if not self.is_fellhammer_siege_host():
+            return None
+        root = self._unit_root(target_unit)
+        if root is None:
+            return None
+        if not self._unit_in_army(root):
+            return None
+        if not self._unit_is_heretic_astartes(root):
+            return None
+        if self._unit_is_damned(root):
+            return None
+        return {
+            "value": 1,
+            "attack_type": "ranged",
+            "source": "Iron Fortitude",
+            "requires_strength_gt_toughness": True,
+            "tag": "detachment:iron_fortitude",
+        }
 
     @staticmethod
     def _normalize_name(value: str) -> str:
