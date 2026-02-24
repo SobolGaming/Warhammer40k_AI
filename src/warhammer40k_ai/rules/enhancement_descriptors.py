@@ -1441,6 +1441,33 @@ _PLAGUE_LEGION_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
         range_in=6.0,
         effect_params={"mortal_wound_roll": "D6>=3 -> D3", "suppresses_daemonic_terror": True},
     ),
+    "000009819004": EnhancementToolDescriptor(
+        enhancement_id="000009819004",
+        name="Droning Shroud (Aura)",
+        timing="passive_aura",
+        target="friendly_nurgle_legiones_daemonica_units_within_range",
+        duration="constant",
+        effect="ranged_targeting_range_cap",
+        range_in=6.0,
+        effect_params={
+            "required_keywords_all": ("LEGIONES DAEMONICA", "NURGLE"),
+            "ranged_targeting_max_distance": 18,
+        },
+    ),
+    "000009819005": EnhancementToolDescriptor(
+        enhancement_id="000009819005",
+        name="Font of Spores (Aura)",
+        timing="passive_aura",
+        target="friendly_nurgle_legiones_daemonica_units_within_range",
+        duration="constant",
+        effect="weapon_ap_bonus",
+        range_in=6.0,
+        effect_params={
+            "required_keywords_all": ("LEGIONES DAEMONICA", "NURGLE"),
+            "ap_bonus": 1,
+            "attack_type": "any",
+        },
+    ),
 }
 
 _PLAGUE_LEGION_BY_NAME = {

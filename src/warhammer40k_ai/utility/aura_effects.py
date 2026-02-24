@@ -479,6 +479,19 @@ def _blood_legion_aura_attacker_valid(attacker_unit) -> bool:
     return True
 
 
+def _plague_legion_nurgle_aura_attacker_valid(attacker_unit) -> bool:
+    if attacker_unit is None:
+        return False
+    try:
+        if not bool(attacker_unit.has_any_keyword("LEGIONES DAEMONICA")):
+            return False
+        if not bool(attacker_unit.has_any_keyword("NURGLE")):
+            return False
+    except Exception:
+        return False
+    return True
+
+
 def _excluded_by_target_keywords(target_unit, excluded_keywords: Iterable[str]) -> bool:
     for kw in excluded_keywords:
         k = str(kw or "").strip()
@@ -2794,6 +2807,30 @@ def get_aura_ap_bonus(attacker_model, weapon_profile, target_unit, *, game_map=N
     applied_aura_names: set[str] = set()
 
     for source in list(game_map.get_friendly_units(attacker_unit)):
+        source_sr = getattr(source, "special_rules", None)
+        if isinstance(source_sr, dict) and bool(source_sr.get("enhancement_font_of_spores_aura")):
+            aura_key = _norm_name("Font of Spores (Aura)")
+            if not aura_key or aura_key not in applied_aura_names:
+                try:
+                    aura_range = float(source_sr.get("enhancement_font_of_spores_aura_range", 6.0) or 6.0)
+                except Exception:
+                    aura_range = 6.0
+                try:
+                    aura_bonus = int(source_sr.get("enhancement_font_of_spores_aura_ap_bonus", 1) or 1)
+                except Exception:
+                    aura_bonus = 1
+                if (
+                    int(aura_bonus or 0) > 0
+                    and _plague_legion_nurgle_aura_attacker_valid(attacker_unit)
+                    and _unit_within_aura_range(source, attacker_unit, float(max(0.0, aura_range)))
+                ):
+                    if aura_key:
+                        applied_aura_names.add(aura_key)
+                    total += int(aura_bonus)
+                    reasons.append(
+                        f"Aura: +{int(aura_bonus)} AP from "
+                        f"{str(source_sr.get('enhancement_font_of_spores_aura_source', '') or 'Font of Spores (Aura)').strip() or 'Font of Spores (Aura)'}"
+                    )
         for ab in _iter_possible_abilities(source):
             spec = _cached_parse_aura_spec("_parse_closest_enemy_ap_aura", ab, _parse_closest_enemy_ap_aura)
             if not spec:

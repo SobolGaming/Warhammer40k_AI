@@ -2956,6 +2956,62 @@ class LateGameplayMixin:
             pass
 
         try:
+            if game_map is not None and bool(
+                root.has_any_keyword("LEGIONES DAEMONICA") and root.has_any_keyword("NURGLE")
+            ):
+                seen_roots: set[str] = set()
+                for source in list(game_map.get_friendly_units(root) or []):
+                    try:
+                        source_root = (
+                            source.get_attached_unit_root()
+                            if hasattr(source, "get_attached_unit_root")
+                            else source
+                        )
+                    except Exception:
+                        source_root = source
+                    if source_root is None:
+                        continue
+                    source_key = str(get_entity_id(source_root) or "")
+                    if source_key and source_key in seen_roots:
+                        continue
+                    if source_key:
+                        seen_roots.add(source_key)
+                    if not bool(getattr(source_root, "is_alive", lambda: False)()):
+                        continue
+                    if not bool(getattr(source_root, "deployed", True)):
+                        continue
+                    source_sr = getattr(source_root, "special_rules", None)
+                    if not isinstance(source_sr, dict) or not bool(source_sr.get("enhancement_droning_shroud_aura")):
+                        continue
+                    try:
+                        from ...utility.aura_utils import unit_within_range_of_unit
+
+                        aura_range = float(source_sr.get("enhancement_droning_shroud_aura_range", 6.0) or 6.0)
+                        in_range = bool(
+                            unit_within_range_of_unit(
+                                source_root,
+                                root,
+                                float(max(0.0, aura_range)),
+                                use_attached_aggregate=True,
+                            )
+                        )
+                    except Exception:
+                        in_range = False
+                    if not in_range:
+                        continue
+                    try:
+                        dist = float(source_sr.get("enhancement_droning_shroud_targeting_cap", 18.0) or 18.0)
+                    except Exception:
+                        dist = 18.0
+                    source_name = (
+                        str(source_sr.get("enhancement_droning_shroud_aura_source", "") or "").strip()
+                        or "Droning Shroud (Aura)"
+                    )
+                    _consider(dist, source_name)
+        except Exception:
+            pass
+
+        try:
             from ...rules.shadow_form import target_unit_has_wreathed_in_shadows
             if target_unit_has_wreathed_in_shadows(root, game_map=game_map):
                 _consider(18.0, "Wreathed in Shadows")

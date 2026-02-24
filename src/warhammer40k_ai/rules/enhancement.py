@@ -2488,6 +2488,48 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 
+        if name == "droning shroud (aura)" or enh_id == "000009819004":
+            if not is_plague_legion:
+                return
+            unit.special_rules["enhancement_droning_shroud_aura"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            range_val = params.get("range", getattr(desc, "range_in", 6.0) if desc is not None else 6.0)
+            try:
+                aura_range = float(range_val if range_val is not None else 6.0)
+            except Exception:
+                aura_range = 6.0
+            try:
+                targeting_cap = float(params.get("ranged_targeting_max_distance", 18) or 18)
+            except Exception:
+                targeting_cap = 18.0
+            unit.special_rules["enhancement_droning_shroud_aura_range"] = float(max(0.0, aura_range))
+            unit.special_rules["enhancement_droning_shroud_targeting_cap"] = float(max(0.0, targeting_cap))
+            unit.special_rules["enhancement_droning_shroud_aura_source"] = "Droning Shroud (Aura)"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "font of spores (aura)" or enh_id == "000009819005":
+            if not is_plague_legion:
+                return
+            unit.special_rules["enhancement_font_of_spores_aura"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            range_val = params.get("range", getattr(desc, "range_in", 6.0) if desc is not None else 6.0)
+            try:
+                aura_range = float(range_val if range_val is not None else 6.0)
+            except Exception:
+                aura_range = 6.0
+            try:
+                ap_bonus = int(params.get("ap_bonus", 1) or 1)
+            except Exception:
+                ap_bonus = 1
+            unit.special_rules["enhancement_font_of_spores_aura_range"] = float(max(0.0, aura_range))
+            unit.special_rules["enhancement_font_of_spores_aura_ap_bonus"] = int(max(0, ap_bonus))
+            unit.special_rules["enhancement_font_of_spores_aura_source"] = "Font of Spores (Aura)"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
         if name == "inescapable eye" or enh_id == "000009810002":
             if not is_scintillating_legion:
                 return
