@@ -6887,6 +6887,23 @@ class WargearProfile:
             if isinstance(patient_rule, dict) and patient_rule:
                 return patient_rule
 
+        ik_mgr = getattr(army, "imperial_knights_detachments", None) if army is not None else None
+        dauntless_rule_fn = (
+            getattr(ik_mgr, "dauntless_defenders_ignore_hit_modifiers_rule", None)
+            if ik_mgr is not None
+            else None
+        )
+        if callable(dauntless_rule_fn):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            dauntless_rule = dauntless_rule_fn(
+                attacker,
+                target_unit=target_unit,
+                weapon_profile=self,
+                game=game,
+            )
+            if isinstance(dauntless_rule, dict) and dauntless_rule:
+                return dauntless_rule
+
         try:
             is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
         except Exception:
@@ -11152,6 +11169,23 @@ class WargearProfile:
             if callable(sustained_fn):
                 dread_mob_sustained_value = int(sustained_fn(attacker) or 0)
         dread_mob_sustained = bool(dread_mob_sustained_value)
+
+        gate_warden_sustained_value = 0
+        gate_warden_sustained_label = ""
+        ik_mgr = getattr(army, "imperial_knights_detachments", None) if army is not None else None
+        dauntless_sustained_fn = getattr(ik_mgr, "dauntless_defenders_sustained_hits_value", None) if ik_mgr is not None else None
+        if callable(dauntless_sustained_fn):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            dauntless_result = dauntless_sustained_fn(
+                attacker,
+                target_unit=target,
+                game=game,
+            )
+            if isinstance(dauntless_result, tuple) and len(dauntless_result) >= 1:
+                gate_warden_sustained_value = int(dauntless_result[0] or 0)
+                if len(dauntless_result) >= 2:
+                    gate_warden_sustained_label = str(dauntless_result[1] or "").strip()
+        gate_warden_sustained = bool(gate_warden_sustained_value)
         bonus_sustained = bool(bonus_sustained_value or bonus_sustained_dice)
 
         sustained_base = (
@@ -11173,6 +11207,7 @@ class WargearProfile:
             or devoted_duellists_sustained
             or bonus_sustained
             or malefic_sustained
+            or gate_warden_sustained
         )
 
         def _resolve_bonus_sustained_hits() -> tuple[int, str]:
@@ -11252,7 +11287,7 @@ class WargearProfile:
                 hit_result['special_effects'].append("Lethal Hits")
                 attack_instance['lethal_hit'] = True
             # For Sustained Hits, do not override an existing Sustained Hits X on the weapon.
-            if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained or bearer_unit_sustained or war_horde_sustained or more_dakka_sustained or freebooter_loot_sustained or dread_mob_sustained or devoted_duellists_sustained or bonus_sustained or malefic_sustained or blitzing_grants_sustained:
+            if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained or bearer_unit_sustained or war_horde_sustained or more_dakka_sustained or freebooter_loot_sustained or dread_mob_sustained or devoted_duellists_sustained or bonus_sustained or malefic_sustained or gate_warden_sustained or blitzing_grants_sustained:
                 # Support Sustained Hits X / Sustained Hits D3 / etc. Roll per critical hit.
                 if self.is_sustained_hits():
                     try:
@@ -11296,6 +11331,10 @@ class WargearProfile:
                     elif malefic_sustained_value:
                         sustained_val = max(int(sustained_val), int(malefic_sustained_value))
                         label = f"Sustained Hits (+{sustained_val}) [Malefic Surge]"
+                    elif gate_warden_sustained_value:
+                        sustained_val = max(int(sustained_val), int(gate_warden_sustained_value))
+                        source = str(gate_warden_sustained_label or "Dauntless Defenders").strip() or "Dauntless Defenders"
+                        label = f"Sustained Hits (+{sustained_val}) [{source}]"
                     elif blessings_sustained:
                         label += " [Blessings of Khorne]"
                     elif dark_pacts_sustained:
@@ -11345,7 +11384,7 @@ class WargearProfile:
                     attack_instance['lethal_hit'] = True
 
                 # Apply Sustained Hits from all sources (same as baseline critical)
-                if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained or bearer_unit_sustained or war_horde_sustained or more_dakka_sustained or freebooter_loot_sustained or dread_mob_sustained or devoted_duellists_sustained or bonus_sustained or blitzing_grants_sustained:
+                if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained or bearer_unit_sustained or war_horde_sustained or more_dakka_sustained or freebooter_loot_sustained or dread_mob_sustained or devoted_duellists_sustained or bonus_sustained or gate_warden_sustained or blitzing_grants_sustained:
                     # Support Sustained Hits X / Sustained Hits D3 / etc. Roll per critical hit.
                     if self.is_sustained_hits():
                         try:
@@ -11408,6 +11447,12 @@ class WargearProfile:
                         elif bonus_sustained:
                             rolled_bonus_sustained_val, _bonus_label = _resolve_bonus_sustained_hits()
                             label = str(_bonus_label or label)
+                        elif gate_warden_sustained:
+                            source = str(gate_warden_sustained_label or "Dauntless Defenders").strip() or "Dauntless Defenders"
+                            if gate_warden_sustained_value > 1:
+                                label = f"Sustained Hits (+{gate_warden_sustained_value}) [{source}]"
+                            else:
+                                label = f"Sustained Hits (+1) [{source}]"
                         elif blitzing_grants_sustained:
                             label += " [Blitzing Firepower]"
                         hit_result['special_effects'].append(label)
@@ -11428,6 +11473,8 @@ class WargearProfile:
                             sustained_vals.append(int(devoted_duellists_sustained_value or 0))
                         if bonus_sustained:
                             sustained_vals.append(int(rolled_bonus_sustained_val or 0))
+                        if gate_warden_sustained:
+                            sustained_vals.append(int(gate_warden_sustained_value or 0))
                         attack_instance['sustained_hit'] = max(sustained_vals)
 
         # Ork charge-related keywords: track hits against MONSTER/VEHICLE units.

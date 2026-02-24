@@ -772,6 +772,18 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Bold Gallantry": (
             r"each time an imperial knights unit from your army advances until the end of the turn ranged weapons equipped by imperial knights models from your army have the assault ability",
         ),
+        "Dauntless Defenders": (
+            r"at the start of the first battle round select two objective markers on the battlefield to be your foundations",
+            r"when you draw a line from any part of one of your foundations to the other if any part of a model s base or any part of a model s hull for a model without a base crosses that line that model s unit is said to be on your defensive line",
+            r"while an imperial knights unit from your army is on your defensive line that unit has the following ability",
+            r"against the horde",
+            r"each time a model in this unit makes an attack that targets a visible enemy unit you can ignore any or all modifiers to the hit roll",
+            r"each time a model in this unit makes an attack that targets a visible enemy unit you can ignore any or all modifiers to the hit roll and weapons equipped by models in this unit have the sustained hits \d+ ability",
+            r"weapons equipped by models in this unit have the sustained hits \d+ ability",
+            r"each time one of your foundations is removed from the battlefield e",
+            r"by a primary mission rule just after it is removed select a new objective marker on the battlefield to be one of your foundations",
+            r"each time one of your foundations is removed from the battlefield .* select a new objective marker on the battlefield to be one of your foundations",
+        ),
         "Da Boss Is Watchin'": (
             r"at the start of your command phase in a turn in which you have not called a waaagh if you have one or more warboss models on the battlefield or embarked within a transport that is on the battlefield you can call a waaagh for a second time this battle",
             r"when doing so that second waaagh only counts as having been called for warboss nobz and meganobz units from your army",
@@ -2741,6 +2753,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Bold Gallantry": (
             "Supported",
             "Valourstrike Lance: IMPERIAL KNIGHTS ranged weapons count as [ASSAULT] when checking Advance-and-shoot eligibility.",
+        ),
+        "Dauntless Defenders": (
+            "Supported",
+            "Gate Warden Lance: start-of-first-battle-round selection of two foundation objective markers defines a defensive line; IMPERIAL KNIGHTS units on that line gain [SUSTAINED HITS 1] and can ignore Hit roll modifiers against visible targets, and removed foundations prompt deterministic replacement objective selection.",
         ),
         "Annihilation Protocol": (
             "Supported",

@@ -202,6 +202,7 @@ Command phase:
 - realm_of_chaos_units_dialog: SELECT_REALM_OF_CHAOS_UNITS {unit_ids | skip} (context `allowed_unit_ids`, `outside_shadow_unit_ids`, `max_units`) (used for The Realm of Chaos and Delirium Unmade)
 - oath_of_moment_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="oath_of_moment"`, `army_id`)
 - bondsman_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="bondsman"`, `source_unit_id`)
+- gate_warden_foundation_dialog: CHOOSE_QUARRY {objective_id} (context `ability="gate_warden_dauntless_defenders_foundation"`, `ability_name="Dauntless Defenders"`, `army_id`, `battle_round`, `slot_index`, `existing_foundation_ids[]`, `candidate_objective_ids[]`, `optional=false`)
 - feed_the_swarm_dialog: CHOOSE_QUARRY {option_key | skip} (context `ability="feed_the_swarm"`, `ability_name="Feed the Swarm"`, `phase="Command phase"`, `army_id`, `source_unit_id`, `source_unit_name`, `option_keys[]`, `turn_owner_id`, `turn`)
 - synaptic_imperatives_dialog: CHOOSE_QUARRY {choice_key | skip} (context `ability="synaptic_imperatives"`, `ability_name="Synaptic Imperatives"`, `army_id`, `battle_round`, `allowed_choice_keys[]`, `optional=true`)
 - data_psalm_benediction_dialog: CHOOSE_QUARRY {choice_key} (context `ability="data_psalm_benediction"`, `ability_name="Benedictions Of The Omnissiah"`, `army_id`, `battle_round`, `allowed_choice_keys[]`, `optional=false`)

@@ -4280,6 +4280,49 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not valid:
             return (str(reason or "Acquisition At Any Cost selection is not legal."),)
         return ()
+    if ability == "gate_warden_dauntless_defenders_foundation":
+        if is_skip_choice(request, result):
+            return ("Dauntless Defenders foundation selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        source_army = _resolve_army(game, request, payload)
+        if source_army is None:
+            return ("Dauntless Defenders army not found.",)
+        mgr = getattr(source_army, "imperial_knights_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_gate_warden_lance", lambda: False)()):
+            return ("Dauntless Defenders requires a Gate Warden Lance army.",)
+        objective_id = str(payload.get("objective_id") or ctx.get("objective_id") or "").strip()
+        if not objective_id:
+            return ("Dauntless Defenders selection requires objective_id.",)
+        candidate_ids = {
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_objective_ids", []) or [])
+            if str(v or "").strip()
+        }
+        if candidate_ids and objective_id not in candidate_ids:
+            return ("Dauntless Defenders selected objective marker is not an eligible candidate.",)
+        validate_choice = getattr(mgr, "validate_dauntless_foundation_choice", None)
+        if not callable(validate_choice):
+            return ("Dauntless Defenders manager support is unavailable.",)
+        player = _resolve_player(game, request, payload)
+        try:
+            battle_round = int(ctx.get("battle_round", 0) or getattr(game, "turn", 0) or 0)
+        except Exception:
+            battle_round = int(getattr(game, "turn", 0) or 0)
+        try:
+            slot_index = int(ctx.get("slot_index", 0) or 0)
+        except Exception:
+            slot_index = 0
+        valid, reason = validate_choice(
+            objective_id,
+            game=game,
+            player=player,
+            battle_round=int(battle_round),
+            slot_index=int(slot_index),
+            candidate_ids=list(candidate_ids),
+        )
+        if not valid:
+            return (str(reason or "Dauntless Defenders selection is not legal."),)
+        return ()
     if ability == "noospheric_transference_units":
         if is_skip_choice(request, result):
             return ("Noospheric Transference unit selection cannot be skipped.",)
@@ -6214,6 +6257,68 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 owner,
                 f"Acquisition At Any Cost: selected {objective_name} as your Acquisition objective marker until your next Command phase.",
             )
+        return outcome
+    if ability == "gate_warden_dauntless_defenders_foundation":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        source_army = _resolve_army(game, request, payload)
+        if source_army is None:
+            return None
+        mgr = getattr(source_army, "imperial_knights_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_gate_warden_lance", lambda: False)()):
+            return None
+        objective_id = str(payload.get("objective_id") or ctx.get("objective_id") or "").strip()
+        if not objective_id:
+            return None
+        player = _resolve_player(game, request, payload)
+        try:
+            battle_round = int(ctx.get("battle_round", 0) or getattr(game, "turn", 0) or 0)
+        except Exception:
+            battle_round = int(getattr(game, "turn", 0) or 0)
+        try:
+            slot_index = int(ctx.get("slot_index", 0) or 0)
+        except Exception:
+            slot_index = 0
+        candidate_ids = [
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_objective_ids", []) or [])
+            if str(v or "").strip()
+        ]
+        select_fn = getattr(mgr, "select_dauntless_foundation", None)
+        if not callable(select_fn):
+            return None
+        outcome = select_fn(
+            objective_id,
+            game=game,
+            player=player,
+            battle_round=int(battle_round),
+            slot_index=int(slot_index),
+            candidate_ids=list(candidate_ids),
+        )
+        if outcome is not None:
+            owner = getattr(source_army, "player", None)
+            objective_name = str((outcome or {}).get("objective_name", "") or "Objective marker")
+            foundation_index = int((outcome or {}).get("foundation_index", 0) or 0)
+            if foundation_index > 0:
+                _log_action_for_players(
+                    game,
+                    owner,
+                    f"Dauntless Defenders: selected {objective_name} as foundation {foundation_index}.",
+                )
+            else:
+                _log_action_for_players(
+                    game,
+                    owner,
+                    f"Dauntless Defenders: selected {objective_name} as a foundation objective marker.",
+                )
+            queue_followup = getattr(mgr, "queue_dauntless_defenders_selection_request", None)
+            if callable(queue_followup):
+                queue_followup(
+                    game=game,
+                    player=owner,
+                    battle_round=int(battle_round),
+                )
         return outcome
     if ability == "noospheric_transference_units":
         if is_skip_choice(request, result):
