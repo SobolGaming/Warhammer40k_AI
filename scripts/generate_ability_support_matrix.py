@@ -660,6 +660,9 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time a kabal or blades for hire model in this unit makes an attack that targets an infantry or mounted unit that attack has the sustained hits 1 ability",
             r"each time a kabal or blades for hire model in this unit makes an attack that targets a monster or vehicle unit that attack has the lethal hits ability",
         ),
+        "Alliance of Agony": (
+            r"at the start of the battle you gain 2 pain tokens for each of the following combinations your army contains these do not need to be in the same attached unit",
+        ),
         "Malefic Surge": (
             r"in your command phase one or more chaos knights units from your army can make a malefic surge",
             r"each one that does must first take a leadership test",
@@ -2954,6 +2957,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Murderous Agenda": (
             "Supported",
             "Kabalite Cartel: at the start of the first battle round, select Trophy Hunters, Sow Fear and Terror, or Show of Strength and an eligible enemy Contract unit; while active, KABAL/BLADES FOR HIRE attacks gain the contract keyword effect (Precision vs Contract target, Sustained Hits 1 vs INFANTRY/MOUNTED, or Lethal Hits vs MONSTER/VEHICLE), and at the start of your Command phase the contract completes when its condition is met and grants 3 Pain tokens.",
+        ),
+        "Alliance of Agony": (
+            "Supported",
+            "Realspace Raiders: at the start of the battle, gain 2 Pain tokens for each present pair (Archon+Kabalite Warriors, Succubus+Wyches, Haemonculus+Wracks), cumulative to a maximum of 6.",
         ),
         "Malefic Surge": (
             "Supported",

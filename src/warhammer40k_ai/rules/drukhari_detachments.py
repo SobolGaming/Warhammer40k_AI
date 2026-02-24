@@ -69,6 +69,8 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
     faction_id = "DRU"
     DETACHMENT_COVENITE_COTERIE = "Covenite Coterie"
     DETACHMENT_KABALITE_CARTEL = "Kabalite Cartel"
+    DETACHMENT_REALSPACE_RAIDERS = "Realspace Raiders"
+    ALLIANCE_OF_AGONY_SOURCE = "Alliance of Agony"
     MURDEROUS_AGENDA_CONTRACT_TROPHY_HUNTERS = "TROPHY_HUNTERS"
     MURDEROUS_AGENDA_CONTRACT_SOW_FEAR_AND_TERROR = "SOW_FEAR_AND_TERROR"
     MURDEROUS_AGENDA_CONTRACT_SHOW_OF_STRENGTH = "SHOW_OF_STRENGTH"
@@ -83,6 +85,8 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
         self.murderous_agenda_contract_target_unit_id: str = ""
         self.murderous_agenda_contract_completed: bool = False
         self.murderous_agenda_reward_paid: bool = False
+        self.alliance_of_agony_applied: bool = False
+        self.alliance_of_agony_tokens_awarded: int = 0
 
     def is_covenite_coterie(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -93,6 +97,11 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches(self.DETACHMENT_KABALITE_CARTEL)
+
+    def is_realspace_raiders(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches(self.DETACHMENT_REALSPACE_RAIDERS)
 
     def is_spectacle_of_spite(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -130,6 +139,21 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
         if root is None:
             return ""
         return str(get_entity_id(root) or "")
+
+    def _unit_name_matches(self, unit, unit_name: str) -> bool:
+        if unit is None:
+            return False
+        expected = self._norm(unit_name)
+        actual = self._norm(str(getattr(unit, "name", "") or ""))
+        if not expected or not actual:
+            return False
+        if actual == expected:
+            return True
+        if actual.endswith("s") and actual[:-1] == expected:
+            return True
+        if expected.endswith("s") and expected[:-1] == actual:
+            return True
+        return False
 
     def _unit_on_battlefield(self, unit) -> bool:
         root = self._unit_root(unit)
@@ -448,6 +472,76 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
                 return [m for m in members if m is not None]
         return [root]
 
+    def _iter_unique_army_attached_members(self) -> list:
+        if self.army is None:
+            return []
+        seen: set[str] = set()
+        out: list = []
+        for unit in list(getattr(self.army, "units", []) or []):
+            root = self._unit_root(unit)
+            if root is None:
+                continue
+            for member in self._iter_attached_members(root):
+                member_root = self._unit_root(member)
+                if member_root is None:
+                    continue
+                key = self._unit_root_id(member_root) or f"obj:{id(member_root)}"
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append(member_root)
+        return out
+
+    def _army_has_member_with_keyword_or_name(self, *, keyword: str, unit_name: str) -> bool:
+        for member in self._iter_unique_army_attached_members():
+            if keyword and self._unit_has_keyword(member, keyword):
+                return True
+            if unit_name and self._unit_name_matches(member, unit_name):
+                return True
+        return False
+
+    def _alliance_of_agony_token_amount(self) -> int:
+        has_archon = self._army_has_member_with_keyword_or_name(keyword="ARCHON", unit_name="Archon")
+        has_kabalite_warriors = self._army_has_member_with_keyword_or_name(
+            keyword="KABALITE WARRIORS",
+            unit_name="Kabalite Warriors",
+        )
+        has_succubus = self._army_has_member_with_keyword_or_name(keyword="SUCCUBUS", unit_name="Succubus")
+        has_wyches = self._army_has_member_with_keyword_or_name(keyword="WYCHES", unit_name="Wyches")
+        has_haemonculus = self._army_has_member_with_keyword_or_name(keyword="HAEMONCULUS", unit_name="Haemonculus")
+        has_wracks = self._army_has_member_with_keyword_or_name(keyword="WRACKS", unit_name="Wracks")
+
+        combos = 0
+        if has_archon and has_kabalite_warriors:
+            combos += 1
+        if has_succubus and has_wyches:
+            combos += 1
+        if has_haemonculus and has_wracks:
+            combos += 1
+        return int(combos * 2)
+
+    def apply_alliance_of_agony(self, *, battle_round: int, game=None, player=None) -> int:
+        if not self.is_realspace_raiders():
+            return 0
+        if self.army is None:
+            return 0
+        if self.alliance_of_agony_applied:
+            return 0
+        if int(battle_round or 0) != 1:
+            return 0
+        if player is not None and getattr(self.army, "player", None) is not player:
+            return 0
+
+        token_amount = self._alliance_of_agony_token_amount()
+        gained = 0
+        pfp = getattr(self.army, "power_from_pain", None)
+        gain_tokens = getattr(pfp, "gain_tokens", None) if pfp is not None else None
+        if token_amount > 0 and callable(gain_tokens):
+            gained = int(gain_tokens(token_amount, reason=self.ALLIANCE_OF_AGONY_SOURCE) or 0)
+        self.alliance_of_agony_tokens_awarded = int(gained)
+        self.alliance_of_agony_applied = True
+        return int(gained)
+
     def _unit_is_character_only(self, unit) -> bool:
         members = self._iter_attached_members(unit)
         if not members:
@@ -713,19 +807,23 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
         return rules
 
     def on_battle_round_start(self, *, battle_round: int, game=None, player=None) -> None:
-        if not self.is_kabalite_cartel():
+        if self.army is None:
             return
-        if game is None or player is None or self.army is None:
+        if player is not None and getattr(self.army, "player", None) is not player:
             return
-        if getattr(self.army, "player", None) is not player:
-            return
-        if int(battle_round or 0) != 1:
-            return
-        if self._murderous_agenda_has_selection():
-            return
-        request = self.build_murderous_agenda_request(game=game, player=player)
-        if request is not None and hasattr(game, "request_decision"):
-            game.request_decision(request)
+        if int(battle_round or 0) == 1:
+            self.apply_alliance_of_agony(battle_round=battle_round, game=game, player=player)
+
+        if self.is_kabalite_cartel():
+            if game is None or player is None:
+                return
+            if int(battle_round or 0) != 1:
+                return
+            if self._murderous_agenda_has_selection():
+                return
+            request = self.build_murderous_agenda_request(game=game, player=player)
+            if request is not None and hasattr(game, "request_decision"):
+                game.request_decision(request)
 
     def on_command_phase_start(self, *, game=None, player=None) -> None:
         if game is None or player is None or self.army is None:
