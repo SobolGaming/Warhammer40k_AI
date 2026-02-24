@@ -1681,6 +1681,11 @@ class StateAttachmentMixin:
                 return False
         except Exception:
             return False
+        army = self.get_parent_army()
+        csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+        match_fn = getattr(csm_mgr, "pactbound_zealots_transport_marks_match", None) if csm_mgr is not None else None
+        if callable(match_fn) and not bool(match_fn(self, passenger_unit)):
+            return False
         # Datasheet-specific restrictions (from Wahapedia `datasheet.transport` field when present)
         req = getattr(self, "transport_required_keywords", set()) or set()
         excl = getattr(self, "transport_excluded_keywords", set()) or set()
@@ -3054,6 +3059,11 @@ class StateAttachmentMixin:
             if self.get_parent_army() != bodyguard.get_parent_army():
                 return False
         except Exception:
+            return False
+        army = self.get_parent_army()
+        csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+        match_fn = getattr(csm_mgr, "pactbound_zealots_leader_marks_match", None) if csm_mgr is not None else None
+        if callable(match_fn) and not bool(match_fn(self, bodyguard)):
             return False
         # Can't attach to another leader unit
         try:

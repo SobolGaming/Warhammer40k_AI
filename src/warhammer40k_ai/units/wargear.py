@@ -9325,6 +9325,17 @@ class WargearProfile:
                     reroll_full_reasons.extend(list(model_hit_mods.get("reroll_hit_full_reasons", ()) or ()))
         except Exception:
             pass
+        attacker_unit = getattr(attacker, "parent_unit", None)
+        get_parent_army = getattr(attacker_unit, "get_parent_army", None) if attacker_unit is not None else None
+        attacker_army = get_parent_army() if callable(get_parent_army) else None
+        csm_mgr = getattr(attacker_army, "chaos_space_marines_detachments", None) if attacker_army is not None else None
+        reroll_fn = getattr(csm_mgr, "pactbound_zealots_reroll_hit_ones", None) if csm_mgr is not None else None
+        if callable(reroll_fn):
+            reroll_ones, source = reroll_fn(attacker, weapon_profile=self)
+            if bool(reroll_ones):
+                reroll_hit_values.add(1)
+                source_name = str(source or "Marks of Chaos").strip() or "Marks of Chaos"
+                reroll_value_reasons.append(f"{source_name}: re-roll Hit rolls of 1")
         # Contextual reroll sources carried on the attack instance (best-effort).
         try:
             if bool(attack_instance.get("furious_onslaught_applies")):
@@ -11097,6 +11108,17 @@ class WargearProfile:
                         crit_hit_reasons.append(f"Martial Mastery: critical hit on {int(threshold)}+")
         except Exception:
             pass
+        attacker_unit = getattr(attacker, "parent_unit", None)
+        get_parent_army = getattr(attacker_unit, "get_parent_army", None) if attacker_unit is not None else None
+        attacker_army = get_parent_army() if callable(get_parent_army) else None
+        csm_mgr = getattr(attacker_army, "chaos_space_marines_detachments", None) if attacker_army is not None else None
+        threshold_fn = getattr(csm_mgr, "pactbound_zealots_crit_hit_threshold", None) if csm_mgr is not None else None
+        if callable(threshold_fn):
+            threshold, source = threshold_fn(attacker, weapon_profile=self)
+            if int(threshold or 0):
+                crit_threshold = min(int(crit_threshold), int(threshold))
+                source_name = str(source or "Marks of Chaos").strip() or "Marks of Chaos"
+                crit_hit_reasons.append(f"{source_name}: critical hit on {int(threshold)}+")
 
         hit_result["crit_threshold"] = int(crit_threshold)
 

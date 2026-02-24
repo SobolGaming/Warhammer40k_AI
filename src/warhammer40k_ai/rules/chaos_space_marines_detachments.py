@@ -76,6 +76,7 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     DETACHMENT_FELLHAMMER_SIEGE_HOST = "Fellhammer Siege-host"
     DETACHMENT_HURONS_MARAUDERS = "Huron's Marauders"
     DETACHMENT_NIGHTMARE_HUNT = "Nightmare Hunt"
+    DETACHMENT_PACTBOUND_ZEALOTS = "Pactbound Zealots"
     DETACHMENT_RENEGADE_RAIDERS = "Renegade Raiders"
     _MASTERS_OF_MISDIRECTION_SELECTION_ABILITY = "deceptors_masters_of_misdirection_selection"
     _MASTERS_OF_MISDIRECTION_SOURCE = "Masters of Misdirection"
@@ -83,6 +84,8 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     _TYRANNICAL_MOTIVATION_SOURCE = "Tyrannical Motivation"
     _TYRANNICAL_MOTIVATION_CHOICE_HURONS_ELITE = "HURONS_ELITE"
     _TYRANNICAL_MOTIVATION_CHOICE_MOBILE_MARAUDERS = "MOBILE_MARAUDERS"
+    _PACTBOUND_MARKS = ("KHORNE", "TZEENTCH", "NURGLE", "SLAANESH", "CHAOS UNDIVIDED")
+    _PACTBOUND_MARK_SOURCE = "Marks of Chaos"
     _DESPERATE_DEVOTION_ALLOWED_ACTIONS = {"move", "advance", "charge"}
     _EXPERIMENTAL_AUGMENTATION_REROLL_MODES = {"keep", "reroll_first", "reroll_second", "reroll_both"}
 
@@ -141,6 +144,11 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches(self.DETACHMENT_NIGHTMARE_HUNT)
+
+    def is_pactbound_zealots(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches(self.DETACHMENT_PACTBOUND_ZEALOTS)
 
     def is_renegade_raiders(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -1512,10 +1520,301 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
             setattr(self.army, "masters_of_misdirection_selected_unit_ids", list(applied_ids))
         return list(applied_ids)
 
+    @classmethod
+    def _normalize_pactbound_mark(cls, value: str) -> str:
+        mark = " ".join(str(value or "").strip().upper().replace("_", " ").split())
+        if mark in {"UNDIVIDED", "UNIDIVIDED", "CHAOS UNDIVIDED"}:
+            return "CHAOS UNDIVIDED"
+        if mark in {"KHORNE", "TZEENTCH", "NURGLE", "SLAANESH"}:
+            return mark
+        return ""
+
+    @classmethod
+    def _pactbound_mark_display(cls, mark: str) -> str:
+        norm = cls._normalize_pactbound_mark(mark)
+        if norm == "CHAOS UNDIVIDED":
+            return "Chaos Undivided"
+        if norm:
+            return norm.title()
+        return str(mark or "").strip()
+
+    def _unit_is_epic_hero(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        return bool(self._unit_has_keyword(root, "EPIC HERO"))
+
+    def _unit_is_psyker(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        return bool(self._unit_has_keyword(root, "PSYKER"))
+
+    def _pactbound_keyword_marks_for_unit(self, unit) -> list[str]:
+        root = self._unit_root(unit)
+        if root is None:
+            return []
+        marks: list[str] = []
+        for mark in ("KHORNE", "TZEENTCH", "NURGLE", "SLAANESH"):
+            if self._unit_has_keyword(root, mark):
+                marks.append(mark)
+        if (
+            self._unit_has_keyword(root, "CHAOS UNDIVIDED")
+            or self._unit_has_keyword(root, "UNDIVIDED")
+            or self._unit_has_keyword(root, "UNIDIVIDED")
+        ):
+            marks.append("CHAOS UNDIVIDED")
+        unique: list[str] = []
+        for mark in marks:
+            if mark not in unique:
+                unique.append(mark)
+        return unique
+
+    def _set_pactbound_mark_for_unit(self, unit, mark: str) -> str:
+        root = self._unit_root(unit)
+        if root is None:
+            return ""
+        norm_mark = self._normalize_pactbound_mark(mark)
+        if not norm_mark:
+            return ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        updated = dict(sr)
+        updated["pactbound_zealots_mark"] = norm_mark
+        updated["pactbound_zealots_mark_source"] = self._PACTBOUND_MARK_SOURCE
+
+        has_mark_keyword = bool(self._unit_has_keyword(root, norm_mark))
+        if norm_mark == "CHAOS UNDIVIDED":
+            has_mark_keyword = bool(
+                has_mark_keyword
+                or self._unit_has_keyword(root, "UNDIVIDED")
+                or self._unit_has_keyword(root, "UNIDIVIDED")
+            )
+        if not has_mark_keyword:
+            extra = list(updated.get("ability_added_keywords", []) or [])
+            display_keyword = self._pactbound_mark_display(norm_mark)
+            lowered = {str(k or "").strip().lower() for k in extra}
+            if display_keyword.strip().lower() not in lowered:
+                extra.append(display_keyword)
+                updated["ability_added_keywords"] = extra
+
+        root.special_rules = updated
+        self._clear_unit_ability_cache(root)
+        return norm_mark
+
+    def ensure_pactbound_mark_for_unit(self, unit, *, assign_default: bool = True) -> str:
+        if not self.is_pactbound_zealots() or self.army is None:
+            return ""
+        root = self._unit_root(unit)
+        if root is None:
+            return ""
+        if not self._unit_in_army(root):
+            return ""
+        if not self._unit_is_heretic_astartes(root):
+            return ""
+
+        sr = getattr(root, "special_rules", None)
+        stored_mark = self._normalize_pactbound_mark(str(sr.get("pactbound_zealots_mark", "") or "")) if isinstance(sr, dict) else ""
+        keyword_marks = self._pactbound_keyword_marks_for_unit(root)
+        if len(keyword_marks) > 1:
+            return ""
+        keyword_mark = keyword_marks[0] if keyword_marks else ""
+        if stored_mark and keyword_mark and stored_mark != keyword_mark:
+            return ""
+        is_epic_hero = self._unit_is_epic_hero(root)
+        selected_mark = stored_mark or keyword_mark
+        if not selected_mark and (not is_epic_hero) and bool(assign_default):
+            selected_mark = "CHAOS UNDIVIDED"
+        if not selected_mark:
+            return ""
+        if selected_mark == "KHORNE" and self._unit_is_psyker(root):
+            return ""
+        if is_epic_hero:
+            return selected_mark
+        return self._set_pactbound_mark_for_unit(root, selected_mark)
+
+    def pactbound_mark_for_unit(self, unit, *, assign_default: bool = True) -> str:
+        return self.ensure_pactbound_mark_for_unit(unit, assign_default=assign_default)
+
+    def _pactbound_dark_pact_state(self, attacker_model) -> tuple[str, bool]:
+        unit = self._unit_root(getattr(attacker_model, "parent_unit", None)) if attacker_model is not None else None
+        if unit is None:
+            return "", False
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("dark_pacts_active", False)):
+            return "", False
+        choice = str(sr.get("dark_pacts_choice", "") or "").strip().upper()
+        if not choice:
+            return "", False
+        passed = bool(sr.get("dark_pacts_test_passed", True))
+        return choice, passed
+
+    def pactbound_zealots_crit_hit_threshold(self, attacker_model, *, weapon_profile=None) -> tuple[int, str]:
+        if not self.is_pactbound_zealots():
+            return 0, ""
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return 0, ""
+        if not self._model_is_heretic_astartes(attacker_model):
+            return 0, ""
+        dark_pact_choice, passed = self._pactbound_dark_pact_state(attacker_model)
+        if not dark_pact_choice or not passed:
+            return 0, ""
+
+        mark = self.ensure_pactbound_mark_for_unit(getattr(attacker_model, "parent_unit", None), assign_default=True)
+        if mark not in self._PACTBOUND_MARKS:
+            return 0, ""
+        parent = getattr(weapon_profile, "parent_wargear", None) if weapon_profile is not None else None
+        is_melee = bool(getattr(parent, "is_melee", lambda: False)())
+        is_ranged = bool(getattr(parent, "is_ranged", lambda: False)())
+
+        if dark_pact_choice in {"LETHAL HITS", "BOTH"}:
+            if mark == "KHORNE" and is_melee:
+                return 5, f"{self._PACTBOUND_MARK_SOURCE} ({self._pactbound_mark_display(mark)})"
+            if mark == "TZEENTCH" and is_ranged:
+                return 5, f"{self._PACTBOUND_MARK_SOURCE} ({self._pactbound_mark_display(mark)})"
+        if dark_pact_choice == "BOTH" or dark_pact_choice.startswith("SUSTAINED"):
+            if mark == "NURGLE" and is_ranged:
+                return 5, f"{self._PACTBOUND_MARK_SOURCE} ({self._pactbound_mark_display(mark)})"
+            if mark == "SLAANESH" and is_melee:
+                return 5, f"{self._PACTBOUND_MARK_SOURCE} ({self._pactbound_mark_display(mark)})"
+        return 0, ""
+
+    def pactbound_zealots_reroll_hit_ones(self, attacker_model, *, weapon_profile=None) -> tuple[bool, str]:
+        if not self.is_pactbound_zealots():
+            return False, ""
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return False, ""
+        if not self._model_is_heretic_astartes(attacker_model):
+            return False, ""
+        dark_pact_choice, passed = self._pactbound_dark_pact_state(attacker_model)
+        if not dark_pact_choice or not passed:
+            return False, ""
+        mark = self.ensure_pactbound_mark_for_unit(getattr(attacker_model, "parent_unit", None), assign_default=True)
+        if mark != "CHAOS UNDIVIDED":
+            return False, ""
+        if dark_pact_choice == "BOTH" or dark_pact_choice == "LETHAL HITS" or dark_pact_choice.startswith("SUSTAINED"):
+            return True, f"{self._PACTBOUND_MARK_SOURCE} ({self._pactbound_mark_display(mark)})"
+        return False, ""
+
+    def pactbound_zealots_leader_marks_match(self, leader, bodyguard) -> bool:
+        if not self.is_pactbound_zealots():
+            return True
+        if leader is None or bodyguard is None:
+            return False
+        if not self._unit_is_heretic_astartes(leader) or not self._unit_is_heretic_astartes(bodyguard):
+            return True
+        leader_mark = self.ensure_pactbound_mark_for_unit(leader, assign_default=True)
+        bodyguard_mark = self.ensure_pactbound_mark_for_unit(bodyguard, assign_default=True)
+        if not leader_mark or not bodyguard_mark:
+            return False
+        if leader_mark == "KHORNE" and self._unit_is_psyker(leader):
+            return False
+        if bodyguard_mark == "KHORNE" and self._unit_is_psyker(bodyguard):
+            return False
+        return leader_mark == bodyguard_mark
+
+    def pactbound_zealots_transport_marks_match(self, transport_unit, passenger_unit) -> bool:
+        if not self.is_pactbound_zealots():
+            return True
+        if transport_unit is None or passenger_unit is None:
+            return False
+        if not self._unit_is_heretic_astartes(transport_unit) or not self._unit_is_heretic_astartes(passenger_unit):
+            return True
+        transport_mark = self.ensure_pactbound_mark_for_unit(transport_unit, assign_default=True)
+        passenger_mark = self.ensure_pactbound_mark_for_unit(passenger_unit, assign_default=True)
+        if not transport_mark or not passenger_mark:
+            return False
+        if transport_mark == "KHORNE" and self._unit_is_psyker(transport_unit):
+            return False
+        if passenger_mark == "KHORNE" and self._unit_is_psyker(passenger_unit):
+            return False
+        return transport_mark == passenger_mark
+
+    def _validate_pactbound_zealots_rules(self) -> list[str]:
+        if not self.is_pactbound_zealots() or self.army is None:
+            return []
+        errors: list[str] = []
+
+        for root in self._iter_unique_roots(getattr(self.army, "units", []) or []):
+            if not self._unit_in_army(root):
+                continue
+            if not self._unit_is_heretic_astartes(root):
+                continue
+            if self._unit_is_epic_hero(root):
+                continue
+            sr = getattr(root, "special_rules", None)
+            raw_sr_mark = str(sr.get("pactbound_zealots_mark", "") or "").strip() if isinstance(sr, dict) else ""
+            sr_mark = self._normalize_pactbound_mark(raw_sr_mark)
+            keyword_marks = self._pactbound_keyword_marks_for_unit(root)
+            if len(keyword_marks) > 1:
+                errors.append(
+                    f"Marks of Chaos: unit '{getattr(root, 'name', 'Unknown')}' has multiple mark keywords {keyword_marks}."
+                )
+                continue
+            if raw_sr_mark and not sr_mark:
+                errors.append(
+                    f"Marks of Chaos: unit '{getattr(root, 'name', 'Unknown')}' has invalid mark '{raw_sr_mark}'."
+                )
+                continue
+            keyword_mark = keyword_marks[0] if keyword_marks else ""
+            if sr_mark and keyword_mark and sr_mark != keyword_mark:
+                errors.append(
+                    f"Marks of Chaos: unit '{getattr(root, 'name', 'Unknown')}' has conflicting marks '{sr_mark}' and '{keyword_mark}'."
+                )
+                continue
+            selected_mark = sr_mark or keyword_mark or "CHAOS UNDIVIDED"
+            if selected_mark == "KHORNE" and self._unit_is_psyker(root):
+                errors.append(
+                    f"Marks of Chaos restriction: PSYKER unit '{getattr(root, 'name', 'Unknown')}' cannot have the KHORNE keyword."
+                )
+                continue
+            self._set_pactbound_mark_for_unit(root, selected_mark)
+
+        for unit in list(getattr(self.army, "units", []) or []):
+            attached_to = getattr(unit, "attached_to", None)
+            if attached_to is None:
+                continue
+            if not self._unit_has_keyword(unit, "CHARACTER"):
+                continue
+            if not self._unit_is_heretic_astartes(unit) or not self._unit_is_heretic_astartes(attached_to):
+                continue
+            leader_mark = self.pactbound_mark_for_unit(unit, assign_default=False)
+            bodyguard_mark = self.pactbound_mark_for_unit(attached_to, assign_default=False)
+            if not leader_mark or not bodyguard_mark or leader_mark != bodyguard_mark:
+                errors.append(
+                    "Marks of Chaos restriction: a Character unit can only be attached to a unit if both share the same mark."
+                )
+
+        for transport in list(getattr(self.army, "units", []) or []):
+            if not bool(getattr(transport, "is_transport", False)):
+                continue
+            if not self._unit_is_heretic_astartes(transport):
+                continue
+            passengers = list(getattr(transport, "transport_passengers", []) or [])
+            for unit in list(getattr(self.army, "units", []) or []):
+                if getattr(unit, "embarked_in", None) is transport and unit not in passengers:
+                    passengers.append(unit)
+            for passenger in passengers:
+                if passenger is None:
+                    continue
+                if not self._unit_is_heretic_astartes(passenger):
+                    continue
+                transport_mark = self.pactbound_mark_for_unit(transport, assign_default=False)
+                passenger_mark = self.pactbound_mark_for_unit(passenger, assign_default=False)
+                if not transport_mark or not passenger_mark or transport_mark != passenger_mark:
+                    errors.append(
+                        "Marks of Chaos restriction: a unit can only embark in a TRANSPORT if both share the same mark."
+                    )
+        return errors
+
     def validate_detachment_rules(self) -> list[str]:
+        errors: list[str] = []
         if self.is_chaos_cult():
             self.apply_chaos_cult_traitor_guardsmen_battleline_keywords()
-        return []
+        if self.is_pactbound_zealots():
+            errors.extend(self._validate_pactbound_zealots_rules())
+        return errors
 
     def raiders_and_reavers_assault_applies(self, unit, weapon_profile=None) -> bool:
         if not self.is_renegade_raiders():

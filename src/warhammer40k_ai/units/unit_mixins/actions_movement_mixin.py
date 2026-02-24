@@ -7726,6 +7726,7 @@ class ActionsMovementMixin:
         dark_ascension_active = self._dark_ascension_aura_applies(game_map=getattr(game, "map", None))
         sr["dark_pacts_active"] = True
         sr["dark_pacts_choice"] = "BOTH" if dark_ascension_active else choice_norm
+        sr["dark_pacts_test_passed"] = bool(passed)
         sr["dark_pacts_expires_phase"] = phase_key
         if empyric_required:
             sr["empyric_wellspring_choice"] = empyric_choice_norm
@@ -7753,6 +7754,11 @@ class ActionsMovementMixin:
                 sr["unholy_bloodshed_source"] = "Unholy Bloodshed"
                 root.mark_unit_once_per_battle_used(once_key, ability_name="Unholy Bloodshed")
         root.special_rules = sr
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+        ensure_mark_fn = getattr(csm_mgr, "ensure_pactbound_mark_for_unit", None) if csm_mgr is not None else None
+        if callable(ensure_mark_fn):
+            ensure_mark_fn(root, assign_default=True)
         return True
 
     def maybe_trigger_dark_pacts(self, game, *, phase_name: str, trigger: str) -> None:

@@ -376,6 +376,18 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time an attack targets a heretic astartes unit from your army if the attacking model is battle shocked subtract 1 from the hit roll",
             r"each time a heretic astartes model from your army makes an attack that targets a battle shocked unit add 1 to the wound roll",
         ),
+        "Marks of Chaos": (
+            r"when mustering your army when you select a heretic astartes unit to include in your army if that unit is not an epic hero and does not already have one of the following keywords you must select one for that unit and note it on your army roster",
+            r"each time a unit with one of these keywords gains a weapon ability as the result of a dark pact and does not fail the resulting leadership test until the end of the phase that unit gains the associated ability below",
+            r"units that gained lethal hits",
+            r"each time a model in this unit makes a melee attack an unmodified hit roll of 5 scores a critical hit",
+            r"each time a model in this unit makes a ranged attack an unmodified hit roll of 5 scores a critical hit",
+            r"each time a model in this unit makes an attack reroll a hit roll of 1",
+            r"units that gained sustained hits 1",
+            r"you cannot select the khorne keyword for a psyker unit",
+            r"a character unit can only be attached to a unit if both units share the same keyword from the list above",
+            r"a unit can only embark within or start the battle embarked within a transport if both of those units share the same keyword from the list above",
+        ),
         "Iron Fortitude": (
             r"each time a ranged attack targets a heretic astartes unit from your army excluding damned units if the strength characteristic of that attack is greater than the toughness characteristic of that unit subtract 1 from the wound roll",
         ),
@@ -2538,6 +2550,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
             "Supported",
             "Nightmare Hunt: in the Battle-shock step of your opponent's Command phase, below-Starting Strength enemy units within 12\" of friendly HERETIC ASTARTES sources are forced to take a Battle-shock test at -1 and are marked to suppress further tests in that phase; HERETIC ASTARTES attacks gain +1 to hit vs Below Half-strength targets and +1 to wound vs Battle-shocked targets, and attacks made by Battle-shocked models suffer -1 to hit against friendly HERETIC ASTARTES units.",
         ),
+        "Marks of Chaos": (
+            "Supported",
+            "Pactbound Zealots: eligible HERETIC ASTARTES non-EPIC HERO units are assigned a roster mark (defaulting to CHAOS UNDIVIDED when unspecified), Dark Pact success enables mark-specific bonuses (+critical hits on 5+ for KHORNE/TZEENTCH/NURGLE/SLAANESH attack types and re-roll Hit rolls of 1 for CHAOS UNDIVIDED), and restrictions are enforced for KHORNE PSYKER selection plus leader/bodyguard and transport/passenger shared marks.",
+        ),
         "Iron Fortitude": (
             "Supported",
             "Fellhammer Siege-host: each time a ranged attack targets a friendly HERETIC ASTARTES unit (excluding DAMNED), if the attack Strength is greater than that unit's Toughness, subtract 1 from the Wound roll.",
@@ -3126,6 +3142,18 @@ def _restriction_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Pact of Blood": ("Supported", "Army faction restriction enforced during validation."),
         "Space Marine Chapters": ("Supported", "Chapter keyword restrictions and unit bans."),
         "Deathwatch": ("Supported", "Deathwatch-only chapter restrictions."),
+        "A Character unit can only be attached to a unit if both units share the same keyword from the list above.": (
+            "Supported",
+            "Pactbound Zealots: attachment validation and attach action checks require matching Marks of Chaos between leader and bodyguard units.",
+        ),
+        "A unit can only embark within (or start the battle embarked within) a TRANSPORT if both of those units share the same keyword from the list above.": (
+            "Supported",
+            "Pactbound Zealots: embark validation and transport eligibility checks require matching Marks of Chaos between transport and passenger units.",
+        ),
+        "You cannot select the KHORNE keyword for a Psyker unit.": (
+            "Supported",
+            "Pactbound Zealots: KHORNE is rejected for PSYKER units during detachment validation and mark resolution.",
+        ),
         "When mustering your army, each NECRONS MONSTER unit from your army has the relevant Necrodermal Binding ability shown below, and you must increase the points cost of each of those units by the amount shown in the Munitorum Field Manual . If this causes your army to exceed the points limit for the battle you are playing, you cannot include that unit in your army.": (
             "Supported",
             "Pantheon of Woe Necrodermal Binding surcharges are enforced in unit point costs for NECRONS MONSTER units, so army points-limit validation includes the mandatory Pantheon binding costs.",
