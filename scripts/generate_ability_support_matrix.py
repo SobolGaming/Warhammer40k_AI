@@ -677,6 +677,11 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"strike force up to 1000 pts",
             r"onslaught up to 1500 pts",
         ),
+        "Rain Of Cruelty": (
+            r"each time a drukhari unit from your army disembarks from a transport until the end of the turn",
+            r"ranged weapons equipped by models in that disembarking unit have the ignores cover ability",
+            r"melee weapons equipped by models in that disembarking unit have the lance ability",
+        ),
         "Malefic Surge": (
             r"in your command phase one or more chaos knights units from your army can make a malefic surge",
             r"each one that does must first take a leadership test",
@@ -2979,6 +2984,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Callous Competition": (
             "Supported",
             "Reaper's Wager: start with DRUKHARI winning, switch winner when DRUKHARI or HARLEQUINS units from your army destroy enemy units, apply re-roll Hit rolls of 1 for winning units and re-roll Hit/Wound rolls of 1 for losing units, and enforce HARLEQUINS ally-only caps (Incursion 500, Strike Force 1000, Onslaught 1500), HARLEQUINS WARLORD prohibition, and Corsairs and Travelling Players incompatibility.",
+        ),
+        "Rain Of Cruelty": (
+            "Supported",
+            "Skysplinter Assault: each time a friendly DRUKHARI unit disembarks from a Transport, mark that unit until end of turn so its ranged weapons gain [IGNORES COVER] and its melee weapons gain [LANCE].",
         ),
         "Malefic Surge": (
             "Supported",

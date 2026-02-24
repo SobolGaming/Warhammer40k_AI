@@ -1370,6 +1370,47 @@ class WargearProfile:
             turn_key="veteran_sharpshooters_turn",
         ) is not None
 
+    def _drukhari_rain_of_cruelty_active(self, attacker: 'Model') -> bool:
+        unit = getattr(attacker, "parent_unit", None)
+        if unit is None:
+            return False
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("rain_of_cruelty_active")):
+            return False
+
+        effect_owner = str(sr.get("rain_of_cruelty_turn_owner", "") or "").strip()
+        try:
+            effect_turn = int(sr.get("rain_of_cruelty_turn", 0) or 0)
+        except Exception:
+            effect_turn = 0
+        if not effect_owner and not effect_turn:
+            return True
+
+        game = None
+        try:
+            game = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
+        except Exception:
+            game = None
+        if game is None:
+            return False
+
+        current_player = getattr(game, "get_current_player", lambda: None)()
+        current_owner = str(getattr(current_player, "id", "") or "").strip()
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+
+        if effect_owner and current_owner and current_owner != effect_owner:
+            return False
+        if effect_turn and current_turn and current_turn != effect_turn:
+            return False
+        return True
+
     def _flickering_reality_value(self, target: 'Unit', attacker: 'Model') -> Optional[int]:
         """Return the Flickering Reality hit roll value if active for target."""
         if target is None:
@@ -7316,7 +7357,7 @@ class WargearProfile:
         except Exception:
             pass
 
-        # Drukhari: ignore cover from Deadly Retinue or Nowhere to Hide (Pain).
+        # Drukhari: ignore cover from Pain effects and Rain Of Cruelty.
         try:
             is_ranged = bool(getattr(self.parent_wargear, "is_ranged", lambda: False)())
         except Exception:
@@ -7348,6 +7389,11 @@ class WargearProfile:
                 pass
             try:
                 if self._veteran_sharpshooters_ignores_cover_active(attacker):
+                    attack_instance["ignores_cover"] = True
+            except Exception:
+                pass
+            try:
+                if self._drukhari_rain_of_cruelty_active(attacker):
                     attack_instance["ignores_cover"] = True
             except Exception:
                 pass
@@ -12736,6 +12782,11 @@ class WargearProfile:
                                 goretrack_lance = False
             except Exception:
                 goretrack_lance = False
+            rain_of_cruelty_lance = False
+            try:
+                rain_of_cruelty_lance = bool(self._drukhari_rain_of_cruelty_active(attacker))
+            except Exception:
+                rain_of_cruelty_lance = False
             run_them_through_lance = False
             run_them_through_source = ""
             try:
@@ -12778,6 +12829,7 @@ class WargearProfile:
                 or blood_tithe_lance
                 or daemonic_fury_lance
                 or goretrack_lance
+                or rain_of_cruelty_lance
                 or run_them_through_lance
                 or bonus_lance
             ):
@@ -12797,6 +12849,8 @@ class WargearProfile:
                         wound_result['modifiers'].append("+1 to wound from Lance (Daemonic Fury)")
                     elif goretrack_lance and not self.is_lance():
                         wound_result['modifiers'].append("+1 to wound from Lance (Goretrack Onslaught)")
+                    elif rain_of_cruelty_lance and not self.is_lance():
+                        wound_result['modifiers'].append("+1 to wound from Lance (Rain Of Cruelty)")
                     elif run_them_through_lance and not self.is_lance():
                         wound_result['modifiers'].append(f"+1 to wound from Lance ({run_them_through_source})")
                     else:

@@ -71,8 +71,10 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
     DETACHMENT_KABALITE_CARTEL = "Kabalite Cartel"
     DETACHMENT_REALSPACE_RAIDERS = "Realspace Raiders"
     DETACHMENT_REAPERS_WAGER = "Reaper's Wager"
+    DETACHMENT_SKYSPLINTER_ASSAULT = "Skysplinter Assault"
     ALLIANCE_OF_AGONY_SOURCE = "Alliance of Agony"
     CALLOUS_COMPETITION_SOURCE = "Callous Competition"
+    RAIN_OF_CRUELTY_SOURCE = "Rain Of Cruelty"
     CALLOUS_COMPETITION_SIDE_DRUKHARI = "DRUKHARI"
     CALLOUS_COMPETITION_SIDE_HARLEQUINS = "HARLEQUINS"
     MURDEROUS_AGENDA_CONTRACT_TROPHY_HUNTERS = "TROPHY_HUNTERS"
@@ -113,6 +115,11 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches(self.DETACHMENT_REAPERS_WAGER)
+
+    def is_skysplinter_assault(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches(self.DETACHMENT_SKYSPLINTER_ASSAULT)
 
     def is_spectacle_of_spite(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -689,6 +696,52 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
                 if bool(getattr(model, "is_alive", False)):
                     return True
         return False
+
+    def _resolve_owner_and_turn(self, *, game=None, current_turn: int = 0) -> tuple[str, int]:
+        owner = ""
+        turn = int(current_turn or 0)
+
+        if game is not None:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+            owner = str(getattr(current_player, "id", "") or "")
+            turn = int(getattr(game, "turn", current_turn) or current_turn or 0)
+        if not owner and self.army is not None:
+            owner = str(getattr(getattr(self.army, "player", None), "id", "") or "")
+        return owner, int(turn)
+
+    def apply_rain_of_cruelty_on_disembark(self, unit, *, game=None, current_turn: int = 0) -> bool:
+        if not self.is_skysplinter_assault():
+            return False
+        if self.army is None:
+            return False
+
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        if not self._unit_has_keyword(root, "DRUKHARI"):
+            return False
+
+        owner, turn = self._resolve_owner_and_turn(game=game, current_turn=current_turn)
+        members = self._iter_attached_members(root)
+        if not members:
+            members = [root]
+
+        applied = False
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["rain_of_cruelty_active"] = True
+            sr["rain_of_cruelty_source"] = self.RAIN_OF_CRUELTY_SOURCE
+            if owner:
+                sr["rain_of_cruelty_turn_owner"] = owner
+            if turn:
+                sr["rain_of_cruelty_turn"] = int(turn)
+            member.special_rules = sr
+            applied = True
+        return applied
 
     @staticmethod
     def _model_has_keyword(model, keyword: str) -> bool:
