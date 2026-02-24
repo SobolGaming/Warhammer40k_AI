@@ -23,6 +23,11 @@ class GreyKnightsDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Hallowed Conclave")
 
+    def is_sanctic_spearhead(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Sanctic Spearhead")
+
     def is_augurium_task_force(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
             return False
@@ -413,6 +418,58 @@ class GreyKnightsDetachmentManager(DetachmentManagerBase):
             return False
         if not self._unit_is_active(root):
             return False
+        return True
+
+    def mailed_fist_applies(self, unit) -> bool:
+        if not self.is_sanctic_spearhead():
+            return False
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        try:
+            if root.get_parent_army() is not self.army:
+                return False
+        except Exception:
+            return False
+        if not self._attached_unit_has_keyword(root, "GREY KNIGHTS"):
+            return False
+        if not self._attached_unit_has_keyword(root, "VEHICLE"):
+            return False
+        return True
+
+    def mailed_fist_advance_no_roll_effect(self, unit) -> dict | None:
+        if not self.mailed_fist_applies(unit):
+            return None
+        return {
+            "distance": 6,
+            "source": "Mailed Fist",
+            "tag": "detachment:mailed_fist",
+            "expires_phase": "MOVEMENT_PHASE",
+        }
+
+    def mailed_fist_assault_applies(self, unit, weapon_profile=None, *, game=None) -> bool:
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        if not self.mailed_fist_applies(root):
+            return False
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            if parent is None or not bool(getattr(parent, "is_ranged", lambda: False)()):
+                return False
+        round_state = getattr(root, "round_state", None)
+        if not bool(getattr(round_state, "advanced_this_round", False)):
+            return False
+        game_obj = game
+        if game_obj is None:
+            army_player = getattr(self.army, "player", None)
+            game_obj = getattr(army_player, "game", None) if army_player is not None else None
+        if game_obj is not None:
+            current = getattr(game_obj, "get_current_player", lambda: None)()
+            current_owner = str(getattr(current, "id", "") or "")
+            owner_id = str(getattr(getattr(self.army, "player", None), "id", "") or "")
+            if owner_id and current_owner and current_owner != owner_id:
+                return False
         return True
 
     def channelled_force_has_psychic_melee_weapons(self, unit) -> bool:

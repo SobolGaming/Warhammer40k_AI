@@ -173,6 +173,84 @@ class TestGreyKnightsDetachments(unittest.TestCase):
         game.event_system.publish("phase_end", player=player, phase=SimpleNamespace(name="FIGHT_PHASE"))
         self.assertNotIn("fury_of_titan_active", unit.special_rules)
 
+    def test_mailed_fist_sets_fixed_advance_distance_for_grey_knights_vehicles(self):
+        from warhammer40k_ai.engine.phase import BattleRoundPhases
+
+        game, army_gk, _army_enemy, _player = _build_game(detachment_type="Sanctic Spearhead")
+        game.phase = BattleRoundPhases.MOVEMENT_PHASE
+
+        vehicle = _make_unit(
+            "Nemesis Dreadknight",
+            keywords=["VEHICLE"],
+            faction_keywords=["GREY KNIGHTS"],
+        )
+        vehicle.deployed = True
+        army_gk.add_unit(vehicle)
+
+        effect = vehicle._get_advance_no_roll_effect()
+        self.assertIsInstance(effect, dict)
+        self.assertEqual(int(effect.get("distance", 0) or 0), 6)
+        self.assertEqual(str(effect.get("expires_phase", "") or ""), "MOVEMENT_PHASE")
+        self.assertEqual(str(effect.get("source", "") or ""), "Mailed Fist")
+
+        infantry = _make_unit(
+            "Strike Squad",
+            keywords=["INFANTRY"],
+            faction_keywords=["GREY KNIGHTS"],
+        )
+        infantry.deployed = True
+        army_gk.add_unit(infantry)
+        self.assertIsNone(infantry._get_advance_no_roll_effect())
+
+    def test_mailed_fist_grants_ranged_assault_after_advancing(self):
+        from warhammer40k_ai.units.wargear import WargearProfile
+
+        game, army_gk, _army_enemy, _player = _build_game(detachment_type="Sanctic Spearhead")
+        vehicle = _make_unit(
+            "Nemesis Dreadknight",
+            keywords=["VEHICLE"],
+            faction_keywords=["GREY KNIGHTS"],
+        )
+        vehicle.deployed = True
+        army_gk.add_unit(vehicle)
+
+        ranged_parent = SimpleNamespace(name="Heavy Psycannon", is_melee=lambda: False, is_ranged=lambda: True)
+        ranged_profile = WargearProfile(
+            profile_name="Ranged",
+            wargear_data={
+                "range": "24",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "8",
+                "AP": "-1",
+                "D": "2",
+                "description": "",
+            },
+            parent_wargear=ranged_parent,
+        )
+
+        melee_parent = SimpleNamespace(name="Greatsword", is_melee=lambda: True, is_ranged=lambda: False)
+        melee_profile = WargearProfile(
+            profile_name="Melee",
+            wargear_data={
+                "range": "Melee",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "10",
+                "AP": "-2",
+                "D": "3",
+                "description": "",
+            },
+            parent_wargear=melee_parent,
+        )
+
+        vehicle.round_state.advanced_this_round = False
+        self.assertFalse(vehicle.can_shoot_after_advance(ranged_profile))
+
+        vehicle.round_state.advanced_this_round = True
+        self.assertTrue(vehicle.can_shoot_after_advance(ranged_profile))
+        self.assertFalse(vehicle.can_shoot_after_advance(melee_profile))
+
     def test_hallowed_ground_melee_reroll_ones(self):
         from warhammer40k_ai.units.wargear import WargearProfile
         from warhammer40k_ai.units import wargear as wargear_mod

@@ -2966,6 +2966,12 @@ class RulesParsingMixin:
             iron_tread_effect = iron_tread_fn(root)
             if isinstance(iron_tread_effect, dict):
                 effects.append(dict(iron_tread_effect))
+        gk_mgr = getattr(army, "grey_knights_detachments", None) if army is not None else None
+        mailed_fist_fn = getattr(gk_mgr, "mailed_fist_advance_no_roll_effect", None) if gk_mgr is not None else None
+        if callable(mailed_fist_fn):
+            mailed_fist_effect = mailed_fist_fn(root)
+            if isinstance(mailed_fist_effect, dict):
+                effects.append(dict(mailed_fist_effect))
         if not effects:
             return None
 

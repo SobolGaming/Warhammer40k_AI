@@ -756,6 +756,10 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Duty Before All": (
             r"grey knights terminator units from your army are eligible to shoot and declare a charge in a turn in which they fell back",
         ),
+        "Mailed Fist": (
+            r"each time a grey knights vehicle unit from your army advances do not make an advance roll for it",
+            r"until the end of the phase add 6 to the move characteristic of models in that unit and until the end of the turn ranged weapons equipped by models in that unit have the assault ability",
+        ),
         "Hallowed Ground": (
             r"certain areas of the battlefield are within your armys hallowed ground as follows",
             r"your deployment zone is always within your armys hallowed ground",
@@ -2766,6 +2770,11 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
             "phase-start control of No Man's Land/opponent deployment zone objectives) grant GREY KNIGHTS hit re-rolls "
             "of 1 on visible ranged attacks or melee; PURIFIER SQUAD or units wholly within Hallowed Ground can re-roll "
             "the Hit roll instead.",
+        ),
+        "Mailed Fist": (
+            "Supported",
+            "Sanctic Spearhead: GREY KNIGHTS VEHICLE units replace Advance rolls with a fixed +6\" Move equivalent and "
+            "their ranged weapons count as [ASSAULT] for that turn after Advancing.",
         ),
         "Channelled Force": (
             "Supported",
