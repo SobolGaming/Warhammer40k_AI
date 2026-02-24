@@ -2021,6 +2021,12 @@ class Army:
         self._validate_freeblades()
         # Imperial Agents: Assigned Agents.
         self._validate_assigned_agents()
+        dru_mgr = getattr(self, "drukhari_detachments", None)
+        is_reapers_wager = bool(getattr(dru_mgr, "is_reapers_wager", lambda: False)()) if dru_mgr is not None else False
+        if is_reapers_wager:
+            self._validate_reapers_wager_harlequins()
+            self._validate_daemonic_pact()
+            return
         # Drukhari: Corsairs and Travelling Players.
         if army_has_ability_id(self, ABILITY_CORSAIRS_AND_TRAVELLING_PLAYERS):
             self._validate_corsairs_and_travelling_players()
@@ -2082,6 +2088,16 @@ class Army:
         if limit <= 2000:
             return 500
         return 750
+
+    def _reapers_wager_harlequins_points_cap(self) -> int:
+        limit = int(self.points_limit or 0)
+        if limit <= 0:
+            return 0
+        if limit <= 1000:
+            return 500
+        if limit <= 2000:
+            return 1000
+        return 1500
 
     def _assigned_agents_unit_caps(self) -> dict[str, int]:
         limit = int(self.points_limit or 0)
@@ -2197,6 +2213,44 @@ class Army:
         if cap <= 0 or total > cap:
             raise ArmyValidationError(
                 f"Corsairs and Travelling Players: allied units total {total} points (cap {cap})."
+            )
+
+    def _validate_reapers_wager_harlequins(self) -> None:
+        harlequins_units = []
+        for unit in list(getattr(self, "units", []) or []):
+            if unit is None:
+                continue
+            is_drukhari = self._unit_has_any_keyword(unit, "DRUKHARI")
+            is_harlequins = self._unit_has_any_keyword(unit, "HARLEQUINS")
+            if not (is_drukhari or is_harlequins):
+                fks = [
+                    str(k).strip().upper()
+                    for k in (getattr(unit, "faction_keywords", []) or [])
+                    if str(k).strip()
+                ]
+                raise ArmyValidationError(
+                    f"Reaper's Wager: unit '{getattr(unit, 'name', 'Unknown')}' has faction keywords {fks}, "
+                    "which are not allowed (allows DRUKHARI + HARLEQUINS)."
+                )
+            if is_harlequins:
+                harlequins_units.append(unit)
+
+        if not harlequins_units:
+            return
+
+        for unit in harlequins_units:
+            if getattr(unit, "is_warlord", False):
+                raise ArmyValidationError(
+                    f"Reaper's Wager: HARLEQUINS unit '{getattr(unit, 'name', 'Unknown')}' cannot be your Warlord."
+                )
+
+        cap = self._reapers_wager_harlequins_points_cap()
+        total = 0
+        for unit in harlequins_units:
+            total += int(unit.get_unit_cost())
+        if cap <= 0 or total > cap:
+            raise ArmyValidationError(
+                f"Reaper's Wager: HARLEQUINS units total {total} points (cap {cap})."
             )
 
     def _validate_assigned_agents(self) -> None:

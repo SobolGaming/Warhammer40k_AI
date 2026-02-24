@@ -6844,6 +6844,16 @@ class KeywordsDetachmentsMixin:
         if extra_reasons:
             reroll_values.add(1)
             reroll_reasons.extend(extra_reasons)
+        if model is not None:
+            army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+            mgr = getattr(army, "drukhari_detachments", None) if army is not None else None
+            reroll_fn = getattr(mgr, "callous_competition_hit_reroll_ones", None) if mgr is not None else None
+            if callable(reroll_fn):
+                applies, source = reroll_fn(model, unit=self)
+                if bool(applies):
+                    reroll_values.add(1)
+                    source_name = str(source or "Callous Competition").strip() or "Callous Competition"
+                    reroll_reasons.append(f"{source_name}: re-roll Hit rolls of 1")
         hunter = self.get_hunter_of_souls_rule(model)
         if hunter and target is not None and bool(hunter.get("requires_target_character", True)):
             if self._target_has_keyword(target, "CHARACTER"):
@@ -6912,6 +6922,16 @@ class KeywordsDetachmentsMixin:
         if extra_reasons:
             reroll_values.add(1)
             reroll_reasons.extend(extra_reasons)
+        if model is not None:
+            army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+            mgr = getattr(army, "drukhari_detachments", None) if army is not None else None
+            reroll_fn = getattr(mgr, "callous_competition_wound_reroll_ones", None) if mgr is not None else None
+            if callable(reroll_fn):
+                applies, source = reroll_fn(model, unit=self)
+                if bool(applies):
+                    reroll_values.add(1)
+                    source_name = str(source or "Callous Competition").strip() or "Callous Competition"
+                    reroll_reasons.append(f"{source_name}: re-roll Wound rolls of 1")
         if model is not None and target is not None:
             army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
             mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None

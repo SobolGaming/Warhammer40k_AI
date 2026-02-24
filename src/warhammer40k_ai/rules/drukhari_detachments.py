@@ -70,7 +70,11 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
     DETACHMENT_COVENITE_COTERIE = "Covenite Coterie"
     DETACHMENT_KABALITE_CARTEL = "Kabalite Cartel"
     DETACHMENT_REALSPACE_RAIDERS = "Realspace Raiders"
+    DETACHMENT_REAPERS_WAGER = "Reaper's Wager"
     ALLIANCE_OF_AGONY_SOURCE = "Alliance of Agony"
+    CALLOUS_COMPETITION_SOURCE = "Callous Competition"
+    CALLOUS_COMPETITION_SIDE_DRUKHARI = "DRUKHARI"
+    CALLOUS_COMPETITION_SIDE_HARLEQUINS = "HARLEQUINS"
     MURDEROUS_AGENDA_CONTRACT_TROPHY_HUNTERS = "TROPHY_HUNTERS"
     MURDEROUS_AGENDA_CONTRACT_SOW_FEAR_AND_TERROR = "SOW_FEAR_AND_TERROR"
     MURDEROUS_AGENDA_CONTRACT_SHOW_OF_STRENGTH = "SHOW_OF_STRENGTH"
@@ -87,6 +91,8 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
         self.murderous_agenda_reward_paid: bool = False
         self.alliance_of_agony_applied: bool = False
         self.alliance_of_agony_tokens_awarded: int = 0
+        self.callous_competition_initialized: bool = False
+        self.callous_competition_winning_side: str = ""
 
     def is_covenite_coterie(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -102,6 +108,11 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches(self.DETACHMENT_REALSPACE_RAIDERS)
+
+    def is_reapers_wager(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches(self.DETACHMENT_REAPERS_WAGER)
 
     def is_spectacle_of_spite(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -154,6 +165,125 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
         if expected.endswith("s") and expected[:-1] == actual:
             return True
         return False
+
+    def _model_side_for_callous_competition(self, model, *, unit=None) -> str:
+        if model is not None:
+            if self._model_has_keyword(model, self.CALLOUS_COMPETITION_SIDE_HARLEQUINS):
+                return self.CALLOUS_COMPETITION_SIDE_HARLEQUINS
+            if self._model_has_keyword(model, self.CALLOUS_COMPETITION_SIDE_DRUKHARI):
+                return self.CALLOUS_COMPETITION_SIDE_DRUKHARI
+        source_unit = unit
+        if source_unit is None and model is not None:
+            source_unit = getattr(model, "parent_unit", None)
+        return self._unit_side_for_callous_competition(source_unit)
+
+    def _unit_side_for_callous_competition(self, unit) -> str:
+        root = self._unit_root(unit)
+        if root is None:
+            return ""
+        is_harlequins = self._unit_has_keyword(root, self.CALLOUS_COMPETITION_SIDE_HARLEQUINS)
+        is_drukhari = self._unit_has_keyword(root, self.CALLOUS_COMPETITION_SIDE_DRUKHARI)
+        if is_harlequins and not is_drukhari:
+            return self.CALLOUS_COMPETITION_SIDE_HARLEQUINS
+        if is_drukhari and not is_harlequins:
+            return self.CALLOUS_COMPETITION_SIDE_DRUKHARI
+        return ""
+
+    def _callous_competition_side_is_winning(self, side: str) -> bool:
+        side_norm = str(side or "").strip().upper()
+        winning = str(self.callous_competition_winning_side or "").strip().upper()
+        if side_norm not in {
+            self.CALLOUS_COMPETITION_SIDE_DRUKHARI,
+            self.CALLOUS_COMPETITION_SIDE_HARLEQUINS,
+        }:
+            return False
+        if winning not in {
+            self.CALLOUS_COMPETITION_SIDE_DRUKHARI,
+            self.CALLOUS_COMPETITION_SIDE_HARLEQUINS,
+        }:
+            return False
+        return side_norm == winning
+
+    def initialize_callous_competition(self, *, battle_round: int, player=None) -> bool:
+        if not self.is_reapers_wager():
+            return False
+        if self.army is None:
+            return False
+        if self.callous_competition_initialized:
+            return False
+        if int(battle_round or 0) != 1:
+            return False
+        if player is not None and getattr(self.army, "player", None) is not player:
+            return False
+        self.callous_competition_winning_side = self.CALLOUS_COMPETITION_SIDE_DRUKHARI
+        self.callous_competition_initialized = True
+        return True
+
+    def on_enemy_unit_destroyed(self, unit, *, destroyed_by_unit=None, destroyed_by_model=None, game=None) -> bool:
+        del unit
+        del game
+        if not self.is_reapers_wager():
+            return False
+        if not self.callous_competition_initialized:
+            return False
+        if self.army is None:
+            return False
+
+        attacker_unit = self._unit_root(destroyed_by_unit)
+        attacker_model = destroyed_by_model
+        if attacker_model is not None and not self._model_in_army(attacker_model):
+            attacker_model = None
+        if attacker_unit is not None and not self._unit_in_army(attacker_unit):
+            attacker_unit = None
+        if attacker_unit is None and attacker_model is None:
+            return False
+
+        side = self._unit_side_for_callous_competition(attacker_unit)
+        if not side:
+            side = self._model_side_for_callous_competition(attacker_model, unit=attacker_unit)
+        if side not in {
+            self.CALLOUS_COMPETITION_SIDE_DRUKHARI,
+            self.CALLOUS_COMPETITION_SIDE_HARLEQUINS,
+        }:
+            return False
+        self.callous_competition_winning_side = side
+        return True
+
+    def callous_competition_hit_reroll_ones(self, model, *, unit=None) -> tuple[bool, str]:
+        if not self.is_reapers_wager():
+            return False, ""
+        if not self.callous_competition_initialized:
+            return False, ""
+        if model is None:
+            return False, ""
+        if not self._model_in_army(model):
+            return False, ""
+        side = self._model_side_for_callous_competition(model, unit=unit)
+        if side not in {
+            self.CALLOUS_COMPETITION_SIDE_DRUKHARI,
+            self.CALLOUS_COMPETITION_SIDE_HARLEQUINS,
+        }:
+            return False, ""
+        return True, self.CALLOUS_COMPETITION_SOURCE
+
+    def callous_competition_wound_reroll_ones(self, model, *, unit=None) -> tuple[bool, str]:
+        if not self.is_reapers_wager():
+            return False, ""
+        if not self.callous_competition_initialized:
+            return False, ""
+        if model is None:
+            return False, ""
+        if not self._model_in_army(model):
+            return False, ""
+        side = self._model_side_for_callous_competition(model, unit=unit)
+        if side not in {
+            self.CALLOUS_COMPETITION_SIDE_DRUKHARI,
+            self.CALLOUS_COMPETITION_SIDE_HARLEQUINS,
+        }:
+            return False, ""
+        if self._callous_competition_side_is_winning(side):
+            return False, ""
+        return True, self.CALLOUS_COMPETITION_SOURCE
 
     def _unit_on_battlefield(self, unit) -> bool:
         root = self._unit_root(unit)
@@ -813,6 +943,7 @@ class DrukhariDetachmentManager(DetachmentManagerBase):
             return
         if int(battle_round or 0) == 1:
             self.apply_alliance_of_agony(battle_round=battle_round, game=game, player=player)
+            self.initialize_callous_competition(battle_round=battle_round, player=player)
 
         if self.is_kabalite_cartel():
             if game is None or player is None:

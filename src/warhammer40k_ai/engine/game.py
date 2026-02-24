@@ -6837,6 +6837,7 @@ class Game(
     def _on_unit_destroyed_power_from_pain(self, unit=None, destroyed_by_unit=None, **_kwargs) -> None:
         if unit is None:
             return
+        destroyed_by_model = _kwargs.get("destroyed_by_model")
         for p in list(self.players or []):
             if p is None:
                 raise RuntimeError("Power from Pain requires players.")
@@ -6845,8 +6846,20 @@ class Game(
                 raise RuntimeError(f"Power from Pain requires an army for {p.name}.")
             mgr = getattr(army, "power_from_pain", None)
             if mgr is None:
+                pass
+            else:
+                mgr.on_enemy_unit_destroyed(unit, destroyed_by_unit=destroyed_by_unit)
+            detachment_mgr = getattr(army, "drukhari_detachments", None)
+            if detachment_mgr is None:
                 continue
-            mgr.on_enemy_unit_destroyed(unit, destroyed_by_unit=destroyed_by_unit)
+            on_destroyed = getattr(detachment_mgr, "on_enemy_unit_destroyed", None)
+            if callable(on_destroyed):
+                on_destroyed(
+                    unit,
+                    destroyed_by_unit=destroyed_by_unit,
+                    destroyed_by_model=destroyed_by_model,
+                    game=self,
+                )
 
     def _on_unit_destroyed_martial_leverage(self, unit=None, **_kwargs) -> None:
         if unit is None:

@@ -663,6 +663,20 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Alliance of Agony": (
             r"at the start of the battle you gain 2 pain tokens for each of the following combinations your army contains these do not need to be in the same attached unit",
         ),
+        "Callous Competition": (
+            r"at the start of the battle drukhari units from your army are winning the wager",
+            r"each time a drukhari unit from your army destroys an enemy unit drukhari units from your army are winning the wager",
+            r"each time a harlequins unit from your army destroys an enemy unit harlequin units from your army are winning the wager",
+            r"while drukhari units from your army are winning the wager harlequin units from your army are losing the wager and vice versa",
+            r"each time a drukhari or harlequins model from your army makes an attack if that models unit is winning the wager reroll a hit roll of 1",
+            r"if that models unit is losing the wager reroll a hit roll of 1 and reroll a wound roll of 1 instead",
+            r"the combined points cost of such units depends on your battle size",
+            r"no harlequins models from your army can be your warlord",
+            r"if you select this detachment you cannot use the corsairs and travelling players army rule",
+            r"incursion up to 500 pts",
+            r"strike force up to 1000 pts",
+            r"onslaught up to 1500 pts",
+        ),
         "Malefic Surge": (
             r"in your command phase one or more chaos knights units from your army can make a malefic surge",
             r"each one that does must first take a leadership test",
@@ -2961,6 +2975,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Alliance of Agony": (
             "Supported",
             "Realspace Raiders: at the start of the battle, gain 2 Pain tokens for each present pair (Archon+Kabalite Warriors, Succubus+Wyches, Haemonculus+Wracks), cumulative to a maximum of 6.",
+        ),
+        "Callous Competition": (
+            "Supported",
+            "Reaper's Wager: start with DRUKHARI winning, switch winner when DRUKHARI or HARLEQUINS units from your army destroy enemy units, apply re-roll Hit rolls of 1 for winning units and re-roll Hit/Wound rolls of 1 for losing units, and enforce HARLEQUINS ally-only caps (Incursion 500, Strike Force 1000, Onslaught 1500), HARLEQUINS WARLORD prohibition, and Corsairs and Travelling Players incompatibility.",
         ),
         "Malefic Surge": (
             "Supported",
