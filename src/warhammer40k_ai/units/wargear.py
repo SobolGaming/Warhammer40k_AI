@@ -623,6 +623,23 @@ class WargearProfile:
             source_default="Fusion Blades",
         )
 
+    def _csm_experimental_augmentation_keys(self, attacker: 'Model') -> set[str]:
+        unit = getattr(attacker, "parent_unit", None)
+        if unit is None:
+            return set()
+        army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
+        mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+        get_keys = getattr(mgr, "get_active_experimental_augmentation_keys_for_model", None) if mgr is not None else None
+        if not callable(get_keys):
+            return set()
+        keys = list(get_keys(attacker) or [])
+        out: set[str] = set()
+        for key in keys:
+            norm = str(key or "").strip().upper()
+            if norm:
+                out.add(norm)
+        return out
+
     def _radiant_champion_extra_mortal_wounds(self, attacker: 'Model') -> int:
         unit = getattr(attacker, "parent_unit", None)
         if unit is None:
@@ -4152,6 +4169,20 @@ class WargearProfile:
                         attack_result.attacks_special_modifiers.append("Combat Drugs: Adrenalight +1A (melee)")
         except Exception:
             pass
+        if self.parent_wargear and self.parent_wargear.is_melee():
+            unit = getattr(attacker, "parent_unit", None)
+            get_parent_army = getattr(unit, "get_parent_army", None) if unit is not None else None
+            army = get_parent_army() if callable(get_parent_army) else None
+            mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            bonus_fn = getattr(mgr, "experimental_augmentations_melee_attacks_bonus", None) if mgr is not None else None
+            if callable(bonus_fn):
+                bonus, source = bonus_fn(attacker, weapon_profile=self)
+                if int(bonus or 0):
+                    source_name = str(source or "Cholinergic Accelerants").strip() or "Cholinergic Accelerants"
+                    atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="detachment:experimental_augmentations_attacks"))
+                    attack_result.attacks_special_modifiers.append(
+                        f"Experimental Augmentations: {source_name} +{int(bonus)}A (melee)"
+                    )
 
         try:
             if self.parent_wargear and self.parent_wargear.is_melee() and not bool(getattr(attacker, "is_character", False)):
@@ -7172,6 +7203,22 @@ class WargearProfile:
                         _add_skill_mod(1, "Combat Drugs: Splintermind +1 BS")
         except Exception:
             pass
+        unit = getattr(attacker, "parent_unit", None)
+        get_parent_army = getattr(unit, "get_parent_army", None) if unit is not None else None
+        army = get_parent_army() if callable(get_parent_army) else None
+        csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+        melee_skill_fn = getattr(csm_mgr, "experimental_augmentations_melee_skill_bonus", None) if csm_mgr is not None else None
+        if callable(melee_skill_fn):
+            melee_bonus, melee_source = melee_skill_fn(attacker, weapon_profile=self)
+            if int(melee_bonus or 0):
+                source_name = str(melee_source or "Paraneural Reactions").strip() or "Paraneural Reactions"
+                _add_skill_mod(int(melee_bonus), f"Experimental Augmentations: {source_name} +{int(melee_bonus)} WS")
+        ranged_skill_fn = getattr(csm_mgr, "experimental_augmentations_ranged_skill_bonus", None) if csm_mgr is not None else None
+        if callable(ranged_skill_fn):
+            ranged_bonus, ranged_source = ranged_skill_fn(attacker, weapon_profile=self)
+            if int(ranged_bonus or 0):
+                source_name = str(ranged_source or "Ophthalmic Enhancement").strip() or "Ophthalmic Enhancement"
+                _add_skill_mod(int(ranged_bonus), f"Experimental Augmentations: {source_name} +{int(ranged_bonus)} BS")
         try:
             unit = getattr(attacker, "parent_unit", None)
             sr = getattr(unit, "special_rules", None) if unit is not None else None
@@ -12362,6 +12409,20 @@ class WargearProfile:
                         wound_result.setdefault("modifiers", []).append("Combat Drugs: Grave Lotus +1S (melee)")
         except Exception:
             pass
+        if self.parent_wargear and self.parent_wargear.is_melee() and isinstance(strength, int):
+            unit = getattr(attacker, "parent_unit", None)
+            get_parent_army = getattr(unit, "get_parent_army", None) if unit is not None else None
+            army = get_parent_army() if callable(get_parent_army) else None
+            csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            bonus_fn = getattr(csm_mgr, "experimental_augmentations_melee_strength_bonus", None) if csm_mgr is not None else None
+            if callable(bonus_fn):
+                s_bonus, source = bonus_fn(attacker, weapon_profile=self)
+                if int(s_bonus or 0):
+                    strength = strength + int(s_bonus)
+                    source_name = str(source or "Macrotensile Sinews").strip() or "Macrotensile Sinews"
+                    wound_result.setdefault("modifiers", []).append(
+                        f"Experimental Augmentations: {source_name} +{int(s_bonus)}S (melee)"
+                    )
         # Emperor's Children: Sensational Performance (+1 Strength to melee weapons this phase).
         try:
             if self.parent_wargear and self.parent_wargear.is_melee():

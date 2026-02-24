@@ -191,6 +191,8 @@ Command phase:
 - zealous_litanies_dialog: CHOOSE_QUARRY {choice_key | skip} (context `ability="zealous_litanies"`, `ability_name="Zealous Litanies"`, `army_id`, `player_id`, `battle_round`, `allowed_choice_keys`, `optional=true`)
 - grand_coven_dialog: CHOOSE_GRAND_COVEN {choice_key | skip} (context `army_id`, `battle_round`)
 - combat_drugs_dialog: CHOOSE_COMBAT_DRUGS {choice_key} (context `army_id`, `battle_round`)
+- experimental_augmentations_dialog: CHOOSE_QUARRY {mode="manual"+choice_key | mode="random"+choice_key="ROLL"} (context `ability="experimental_augmentations_choice"`, `ability_name="Experimental Augmentations"`, `army_id`, `battle_round`, `available_choice_keys[]`, `optional=false`)
+- experimental_augmentations_reroll_dialog: CHOOSE_QUARRY {reroll_mode} (context `ability="experimental_augmentations_reroll"`, `ability_name="Experimental Augmentations"`, `army_id`, `battle_round`, `initial_rolls[]`, `available_reroll_modes[]`, `optional=false`)
 - warmaster_dialog: CHOOSE_WARMASTER_ABILITY {choice_key} (context `unit_id`, `battle_round`, `player_id`, `expires_round`)
 - voice_of_triarch_dialog: CHOOSE_QUARRY {choice_key} (context `ability="voice_of_triarch"`, `source_unit_id`, `battle_round`, `expires_round`, `player_id`, `allowed_choice_keys`)
 - blood_tithe_dialog: CHOOSE_BLOOD_TITHE {ability_key | skip} (context `army_id`, `timing`)
@@ -451,6 +453,8 @@ Faction / Detachment / Ability choices:
 - nurgles_gift_plague_dialog: CHOOSE_PLAGUE {choice_id}
 - pledge_selection_dialog: CHOOSE_PLEDGE {choice_id} (context `army_id`, `battle_round`, `max_value`, `ability_name="Pledges to the Dark Prince"`)
 - quarry_selection_dialog: CHOOSE_QUARRY {target_unit_id | objective_id | mode | selected_unit_ids[] | skip} (context may include `ability`, `ability_name`, `effect_key`, `source_unit_id`, `prey_reroll_hit`, `prey_reroll_wound`, `prey_melee_only`, `prey_keyword`, `prey_repick_on_destroyed`, `source_model_id`, `singular_purpose_reroll_hit`, `singular_purpose_reroll_wound`, `singular_purpose_objective_fnp`, `singular_purpose_objective_oc`)
+- quarry_selection_dialog (Experimental Augmentations choice): CHOOSE_QUARRY {mode="manual"+choice_key | mode="random"+choice_key="ROLL"} (context `ability="experimental_augmentations_choice"`, `ability_name="Experimental Augmentations"`, `army_id`, `battle_round`, `available_choice_keys[]`)
+- quarry_selection_dialog (Experimental Augmentations reroll): CHOOSE_QUARRY {reroll_mode} (context `ability="experimental_augmentations_reroll"`, `ability_name="Experimental Augmentations"`, `army_id`, `battle_round`, `initial_rolls[]`, `available_reroll_modes[]`)
 - quarry_selection_dialog (Artillery Support mode): CHOOSE_QUARRY {artillery_support_mode} (context `ability="siege_regiment_artillery_support_mode"`, `ability_name="Artillery Support"`, `army_id`, `battle_round`, `allowed_modes[]`, `max_units`)
 - realm_of_chaos_units_dialog (Artillery Support selections): SELECT_REALM_OF_CHAOS_UNITS {unit_ids | skip} (context `ability="siege_regiment_incendiary_bombardment"` or `ability="siege_regiment_smoke_shells"` or `ability="siege_regiment_creeping_barrage_selection"`, `ability_name`, `army_id`, `battle_round`, `allowed_unit_ids[]`, `max_units`, optional `required_units`)
 - realm_of_chaos_units_dialog (Houndpack Lance CHARACTER selection): SELECT_REALM_OF_CHAOS_UNITS {unit_ids} (context `ability="houndpack_lance_character_selection"`, `ability_name="Marked Prey"`, `phase="Muster Armies step"`, `army_id`, `allowed_unit_ids[]`, `max_units=3`, `required_units=3`)

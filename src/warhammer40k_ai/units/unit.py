@@ -1192,6 +1192,17 @@ class Unit(
         except Exception:
             pass
 
+        if ckey == "toughness":
+            army = self.get_parent_army()
+            csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            bonus_fn = getattr(csm_mgr, "experimental_augmentations_toughness_bonus", None) if csm_mgr is not None else None
+            if callable(bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                bonus, source = bonus_fn(model=model, unit=self, game=game)
+                if int(bonus or 0):
+                    source_name = str(source or "Supracutaneous Chitination").strip() or "Supracutaneous Chitination"
+                    mods.append(Modifier(ModifierOp.ADD, int(bonus), source=f"detachment:{source_name}"))
+
         if ckey == "movement":
             if game_map is None:
                 try:
@@ -1237,6 +1248,13 @@ class Unit(
             except Exception:
                 pass
             csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            bonus_fn = getattr(csm_mgr, "experimental_augmentations_movement_bonus", None) if csm_mgr is not None else None
+            if callable(bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                bonus, source = bonus_fn(model=model, unit=self, game=game)
+                if int(bonus or 0):
+                    source_name = str(source or "Hyperadrenal Infusion").strip() or "Hyperadrenal Infusion"
+                    mods.append(Modifier(ModifierOp.ADD, int(bonus), source=f"detachment:{source_name}"))
             bonus_fn = getattr(csm_mgr, "desperate_devotion_movement_bonus", None) if csm_mgr is not None else None
             if callable(bonus_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None

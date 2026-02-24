@@ -344,6 +344,18 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time a unit makes a desperate pact it must first take a leadership test",
             r"if that test is failed that unit suffers d3 mortal wounds before any effects of that desperate pact are resolved",
         ),
+        "Experimental Augmentations": (
+            r"at the start of the battle select which augmentations are active for heretic astartes infantry models excluding damned models from your army until the end of the battle",
+            r"to do so either select one from the list below or randomly determine two by rolling two d6",
+            r"if fabius bile is your warlord when randomly determining your augmentations you can reroll one or both of the dice",
+            r"duplicated augmentations have no additional effect",
+            r"add 1 to the attacks characteristic of melee weapons equipped by this model",
+            r"add 2 to the move characteristic of this model",
+            r"improve the weapon skill characteristic of melee weapons equipped by this model by 1",
+            r"improve the toughness characteristic of this model by 1",
+            r"add 1 to the strength characteristic of melee weapons equipped by this model",
+            r"improve the ballistic skill characteristic of ranged weapons equipped by this model by 1",
+        ),
         "Yriel's Own": (
             r"aeldari units in your army are eligible to declare a charge in a turn in which they advanced",
             r"in addition each time an anhrathe rangers or shroud runners unit from your army advances you can reroll the advance roll",
@@ -2478,6 +2490,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Desperate Devotion": (
             "Supported",
             "Chaos Cult: each time an eligible DAMNED unit with Dark Pacts is selected to move/advance or declare a charge (excluding arrivals from Reserves this turn), it can optionally make a Desperate Pact; on activation, a Leadership test is taken and failed tests inflict D3 mortal wounds, then the unit gains +2 Move and +2 to Charge rolls until end of phase.",
+        ),
+        "Experimental Augmentations": (
+            "Supported",
+            "Creations of Bile: at the start of battle, select one augmentation or roll two D6 (with optional Fabius Bile rerolls); duplicate results do not stack, and eligible HERETIC ASTARTES INFANTRY models excluding DAMNED gain the selected Move/Toughness/WS/BS/Attacks/Strength bonuses for the battle.",
         ),
         "Mechanised Murder": ("Supported", "Rapid Evisceration: reroll Hit/Wound rolls of 1 for eligible units."),
         "Daemonic Empowerment": (

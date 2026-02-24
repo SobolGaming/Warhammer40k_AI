@@ -2880,6 +2880,57 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if choice_key not in {"CRIT_5_PLUS", "AP_PLUS_1"}:
             return ("Martial Mastery choice must be CRIT_5_PLUS or AP_PLUS_1 (or skip).",)
         return ()
+    if ability == "experimental_augmentations_choice":
+        if is_skip_choice(request, result):
+            return ("Experimental Augmentations selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Experimental Augmentations army not found.",)
+        mgr = getattr(army, "chaos_space_marines_detachments", None)
+        is_creations = getattr(mgr, "is_creations_of_bile", None) if mgr is not None else None
+        if not callable(is_creations) or not bool(is_creations()):
+            return ("Experimental Augmentations requires Creations of Bile.",)
+        can_select = getattr(mgr, "can_select_experimental_augmentations", None)
+        try:
+            battle_round = int(ctx.get("battle_round", 0) or getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            battle_round = int(getattr(game, "turn", 0) or 0)
+        if not callable(can_select) or not bool(can_select(game=game, battle_round=battle_round)):
+            return ("Experimental Augmentations cannot be selected right now.",)
+        mode = str(payload.get("mode", "") or "").strip().lower()
+        if not mode:
+            choice_key = str(payload.get("choice_key", "") or payload.get("key", "")).strip().upper()
+            mode = "random" if choice_key == "ROLL" or bool(payload.get("random", False)) else "manual"
+        if mode not in {"manual", "random"}:
+            return ("Experimental Augmentations mode must be manual or random.",)
+        if mode == "manual":
+            choice = str(payload.get("choice_key", "") or payload.get("key", "")).strip().upper()
+            if not choice:
+                return ("Experimental Augmentations manual selection requires choice_key.",)
+            available = {
+                str(v or "").strip().upper()
+                for v in list(ctx.get("available_choice_keys", []) or [])
+                if str(v or "").strip()
+            }
+            if available and choice not in available:
+                return ("Experimental Augmentations choice is not in this request's candidate list.",)
+        return ()
+    if ability == "experimental_augmentations_reroll":
+        if is_skip_choice(request, result):
+            return ("Experimental Augmentations reroll selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Experimental Augmentations army not found.",)
+        mgr = getattr(army, "chaos_space_marines_detachments", None)
+        has_pending = getattr(mgr, "has_pending_experimental_augmentations_rolls", None) if mgr is not None else None
+        if not callable(has_pending) or not bool(has_pending()):
+            return ("Experimental Augmentations has no pending random rolls.",)
+        mode = str(payload.get("reroll_mode", "") or payload.get("choice_key", "") or payload.get("key", "")).strip().lower()
+        if mode not in {"keep", "reroll_first", "reroll_second", "reroll_both"}:
+            return ("Experimental Augmentations reroll mode is invalid.",)
+        return ()
     if ability == "da_big_hunt_prey":
         if is_skip_choice(request, result):
             return ("Da Hunt Is On selection cannot be skipped.",)
@@ -5184,6 +5235,188 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         mode_label = str(label_map.get(mode_key, mode_key) or mode_key)
         _log_action_for_players(game, player, f"Artillery Support: selected {mode_label}.")
         return outcome
+    if ability == "experimental_augmentations_choice":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "chaos_space_marines_detachments", None)
+        if mgr is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        try:
+            battle_round = int(ctx.get("battle_round", 0) or getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            battle_round = int(getattr(game, "turn", 0) or 0)
+
+        mode = str(payload.get("mode", "") or "").strip().lower()
+        choice_key = str(payload.get("choice_key", "") or payload.get("key", "")).strip().upper()
+        if not mode:
+            mode = "random" if choice_key == "ROLL" or bool(payload.get("random", False)) else "manual"
+        ability_name = str(ctx.get("ability_name", "") or "Experimental Augmentations").strip() or "Experimental Augmentations"
+
+        if mode == "manual":
+            select_fn = getattr(mgr, "select_experimental_augmentation", None)
+            if not callable(select_fn) or not choice_key:
+                return None
+            if not bool(select_fn(choice_key, battle_round=battle_round)):
+                return None
+            names = [choice_key]
+            describe_fn = getattr(mgr, "describe_experimental_augmentation_keys", None)
+            if callable(describe_fn):
+                names = list(describe_fn([choice_key]) or names)
+            label = ", ".join(str(v) for v in names if str(v).strip())
+            _log_action_for_players(game, player, f"{ability_name}: selected {label or choice_key}.")
+            return {
+                "ok": True,
+                "mode": "manual",
+                "selected_keys": [choice_key],
+                "selected_names": list(names),
+                "battle_round": int(battle_round),
+            }
+
+        if mode != "random":
+            return None
+
+        roll_fn = getattr(mgr, "roll_experimental_augmentations_initial", None)
+        if not callable(roll_fn):
+            return None
+        outcome = roll_fn(battle_round=battle_round, game=game)
+        if not isinstance(outcome, dict) or not bool(outcome.get("ok", False)):
+            return None
+
+        rolls = [int(v) for v in list(outcome.get("rolls", []) or [])]
+        selected_keys = [
+            str(v or "").strip().upper()
+            for v in list(outcome.get("selected_keys", []) or [])
+            if str(v or "").strip()
+        ]
+        describe_fn = getattr(mgr, "describe_experimental_augmentation_keys", None)
+        selected_names = list(selected_keys)
+        if callable(describe_fn):
+            selected_names = list(describe_fn(selected_keys) or selected_names)
+        rolls_text = ", ".join(str(v) for v in rolls) if rolls else "no rolls"
+
+        if bool(outcome.get("requires_reroll_choice", False)):
+            queue = getattr(game, "decision_queue", None)
+            army_id = str(get_entity_id(army) or "")
+            duplicate = False
+            if queue is not None and hasattr(queue, "list"):
+                for pending in list(queue.list() or []):
+                    if str(getattr(pending, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                        continue
+                    pending_ctx = dict(getattr(pending, "context", {}) or {})
+                    if str(pending_ctx.get("ability", "") or "") != "experimental_augmentations_reroll":
+                        continue
+                    if str(pending_ctx.get("army_id", "") or "") != army_id:
+                        continue
+                    if int(pending_ctx.get("battle_round", battle_round) or battle_round) == int(battle_round):
+                        duplicate = True
+                        break
+            if not duplicate and hasattr(game, "request_decision"):
+                from ..decisions import DecisionOption as _DecisionOption
+                from ..decisions import DecisionRequest as _DecisionRequest
+
+                req_options = [
+                    _DecisionOption.create(
+                        "Keep initial rolls",
+                        payload={"reroll_mode": "keep", "army_id": army_id},
+                    ),
+                    _DecisionOption.create(
+                        "Re-roll first die",
+                        payload={"reroll_mode": "reroll_first", "army_id": army_id},
+                    ),
+                    _DecisionOption.create(
+                        "Re-roll second die",
+                        payload={"reroll_mode": "reroll_second", "army_id": army_id},
+                    ),
+                    _DecisionOption.create(
+                        "Re-roll both dice",
+                        payload={"reroll_mode": "reroll_both", "army_id": army_id},
+                    ),
+                ]
+                req = _DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    "Experimental Augmentations: keep your rolls or re-roll one/both dice.",
+                    player_id=getattr(player, "id", None),
+                    options=req_options,
+                    context={
+                        "ability": "experimental_augmentations_reroll",
+                        "ability_name": ability_name,
+                        "army_id": army_id,
+                        "battle_round": int(battle_round),
+                        "initial_rolls": list(rolls),
+                        "available_reroll_modes": ["keep", "reroll_first", "reroll_second", "reroll_both"],
+                    },
+                )
+                game.request_decision(req)
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: rolled {rolls_text}. Select whether to re-roll one or both dice.",
+            )
+            return dict(outcome)
+
+        selected_label = ", ".join(str(v) for v in selected_names if str(v).strip())
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: rolled {rolls_text}; active augmentations {selected_label or 'none'}.",
+        )
+        return dict(outcome)
+    if ability == "experimental_augmentations_reroll":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "chaos_space_marines_detachments", None)
+        if mgr is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        mode = str(payload.get("reroll_mode", "") or payload.get("choice_key", "") or payload.get("key", "")).strip().lower()
+        if not mode:
+            return None
+        resolve_fn = getattr(mgr, "resolve_experimental_augmentations_reroll", None)
+        if not callable(resolve_fn):
+            return None
+        try:
+            battle_round = int(ctx.get("battle_round", 0) or getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            battle_round = int(getattr(game, "turn", 0) or 0)
+        outcome = resolve_fn(mode, battle_round=battle_round)
+        if not isinstance(outcome, dict) or not bool(outcome.get("ok", False)):
+            return None
+
+        ability_name = str(ctx.get("ability_name", "") or "Experimental Augmentations").strip() or "Experimental Augmentations"
+        rolls = [int(v) for v in list(outcome.get("rolls", []) or [])]
+        selected_keys = [
+            str(v or "").strip().upper()
+            for v in list(outcome.get("selected_keys", []) or [])
+            if str(v or "").strip()
+        ]
+        describe_fn = getattr(mgr, "describe_experimental_augmentation_keys", None)
+        selected_names = list(selected_keys)
+        if callable(describe_fn):
+            selected_names = list(describe_fn(selected_keys) or selected_names)
+        reroll_label_map = {
+            "keep": "kept initial rolls",
+            "reroll_first": "re-rolled the first die",
+            "reroll_second": "re-rolled the second die",
+            "reroll_both": "re-rolled both dice",
+        }
+        reroll_label = str(reroll_label_map.get(mode, mode) or mode)
+        rolls_text = ", ".join(str(v) for v in rolls) if rolls else "no rolls"
+        selected_label = ", ".join(str(v) for v in selected_names if str(v).strip())
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {reroll_label}; final rolls {rolls_text}; active augmentations {selected_label or 'none'}.",
+        )
+        return dict(outcome)
     if ability == "da_big_hunt_prey":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)

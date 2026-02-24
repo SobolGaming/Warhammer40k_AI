@@ -1363,6 +1363,80 @@ class Game(
         if hasattr(self, "request_decision"):
             self.request_decision(req)
 
+    def _maybe_prompt_csm_experimental_augmentations(self) -> None:
+        player = self.get_current_player()
+        if player is None:
+            raise RuntimeError("Experimental Augmentations prompt requires current player.")
+        army = player.get_army()
+        if army is None:
+            raise RuntimeError("Experimental Augmentations prompt requires an army.")
+        mgr = getattr(army, "chaos_space_marines_detachments", None)
+        battle_round = int(getattr(self, "turn", 0) or 0)
+        can_select = getattr(mgr, "can_select_experimental_augmentations", None) if mgr is not None else None
+        if not callable(can_select) or not bool(can_select(game=self, battle_round=battle_round)):
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        options = list(getattr(mgr, "experimental_augmentations_catalog", lambda: [])() or [])
+        army_id = get_entity_id(army)
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "experimental_augmentations_choice":
+                    continue
+                if str(ctx.get("army_id", "") or "") != str(army_id):
+                    continue
+                if int(ctx.get("battle_round", battle_round) or battle_round) == battle_round:
+                    return
+        req_options = [
+            DecisionOption.create(
+                "Roll 2D6 (randomly select two)",
+                payload={
+                    "mode": "random",
+                    "choice_key": "ROLL",
+                    "random": True,
+                    "summary": "Roll two dice and apply both results; duplicates have no additional effect.",
+                    "army_id": army_id,
+                },
+            )
+        ]
+        available_keys = []
+        for opt in options:
+            key = getattr(opt, "key", None)
+            if not key:
+                continue
+            available_keys.append(str(key))
+            name = getattr(opt, "name", None) or str(opt)
+            summary = getattr(opt, "summary", "") or ""
+            req_options.append(
+                DecisionOption.create(
+                    name,
+                    payload={
+                        "mode": "manual",
+                        "choice_key": str(key),
+                        "summary": summary,
+                        "army_id": army_id,
+                    },
+                )
+            )
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Experimental Augmentations: select one augmentation or roll 2D6.",
+            player_id=getattr(player, "id", None),
+            options=req_options,
+            context={
+                "ability": "experimental_augmentations_choice",
+                "ability_name": "Experimental Augmentations",
+                "army_id": army_id,
+                "battle_round": battle_round,
+                "available_choice_keys": list(available_keys),
+            },
+        )
+        self.request_decision(req)
+
     def _maybe_prompt_power_from_pain_command_phase(self) -> None:
         player = self.get_current_player()
         if player is None:
@@ -7933,6 +8007,7 @@ class Game(
 
         # Abaddon: The Warmaster selection at the start of your Command phase.
         self._maybe_prompt_csm_warmaster(current_player)
+        self._maybe_prompt_csm_experimental_augmentations()
 
         # Space Marines: Oath of Moment target selection at the start of your Command phase.
         mgr = getattr(army, "oath_of_moment", None)

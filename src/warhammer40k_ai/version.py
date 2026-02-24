@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-APP_VERSION = "0.1.595"
+APP_VERSION = "0.1.596"
 __version__ = APP_VERSION
 
 
