@@ -818,6 +818,24 @@ class Unit(
             except Exception:
                 pass
 
+            gsc_mgr = getattr(army, "genestealer_cults_detachments", None) if army is not None else None
+            bonus_fn = (
+                getattr(gsc_mgr, "outlander_claw_rapid_takeover_objective_control_bonus", None)
+                if gsc_mgr is not None
+                else None
+            )
+            if callable(bonus_fn):
+                bonus, source = bonus_fn(model, unit=self)
+                if int(bonus or 0):
+                    source_name = str(source or "Rapid Takeover").strip() or "Rapid Takeover"
+                    mods.append(
+                        Modifier(
+                            ModifierOp.ADD,
+                            int(bonus),
+                            source=f"detachment:{source_name}",
+                        )
+                    )
+
             # Singular Purpose (TYRANIDS): while the selected source model is within range
             # of the selected objective marker, that model has OC 15 (or configured value).
             try:

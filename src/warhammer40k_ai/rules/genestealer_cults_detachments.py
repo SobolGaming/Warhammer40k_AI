@@ -68,6 +68,9 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
         "BROODLORD",
         "GENESTEALERS",
     )
+    _RAPID_TAKEOVER_RULE_NAME = "Rapid Takeover"
+    _RAPID_TAKEOVER_STICKY_SOURCE = "rapid_takeover"
+    _RAPID_TAKEOVER_ATALAN_JACKALS_TOKEN = "atalan jackals"
 
     @staticmethod
     def _attached_root(unit):
@@ -135,6 +138,19 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
             return int(value or 0)
         except (TypeError, ValueError):
             return 0
+
+    @staticmethod
+    def _objective_sort_key(loc) -> tuple[str, float, float]:
+        objective_id = str(get_entity_id(loc) or "")
+        try:
+            x = float(getattr(loc, "x", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            x = 0.0
+        try:
+            y = float(getattr(loc, "y", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            y = 0.0
+        return (objective_id, x, y)
 
     @staticmethod
     def _brood_brothers_points_cap(points_limit: int) -> tuple[int, str]:
@@ -304,6 +320,94 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Final Day")
+
+    def is_outlander_claw(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Outlander Claw")
+
+    def outlander_claw_rapid_takeover_objective_control_bonus(self, model, *, unit=None) -> tuple[int, str]:
+        if not self.is_outlander_claw():
+            return 0, ""
+        if model is None:
+            return 0, ""
+        source_unit = unit if unit is not None else getattr(model, "parent_unit", None)
+        root = self._attached_root(source_unit)
+        if root is None:
+            return 0, ""
+        if not self._unit_in_army(root):
+            return 0, ""
+        if not self._unit_is_genestealer_cults(root):
+            return 0, ""
+        if not (self._unit_has_keyword(root, "MOUNTED") or self._unit_has_keyword(root, "VEHICLE")):
+            return 0, ""
+        is_battle_shocked = getattr(root, "is_battle_shocked", None)
+        if callable(is_battle_shocked) and bool(is_battle_shocked()):
+            return 0, ""
+        return 1, self._RAPID_TAKEOVER_RULE_NAME
+
+    def _is_outlander_claw_atalan_jackals_unit(self, unit) -> bool:
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        if not self._unit_is_genestealer_cults(root):
+            return False
+        return self._RAPID_TAKEOVER_ATALAN_JACKALS_TOKEN in self._unit_name_tokens(root)
+
+    def apply_outlander_claw_rapid_takeover_sticky_objectives(self, *, game=None, game_map=None) -> int:
+        if not self.is_outlander_claw() or self.army is None:
+            return 0
+        player = getattr(self.army, "player", None)
+        if player is None:
+            return 0
+        resolved_map = self._resolve_game_map(game=game, game_map=game_map)
+        if resolved_map is None:
+            return 0
+
+        objective_locations: list = []
+        for obj in list(getattr(resolved_map, "objectives", []) or []):
+            loc = getattr(obj, "location", None)
+            if loc is None:
+                loc = obj
+            if loc is None or bool(getattr(loc, "removed", False)):
+                continue
+            update_control = getattr(loc, "update_control", None)
+            if callable(update_control) and game is not None:
+                update_control(game)
+            objective_locations.append(loc)
+        if not objective_locations:
+            return 0
+        objective_locations.sort(key=self._objective_sort_key)
+
+        applied = 0
+        for root in list(self._iter_unit_roots() or []):
+            if root is None:
+                continue
+            if not self._is_outlander_claw_atalan_jackals_unit(root):
+                continue
+            if not self._unit_is_on_battlefield(root):
+                continue
+            within_objective = getattr(root, "is_within_objective_range", None)
+            if not callable(within_objective):
+                continue
+            for loc in objective_locations:
+                if getattr(loc, "controlling_player", None) is not player:
+                    continue
+                if not bool(within_objective(loc)):
+                    continue
+                if getattr(loc, "sticky_controller", None) is player:
+                    continue
+                set_sticky = getattr(loc, "set_sticky_control", None)
+                if callable(set_sticky):
+                    set_sticky(player, source=self._RAPID_TAKEOVER_STICKY_SOURCE)
+                else:
+                    loc.sticky_controller = player
+                    loc.sticky_source = self._RAPID_TAKEOVER_STICKY_SOURCE
+                    loc.controlling_player = player
+                applied += 1
+        return int(applied)
 
     def _integrated_tactics_source_eligible(self, unit) -> bool:
         if not self.is_brood_brother_auxilia():

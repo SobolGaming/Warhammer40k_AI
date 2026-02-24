@@ -1166,6 +1166,10 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"strike force up to \d+ pts",
             r"onslaught up to \d+ pts",
         ),
+        "Rapid Takeover": (
+            r"while a genestealer cults mounted or genestealer cults vehicle model from your army is not battle shocked add 1 to its objective control characteristic",
+            r"in addition at the end of your command phase if one or more atalan jackals units from your army are within range of an objective marker you control that objective marker remains under your control until your opponent(?: s|s) level of control over that objective marker is greater than yours at the end of a phase",
+        ),
         "Relentless Rage": (
             r"each time a world eaters unit from your army makes a charge move until the end of the turn add \d+ to the attacks characteristic and add \d+ to the strength characteristic of melee weapons equipped by models in that unit",
         ),
@@ -2354,6 +2358,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Psionic Parasitism": (
             "Supported",
             "Final Day: end-of-Movement optional SYNAPSE pair selections are queued as deterministic decisions (GENESTEALER CULTS target plus TYRANIDS target, or skip), selected GENESTEALER CULTS units suffer D3+1 mortal wounds, selected TYRANIDS units heal up to that amount and gain +1 to hit until the start of their owner's next Movement phase, TYRANIDS Catalyst aura (+1 to hit for friendly GENESTEALER CULTS attacks vs enemies within 6\") is enforced, and Final Day TYRANIDS ally restrictions/points caps/WARLORD limits are validated.",
+        ),
+        "Rapid Takeover": (
+            "Supported",
+            "Outlander Claw: GENESTEALER CULTS MOUNTED and VEHICLE models gain +1 Objective Control while not Battle-shocked, and at the end of your Command phase objective markers you control and that are within range of one or more friendly Atalan Jackals units become sticky until opponent level of control is greater at a phase end.",
         ),
         "Against All Odds": (
             "Supported",

@@ -9535,6 +9535,14 @@ class GamePhaseHandlersMixin:
                             loc.sticky_controller = player
                             loc.sticky_source = "unit_sticky_objective"
                             loc.controlling_player = player
+            gsc_mgr = getattr(army, "genestealer_cults_detachments", None)
+            apply_rapid_takeover = (
+                getattr(gsc_mgr, "apply_outlander_claw_rapid_takeover_sticky_objectives", None)
+                if gsc_mgr is not None
+                else None
+            )
+            if callable(apply_rapid_takeover):
+                apply_rapid_takeover(game=self, game_map=game_map)
 
         # Aeldari Corsair Coterie: Void Thieves sticky objectives at end of any phase.
         if bool(getattr(self, "is_authoritative", True)):
