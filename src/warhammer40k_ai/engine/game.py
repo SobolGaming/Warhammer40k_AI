@@ -1560,6 +1560,18 @@ class Game(
         if callable(queue_fn):
             queue_fn(game=self, player=player)
 
+    def _maybe_prompt_csm_focus_of_hatred(self) -> None:
+        player = self.get_current_player()
+        if player is None:
+            raise RuntimeError("Focus of Hatred prompt requires current player.")
+        army = player.get_army()
+        if army is None:
+            raise RuntimeError("Focus of Hatred prompt requires an army.")
+        mgr = getattr(army, "chaos_space_marines_detachments", None)
+        queue_fn = getattr(mgr, "queue_veterans_focus_of_hatred_choice_request", None) if mgr is not None else None
+        if callable(queue_fn):
+            queue_fn(game=self, player=player)
+
     def _refresh_csm_tyrannical_motivation_phase_state(self) -> None:
         for player in list(getattr(self, "players", []) or []):
             if player is None:
@@ -8214,6 +8226,7 @@ class Game(
         self._maybe_prompt_csm_warmaster(current_player)
         self._maybe_prompt_csm_tyrannical_motivation()
         self._maybe_prompt_csm_vendetta()
+        self._maybe_prompt_csm_focus_of_hatred()
         self._maybe_prompt_csm_experimental_augmentations()
         self._refresh_csm_tyrannical_motivation_phase_state()
 

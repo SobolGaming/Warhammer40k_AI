@@ -80,6 +80,7 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     DETACHMENT_RENEGADE_RAIDERS = "Renegade Raiders"
     DETACHMENT_RENEGADE_WARBAND = "Renegade Warband"
     DETACHMENT_SOULFORGED_WARPACK = "Soulforged Warpack"
+    DETACHMENT_VETERANS_OF_THE_LONG_WAR = "Veterans of the Long War"
     _MASTERS_OF_MISDIRECTION_SELECTION_ABILITY = "deceptors_masters_of_misdirection_selection"
     _MASTERS_OF_MISDIRECTION_SOURCE = "Masters of Misdirection"
     _TYRANNICAL_MOTIVATION_ABILITY = "tyrannical_motivation_choice"
@@ -92,6 +93,8 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     _RENEGADE_WARBAND_TWISTED_DOCTRINE_SOURCE = "Twisted Doctrine"
     _RENEGADE_WARBAND_TWISTED_DOCTRINE_FALL_BACK_CHOICE = "FALL_BACK_SHOOT_AND_CHARGE"
     _RENEGADE_WARBAND_TWISTED_DOCTRINE_ADVANCE_CHOICE = "ADVANCE_CHARGE"
+    _VETERANS_OF_THE_LONG_WAR_FOCUS_ABILITY = "veterans_of_the_long_war_focus_of_hatred_target"
+    _VETERANS_OF_THE_LONG_WAR_FOCUS_SOURCE = "Focus of Hatred"
     _SOULFORGED_WARPACK_CONTRACT_SOURCE = "Debt to the Soul Forge"
     _SOULFORGED_WARPACK_CONTRACT_ACTIVE_KEY = "soulforged_warpack_contract_active"
     _SOULFORGED_WARPACK_CONTRACT_EXPIRES_PHASE_KEY = "soulforged_warpack_contract_expires_phase"
@@ -125,6 +128,7 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         self._tyrannical_motivation_phase_hit_bonus_unit_ids: set[str] = set()
         self._tyrannical_motivation_phase_mobile_unit_ids: set[str] = set()
         self.renegade_warband_vendetta_target_unit_id: str = ""
+        self.veterans_focus_of_hatred_target_unit_id: str = ""
 
     def is_cabal_of_chaos(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -185,6 +189,11 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches(self.DETACHMENT_SOULFORGED_WARPACK)
+
+    def is_veterans_of_the_long_war(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches(self.DETACHMENT_VETERANS_OF_THE_LONG_WAR)
 
     @staticmethod
     def _unit_root(unit):
@@ -1019,6 +1028,178 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         if callable(is_alive) and not bool(is_alive()):
             return False, ""
         return True, self._RENEGADE_WARBAND_VENDETTA_SOURCE
+
+    def clear_veterans_focus_of_hatred_target(self) -> None:
+        self.veterans_focus_of_hatred_target_unit_id = ""
+
+    def veterans_focus_of_hatred_candidate_enemy_units(self, *, game=None, player=None) -> list:
+        if not self.is_veterans_of_the_long_war() or self.army is None:
+            return []
+        return self._iter_enemy_units_for_player(game=game, player=player)
+
+    def _pending_veterans_focus_of_hatred_choice_request(self, game, *, army_id: str, battle_round: int) -> bool:
+        if game is None:
+            return False
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "").strip().lower() != self._VETERANS_OF_THE_LONG_WAR_FOCUS_ABILITY:
+                continue
+            if str(ctx.get("army_id", "") or "") != str(army_id or ""):
+                continue
+            try:
+                ctx_round = int(ctx.get("battle_round", battle_round) or battle_round)
+            except (TypeError, ValueError):
+                ctx_round = int(battle_round or 0)
+            if int(ctx_round) == int(battle_round):
+                return True
+        return False
+
+    def can_select_veterans_focus_of_hatred_target(self, *, game=None, player=None) -> bool:
+        if not self.is_veterans_of_the_long_war() or self.army is None:
+            return False
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return False
+        army_player = getattr(self.army, "player", None)
+        if army_player is not None:
+            if str(getattr(army_player, "id", "") or "") != str(getattr(owner, "id", "") or ""):
+                return False
+        resolved_game = self._resolve_game(game=game)
+        if resolved_game is None:
+            return False
+        phase_name = self._current_phase_name(game=resolved_game)
+        if phase_name and phase_name != "COMMAND_PHASE":
+            return False
+        current_owner = str(self._current_turn_owner_id(game=resolved_game, player=owner) or "")
+        if current_owner and current_owner != str(getattr(owner, "id", "") or ""):
+            return False
+        return True
+
+    def queue_veterans_focus_of_hatred_choice_request(self, *, game=None, player=None) -> None:
+        if not self.is_veterans_of_the_long_war() or self.army is None:
+            return
+        resolved_game = self._resolve_game(game=game)
+        if resolved_game is None or not bool(getattr(resolved_game, "is_authoritative", True)):
+            return
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return
+        if not self.can_select_veterans_focus_of_hatred_target(game=resolved_game, player=owner):
+            return
+
+        self.clear_veterans_focus_of_hatred_target()
+
+        candidates = list(self.veterans_focus_of_hatred_candidate_enemy_units(game=resolved_game, player=owner) or [])
+        if not candidates:
+            return
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        army_id = str(get_entity_id(self.army) or "")
+        battle_round = int(self._current_turn(game=resolved_game) or 0)
+        if self._pending_veterans_focus_of_hatred_choice_request(
+            resolved_game,
+            army_id=army_id,
+            battle_round=battle_round,
+        ):
+            return
+
+        options: list[DecisionOption] = []
+        candidate_ids: list[str] = []
+        for unit in candidates:
+            unit_id = str(get_entity_id(unit) or "")
+            if not unit_id:
+                continue
+            candidate_ids.append(unit_id)
+            options.append(
+                DecisionOption.create(
+                    str(getattr(unit, "name", "Enemy Unit") or "Enemy Unit"),
+                    payload={
+                        "target_unit_id": unit_id,
+                        "army_id": army_id,
+                    },
+                )
+            )
+        if not options:
+            return
+
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Focus of Hatred: select one enemy unit.",
+            player_id=getattr(owner, "id", None),
+            options=options,
+            context={
+                "ability": self._VETERANS_OF_THE_LONG_WAR_FOCUS_ABILITY,
+                "ability_name": self._VETERANS_OF_THE_LONG_WAR_FOCUS_SOURCE,
+                "phase": "Command phase",
+                "army_id": army_id,
+                "battle_round": int(battle_round),
+                "candidate_unit_ids": list(candidate_ids),
+                "optional": False,
+            },
+        )
+        if hasattr(resolved_game, "request_decision"):
+            resolved_game.request_decision(request)
+
+    def veterans_focus_of_hatred_target_is_valid(self, target_unit_id: str, *, game=None, player=None) -> bool:
+        target_id = str(target_unit_id or "").strip()
+        if not target_id:
+            return False
+        candidates = list(self.veterans_focus_of_hatred_candidate_enemy_units(game=game, player=player) or [])
+        candidate_ids = {str(get_entity_id(unit) or "") for unit in candidates}
+        return target_id in candidate_ids
+
+    def select_veterans_focus_of_hatred_target(self, target_unit_id: str, *, game=None, player=None) -> dict:
+        if not self.can_select_veterans_focus_of_hatred_target(game=game, player=player):
+            return {"ok": False, "reason": "Focus of Hatred target cannot be selected right now."}
+        target_id = str(target_unit_id or "").strip()
+        if not self.veterans_focus_of_hatred_target_is_valid(target_id, game=game, player=player):
+            return {"ok": False, "reason": "Focus of Hatred target is invalid."}
+        self.veterans_focus_of_hatred_target_unit_id = target_id
+        target_name = ""
+        for unit in list(self.veterans_focus_of_hatred_candidate_enemy_units(game=game, player=player) or []):
+            if str(get_entity_id(unit) or "") == target_id:
+                target_name = str(getattr(unit, "name", "") or "").strip()
+                break
+        return {
+            "ok": True,
+            "target_unit_id": target_id,
+            "target_name": target_name or "Enemy Unit",
+            "source": self._VETERANS_OF_THE_LONG_WAR_FOCUS_SOURCE,
+        }
+
+    def veterans_focus_of_hatred_reroll_hit_applies(self, attacker_model, target_unit, *, game=None) -> tuple[bool, str]:
+        if not self.is_veterans_of_the_long_war():
+            return False, ""
+        if attacker_model is None or target_unit is None:
+            return False, ""
+        if not self._model_in_army(attacker_model):
+            return False, ""
+        if not self._model_is_heretic_astartes(attacker_model):
+            return False, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        if self._unit_is_damned(attacker_unit):
+            return False, ""
+        target_root = self._unit_root(target_unit)
+        if target_root is None:
+            return False, ""
+        stored_target_id = str(self.veterans_focus_of_hatred_target_unit_id or "").strip()
+        if not stored_target_id:
+            return False, ""
+        if str(get_entity_id(target_root) or "") != stored_target_id:
+            return False, ""
+        is_alive = getattr(target_root, "is_alive", None)
+        if callable(is_alive) and not bool(is_alive()):
+            return False, ""
+        return True, self._VETERANS_OF_THE_LONG_WAR_FOCUS_SOURCE
 
     def twisted_doctrine_can_trigger(
         self,

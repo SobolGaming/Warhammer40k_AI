@@ -9378,6 +9378,14 @@ class WargearProfile:
             if bool(reroll_full):
                 source_name = str(source or "Vendetta").strip() or "Vendetta"
                 reroll_full_reasons.append(f"{source_name}: re-roll Hit roll")
+        focus_reroll_fn = (
+            getattr(csm_mgr, "veterans_focus_of_hatred_reroll_hit_applies", None) if csm_mgr is not None else None
+        )
+        if callable(focus_reroll_fn):
+            reroll_full, source = focus_reroll_fn(attacker, target)
+            if bool(reroll_full):
+                source_name = str(source or "Focus of Hatred").strip() or "Focus of Hatred"
+                reroll_full_reasons.append(f"{source_name}: re-roll Hit roll")
         # Contextual reroll sources carried on the attack instance (best-effort).
         try:
             if bool(attack_instance.get("furious_onslaught_applies")):

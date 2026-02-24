@@ -3113,6 +3113,41 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not callable(validate_target) or not bool(validate_target(target_unit_id, game=game, player=player)):
             return ("Vendetta selected target is invalid.",)
         return ()
+    if ability == "veterans_of_the_long_war_focus_of_hatred_target":
+        if is_skip_choice(request, result):
+            return ("Focus of Hatred target selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Focus of Hatred army not found.",)
+        mgr = getattr(army, "chaos_space_marines_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_veterans_of_the_long_war", lambda: False)()):
+            return ("Focus of Hatred requires Veterans of the Long War.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        can_select = getattr(mgr, "can_select_veterans_focus_of_hatred_target", None)
+        if not callable(can_select) or not bool(can_select(game=game, player=player)):
+            return ("Focus of Hatred target cannot be selected right now.",)
+        target_unit_id = str(
+            payload.get("target_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("target_unit_id")
+            or ""
+        ).strip()
+        if not target_unit_id:
+            return ("Focus of Hatred selection requires target_unit_id.",)
+        candidate_ids = {
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(v or "").strip()
+        }
+        if candidate_ids and target_unit_id not in candidate_ids:
+            return ("Focus of Hatred selection contains an ineligible target.",)
+        validate_target = getattr(mgr, "veterans_focus_of_hatred_target_is_valid", None)
+        if not callable(validate_target) or not bool(validate_target(target_unit_id, game=game, player=player)):
+            return ("Focus of Hatred selected target is invalid.",)
+        return ()
     if ability == "renegade_warband_twisted_doctrine":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)
@@ -5674,6 +5709,35 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         ability_name = str(ctx.get("ability_name", "") or "Vendetta").strip() or "Vendetta"
         target_name = str((outcome or {}).get("target_name", "") or "Enemy Unit").strip() or "Enemy Unit"
         _log_action_for_players(game, player, f"{ability_name}: selected {target_name} as your Vendetta target.")
+        return dict(outcome)
+    if ability == "veterans_of_the_long_war_focus_of_hatred_target":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "chaos_space_marines_detachments", None)
+        if mgr is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        target_unit_id = str(
+            payload.get("target_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("target_unit_id")
+            or ""
+        ).strip()
+        if not target_unit_id:
+            return None
+        select_fn = getattr(mgr, "select_veterans_focus_of_hatred_target", None)
+        if not callable(select_fn):
+            return None
+        outcome = select_fn(target_unit_id, game=game, player=player)
+        if not isinstance(outcome, dict) or not bool(outcome.get("ok", False)):
+            return None
+        ability_name = str(ctx.get("ability_name", "") or "Focus of Hatred").strip() or "Focus of Hatred"
+        target_name = str((outcome or {}).get("target_name", "") or "Enemy Unit").strip() or "Enemy Unit"
+        _log_action_for_players(game, player, f"{ability_name}: selected {target_name} as your focus of hatred.")
         return dict(outcome)
     if ability == "renegade_warband_twisted_doctrine":
         payload = _option_payload(request, result)

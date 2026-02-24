@@ -774,6 +774,10 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time a model in that unit makes a ranged attack add \d+ to the wound roll",
             r"add \d+ to the attacks characteristic of melee weapons equipped by models in that unit",
         ),
+        "Focus of Hatred": (
+            r"at the start of your command phase select one unit from your opponent(?:s| s) army to be your focus of hatred",
+            r"until the start of your next command phase each time a heretic astartes model from your army excluding damned models makes an attack that targets your focus of hatred you can reroll the hit roll",
+        ),
         "Defend at All Costs": (
             r"each time a dire avenger guardian support weapon or war walker model from your army makes an attack if that models unit and or the target unit are within range of one or more objective markers add \d+ to the hit roll",
         ),
@@ -2611,6 +2615,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Debt to the Soul Forge": (
             "Supported",
             "Soulforged Warpack: each time an eligible HERETIC ASTARTES DAEMON VEHICLE unit makes a Dark Pact it can invoke its contract; invoked contracts apply -1 to the resulting Leadership test and, until end of phase, grant +1 to wound for ranged attacks and +2 Attacks to melee weapons for that unit.",
+        ),
+        "Focus of Hatred": (
+            "Supported",
+            "Veterans of the Long War: at the start of your Command phase, select one enemy unit as your Focus of Hatred until your next Command phase; HERETIC ASTARTES models from your army (excluding DAMNED) can re-roll Hit rolls when attacking that target.",
         ),
         "Mechanised Murder": ("Supported", "Rapid Evisceration: reroll Hit/Wound rolls of 1 for eligible units."),
         "Daemonic Empowerment": (
