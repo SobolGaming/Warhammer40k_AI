@@ -291,11 +291,13 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("phase_start", "_on_phase_start_master_of_mechanisms_cleanup"),
                 ("phase_start", "_on_phase_start_master_of_mechanisms"),
                 ("phase_end", "_on_phase_end_enrage_machine_spirits"),
+                ("unit_move_started", "_on_unit_move_started_detachment_rules"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_dark_pacts"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_daemonic_ordnance"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_warp_rift_firepower"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_reorder_reality"),
                 ("fight_unit_selected", "_on_fight_unit_selected_dark_pacts"),
+                ("charge_declared", "_on_charge_declared_detachment_rules"),
             ],
         )
     )

@@ -455,6 +455,14 @@ class Army:
         apply_fn = getattr(cd_mgr, "apply_shadow_legion_keywords", None) if cd_mgr is not None else None
         if callable(apply_fn):
             apply_fn(unit)
+        csm_mgr = getattr(self, "chaos_space_marines_detachments", None)
+        apply_fn = (
+            getattr(csm_mgr, "apply_chaos_cult_traitor_guardsmen_battleline_keywords", None)
+            if csm_mgr is not None
+            else None
+        )
+        if callable(apply_fn):
+            apply_fn(unit)
         ae_mgr = getattr(self, "aeldari_detachments", None)
         apply_fn = getattr(ae_mgr, "apply_acrobatic_onslaught_travelling_players", None) if ae_mgr is not None else None
         if callable(apply_fn):
@@ -1547,6 +1555,11 @@ class Army:
         ec_mgr = getattr(self, "emperors_children", None)
         if ec_mgr is not None:
             for msg in list(ec_mgr.validate_detachment_rules() or []):
+                if msg:
+                    raise ArmyValidationError(str(msg))
+        csm_mgr = getattr(self, "chaos_space_marines_detachments", None)
+        if csm_mgr is not None and hasattr(csm_mgr, "validate_detachment_rules"):
+            for msg in list(csm_mgr.validate_detachment_rules() or []):
                 if msg:
                     raise ArmyValidationError(str(msg))
         we_mgr = getattr(self, "world_eaters_detachments", None)

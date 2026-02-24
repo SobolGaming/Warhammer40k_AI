@@ -338,6 +338,12 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"on a 2 do not remove it from play",
             r"the destroyed model can fight after the attacking unit has finished making its attacks and is then removed from play",
         ),
+        "Desperate Devotion": (
+            r"each time a damned unit from your army with the dark pacts ability is selected to make a normal or advance move or declare a charge excluding units that arrived from reserves this turn it can make a desperate pact(?: see below)?",
+            r"if it does until the end of the phase add 2 to the move characteristic of models in that unit and add 2 to charge rolls made for that unit",
+            r"each time a unit makes a desperate pact it must first take a leadership test",
+            r"if that test is failed that unit suffers d3 mortal wounds before any effects of that desperate pact are resolved",
+        ),
         "Yriel's Own": (
             r"aeldari units in your army are eligible to declare a charge in a turn in which they advanced",
             r"in addition each time an anhrathe rangers or shroud runners unit from your army advances you can reroll the advance roll",
@@ -2468,6 +2474,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Raiders and Reavers": (
             "Supported",
             "Renegade Raiders: HERETIC ASTARTES ranged weapons count as [ASSAULT], and HERETIC ASTARTES attacks improve AP by 1 when targeting units within range of an objective marker.",
+        ),
+        "Desperate Devotion": (
+            "Supported",
+            "Chaos Cult: each time an eligible DAMNED unit with Dark Pacts is selected to move/advance or declare a charge (excluding arrivals from Reserves this turn), it can optionally make a Desperate Pact; on activation, a Leadership test is taken and failed tests inflict D3 mortal wounds, then the unit gains +2 Move and +2 to Charge rolls until end of phase.",
         ),
         "Mechanised Murder": ("Supported", "Rapid Evisceration: reroll Hit/Wound rolls of 1 for eligible units."),
         "Daemonic Empowerment": (
@@ -4663,6 +4673,10 @@ def _detachment_ability_support_by_id() -> Dict[str, Tuple[str, str]]:
         "000008876": (
             "Supported",
             "Dread Mob: Gretchin units from your army gain the Battleline keyword.",
+        ),
+        "000008980": (
+            "Supported",
+            "Chaos Cult: TRAITOR GUARDSMEN SQUAD units from your army gain the BATTLELINE keyword.",
         ),
         "000008880": (
             "Supported",

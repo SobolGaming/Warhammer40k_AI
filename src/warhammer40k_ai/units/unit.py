@@ -1236,6 +1236,14 @@ class Unit(
                         mods.append(Modifier(ModifierOp.ADD, int(bonus), source=source_name))
             except Exception:
                 pass
+            csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            bonus_fn = getattr(csm_mgr, "desperate_devotion_movement_bonus", None) if csm_mgr is not None else None
+            if callable(bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                bonus, source = bonus_fn(model=model, unit=self, game=game)
+                if int(bonus or 0):
+                    source_name = str(source or "Desperate Devotion").strip() or "Desperate Devotion"
+                    mods.append(Modifier(ModifierOp.ADD, int(bonus), source=f"detachment:{source_name}"))
             as_mgr = getattr(army, "adepta_sororitas_detachments", None) if army is not None else None
             bonus_fn = getattr(as_mgr, "righteous_purpose_move_bonus", None) if as_mgr is not None else None
             if callable(bonus_fn):

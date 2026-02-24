@@ -182,6 +182,9 @@ def _apply_select_movement_action(game: object, request: DecisionRequest, result
             raise RuntimeError(f"Stationary action failed: {exc}") from exc
     elif action == "advance":
         _maybe_request_move_modifier_choice(game, unit, action_type=action)
+        queue_fn = getattr(game, "_queue_chaos_cult_desperate_devotion", None)
+        if callable(queue_fn):
+            queue_fn(unit=unit, action="advance")
         try:
             army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
             mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
@@ -201,6 +204,9 @@ def _apply_select_movement_action(game: object, request: DecisionRequest, result
                 player = getattr(getattr(unit, "get_parent_army", lambda: None)(), "player", None)
             except Exception:
                 player = None
+            queue_fn = getattr(game, "_queue_chaos_cult_desperate_devotion", None)
+            if callable(queue_fn):
+                queue_fn(unit=unit, action="move")
             try:
                 queue_fn = getattr(game, "_queue_movement_phase_normal_move_weapon_attacks_bonus", None)
                 if callable(queue_fn):

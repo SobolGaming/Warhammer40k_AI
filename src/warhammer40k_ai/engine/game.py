@@ -3025,6 +3025,86 @@ class Game(
             if obj is not None and hasattr(obj, "_gift_of_chaos_hit_models_by_target_psychic"):
                 delattr(obj, "_gift_of_chaos_hit_models_by_target_psychic")
 
+    def _queue_chaos_cult_desperate_devotion(self, *, unit=None, action: str | None = None) -> None:
+        if unit is None:
+            return
+        action_key = str(action or "").strip().lower()
+        if action_key not in {"move", "advance", "charge"}:
+            return
+        root = unit
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        if callable(get_root):
+            try:
+                resolved = get_root()
+            except (AttributeError, RuntimeError, TypeError):
+                resolved = None
+            if resolved is not None:
+                root = resolved
+        if root is None:
+            return
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        if army is None:
+            return
+        mgr = getattr(army, "chaos_space_marines_detachments", None)
+        can_trigger = getattr(mgr, "desperate_devotion_can_trigger", None) if mgr is not None else None
+        if not callable(can_trigger):
+            return
+        if not bool(can_trigger(root, action=action_key, game=self)):
+            return
+        player = getattr(army, "player", None)
+        if player is None:
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        unit_id = str(maybe_entity_id(root) or "")
+        if not unit_id:
+            return
+        phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+        turn = int(getattr(self, "turn", 0) or 0)
+        current_player = self.get_current_player()
+        owner_id = str(getattr(current_player, "id", "") or "")
+        if action_key == "charge":
+            message = f"Use Desperate Devotion for {getattr(root, 'name', 'Unit')}? (+2 Charge this phase)"
+        else:
+            message = (
+                f"Use Desperate Devotion for {getattr(root, 'name', 'Unit')}? "
+                "(+2 Move and +2 Charge this phase)"
+            )
+        self._queue_optional_ability_confirmation(
+            player=player,
+            ability_key="desperate_devotion",
+            ability_name="Desperate Devotion",
+            message=message,
+            context={
+                "unit_id": unit_id,
+                "trigger_action": action_key,
+                "phase": phase_name,
+                "turn": turn,
+                "turn_owner_id": owner_id,
+            },
+            payload={
+                "unit_id": unit_id,
+                "trigger_action": action_key,
+                "phase": phase_name,
+                "turn": turn,
+                "turn_owner_id": owner_id,
+            },
+            instance_key=f"{unit_id}:{turn}:{phase_name}:{owner_id}:desperate_devotion:{action_key}",
+        )
+
+    def _on_unit_move_started_detachment_rules(self, unit=None, action: str | None = None, **_kwargs) -> None:
+        if unit is None:
+            return
+        action_key = str(action or "").strip().lower()
+        if action_key not in {"move", "advance"}:
+            return
+        self._queue_chaos_cult_desperate_devotion(unit=unit, action=action_key)
+
+    def _on_charge_declared_detachment_rules(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        self._queue_chaos_cult_desperate_devotion(unit=unit, action="charge")
+
     def _on_unit_move_ended_detachment_rules(self, unit=None, action: str | None = None, **_kwargs) -> None:
         if unit is None:
             return
@@ -8914,6 +8994,12 @@ class Game(
             army = charging_unit.get_parent_army()
         except Exception:
             army = None
+        csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+        desperate_charge_bonus_fn = getattr(csm_mgr, "desperate_devotion_charge_roll_bonus", None) if csm_mgr is not None else None
+        if callable(desperate_charge_bonus_fn):
+            bonus, source = desperate_charge_bonus_fn(charging_unit, game=self)
+            if int(bonus or 0):
+                modifiers.append((int(bonus), str(source or "Desperate Devotion").strip() or "Desperate Devotion"))
         tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
         synaptic_charge_bonus_fn = getattr(tyr_mgr, "synaptic_imperatives_charge_roll_bonus", None) if tyr_mgr is not None else None
         if callable(synaptic_charge_bonus_fn):

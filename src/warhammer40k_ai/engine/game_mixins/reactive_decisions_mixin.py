@@ -3427,6 +3427,7 @@ class GameReactiveDecisionsMixin:
             "possessed_blade_fight",
             "aeldari_strength_from_death_lethal_surge",
             "our_time_is_nigh",
+            "desperate_devotion",
         ):
             return
         selected = None
@@ -3491,6 +3492,42 @@ class GameReactiveDecisionsMixin:
             )
             return
         if not choice:
+            return
+
+        if ability_key == "desperate_devotion":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None or not unit.is_alive():
+                return
+            root = unit
+            get_root = getattr(unit, "get_attached_unit_root", None)
+            if callable(get_root):
+                try:
+                    resolved = get_root()
+                except (AttributeError, RuntimeError, TypeError):
+                    resolved = None
+                if resolved is not None:
+                    root = resolved
+            if root is None or not root.is_alive():
+                return
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+            activate = getattr(mgr, "activate_desperate_devotion", None) if mgr is not None else None
+            if not callable(activate):
+                return
+            player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+            action = str(payload.get("trigger_action") or ctx.get("trigger_action") or "").strip().lower()
+            if not action:
+                action = "move"
+            activate(
+                root,
+                action=action,
+                game=self,
+                player=player,
+                ability_name=str(ctx.get("ability_name", "") or "Desperate Devotion").strip() or "Desperate Devotion",
+            )
             return
 
         if ability_key == "warpmeld_sacrifice":
