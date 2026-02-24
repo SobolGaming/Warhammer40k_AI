@@ -1285,16 +1285,51 @@ class PositioningMixin:
 
         ability = None
         try:
+            has_fade_to_darkness = bool(
+                root._attached_unit_has_active_enhancement(
+                    "enhancement_fade_to_darkness",
+                    enhancement_id="000009980004",
+                    enhancement_name="fade to darkness",
+                )
+            )
+        except Exception:
+            has_fade_to_darkness = False
+        if has_fade_to_darkness:
+            source_name = "Fade to Darkness"
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = [root]
+            if not members:
+                members = [root]
+            for member in members:
+                sr = getattr(member, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if not bool(sr.get("enhancement_fade_to_darkness")):
+                    continue
+                raw = str(sr.get("enhancement_fade_to_darkness_source", "") or "").strip()
+                if raw:
+                    source_name = raw
+                break
+            ability = {
+                "name": source_name,
+                "description": "",
+                "ability_key": "fight_phase_destroyed_strategic_reserves",
+            }
+
+        try:
             members = list(root.get_attached_unit_members() or [])
         except Exception:
             members = [root]
-        for member in members:
-            try:
-                ability = member._scan_end_of_fight_phase_destroyed_strategic_reserves_ability()
-            except Exception:
-                ability = None
-            if ability:
-                break
+        if not ability:
+            for member in members:
+                try:
+                    ability = member._scan_end_of_fight_phase_destroyed_strategic_reserves_ability()
+                except Exception:
+                    ability = None
+                if ability:
+                    break
 
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}

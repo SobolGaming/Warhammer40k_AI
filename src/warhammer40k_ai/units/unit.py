@@ -932,6 +932,88 @@ class Unit(
             except Exception:
                 pass
 
+            # Mantle of Gloom (Shadow Legion): enemy units in Engagement Range of the
+            # bearer's unit suffer -1 Objective Control.
+            try:
+                try:
+                    root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+                except Exception:
+                    root = self
+                total_mantle_penalty = 0
+                seen_enemy_roots = set()
+                for enemy in list(game_map.get_enemy_units(root) or []):
+                    if enemy is None:
+                        continue
+                    try:
+                        enemy_root = enemy.get_attached_unit_root()
+                    except Exception:
+                        enemy_root = enemy
+                    if enemy_root is None:
+                        continue
+                    enemy_id = str(maybe_entity_id(enemy_root) or "")
+                    if enemy_id and enemy_id in seen_enemy_roots:
+                        continue
+                    if enemy_id:
+                        seen_enemy_roots.add(enemy_id)
+                    try:
+                        if not enemy_root.is_alive() or not getattr(enemy_root, "deployed", True):
+                            continue
+                        if enemy_root.is_in_reserves() or enemy_root.is_embarked:
+                            continue
+                    except Exception:
+                        continue
+                    try:
+                        if not game_map.is_within_engagement_range(enemy_root, root):
+                            continue
+                    except Exception:
+                        continue
+
+                    has_mantle = False
+                    try:
+                        checker = getattr(enemy_root, "_attached_unit_has_active_enhancement", None)
+                        if callable(checker):
+                            has_mantle = bool(
+                                checker(
+                                    "enhancement_mantle_of_gloom",
+                                    enhancement_id="000009980003",
+                                    enhancement_name="mantle of gloom (aura)",
+                                )
+                            )
+                    except Exception:
+                        has_mantle = False
+                    if not has_mantle:
+                        continue
+
+                    penalty = 1
+                    try:
+                        members = list(enemy_root.get_attached_unit_members() or [])
+                    except Exception:
+                        members = [enemy_root]
+                    if not members:
+                        members = [enemy_root]
+                    for member in members:
+                        sr_member = getattr(member, "special_rules", None)
+                        if not isinstance(sr_member, dict):
+                            continue
+                        if not bool(sr_member.get("enhancement_mantle_of_gloom")):
+                            continue
+                        try:
+                            penalty = int(sr_member.get("enhancement_mantle_of_gloom_oc_penalty", 1) or 1)
+                        except Exception:
+                            penalty = 1
+                        break
+                    total_mantle_penalty += int(max(0, penalty))
+                if total_mantle_penalty > 0:
+                    mods.append(
+                        Modifier(
+                            ModifierOp.ADD,
+                            -int(total_mantle_penalty),
+                            source="enhancement:mantle_of_gloom",
+                        )
+                    )
+            except Exception:
+                pass
+
             # Pledge of Dark Glory: while the bearer is leading a unit, improve
             # Objective Control characteristics of models in that unit by 1.
             try:

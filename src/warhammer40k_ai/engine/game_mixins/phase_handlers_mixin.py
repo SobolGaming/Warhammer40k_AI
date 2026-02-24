@@ -4103,6 +4103,164 @@ class GamePhaseHandlersMixin:
                 continue
             mgr.on_phase_start(game=self)
 
+    def _on_phase_start_malice_made_manifest(self, player=None, phase=None, **_kwargs) -> None:
+        """Fight phase start: Shadow Legion Malice Made Manifest target selection."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "FIGHT_PHASE":
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+
+        pending_units = set()
+        try:
+            queue = getattr(self, "decision_queue", None)
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                        continue
+                    ctx = dict(getattr(req, "context", {}) or {})
+                    if str(ctx.get("ability", "") or "") != "malice_made_manifest":
+                        continue
+                    uid = str(ctx.get("source_unit_id", "") or "")
+                    if uid:
+                        pending_units.add(uid)
+        except Exception:
+            pending_units = set()
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        seen_roots = set()
+        for p in list(getattr(self, "players", []) or []):
+            if p is None:
+                continue
+            army = p.get_army()
+            if army is None:
+                continue
+            for unit in sorted(list(army.units or []), key=_unit_sort_key):
+                if unit is None:
+                    continue
+                if not unit.is_alive() or not getattr(unit, "deployed", True):
+                    continue
+                try:
+                    if unit.is_in_reserves() or unit.is_embarked:
+                        continue
+                except Exception:
+                    pass
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None or not root.is_alive():
+                    continue
+                root_id = str(get_entity_id(root) or "")
+                if not root_id:
+                    continue
+                if root_id in seen_roots:
+                    continue
+                seen_roots.add(root_id)
+                if root_id in pending_units:
+                    continue
+
+                try:
+                    has_malice = bool(
+                        root._attached_unit_has_active_enhancement(
+                            "enhancement_malice_made_manifest",
+                            enhancement_id="000009980005",
+                            enhancement_name="malice made manifest",
+                        )
+                    )
+                except Exception:
+                    has_malice = False
+                if not has_malice:
+                    continue
+
+                enemy_candidates = []
+                seen_enemy = set()
+                for enemy in list(game_map.get_enemy_units(root) or []):
+                    if enemy is None:
+                        continue
+                    try:
+                        enemy_root = enemy.get_attached_unit_root()
+                    except Exception:
+                        enemy_root = enemy
+                    if enemy_root is None or not enemy_root.is_alive():
+                        continue
+                    enemy_id = str(get_entity_id(enemy_root) or "")
+                    if not enemy_id or enemy_id in seen_enemy:
+                        continue
+                    seen_enemy.add(enemy_id)
+                    try:
+                        if not getattr(enemy_root, "deployed", True):
+                            continue
+                        if enemy_root.is_in_reserves() or enemy_root.is_embarked:
+                            continue
+                    except Exception:
+                        pass
+                    try:
+                        if not game_map.is_within_engagement_range(root, enemy_root):
+                            continue
+                    except Exception:
+                        continue
+                    enemy_candidates.append(enemy_root)
+                if not enemy_candidates:
+                    continue
+
+                try:
+                    enemy_candidates = sorted(enemy_candidates, key=_unit_sort_key)
+                except Exception:
+                    enemy_candidates = list(enemy_candidates)
+
+                ability_name = "Malice Made Manifest"
+                try:
+                    members = list(root.get_attached_unit_members() or [])
+                except Exception:
+                    members = [root]
+                if not members:
+                    members = [root]
+                for member in members:
+                    sr = getattr(member, "special_rules", None)
+                    if not isinstance(sr, dict):
+                        continue
+                    if not bool(sr.get("enhancement_malice_made_manifest")):
+                        continue
+                    raw = str(sr.get("enhancement_malice_made_manifest_source", "") or "").strip()
+                    if raw:
+                        ability_name = raw
+                    break
+
+                from ..decisions import DecisionOption, DecisionRequest
+
+                options = []
+                for enemy_root in enemy_candidates:
+                    options.append(
+                        DecisionOption.create(
+                            str(getattr(enemy_root, "name", "Unit") or "Unit"),
+                            payload={"target_unit_id": get_entity_id(enemy_root)},
+                        )
+                    )
+                if not options:
+                    continue
+                request = DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    f"{ability_name}: select one enemy unit within Engagement Range.",
+                    player_id=getattr(p, "id", None),
+                    options=options,
+                    context={
+                        "ability": "malice_made_manifest",
+                        "ability_name": ability_name,
+                        "source_unit_id": root_id,
+                        "unit_id": root_id,
+                    },
+                )
+                self.request_decision(request)
+
     def _on_phase_start_prescient_redeployment(self, player=None, phase=None, **_kwargs) -> None:
         """Augurium Task Force: optional Movement phase strategic-reserves redeploy after Gate of Infinity."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

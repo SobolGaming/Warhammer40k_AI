@@ -11301,6 +11301,57 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         except Exception:
             pass
         return target_unit
+    if str(ctx.get("ability", "") or "") == "malice_made_manifest":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        target_val = payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id")
+        target_unit = resolve_unit(game, target_val)
+        if target_unit is None:
+            return None
+        source_unit = resolve_unit(
+            game,
+            ctx.get("source_unit_id") or ctx.get("unit_id") or ctx.get("attacker_unit_id"),
+        )
+        if source_unit is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            try:
+                player = source_unit.get_parent_army().player
+            except Exception:
+                player = None
+        ability_name = str(ctx.get("ability_name", "") or "Malice Made Manifest").strip() or "Malice Made Manifest"
+        from ...utility.dice import get_roll
+        from ...utility.event_bus import append_dice
+
+        roll = int(get_roll("D6") or 0)
+        if player is not None:
+            append_dice(player, f"{ability_name} roll: {roll}")
+
+        mortal = 0
+        if 2 <= roll <= 5:
+            mortal = int(get_roll("D3") or 0)
+        elif roll >= 6:
+            mortal = 3
+        if mortal > 0:
+            try:
+                source_unit._apply_mortal_wounds_to_unit(
+                    target_unit,
+                    int(mortal),
+                    game_map=getattr(game, "map", None),
+                )
+            except Exception:
+                pass
+        try:
+            tname = str(getattr(target_unit, "name", "Unit") or "Unit")
+            if mortal > 0:
+                _log_action_for_players(game, player, f"{ability_name}: {tname} suffers {int(mortal)} mortal wounds.")
+            else:
+                _log_action_for_players(game, player, f"{ability_name}: {tname} suffers no mortal wounds.")
+        except Exception:
+            pass
+        return target_unit
     if str(ctx.get("ability", "") or "") == "opponent_shooting_phase_grant_stealth":
         if is_skip_choice(request, result):
             return None

@@ -420,6 +420,10 @@ class Enhancement:
         except Exception:
             is_daemonic_incursion = False
         try:
+            is_shadow_legion = bool(cd_mgr and cd_mgr.is_shadow_legion_detachment())
+        except Exception:
+            is_shadow_legion = False
+        try:
             is_plague_legion = bool(cd_mgr and cd_mgr.is_plague_legion_detachment())
         except Exception:
             is_plague_legion = False
@@ -2214,6 +2218,64 @@ class Enhancement:
         if name == "synaptic linchpin" or enh_id == "000008348004":
             unit.special_rules["enhancement_synaptic_linchpin"] = True
             unit.special_rules["enhancement_synaptic_linchpin_range"] = 9.0
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "leaping shadows" or enh_id == "000009980002":
+            if not is_shadow_legion:
+                return
+            unit.special_rules["enhancement_leaping_shadows"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            scout_distance = _coerce_int(params.get("scouts_distance", 9) or 9, default=9)
+            unit.special_rules["enhancement_scout_distance"] = max(
+                int(unit.special_rules.get("enhancement_scout_distance", 0) or 0),
+                int(max(0, scout_distance)),
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "mantle of gloom (aura)" or enh_id == "000009980003":
+            if not is_shadow_legion:
+                return
+            unit.special_rules["enhancement_mantle_of_gloom"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            penalty = _coerce_int(params.get("objective_control_penalty", 1) or 1, default=1)
+            unit.special_rules["enhancement_mantle_of_gloom_oc_penalty"] = int(max(0, penalty))
+            unit.special_rules["enhancement_mantle_of_gloom_source"] = "Mantle of Gloom (Aura)"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "fade to darkness" or enh_id == "000009980004":
+            if not is_shadow_legion:
+                return
+            unit.special_rules["enhancement_fade_to_darkness"] = True
+            unit.special_rules["enhancement_fade_to_darkness_source"] = "Fade to Darkness"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+            cache = getattr(unit, "_ability_cache", None)
+            if isinstance(cache, dict):
+                cache.pop("fight_phase_destroyed_strategic_reserves_ability", None)
+
+        if name == "malice made manifest" or enh_id == "000009980005":
+            if not is_shadow_legion:
+                return
+            unit.special_rules["enhancement_malice_made_manifest"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            low_min = _coerce_int(params.get("threshold_mid_min", 2) or 2, default=2)
+            low_max = _coerce_int(params.get("threshold_mid_max", 5) or 5, default=5)
+            high_threshold = _coerce_int(params.get("threshold_high", 6) or 6, default=6)
+            mortal_mid = str(params.get("mortal_mid", "D3") or "D3").strip().upper() or "D3"
+            high_raw = params.get("mortal_high", 3)
+            mortal_high = _coerce_int(high_raw, default=3)
+            unit.special_rules["enhancement_malice_made_manifest_low_min"] = int(max(0, low_min))
+            unit.special_rules["enhancement_malice_made_manifest_low_max"] = int(max(0, low_max))
+            unit.special_rules["enhancement_malice_made_manifest_high_threshold"] = int(max(0, high_threshold))
+            unit.special_rules["enhancement_malice_made_manifest_mortal_mid"] = mortal_mid
+            unit.special_rules["enhancement_malice_made_manifest_mortal_high"] = int(max(0, mortal_high))
+            unit.special_rules["enhancement_malice_made_manifest_source"] = "Malice Made Manifest"
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 

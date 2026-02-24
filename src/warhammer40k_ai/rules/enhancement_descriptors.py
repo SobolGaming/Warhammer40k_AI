@@ -1242,6 +1242,56 @@ _DAEMONIC_INCURSION_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _DAEMONIC_INCURSION_DESCRIPTORS.values()
 }
 
+_SHADOW_LEGION_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009980002": EnhancementToolDescriptor(
+        enhancement_id="000009980002",
+        name="Leaping Shadows",
+        timing="declare_battle_formations",
+        target="bearer_unit",
+        duration="scout_step",
+        effect="grant_scouts",
+        effect_params={"scouts_distance": 9},
+    ),
+    "000009980003": EnhancementToolDescriptor(
+        enhancement_id="000009980003",
+        name="Mantle of Gloom (Aura)",
+        timing="passive_aura",
+        target="enemy_unit_within_engagement_range_of_bearer_unit",
+        duration="constant",
+        effect="enemy_objective_control_penalty",
+        effect_params={"objective_control_penalty": 1},
+    ),
+    "000009980004": EnhancementToolDescriptor(
+        enhancement_id="000009980004",
+        name="Fade to Darkness",
+        timing="end_of_fight_phase",
+        target="bearer_unit",
+        duration="instant_optional",
+        effect="enter_strategic_reserves_if_destroyed_enemy_and_not_engaged",
+        effect_params={"requires_destroyed_enemy_this_phase": True, "requires_not_in_engagement_range": True},
+    ),
+    "000009980005": EnhancementToolDescriptor(
+        enhancement_id="000009980005",
+        name="Malice Made Manifest",
+        timing="start_of_fight_phase",
+        target="enemy_unit_within_engagement_range_of_bearer_unit",
+        duration="instant",
+        effect="select_enemy_then_roll_mortal_wounds",
+        effect_params={
+            "roll": "D6",
+            "threshold_mid_min": 2,
+            "threshold_mid_max": 5,
+            "mortal_mid": "D3",
+            "threshold_high": 6,
+            "mortal_high": 3,
+        },
+    ),
+}
+
+_SHADOW_LEGION_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SHADOW_LEGION_DESCRIPTORS.values()
+}
+
 _PLAGUE_LEGION_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009819002": EnhancementToolDescriptor(
         enhancement_id="000009819002",
@@ -1636,6 +1686,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _DAEMONIC_INCURSION_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SHADOW_LEGION_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _PLAGUE_LEGION_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -1686,6 +1739,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _COTERIE_OF_CONCEITED_BY_NAME.get(key)
         or _CARNIVAL_OF_EXCESS_BY_NAME.get(key)
         or _DAEMONIC_INCURSION_BY_NAME.get(key)
+        or _SHADOW_LEGION_BY_NAME.get(key)
         or _PLAGUE_LEGION_BY_NAME.get(key)
         or _SCINTILLATING_LEGION_BY_NAME.get(key)
         or _GRAND_COVEN_BY_NAME.get(key)
