@@ -1138,6 +1138,23 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"add \d+ to charge rolls made for aberrants biophagus and purestrain genestealers units from your army",
             r"in addition each time such a unit is selected to fight if it made a charge move this turn until the end of the phase add \d+ to the attacks characteristic of melee weapons equipped by models in that unit",
         ),
+        "Integrated Tactics": (
+            r"each time an astra militarum unit from your army .* is selected to shoot you can select one enemy unit within 18 of and visible to that unit",
+            r"(?:if you do )?until the end of the phase models in that astra militarum unit can only target that enemy unit and only if it is an eligible target(?: and that enemy unit is caught in overlapping fire)?",
+            r"that enemy unit is caught in overlapping fire",
+            r"while an enemy unit is caught in overlapping fire each time a genestealer cults model from your army targets that enemy unit with a ranged attack add 1 to the hit roll",
+        ),
+        "BROOD BROTHERS": (
+            r"you can include astra militarum units in your army even though they do not have the genestealer cults faction keyword",
+            r"the combined points cost of such units you can include in your army is",
+            r"incursion up to \d+ pts",
+            r"strike force up to \d+ pts",
+            r"onslaught up to \d+ pts",
+            r"a genestealer cults model must be your warlord",
+            r"astra militarum models from your army lose the voice of command ability if they have it",
+            r"a genestealer cults model must be your warlord and astra militarum models from your army lose the voice of command ability if they have it",
+            r"you cannot include units with any of the following keywords in your army using this rule",
+        ),
         "Relentless Rage": (
             r"each time a world eaters unit from your army makes a charge move until the end of the turn add \d+ to the attacks characteristic and add \d+ to the strength characteristic of melee weapons equipped by models in that unit",
         ),
@@ -2314,6 +2331,14 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Hypermorphic Fury": (
             "Supported",
             "Biosanctic Broodsurge: ABERRANTS/BIOPHAGUS/PURESTRAIN GENESTEALERS units gain +1 to Charge rolls, and when selected to fight after charging their melee weapons gain +1 Attacks until end of phase.",
+        ),
+        "Integrated Tactics": (
+            "Supported",
+            "Brood Brother Auxilia: each time an eligible ASTRA MILITARUM unit is selected to shoot it can optionally select one enemy unit within 18\" and visible (or none); if selected, that ASTRA MILITARUM unit is target-locked to that enemy until end of phase and the enemy is marked as caught in overlapping fire, granting friendly GENESTEALER CULTS ranged attacks +1 to hit against it.",
+        ),
+        "BROOD BROTHERS": (
+            "Supported",
+            "Brood Brother Auxilia: ASTRA MILITARUM ally points caps are validated by battle size, forbidden allied keywords are rejected, a GENESTEALER CULTS model must be WARLORD, and allied ASTRA MILITARUM units lose Voice of Command.",
         ),
         "Against All Odds": (
             "Supported",

@@ -8058,6 +8058,19 @@ class WargearProfile:
                     _add_hit_mod(int(bonus), f"+{int(bonus)} from {source_name}")
         except Exception:
             pass
+        # Genestealer Cults: Brood Brother Auxilia (Integrated Tactics) +1 to hit for
+        # GENESTEALER CULTS ranged attacks against enemy units caught in overlapping fire.
+        unit = getattr(attacker, "parent_unit", None)
+        get_parent_army = getattr(unit, "get_parent_army", None)
+        army = get_parent_army() if callable(get_parent_army) else None
+        gsc_mgr = getattr(army, "genestealer_cults_detachments", None) if army is not None else None
+        bonus_fn = getattr(gsc_mgr, "integrated_tactics_hit_bonus", None) if gsc_mgr is not None else None
+        if callable(bonus_fn):
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            bonus, source = bonus_fn(attacker, target, game=game, weapon_profile=self)
+            if bonus:
+                source_name = str(source or "Integrated Tactics").strip() or "Integrated Tactics"
+                _add_hit_mod(int(bonus), f"+{int(bonus)} from {source_name}")
 
         # Master of Mechanisms: selected friendly VEHICLE gets +1 to hit until next Command phase.
         sr = getattr(getattr(attacker, "parent_unit", None), "special_rules", None)

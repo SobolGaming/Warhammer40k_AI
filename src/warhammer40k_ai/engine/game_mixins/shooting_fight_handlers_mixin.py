@@ -7729,6 +7729,115 @@ class GameShootingFightHandlersMixin:
             instance_key=f"{unit_id}:{turn}:{owner_id}:optimal_application",
         )
 
+    def _on_shooting_targets_selected_integrated_tactics(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None:
+            return
+        if not self.is_shooting_phase():
+            return
+        get_root = getattr(attacking_unit, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else attacking_unit
+        if root is None:
+            return
+        is_alive_fn = getattr(root, "is_alive", None)
+        if callable(is_alive_fn) and not bool(is_alive_fn()):
+            return
+        if not bool(getattr(root, "deployed", True)):
+            return
+        is_in_reserves_fn = getattr(root, "is_in_reserves", None)
+        if callable(is_in_reserves_fn) and bool(is_in_reserves_fn()):
+            return
+        embarked = getattr(root, "is_embarked", False)
+        if callable(embarked):
+            embarked = embarked()
+        if bool(embarked):
+            return
+
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        player = getattr(army, "player", None) if army is not None else None
+        if player is None or player is not self.get_current_player():
+            return
+        mgr = getattr(army, "genestealer_cults_detachments", None) if army is not None else None
+        candidates_fn = (
+            getattr(mgr, "integrated_tactics_target_candidates_for_unit", None)
+            if mgr is not None
+            else None
+        )
+        if not callable(candidates_fn):
+            return
+        candidates = list(candidates_fn(root, game=self) or [])
+        if not candidates:
+            # Fallback path for sparse test maps: use explicitly selected targets when available.
+            target_eligible_fn = getattr(mgr, "integrated_tactics_target_eligible", None) if mgr is not None else None
+            seen_ids = set()
+            for target in list(target_units or []):
+                if target is None:
+                    continue
+                target_get_root = getattr(target, "get_attached_unit_root", None)
+                target_root = target_get_root() if callable(target_get_root) else target
+                if target_root is None:
+                    continue
+                if callable(target_eligible_fn) and not bool(target_eligible_fn(root, target_root, game=self)):
+                    continue
+                target_id = str(get_entity_id(target_root) or "")
+                if not target_id or target_id in seen_ids:
+                    continue
+                seen_ids.add(target_id)
+                candidates.append(target_root)
+        if not candidates:
+            return
+
+        unit_id = str(get_entity_id(root) or "")
+        if not unit_id:
+            return
+        owner_id = str(getattr(player, "id", "") or "")
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            turn = 0
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "integrated_tactics":
+                    continue
+                if str(ctx.get("unit_id", "") or "") != unit_id:
+                    continue
+                if str(ctx.get("turn_owner", "") or "") != owner_id:
+                    continue
+                if int(ctx.get("turn", turn) or turn) != int(turn or 0):
+                    continue
+                return
+
+        sorted_candidates = sorted(list(candidates), key=lambda c: str(maybe_entity_id(c) or ""))
+        options = [DecisionOption.create("None", payload={"action": "skip"})]
+        for target in sorted_candidates:
+            options.append(
+                DecisionOption.create(
+                    str(getattr(target, "name", "Unit") or "Unit"),
+                    payload={"target_unit_id": get_entity_id(target)},
+                )
+            )
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"Integrated Tactics: select overlapping-fire target for {getattr(root, 'name', 'Unit')} (or None).",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={
+                "ability": "integrated_tactics",
+                "ability_name": "Integrated Tactics",
+                "phase": "Shooting phase",
+                "unit_id": unit_id,
+                "source_unit_id": unit_id,
+                "turn_owner": owner_id,
+                "turn": int(turn or 0),
+                "candidate_unit_ids": [str(get_entity_id(u) or "") for u in sorted_candidates],
+                "optional": True,
+            },
+        )
+        self.request_decision(request)
+
     @staticmethod
     def _clear_persecution_prospect_source_lock(unit) -> None:
         if unit is None:

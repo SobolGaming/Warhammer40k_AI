@@ -25,6 +25,32 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
     _A_CHINK_KEYWORDS = ("LETHAL HITS",)
     _A_CHINK_ENHANCEMENT_ID = "000009067003"
     _A_CHINK_NAME_KEY = "achinkintheirarmour"
+    _INTEGRATED_TACTICS_RULE_NAME = "Integrated Tactics"
+    _INTEGRATED_TACTICS_SOURCE_ACTIVE_KEY = "gsc_integrated_tactics_active"
+    _INTEGRATED_TACTICS_SOURCE_TARGET_KEY = "gsc_integrated_tactics_target_unit_id"
+    _INTEGRATED_TACTICS_SOURCE_OWNER_KEY = "gsc_integrated_tactics_turn_owner"
+    _INTEGRATED_TACTICS_SOURCE_TURN_KEY = "gsc_integrated_tactics_turn"
+    _INTEGRATED_TACTICS_SOURCE_PHASE_KEY = "gsc_integrated_tactics_expires_phase"
+    _INTEGRATED_TACTICS_SOURCE_NAME_KEY = "gsc_integrated_tactics_source"
+    _INTEGRATED_TACTICS_TARGET_ACTIVE_KEY = "gsc_integrated_tactics_overlapping_fire_active"
+    _INTEGRATED_TACTICS_TARGET_OWNER_KEY = "gsc_integrated_tactics_overlapping_fire_owner"
+    _INTEGRATED_TACTICS_TARGET_TURN_KEY = "gsc_integrated_tactics_overlapping_fire_turn"
+    _INTEGRATED_TACTICS_TARGET_PHASE_KEY = "gsc_integrated_tactics_overlapping_fire_expires_phase"
+    _INTEGRATED_TACTICS_TARGET_NAME_KEY = "gsc_integrated_tactics_overlapping_fire_source"
+    _BROOD_BROTHERS_VOICE_OF_COMMAND_LOST_KEY = "gsc_brood_brothers_voice_of_command_lost"
+    _BROOD_BROTHERS_FORBIDDEN_KEYWORDS = (
+        "AIRCRAFT",
+        "COMMISSAR",
+        "MILITARUM TEMPESTUS",
+        "OGRYN",
+        "RATLING",
+        "TECH-PRIEST ENGINSEER",
+        "MINISTORUM PRIEST",
+    )
+    _BROOD_BROTHERS_FORBIDDEN_NAME_TOKENS = (
+        "tech priest enginseer",
+        "ministorum priest",
+    )
 
     @staticmethod
     def _attached_root(unit):
@@ -47,6 +73,103 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
 
     def _unit_is_genestealer_cults(self, unit) -> bool:
         return self._unit_has_keyword_or_faction(unit, "GENESTEALER CULTS", faction_id=self.faction_id)
+
+    def _unit_is_astra_militarum(self, unit) -> bool:
+        return self._unit_has_keyword(unit, "ASTRA MILITARUM")
+
+    @staticmethod
+    def _unit_points(unit) -> int:
+        get_cost = getattr(unit, "get_unit_cost", None)
+        if callable(get_cost):
+            value = get_cost()
+            try:
+                return int(value or 0)
+            except (TypeError, ValueError):
+                return 0
+        value = getattr(unit, "points", 0)
+        try:
+            return int(value or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    @staticmethod
+    def _brood_brothers_points_cap(points_limit: int) -> tuple[int, str]:
+        if points_limit <= 1000:
+            return 500, "Incursion"
+        if points_limit <= 2000:
+            return 1000, "Strike Force"
+        return 1500, "Onslaught"
+
+    @staticmethod
+    def _unit_is_on_battlefield(unit) -> bool:
+        if unit is None:
+            return False
+        is_alive = getattr(unit, "is_alive", None)
+        if callable(is_alive) and not bool(is_alive()):
+            return False
+        if not bool(getattr(unit, "deployed", True)):
+            return False
+        if str(getattr(unit, "reserve_status", "deployed") or "").strip().lower() != "deployed":
+            return False
+        is_in_reserves = getattr(unit, "is_in_reserves", None)
+        if callable(is_in_reserves) and bool(is_in_reserves()):
+            return False
+        embarked = getattr(unit, "is_embarked", False)
+        if callable(embarked):
+            embarked = embarked()
+        if bool(embarked):
+            return False
+        if getattr(unit, "embarked_in", None) is not None:
+            return False
+        return True
+
+    @staticmethod
+    def _resolve_game_map(game=None, *, game_map=None):
+        if game_map is not None:
+            return game_map
+        if game is None:
+            return None
+        return getattr(game, "map", None)
+
+    @classmethod
+    def _is_phase_owner_turn_active(
+        cls,
+        sr: dict,
+        *,
+        game=None,
+        owner_key: str,
+        turn_key: str,
+        phase_key: str,
+        owner_id: str = "",
+    ) -> bool:
+        if not isinstance(sr, dict):
+            return False
+        if game is None:
+            return True
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        expected_phase = str(sr.get(phase_key, "") or "").strip().upper()
+        if expected_phase and phase_name and expected_phase != phase_name:
+            return False
+        expected_owner = str(sr.get(owner_key, "") or "")
+        if owner_id and expected_owner and expected_owner != owner_id:
+            return False
+        if expected_owner and not owner_id:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+            current_owner = str(getattr(current_player, "id", "") or "")
+            if current_owner and current_owner != expected_owner:
+                return False
+        try:
+            expected_turn = int(sr.get(turn_key, 0) or 0)
+        except (TypeError, ValueError):
+            expected_turn = 0
+        if expected_turn:
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            if current_turn and current_turn != expected_turn:
+                return False
+        return True
 
     def _iter_unit_roots(self) -> list:
         if self.army is None:
@@ -127,6 +250,347 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches("Biosanctic Broodsurge")
+
+    def is_brood_brother_auxilia(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Brood Brother Auxilia")
+
+    def _integrated_tactics_source_eligible(self, unit) -> bool:
+        if not self.is_brood_brother_auxilia():
+            return False
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        if not self._unit_is_on_battlefield(root):
+            return False
+        return bool(self._unit_is_astra_militarum(root))
+
+    def integrated_tactics_source_eligible(self, unit) -> bool:
+        return self._integrated_tactics_source_eligible(unit)
+
+    def integrated_tactics_target_eligible(self, source_unit, target_unit, *, game=None, game_map=None) -> bool:
+        if not self._integrated_tactics_source_eligible(source_unit):
+            return False
+        source_root = self._attached_root(source_unit)
+        target_root = self._attached_root(target_unit)
+        if source_root is None or target_root is None:
+            return False
+        if not self._unit_is_on_battlefield(target_root):
+            return False
+        target_army = getattr(target_root, "get_parent_army", lambda: None)()
+        if target_army is not None and target_army is self.army:
+            return False
+
+        local_map = self._resolve_game_map(game, game_map=game_map)
+        if local_map is not None:
+            get_distance = getattr(local_map, "get_distance_between_units", None)
+            if callable(get_distance):
+                try:
+                    distance = float(get_distance(source_root, target_root))
+                except (TypeError, ValueError):
+                    return False
+                if distance > 18.0:
+                    return False
+            has_los = getattr(source_root, "_attacking_unit_has_any_los_to_target_unit", None)
+            if callable(has_los) and not bool(has_los(target_root, local_map)):
+                return False
+        return True
+
+    def integrated_tactics_target_candidates_for_unit(self, source_unit, *, game=None, game_map=None) -> list:
+        if not self._integrated_tactics_source_eligible(source_unit):
+            return []
+        source_root = self._attached_root(source_unit)
+        if source_root is None:
+            return []
+
+        local_map = self._resolve_game_map(game, game_map=game_map)
+        player = getattr(self.army, "player", None) if self.army is not None else None
+        enemy_units = []
+        if game is not None and player is not None and callable(getattr(game, "get_enemy_units", None)):
+            enemy_units = list(game.get_enemy_units(player) or [])
+        elif local_map is not None and callable(getattr(local_map, "get_enemy_units", None)):
+            enemy_units = list(local_map.get_enemy_units(source_root) or [])
+
+        unique: dict[str, object] = {}
+        for unit in list(enemy_units or []):
+            root = self._attached_root(unit)
+            target_id = str(get_entity_id(root) or "")
+            if not target_id or target_id in unique:
+                continue
+            if not self.integrated_tactics_target_eligible(
+                source_root,
+                root,
+                game=game,
+                game_map=local_map,
+            ):
+                continue
+            unique[target_id] = root
+        return [unique[k] for k in sorted(unique.keys())]
+
+    def _clear_integrated_tactics_source_lock(self, unit) -> None:
+        root = self._attached_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in (
+            self._INTEGRATED_TACTICS_SOURCE_ACTIVE_KEY,
+            self._INTEGRATED_TACTICS_SOURCE_TARGET_KEY,
+            self._INTEGRATED_TACTICS_SOURCE_OWNER_KEY,
+            self._INTEGRATED_TACTICS_SOURCE_TURN_KEY,
+            self._INTEGRATED_TACTICS_SOURCE_PHASE_KEY,
+            self._INTEGRATED_TACTICS_SOURCE_NAME_KEY,
+        ):
+            sr.pop(key, None)
+        root.special_rules = sr
+
+    def _clear_integrated_tactics_target_mark(self, unit) -> None:
+        root = self._attached_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in (
+            self._INTEGRATED_TACTICS_TARGET_ACTIVE_KEY,
+            self._INTEGRATED_TACTICS_TARGET_OWNER_KEY,
+            self._INTEGRATED_TACTICS_TARGET_TURN_KEY,
+            self._INTEGRATED_TACTICS_TARGET_PHASE_KEY,
+            self._INTEGRATED_TACTICS_TARGET_NAME_KEY,
+        ):
+            sr.pop(key, None)
+        root.special_rules = sr
+
+    def apply_integrated_tactics_choice(
+        self,
+        source_unit,
+        *,
+        target_unit=None,
+        skip: bool = False,
+        game=None,
+        player=None,
+    ) -> dict | None:
+        if not self._integrated_tactics_source_eligible(source_unit):
+            return None
+        source_root = self._attached_root(source_unit)
+        if source_root is None:
+            return None
+
+        self._clear_integrated_tactics_source_lock(source_root)
+        if skip:
+            return {
+                "action": "skip",
+                "source_unit_id": str(get_entity_id(source_root) or ""),
+            }
+
+        target_root = self._attached_root(target_unit)
+        if target_root is None:
+            return None
+        if not self.integrated_tactics_target_eligible(source_root, target_root, game=game):
+            return None
+
+        owner_player = player if player is not None else getattr(self.army, "player", None)
+        owner_id = str(getattr(owner_player, "id", "") or "")
+        try:
+            turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            turn = 0
+
+        source_sr = getattr(source_root, "special_rules", None)
+        if not isinstance(source_sr, dict):
+            source_sr = {}
+        source_sr[self._INTEGRATED_TACTICS_SOURCE_ACTIVE_KEY] = True
+        source_sr[self._INTEGRATED_TACTICS_SOURCE_TARGET_KEY] = str(get_entity_id(target_root) or "")
+        source_sr[self._INTEGRATED_TACTICS_SOURCE_OWNER_KEY] = owner_id
+        source_sr[self._INTEGRATED_TACTICS_SOURCE_TURN_KEY] = int(turn or 0)
+        source_sr[self._INTEGRATED_TACTICS_SOURCE_PHASE_KEY] = "SHOOTING_PHASE"
+        source_sr[self._INTEGRATED_TACTICS_SOURCE_NAME_KEY] = self._INTEGRATED_TACTICS_RULE_NAME
+        source_root.special_rules = source_sr
+
+        target_sr = getattr(target_root, "special_rules", None)
+        if not isinstance(target_sr, dict):
+            target_sr = {}
+        target_sr[self._INTEGRATED_TACTICS_TARGET_ACTIVE_KEY] = True
+        target_sr[self._INTEGRATED_TACTICS_TARGET_OWNER_KEY] = owner_id
+        target_sr[self._INTEGRATED_TACTICS_TARGET_TURN_KEY] = int(turn or 0)
+        target_sr[self._INTEGRATED_TACTICS_TARGET_PHASE_KEY] = "SHOOTING_PHASE"
+        target_sr[self._INTEGRATED_TACTICS_TARGET_NAME_KEY] = self._INTEGRATED_TACTICS_RULE_NAME
+        target_root.special_rules = target_sr
+
+        return {
+            "action": "mark",
+            "source_unit_id": str(get_entity_id(source_root) or ""),
+            "target_unit_id": str(get_entity_id(target_root) or ""),
+            "source": self._INTEGRATED_TACTICS_RULE_NAME,
+        }
+
+    def integrated_tactics_target_locked_to(self, source_unit, target_unit, *, game=None) -> bool:
+        if not self.is_brood_brother_auxilia():
+            return True
+        source_root = self._attached_root(source_unit)
+        if source_root is None:
+            return True
+        if not self._unit_in_army(source_root):
+            return True
+        if not self._unit_is_astra_militarum(source_root):
+            return True
+        sr = getattr(source_root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(self._INTEGRATED_TACTICS_SOURCE_ACTIVE_KEY)):
+            return True
+        if not self._is_phase_owner_turn_active(
+            sr,
+            game=game,
+            owner_key=self._INTEGRATED_TACTICS_SOURCE_OWNER_KEY,
+            turn_key=self._INTEGRATED_TACTICS_SOURCE_TURN_KEY,
+            phase_key=self._INTEGRATED_TACTICS_SOURCE_PHASE_KEY,
+        ):
+            return True
+        expected_target_id = str(sr.get(self._INTEGRATED_TACTICS_SOURCE_TARGET_KEY, "") or "")
+        if not expected_target_id:
+            return True
+        target_root = self._attached_root(target_unit)
+        current_target_id = str(get_entity_id(target_root) or "")
+        if not current_target_id:
+            return True
+        return bool(current_target_id == expected_target_id)
+
+    def integrated_tactics_hit_bonus(self, attacker_model, target_unit, *, game=None, weapon_profile=None) -> tuple[int, str]:
+        if not self.is_brood_brother_auxilia():
+            return 0, ""
+        if attacker_model is None or target_unit is None:
+            return 0, ""
+        if weapon_profile is not None:
+            is_melee = getattr(weapon_profile, "is_melee", None)
+            if callable(is_melee) and bool(is_melee()):
+                return 0, ""
+
+        attacker_unit = self._attached_root(getattr(attacker_model, "parent_unit", None))
+        if attacker_unit is None or not self._unit_in_army(attacker_unit):
+            return 0, ""
+        if not self._unit_is_genestealer_cults(attacker_unit):
+            return 0, ""
+        if self._unit_is_astra_militarum(attacker_unit):
+            return 0, ""
+
+        target_root = self._attached_root(target_unit)
+        if target_root is None:
+            return 0, ""
+        target_sr = getattr(target_root, "special_rules", None)
+        if not isinstance(target_sr, dict):
+            return 0, ""
+        if not bool(target_sr.get(self._INTEGRATED_TACTICS_TARGET_ACTIVE_KEY)):
+            return 0, ""
+        owner_id = str(getattr(getattr(self.army, "player", None), "id", "") or "")
+        if not self._is_phase_owner_turn_active(
+            target_sr,
+            game=game,
+            owner_key=self._INTEGRATED_TACTICS_TARGET_OWNER_KEY,
+            turn_key=self._INTEGRATED_TACTICS_TARGET_TURN_KEY,
+            phase_key=self._INTEGRATED_TACTICS_TARGET_PHASE_KEY,
+            owner_id=owner_id,
+        ):
+            return 0, ""
+        return 1, self._INTEGRATED_TACTICS_RULE_NAME
+
+    def _brood_brothers_forbidden_unit_reasons(self, unit) -> list[str]:
+        if unit is None:
+            return []
+        reasons: list[str] = []
+        if bool(getattr(unit, "is_epic_hero", False)):
+            reasons.append("EPIC HERO")
+        for keyword in self._BROOD_BROTHERS_FORBIDDEN_KEYWORDS:
+            if self._unit_has_keyword(unit, keyword):
+                reasons.append(keyword)
+        name_token = self._name_token(getattr(unit, "name", ""))
+        for token in self._BROOD_BROTHERS_FORBIDDEN_NAME_TOKENS:
+            if token and token in name_token:
+                reasons.append(token.upper())
+        unique: list[str] = []
+        seen: set[str] = set()
+        for reason in reasons:
+            key = str(reason or "").strip().upper()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            unique.append(key)
+        return unique
+
+    def apply_brood_brothers_voice_of_command_loss(self) -> None:
+        if not self.is_brood_brother_auxilia():
+            return
+        for root in self._iter_unit_roots():
+            if not self._unit_is_astra_militarum(root):
+                continue
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr[self._BROOD_BROTHERS_VOICE_OF_COMMAND_LOST_KEY] = True
+            for key in (
+                "voice_of_command_order_key",
+                "voice_of_command_order_owner",
+                "voice_of_command_order_source",
+                "voice_of_command_take_cover_cap",
+            ):
+                sr.pop(key, None)
+            root.special_rules = sr
+            remove_modifiers = getattr(root, "remove_characteristic_modifiers_by_source", None)
+            if callable(remove_modifiers):
+                remove_modifiers("voice_of_command:")
+
+    def brood_brothers_voice_of_command_lost_for_unit(self, unit) -> bool:
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        sr = getattr(root, "special_rules", None)
+        return bool(isinstance(sr, dict) and sr.get(self._BROOD_BROTHERS_VOICE_OF_COMMAND_LOST_KEY))
+
+    def validate_detachment_rules(self) -> list[str]:
+        errors: list[str] = []
+        if not self.is_brood_brother_auxilia():
+            return errors
+        army = self.army
+        if army is None:
+            return errors
+
+        self.apply_brood_brothers_voice_of_command_loss()
+
+        cap, size_label = self._brood_brothers_points_cap(int(getattr(army, "points_limit", 0) or 0))
+        brood_brothers_points = 0
+        for unit in self._iter_unit_roots():
+            if not self._unit_is_astra_militarum(unit):
+                continue
+            brood_brothers_points += self._unit_points(unit)
+            forbidden = self._brood_brothers_forbidden_unit_reasons(unit)
+            if not forbidden:
+                continue
+            name = str(getattr(unit, "name", "") or "Unit").strip() or "Unit"
+            errors.append(
+                "Brood Brother Auxilia: ASTRA MILITARUM unit "
+                f"'{name}' is not allowed ({', '.join(forbidden)})."
+            )
+
+        if int(brood_brothers_points) > int(cap):
+            errors.append(
+                "Brood Brother Auxilia: combined ASTRA MILITARUM points "
+                f"({int(brood_brothers_points)}) exceed the {size_label} cap of {int(cap)}."
+            )
+
+        warlord = getattr(army, "warlord", None)
+        if warlord is None:
+            for unit in self._iter_unit_roots():
+                if bool(getattr(unit, "is_warlord", False)):
+                    warlord = unit
+                    break
+        warlord_root = self._attached_root(warlord)
+        if warlord_root is not None and not self._unit_is_genestealer_cults(warlord_root):
+            errors.append(
+                "Brood Brother Auxilia: a GENESTEALER CULTS model from your army must be your WARLORD."
+            )
+        return errors
 
     def _is_hypermorphic_fury_eligible_unit(self, unit) -> bool:
         if not self.is_biosanctic_broodsurge():
@@ -369,14 +833,49 @@ class GenestealerCultsDetachmentManager(DetachmentManagerBase):
             )
 
     def cleanup_on_phase_end(self, phase, active_player) -> None:
-        if not self.is_host_of_ascension():
-            return
         phase_name = str(getattr(phase, "name", phase) or "").strip().upper()
-        if phase_name != "FIGHT_PHASE":
-            return
-        owner_id = str(getattr(active_player, "id", "") or "")
-        if not owner_id:
-            return
-        for root in self._iter_unit_roots():
-            self._clear_a_perfect_ambush_effects(root, owner_id=owner_id)
-            self._clear_a_chink_in_their_armour_effects(root, owner_id=owner_id)
+        if self.is_host_of_ascension() and phase_name == "FIGHT_PHASE":
+            owner_id = str(getattr(active_player, "id", "") or "")
+            if owner_id:
+                for root in self._iter_unit_roots():
+                    self._clear_a_perfect_ambush_effects(root, owner_id=owner_id)
+                    self._clear_a_chink_in_their_armour_effects(root, owner_id=owner_id)
+
+        if self.is_brood_brother_auxilia() and phase_name == "SHOOTING_PHASE":
+            owner_id = str(getattr(active_player, "id", "") or "")
+            game = getattr(getattr(self.army, "player", None), "game", None) if self.army is not None else None
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+
+            for root in self._iter_unit_roots():
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict) or not bool(sr.get(self._INTEGRATED_TACTICS_SOURCE_ACTIVE_KEY)):
+                    continue
+                if owner_id and str(sr.get(self._INTEGRATED_TACTICS_SOURCE_OWNER_KEY, "") or "") not in ("", owner_id):
+                    continue
+                try:
+                    effect_turn = int(sr.get(self._INTEGRATED_TACTICS_SOURCE_TURN_KEY, 0) or 0)
+                except (TypeError, ValueError):
+                    effect_turn = 0
+                if current_turn and effect_turn and effect_turn != current_turn:
+                    continue
+                self._clear_integrated_tactics_source_lock(root)
+
+            owner_player = getattr(self.army, "player", None) if self.army is not None else None
+            if game is not None and owner_player is not None and callable(getattr(game, "get_enemy_units", None)):
+                for enemy in list(game.get_enemy_units(owner_player) or []):
+                    target_root = self._attached_root(enemy)
+                    target_sr = getattr(target_root, "special_rules", None)
+                    if not isinstance(target_sr, dict) or not bool(target_sr.get(self._INTEGRATED_TACTICS_TARGET_ACTIVE_KEY)):
+                        continue
+                    if owner_id and str(target_sr.get(self._INTEGRATED_TACTICS_TARGET_OWNER_KEY, "") or "") not in ("", owner_id):
+                        continue
+                    try:
+                        effect_turn = int(target_sr.get(self._INTEGRATED_TACTICS_TARGET_TURN_KEY, 0) or 0)
+                    except (TypeError, ValueError):
+                        effect_turn = 0
+                    if current_turn and effect_turn and effect_turn != current_turn:
+                        continue
+                    self._clear_integrated_tactics_target_mark(target_root)

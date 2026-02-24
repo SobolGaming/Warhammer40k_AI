@@ -91,6 +91,15 @@ class VoiceOfCommandManager:
     def _unit_has_voice(self, unit) -> bool:
         if unit is None:
             return False
+        root = unit
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        if callable(get_root):
+            maybe_root = get_root()
+            if maybe_root is not None:
+                root = maybe_root
+        sr = getattr(root, "special_rules", None)
+        if isinstance(sr, dict) and bool(sr.get("gsc_brood_brothers_voice_of_command_lost")):
+            return False
         for ab in (list(getattr(unit, "possible_abilities", []) or []) + list(getattr(unit, "abilities", []) or [])):
             try:
                 name = ab if isinstance(ab, str) else getattr(ab, "name", "")

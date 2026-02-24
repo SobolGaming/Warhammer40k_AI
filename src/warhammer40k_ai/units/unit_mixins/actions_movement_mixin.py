@@ -3881,6 +3881,54 @@ class ActionsMovementMixin:
             return False
         return True
 
+    def _gsc_integrated_tactics_context(self, *, game=None) -> Optional[dict]:
+        get_root = getattr(self, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else self
+        if root is None:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("gsc_integrated_tactics_active")):
+            return None
+        target_id = str(sr.get("gsc_integrated_tactics_target_unit_id", "") or "")
+        if not target_id:
+            return None
+        source = str(sr.get("gsc_integrated_tactics_source", "") or "Integrated Tactics").strip() or "Integrated Tactics"
+        if game is None:
+            return {"target_id": target_id, "source": source}
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        expected_phase = str(sr.get("gsc_integrated_tactics_expires_phase", "") or "").strip().upper()
+        if expected_phase and phase_name and expected_phase != phase_name:
+            return None
+        try:
+            effect_turn = int(sr.get("gsc_integrated_tactics_turn", 0) or 0)
+        except (TypeError, ValueError):
+            effect_turn = 0
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            current_turn = 0
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return None
+        effect_owner = str(sr.get("gsc_integrated_tactics_turn_owner", "") or "")
+        if effect_owner:
+            get_current_player = getattr(game, "get_current_player", None)
+            current_player = get_current_player() if callable(get_current_player) else None
+            current_owner = str(getattr(current_player, "id", "") or "")
+            if current_owner and effect_owner != current_owner:
+                return None
+        return {"target_id": target_id, "source": source}
+
+    def _gsc_integrated_tactics_target_locked_to(self, target_unit, *, game=None) -> bool:
+        context = self._gsc_integrated_tactics_context(game=game)
+        if not isinstance(context, dict):
+            return True
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        current_target_id = str(get_entity_id(target_root) or "")
+        expected_target_id = str(context.get("target_id", "") or "")
+        if expected_target_id and current_target_id and expected_target_id != current_target_id:
+            return False
+        return True
+
     def get_unit_wound_reroll_modifiers(self, attack_type: str, *, target=None) -> dict:
         """
         Return unit-level wound modifiers for this attached unit, parsed via attack_roll_parser.

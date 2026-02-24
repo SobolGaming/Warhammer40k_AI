@@ -4916,6 +4916,64 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not callable(target_eligible) or not bool(target_eligible(source_root, target_root)):
             return ("Assailed From Every Angle target must be an enemy non-MONSTER/non-VEHICLE unit.")
         return ()
+    if ability == "integrated_tactics":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Integrated Tactics army not found.",)
+        mgr = getattr(army, "genestealer_cults_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_brood_brother_auxilia", lambda: False)()):
+            return ("Integrated Tactics requires Brood Brother Auxilia detachment.",)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("source_unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Integrated Tactics source unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return ("Integrated Tactics source unit was not found.",)
+        source_id = str(get_entity_id(source_root) or "")
+        expected_source_id = str(ctx.get("unit_id", "") or "")
+        if expected_source_id and source_id and source_id != expected_source_id:
+            return ("Integrated Tactics source unit mismatch.",)
+        source_eligible = getattr(mgr, "integrated_tactics_source_eligible", None)
+        if not callable(source_eligible) or not bool(source_eligible(source_root)):
+            return ("Integrated Tactics source unit is not eligible.",)
+        if is_skip_choice(request, result):
+            return ()
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return ("Integrated Tactics target unit was not found.",)
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None:
+            return ("Integrated Tactics target unit was not found.",)
+        candidate_ids = {
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_unit_ids", []) or [])
+            if str(v or "").strip()
+        }
+        target_id = str(get_entity_id(target_root) or "")
+        if candidate_ids and target_id not in candidate_ids:
+            return ("Integrated Tactics selected unit is not an eligible candidate.",)
+        target_eligible = getattr(mgr, "integrated_tactics_target_eligible", None)
+        if not callable(target_eligible) or not bool(target_eligible(source_root, target_root, game=game)):
+            return ("Integrated Tactics target must be an enemy unit within 18\" and visible to the source unit.")
+        return ()
     if ability == "bondsman":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)
@@ -5361,6 +5419,79 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             "source_unit_id": str(get_entity_id(source_root) or ""),
             "source": ability_name,
         }
+    if ability == "integrated_tactics":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "genestealer_cults_detachments", None)
+        if mgr is None:
+            return None
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("source_unit_id")
+            or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        skip = is_skip_choice(request, result)
+        target_root = None
+        if not skip:
+            target_unit = resolve_unit(
+                game,
+                payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+            )
+            if target_unit is None:
+                return None
+            target_root = (
+                target_unit.get_attached_unit_root()
+                if hasattr(target_unit, "get_attached_unit_root")
+                else target_unit
+            )
+            if target_root is None:
+                return None
+        apply_fn = getattr(mgr, "apply_integrated_tactics_choice", None)
+        if not callable(apply_fn):
+            return None
+        outcome = apply_fn(
+            source_root,
+            target_unit=target_root,
+            skip=bool(skip),
+            game=game,
+            player=player,
+        )
+        if not isinstance(outcome, dict):
+            return None
+        ability_name = str(ctx.get("ability_name", "") or "Integrated Tactics").strip() or "Integrated Tactics"
+        if bool(skip):
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: no target selected for {getattr(source_root, 'name', 'Unit')}.",
+            )
+            return outcome
+        _log_action_for_players(
+            game,
+            player,
+            (
+                f"{ability_name}: {getattr(source_root, 'name', 'Unit')} can only target "
+                f"{getattr(target_root, 'name', 'Unit')} this phase; "
+                f"{getattr(target_root, 'name', 'Unit')} is caught in overlapping fire."
+            ),
+        )
+        return outcome
     if ability == "dread_mob_try_dat_button":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)
