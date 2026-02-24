@@ -8332,6 +8332,27 @@ class WargearProfile:
                     _add_hit_mod(int(bonus), reason)
         except Exception:
             pass
+        # Imperial Agents: Imperialis Fleet - At all Costs (Eliminate).
+        try:
+            unit = attacker.parent_unit
+            army = None
+            game = None
+            game_map = None
+            try:
+                army = unit.get_parent_army()
+                game = getattr(getattr(army, "player", None), "game", None)
+                game_map = getattr(game, "map", None) if game is not None else None
+            except Exception:
+                game = None
+                game_map = None
+            mgr = getattr(army, "imperial_agents_detachments", None) if army is not None else None
+            bonus_fn = getattr(mgr, "at_all_costs_hit_bonus", None) if mgr is not None else None
+            if callable(bonus_fn):
+                bonus, reason = bonus_fn(attacker, unit, target, game=game, game_map=game_map)
+                if bonus:
+                    _add_hit_mod(int(bonus), reason)
+        except Exception:
+            pass
         # Adepta Sororitas: The Blood of Martyrs (Hallowed Martyrs).
         unit = getattr(attacker, "parent_unit", None)
         army = (
@@ -16215,6 +16236,31 @@ class WargearProfile:
                         source = str(inv_source or "Zealous Litanies (Chant of Deathless Devotion)").strip()
                         if source:
                             attack_instance["inv_save_override_reason"] = source
+        except Exception:
+            pass
+        # Imperial Agents: Imperialis Fleet (At all Costs - Acquire) 5+ invulnerable save.
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            attack_type = "melee" if (self.parent_wargear and self.parent_wargear.is_melee()) else "ranged"
+            army = t_unit.get_parent_army() if t_unit is not None else None
+            ia_mgr = getattr(army, "imperial_agents_detachments", None) if army is not None else None
+            inv_fn = getattr(ia_mgr, "at_all_costs_acquire_invulnerable_save", None) if ia_mgr is not None else None
+            if callable(inv_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                game_map = getattr(game, "map", None) if game is not None else None
+                inv_value, inv_source = inv_fn(
+                    target_model,
+                    unit=t_unit,
+                    attack_type=attack_type,
+                    game=game,
+                    game_map=game_map,
+                )
+                if inv_value:
+                    current = attack_instance.get("inv_save_override", None)
+                    if current is None or int(current) > int(inv_value):
+                        attack_instance["inv_save_override"] = int(inv_value)
+                        source = str(inv_source or "At all Costs (Acquire)").strip() or "At all Costs (Acquire)"
+                        attack_instance["inv_save_override_reason"] = source
         except Exception:
             pass
         # Thousand Sons: Changehost of Deceit (Infernal Pacts - Daemonic Illusions).

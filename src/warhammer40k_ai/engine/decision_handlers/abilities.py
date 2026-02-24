@@ -2908,6 +2908,90 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not bool(is_valid_target(target_root, player=player, game=game)):
             return ("Marked Prey target must be an enemy unit on the battlefield.",)
         return ()
+    if ability == "imperialis_fleet_at_all_costs":
+        payload = _option_payload(request, result)
+        source_army = _resolve_army(game, request, payload)
+        if source_army is None:
+            return ("At all Costs army not found.",)
+        mgr = getattr(source_army, "imperial_agents_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_imperialis_fleet", lambda: False)()):
+            return ("At all Costs requires an Imperialis Fleet army.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(source_army, "player", None)
+        try:
+            battle_round = int(ctx.get("battle_round", 0) or getattr(game, "turn", 0) or 0)
+        except Exception:
+            battle_round = int(getattr(game, "turn", 0) or 0)
+
+        if is_skip_choice(request, result):
+            validate_choice = getattr(mgr, "validate_at_all_costs_choice", None)
+            if not callable(validate_choice):
+                return ("At all Costs manager support is unavailable.",)
+            valid, reason = validate_choice(
+                mode="skip",
+                game=game,
+                player=player,
+                battle_round=int(battle_round),
+            )
+            if not valid:
+                return (str(reason or "At all Costs selection is not legal."),)
+            return ()
+
+        mode = str(payload.get("mode", "") or "").strip().lower()
+        if mode not in {"eliminate", "acquire"}:
+            return ("At all Costs mode must be eliminate or acquire.",)
+        validate_choice = getattr(mgr, "validate_at_all_costs_choice", None)
+        if not callable(validate_choice):
+            return ("At all Costs manager support is unavailable.",)
+        candidate_unit_ids = [str(v or "").strip() for v in list(ctx.get("candidate_unit_ids", []) or []) if str(v or "").strip()]
+        candidate_objective_ids = [
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_objective_ids", []) or [])
+            if str(v or "").strip()
+        ]
+        if mode == "eliminate":
+            target_unit = resolve_unit(
+                game,
+                payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+            )
+            if target_unit is None:
+                return ("Eliminate At All Costs target unit was not found.",)
+            target_root = (
+                target_unit.get_attached_unit_root()
+                if hasattr(target_unit, "get_attached_unit_root")
+                else target_unit
+            )
+            if target_root is None:
+                return ("Eliminate At All Costs target unit was not found.",)
+            valid, reason = validate_choice(
+                mode=mode,
+                target_unit=target_root,
+                game=game,
+                player=player,
+                battle_round=int(battle_round),
+                candidate_unit_ids=list(candidate_unit_ids),
+                candidate_objective_ids=list(candidate_objective_ids),
+            )
+            if not valid:
+                return (str(reason or "Eliminate At All Costs selection is not legal."),)
+            return ()
+
+        objective_id = str(payload.get("objective_id") or ctx.get("objective_id") or "").strip()
+        if not objective_id:
+            return ("Acquire At All Costs selection requires objective_id.",)
+        valid, reason = validate_choice(
+            mode=mode,
+            objective_id=objective_id,
+            game=game,
+            player=player,
+            battle_round=int(battle_round),
+            candidate_unit_ids=list(candidate_unit_ids),
+            candidate_objective_ids=list(candidate_objective_ids),
+        )
+        if not valid:
+            return (str(reason or "Acquire At All Costs selection is not legal."),)
+        return ()
     if ability == "iconoclast_dark_sacrifice":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)
@@ -4824,6 +4908,105 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             "target_unit_id": str(get_entity_id(target_root) or ""),
             "source": ability_name,
         }
+    if ability == "imperialis_fleet_at_all_costs":
+        payload = _option_payload(request, result)
+        source_army = _resolve_army(game, request, payload)
+        if source_army is None:
+            return None
+        mgr = getattr(source_army, "imperial_agents_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_imperialis_fleet", lambda: False)()):
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(source_army, "player", None)
+        try:
+            battle_round = int(ctx.get("battle_round", 0) or getattr(game, "turn", 0) or 0)
+        except Exception:
+            battle_round = int(getattr(game, "turn", 0) or 0)
+        candidate_unit_ids = [str(v or "").strip() for v in list(ctx.get("candidate_unit_ids", []) or []) if str(v or "").strip()]
+        candidate_objective_ids = [
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_objective_ids", []) or [])
+            if str(v or "").strip()
+        ]
+
+        select_fn = getattr(mgr, "select_at_all_costs_choice", None)
+        if not callable(select_fn):
+            return None
+
+        if is_skip_choice(request, result):
+            outcome = select_fn(
+                mode="skip",
+                game=game,
+                player=player,
+                battle_round=int(battle_round),
+            )
+            if outcome is None:
+                return None
+            ability_name = str(ctx.get("ability_name", "") or "At all Costs").strip() or "At all Costs"
+            _log_action_for_players(game, player, f"{ability_name}: no option selected this Command phase.")
+            return outcome
+
+        mode = str(payload.get("mode", "") or "").strip().lower()
+        if mode == "eliminate":
+            target_unit = resolve_unit(
+                game,
+                payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+            )
+            if target_unit is None:
+                return None
+            target_root = (
+                target_unit.get_attached_unit_root()
+                if hasattr(target_unit, "get_attached_unit_root")
+                else target_unit
+            )
+            if target_root is None:
+                return None
+            outcome = select_fn(
+                mode=mode,
+                target_unit=target_root,
+                game=game,
+                player=player,
+                battle_round=int(battle_round),
+                candidate_unit_ids=list(candidate_unit_ids),
+                candidate_objective_ids=list(candidate_objective_ids),
+            )
+        elif mode == "acquire":
+            objective_id = str(payload.get("objective_id") or ctx.get("objective_id") or "").strip()
+            if not objective_id:
+                return None
+            outcome = select_fn(
+                mode=mode,
+                objective_id=objective_id,
+                game=game,
+                player=player,
+                battle_round=int(battle_round),
+                candidate_unit_ids=list(candidate_unit_ids),
+                candidate_objective_ids=list(candidate_objective_ids),
+            )
+        else:
+            return None
+
+        if outcome is None:
+            return None
+
+        ability_name = str((outcome or {}).get("source", "") or ctx.get("ability_name", "") or "At all Costs").strip() or "At all Costs"
+        mode_name = str((outcome or {}).get("mode", "") or "").strip().lower()
+        if mode_name == "eliminate":
+            target_name = str((outcome or {}).get("target_unit_name", "") or "enemy unit")
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: selected Eliminate At All Costs targeting {target_name}.",
+            )
+        elif mode_name == "acquire":
+            objective_name = str((outcome or {}).get("objective_name", "") or "objective marker")
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: selected Acquire At All Costs targeting {objective_name}.",
+            )
+        return outcome
     if ability == "assemblage_of_might":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)

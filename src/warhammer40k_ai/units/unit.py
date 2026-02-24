@@ -796,6 +796,27 @@ class Unit(
                         )
             except Exception:
                 pass
+            try:
+                ia_mgr = getattr(army, "imperial_agents_detachments", None) if army is not None else None
+                bonus_fn = (
+                    getattr(ia_mgr, "at_all_costs_acquire_objective_control_bonus", None)
+                    if ia_mgr is not None
+                    else None
+                )
+                if callable(bonus_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    bonus, source = bonus_fn(model, unit=self, game=game, game_map=game_map)
+                    if int(bonus or 0):
+                        source_name = str(source or "At all Costs (Acquire)").strip() or "At all Costs (Acquire)"
+                        mods.append(
+                            Modifier(
+                                ModifierOp.ADD,
+                                int(bonus),
+                                source=f"detachment:{source_name}",
+                            )
+                        )
+            except Exception:
+                pass
 
             # Singular Purpose (TYRANIDS): while the selected source model is within range
             # of the selected objective marker, that model has OC 15 (or configured value).
@@ -1103,6 +1124,17 @@ class Unit(
                 if int(bonus or 0):
                     source_name = str(source or "Righteous Purpose").strip() or "Righteous Purpose"
                     mods.append(Modifier(ModifierOp.ADD, int(bonus), source=f"detachment:{source_name}"))
+            try:
+                ia_mgr = getattr(army, "imperial_agents_detachments", None) if army is not None else None
+                bonus_fn = getattr(ia_mgr, "at_all_costs_acquire_leadership_bonus", None) if ia_mgr is not None else None
+                if callable(bonus_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    bonus, source = bonus_fn(self, game=game, game_map=game_map)
+                    if int(bonus or 0):
+                        source_name = str(source or "At all Costs (Acquire)").strip() or "At all Costs (Acquire)"
+                        mods.append(Modifier(ModifierOp.ADD, int(bonus), source=f"detachment:{source_name}"))
+            except Exception:
+                pass
 
         afflicted_plague = None
         try:

@@ -1137,6 +1137,13 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"at the start of your command phase select one unit from your opponent(?: s|s) army",
             r"until the start of your next command phase each time a model in an adeptus custodes character unit from your army makes an attack that targets that enemy unit add 1 to the wound roll",
         ),
+        "At all Costs": (
+            r"at the start of your command phase you can select one of the following to apply",
+            r"select one enemy unit on the battlefield",
+            r"until the start of your next command phase each time an agents of the imperium model from your army makes an attack that targets that enemy unit add 1 to the hit roll",
+            r"select one objective marker on the battlefield",
+            r"until the start of your next command phase while an agents of the imperium unit from your army is within range of that objective marker improve the leadership and objective control characteristics of models in that unit by 1 and models in that unit have a 5 invulnerable save",
+        ),
         "Creeping Dread (Aura)": (
             r"in the battle shock step of your opponents command phase if an enemy unit that is either a psyker unit or below its starting strength is within \d+ of one or more anathema psykana models from your army that enemy unit must take a battle shock test",
             r"if that unit is below half strength it must subtract \d+ from its battle shock test this phase instead",
@@ -4520,6 +4527,10 @@ def _datasheet_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[str, str
 
 def _detachment_ability_support_by_id() -> Dict[str, Tuple[str, str]]:
     return {
+        "000009137": (
+            "Supported",
+            "Imperialis Fleet: At all Costs command-phase choice fully implemented with Eliminate target selection (+1 to hit vs selected enemy unit) and Acquire objective selection (+1 Objective Control, +1 Leadership improvement, and 5+ invulnerable save while in range) until your next Command phase.",
+        ),
         "000010711": (
             "Supported",
             "Freebooter Krew: Here Be Loot objective selection and Sustained Hits 1 objective-range attack gating implemented.",
