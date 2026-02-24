@@ -797,6 +797,16 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"strike force up to 500 pts",
             r"onslaught up to 750 pts",
         ),
+        "Heroes of Legend": (
+            r"at the start of your turn if your current oath is fulfilled determine an additional oath as described here with the exception that you cannot select a deed or quality you have already selected if you are randomly selecting the deed and or quality and roll any result that you have already selected select a deed or quality you have not already selected instead",
+            r"if you cannot determine an additional oath because you have already selected each deed and each quality do not determine an additional oath",
+            r"the qualities from oaths you have fulfilled continue to apply to all models in your army with the code chivalric ability",
+            r"when the deed for an additional oath is completed you instead gain 1cp regardless of how you selected the deed or quality",
+        ),
+        "Valour's Reward": (
+            r"you cannot use such enhancements while they are expended",
+            r"each time you fulfil your oath each expended enhancement is no longer expended",
+        ),
         "Da Boss Is Watchin'": (
             r"at the start of your command phase in a turn in which you have not called a waaagh if you have one or more warboss models on the battlefield or embarked within a transport that is on the battlefield you can call a waaagh for a second time this battle",
             r"when doing so that second waaagh only counts as having been called for warboss nobz and meganobz units from your army",
@@ -2774,6 +2784,14 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Cogbound Alliance": (
             "Supported",
             "Questor Forgepact: Command phase Sacristan Pledge heals one lost wound for each IMPERIAL KNIGHTS unit (D3 while within 3\" of a friendly TECH-PRIEST), ADEPTUS MECHANICUS units gain Divine Inspiration re-roll Hit rolls of 1 for ranged attacks with re-roll Wound rolls of 1 while within 6\" of friendly IMPERIAL KNIGHTS units, and Forge World ally list/points cap/warlord restrictions are validated.",
+        ),
+        "Heroes of Legend": (
+            "Supported",
+            "Questoris Companions: when a current Code Chivalric Oath is fulfilled, start-of-turn Heroes of Legend automatically prepares and queues additional Deed/Quality oath selection using deterministic CHOOSE_CHIVALRIC_OATH flow, prevents re-selecting previously used Deeds/Qualities (including random-roll duplicates), preserves fulfilled Oath Qualities as cumulative active effects, and grants +1CP when each additional Oath Deed is completed.",
+        ),
+        "Valour’s Reward": (
+            "Supported",
+            "Questoris Companions: Valour's Reward expended-state tracking is provided for listed detachment enhancements (expended enhancements are blocked via manager state), and every time a Code Chivalric Oath is fulfilled all expended enhancement states are cleared.",
         ),
         "Annihilation Protocol": (
             "Supported",

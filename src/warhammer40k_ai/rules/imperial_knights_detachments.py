@@ -14,15 +14,24 @@ class ImperialKnightsDetachmentManager(DetachmentManagerBase):
     DETACHMENT_VALOURSTRIKE_LANCE = "Valourstrike Lance"
     DETACHMENT_GATE_WARDEN_LANCE = "Gate Warden Lance"
     DETACHMENT_QUESTOR_FORGEPACT = "Questor Forgepact"
+    DETACHMENT_QUESTORIS_COMPANIONS = "Questoris Companions"
     DAUNTLESS_DEFENDERS_NAME = "Dauntless Defenders"
     DAUNTLESS_DEFENDERS_ABILITY_KEY = "gate_warden_dauntless_defenders_foundation"
     COGBOUND_ALLIANCE_NAME = "Cogbound Alliance"
+    VALOURS_REWARD_NAME = "Valour's Reward"
+    HEROES_OF_LEGEND_NAME = "Heroes of Legend"
     FORGEPACT_ALLOWED_ADMECH_UNIT_NAMES = (
         "tech priest dominus",
         "tech priest manipulus",
         "skitarii marshal",
         "skitarii rangers",
         "skitarii vanguard",
+    )
+    QUESTORIS_COMPANIONS_EXPENDABLE_ENHANCEMENTS = (
+        "herald of triumph",
+        "wyrmslayer divination",
+        "pennant of silvered fury",
+        "crushing condemnation",
     )
 
     def __init__(self, army=None):
@@ -44,6 +53,11 @@ class ImperialKnightsDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches(self.DETACHMENT_QUESTOR_FORGEPACT)
+
+    def is_questoris_companions(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches(self.DETACHMENT_QUESTORIS_COMPANIONS)
 
     @staticmethod
     def _entity_id(entity) -> str:
@@ -742,8 +756,90 @@ class ImperialKnightsDetachmentManager(DetachmentManagerBase):
         )
         return reroll_hit_ones, reroll_wound_ones, "Divine Inspiration"
 
+    def _unit_has_questoris_companions_expended_enhancement(self, unit) -> bool:
+        if unit is None:
+            return False
+        enhancement = getattr(unit, "enhancement", None)
+        if enhancement is None:
+            return False
+        normalized_name = self._normalize_unit_name(getattr(enhancement, "name", ""))
+        return normalized_name in set(self.QUESTORIS_COMPANIONS_EXPENDABLE_ENHANCEMENTS)
+
+    def mark_questoris_companions_enhancement_expended(self, unit) -> bool:
+        if not self.is_questoris_companions():
+            return False
+        root = self._attached_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return False
+        if not self._unit_has_questoris_companions_expended_enhancement(root):
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr = dict(sr)
+        sr["questoris_companions_enhancement_expended"] = True
+        root.special_rules = sr
+        return True
+
+    def is_questoris_companions_enhancement_expended(self, unit) -> bool:
+        if not self.is_questoris_companions():
+            return False
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        sr = getattr(root, "special_rules", None)
+        return bool(isinstance(sr, dict) and sr.get("questoris_companions_enhancement_expended"))
+
+    def clear_questoris_companions_expended_enhancements(self) -> None:
+        if self.army is None:
+            return
+        for unit in list(getattr(self.army, "units", []) or []):
+            root = self._attached_root(unit)
+            if root is None or not self._unit_in_army(root):
+                continue
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if "questoris_companions_enhancement_expended" not in sr:
+                continue
+            updated = dict(sr)
+            updated.pop("questoris_companions_enhancement_expended", None)
+            root.special_rules = updated
+
+    def on_code_chivalric_oath_fulfilled(self, *, player=None, is_additional_oath: bool = False) -> None:
+        del player, is_additional_oath
+        if not self.is_questoris_companions():
+            return
+        self.clear_questoris_companions_expended_enhancements()
+
+    def _process_heroes_of_legend_start_of_turn(self, *, game=None, player=None) -> None:
+        if not self.is_questoris_companions():
+            return
+        if self.army is None:
+            return
+        owner = getattr(self.army, "player", None)
+        if owner is None:
+            return
+        if player is not None and player is not owner:
+            return
+        code_mgr = getattr(self.army, "code_chivalric", None)
+        if code_mgr is None:
+            return
+        prepare_next = getattr(code_mgr, "prepare_next_oath_selection", None)
+        prepared = bool(callable(prepare_next) and prepare_next(game=game, player=owner))
+        if prepared:
+            return
+        selected_deed = str(getattr(code_mgr, "selected_deed_key", "") or "").strip()
+        selected_quality = str(getattr(code_mgr, "selected_quality_key", "") or "").strip()
+        if selected_deed and selected_quality:
+            return
+        queue_oath = getattr(code_mgr, "on_read_mission_objectives", None)
+        if callable(queue_oath):
+            queue_oath(game=game, player=owner)
+
     def on_command_phase_start(self, *, game=None, player=None) -> None:
         self._apply_forgepact_sacristan_pledges(game=game, player=player)
+        self._process_heroes_of_legend_start_of_turn(game=game, player=player)
 
     def validate_detachment_rules(self) -> list[str]:
         errors: list[str] = []

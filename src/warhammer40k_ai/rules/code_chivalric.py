@@ -103,6 +103,10 @@ class CodeChivalricManager:
         self.honoured = False
         self.deed_completed = False
         self.enemy_units_destroyed_this_round = 0
+        self.used_deed_keys: set[str] = set()
+        self.used_quality_keys: set[str] = set()
+        self.fulfilled_quality_keys: set[str] = set()
+        self.completed_oath_count = 0
 
     def _army_has_code_chivalric(self) -> bool:
         if self.army is None:
@@ -150,6 +154,34 @@ class CodeChivalricManager:
             return getattr(player, "game", None) if player is not None else None
         except Exception:
             return None
+
+    def _is_questoris_companions(self) -> bool:
+        if self.army is None:
+            return False
+        mgr = getattr(self.army, "imperial_knights_detachments", None)
+        check = getattr(mgr, "is_questoris_companions", None)
+        return bool(callable(check) and check())
+
+    def _available_deeds_for_selection(self) -> list[CodeChivalricDeed]:
+        if not self._is_questoris_companions() or not bool(self.honoured):
+            return list(CODE_CHIVALRIC_DEEDS)
+        used = {str(k or "").strip().upper() for k in list(self.used_deed_keys or set()) if str(k or "").strip()}
+        return [deed for deed in list(CODE_CHIVALRIC_DEEDS) if str(getattr(deed, "key", "") or "").strip().upper() not in used]
+
+    def _available_qualities_for_selection(self) -> list[CodeChivalricQuality]:
+        if not self._is_questoris_companions() or not bool(self.honoured):
+            return list(CODE_CHIVALRIC_QUALITIES)
+        used = {str(k or "").strip().upper() for k in list(self.used_quality_keys or set()) if str(k or "").strip()}
+        return [
+            quality for quality in list(CODE_CHIVALRIC_QUALITIES)
+            if str(getattr(quality, "key", "") or "").strip().upper() not in used
+        ]
+
+    def get_active_quality_keys(self) -> list[str]:
+        active = {str(v or "").strip().upper() for v in list(self.fulfilled_quality_keys or set()) if str(v or "").strip()}
+        if str(self.selected_quality_key or "").strip():
+            active.add(str(self.selected_quality_key or "").strip().upper())
+        return sorted(active)
 
     def get_selected_deed(self) -> Optional[CodeChivalricDeed]:
         return DEED_BY_KEY.get(self.selected_deed_key) if self.selected_deed_key else None
@@ -230,8 +262,13 @@ class CodeChivalricManager:
         key = str(key or "").strip().upper()
         if key not in DEED_BY_KEY:
             return False
+        if self._is_questoris_companions() and bool(self.honoured):
+            used = {str(v or "").strip().upper() for v in list(self.used_deed_keys or set()) if str(v or "").strip()}
+            if key in used:
+                return False
         self.selected_deed_key = key
         self.selected_deed_random = bool(random)
+        self.used_deed_keys.add(str(key))
         if self.army is not None:
             try:
                 setattr(self.army, "code_chivalric_deed_key", self.selected_deed_key)
@@ -246,8 +283,13 @@ class CodeChivalricManager:
         key = str(key or "").strip().upper()
         if key not in QUALITY_BY_KEY:
             return False
+        if self._is_questoris_companions() and bool(self.honoured):
+            used = {str(v or "").strip().upper() for v in list(self.used_quality_keys or set()) if str(v or "").strip()}
+            if key in used:
+                return False
         self.selected_quality_key = key
         self.selected_quality_random = bool(random)
+        self.used_quality_keys.add(str(key))
         if self.army is not None:
             try:
                 setattr(self.army, "code_chivalric_quality_key", self.selected_quality_key)
@@ -261,6 +303,17 @@ class CodeChivalricManager:
         deed = next((d for d in CODE_CHIVALRIC_DEEDS if d.roll_min <= roll <= d.roll_max), None)
         if deed is None:
             deed = DEED_LAY_LOW
+        if self._is_questoris_companions() and bool(self.honoured):
+            available = list(self._available_deeds_for_selection() or [])
+            if not available:
+                return {"roll": roll, "deed": None}
+            available_by_key = {
+                str(getattr(entry, "key", "") or "").strip().upper(): entry
+                for entry in available
+                if str(getattr(entry, "key", "") or "").strip()
+            }
+            if str(getattr(deed, "key", "") or "").strip().upper() not in available_by_key:
+                deed = available[0]
         self.select_deed(deed, random=True, game=game, player=player)
         return {"roll": roll, "deed": deed}
 
@@ -269,6 +322,17 @@ class CodeChivalricManager:
         quality = next((q for q in CODE_CHIVALRIC_QUALITIES if q.roll_min <= roll <= q.roll_max), None)
         if quality is None:
             quality = QUALITY_VALOUR
+        if self._is_questoris_companions() and bool(self.honoured):
+            available = list(self._available_qualities_for_selection() or [])
+            if not available:
+                return {"roll": roll, "quality": None}
+            available_by_key = {
+                str(getattr(entry, "key", "") or "").strip().upper(): entry
+                for entry in available
+                if str(getattr(entry, "key", "") or "").strip()
+            }
+            if str(getattr(quality, "key", "") or "").strip().upper() not in available_by_key:
+                quality = available[0]
         self.select_quality(quality, random=True)
         return {"roll": roll, "quality": quality}
 
@@ -305,13 +369,16 @@ class CodeChivalricManager:
                         continue
                     if str(ctx.get("army_id", "")) == str(army_id):
                         return
+            available_deeds = list(self._available_deeds_for_selection() or [])
+            if not available_deeds:
+                return
             req_options = [
                 DecisionOption.create(
                     "Roll D6 (random)",
                     payload={"choice_key": "ROLL", "random": True, "oath_kind": "deed"},
                 )
             ]
-            for deed in list(CODE_CHIVALRIC_DEEDS or []):
+            for deed in available_deeds:
                 key = getattr(deed, "key", None) or getattr(deed, "choice_key", None)
                 name = getattr(deed, "name", None) or str(deed)
                 summary = getattr(deed, "summary", "") or getattr(deed, "effect", "")
@@ -344,13 +411,16 @@ class CodeChivalricManager:
                         continue
                     if str(ctx.get("army_id", "")) == str(army_id):
                         return
+            available_qualities = list(self._available_qualities_for_selection() or [])
+            if not available_qualities:
+                return
             req_options = [
                 DecisionOption.create(
                     "Roll D6 (random)",
                     payload={"choice_key": "ROLL", "random": True, "oath_kind": "quality"},
                 )
             ]
-            for quality in list(CODE_CHIVALRIC_QUALITIES or []):
+            for quality in available_qualities:
                 key = getattr(quality, "key", None) or getattr(quality, "choice_key", None)
                 name = getattr(quality, "name", None) or str(quality)
                 summary = getattr(quality, "summary", "") or getattr(quality, "effect", "")
@@ -373,7 +443,10 @@ class CodeChivalricManager:
                 game.request_decision(req)
 
     def apply_quality_effects(self) -> None:
-        if self.army is None or not self.selected_quality_key:
+        if self.army is None:
+            return
+        active_quality_keys = set(self.get_active_quality_keys())
+        if not active_quality_keys:
             return
         for unit in list(getattr(self.army, "units", []) or []):
             if not self._unit_has_code_chivalric(unit):
@@ -388,14 +461,14 @@ class CodeChivalricManager:
             for key in list(sr.keys()):
                 if str(key).startswith("code_chivalric_"):
                     sr.pop(key, None)
-            if self.selected_quality_key == QUALITY_EAGER.key:
+            if QUALITY_EAGER.key in active_quality_keys:
                 unit.add_characteristic_modifier(
                     "movement",
                     Modifier(ModifierOp.ADD, 2, source="code_chivalric:quality"),
                 )
                 sr["code_chivalric_advance_bonus"] = 1
                 sr["code_chivalric_charge_bonus"] = 1
-            elif self.selected_quality_key == QUALITY_LEGACY.key:
+            if QUALITY_LEGACY.key in active_quality_keys:
                 unit.add_characteristic_modifier(
                     "objective_control",
                     Modifier(ModifierOp.ADD, 2, source="code_chivalric:quality"),
@@ -404,11 +477,12 @@ class CodeChivalricManager:
                     "leadership",
                     Modifier(ModifierOp.ADD, -1, source="code_chivalric:quality"),
                 )
-            sr["code_chivalric_quality_key"] = self.selected_quality_key
+            sr["code_chivalric_quality_key"] = str(self.selected_quality_key or "")
+            sr["code_chivalric_active_quality_keys"] = sorted(active_quality_keys)
             unit.special_rules = sr
 
     def quality_allows_rerolls(self) -> bool:
-        return self.selected_quality_key == QUALITY_VALOUR.key
+        return QUALITY_VALOUR.key in set(self.get_active_quality_keys())
 
     def can_use_reroll(self, model, *, kind: str) -> bool:
         if not self.quality_allows_rerolls():
@@ -489,18 +563,40 @@ class CodeChivalricManager:
     def on_battle_round_start(self, battle_round: int) -> None:
         self.enemy_units_destroyed_this_round = 0
 
-    def _grant_honoured(self, *, player=None) -> None:
-        if self.honoured:
+    def _notify_oath_fulfilled(self, *, is_additional_oath: bool, player=None) -> None:
+        if self.army is None:
             return
+        mgr = getattr(self.army, "imperial_knights_detachments", None)
+        callback = getattr(mgr, "on_code_chivalric_oath_fulfilled", None) if mgr is not None else None
+        if callable(callback):
+            callback(player=player, is_additional_oath=bool(is_additional_oath))
+
+    def _grant_honoured(self, *, player=None) -> None:
+        if player is None and self.army is not None:
+            player = getattr(self.army, "player", None)
+        selected_quality = str(self.selected_quality_key or "").strip().upper()
+        if selected_quality:
+            self.fulfilled_quality_keys.add(selected_quality)
+        is_additional = bool(self.honoured)
+        if self.honoured:
+            self.deed_completed = True
+            self.completed_oath_count = int(self.completed_oath_count or 0) + 1
+            self.apply_quality_effects()
+            if self._is_questoris_companions() and player is not None:
+                player.gain_command_points(1, exempt_from_guardrail=True, reason="Code Chivalric: Additional Oath")
+            self._notify_oath_fulfilled(is_additional_oath=True, player=player)
+            return
+
         self.honoured = True
         self.deed_completed = True
+        self.completed_oath_count = int(self.completed_oath_count or 0) + 1
         if self.army is not None:
             try:
                 setattr(self.army, "code_chivalric_honoured", True)
             except Exception:
                 pass
-        if player is None and self.army is not None:
-            player = getattr(self.army, "player", None)
+        self.apply_quality_effects()
+        self._notify_oath_fulfilled(is_additional_oath=is_additional, player=player)
         if player is None:
             return
         cp_gain = 3 if (self.selected_deed_random or self.selected_quality_random) else 2
@@ -508,6 +604,42 @@ class CodeChivalricManager:
             player.gain_command_points(cp_gain, exempt_from_guardrail=True, reason="Code Chivalric: Honoured")
         except Exception:
             pass
+
+    def prepare_next_oath_selection(self, *, game=None, player=None) -> bool:
+        if not self._is_questoris_companions():
+            return False
+        if not bool(self.honoured):
+            return False
+        if not bool(self.deed_completed):
+            return False
+        if not str(self.selected_deed_key or "").strip():
+            return False
+        if not str(self.selected_quality_key or "").strip():
+            return False
+        if not self._available_deeds_for_selection():
+            return False
+        if not self._available_qualities_for_selection():
+            return False
+        self.deed_completed = False
+        self.selected_deed_key = None
+        self.selected_quality_key = None
+        self.selected_deed_random = False
+        self.selected_quality_random = False
+        self.deed_target_model_id = None
+        self.deed_target_model_name = None
+        self.deed_target_destroyed = False
+        if self.army is not None:
+            try:
+                setattr(self.army, "code_chivalric_deed_key", "")
+                setattr(self.army, "code_chivalric_quality_key", "")
+                setattr(self.army, "code_chivalric_target_model_id", "")
+                setattr(self.army, "code_chivalric_target_model_name", "")
+            except Exception:
+                pass
+        self.apply_quality_effects()
+        if game is not None and player is not None:
+            self.on_read_mission_objectives(game=game, player=player)
+        return True
 
     def check_end_of_turn(self, *, game=None, turn_ending_player=None) -> None:
         if not self._army_has_code_chivalric():
