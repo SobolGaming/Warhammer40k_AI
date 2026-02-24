@@ -2715,6 +2715,41 @@ class WargearProfile:
                 except Exception:
                     root = unit
                 sr = getattr(root, "special_rules", None) if root is not None else None
+                bonus = int(sr.get("shadow_legion_channelled_wrath_ap_bonus", 0) or 0) if isinstance(sr, dict) else 0
+                if bonus and isinstance(sr, dict) and sr.get("shadow_legion_channelled_wrath_active"):
+                    apply_bonus = True
+                    exp = str(sr.get("shadow_legion_channelled_wrath_expires_phase", "") or "").strip().upper()
+                    if exp:
+                        try:
+                            army = root.get_parent_army() if root is not None else None
+                            game = getattr(getattr(army, "player", None), "game", None)
+                            pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                        except Exception:
+                            pname = ""
+                        if pname and pname != exp:
+                            apply_bonus = False
+                    effect_turn = int(sr.get("shadow_legion_channelled_wrath_turn", 0) or 0)
+                    if effect_turn:
+                        try:
+                            army = root.get_parent_army() if root is not None else None
+                            game = getattr(getattr(army, "player", None), "game", None)
+                            current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                        except Exception:
+                            current_turn = 0
+                        if current_turn and current_turn != effect_turn:
+                            apply_bonus = False
+                    if apply_bonus:
+                        ap_val -= bonus
+        except Exception:
+            pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                unit = getattr(attacker, "parent_unit", None)
+                try:
+                    root = unit.get_attached_unit_root() if unit is not None else None
+                except Exception:
+                    root = unit
+                sr = getattr(root, "special_rules", None) if root is not None else None
                 bonus = int(sr.get("deadly_debut_melee_ap_bonus", 0) or 0) if isinstance(sr, dict) else 0
                 if bonus and isinstance(sr, dict) and sr.get("deadly_debut_active"):
                     apply_bonus = True
@@ -12927,6 +12962,40 @@ class WargearProfile:
             except Exception:
                 run_them_through_lance = False
                 run_them_through_source = ""
+            channelled_wrath_lance = False
+            channelled_wrath_source = ""
+            try:
+                attacker_unit = getattr(attacker, "parent_unit", None)
+                attacker_root = attacker_unit.get_attached_unit_root() if hasattr(attacker_unit, "get_attached_unit_root") else attacker_unit
+                sr = getattr(attacker_root, "special_rules", None) if attacker_root is not None else None
+                if isinstance(sr, dict) and sr.get("shadow_legion_channelled_wrath_lance_active") is True:
+                    channelled_wrath_lance = True
+                    channelled_wrath_source = str(
+                        sr.get("shadow_legion_channelled_wrath_source", "") or "Channelled Wrath"
+                    ).strip() or "Channelled Wrath"
+                    exp = str(sr.get("shadow_legion_channelled_wrath_expires_phase", "") or "").strip().upper()
+                    if exp:
+                        try:
+                            army = attacker_root.get_parent_army() if attacker_root is not None else None
+                            game = getattr(getattr(army, "player", None), "game", None)
+                            pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+                        except Exception:
+                            pname = ""
+                        if pname and pname != exp:
+                            channelled_wrath_lance = False
+                    turn = int(sr.get("shadow_legion_channelled_wrath_turn", 0) or 0)
+                    if turn:
+                        try:
+                            army = attacker_root.get_parent_army() if attacker_root is not None else None
+                            game = getattr(getattr(army, "player", None), "game", None)
+                            current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                        except Exception:
+                            current_turn = 0
+                        if current_turn and current_turn != turn:
+                            channelled_wrath_lance = False
+            except Exception:
+                channelled_wrath_lance = False
+                channelled_wrath_source = ""
             bonus_lance = bool(attack_instance.get("bonus_lance"))
             bonus_lance_source = str(attack_instance.get("bonus_lance_source") or "")
             if is_melee and (
@@ -12937,6 +13006,7 @@ class WargearProfile:
                 or goretrack_lance
                 or rain_of_cruelty_lance
                 or run_them_through_lance
+                or channelled_wrath_lance
                 or bonus_lance
             ):
                 charged = bool(getattr(attacker.parent_unit.round_state, "charged_this_round", False))
@@ -12959,6 +13029,8 @@ class WargearProfile:
                         wound_result['modifiers'].append("+1 to wound from Lance (Rain Of Cruelty)")
                     elif run_them_through_lance and not self.is_lance():
                         wound_result['modifiers'].append(f"+1 to wound from Lance ({run_them_through_source})")
+                    elif channelled_wrath_lance and not self.is_lance():
+                        wound_result['modifiers'].append(f"+1 to wound from Lance ({channelled_wrath_source})")
                     else:
                         wound_result['modifiers'].append("+1 to wound from Lance (charged)")
         except Exception:

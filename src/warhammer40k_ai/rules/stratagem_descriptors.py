@@ -294,6 +294,38 @@ _BLOOD_LEGION_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _BLOOD_LEGION_STRATAGEM_DESCRIPTORS.values()
 }
 
+_SHADOW_LEGION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009979007": StratagemToolDescriptor(
+        stratagem_id="000009979007",
+        name="Binding Shadow",
+        timing="end_of_opponent_fight_phase",
+        target="up_to_one_shadow_legion_heretic_astartes_and_up_to_one_shadow_legion_legiones_daemonica_not_engaged",
+        duration="immediate",
+        effect="enter_strategic_reserves",
+        cp_cost=1,
+        effect_params={
+            "max_units": 2,
+            "max_per_group": 1,
+            "groups": ["heretic_astartes", "legiones_daemonica"],
+            "requires_not_engaged": True,
+        },
+    ),
+    "000009979003": StratagemToolDescriptor(
+        stratagem_id="000009979003",
+        name="Channelled Wrath",
+        timing="fight_phase",
+        target="shadow_legion_unit_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="melee_weapons_gain_lance_and_khorne_ap_bonus",
+        cp_cost=1,
+        effect_params={"keyword": "LANCE", "khorne_ap_bonus": 1},
+    ),
+}
+
+_SHADOW_LEGION_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SHADOW_LEGION_STRATAGEM_DESCRIPTORS.values()
+}
+
 _GORETRACK_ONSLAUGHT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010087007": StratagemToolDescriptor(
         stratagem_id="000010087007",
@@ -2908,6 +2940,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _BLOOD_LEGION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _SHADOW_LEGION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _GORETRACK_ONSLAUGHT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -3018,6 +3053,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _DAEMONIC_INCURSION_STRATAGEM_BY_NAME.get(key)
         or _SCINTILLATING_LEGION_STRATAGEM_BY_NAME.get(key)
         or _BLOOD_LEGION_STRATAGEM_BY_NAME.get(key)
+        or _SHADOW_LEGION_STRATAGEM_BY_NAME.get(key)
         or _GORETRACK_ONSLAUGHT_STRATAGEM_BY_NAME.get(key)
         or _POSSESSED_SLAUGHTERBAND_STRATAGEM_BY_NAME.get(key)
         or _HOST_OF_ASCENSION_STRATAGEM_BY_NAME.get(key)

@@ -11212,6 +11212,8 @@ def _stratagem_support(
         "\u2019ARD AS NAILS": "Opponent Shooting/Fight phase: targeted ORKS unit (excluding Grots/Monsters/Vehicles) suffers -1 to wound until end of phase.",
         "CORRUPT REALSPACE": "Command phase: corrupt a controlled objective; sticky until opponent controls it at start/end of any turn; 6\" area counts as Shadow of Chaos.",
         "DAEMONIC INVULNERABILITY": "Opponent Shooting phase: targeted LEGIONES DAEMONICA unit re-rolls invulnerable saves of 1 until end of phase.",
+        "BINDING SHADOW": "End of opponent Fight phase: select up to one SHADOW LEGION HERETIC ASTARTES unit and up to one SHADOW LEGION LEGIONES DAEMONICA unit that are not within Engagement Range; selected units enter Strategic Reserves.",
+        "CHANNELLED WRATH": "Fight phase: SHADOW LEGION unit that has not been selected to fight gains [LANCE] on melee weapons until end of phase; if it has KHORNE, improve melee AP by 1 as well.",
         "DELIRIUM UNMADE": "End of opponent Fight phase: select up to two TZEENTCH LEGIONES DAEMONICA units; if selecting two units or any engaged unit, spend 1 Flux; units enter Strategic Reserves.",
         "DENIZENS OF THE WARP": "Movement phase: Deep Strike arrival can be set up more than 6\" horizontally from enemies this phase.",
         "DRAUGHT OF TERROR": "Shooting/Fight phase: LEGIONES DAEMONICA unit gains +1 AP and re-rolls Wound rolls vs Battle-shocked targets until end of phase.",

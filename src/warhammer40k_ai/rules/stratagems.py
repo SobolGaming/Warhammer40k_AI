@@ -249,6 +249,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "DAEMONIC INVULNERABILITY",
     "DENIZENS OF THE WARP",
     "DRAUGHT OF TERROR",
+    "BINDING SHADOW",
+    "CHANNELLED WRATH",
     "DELIRIUM UNMADE",
     "ENDLESS PURSUIT OF VIOLENCE",
     "HORRIFYING VIOLENCE",
@@ -423,6 +425,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "PARTING THE VEIL",
     "CORRUPT REALSPACE",
     "DAEMONIC INVULNERABILITY",
+    "BINDING SHADOW",
     "DELIRIUM UNMADE",
     "ENDLESS PURSUIT OF VIOLENCE",
     "FOOLS' FLIGHT",
@@ -1679,6 +1682,7 @@ class StratagemManager(
             "DARK APPARITIONS",
             "DEATH ANSWERS DEATH",
             "BLOODY DANCE",
+            "BINDING SHADOW",
             "DELIRIUM UNMADE",
             "ENDLESS PURSUIT OF VIOLENCE",
             "ENSNARING TRAP",
@@ -1743,6 +1747,7 @@ class StratagemManager(
             "FATEBORNE NIGHTMARES",
             "FICKLEFIRE",
             "FLICKERING REALITY",
+            "CHANNELLED WRATH",
             "BLOOD BEGETS SKULLS",
             "GORE-HUNGRY ONSLAUGHT",
             "SHEATHED IN BRASS",
@@ -4119,9 +4124,11 @@ class StratagemManager(
             "WARP VISION": "Target: CHAOS KNIGHTS unit (not yet shot)",
             "CORRUPT REALSPACE": "Target: LEGIONES DAEMONICA unit; select objective you control",
             "DAEMONIC INVULNERABILITY": "Target: LEGIONES DAEMONICA unit (defensive reaction)",
+            "BINDING SHADOW": "Target: up to one SHADOW LEGION HERETIC ASTARTES unit and up to one SHADOW LEGION LEGIONES DAEMONICA unit, both not in Engagement Range (end of opponent Fight phase)",
             "DENIZENS OF THE WARP": "Target: LEGIONES DAEMONICA unit (arriving via Deep Strike)",
             "DRAUGHT OF TERROR": "Target: LEGIONES DAEMONICA unit (not yet shot/fought)",
             "DELIRIUM UNMADE": "Target: up to two TZEENTCH LEGIONES DAEMONICA units (end of opponent Fight phase)",
+            "CHANNELLED WRATH": "Target: SHADOW LEGION unit that has not been selected to fight this phase; melee weapons gain [LANCE] (KHORNE also improves AP by 1) until end of phase",
             "BLOOD BEGETS SKULLS": "Target: LEGIONES DAEMONICA KHORNE unit that has not been selected to charge this phase",
             "FOOLS' FLIGHT": "Target: LEGIONES DAEMONICA KHORNE unit within 6\" of enemy unit that Fell Back and eligible to charge it",
             "SHEATHED IN BRASS": "Target: LEGIONES DAEMONICA KHORNE unit selected as a target of enemy shooting attacks",
@@ -6204,6 +6211,11 @@ class StratagemManager(
             self._cleanup_blood_legion_phase_end_effects(phase=phase)
         except Exception:
             raise
+        # Chaos Daemons: Shadow Legion CHANNELLED WRATH (expires at end of Fight phase).
+        try:
+            self._cleanup_shadow_legion_phase_end_effects(phase=phase)
+        except Exception:
+            raise
         # World Eaters (Goretrack Onslaught): Smash Through / Full-Throttle Assault cleanup at end of Movement phase.
         try:
             phase_name = getattr(phase, "name", None)
@@ -6888,6 +6900,11 @@ class StratagemManager(
                                 "max_units": max_units,
                                 "flux_available": bool(allow_engaged),
                             }, use_timer=False)
+        except Exception:
+            raise
+        # Shadow Legion: BINDING SHADOW (end of opponent's Fight phase)
+        try:
+            self._queue_shadow_legion_binding_shadow_phase_end_reactions(player=player, phase=phase)
         except Exception:
             raise
         # Necrons: ENDLESS SERVITUDE (end of your Fight phase)
@@ -11799,6 +11816,9 @@ class StratagemManager(
         imperial_agents_result = self._use_imperial_agents_veiled_blade_stratagem(s, **kwargs)
         if imperial_agents_result is not None:
             return imperial_agents_result
+        chaos_daemons_shadow_legion_result = self._use_chaos_daemons_shadow_legion_stratagem(s, **kwargs)
+        if chaos_daemons_shadow_legion_result is not None:
+            return chaos_daemons_shadow_legion_result
         chaos_daemons_blood_legion_result = self._use_chaos_daemons_blood_legion_stratagem(s, **kwargs)
         if chaos_daemons_blood_legion_result is not None:
             return chaos_daemons_blood_legion_result

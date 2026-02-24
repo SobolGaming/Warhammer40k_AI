@@ -82,6 +82,18 @@ class ChaosDaemonsStratagemMixin:
         det = " ".join(str(getattr(army, "detachment_type", "") or "").lower().split())
         return det == "blood legion"
 
+    def _is_shadow_legion_detachment(self) -> bool:
+        if self.player is None:
+            return False
+        army = self.player.get_army()
+        if army is None:
+            return False
+        mgr = getattr(army, "chaos_daemons_detachments", None)
+        if mgr is not None and hasattr(mgr, "is_shadow_legion_detachment"):
+            return bool(mgr.is_shadow_legion_detachment())
+        det = " ".join(str(getattr(army, "detachment_type", "") or "").lower().split())
+        return det == "shadow legion"
+
     def _is_khorne_legiones_unit(self, unit: Any) -> bool:
         if unit is None:
             return False
@@ -107,6 +119,183 @@ class ChaosDaemonsStratagemMixin:
             return bool(root.has_any_keyword("TZEENTCH"))
         except Exception:
             return False
+
+    def _is_shadow_legion_unit(self, unit: Any) -> bool:
+        if unit is None:
+            return False
+        root = self._chaos_daemons_root(unit)
+        if root is None:
+            return False
+        has_any_keyword = getattr(root, "has_any_keyword", None)
+        if not callable(has_any_keyword):
+            return False
+        return bool(has_any_keyword("SHADOW LEGION"))
+
+    def _is_shadow_legion_heretic_astartes_unit(self, unit: Any) -> bool:
+        if unit is None:
+            return False
+        root = self._chaos_daemons_root(unit)
+        if root is None:
+            return False
+        has_any_keyword = getattr(root, "has_any_keyword", None)
+        if not callable(has_any_keyword):
+            return False
+        return bool(has_any_keyword("HERETIC ASTARTES") and has_any_keyword("SHADOW LEGION"))
+
+    def _is_shadow_legion_legiones_daemonica_unit(self, unit: Any) -> bool:
+        if unit is None:
+            return False
+        root = self._chaos_daemons_root(unit)
+        if root is None:
+            return False
+        if not self._is_legiones_daemonica_unit(root):
+            return False
+        has_any_keyword = getattr(root, "has_any_keyword", None)
+        if not callable(has_any_keyword):
+            return False
+        return bool(has_any_keyword("SHADOW LEGION"))
+
+    @staticmethod
+    def _shadow_legion_unit_selected_to_fight_this_phase(unit: Any) -> bool:
+        round_state = getattr(unit, "round_state", None)
+        if round_state is None:
+            return False
+        return bool(getattr(round_state, "fought_this_phase", False))
+
+    def _shadow_legion_battlefield_unit_candidates(
+        self,
+        *,
+        require_heretic_astartes: bool = False,
+        require_legiones_daemonica: bool = False,
+        require_not_engaged: bool = False,
+        require_not_fought: bool = False,
+    ) -> List[Any]:
+        if self.player is None:
+            return []
+        if not self._is_shadow_legion_detachment():
+            return []
+        army = self.player.get_army()
+        if army is None:
+            return []
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        if require_not_engaged and game_map is None:
+            return []
+        candidates: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._chaos_daemons_root(unit)
+            if root is None:
+                continue
+            uid = self._chaos_daemons_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            is_alive = getattr(root, "is_alive", None)
+            if callable(is_alive):
+                if not bool(is_alive()):
+                    continue
+            elif not bool(getattr(root, "is_alive", True)):
+                continue
+            if not bool(getattr(root, "deployed", False)):
+                continue
+            in_reserves = getattr(root, "is_in_reserves", None)
+            if callable(in_reserves) and bool(in_reserves()):
+                continue
+            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            if not self._is_shadow_legion_unit(root):
+                continue
+            if require_heretic_astartes and not self._is_shadow_legion_heretic_astartes_unit(root):
+                continue
+            if require_legiones_daemonica and not self._is_shadow_legion_legiones_daemonica_unit(root):
+                continue
+            if require_not_fought and self._shadow_legion_unit_selected_to_fight_this_phase(root):
+                continue
+            if require_not_engaged and self._blood_legion_unit_is_engaged(root):
+                continue
+            candidates.append(root)
+        candidates.sort(key=self._chaos_daemons_sort_key)
+        return candidates
+
+    def _shadow_legion_channelled_wrath_candidates(self) -> List[Any]:
+        return self._shadow_legion_battlefield_unit_candidates(require_not_fought=True)
+
+    def _shadow_legion_binding_shadow_heretic_candidates(self) -> List[Any]:
+        return self._shadow_legion_battlefield_unit_candidates(
+            require_heretic_astartes=True,
+            require_not_engaged=True,
+        )
+
+    def _shadow_legion_binding_shadow_daemon_candidates(self) -> List[Any]:
+        return self._shadow_legion_battlefield_unit_candidates(
+            require_legiones_daemonica=True,
+            require_not_engaged=True,
+        )
+
+    def _shadow_legion_binding_shadow_candidate_union(self) -> List[Any]:
+        candidates: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(self._shadow_legion_binding_shadow_heretic_candidates()) + list(
+            self._shadow_legion_binding_shadow_daemon_candidates()
+        ):
+            uid = self._chaos_daemons_sort_key(unit)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            candidates.append(unit)
+        candidates.sort(key=self._chaos_daemons_sort_key)
+        return candidates
+
+    def _queue_shadow_legion_binding_shadow_phase_end_reactions(self, *, player: Any, phase: Any) -> None:
+        if self.player is None or self.game is None:
+            return
+        if not self._is_shadow_legion_detachment():
+            return
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_name != "FIGHT_PHASE":
+            return
+        if player is self.player:
+            return
+        stratagem = self.get_by_name("BINDING SHADOW")
+        if stratagem is None:
+            return
+        cp_cost = int(getattr(stratagem, "cp_cost", 0) or 0)
+        if int(getattr(self.player, "command_points", 0) or 0) < cp_cost:
+            return
+        if (stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        heretic_candidates = self._shadow_legion_binding_shadow_heretic_candidates()
+        daemon_candidates = self._shadow_legion_binding_shadow_daemon_candidates()
+        if not heretic_candidates and not daemon_candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "phase_end":
+                continue
+            if self._chaos_daemons_normalize_stratagem_name(reaction.get("stratagem", "")) != "BINDING SHADOW":
+                continue
+            if str(reaction.get("phase", "") or "").strip().lower() != "fight phase":
+                continue
+            return
+        self._queue_reaction(
+            {
+                "event": "phase_end",
+                "phase": "Fight phase",
+                "phase_name": "Fight phase",
+                "stratagem": stratagem.name,
+                "cp_cost": cp_cost,
+                "candidates": self._shadow_legion_binding_shadow_candidate_union(),
+                "heretic_candidates": heretic_candidates,
+                "daemon_candidates": daemon_candidates,
+                "max_units": 2,
+                "max_heretic_units": 1,
+                "max_daemon_units": 1,
+            },
+            use_timer=False,
+        )
 
     def _scintillating_legion_tzeentch_unit_candidates(
         self,
@@ -773,6 +962,154 @@ class ChaosDaemonsStratagemMixin:
             cp_cost = int(preview.get("cost", cp_cost))
         return cp_cost
 
+    def _use_chaos_daemons_shadow_legion_stratagem(self, stratagem: Any, **kwargs) -> bool | None:
+        name_u = self._chaos_daemons_normalize_stratagem_name(getattr(stratagem, "name", ""))
+        if name_u == "CHANNELLED WRATH":
+            return self._use_shadow_legion_channelled_wrath(stratagem, **kwargs)
+        if name_u == "BINDING SHADOW":
+            return self._use_shadow_legion_binding_shadow(stratagem, **kwargs)
+        return None
+
+    def _resolve_shadow_legion_selected_units(self, **kwargs) -> List[Any]:
+        selected = (
+            kwargs.get("units")
+            or kwargs.get("target_units")
+            or kwargs.get("selected_units")
+            or kwargs.get("unit")
+            or kwargs.get("target_unit")
+        )
+        extras = [kwargs.get("heretic_unit"), kwargs.get("daemon_unit")]
+        if selected is None:
+            selected = []
+        if not isinstance(selected, (list, tuple)):
+            selected = [selected]
+        selected = [entry for entry in list(selected or []) if entry is not None]
+        selected.extend(entry for entry in extras if entry is not None)
+        resolved: List[Any] = []
+        seen: set[str] = set()
+        resolver = getattr(self.game, "_resolve_unit_by_id", None) if self.game is not None else None
+        for entry in selected:
+            unit = entry
+            if isinstance(entry, str) and callable(resolver):
+                unit = resolver(entry)
+            root = self._chaos_daemons_root(unit)
+            if root is None:
+                continue
+            uid = self._chaos_daemons_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            resolved.append(root)
+        resolved.sort(key=self._chaos_daemons_sort_key)
+        return resolved
+
+    def _use_shadow_legion_channelled_wrath(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_shadow_legion_detachment():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            return False
+        root = self._chaos_daemons_root(unit)
+        if root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            return False
+        if candidates:
+            candidate_ids = {self._chaos_daemons_sort_key(self._chaos_daemons_root(candidate)) for candidate in candidates}
+            if self._chaos_daemons_sort_key(root) not in candidate_ids:
+                return False
+        valid_ids = {self._chaos_daemons_sort_key(candidate) for candidate in self._shadow_legion_channelled_wrath_candidates()}
+        if self._chaos_daemons_sort_key(root) not in valid_ids:
+            return False
+        cp_cost = self._chaos_daemons_effective_cp_cost(stratagem, target_unit=root)
+        if not self.player.spend_command_points(cp_cost, reason=f"Stratagem: {stratagem.name}", source="stratagem"):
+            return False
+        special_rules = getattr(root, "special_rules", None)
+        if not isinstance(special_rules, dict):
+            special_rules = {}
+        special_rules["shadow_legion_channelled_wrath_active"] = True
+        special_rules["shadow_legion_channelled_wrath_lance_active"] = True
+        special_rules["shadow_legion_channelled_wrath_expires_phase"] = "FIGHT_PHASE"
+        special_rules["shadow_legion_channelled_wrath_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        special_rules["shadow_legion_channelled_wrath_source"] = str(getattr(stratagem, "name", "") or "CHANNELLED WRATH")
+        if bool(getattr(root, "has_any_keyword", lambda *_: False)("KHORNE")):
+            special_rules["shadow_legion_channelled_wrath_ap_bonus"] = 1
+        else:
+            special_rules.pop("shadow_legion_channelled_wrath_ap_bonus", None)
+        root.special_rules = special_rules
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
+        return True
+
+    def _use_shadow_legion_binding_shadow(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_shadow_legion_detachment():
+            return False
+        selected_units = self._resolve_shadow_legion_selected_units(**kwargs)
+        if not selected_units:
+            normalized_name = self._chaos_daemons_normalize_stratagem_name(getattr(stratagem, "name", ""))
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if self._chaos_daemons_normalize_stratagem_name(reaction.get("stratagem", "")) != normalized_name:
+                    continue
+                selected_units = self._resolve_shadow_legion_selected_units(**reaction)
+                break
+        if not selected_units:
+            return False
+        if len(selected_units) > 2:
+            return False
+        phase_name = str(kwargs.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return False
+        valid_heretic_ids = {
+            self._chaos_daemons_sort_key(unit) for unit in self._shadow_legion_binding_shadow_heretic_candidates()
+        }
+        valid_daemon_ids = {
+            self._chaos_daemons_sort_key(unit) for unit in self._shadow_legion_binding_shadow_daemon_candidates()
+        }
+        selected_heretic = 0
+        selected_daemon = 0
+        for root in selected_units:
+            unit_id = self._chaos_daemons_sort_key(root)
+            qualifies_heretic = unit_id in valid_heretic_ids
+            qualifies_daemon = unit_id in valid_daemon_ids
+            if not (qualifies_heretic or qualifies_daemon):
+                return False
+            if qualifies_heretic and selected_heretic < 1:
+                selected_heretic += 1
+                continue
+            if qualifies_daemon and selected_daemon < 1:
+                selected_daemon += 1
+                continue
+            if qualifies_heretic and qualifies_daemon:
+                if selected_heretic < 1:
+                    selected_heretic += 1
+                    continue
+                if selected_daemon < 1:
+                    selected_daemon += 1
+                    continue
+            return False
+        cp_cost = self._chaos_daemons_effective_cp_cost(stratagem, target_unit=selected_units[0])
+        if not self.player.spend_command_points(cp_cost, reason=f"Stratagem: {stratagem.name}", source="stratagem"):
+            return False
+        for root in selected_units:
+            root.enter_strategic_reserves_midgame(
+                game=self.game,
+                game_map=getattr(self.game, "map", None),
+                reason=stratagem.name,
+            )
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
+        return True
+
     def _use_chaos_daemons_blood_legion_stratagem(self, stratagem: Any, **kwargs) -> bool | None:
         name_u = self._chaos_daemons_normalize_stratagem_name(getattr(stratagem, "name", ""))
         if name_u == "BLOOD BEGETS SKULLS":
@@ -1203,4 +1540,39 @@ class ChaosDaemonsStratagemMixin:
                 if isinstance(pending_models, list) and pending_models:
                     root._blood_legion_wrath_undeniable_pending_models = []
             if changed:
+                root.special_rules = special_rules
+
+    def _cleanup_shadow_legion_phase_end_effects(self, *, phase: Any) -> None:
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_name != "FIGHT_PHASE":
+            return
+        if self.player is None:
+            return
+        army = self.player.get_army()
+        if army is None:
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._chaos_daemons_root(unit)
+            if root is None:
+                continue
+            uid = self._chaos_daemons_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            special_rules = getattr(root, "special_rules", None)
+            if not isinstance(special_rules, dict):
+                continue
+            expires_phase = str(special_rules.get("shadow_legion_channelled_wrath_expires_phase", "") or "").strip().upper()
+            if special_rules.get("shadow_legion_channelled_wrath_active") and (not expires_phase or expires_phase == "FIGHT_PHASE"):
+                for key in (
+                    "shadow_legion_channelled_wrath_active",
+                    "shadow_legion_channelled_wrath_lance_active",
+                    "shadow_legion_channelled_wrath_ap_bonus",
+                    "shadow_legion_channelled_wrath_expires_phase",
+                    "shadow_legion_channelled_wrath_turn",
+                    "shadow_legion_channelled_wrath_source",
+                ):
+                    special_rules.pop(key, None)
                 root.special_rules = special_rules
