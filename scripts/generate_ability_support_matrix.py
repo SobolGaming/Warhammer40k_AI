@@ -768,6 +768,12 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"until the end of the turn this unit is eligible to shoot and declare a charge in a turn in which it fell back",
             r"until the end of the turn this unit is eligible to declare a charge in a turn in which it advanced",
         ),
+        "Debt to the Soul Forge": (
+            r"each time a heretic astartes daemon vehicle unit from your army makes a dark pact it can invoke its contract",
+            r"if it does subtract \d+ from the resulting leadership test when making that dark pact and until the end of the phase",
+            r"each time a model in that unit makes a ranged attack add \d+ to the wound roll",
+            r"add \d+ to the attacks characteristic of melee weapons equipped by models in that unit",
+        ),
         "Defend at All Costs": (
             r"each time a dire avenger guardian support weapon or war walker model from your army makes an attack if that models unit and or the target unit are within range of one or more objective markers add \d+ to the hit roll",
         ),
@@ -2601,6 +2607,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Twisted Doctrine": (
             "Supported",
             "Renegade Warband: in your Movement phase, each time an eligible HERETIC ASTARTES unit is set up or selected to move it can take a Battle-shock test and choose one mode until end of turn (shoot/charge after Falling Back, or charge after Advancing).",
+        ),
+        "Debt to the Soul Forge": (
+            "Supported",
+            "Soulforged Warpack: each time an eligible HERETIC ASTARTES DAEMON VEHICLE unit makes a Dark Pact it can invoke its contract; invoked contracts apply -1 to the resulting Leadership test and, until end of phase, grant +1 to wound for ranged attacks and +2 Attacks to melee weapons for that unit.",
         ),
         "Mechanised Murder": ("Supported", "Rapid Evisceration: reroll Hit/Wound rolls of 1 for eligible units."),
         "Daemonic Empowerment": (

@@ -7683,6 +7683,7 @@ class ActionsMovementMixin:
         phase_name: str,
         trigger: str,
         empyric_wellspring_choice: Optional[str] = None,
+        invoke_contract: bool = False,
     ) -> bool:
         trigger_norm = str(trigger or "").strip().lower()
         if trigger_norm not in ("shooting", "fight"):
@@ -7699,8 +7700,44 @@ class ActionsMovementMixin:
             return False
         if not empyric_required:
             empyric_choice_norm = ""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+        can_invoke_contract_fn = (
+            getattr(csm_mgr, "soulforged_warpack_can_invoke_contract", None) if csm_mgr is not None else None
+        )
+        invoke_contract_active = False
+        if bool(invoke_contract):
+            if not callable(can_invoke_contract_fn):
+                return False
+            invoke_contract_active = bool(can_invoke_contract_fn(root, game=game))
+            if not invoke_contract_active:
+                return False
         passed = True
         auto_passed = self._auto_pass_dark_pacts_test()
+        contract_test_modifier = 0
+        contract_test_modifier_source = ""
+        contract_test_modifier_fn = (
+            getattr(csm_mgr, "soulforged_warpack_dark_pact_test_modifier", None) if csm_mgr is not None else None
+        )
+        if callable(contract_test_modifier_fn):
+            contract_test_modifier, contract_test_modifier_source = contract_test_modifier_fn(
+                root,
+                invoke_contract=bool(invoke_contract_active),
+                game=game,
+            )
+        set_contract_test_modifier_fn = (
+            getattr(csm_mgr, "set_soulforged_warpack_dark_pact_test_modifier", None) if csm_mgr is not None else None
+        )
+        if callable(set_contract_test_modifier_fn):
+            set_contract_test_modifier_fn(
+                root,
+                modifier=int(contract_test_modifier or 0),
+                source=contract_test_modifier_source,
+            )
         if not auto_passed:
             try:
                 extra_sources = list(self.dark_pacts_leadership_reroll_sources() or [])
@@ -7719,6 +7756,8 @@ class ActionsMovementMixin:
             except Exception:
                 passed = False
             self._maybe_gain_dark_destiny_cp(game, passed=bool(passed), auto_passed=False)
+        if callable(set_contract_test_modifier_fn):
+            set_contract_test_modifier_fn(root, modifier=0)
         if not passed:
             try:
                 from ...utility.dice import DiceCollection
@@ -7726,10 +7765,6 @@ class ActionsMovementMixin:
                 self._apply_mortal_wounds_to_unit(self, int(dmg_roll or 0), game_map=getattr(game, "map", None))
             except Exception:
                 pass
-        try:
-            root = self.get_attached_unit_root()
-        except Exception:
-            root = self
         sr = getattr(root, "special_rules", None)
         if not isinstance(sr, dict):
             sr = {}
@@ -7765,8 +7800,18 @@ class ActionsMovementMixin:
                 sr["unholy_bloodshed_source"] = "Unholy Bloodshed"
                 root.mark_unit_once_per_battle_used(once_key, ability_name="Unholy Bloodshed")
         root.special_rules = sr
-        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
-        csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+        set_contract_state_fn = (
+            getattr(csm_mgr, "set_soulforged_warpack_contract_state", None) if csm_mgr is not None else None
+        )
+        if callable(set_contract_state_fn):
+            set_contract_state_fn(
+                root,
+                active=bool(invoke_contract_active),
+                phase_name=phase_key,
+                choice=choice_norm,
+                game=game,
+                player=getattr(army, "player", None) if army is not None else None,
+            )
         ensure_mark_fn = getattr(csm_mgr, "ensure_pactbound_mark_for_unit", None) if csm_mgr is not None else None
         if callable(ensure_mark_fn):
             ensure_mark_fn(root, assign_default=True)
@@ -7786,6 +7831,16 @@ class ActionsMovementMixin:
             player = None
         if player is None:
             return
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+        can_invoke_contract_fn = (
+            getattr(csm_mgr, "soulforged_warpack_can_invoke_contract", None) if csm_mgr is not None else None
+        )
+        can_invoke_contract = bool(callable(can_invoke_contract_fn) and can_invoke_contract_fn(root, game=game))
         try:
             sr = getattr(self, "special_rules", None)
             exp = ""
@@ -7818,6 +7873,15 @@ class ActionsMovementMixin:
                 payload={"action": "skip", "unit_id": unit_id, "phase_name": phase_name or "", "trigger": trigger or ""},
             ),
         ]
+        contract_variants = [("", False, "")]
+        if can_invoke_contract:
+            contract_variants.append(
+                (
+                    " + Invoke Contract",
+                    True,
+                    "Invoke Contract: -1 Leadership test, +1 to wound (ranged), +2 Attacks (melee) until end of phase.",
+                )
+            )
         base_choices = (
             ("LETHAL HITS", "Lethal Hits"),
             ("SUSTAINED HITS 1", "Sustained Hits 1"),
@@ -7838,32 +7902,42 @@ class ActionsMovementMixin:
             )
             for dark_pact_choice, dark_pact_label in base_choices:
                 for empyric_choice, empyric_label, empyric_summary in empyric_choices:
-                    decision_options.append(
-                        DecisionOption.create(
-                            f"{dark_pact_label} + {empyric_label}",
-                            payload={
-                                "choice": dark_pact_choice,
-                                "empyric_wellspring_choice": empyric_choice,
-                                "summary": f"{dark_pact_label}; {empyric_summary}",
-                                "unit_id": unit_id,
-                                "phase_name": phase_name or "",
-                                "trigger": trigger or "",
-                            },
+                    for label_suffix, invoke_flag, invoke_summary in contract_variants:
+                        summary = f"{dark_pact_label}; {empyric_summary}"
+                        if invoke_summary:
+                            summary = f"{summary}; {invoke_summary}"
+                        decision_options.append(
+                            DecisionOption.create(
+                                f"{dark_pact_label} + {empyric_label}{label_suffix}",
+                                payload={
+                                    "choice": dark_pact_choice,
+                                    "empyric_wellspring_choice": empyric_choice,
+                                    "invoke_contract": bool(invoke_flag),
+                                    "summary": summary,
+                                    "unit_id": unit_id,
+                                    "phase_name": phase_name or "",
+                                    "trigger": trigger or "",
+                                },
+                            )
                         )
-                    )
         else:
             for dark_pact_choice, dark_pact_label in base_choices:
-                decision_options.append(
-                    DecisionOption.create(
-                        dark_pact_label,
-                        payload={
-                            "choice": dark_pact_choice,
-                            "unit_id": unit_id,
-                            "phase_name": phase_name or "",
-                            "trigger": trigger or "",
-                        },
+                for label_suffix, invoke_flag, invoke_summary in contract_variants:
+                    payload = {
+                        "choice": dark_pact_choice,
+                        "invoke_contract": bool(invoke_flag),
+                        "unit_id": unit_id,
+                        "phase_name": phase_name or "",
+                        "trigger": trigger or "",
+                    }
+                    if invoke_summary:
+                        payload["summary"] = f"{dark_pact_label}; {invoke_summary}"
+                    decision_options.append(
+                        DecisionOption.create(
+                            f"{dark_pact_label}{label_suffix}",
+                            payload=payload,
+                        )
                     )
-                )
         req = DecisionRequest.create(
             DECISION_CHOOSE_DARK_PACT,
             f"Select Dark Pact for {getattr(self, 'name', 'Unit')}",

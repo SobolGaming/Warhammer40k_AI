@@ -1093,6 +1093,14 @@ class StateAttachmentMixin:
                     mod += int(val)
             except Exception:
                 pass
+            try:
+                root_for_mod = self.get_attached_unit_root()
+            except Exception:
+                root_for_mod = self
+            sr = getattr(root_for_mod, "special_rules", None)
+            if isinstance(sr, dict):
+                soulforged_mod = int(sr.get("soulforged_warpack_dark_pact_test_modifier", 0) or 0)
+                mod += int(soulforged_mod)
         except Exception:
             mod = 0
         try:

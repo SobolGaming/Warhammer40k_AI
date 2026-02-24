@@ -79,6 +79,7 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     DETACHMENT_PACTBOUND_ZEALOTS = "Pactbound Zealots"
     DETACHMENT_RENEGADE_RAIDERS = "Renegade Raiders"
     DETACHMENT_RENEGADE_WARBAND = "Renegade Warband"
+    DETACHMENT_SOULFORGED_WARPACK = "Soulforged Warpack"
     _MASTERS_OF_MISDIRECTION_SELECTION_ABILITY = "deceptors_masters_of_misdirection_selection"
     _MASTERS_OF_MISDIRECTION_SOURCE = "Masters of Misdirection"
     _TYRANNICAL_MOTIVATION_ABILITY = "tyrannical_motivation_choice"
@@ -91,6 +92,17 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     _RENEGADE_WARBAND_TWISTED_DOCTRINE_SOURCE = "Twisted Doctrine"
     _RENEGADE_WARBAND_TWISTED_DOCTRINE_FALL_BACK_CHOICE = "FALL_BACK_SHOOT_AND_CHARGE"
     _RENEGADE_WARBAND_TWISTED_DOCTRINE_ADVANCE_CHOICE = "ADVANCE_CHARGE"
+    _SOULFORGED_WARPACK_CONTRACT_SOURCE = "Debt to the Soul Forge"
+    _SOULFORGED_WARPACK_CONTRACT_ACTIVE_KEY = "soulforged_warpack_contract_active"
+    _SOULFORGED_WARPACK_CONTRACT_EXPIRES_PHASE_KEY = "soulforged_warpack_contract_expires_phase"
+    _SOULFORGED_WARPACK_CONTRACT_TURN_KEY = "soulforged_warpack_contract_turn"
+    _SOULFORGED_WARPACK_CONTRACT_OWNER_KEY = "soulforged_warpack_contract_turn_owner"
+    _SOULFORGED_WARPACK_CONTRACT_SOURCE_KEY = "soulforged_warpack_contract_source"
+    _SOULFORGED_WARPACK_CONTRACT_CHOICE_KEY = "soulforged_warpack_contract_choice"
+    _SOULFORGED_WARPACK_DARK_PACT_TEST_MODIFIER_KEY = "soulforged_warpack_dark_pact_test_modifier"
+    _SOULFORGED_WARPACK_DARK_PACT_TEST_MODIFIER_SOURCE_KEY = (
+        "soulforged_warpack_dark_pact_test_modifier_source"
+    )
     _PACTBOUND_MARKS = ("KHORNE", "TZEENTCH", "NURGLE", "SLAANESH", "CHAOS UNDIVIDED")
     _PACTBOUND_MARK_SOURCE = "Marks of Chaos"
     _DESPERATE_DEVOTION_ALLOWED_ACTIONS = {"move", "advance", "charge"}
@@ -168,6 +180,11 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches(self.DETACHMENT_RENEGADE_WARBAND)
+
+    def is_soulforged_warpack(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches(self.DETACHMENT_SOULFORGED_WARPACK)
 
     @staticmethod
     def _unit_root(unit):
@@ -247,6 +264,12 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         if root is None:
             return False
         return self._unit_has_keyword(root, "DAMNED")
+
+    def _unit_is_daemon_vehicle(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        return bool(self._unit_has_keyword(root, "DAEMON") and self._unit_has_keyword(root, "VEHICLE"))
 
     def _unit_is_battle_shocked(self, unit) -> bool:
         root = self._unit_root(unit)
@@ -1626,6 +1649,187 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
                 return owner_id
         army_player = getattr(self.army, "player", None) if self.army is not None else None
         return str(getattr(army_player, "id", "") or "").strip()
+
+    def soulforged_warpack_can_invoke_contract(self, unit, *, game=None) -> bool:
+        if not self.is_soulforged_warpack():
+            return False
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        if not self._unit_in_army(root):
+            return False
+        if not self._unit_on_battlefield(root):
+            return False
+        if not self._unit_is_heretic_astartes(root):
+            return False
+        if not self._unit_is_daemon_vehicle(root):
+            return False
+        return bool(self._unit_has_dark_pacts(root))
+
+    def soulforged_warpack_dark_pact_test_modifier(
+        self,
+        unit,
+        *,
+        invoke_contract: bool,
+        game=None,
+    ) -> tuple[int, str]:
+        if not bool(invoke_contract):
+            return 0, ""
+        if not self.soulforged_warpack_can_invoke_contract(unit, game=game):
+            return 0, ""
+        return -1, self._SOULFORGED_WARPACK_CONTRACT_SOURCE
+
+    def set_soulforged_warpack_dark_pact_test_modifier(
+        self,
+        unit,
+        *,
+        modifier: int,
+        source: str = "",
+    ) -> None:
+        root = self._unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        updated = dict(sr)
+        if int(modifier or 0):
+            updated[self._SOULFORGED_WARPACK_DARK_PACT_TEST_MODIFIER_KEY] = int(modifier)
+            updated[self._SOULFORGED_WARPACK_DARK_PACT_TEST_MODIFIER_SOURCE_KEY] = (
+                str(source or self._SOULFORGED_WARPACK_CONTRACT_SOURCE).strip()
+                or self._SOULFORGED_WARPACK_CONTRACT_SOURCE
+            )
+        else:
+            updated.pop(self._SOULFORGED_WARPACK_DARK_PACT_TEST_MODIFIER_KEY, None)
+            updated.pop(self._SOULFORGED_WARPACK_DARK_PACT_TEST_MODIFIER_SOURCE_KEY, None)
+        root.special_rules = updated
+
+    def _soulforged_warpack_contract_state(self, unit, *, game=None) -> tuple[bool, str]:
+        if not self.is_soulforged_warpack():
+            return False, ""
+        root = self._unit_root(unit)
+        if root is None:
+            return False, ""
+        if not self._unit_in_army(root):
+            return False, ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False, ""
+        if not bool(sr.get(self._SOULFORGED_WARPACK_CONTRACT_ACTIVE_KEY, False)):
+            return False, ""
+        expected_phase = str(sr.get(self._SOULFORGED_WARPACK_CONTRACT_EXPIRES_PHASE_KEY, "") or "").strip().upper()
+        current_phase = self._current_phase_name(game=game)
+        if expected_phase and current_phase and expected_phase != current_phase:
+            return False, ""
+        expected_owner = str(sr.get(self._SOULFORGED_WARPACK_CONTRACT_OWNER_KEY, "") or "").strip()
+        current_owner = self._current_turn_owner_id(game=game)
+        if expected_owner and current_owner and expected_owner != current_owner:
+            return False, ""
+        try:
+            expected_turn = int(sr.get(self._SOULFORGED_WARPACK_CONTRACT_TURN_KEY, 0) or 0)
+        except (TypeError, ValueError):
+            expected_turn = 0
+        current_turn = self._current_turn(game=game)
+        if expected_turn and current_turn and expected_turn != current_turn:
+            return False, ""
+        source = (
+            str(sr.get(self._SOULFORGED_WARPACK_CONTRACT_SOURCE_KEY, "") or self._SOULFORGED_WARPACK_CONTRACT_SOURCE).strip()
+            or self._SOULFORGED_WARPACK_CONTRACT_SOURCE
+        )
+        return True, source
+
+    def set_soulforged_warpack_contract_state(
+        self,
+        unit,
+        *,
+        active: bool,
+        phase_name: str = "",
+        choice: str = "",
+        game=None,
+        player=None,
+    ) -> None:
+        root = self._unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        updated = dict(sr)
+        if not bool(active):
+            updated.pop(self._SOULFORGED_WARPACK_CONTRACT_ACTIVE_KEY, None)
+            updated.pop(self._SOULFORGED_WARPACK_CONTRACT_EXPIRES_PHASE_KEY, None)
+            updated.pop(self._SOULFORGED_WARPACK_CONTRACT_TURN_KEY, None)
+            updated.pop(self._SOULFORGED_WARPACK_CONTRACT_OWNER_KEY, None)
+            updated.pop(self._SOULFORGED_WARPACK_CONTRACT_SOURCE_KEY, None)
+            updated.pop(self._SOULFORGED_WARPACK_CONTRACT_CHOICE_KEY, None)
+            root.special_rules = updated
+            return
+
+        updated[self._SOULFORGED_WARPACK_CONTRACT_ACTIVE_KEY] = True
+        updated[self._SOULFORGED_WARPACK_CONTRACT_EXPIRES_PHASE_KEY] = (
+            str(phase_name or "").strip().upper() or self._current_phase_name(game=game)
+        )
+        updated[self._SOULFORGED_WARPACK_CONTRACT_TURN_KEY] = int(self._current_turn(game=game) or 0)
+        updated[self._SOULFORGED_WARPACK_CONTRACT_OWNER_KEY] = str(
+            self._current_turn_owner_id(game=game, player=player) or ""
+        ).strip()
+        updated[self._SOULFORGED_WARPACK_CONTRACT_SOURCE_KEY] = self._SOULFORGED_WARPACK_CONTRACT_SOURCE
+        updated[self._SOULFORGED_WARPACK_CONTRACT_CHOICE_KEY] = str(choice or "").strip().upper()
+        root.special_rules = updated
+
+    def soulforged_warpack_contract_ranged_wound_bonus(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return 0, ""
+        if not self._model_is_heretic_astartes(attacker_model):
+            return 0, ""
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            is_ranged = getattr(parent, "is_ranged", None) if parent is not None else None
+            if not callable(is_ranged) or not bool(is_ranged()):
+                return 0, ""
+        unit = getattr(attacker_model, "parent_unit", None)
+        root = self._unit_root(unit)
+        if root is None:
+            return 0, ""
+        if not self._unit_is_daemon_vehicle(root):
+            return 0, ""
+        active, source = self._soulforged_warpack_contract_state(root, game=game)
+        if not active:
+            return 0, ""
+        return 1, source
+
+    def soulforged_warpack_contract_melee_attacks_bonus(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if attacker_model is None or not self._model_in_army(attacker_model):
+            return 0, ""
+        if not self._model_is_heretic_astartes(attacker_model):
+            return 0, ""
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            is_melee = getattr(parent, "is_melee", None) if parent is not None else None
+            if not callable(is_melee) or not bool(is_melee()):
+                return 0, ""
+        unit = getattr(attacker_model, "parent_unit", None)
+        root = self._unit_root(unit)
+        if root is None:
+            return 0, ""
+        if not self._unit_is_daemon_vehicle(root):
+            return 0, ""
+        active, source = self._soulforged_warpack_contract_state(root, game=game)
+        if not active:
+            return 0, ""
+        return 2, source
 
     def desperate_devotion_can_trigger(self, unit, *, action: str, game=None) -> bool:
         if not self.is_chaos_cult():

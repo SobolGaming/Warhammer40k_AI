@@ -1226,6 +1226,20 @@ def _validate_choose_dark_pact(game: object, request: DecisionRequest, result: D
     requires_fn = getattr(unit, "dark_pacts_requires_empyric_wellspring_choice", None)
     if callable(requires_fn):
         requires_empyric = bool(requires_fn())
+    invoke_contract = bool(payload.get("invoke_contract", False))
+    if invoke_contract:
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
+        invoke_fn = getattr(csm_mgr, "soulforged_warpack_can_invoke_contract", None) if csm_mgr is not None else None
+        if not callable(invoke_fn) or not bool(invoke_fn(root, game=game)):
+            return ("Dark Pact invoke contract selection is invalid for this unit.",)
     if requires_empyric:
         key = str(empyric_choice or "").strip().upper()
         if key not in ("LEAPING_WARPFLAME", "MONSTROUS_MANIFESTATION"):
@@ -1244,6 +1258,7 @@ def _apply_choose_dark_pact(game: object, request: DecisionRequest, result: Deci
         raise RuntimeError("Dark Pact unit not found.")
     choice = payload.get("choice") or payload.get("choice_key") or payload.get("key")
     empyric_choice = payload.get("empyric_wellspring_choice")
+    invoke_contract = bool(payload.get("invoke_contract", False))
     phase_name = str(payload.get("phase_name", "") or request.context.get("phase_name", "") or "")
     trigger = str(payload.get("trigger", "") or request.context.get("trigger", "") or "")
     apply_fn = getattr(unit, "apply_dark_pacts_choice", None)
@@ -1258,6 +1273,7 @@ def _apply_choose_dark_pact(game: object, request: DecisionRequest, result: Deci
             empyric_wellspring_choice=(
                 str(empyric_choice).strip().upper() if str(empyric_choice or "").strip() else None
             ),
+            invoke_contract=bool(invoke_contract),
         )
     )
 

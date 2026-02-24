@@ -305,7 +305,7 @@ Shooting:
 - firing_deck_dialog: DECLARE_FIRING_DECK {transport_id, declarations[]}
 - overwatch_shooter_dialog: SELECT_OVERWATCH_SHOOTER {unit_id} (also used for stratagem unit selection; context may include enemy_unit_id)
 - roll_reroll_dialog: REROLL_ROLL {roll_id, reroll_all_or_one, die_index}
-- dark_pacts_dialog: CHOOSE_DARK_PACT {choice, optional `empyric_wellspring_choice` | skip} (context `unit_id`, `phase_name`, `trigger`; Cabal of Chaos requires `empyric_wellspring_choice`)
+- dark_pacts_dialog: CHOOSE_DARK_PACT {choice, optional `empyric_wellspring_choice`, optional `invoke_contract` | skip} (context `unit_id`, `phase_name`, `trigger`; Cabal of Chaos requires `empyric_wellspring_choice`; Soulforged Warpack eligible DAEMON VEHICLE units may set `invoke_contract=true`)
 - dread_mob_try_dat_button_shooting_dialog: CHOOSE_QUARRY {button_mode, button_effect?} (context `ability="dread_mob_try_dat_button"`, `ability_name="Try Dat Button!"`, `army_id`, `unit_id`, `phase_name`, `trigger="shooting"`, `candidate_button_modes[]`, `candidate_button_effects[]`, `optional=false`)
 - path_of_warrior_dialog: CHOOSE_PATH_OF_WARRIOR {choice_key} (context `unit_id`, `phase_name`, `trigger`)
 - cruel_amusement_dialog: CHOOSE_CRUEL_AMUSEMENT {choice} (context `unit_id`, `model_id`, `weapon_name`, `ability_name`)
@@ -438,7 +438,7 @@ Faction / Detachment / Ability choices:
 - cabal_of_sorcerers_dialog: CHOOSE_RITUALS {choices[]}
 - code_chivalric_dialog: CHOOSE_CHIVALRIC_OATH {choice_id}
 - daemonic_allegiance_dialog: CHOOSE_DAEMONIC_ALLEGIANCE {choice_id}
-- dark_pacts_dialog: CHOOSE_DARK_PACT {choice_id} (selected option payload may include `empyric_wellspring_choice` for Cabal of Chaos)
+- dark_pacts_dialog: CHOOSE_DARK_PACT {choice_id} (selected option payload may include `empyric_wellspring_choice` for Cabal of Chaos and `invoke_contract` for Soulforged Warpack)
 - doctrina_imperatives_dialog: CHOOSE_DOCTRINA {choice_id}
 - combat_doctrines_dialog: CHOOSE_COMBAT_DOCTRINE {choice_id | skip} (Combat Doctrines / Mastered Doctrines; availability validated by engine)
 - angelic_legacy_dialog: CHOOSE_ANGELIC_LEGACY {choice_id} (Angelic Inheritors; payload includes `choice_keys` with exactly two selected legacy abilities)

@@ -4208,6 +4208,29 @@ class WargearProfile:
                     attack_result.attacks_special_modifiers.append(
                         f"Experimental Augmentations: {source_name} +{int(bonus)}A (melee)"
                     )
+            soulforged_bonus_fn = getattr(
+                mgr,
+                "soulforged_warpack_contract_melee_attacks_bonus",
+                None,
+            ) if mgr is not None else None
+            if callable(soulforged_bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                bonus, source = soulforged_bonus_fn(attacker, weapon_profile=self, game=game)
+                if int(bonus or 0):
+                    source_name = (
+                        str(source or "Debt to the Soul Forge").strip()
+                        or "Debt to the Soul Forge"
+                    )
+                    atk_mods.append(
+                        Modifier(
+                            ModifierOp.ADD,
+                            int(bonus),
+                            source="detachment:debt_to_the_soul_forge_attacks",
+                        )
+                    )
+                    attack_result.attacks_special_modifiers.append(
+                        f"{source_name} +{int(bonus)}A (melee)"
+                    )
 
         try:
             if self.parent_wargear and self.parent_wargear.is_melee() and not bool(getattr(attacker, "is_character", False)):
@@ -13217,6 +13240,19 @@ class WargearProfile:
         attacker_get_army = getattr(attacker_unit, "get_parent_army", None) if attacker_unit is not None else None
         attacker_army = attacker_get_army() if callable(attacker_get_army) else None
         csm_mgr = getattr(attacker_army, "chaos_space_marines_detachments", None) if attacker_army is not None else None
+        soulforged_wound_fn = (
+            getattr(csm_mgr, "soulforged_warpack_contract_ranged_wound_bonus", None) if csm_mgr is not None else None
+        )
+        if callable(soulforged_wound_fn):
+            soulforged_bonus, soulforged_source = soulforged_wound_fn(
+                attacker,
+                weapon_profile=self,
+                game=getattr(getattr(attacker_army, "player", None), "game", None) if attacker_army is not None else None,
+            )
+            if int(soulforged_bonus or 0):
+                source_name = str(soulforged_source or "Debt to the Soul Forge").strip() or "Debt to the Soul Forge"
+                dice_modifier += int(soulforged_bonus)
+                wound_result["modifiers"].append(f"+{int(soulforged_bonus)} to wound from {source_name}")
         csm_bonus_fn = getattr(csm_mgr, "terror_made_manifest_wound_bonus", None) if csm_mgr is not None else None
         if callable(csm_bonus_fn):
             bonus, source = csm_bonus_fn(attacker, target)

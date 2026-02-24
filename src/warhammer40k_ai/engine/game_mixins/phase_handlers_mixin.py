@@ -8988,7 +8988,20 @@ class GamePhaseHandlersMixin:
                         sr.pop(k, None)
                 exp = str(sr.get("dark_pacts_expires_phase", "") or "").strip().upper()
                 if exp and exp == pname:
-                    for k in ("dark_pacts_active", "dark_pacts_choice", "dark_pacts_test_passed", "dark_pacts_expires_phase"):
+                    for k in (
+                        "dark_pacts_active",
+                        "dark_pacts_choice",
+                        "dark_pacts_test_passed",
+                        "dark_pacts_expires_phase",
+                        "soulforged_warpack_contract_active",
+                        "soulforged_warpack_contract_expires_phase",
+                        "soulforged_warpack_contract_turn",
+                        "soulforged_warpack_contract_turn_owner",
+                        "soulforged_warpack_contract_source",
+                        "soulforged_warpack_contract_choice",
+                        "soulforged_warpack_dark_pact_test_modifier",
+                        "soulforged_warpack_dark_pact_test_modifier_source",
+                    ):
                         sr.pop(k, None)
                 exp = str(sr.get("empyric_wellspring_expires_phase", "") or "").strip().upper()
                 if exp and exp == pname:
