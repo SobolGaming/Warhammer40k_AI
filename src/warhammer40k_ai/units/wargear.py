@@ -7391,6 +7391,24 @@ class WargearProfile:
                         )
         except Exception:
             pass
+        # Imperial Agents (Ordo Xenos Alien Hunters): Deathwatch Mission Tactics.
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            ia_mgr = getattr(army, "imperial_agents_detachments", None) if army is not None else None
+            if ia_mgr is not None:
+                mission_lethal, _source = ia_mgr.deathwatch_mission_tactics_lethal_hits(attacker)
+                if mission_lethal:
+                    bonus_lethal = True
+                mission_sustained, source = ia_mgr.deathwatch_mission_tactics_sustained_hits(attacker)
+                mission_sustained_value = int(mission_sustained or 0)
+                if mission_sustained_value > 0:
+                    _set_bonus_sustained(mission_sustained_value, str(source or "Deathwatch Mission Tactics"))
+                mission_precision_on_crit, _source = ia_mgr.deathwatch_mission_tactics_precision_on_crit(attacker)
+                if mission_precision_on_crit:
+                    bonus_precision_on_crit = True
+        except Exception:
+            pass
         # Imperial Agents (Ordo Hereticus Purgation Force): Root out Heresy.
         try:
             unit = getattr(attacker, "parent_unit", None)

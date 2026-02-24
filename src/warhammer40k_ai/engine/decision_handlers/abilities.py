@@ -2908,6 +2908,50 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not bool(is_valid_target(target_root, player=player, game=game)):
             return ("Marked Prey target must be an enemy unit on the battlefield.",)
         return ()
+    if ability == "ordo_xenos_deathwatch_mission_tactics":
+        payload = _option_payload(request, result)
+        source_army = _resolve_army(game, request, payload)
+        if source_army is None:
+            return ("Deathwatch Mission Tactics army not found.",)
+        mgr = getattr(source_army, "imperial_agents_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_ordo_xenos_alien_hunters", lambda: False)()):
+            return ("Deathwatch Mission Tactics requires an Ordo Xenos Alien Hunters army.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(source_army, "player", None)
+        try:
+            battle_round = int(ctx.get("battle_round", 0) or getattr(game, "turn", 0) or 0)
+        except Exception:
+            battle_round = int(getattr(game, "turn", 0) or 0)
+        available_keys = [str(v or "").strip().upper() for v in list(ctx.get("available_keys", []) or []) if str(v or "").strip()]
+        validate_choice = getattr(mgr, "validate_deathwatch_mission_tactic_choice", None)
+        if not callable(validate_choice):
+            return ("Deathwatch Mission Tactics manager support is unavailable.",)
+        if is_skip_choice(request, result):
+            valid, reason = validate_choice(
+                skip=True,
+                game=game,
+                player=player,
+                battle_round=int(battle_round),
+                available_keys=list(available_keys),
+            )
+            if not valid:
+                return (str(reason or "Deathwatch Mission Tactics selection is not legal."),)
+            return ()
+        choice_key = str(payload.get("choice_key") or payload.get("key") or "").strip().upper()
+        if not choice_key:
+            return ("Deathwatch Mission Tactics selection requires choice_key.",)
+        valid, reason = validate_choice(
+            choice_key=choice_key,
+            skip=False,
+            game=game,
+            player=player,
+            battle_round=int(battle_round),
+            available_keys=list(available_keys),
+        )
+        if not valid:
+            return (str(reason or "Deathwatch Mission Tactics selection is not legal."),)
+        return ()
     if ability == "imperialis_fleet_at_all_costs":
         payload = _option_payload(request, result)
         source_army = _resolve_army(game, request, payload)
@@ -4908,6 +4952,55 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             "target_unit_id": str(get_entity_id(target_root) or ""),
             "source": ability_name,
         }
+    if ability == "ordo_xenos_deathwatch_mission_tactics":
+        payload = _option_payload(request, result)
+        source_army = _resolve_army(game, request, payload)
+        if source_army is None:
+            return None
+        mgr = getattr(source_army, "imperial_agents_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_ordo_xenos_alien_hunters", lambda: False)()):
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(source_army, "player", None)
+        try:
+            battle_round = int(ctx.get("battle_round", 0) or getattr(game, "turn", 0) or 0)
+        except Exception:
+            battle_round = int(getattr(game, "turn", 0) or 0)
+        available_keys = [str(v or "").strip().upper() for v in list(ctx.get("available_keys", []) or []) if str(v or "").strip()]
+        select_fn = getattr(mgr, "select_deathwatch_mission_tactic_choice", None)
+        if not callable(select_fn):
+            return None
+        if is_skip_choice(request, result):
+            outcome = select_fn(
+                skip=True,
+                game=game,
+                player=player,
+                battle_round=int(battle_round),
+                available_keys=list(available_keys),
+            )
+            if outcome is None:
+                return None
+            ability_name = str(ctx.get("ability_name", "") or "Deathwatch Mission Tactics").strip() or "Deathwatch Mission Tactics"
+            _log_action_for_players(game, player, f"{ability_name}: no tactic selected this Command phase.")
+            return outcome
+        choice_key = str(payload.get("choice_key") or payload.get("key") or "").strip().upper()
+        if not choice_key:
+            return None
+        outcome = select_fn(
+            choice_key=choice_key,
+            skip=False,
+            game=game,
+            player=player,
+            battle_round=int(battle_round),
+            available_keys=list(available_keys),
+        )
+        if outcome is None:
+            return None
+        ability_name = str((outcome or {}).get("source", "") or ctx.get("ability_name", "") or "Deathwatch Mission Tactics").strip() or "Deathwatch Mission Tactics"
+        label = str((outcome or {}).get("label", "") or choice_key).strip() or choice_key
+        _log_action_for_players(game, player, f"{ability_name}: selected {label}.")
+        return outcome
     if ability == "imperialis_fleet_at_all_costs":
         payload = _option_payload(request, result)
         source_army = _resolve_army(game, request, payload)

@@ -1061,6 +1061,14 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"while this mission tactic is active weapons equipped by adeptus astartes units from your army have the lethal hits ability",
             r"while this mission tactic is active each time an adeptus astartes unit from your army makes an attack if a critical hit is scored that attack has the precision ability",
         ),
+        "Deathwatch Mission Tactics": (
+            r"at the start of your command phase you can select one of the mission tactics listed below",
+            r"until the start of your next command phase that mission tactic is active and its effects apply to all deathwatch units from your army",
+            r"each mission tactic can only be selected once per battle",
+            r"while this mission tactic is active weapons equipped by deathwatch units from your army have the sustained hits \d+ ability",
+            r"while this mission tactic is active weapons equipped by deathwatch units from your army have the lethal hits ability",
+            r"while this mission tactic is active each time a deathwatch model from your army makes an attack on a critical wound that attack has the precision ability",
+        ),
         "Legendary Slayers": (
             r"each time an adeptus astartes model from your army makes an attack if that attack targets a character monster or vehicle unit or if your saga is completed see below that attack has the lethal hits ability",
             r"at the start of the first battle round your beastslayer tally is 0 and you determine your beastslayer target by halving the number of units from your opponents army including those embarked within transports that have one or more of the following keywords rounding up",
@@ -4534,6 +4542,10 @@ def _datasheet_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[str, str
 
 def _detachment_ability_support_by_id() -> Dict[str, Tuple[str, str]]:
     return {
+        "000009125": (
+            "Supported",
+            "Ordo Xenos Alien Hunters: Deathwatch Mission Tactics command-phase choice is fully implemented (Furor: Sustained Hits 1, Malleus: Lethal Hits, Purgatus: Precision on critical wounds) for DEATHWATCH units, with each tactic selectable once per battle.",
+        ),
         "000009129": (
             "Supported",
             "Ordo Hereticus Purgation Force: Root out Heresy grants [IGNORES COVER] to ranged weapons of ADEPTUS ARBITES/INQUISITOR/INQUISITORIAL AGENTS/ORDO HERETICUS models and grants [SUSTAINED HITS 1] when those models attack CHAOS units containing 5+ models.",

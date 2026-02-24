@@ -29,6 +29,22 @@ class ImperialAgentsDetachmentManager(DetachmentManagerBase):
         "INQUISITORIAL AGENTS",
         "ORDO MALLEUS",
     )
+    _ORDO_XENOS_ALIEN_HUNTERS_DETACHMENT_NAME = "Ordo Xenos Alien Hunters"
+    _DEATHWATCH_MISSION_TACTICS_NAME = "Deathwatch Mission Tactics"
+    _DEATHWATCH_MISSION_TACTICS_ABILITY_KEY = "ordo_xenos_deathwatch_mission_tactics"
+    _DEATHWATCH_MISSION_TACTIC_FUROR = "FUROR_TACTICS"
+    _DEATHWATCH_MISSION_TACTIC_MALLEUS = "MALLEUS_TACTICS"
+    _DEATHWATCH_MISSION_TACTIC_PURGATUS = "PURGATUS_TACTICS"
+    _DEATHWATCH_MISSION_TACTIC_KEYS = (
+        _DEATHWATCH_MISSION_TACTIC_FUROR,
+        _DEATHWATCH_MISSION_TACTIC_MALLEUS,
+        _DEATHWATCH_MISSION_TACTIC_PURGATUS,
+    )
+    _DEATHWATCH_MISSION_TACTIC_LABELS = {
+        _DEATHWATCH_MISSION_TACTIC_FUROR: "Furor Tactics",
+        _DEATHWATCH_MISSION_TACTIC_MALLEUS: "Malleus Tactics",
+        _DEATHWATCH_MISSION_TACTIC_PURGATUS: "Purgatus Tactics",
+    }
     _EXTREMIS_DETACHMENT_NAME = "Veiled Blade Elimination Force"
     _EXTREMIS_SURCHARGE_BY_UNIT_NAME = {
         "callidus assassin": 40,
@@ -49,6 +65,10 @@ class ImperialAgentsDetachmentManager(DetachmentManagerBase):
         self.at_all_costs_active_mode: str = ""
         self.at_all_costs_target_unit_id: str = ""
         self.at_all_costs_target_objective_id: str = ""
+        self.deathwatch_mission_tactics_selected_keys: tuple[str, ...] = ()
+        self.deathwatch_mission_tactics_active_key: str = ""
+        self.deathwatch_mission_tactics_active_round: int = 0
+        self.deathwatch_mission_tactics_last_selection_round: int = 0
 
     @staticmethod
     def _normalize_name(value: str) -> str:
@@ -73,6 +93,11 @@ class ImperialAgentsDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches(self._ORDO_MALLEUS_DAEMON_HUNTERS_DETACHMENT_NAME)
+
+    def is_ordo_xenos_alien_hunters(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches(self._ORDO_XENOS_ALIEN_HUNTERS_DETACHMENT_NAME)
 
     def is_veiled_blade_elimination_force(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -386,6 +411,264 @@ class ImperialAgentsDetachmentManager(DetachmentManagerBase):
         if callable(request_decision) and request is not None:
             request_decision(request)
 
+    def _deathwatch_mission_tactics_pending_request(self, game, *, army_id: str, battle_round: int):
+        if game is None:
+            return None
+        queue = getattr(game, "decision_queue", None)
+        if queue is None:
+            return None
+        for req in list(getattr(queue, "list", lambda: [])() or []):
+            if str(getattr(req, "decision_type", "") or "") != "CHOOSE_QUARRY":
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "") != self._DEATHWATCH_MISSION_TACTICS_ABILITY_KEY:
+                continue
+            if str(ctx.get("army_id", "") or "") != str(army_id or ""):
+                continue
+            try:
+                req_round = int(ctx.get("battle_round", 0) or 0)
+            except Exception:
+                req_round = 0
+            if int(req_round) != int(battle_round):
+                continue
+            return req
+        return None
+
+    def clear_active_deathwatch_mission_tactic(self) -> None:
+        self.deathwatch_mission_tactics_active_key = ""
+        self.deathwatch_mission_tactics_active_round = 0
+
+    def mark_deathwatch_mission_tactics_skipped_for_round(self, *, battle_round=None) -> None:
+        try:
+            self.deathwatch_mission_tactics_last_selection_round = int(battle_round or 0)
+        except Exception:
+            self.deathwatch_mission_tactics_last_selection_round = 0
+
+    def deathwatch_mission_tactic_label(self, key: str) -> str:
+        key_norm = str(key or "").strip().upper()
+        return self._DEATHWATCH_MISSION_TACTIC_LABELS.get(key_norm, key_norm)
+
+    def get_available_deathwatch_mission_tactics(self) -> list[str]:
+        selected = {str(v or "").strip().upper() for v in list(self.deathwatch_mission_tactics_selected_keys or ())}
+        return [key for key in self._DEATHWATCH_MISSION_TACTIC_KEYS if key not in selected]
+
+    def can_select_deathwatch_mission_tactic(self, *, game=None, battle_round=None) -> bool:
+        if not self.is_ordo_xenos_alien_hunters():
+            return False
+        available = list(self.get_available_deathwatch_mission_tactics() or [])
+        if not available:
+            return False
+        round_now = 0
+        try:
+            round_now = int(
+                battle_round
+                or getattr(game, "turn", 0)
+                or getattr(getattr(self.army, "player", None), "game", None).turn
+                or 0
+            )
+        except Exception:
+            round_now = 0
+        if round_now <= 0:
+            return False
+        return int(self.deathwatch_mission_tactics_last_selection_round or 0) != round_now
+
+    def _build_deathwatch_mission_tactics_request(self, game, *, battle_round: int):
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        if game is None or self.army is None:
+            return None
+        owner = getattr(self.army, "player", None)
+        if owner is None:
+            return None
+        available = list(self.get_available_deathwatch_mission_tactics() or [])
+        if not available:
+            return None
+        options = [
+            DecisionOption.create(
+                "None",
+                payload={
+                    "action": "skip",
+                    "skip": True,
+                    "mode": "skip",
+                    "summary": "Do not select a Deathwatch Mission Tactic this Command phase.",
+                },
+            )
+        ]
+        for key in list(available):
+            label = str(self.deathwatch_mission_tactic_label(key) or key)
+            options.append(
+                DecisionOption.create(
+                    label,
+                    payload={
+                        "choice_key": str(key),
+                        "summary": f"{self._DEATHWATCH_MISSION_TACTICS_NAME}: select {label}.",
+                    },
+                )
+            )
+        return DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Deathwatch Mission Tactics: select one available tactic or None.",
+            player_id=getattr(owner, "id", None),
+            options=options,
+            context={
+                "ability": self._DEATHWATCH_MISSION_TACTICS_ABILITY_KEY,
+                "ability_name": self._DEATHWATCH_MISSION_TACTICS_NAME,
+                "army_id": self._entity_id(self.army),
+                "battle_round": int(battle_round),
+                "available_keys": list(available),
+                "optional": True,
+            },
+        )
+
+    def _queue_deathwatch_mission_tactics_request(self, *, game=None, player=None, battle_round: int = 0) -> None:
+        if not self.is_ordo_xenos_alien_hunters():
+            return
+        if game is None or player is None or self.army is None:
+            return
+        if player is not getattr(self.army, "player", None):
+            return
+        if not bool(getattr(game, "is_authoritative", True)):
+            return
+        try:
+            br = int(battle_round or getattr(game, "turn", 0) or 0)
+        except Exception:
+            br = int(getattr(game, "turn", 0) or 0)
+        if br <= 0:
+            return
+        if not self.can_select_deathwatch_mission_tactic(game=game, battle_round=int(br)):
+            return
+        army_id = self._entity_id(self.army)
+        if self._deathwatch_mission_tactics_pending_request(game, army_id=army_id, battle_round=int(br)) is not None:
+            return
+        request = self._build_deathwatch_mission_tactics_request(game, battle_round=int(br))
+        request_decision = getattr(game, "request_decision", None)
+        if callable(request_decision) and request is not None:
+            request_decision(request)
+
+    def validate_deathwatch_mission_tactic_choice(
+        self,
+        *,
+        choice_key: str = "",
+        skip: bool = False,
+        game=None,
+        player=None,
+        battle_round: int = 0,
+        available_keys: Optional[list[str]] = None,
+    ) -> tuple[bool, str]:
+        if not self.is_ordo_xenos_alien_hunters():
+            return False, "Deathwatch Mission Tactics requires the Ordo Xenos Alien Hunters detachment."
+        if self.army is None:
+            return False, "Deathwatch Mission Tactics army not found."
+        owner = getattr(self.army, "player", None)
+        if player is not None and owner is not None and player is not owner:
+            return False, "Deathwatch Mission Tactics must be resolved by the owning player."
+        round_key = int(battle_round or 0)
+        if round_key > 0 and int(self.deathwatch_mission_tactics_last_selection_round or 0) == round_key:
+            return False, "Deathwatch Mission Tactics has already been selected this Command phase."
+        if skip:
+            return True, ""
+
+        key = str(choice_key or "").strip().upper()
+        if not key:
+            return False, "Deathwatch Mission Tactics selection requires choice_key."
+        if key not in set(self._DEATHWATCH_MISSION_TACTIC_KEYS):
+            return False, "Deathwatch Mission Tactics choice_key is invalid."
+        allowed = {
+            str(v or "").strip().upper()
+            for v in list(available_keys or self.get_available_deathwatch_mission_tactics() or [])
+            if str(v or "").strip()
+        }
+        if allowed and key not in allowed:
+            return False, "Deathwatch Mission Tactics choice is not currently available."
+        if key in {str(v or "").strip().upper() for v in list(self.deathwatch_mission_tactics_selected_keys or ())}:
+            return False, "Deathwatch Mission Tactics choice has already been selected this battle."
+        return True, ""
+
+    def select_deathwatch_mission_tactic_choice(
+        self,
+        *,
+        choice_key: str = "",
+        skip: bool = False,
+        game=None,
+        player=None,
+        battle_round: int = 0,
+        available_keys: Optional[list[str]] = None,
+    ):
+        valid, reason = self.validate_deathwatch_mission_tactic_choice(
+            choice_key=choice_key,
+            skip=skip,
+            game=game,
+            player=player,
+            battle_round=battle_round,
+            available_keys=available_keys,
+        )
+        if not valid:
+            return None
+        if game is not None:
+            try:
+                round_now = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                round_now = int(battle_round or 0)
+        else:
+            round_now = int(battle_round or 0)
+        self.deathwatch_mission_tactics_last_selection_round = int(round_now)
+        self.clear_active_deathwatch_mission_tactic()
+        if skip:
+            return {
+                "mode": "skip",
+                "source": self._DEATHWATCH_MISSION_TACTICS_NAME,
+                "battle_round": int(round_now),
+            }
+
+        key = str(choice_key or "").strip().upper()
+        selected = list(self.deathwatch_mission_tactics_selected_keys or ())
+        if key not in selected:
+            selected.append(key)
+        self.deathwatch_mission_tactics_selected_keys = tuple(selected)
+        self.deathwatch_mission_tactics_active_key = key
+        self.deathwatch_mission_tactics_active_round = int(round_now)
+        return {
+            "choice_key": key,
+            "label": self.deathwatch_mission_tactic_label(key),
+            "source": self._DEATHWATCH_MISSION_TACTICS_NAME,
+            "battle_round": int(round_now),
+        }
+
+    def _deathwatch_mission_tactics_recipient(self, unit) -> bool:
+        if not self.is_ordo_xenos_alien_hunters():
+            return False
+        if not str(self.deathwatch_mission_tactics_active_key or "").strip():
+            return False
+        root = self._unit_root(unit)
+        if root is None or not self._unit_in_army(root):
+            return False
+        return self._unit_has_keyword(root, "DEATHWATCH")
+
+    def deathwatch_mission_tactics_lethal_hits(self, attacker_model) -> tuple[bool, str]:
+        if str(self.deathwatch_mission_tactics_active_key or "").strip().upper() != self._DEATHWATCH_MISSION_TACTIC_MALLEUS:
+            return False, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None) if attacker_model is not None else None
+        if not self._deathwatch_mission_tactics_recipient(attacker_unit):
+            return False, ""
+        return True, f"{self._DEATHWATCH_MISSION_TACTICS_NAME} ({self.deathwatch_mission_tactic_label(self._DEATHWATCH_MISSION_TACTIC_MALLEUS)})"
+
+    def deathwatch_mission_tactics_sustained_hits(self, attacker_model) -> tuple[int, str]:
+        if str(self.deathwatch_mission_tactics_active_key or "").strip().upper() != self._DEATHWATCH_MISSION_TACTIC_FUROR:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None) if attacker_model is not None else None
+        if not self._deathwatch_mission_tactics_recipient(attacker_unit):
+            return 0, ""
+        return 1, f"{self._DEATHWATCH_MISSION_TACTICS_NAME} ({self.deathwatch_mission_tactic_label(self._DEATHWATCH_MISSION_TACTIC_FUROR)})"
+
+    def deathwatch_mission_tactics_precision_on_crit(self, attacker_model) -> tuple[bool, str]:
+        if str(self.deathwatch_mission_tactics_active_key or "").strip().upper() != self._DEATHWATCH_MISSION_TACTIC_PURGATUS:
+            return False, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None) if attacker_model is not None else None
+        if not self._deathwatch_mission_tactics_recipient(attacker_unit):
+            return False, ""
+        return True, f"{self._DEATHWATCH_MISSION_TACTICS_NAME} ({self.deathwatch_mission_tactic_label(self._DEATHWATCH_MISSION_TACTIC_PURGATUS)})"
+
     def on_command_phase_start(self, *, game=None, player=None) -> None:
         if game is None or player is None:
             return
@@ -393,6 +676,13 @@ class ImperialAgentsDetachmentManager(DetachmentManagerBase):
             return
         if self.is_imperialis_fleet():
             self._queue_at_all_costs_request(
+                game=game,
+                player=player,
+                battle_round=int(getattr(game, "turn", 0) or 0),
+            )
+        if self.is_ordo_xenos_alien_hunters():
+            self.clear_active_deathwatch_mission_tactic()
+            self._queue_deathwatch_mission_tactics_request(
                 game=game,
                 player=player,
                 battle_round=int(getattr(game, "turn", 0) or 0),
