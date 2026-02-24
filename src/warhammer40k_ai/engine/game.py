@@ -611,6 +611,84 @@ class Game(
                         tested_ids.add(uid)
                         break
 
+    def _apply_csm_dread_talons_terror_descends_forced_tests(self, current_player, tested_ids: set[str]) -> None:
+        if current_player is None:
+            return
+
+        def _get_army(player):
+            getter = getattr(self, "_get_player_army", None)
+            if callable(getter):
+                return getter(player)
+            if player is None:
+                return None
+            getter = getattr(player, "get_army", None)
+            if callable(getter):
+                return getter()
+            return getattr(player, "army", None)
+
+        current_army = _get_army(current_player)
+        if current_army is None:
+            return
+
+        for enemy_player in [p for p in (self.players or []) if p is not current_player]:
+            army = _get_army(enemy_player)
+            if army is None:
+                continue
+            mgr = getattr(army, "chaos_space_marines_detachments", None)
+            if mgr is None or not getattr(mgr, "is_dread_talons", lambda: False)():
+                continue
+            in_range_fn = getattr(mgr, "terror_descends_target_in_range", None)
+            suppress_fn = getattr(mgr, "terror_descends_apply_test_suppression", None)
+            if not callable(in_range_fn) or not callable(suppress_fn):
+                continue
+
+            seen_targets: set[str] = set()
+            for unit in list(getattr(current_army, "units", []) or []):
+                if unit is None:
+                    continue
+                get_root = getattr(unit, "get_attached_unit_root", None)
+                root = get_root() if callable(get_root) else unit
+                if root is None:
+                    continue
+                unit_id = str(get_entity_id(root) or "")
+                if not unit_id or unit_id in seen_targets:
+                    continue
+                seen_targets.add(unit_id)
+
+                is_alive = getattr(root, "is_alive", None)
+                if callable(is_alive) and not bool(is_alive()):
+                    continue
+                if not bool(getattr(root, "deployed", True)):
+                    continue
+                reserve_status = str(getattr(root, "reserve_status", "deployed") or "deployed").strip().lower()
+                if reserve_status != "deployed":
+                    continue
+                is_in_reserves = getattr(root, "is_in_reserves", None)
+                if callable(is_in_reserves) and bool(is_in_reserves()):
+                    continue
+                if bool(getattr(root, "is_embarked", False)) or getattr(root, "embarked_in", None) is not None:
+                    continue
+
+                below_starting = getattr(root, "is_below_starting_strength", None)
+                if not callable(below_starting) or not bool(below_starting()):
+                    continue
+                if not bool(in_range_fn(root)):
+                    continue
+
+                already_tested = unit_id in tested_ids
+                suppress_fn(
+                    root,
+                    phase_name="COMMAND_PHASE",
+                    allow_current_test=not already_tested,
+                )
+                if already_tested:
+                    continue
+
+                take_test = getattr(root, "take_battle_shock_test", None)
+                if callable(take_test):
+                    take_test(int(getattr(self, "turn", 0) or 0))
+                tested_ids.add(unit_id)
+
     def _on_battle_shock_test_resolved_shadow_form(self, unit=None, passed: bool = False, **_kwargs) -> None:
         if unit is None or passed:
             return
@@ -8197,6 +8275,9 @@ class Game(
                 uid = get_entity_id(unit)
                 tested_ids.add(uid)
 
+        # Chaos Space Marines Dread Talons: Terror Descends marks affected units so they do
+        # not take additional Battle-shock tests in this Command phase.
+        self._apply_csm_dread_talons_terror_descends_forced_tests(current_player, tested_ids)
         # Belakor: Pall of Despair can force additional tests for eligible enemy units.
         self._apply_pall_of_despair_forced_tests(current_player, tested_ids)
         # Chaos Knights: Dismay can force additional tests for eligible enemy units.

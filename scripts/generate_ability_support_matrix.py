@@ -364,6 +364,11 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"strike force up to 3 units up to 3 units",
             r"onslaught up to 4 units up to 4 units",
         ),
+        "Terror Descends (Aura)": (
+            r"in the battle shock step of your opponent(?:s| s) command phase if an enemy unit that is below its starting strength is within 12 of one or more heretic astartes units from your army that enemy unit must take a battle shock test",
+            r"each time an enemy unit within 12 of one or more heretic astartes units from your army takes a battle shock test subtract 1 from the result",
+            r"enemy units affected by this detachment rule do not need to take any other battle shock tests in the same phase",
+        ),
         "Yriel's Own": (
             r"aeldari units in your army are eligible to declare a charge in a turn in which they advanced",
             r"in addition each time an anhrathe rangers or shroud runners unit from your army advances you can reroll the advance roll",
@@ -2506,6 +2511,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Masters of Misdirection": (
             "Supported",
             "Deceptors: in the Declare Battle Formations step, select eligible LEGIONARIES/CULTIST MOB units (battle-size caps enforced per unit type); selected units gain Infiltrators until end of battle, and attached non-EPIC HERO CHARACTER units also gain Infiltrators while attached.",
+        ),
+        "Terror Descends (Aura)": (
+            "Supported",
+            "Dread Talons: in the Battle-shock step of your opponent's Command phase, below-Starting Strength enemy units within 12\" of friendly HERETIC ASTARTES sources are forced to take a Battle-shock test, affected units are flagged to suppress further Battle-shock tests in that phase, and in-range Battle-shock tests use the detachment's -1 test modifier support.",
         ),
         "Mechanised Murder": ("Supported", "Rapid Evisceration: reroll Hit/Wound rolls of 1 for eligible units."),
         "Daemonic Empowerment": (

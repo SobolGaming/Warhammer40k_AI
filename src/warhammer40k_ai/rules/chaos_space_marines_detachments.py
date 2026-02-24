@@ -72,6 +72,7 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
     DETACHMENT_CHAOS_CULT = "Chaos Cult"
     DETACHMENT_CREATIONS_OF_BILE = "Creations of Bile"
     DETACHMENT_DECEPTORS = "Deceptors"
+    DETACHMENT_DREAD_TALONS = "Dread Talons"
     DETACHMENT_RENEGADE_RAIDERS = "Renegade Raiders"
     _MASTERS_OF_MISDIRECTION_SELECTION_ABILITY = "deceptors_masters_of_misdirection_selection"
     _MASTERS_OF_MISDIRECTION_SOURCE = "Masters of Misdirection"
@@ -109,6 +110,11 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         if not self._army_faction_matches(self.faction_id):
             return False
         return self.detachment_matches(self.DETACHMENT_DECEPTORS)
+
+    def is_dread_talons(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches(self.DETACHMENT_DREAD_TALONS)
 
     def is_renegade_raiders(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -242,6 +248,67 @@ class ChaosSpaceMarinesDetachmentManager(DetachmentManagerBase):
         if callable(has_keyword) and bool(has_keyword("HERETIC ASTARTES")):
             return True
         return self._unit_is_heretic_astartes(getattr(model, "parent_unit", None))
+
+    def terror_descends_source_units(self) -> list:
+        if not self.is_dread_talons() or self.army is None:
+            return []
+        sources = []
+        for root in self._iter_unique_roots(getattr(self.army, "units", []) or []):
+            if not self._unit_in_army(root):
+                continue
+            if not self._unit_is_heretic_astartes(root):
+                continue
+            is_alive = getattr(root, "is_alive", None)
+            if callable(is_alive) and not bool(is_alive()):
+                continue
+            if not bool(getattr(root, "deployed", False)):
+                continue
+            reserve_status = str(getattr(root, "reserve_status", "deployed") or "deployed").strip().lower()
+            if reserve_status != "deployed":
+                continue
+            in_reserves = getattr(root, "is_in_reserves", None)
+            if callable(in_reserves) and bool(in_reserves()):
+                continue
+            if bool(getattr(root, "is_embarked", False)) or getattr(root, "embarked_in", None) is not None:
+                continue
+            sources.append(root)
+        sources.sort(key=lambda unit: str(get_entity_id(unit) or self._unit_root_key(unit)))
+        return sources
+
+    def terror_descends_target_in_range(self, target_unit) -> bool:
+        if not self.is_dread_talons():
+            return False
+        root = self._unit_root(target_unit)
+        if root is None:
+            return False
+        from ..utility.aura_utils import unit_within_range_of_unit
+
+        for source in list(self.terror_descends_source_units() or []):
+            if unit_within_range_of_unit(source, root, 12.0, use_attached_aggregate=True):
+                return True
+        return False
+
+    def terror_descends_apply_test_suppression(
+        self,
+        target_unit,
+        *,
+        phase_name: str = "COMMAND_PHASE",
+        allow_current_test: bool = False,
+    ) -> None:
+        root = self._unit_root(target_unit)
+        if root is None:
+            return
+        special_rules = getattr(root, "special_rules", None)
+        if not isinstance(special_rules, dict):
+            special_rules = {}
+        updated = dict(special_rules)
+        updated["battle_shock_suppress_other_tests_phase"] = str(phase_name or "COMMAND_PHASE").strip().upper()
+        updated["battle_shock_suppress_other_tests_source"] = "Terror Descends"
+        if bool(allow_current_test):
+            updated["battle_shock_allow_suppressed_test"] = True
+        else:
+            updated.pop("battle_shock_allow_suppressed_test", None)
+        root.special_rules = updated
 
     @staticmethod
     def _normalize_name(value: str) -> str:
