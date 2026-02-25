@@ -9845,6 +9845,24 @@ class WargearProfile:
                     reroll_value_reasons.append(f"{source_name}: re-roll Hit roll of 1")
         except Exception:
             pass
+        # Space Marines: Reclamation Force (Liberatum).
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            reroll_fn = getattr(sm_mgr, "reclamation_force_liberatum_hit_wound_rerolls", None) if sm_mgr is not None else None
+            if callable(reroll_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                reroll_hit, _reroll_wound, source = reroll_fn(
+                    attacker,
+                    target,
+                    game=game,
+                )
+                if bool(reroll_hit):
+                    source_name = str(source or "Liberatum").strip() or "Liberatum"
+                    reroll_full_reasons.append(f"{source_name}: re-roll Hit roll")
+        except Exception:
+            pass
         # Tyranids: Subterranean Assault (Surprise Assault).
         try:
             unit = getattr(attacker, "parent_unit", None)
@@ -14467,6 +14485,24 @@ class WargearProfile:
                     reroll_wound_values.add(1)
                     source_name = str(source or "Rapid-drop Deployment").strip() or "Rapid-drop Deployment"
                     reroll_value_reasons.append(f"{source_name}: re-roll Wound roll of 1")
+        except Exception:
+            pass
+        # Space Marines: Reclamation Force (Liberatum).
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            reroll_fn = getattr(sm_mgr, "reclamation_force_liberatum_hit_wound_rerolls", None) if sm_mgr is not None else None
+            if callable(reroll_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                _reroll_hit, reroll_wound, source = reroll_fn(
+                    attacker,
+                    target,
+                    game=game,
+                )
+                if bool(reroll_wound):
+                    source_name = str(source or "Liberatum").strip() or "Liberatum"
+                    reroll_full_reasons.append(f"{source_name}: re-roll Wound roll")
         except Exception:
             pass
         # Imperial Knights: Questor Forgepact (Cogbound Alliance - Divine Inspiration).

@@ -1808,6 +1808,62 @@ _SPACE_MARINES_ORBITAL_ASSAULT_FORCE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPACE_MARINES_ORBITAL_ASSAULT_FORCE_DESCRIPTORS.values()
 }
 
+_SPACE_MARINES_RECLAMATION_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010684002": EnhancementToolDescriptor(
+        enhancement_id="000010684002",
+        name="Seals of Reconquest",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant_while_bearer_alive",
+        effect="bearer_unit_invulnerable_save",
+        effect_params={
+            "invulnerable_save": 5,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010684003": EnhancementToolDescriptor(
+        enhancement_id="000010684003",
+        name="Avenging Avatar (Aura)",
+        timing="opponent_command_phase_battleshock_step",
+        target="enemy_units_within_range",
+        duration="repeatable",
+        effect="opponent_command_phase_below_starting_strength_battleshock_aura",
+        range_in=9.0,
+        effect_params={
+            "range": 9,
+            "requires_target_below_starting_strength": True,
+        },
+    ),
+    "000010684004": EnhancementToolDescriptor(
+        enhancement_id="000010684004",
+        name="Scroll of Proclamation",
+        timing="charge_declaration",
+        target="bearer_unit",
+        duration="conditional",
+        effect="charge_reroll_if_charge_target_within_objective_range",
+        effect_params={
+            "charge_reroll_if_target_on_objective": True,
+        },
+    ),
+    "000010684005": EnhancementToolDescriptor(
+        enhancement_id="000010684005",
+        name="Liberatum",
+        timing="passive",
+        target="bearer_attacks",
+        duration="conditional",
+        effect="bearer_hit_and_wound_rerolls_if_target_within_objective_range",
+        effect_params={
+            "reroll_hit": True,
+            "reroll_wound": True,
+            "requires_target_within_objective_range": True,
+        },
+    ),
+}
+
+_SPACE_MARINES_RECLAMATION_FORCE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPACE_MARINES_RECLAMATION_FORCE_DESCRIPTORS.values()
+}
+
 _SPACE_MARINES_BASTION_TASK_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010676002": EnhancementToolDescriptor(
         enhancement_id="000010676002",
@@ -2708,6 +2764,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPACE_MARINES_ORBITAL_ASSAULT_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPACE_MARINES_RECLAMATION_FORCE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPACE_MARINES_BASTION_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -2792,6 +2851,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SPACE_MARINES_LIBRARIUS_CONCLAVE_BY_NAME.get(key)
         or _SPACE_MARINES_LIONS_BLADE_TASK_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_ORBITAL_ASSAULT_FORCE_BY_NAME.get(key)
+        or _SPACE_MARINES_RECLAMATION_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_BASTION_TASK_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_BLADE_OF_ULTRAMAR_BY_NAME.get(key)
         or _SPACE_MARINES_CHAMPIONS_OF_FENRIS_BY_NAME.get(key)

@@ -2726,6 +2726,112 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return 0, ""
         return 1, "Oath of Reclamation"
 
+    def _reclamation_force_enhancement_source_member(self, unit, flag_key: str):
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return None, None, None
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if not members:
+            members = [root]
+        members.sort(key=lambda member: str(get_entity_id(member) or ""))
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get(flag_key, False)):
+                return root, member, sr
+        return root, None, None
+
+    @staticmethod
+    def _reclamation_force_member_has_live_bearer(member, sr) -> bool:
+        if member is None or not isinstance(sr, dict):
+            return False
+        bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
+        if bearer_id:
+            for model in list(getattr(member, "models", []) or []):
+                if str(get_entity_id(model) or "") != bearer_id:
+                    continue
+                alive_attr = getattr(model, "is_alive", True)
+                return bool(alive_attr() if callable(alive_attr) else alive_attr)
+            return False
+        bearer = getattr(member, "_get_enhancement_bearer_model", lambda: None)()
+        if bearer is None:
+            return False
+        alive_attr = getattr(bearer, "is_alive", True)
+        return bool(alive_attr() if callable(alive_attr) else alive_attr)
+
+    def _reclamation_force_model_is_bearer(self, model, member, sr) -> bool:
+        if model is None or member is None or not isinstance(sr, dict):
+            return False
+        model_id = str(get_entity_id(model) or "").strip()
+        bearer_id = str(
+            sr.get("enhancement_liberatum_bearer_model_id", "")
+            or sr.get("enhancement_bearer_model_id", "")
+            or ""
+        ).strip()
+        if bearer_id and model_id:
+            return bearer_id == model_id
+        bearer = getattr(member, "_get_enhancement_bearer_model", lambda: None)()
+        if bearer is None:
+            return False
+        return str(get_entity_id(bearer) or "").strip() == model_id
+
+    def _unit_within_any_objective_range(self, unit, *, game=None) -> bool:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        checker = getattr(root, "is_within_any_objective_range", None)
+        if not callable(checker):
+            return False
+        game_obj = self._resolve_game_context(game=game)
+        game_map = getattr(game_obj, "map", None) if game_obj is not None else None
+        try:
+            return bool(checker(game_map=game_map))
+        except TypeError:
+            return bool(checker())
+
+    def reclamation_force_liberatum_hit_wound_rerolls(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        game=None,
+    ) -> tuple[bool, bool, str]:
+        if not self.is_reclamation_force():
+            return False, False, ""
+        if attacker_model is None or target_unit is None:
+            return False, False, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        if attacker_unit is None:
+            return False, False, ""
+        root, member, sr = self._reclamation_force_enhancement_source_member(
+            attacker_unit,
+            "enhancement_liberatum",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return False, False, ""
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False, False, ""
+        attacker_root = self._attached_unit_root(attacker_unit)
+        if attacker_root is None or str(get_entity_id(attacker_root) or "") != str(get_entity_id(root) or ""):
+            return False, False, ""
+        if not self._reclamation_force_member_has_live_bearer(member, sr):
+            return False, False, ""
+        if not self._reclamation_force_model_is_bearer(attacker_model, member, sr):
+            return False, False, ""
+        if bool(sr.get("enhancement_liberatum_requires_target_within_objective_range", True)):
+            if not self._unit_within_any_objective_range(target_unit, game=game):
+                return False, False, ""
+        reroll_hit = bool(sr.get("enhancement_liberatum_reroll_hit", True))
+        reroll_wound = bool(sr.get("enhancement_liberatum_reroll_wound", True))
+        if not (reroll_hit or reroll_wound):
+            return False, False, ""
+        source = str(sr.get("enhancement_liberatum_source", "") or "Liberatum").strip()
+        if not source:
+            source = "Liberatum"
+        return reroll_hit, reroll_wound, source
+
     def _attached_unit_is_ancient(self, unit) -> bool:
         if unit is None:
             return False

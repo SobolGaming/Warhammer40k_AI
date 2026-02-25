@@ -1950,6 +1950,8 @@ class RulesParsingMixin:
         except Exception:
             members = [root]
 
+        preserved_invuln_entries: list[dict] = []
+
         # Clear prior bearer-unit modifiers from all attached members.
         for u in members:
             try:
@@ -1980,6 +1982,27 @@ class RulesParsingMixin:
                 sr = getattr(u, "special_rules", None)
                 if not isinstance(sr, dict):
                     sr = {}
+                existing_invuln = sr.get("bearer_unit_invulnerable_save")
+                if isinstance(existing_invuln, list):
+                    for entry in existing_invuln:
+                        if isinstance(entry, dict):
+                            value = entry.get("value")
+                            source = entry.get("source")
+                        elif isinstance(entry, (list, tuple)):
+                            value = entry[0] if entry else None
+                            source = entry[1] if len(entry) > 1 else None
+                        else:
+                            continue
+                        try:
+                            ivalue = int(value)
+                        except Exception:
+                            continue
+                        preserved_invuln_entries.append(
+                            {
+                                "value": int(ivalue),
+                                "source": str(source or "").strip() or "Bearer unit ability",
+                            }
+                        )
                 existing = sr.get("charge_roll_modifiers")
                 if isinstance(existing, list):
                     kept = []
@@ -2626,6 +2649,9 @@ class RulesParsingMixin:
                     sr = {}
                 sr["same_unit_keyword_fnp_entries"] = list(same_unit_keyword_fnp_entries)
                 u.special_rules = sr
+
+        if preserved_invuln_entries:
+            invuln_entries.extend(list(preserved_invuln_entries))
 
         if invuln_entries:
             deduped = []

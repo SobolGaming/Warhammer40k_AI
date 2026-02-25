@@ -438,6 +438,9 @@ class Enhancement:
         is_orbital_assault_force = bool(
             sm_mgr and getattr(sm_mgr, "is_orbital_assault_force", lambda: False)()
         )
+        is_reclamation_force = bool(
+            sm_mgr and getattr(sm_mgr, "is_reclamation_force", lambda: False)()
+        )
         is_bastion_task_force = bool(
             sm_mgr and getattr(sm_mgr, "is_bastion_task_force", lambda: False)()
         )
@@ -1636,6 +1639,90 @@ class Enhancement:
             cache = getattr(unit, "_ability_cache", None)
             if isinstance(cache, dict):
                 cache.pop("opponent_turn_strategic_reserves_ability", None)
+
+        if name == "seals of reconquest" or enh_id == "000010684002":
+            if not is_reclamation_force:
+                return
+            unit.special_rules["enhancement_seals_of_reconquest"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            invuln = _coerce_int(params.get("invulnerable_save", 5) or 5, default=5)
+            invuln = int(max(2, min(7, invuln)))
+            source_name = (
+                str(getattr(self, "name", "") or "Seals of Reconquest").strip() or "Seals of Reconquest"
+            )
+            entries = list(unit.special_rules.get("bearer_unit_invulnerable_save", []) or [])
+            entry = {"value": int(invuln), "source": source_name}
+            found = False
+            for existing in entries:
+                if not isinstance(existing, dict):
+                    continue
+                try:
+                    val = int(existing.get("value"))
+                except (TypeError, ValueError):
+                    continue
+                src = str(existing.get("source", "") or "").strip()
+                if val == int(invuln) and src == source_name:
+                    found = True
+                    break
+            if not found:
+                entries.append(entry)
+            unit.special_rules["bearer_unit_invulnerable_save"] = entries
+            unit.special_rules["enhancement_seals_of_reconquest_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_seals_of_reconquest_bearer_model_id"] = bearer_id
+
+        if name == "avenging avatar (aura)" or enh_id == "000010684003":
+            if not is_reclamation_force:
+                return
+            unit.special_rules["enhancement_avenging_avatar"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            aura_range = float(getattr(desc, "range_in", 0.0) or 0.0)
+            if aura_range <= 0:
+                aura_range = float(_coerce_int(params.get("range", 9) or 9, default=9))
+            unit.special_rules["enhancement_avenging_avatar_range"] = float(max(0.0, aura_range))
+            unit.special_rules["enhancement_avenging_avatar_source"] = (
+                str(getattr(self, "name", "") or "Avenging Avatar (Aura)").strip() or "Avenging Avatar (Aura)"
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_avenging_avatar_bearer_model_id"] = bearer_id
+
+        if name == "scroll of proclamation" or enh_id == "000010684004":
+            if not is_reclamation_force:
+                return
+            unit.special_rules["enhancement_scroll_of_proclamation"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_charge_reroll_if_target_on_objective"] = bool(
+                params.get("charge_reroll_if_target_on_objective", True)
+            )
+            unit.special_rules["enhancement_scroll_of_proclamation_source"] = (
+                str(getattr(self, "name", "") or "Scroll of Proclamation").strip() or "Scroll of Proclamation"
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_scroll_of_proclamation_bearer_model_id"] = bearer_id
+
+        if name == "liberatum" or enh_id == "000010684005":
+            if not is_reclamation_force:
+                return
+            unit.special_rules["enhancement_liberatum"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_liberatum_reroll_hit"] = bool(params.get("reroll_hit", True))
+            unit.special_rules["enhancement_liberatum_reroll_wound"] = bool(params.get("reroll_wound", True))
+            unit.special_rules["enhancement_liberatum_requires_target_within_objective_range"] = bool(
+                params.get("requires_target_within_objective_range", True)
+            )
+            unit.special_rules["enhancement_liberatum_source"] = (
+                str(getattr(self, "name", "") or "Liberatum").strip() or "Liberatum"
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_liberatum_bearer_model_id"] = bearer_id
 
         if name == "eye of the primarch" or enh_id == "000010676002":
             if not is_bastion_task_force:

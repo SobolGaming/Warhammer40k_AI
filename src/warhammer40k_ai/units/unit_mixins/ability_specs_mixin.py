@@ -1333,6 +1333,51 @@ class AbilitySpecsMixin:
                 }
             )
 
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        model_id = str(get_entity_id(model) or "").strip()
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_avenging_avatar", False)):
+                continue
+            bearer_id = str(
+                sr.get("enhancement_avenging_avatar_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            if bearer_id and model_id and bearer_id != model_id:
+                continue
+            source = str(
+                sr.get("enhancement_avenging_avatar_source", "") or "Avenging Avatar (Aura)"
+            ).strip() or "Avenging Avatar (Aura)"
+            try:
+                range_value = int(float(sr.get("enhancement_avenging_avatar_range", 9.0) or 9.0))
+            except Exception:
+                range_value = 9
+            if range_value <= 0:
+                continue
+            key = (source.lower(), int(range_value), 0)
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "range": int(range_value),
+                    "psyker_penalty": 0,
+                }
+            )
+
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
         self._ability_cache[cache_key] = list(specs)
