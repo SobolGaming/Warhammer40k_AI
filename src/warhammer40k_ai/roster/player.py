@@ -453,8 +453,12 @@ class Player:
             if not isinstance(sr, dict):
                 sr = {}
             for spec in list(sr.get("stratagem_target_cp_refund_specs", []) or []):
-                if isinstance(spec, dict):
-                    specs.append(spec)
+                if not isinstance(spec, dict):
+                    continue
+                source_model_id = str(spec.get("source_model_id", "") or "").strip()
+                if source_model_id and not self._unit_has_alive_model_id(target_unit, source_model_id):
+                    continue
+                specs.append(spec)
 
         if not specs:
             has_rule = getattr(target_unit, "has_multiwave_comms_array", None)
@@ -487,6 +491,8 @@ class Player:
                 int(bonus_roll),
                 str(bonus_keyword),
                 int(bonus_range),
+                str(spec.get("roll_bonus_if_target_has_keyword", "") or "").strip().upper(),
+                str(spec.get("source_model_id", "") or "").strip(),
             )
             if key in seen:
                 continue
@@ -500,6 +506,8 @@ class Player:
                 int(item.get("roll_bonus", 0) or 0),
                 str(item.get("roll_bonus_keyword", "") or "").strip().upper(),
                 int(item.get("roll_bonus_range", 0) or 0),
+                str(item.get("roll_bonus_if_target_has_keyword", "") or "").strip().upper(),
+                str(item.get("source_model_id", "") or "").strip(),
             )
         )
         return deduped
@@ -562,6 +570,7 @@ class Player:
             except (TypeError, ValueError):
                 roll_bonus_value = 0
             roll_bonus_keyword = str(spec.get("roll_bonus_keyword", "") or "").strip().upper()
+            roll_bonus_target_keyword = str(spec.get("roll_bonus_if_target_has_keyword", "") or "").strip().upper()
             try:
                 roll_bonus_range = float(spec.get("roll_bonus_range", 0) or 0)
             except (TypeError, ValueError):
@@ -573,7 +582,10 @@ class Player:
                     keyword=roll_bonus_keyword,
                     rng=roll_bonus_range,
                 ):
-                    roll_bonus = int(roll_bonus_value)
+                    roll_bonus = max(int(roll_bonus), int(roll_bonus_value))
+            if roll_bonus_value > 0 and roll_bonus_target_keyword:
+                if self._unit_has_keyword(root, roll_bonus_target_keyword):
+                    roll_bonus = max(int(roll_bonus), int(roll_bonus_value))
             effective_roll = int(roll + roll_bonus)
             gained = 0
             if effective_roll >= roll_min and cp_gain > 0:
@@ -715,6 +727,28 @@ class Player:
         if parent is not None:
             return parent
         return getattr(target_unit, "army", None)
+
+    def _unit_has_alive_model_id(self, unit, model_id: str) -> bool:
+        key = str(model_id or "").strip()
+        if unit is None or not key:
+            return False
+        get_models = getattr(unit, "get_attached_unit_models", None)
+        if callable(get_models):
+            models = list(get_models() or [])
+        else:
+            models = []
+            for member in self._attached_members(unit):
+                models.extend(list(getattr(member, "models", []) or []))
+        for model in models:
+            mid = str(get_entity_id(model) or getattr(model, "id", getattr(model, "_id", "")) or "")
+            if mid != key:
+                continue
+            alive_attr = getattr(model, "is_alive", True)
+            try:
+                return bool(alive_attr() if callable(alive_attr) else alive_attr)
+            except Exception:
+                return False
+        return False
 
     def _unit_is_alive_or_unknown(self, unit) -> bool:
         if unit is None:

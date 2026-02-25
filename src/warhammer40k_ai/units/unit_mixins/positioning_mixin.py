@@ -2889,6 +2889,91 @@ class PositioningMixin:
         except Exception:
             pass
 
+        try:
+            has_eye_of_the_primarch = False
+            checker = getattr(root, "_attached_unit_has_active_enhancement", None)
+            if callable(checker):
+                has_eye_of_the_primarch = bool(
+                    checker(
+                        "enhancement_eye_of_the_primarch",
+                        enhancement_id="000010676002",
+                        enhancement_name="eye of the primarch",
+                    )
+                )
+            if has_eye_of_the_primarch:
+                is_bearer = False
+                bearer_checker = getattr(root, "_attached_unit_model_is_enhancement_bearer", None)
+                if callable(bearer_checker):
+                    is_bearer = bool(
+                        bearer_checker(
+                            model,
+                            flag_key="enhancement_eye_of_the_primarch",
+                            enhancement_id="000010676002",
+                            enhancement_name="eye of the primarch",
+                            require_leading=False,
+                            require_bearer_alive=True,
+                        )
+                    )
+
+                is_battleline_model = False
+                if not is_bearer:
+                    has_any = getattr(model, "has_any_keyword", None)
+                    if callable(has_any):
+                        is_battleline_model = bool(has_any("BATTLELINE"))
+                    if not is_battleline_model:
+                        model_keywords = [str(k or "").strip().upper() for k in list(getattr(model, "keywords", []) or [])]
+                        is_battleline_model = "BATTLELINE" in set(model_keywords)
+
+                if is_bearer or is_battleline_model:
+                    source_name = "Eye of the Primarch"
+                    configured_keywords = ["PRECISION"]
+                    try:
+                        members = list(root.get_attached_unit_members() or [])
+                    except Exception:
+                        members = [root]
+                    if not members:
+                        members = [root]
+                    for member in members:
+                        sr_member = getattr(member, "special_rules", None)
+                        if not isinstance(sr_member, dict):
+                            continue
+                        if not bool(sr_member.get("enhancement_eye_of_the_primarch", False)):
+                            continue
+                        source_name = (
+                            str(sr_member.get("enhancement_eye_of_the_primarch_source", "Eye of the Primarch") or "Eye of the Primarch").strip()
+                            or "Eye of the Primarch"
+                        )
+                        raw_keywords = list(sr_member.get("enhancement_eye_of_the_primarch_keywords", []) or [])
+                        normalized = []
+                        seen_kw = set()
+                        for value in raw_keywords:
+                            keyword = str(value or "").strip().upper()
+                            if not keyword:
+                                continue
+                            key_kw = keyword.lower()
+                            if key_kw in seen_kw:
+                                continue
+                            seen_kw.add(key_kw)
+                            normalized.append(keyword)
+                        if normalized:
+                            configured_keywords = normalized
+                        break
+
+                    for keyword in configured_keywords:
+                        key = ("ranged", keyword.strip().lower(), source_name.lower())
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        rules.append(
+                            {
+                                "attack_type": "ranged",
+                                "keyword": keyword.strip(),
+                                "source": source_name,
+                            }
+                        )
+        except Exception:
+            pass
+
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
         self._ability_cache[cache_key] = rules

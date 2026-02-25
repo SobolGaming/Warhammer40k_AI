@@ -420,6 +420,9 @@ class Enhancement:
         is_anvil_siege_force = bool(
             sm_mgr and getattr(sm_mgr, "is_anvil_siege_force", lambda: False)()
         )
+        is_bastion_task_force = bool(
+            sm_mgr and getattr(sm_mgr, "is_bastion_task_force", lambda: False)()
+        )
         is_lions = bool(ac_mgr and ac_mgr.is_lions_of_the_emperor())
         try:
             is_war_horde = bool(orks_mgr and orks_mgr.is_war_horde())
@@ -1176,6 +1179,106 @@ class Enhancement:
                 return
             unit.special_rules["enhancement_architect_of_war"] = True
             unit.special_rules["enhancement_architect_of_war_source"] = "Architect of War"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "eye of the primarch" or enh_id == "000010676002":
+            if not is_bastion_task_force:
+                return
+            unit.special_rules["enhancement_eye_of_the_primarch"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            keywords: list[str] = []
+            seen_keywords: set[str] = set()
+            for keyword in list(params.get("keywords", ("PRECISION",)) or []):
+                kw = str(keyword or "").strip().upper()
+                if not kw or kw in seen_keywords:
+                    continue
+                seen_keywords.add(kw)
+                keywords.append(kw)
+            if keywords:
+                unit.special_rules["enhancement_eye_of_the_primarch_keywords"] = keywords
+            unit.special_rules["enhancement_eye_of_the_primarch_source"] = "Eye of the Primarch"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "hero of the chapter" or enh_id == "000010676003":
+            if not is_bastion_task_force:
+                return
+            unit.special_rules["enhancement_hero_of_the_chapter"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            keyword = str(params.get("keyword", "BATTLELINE") or "BATTLELINE").strip().upper()
+            if keyword:
+                unit.special_rules["enhancement_hero_of_the_chapter_keyword"] = keyword
+            unit.special_rules["enhancement_hero_of_the_chapter_source"] = "Hero of the Chapter"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "blades of valour" or enh_id == "000010676004":
+            if not is_bastion_task_force:
+                return
+            unit.special_rules["enhancement_blades_of_valour"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            ap_bonus = _coerce_int(params.get("ap_bonus", 1) or 1, default=1)
+            unit.special_rules["enhancement_blades_of_valour_ap_bonus"] = int(max(0, ap_bonus))
+            unit.special_rules["enhancement_blades_of_valour_source"] = "Blades of Valour"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "bombast omnivox" or enh_id == "000010676005":
+            if not is_bastion_task_force:
+                return
+            unit.special_rules["enhancement_bombast_omnivox"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            roll_min = _coerce_int(params.get("roll_min", 4) or 4, default=4)
+            cp_gain = _coerce_int(params.get("cp_gain", 1) or 1, default=1)
+            roll_bonus = _coerce_int(params.get("roll_bonus", 1) or 1, default=1)
+            bonus_keyword = str(
+                params.get("roll_bonus_if_target_has_keyword", "BATTLELINE") or "BATTLELINE"
+            ).strip().upper()
+            source_name = "Bombast Omnivox"
+            unit.special_rules["enhancement_bombast_omnivox_source"] = source_name
+            specs = list(unit.special_rules.get("stratagem_target_cp_refund_specs", []) or [])
+            spec = {
+                "roll_min": int(max(2, roll_min)),
+                "cp_gain": int(max(1, cp_gain)),
+                "name": source_name,
+                "description": str(getattr(self, "description", "") or ""),
+            }
+            if roll_bonus > 0 and bonus_keyword:
+                spec["roll_bonus"] = int(roll_bonus)
+                spec["roll_bonus_if_target_has_keyword"] = bonus_keyword
+            if bearer_id:
+                spec["source_model_id"] = bearer_id
+            dedupe_key = (
+                int(spec.get("roll_min", 0) or 0),
+                int(spec.get("cp_gain", 0) or 0),
+                str(spec.get("name", "") or "").strip().lower(),
+                int(spec.get("roll_bonus", 0) or 0),
+                str(spec.get("roll_bonus_if_target_has_keyword", "") or "").strip().upper(),
+                str(spec.get("source_model_id", "") or "").strip(),
+            )
+            seen_spec_keys = set()
+            deduped_specs: list[dict] = []
+            for existing in specs:
+                key = (
+                    int(existing.get("roll_min", 0) or 0),
+                    int(existing.get("cp_gain", 0) or 0),
+                    str(existing.get("name", "") or "").strip().lower(),
+                    int(existing.get("roll_bonus", 0) or 0),
+                    str(existing.get("roll_bonus_if_target_has_keyword", "") or "").strip().upper(),
+                    str(existing.get("source_model_id", "") or "").strip(),
+                )
+                if key in seen_spec_keys:
+                    continue
+                seen_spec_keys.add(key)
+                deduped_specs.append(existing)
+            if dedupe_key not in seen_spec_keys:
+                deduped_specs.append(spec)
+            unit.special_rules["stratagem_target_cp_refund_specs"] = deduped_specs
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 

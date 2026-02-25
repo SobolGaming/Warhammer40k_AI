@@ -2090,6 +2090,38 @@ class StateAttachmentMixin:
                         continue
                     seen.add(lk)
                     kws.append(ks)
+                if isinstance(sr, dict) and bool(sr.get("enhancement_hero_of_the_chapter", False)):
+                    keyword = str(sr.get("enhancement_hero_of_the_chapter_keyword", "BATTLELINE") or "BATTLELINE").strip()
+                    keyword_lower = keyword.lower()
+                    if keyword and keyword_lower not in removed_keywords:
+                        bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
+                        bearer_alive = False
+                        if bearer_id:
+                            for model in list(getattr(u, "models", []) or []):
+                                model_id = str(getattr(model, "id", getattr(model, "_id", "")) or "")
+                                if model_id != bearer_id:
+                                    continue
+                                alive_attr = getattr(model, "is_alive", True)
+                                bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                                break
+                        else:
+                            get_bearer = getattr(u, "_get_enhancement_bearer_model", None)
+                            if callable(get_bearer):
+                                bearer = get_bearer()
+                                if bearer is not None:
+                                    alive_attr = getattr(bearer, "is_alive", True)
+                                    bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                        is_leading = False
+                        attached_to = getattr(u, "attached_to", None)
+                        if attached_to is not None:
+                            for attached_model in list(getattr(attached_to, "models", []) or []):
+                                attached_alive = getattr(attached_model, "is_alive", True)
+                                if bool(attached_alive() if callable(attached_alive) else attached_alive):
+                                    is_leading = True
+                                    break
+                        if bearer_alive and is_leading and keyword_lower not in seen:
+                            seen.add(keyword_lower)
+                            kws.append(keyword)
             except Exception:
                 continue
         return kws

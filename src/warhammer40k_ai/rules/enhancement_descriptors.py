@@ -1529,6 +1529,63 @@ _SPACE_MARINES_ANVIL_SIEGE_FORCE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPACE_MARINES_ANVIL_SIEGE_FORCE_DESCRIPTORS.values()
 }
 
+_SPACE_MARINES_BASTION_TASK_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010676002": EnhancementToolDescriptor(
+        enhancement_id="000010676002",
+        name="Eye of the Primarch",
+        timing="passive",
+        target="bearer_and_battleline_models_in_bearer_unit_ranged_weapons",
+        duration="constant",
+        effect="grant_weapon_keywords",
+        effect_params={
+            "attack_type": "ranged",
+            "keywords": ("PRECISION",),
+            "includes_bearer": True,
+            "includes_battleline_models": True,
+        },
+    ),
+    "000010676003": EnhancementToolDescriptor(
+        enhancement_id="000010676003",
+        name="Hero of the Chapter",
+        timing="passive_while_leading",
+        target="bearer",
+        duration="constant_conditional",
+        effect="bearer_gains_keyword_while_leading",
+        effect_params={"keyword": "BATTLELINE"},
+    ),
+    "000010676004": EnhancementToolDescriptor(
+        enhancement_id="000010676004",
+        name="Blades of Valour",
+        timing="passive",
+        target="bearer_and_battleline_models_in_bearer_unit_melee_weapons",
+        duration="constant",
+        effect="melee_ap_bonus_for_bearer_and_battleline_models_in_bearer_unit",
+        effect_params={
+            "ap_bonus": 1,
+            "includes_bearer": True,
+            "includes_battleline_models": True,
+        },
+    ),
+    "000010676005": EnhancementToolDescriptor(
+        enhancement_id="000010676005",
+        name="Bombast Omnivox",
+        timing="when_bearer_unit_targeted_by_stratagem",
+        target="bearer_unit",
+        duration="instant_repeatable",
+        effect="targeted_stratagem_cp_refund_with_conditional_bonus",
+        effect_params={
+            "roll_min": 4,
+            "cp_gain": 1,
+            "roll_bonus": 1,
+            "roll_bonus_if_target_has_keyword": "BATTLELINE",
+        },
+    ),
+}
+
+_SPACE_MARINES_BASTION_TASK_FORCE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPACE_MARINES_BASTION_TASK_FORCE_DESCRIPTORS.values()
+}
+
 _LEGION_OF_EXCESS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009806002": EnhancementToolDescriptor(
         enhancement_id="000009806002",
@@ -2033,6 +2090,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPACE_MARINES_ANVIL_SIEGE_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPACE_MARINES_BASTION_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _LEGION_OF_EXCESS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -2091,6 +2151,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SPACE_MARINES_FIRST_COMPANY_TASK_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_ANGELIC_INHERITORS_BY_NAME.get(key)
         or _SPACE_MARINES_ANVIL_SIEGE_FORCE_BY_NAME.get(key)
+        or _SPACE_MARINES_BASTION_TASK_FORCE_BY_NAME.get(key)
         or _LEGION_OF_EXCESS_BY_NAME.get(key)
         or _PLAGUE_LEGION_BY_NAME.get(key)
         or _SCINTILLATING_LEGION_BY_NAME.get(key)

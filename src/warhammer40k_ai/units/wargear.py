@@ -391,6 +391,78 @@ class WargearProfile:
         attacker_id = str(getattr(attacker, "id", getattr(attacker, "_id", "")) or "")
         return attacker_id == str(bearer_id)
 
+    def _attacker_is_battleline_model(self, attacker: 'Model') -> bool:
+        has_any = getattr(attacker, "has_any_keyword", None)
+        if callable(has_any) and bool(has_any("BATTLELINE")):
+            return True
+        model_keywords = [str(k or "").strip().lower() for k in list(getattr(attacker, "keywords", []) or [])]
+        return "battleline" in set(model_keywords)
+
+    @staticmethod
+    def _model_is_alive(model: 'Model') -> bool:
+        alive_attr = getattr(model, "is_alive", True)
+        try:
+            return bool(alive_attr() if callable(alive_attr) else alive_attr)
+        except Exception:
+            return False
+
+    def _blades_of_valour_ap_bonus(self, attacker: 'Model') -> int:
+        unit = getattr(attacker, "parent_unit", None)
+        if unit is None:
+            return 0
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        attacker_id = str(getattr(attacker, "id", getattr(attacker, "_id", "")) or "")
+        attacker_is_battleline = self._attacker_is_battleline_model(attacker)
+        best_bonus = 0
+
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_blades_of_valour", False)):
+                continue
+
+            bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "")
+            bearer_model = None
+            if bearer_id:
+                for model in list(getattr(member, "models", []) or []):
+                    model_id = str(getattr(model, "id", getattr(model, "_id", "")) or "")
+                    if model_id != bearer_id:
+                        continue
+                    bearer_model = model
+                    break
+            if bearer_model is None:
+                get_bearer = getattr(member, "_get_enhancement_bearer_model", None)
+                if callable(get_bearer):
+                    bearer_model = get_bearer()
+            if bearer_model is None:
+                continue
+            if not self._model_is_alive(bearer_model):
+                continue
+
+            bearer_entity_id = str(getattr(bearer_model, "id", getattr(bearer_model, "_id", "")) or "")
+            attacker_is_bearer = bool(attacker_id and bearer_entity_id and attacker_id == bearer_entity_id)
+            if not attacker_is_bearer and not attacker_is_battleline:
+                continue
+
+            try:
+                bonus = int(sr.get("enhancement_blades_of_valour_ap_bonus", 0) or 0)
+            except (TypeError, ValueError):
+                bonus = 0
+            if bonus > best_bonus:
+                best_bonus = int(bonus)
+        return int(best_bonus)
+
     def _through_suffering_bonus(self, attacker: 'Model', sr: dict) -> int:
         if not isinstance(sr, dict) or not sr.get("enhancement_through_suffering_strength"):
             return 0
@@ -2529,6 +2601,9 @@ class WargearProfile:
             bearer_bonus = int(sr.get("enhancement_bearer_melee_ap_bonus", 0) or 0)
             if bearer_bonus and self._attacker_is_enhancement_bearer(attacker, sr):
                 ap_val -= bearer_bonus
+            blades_of_valour_bonus = self._blades_of_valour_ap_bonus(attacker)
+            if blades_of_valour_bonus:
+                ap_val -= int(blades_of_valour_bonus)
             if (
                 isinstance(sr, dict)
                 and sr.get("enhancement_slayer_of_champions")
