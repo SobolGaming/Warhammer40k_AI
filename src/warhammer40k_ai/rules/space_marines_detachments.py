@@ -6219,6 +6219,34 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             bonus = 1
         return max(0, int(bonus))
 
+    def shadowmark_talon_hunters_instincts_strategic_reserves_round_bonus(self, unit, *, game=None) -> int:
+        if not self.is_shadowmark_talon():
+            return 0
+        if unit is None:
+            return 0
+        root, member, sr = self._company_of_hunters_enhancement_source_member(
+            unit,
+            "enhancement_hunters_instincts",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return 0
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return 0
+        if not self._company_of_hunters_member_has_live_bearer(member, sr):
+            return 0
+        in_strategic_fn = getattr(root, "is_in_strategic_reserves", None)
+        if callable(in_strategic_fn):
+            if not bool(in_strategic_fn()):
+                return 0
+        else:
+            if str(getattr(root, "reserve_status", "") or "").strip().lower() != "strategic_reserves":
+                return 0
+        try:
+            bonus = int(sr.get("enhancement_hunters_instincts_round_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            bonus = 1
+        return max(0, int(bonus))
+
     def _emperors_shield_enhancement_source_member(self, unit, flag_key: str):
         root = self._attached_unit_root(unit)
         if root is None:

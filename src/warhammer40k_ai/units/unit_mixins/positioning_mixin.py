@@ -6957,6 +6957,16 @@ class PositioningMixin:
             except Exception:
                 pass
         if not found:
+            try:
+                if self._attached_unit_has_active_leading_enhancement(
+                    "enhancement_blackwing_shroud",
+                    enhancement_id="000010466002",
+                    enhancement_name="blackwing shroud",
+                ):
+                    found = True
+            except Exception:
+                pass
+        if not found:
             found, _ = self._find_ability_with_patterns(["infiltrators", "infiltrate"])
         
         # Cache the result
@@ -6975,6 +6985,9 @@ class PositioningMixin:
             return True
         # Enhancement: Praesidius grants Stealth to the bearer model.
         if isinstance(sr, dict) and sr.get("enhancement_praesidius_stealth"):
+            return True
+        # Enhancement: Umbral Raptor grants Stealth to the bearer model.
+        if isinstance(sr, dict) and sr.get("enhancement_umbral_raptor_stealth"):
             return True
         # Enhancement: Phial of the Abyss grants Stealth to models in the bearer's unit.
         if isinstance(sr, dict) and sr.get("enhancement_phial_of_the_abyss"):

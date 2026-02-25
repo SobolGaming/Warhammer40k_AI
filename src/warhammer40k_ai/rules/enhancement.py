@@ -465,6 +465,9 @@ class Enhancement:
         is_company_of_hunters = bool(
             sm_mgr and getattr(sm_mgr, "is_company_of_hunters", lambda: False)()
         )
+        is_shadowmark_talon = bool(
+            sm_mgr and getattr(sm_mgr, "is_shadowmark_talon", lambda: False)()
+        )
         is_companions_of_vehemence = bool(
             sm_mgr and getattr(sm_mgr, "is_companions_of_vehemence", lambda: False)()
         )
@@ -2417,6 +2420,104 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_recon_hunter_bearer_model_id"] = bearer_id
+
+        if name == "blackwing shroud" or enh_id == "000010466002":
+            if not is_shadowmark_talon:
+                return
+            unit.special_rules["enhancement_blackwing_shroud"] = True
+            unit.special_rules["enhancement_blackwing_shroud_source"] = "Blackwing Shroud"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_blackwing_shroud_bearer_model_id"] = bearer_id
+            invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate_cache):
+                invalidate_cache()
+
+        if name == "coronal susurrant" or enh_id == "000010466003":
+            if not is_shadowmark_talon:
+                return
+            unit.special_rules["enhancement_coronal_susurrant"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            aura_range = _coerce_int(params.get("range", 0), default=0)
+            if aura_range <= 0:
+                try:
+                    aura_range = int(getattr(desc, "range_in", 12) or 12)
+                except Exception:
+                    aura_range = 12
+            unit.special_rules["enhancement_coronal_susurrant_range"] = int(max(1, aura_range))
+            unit.special_rules["enhancement_coronal_susurrant_source"] = "Coronal Susurrant"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_coronal_susurrant_bearer_model_id"] = bearer_id
+            try:
+                if hasattr(unit, "_refresh_targeted_stratagem_cp_increase_flags"):
+                    unit._refresh_targeted_stratagem_cp_increase_flags()
+            except Exception:
+                pass
+            cp_increase = _coerce_int(params.get("cp_increase", 1) or 1, default=1)
+            ability_name = str(params.get("ability_name", "Lord of Deceit (Aura)") or "Lord of Deceit (Aura)").strip()
+            if not ability_name:
+                ability_name = "Lord of Deceit (Aura)"
+            usage_key = "STRATAGEM_CP_INCREASE:CORONAL_SUSURRANT"
+            spec = {
+                "range": int(max(1, aura_range)),
+                "keyword": "",
+                "name": ability_name,
+                "description": str(getattr(self, "description", "") or ""),
+                "optional": False,
+                "limit": "",
+                "max_cp": None,
+                "cp_increase": int(max(1, cp_increase)),
+                "usage_key": usage_key,
+            }
+            if bearer_id:
+                spec["source_model_id"] = bearer_id
+            existing_specs = list(unit.special_rules.get("stratagem_target_cp_increase_aura", []) or [])
+            deduped_specs: list[dict] = []
+            seen_spec_keys: set[tuple[str, str]] = set()
+            for existing_spec in existing_specs + [spec]:
+                if not isinstance(existing_spec, dict):
+                    continue
+                key = (
+                    str(existing_spec.get("usage_key", "") or "").strip().upper(),
+                    str(existing_spec.get("source_model_id", "") or "").strip().lower(),
+                )
+                if key in seen_spec_keys:
+                    continue
+                seen_spec_keys.add(key)
+                deduped_specs.append(existing_spec)
+            unit.special_rules["stratagem_target_cp_increase_aura"] = deduped_specs
+
+        if name == "umbral raptor" or enh_id == "000010466004":
+            if not is_shadowmark_talon:
+                return
+            unit.special_rules["enhancement_umbral_raptor"] = True
+            unit.special_rules["enhancement_umbral_raptor_stealth"] = True
+            unit.special_rules["enhancement_umbral_raptor_lone_operative"] = True
+            unit.special_rules["enhancement_umbral_raptor_source"] = "Umbral Raptor"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_umbral_raptor_bearer_model_id"] = bearer_id
+            invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate_cache):
+                invalidate_cache()
+
+        if name in ("hunter's instincts", "hunters instincts") or enh_id == "000010466005":
+            if not is_shadowmark_talon:
+                return
+            unit.special_rules["enhancement_hunters_instincts"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            round_bonus = _coerce_int(
+                params.get("strategic_reserves_setup_round_bonus", 1) or 1,
+                default=1,
+            )
+            unit.special_rules["enhancement_hunters_instincts_round_bonus"] = int(max(0, round_bonus))
+            unit.special_rules["enhancement_hunters_instincts_source"] = "Hunter's Instincts"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_hunters_instincts_bearer_model_id"] = bearer_id
 
         if name == "champion of the feast" or enh_id == "000010460002":
             if not is_emperors_shield:

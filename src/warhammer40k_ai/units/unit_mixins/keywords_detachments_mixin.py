@@ -4074,6 +4074,21 @@ class KeywordsDetachmentsMixin:
                 master_of_manoeuvre_bonus = 0
         if master_of_manoeuvre_bonus > 0:
             total_bonus += int(master_of_manoeuvre_bonus)
+        shadowmark_hunters_instincts_bonus = 0
+        shadowmark_hunters_instincts_bonus_fn = (
+            getattr(sm_mgr, "shadowmark_talon_hunters_instincts_strategic_reserves_round_bonus", None)
+            if sm_mgr is not None
+            else None
+        )
+        if callable(shadowmark_hunters_instincts_bonus_fn):
+            try:
+                shadowmark_hunters_instincts_bonus = int(
+                    shadowmark_hunters_instincts_bonus_fn(root, game=game) or 0
+                )
+            except (TypeError, ValueError):
+                shadowmark_hunters_instincts_bonus = 0
+        if shadowmark_hunters_instincts_bonus > 0:
+            total_bonus += int(shadowmark_hunters_instincts_bonus)
         try:
             rule = root.get_strategic_reserves_round_bonus_rule()
         except Exception:
