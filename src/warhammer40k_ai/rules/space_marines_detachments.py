@@ -2520,6 +2520,80 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         name = str(getattr(root, "name", "") or "").strip().lower()
         return "terminator" in name
 
+    def _champions_of_fenris_enhancement_source_member(self, unit, flag_key: str):
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return None, None, None
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        members.sort(key=lambda member: str(get_entity_id(member) or ""))
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get(flag_key, False)):
+                return root, member, sr
+        return root, None, None
+
+    @staticmethod
+    def _champions_of_fenris_member_has_live_bearer(member, sr) -> bool:
+        if member is None or not isinstance(sr, dict):
+            return False
+        bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
+        if bearer_id:
+            for model in list(getattr(member, "models", []) or []):
+                if str(get_entity_id(model) or "") != bearer_id:
+                    continue
+                alive_attr = getattr(model, "is_alive", True)
+                return bool(alive_attr() if callable(alive_attr) else alive_attr)
+            return False
+        bearer = getattr(member, "_get_enhancement_bearer_model", lambda: None)()
+        if bearer is None:
+            return False
+        alive_attr = getattr(bearer, "is_alive", True)
+        return bool(alive_attr() if callable(alive_attr) else alive_attr)
+
+    def champions_of_fenris_great_wolf_watches_trigger_range(self, unit) -> float:
+        default_range = 3.0
+        if not self.is_champions_of_fenris():
+            return default_range
+        root, member, sr = self._champions_of_fenris_enhancement_source_member(
+            unit,
+            "enhancement_wolves_wisdom",
+        )
+        if root is None:
+            return default_range
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return default_range
+        if not self._champions_of_fenris_member_has_live_bearer(member, sr):
+            return default_range
+        try:
+            base_range = float(sr.get("enhancement_wolves_wisdom_base_range", default_range) or default_range)
+        except (TypeError, ValueError):
+            base_range = default_range
+        try:
+            enhanced_range = float(sr.get("enhancement_wolves_wisdom_range", 6.0) or 6.0)
+        except (TypeError, ValueError):
+            enhanced_range = 6.0
+        return float(max(base_range, enhanced_range))
+
+    def champions_of_fenris_fangrune_pendant_applies(self, unit) -> bool:
+        if not self.is_champions_of_fenris():
+            return False
+        root, member, sr = self._champions_of_fenris_enhancement_source_member(
+            unit,
+            "enhancement_fangrune_pendant",
+        )
+        if root is None:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        return self._champions_of_fenris_member_has_live_bearer(member, sr)
+
     def great_wolf_watches_reacting_unit_is_eligible(self, unit, *, game=None) -> bool:
         if not self.is_champions_of_fenris():
             return False
@@ -2579,7 +2653,15 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             distance = float(game_map.get_distance_between_units(reacting_root, target_root))
         except Exception:
             return False
-        if distance > float(range_inches) + 1e-6:
+        try:
+            effective_range = float(range_inches)
+        except (TypeError, ValueError):
+            effective_range = 3.0
+        effective_range = max(
+            float(effective_range),
+            float(self.champions_of_fenris_great_wolf_watches_trigger_range(reacting_root)),
+        )
+        if distance > float(effective_range) + 1e-6:
             return False
         can_target = getattr(reacting_root, "can_declare_charge_against", None)
         if not callable(can_target):

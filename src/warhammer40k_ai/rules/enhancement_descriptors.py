@@ -1642,6 +1642,55 @@ _SPACE_MARINES_BLADE_OF_ULTRAMAR_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPACE_MARINES_BLADE_OF_ULTRAMAR_DESCRIPTORS.values()
 }
 
+_SPACE_MARINES_CHAMPIONS_OF_FENRIS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009851002": EnhancementToolDescriptor(
+        enhancement_id="000009851002",
+        name="Wolves' Wisdom",
+        timing="passive",
+        target="bearer_unit_great_wolf_watches_trigger",
+        duration="constant",
+        effect="increase_great_wolf_watches_charge_trigger_range",
+        effect_params={
+            "base_range": 3,
+            "enhanced_range": 6,
+        },
+    ),
+    "000009851003": EnhancementToolDescriptor(
+        enhancement_id="000009851003",
+        name="Foes' Fate",
+        timing="enemy_fall_back_from_engagement_with_bearer_unit",
+        target="enemy_units_within_engagement_of_bearer_unit_excluding_monsters_vehicles",
+        duration="constant",
+        effect="enemy_fall_back_forced_desperate_escape_with_battleshock_penalty",
+        effect_params={
+            "exclude_monsters_vehicles": True,
+            "battleshock_penalty": 1,
+        },
+    ),
+    "000009851004": EnhancementToolDescriptor(
+        enhancement_id="000009851004",
+        name="Fangrune Pendant",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="eligible_to_shoot_and_charge_after_fall_back",
+        effect_params={},
+    ),
+    "000009851005": EnhancementToolDescriptor(
+        enhancement_id="000009851005",
+        name="Longstrider",
+        timing="passive",
+        target="bearer_unit_charge_rolls",
+        duration="constant",
+        effect="reroll_charge_rolls_for_bearer_unit",
+        effect_params={},
+    ),
+}
+
+_SPACE_MARINES_CHAMPIONS_OF_FENRIS_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPACE_MARINES_CHAMPIONS_OF_FENRIS_DESCRIPTORS.values()
+}
+
 _SPACE_MARINES_BLACK_SPEAR_TASK_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008522002": EnhancementToolDescriptor(
         enhancement_id="000008522002",
@@ -2212,6 +2261,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPACE_MARINES_BLADE_OF_ULTRAMAR_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPACE_MARINES_CHAMPIONS_OF_FENRIS_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPACE_MARINES_BLACK_SPEAR_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -2275,6 +2327,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SPACE_MARINES_ANVIL_SIEGE_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_BASTION_TASK_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_BLADE_OF_ULTRAMAR_BY_NAME.get(key)
+        or _SPACE_MARINES_CHAMPIONS_OF_FENRIS_BY_NAME.get(key)
         or _SPACE_MARINES_BLACK_SPEAR_TASK_FORCE_BY_NAME.get(key)
         or _LEGION_OF_EXCESS_BY_NAME.get(key)
         or _PLAGUE_LEGION_BY_NAME.get(key)

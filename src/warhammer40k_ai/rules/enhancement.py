@@ -429,6 +429,9 @@ class Enhancement:
         is_blade_of_ultramar = bool(
             sm_mgr and getattr(sm_mgr, "is_blade_of_ultramar", lambda: False)()
         )
+        is_champions_of_fenris = bool(
+            sm_mgr and getattr(sm_mgr, "is_champions_of_fenris", lambda: False)()
+        )
         is_black_spear_task_force = bool(
             sm_mgr and getattr(sm_mgr, "is_black_spear_task_force", lambda: False)()
         )
@@ -1367,6 +1370,57 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_veteran_of_behemoth_bearer_model_id"] = bearer_id
+
+        if name in ("wolves' wisdom", "wolves wisdom") or enh_id == "000009851002":
+            if not is_champions_of_fenris:
+                return
+            unit.special_rules["enhancement_wolves_wisdom"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            base_range = _coerce_int(params.get("base_range", 3) or 3, default=3)
+            enhanced_range = _coerce_int(params.get("enhanced_range", 6) or 6, default=6)
+            base_range = int(max(0, base_range))
+            enhanced_range = int(max(base_range, enhanced_range))
+            unit.special_rules["enhancement_wolves_wisdom_base_range"] = int(base_range)
+            unit.special_rules["enhancement_wolves_wisdom_range"] = int(enhanced_range)
+            unit.special_rules["enhancement_wolves_wisdom_source"] = "Wolves' Wisdom"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_wolves_wisdom_bearer_model_id"] = bearer_id
+
+        if name in ("foes' fate", "foes fate") or enh_id == "000009851003":
+            if not is_champions_of_fenris:
+                return
+            unit.special_rules["enhancement_foes_fate"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            exclude_mv = bool(params.get("exclude_monsters_vehicles", True))
+            bs_penalty = _coerce_int(params.get("battleshock_penalty", 1) or 1, default=1)
+            unit.special_rules["enhancement_foes_fate_exclude_monster_vehicle"] = bool(exclude_mv)
+            unit.special_rules["enhancement_foes_fate_battleshock_penalty"] = int(max(0, bs_penalty))
+            unit.special_rules["enhancement_foes_fate_source"] = "Foes' Fate"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_foes_fate_bearer_model_id"] = bearer_id
+
+        if name == "fangrune pendant" or enh_id == "000009851004":
+            if not is_champions_of_fenris:
+                return
+            unit.special_rules["enhancement_fangrune_pendant"] = True
+            unit.special_rules["enhancement_fangrune_pendant_source"] = "Fangrune Pendant"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_fangrune_pendant_bearer_model_id"] = bearer_id
+
+        if name == "longstrider" or enh_id == "000009851005":
+            if not is_champions_of_fenris:
+                return
+            unit.special_rules["enhancement_longstrider"] = True
+            unit.special_rules["enhancement_charge_reroll"] = True
+            unit.special_rules["enhancement_longstrider_source"] = "Longstrider"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_longstrider_bearer_model_id"] = bearer_id
 
         if name == "thief of secrets" or enh_id == "000008522002":
             if not is_black_spear_task_force:

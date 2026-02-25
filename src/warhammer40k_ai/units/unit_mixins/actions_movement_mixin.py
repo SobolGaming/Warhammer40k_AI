@@ -10428,6 +10428,37 @@ class ActionsMovementMixin:
                         except Exception:
                             continue
 
+                foes_fate_active = False
+                try:
+                    checker = getattr(enemy_root, "_attached_unit_has_active_enhancement", None)
+                    if callable(checker):
+                        foes_fate_active = bool(
+                            checker(
+                                "enhancement_foes_fate",
+                                enhancement_id="000009851003",
+                                enhancement_name="foes' fate",
+                            )
+                        )
+                except Exception:
+                    foes_fate_active = False
+                if foes_fate_active:
+                    source_desperate = True
+                    for source_unit in members:
+                        source_sr = getattr(source_unit, "special_rules", None)
+                        if not isinstance(source_sr, dict):
+                            continue
+                        if not source_sr.get("enhancement_foes_fate"):
+                            continue
+                        if bool(source_sr.get("enhancement_foes_fate_exclude_monster_vehicle", True)):
+                            source_exclude_mv = True
+                        try:
+                            source_bs_penalty = max(
+                                source_bs_penalty,
+                                int(source_sr.get("enhancement_foes_fate_battleshock_penalty", 1) or 1),
+                            )
+                        except Exception:
+                            continue
+
                 if not source_desperate:
                     continue
                 if source_exclude_mv:
@@ -11336,6 +11367,14 @@ class ActionsMovementMixin:
         except Exception:
             pass
         try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "champions_of_fenris_fangrune_pendant_applies", None):
+                if mgr.champions_of_fenris_fangrune_pendant_applies(self):
+                    return True
+        except Exception:
+            pass
+        try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("vectored_engines_active"):
                 army = self.get_parent_army()
@@ -11700,6 +11739,14 @@ class ActionsMovementMixin:
             mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
             if mgr is not None and getattr(mgr, "legacy_of_the_angel_sanguinary_grace_applies", None):
                 if mgr.legacy_of_the_angel_sanguinary_grace_applies(self):
+                    return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "champions_of_fenris_fangrune_pendant_applies", None):
+                if mgr.champions_of_fenris_fangrune_pendant_applies(self):
                     return True
         except Exception:
             pass
