@@ -3572,6 +3572,25 @@ class PositioningMixin:
                 {"attack_type": "ranged", "keyword": f"ANTI-MONSTER {int(max(2, anti_monster))}+", "source": source},
                 {"attack_type": "ranged", "keyword": f"ANTI-VEHICLE {int(max(2, anti_vehicle))}+", "source": source},
             ]
+        try:
+            if is_ranged_attack and model is not None:
+                root = self.get_attached_unit_root()
+                army = root.get_parent_army() if root is not None else None
+                sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                apply_fn = getattr(sm_mgr, "librarius_fusillade_attack_keywords", None) if sm_mgr is not None else None
+                if callable(apply_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    keywords, source = apply_fn(model, weapon_profile=weapon_profile, game=game)
+                    source_name = str(source or "Fusillade").strip() or "Fusillade"
+                    for keyword in list(keywords or []):
+                        kw = str(keyword or "").strip().upper()
+                        if not kw:
+                            continue
+                        rules = list(rules or []) + [
+                            {"attack_type": "ranged", "keyword": kw, "source": source_name}
+                        ]
+        except Exception:
+            pass
         if is_ranged_attack and self._attached_unit_has_active_leading_enhancement(
             "enhancement_peerless_eradicator",
             enhancement_id="000008385004",

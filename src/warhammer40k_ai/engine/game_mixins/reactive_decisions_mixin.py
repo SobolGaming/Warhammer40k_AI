@@ -3354,7 +3354,14 @@ class GameReactiveDecisionsMixin:
         if decision_type == DECISION_CONFIRM_YES_NO:
             ctx = dict(getattr(request, "context", {}) or {})
             kind = str(ctx.get("reactive_move_kind", "") or "").strip()
-            if kind not in ("loping_speed", "blood_surge", "brazen_fury", "horde_move", "unhinged_vengeance"):
+            if kind not in (
+                "loping_speed",
+                "blood_surge",
+                "brazen_fury",
+                "horde_move",
+                "unhinged_vengeance",
+                "librarius_prescience",
+            ):
                 return
             opt = None
             for candidate in list(getattr(request, "options", []) or []):
@@ -3472,6 +3479,76 @@ class GameReactiveDecisionsMixin:
                     movement_type=movement_type or "unhinged_vengeance",
                     source=source,
                     allow_engagement_range=True,
+                )
+                return
+            if kind == "librarius_prescience":
+                army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
+                sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                rule_fn = getattr(sm_mgr, "librarius_prescience_reactive_rule", None) if sm_mgr is not None else None
+                can_trigger_fn = getattr(sm_mgr, "librarius_prescience_can_trigger", None) if sm_mgr is not None else None
+                mark_used_fn = getattr(sm_mgr, "mark_librarius_prescience_used", None) if sm_mgr is not None else None
+                if not callable(rule_fn) or not callable(can_trigger_fn):
+                    return
+                moving_unit_id = str(ctx.get("reactive_move_moving_unit_id") or "")
+                moving_unit = self._resolve_unit_by_id(moving_unit_id)
+                rng = int(ctx.get("reactive_move_range") or 9)
+                if not can_trigger_fn(
+                    unit,
+                    game=self,
+                    game_map=getattr(self, "map", None),
+                    moving_unit=moving_unit,
+                    range_override=rng,
+                ):
+                    return
+                rule = rule_fn(unit, game=self) or {}
+                source_name = str(rule.get("source", "") or source or "Prescience").strip() or "Prescience"
+                fixed_distance = 0
+                try:
+                    fixed_distance = int(rule.get("max_distance", 0) or 0)
+                except Exception:
+                    fixed_distance = 0
+                if fixed_distance > 0:
+                    max_distance = int(fixed_distance)
+                    try:
+                        from ...utility.event_bus import append_dice
+
+                        player = getattr(unit.get_parent_army(), "player", None)
+                        if player is not None:
+                            append_dice(player, f"{source_name} fixed distance: {int(max_distance)}\" for {unit.name}")
+                    except Exception:
+                        pass
+                else:
+                    roll_spec = str(rule.get("distance_roll", "") or "D6").strip().upper() or "D6"
+                    try:
+                        from ...utility.dice import get_roll
+
+                        max_distance = int(get_roll(roll_spec) or 0)
+                    except Exception:
+                        max_distance = 0
+                    try:
+                        from ...utility.event_bus import append_dice
+
+                        player = getattr(unit.get_parent_army(), "player", None)
+                        if player is not None:
+                            append_dice(player, f"{source_name} roll: {int(max_distance)}\" for {unit.name}")
+                    except Exception:
+                        pass
+                if max_distance <= 0:
+                    return
+                if callable(mark_used_fn):
+                    try:
+                        mark_used_fn(unit, game=self)
+                    except Exception:
+                        pass
+                self._queue_reactive_move_movement_decision(
+                    player=player,
+                    unit=unit,
+                    moving_unit=moving_unit,
+                    max_distance=max_distance,
+                    kind=kind,
+                    movement_type=movement_type or "librarius_prescience",
+                    source=source_name,
+                    range_value=rng,
                 )
                 return
         if decision_type == DECISION_SELECT_OVERWATCH_SHOOTER:

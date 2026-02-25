@@ -3559,6 +3559,69 @@ class Game(
                 if callable(on_enemy_move_fn):
                     on_enemy_move_fn(moving_root, game=self)
 
+            sm_mgr = getattr(reacting_army, "space_marines_detachments", None)
+            if sm_mgr is not None:
+                rule_fn = getattr(sm_mgr, "librarius_prescience_reactive_rule", None)
+                can_trigger_fn = getattr(sm_mgr, "librarius_prescience_can_trigger", None)
+                queue_confirmation = getattr(self, "_queue_reactive_move_confirmation", None)
+                if callable(rule_fn) and callable(can_trigger_fn) and callable(queue_confirmation):
+                    seen_reactors: set[str] = set()
+                    for candidate in list(getattr(reacting_army, "units", []) or []):
+                        if candidate is None:
+                            continue
+                        try:
+                            reacting_root = candidate.get_attached_unit_root()
+                        except Exception:
+                            reacting_root = candidate
+                        if reacting_root is None:
+                            continue
+                        reacting_id = str(get_entity_id(reacting_root) or "")
+                        if not reacting_id or reacting_id in seen_reactors:
+                            continue
+                        seen_reactors.add(reacting_id)
+                        rule = rule_fn(reacting_root, game=self)
+                        if not isinstance(rule, dict):
+                            continue
+                        try:
+                            trigger_range = int(rule.get("range", 9) or 9)
+                        except Exception:
+                            trigger_range = 9
+                        if not can_trigger_fn(
+                            reacting_root,
+                            game=self,
+                            game_map=game_map,
+                            moving_unit=moving_root,
+                            range_override=trigger_range,
+                        ):
+                            continue
+                        source = str(rule.get("source", "") or "Prescience").strip() or "Prescience"
+                        move_label = "D6"
+                        try:
+                            fixed_distance = int(rule.get("max_distance", 0) or 0)
+                        except Exception:
+                            fixed_distance = 0
+                        if fixed_distance > 0:
+                            move_label = str(int(fixed_distance))
+                        else:
+                            roll_spec = str(rule.get("distance_roll", "") or "").strip().upper()
+                            if roll_spec:
+                                move_label = roll_spec
+                        message = (
+                            f"{getattr(moving_root, 'name', 'Enemy unit')} ended a move within {int(trigger_range)}\" of "
+                            f"{getattr(reacting_root, 'name', 'unit')}.\n\n"
+                            f"{source}: Make a Normal move of up to {move_label}\"?"
+                        )
+                        queue_confirmation(
+                            player=reacting_player,
+                            unit=reacting_root,
+                            kind="librarius_prescience",
+                            movement_type="librarius_prescience",
+                            source=source,
+                            message=message,
+                            moving_unit=moving_root,
+                            range_value=int(trigger_range),
+                        )
+
             ae_mgr = getattr(reacting_army, "aeldari_detachments", None)
             if ae_mgr is None:
                 continue

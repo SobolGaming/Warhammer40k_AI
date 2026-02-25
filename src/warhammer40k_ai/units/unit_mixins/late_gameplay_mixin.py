@@ -2963,6 +2963,21 @@ class LateGameplayMixin:
             pass
 
         try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+        obfuscation_cap_fn = getattr(sm_mgr, "librarius_obfuscation_ranged_targeting_cap", None) if sm_mgr is not None else None
+        if callable(obfuscation_cap_fn):
+            try:
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                dist, source = obfuscation_cap_fn(root, game=game)
+            except Exception:
+                dist, source = 0.0, ""
+            if float(dist or 0.0) > 0.0:
+                _consider(float(dist), source or "Obfuscation")
+
+        try:
             sr = getattr(root, "special_rules", None)
             if isinstance(sr, dict) and sr.get("imperial_agents_orbital_oversight_active"):
                 applies = True

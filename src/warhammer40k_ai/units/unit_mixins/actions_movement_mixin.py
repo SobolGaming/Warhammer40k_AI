@@ -7555,6 +7555,21 @@ class ActionsMovementMixin:
             return True
         return False
 
+    def _librarius_obfuscation_no_overwatch_active(self, *, target_unit: Optional['Unit'] = None) -> bool:
+        try:
+            army = self.get_parent_army()
+        except Exception:
+            army = None
+        sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+        apply_fn = getattr(sm_mgr, "librarius_obfuscation_overwatch_prevented", None) if sm_mgr is not None else None
+        if not callable(apply_fn):
+            return False
+        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        try:
+            return bool(apply_fn(self, source_unit=target_unit, game=game))
+        except Exception:
+            return False
+
     def is_overwatch_prevented_against(self, target_unit: 'Unit', *, game: Optional['Game'] = None) -> bool:
         if self._post_shoot_no_overwatch_active(game=game):
             return True
@@ -7565,6 +7580,8 @@ class ActionsMovementMixin:
         if self._periapt_of_torments_no_overwatch_active(target_unit=target_unit):
             return True
         if self._blazing_icon_no_overwatch_active(target_unit=target_unit):
+            return True
+        if self._librarius_obfuscation_no_overwatch_active(target_unit=target_unit):
             return True
         entry = self._get_wargear_charge_keyword_effects(target_unit, game=game)
         if not entry:
@@ -11723,6 +11740,15 @@ class ActionsMovementMixin:
             pass
         try:
             army = self.get_parent_army()
+            mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "librarius_celerity_charge_after_advance_applies", None):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if mgr.librarius_celerity_charge_after_advance_applies(self, game=game):
+                    return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
             mgr = getattr(army, "aeldari_detachments", None) if army is not None else None
             if mgr is not None and getattr(mgr, "can_charge_after_advance", None):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
@@ -11873,6 +11899,15 @@ class ActionsMovementMixin:
             mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
             if mgr is not None and getattr(mgr, "storm_swift_onslaught_charge_after_fall_back_applies", None):
                 if mgr.storm_swift_onslaught_charge_after_fall_back_applies(self):
+                    return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "librarius_celerity_charge_after_fall_back_applies", None):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if mgr.librarius_celerity_charge_after_fall_back_applies(self, game=game):
                     return True
         except Exception:
             pass

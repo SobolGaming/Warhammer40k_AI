@@ -1056,6 +1056,20 @@ class WargearProfile:
         except Exception:
             pass
         try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if mgr is not None and callable(getattr(mgr, "librarius_fusillade_ranged_range_bonus", None)):
+                game = getattr(getattr(army, "player", None), "game", None)
+                range_bonus, _source = mgr.librarius_fusillade_ranged_range_bonus(
+                    attacker,
+                    weapon_profile=self,
+                    game=game,
+                )
+                bonus += int(range_bonus or 0)
+        except Exception:
+            pass
+        try:
             if self.parent_wargear and self.parent_wargear.is_ranged():
                 unit = getattr(attacker, "parent_unit", None)
                 sr = getattr(unit, "special_rules", None)

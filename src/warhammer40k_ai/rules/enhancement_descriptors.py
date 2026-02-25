@@ -1636,6 +1636,67 @@ _SPACE_MARINES_LIBERATOR_ASSAULT_GROUP_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPACE_MARINES_LIBERATOR_ASSAULT_GROUP_DESCRIPTORS.values()
 }
 
+_SPACE_MARINES_LIBRARIUS_CONCLAVE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009785002": EnhancementToolDescriptor(
+        enhancement_id="000009785002",
+        name="Prescience",
+        timing="enemy_move_end_reactive",
+        target="bearer_unit",
+        duration="constant_once_per_turn",
+        effect="reactive_normal_move_up_to_d6_or_six_if_divination_active",
+        range_in=9.0,
+        effect_params={
+            "trigger_actions": ("move", "advance", "fall_back"),
+            "trigger_range": 9,
+            "distance_roll": "D6",
+            "divination_max_distance": 6,
+            "limit": "turn",
+        },
+    ),
+    "000009785003": EnhancementToolDescriptor(
+        enhancement_id="000009785003",
+        name="Celerity",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant_conditional",
+        effect="charge_after_advance_and_biomancy_charge_after_fall_back",
+        effect_params={
+            "charge_after_advance": True,
+            "charge_after_fall_back_when_discipline_active": "BIOMANCY",
+        },
+    ),
+    "000009785004": EnhancementToolDescriptor(
+        enhancement_id="000009785004",
+        name="Obfuscation",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant_conditional",
+        effect="prevent_fire_overwatch_and_telepathy_ranged_targeting_cap",
+        effect_params={
+            "stratagem_name": "Fire Overwatch",
+            "telepathy_ranged_targeting_cap": 18,
+        },
+    ),
+    "000009785005": EnhancementToolDescriptor(
+        enhancement_id="000009785005",
+        name="Fusillade",
+        timing="passive",
+        target="bearer_unit_ranged_weapons",
+        duration="constant_conditional",
+        effect="grant_anti_keywords_and_conditional_pyromancy_sustained_hits_and_telekinesis_range_bonus",
+        effect_params={
+            "anti_monster": 5,
+            "anti_vehicle": 5,
+            "pyromancy_sustained_hits": 1,
+            "telekinesis_range_bonus": 6,
+        },
+    ),
+}
+
+_SPACE_MARINES_LIBRARIUS_CONCLAVE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPACE_MARINES_LIBRARIUS_CONCLAVE_DESCRIPTORS.values()
+}
+
 _SPACE_MARINES_BASTION_TASK_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010676002": EnhancementToolDescriptor(
         enhancement_id="000010676002",
@@ -2527,6 +2588,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPACE_MARINES_LIBERATOR_ASSAULT_GROUP_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPACE_MARINES_LIBRARIUS_CONCLAVE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPACE_MARINES_BASTION_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -2608,6 +2672,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SPACE_MARINES_ANVIL_SIEGE_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_IRONSTORM_SPEARHEAD_BY_NAME.get(key)
         or _SPACE_MARINES_LIBERATOR_ASSAULT_GROUP_BY_NAME.get(key)
+        or _SPACE_MARINES_LIBRARIUS_CONCLAVE_BY_NAME.get(key)
         or _SPACE_MARINES_BASTION_TASK_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_BLADE_OF_ULTRAMAR_BY_NAME.get(key)
         or _SPACE_MARINES_CHAMPIONS_OF_FENRIS_BY_NAME.get(key)

@@ -429,6 +429,9 @@ class Enhancement:
         is_liberator_assault_group = bool(
             sm_mgr and getattr(sm_mgr, "is_liberator_assault_group", lambda: False)()
         )
+        is_librarius_conclave = bool(
+            sm_mgr and getattr(sm_mgr, "is_librarius_conclave", lambda: False)()
+        )
         is_bastion_task_force = bool(
             sm_mgr and getattr(sm_mgr, "is_bastion_task_force", lambda: False)()
         )
@@ -1387,6 +1390,77 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_liberator_gift_of_foresight_bearer_model_id"] = bearer_id
+
+        if name == "prescience" or enh_id == "000009785002":
+            if not is_librarius_conclave:
+                return
+            unit.special_rules["enhancement_prescience"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            trigger_range = _coerce_int(params.get("trigger_range", 9) or 9, default=9)
+            divination_distance = _coerce_int(params.get("divination_max_distance", 6) or 6, default=6)
+            distance_roll = str(params.get("distance_roll", "D6") or "D6").strip().upper() or "D6"
+            source_name = str(getattr(self, "name", "") or "Prescience").strip() or "Prescience"
+            unit.special_rules["enhancement_prescience_trigger_range"] = int(max(1, trigger_range))
+            unit.special_rules["enhancement_prescience_divination_max_distance"] = int(max(1, divination_distance))
+            unit.special_rules["enhancement_prescience_distance_roll"] = distance_roll
+            unit.special_rules["enhancement_prescience_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_prescience_bearer_model_id"] = bearer_id
+
+        if name == "celerity" or enh_id == "000009785003":
+            if not is_librarius_conclave:
+                return
+            unit.special_rules["enhancement_celerity"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_celerity_charge_after_advance"] = bool(
+                params.get("charge_after_advance", True)
+            )
+            required = str(
+                params.get("charge_after_fall_back_when_discipline_active", "BIOMANCY") or "BIOMANCY"
+            ).strip().upper()
+            unit.special_rules["enhancement_celerity_fall_back_discipline"] = required
+            unit.special_rules["enhancement_celerity_source"] = str(getattr(self, "name", "") or "Celerity").strip() or "Celerity"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_celerity_bearer_model_id"] = bearer_id
+
+        if name == "obfuscation" or enh_id == "000009785004":
+            if not is_librarius_conclave:
+                return
+            unit.special_rules["enhancement_obfuscation"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                targeting_cap = int(params.get("telepathy_ranged_targeting_cap", 18) or 18)
+            except (TypeError, ValueError):
+                targeting_cap = 18
+            unit.special_rules["enhancement_obfuscation_telepathy_targeting_cap"] = int(max(1, targeting_cap))
+            unit.special_rules["enhancement_obfuscation_source"] = str(getattr(self, "name", "") or "Obfuscation").strip() or "Obfuscation"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_obfuscation_bearer_model_id"] = bearer_id
+
+        if name == "fusillade" or enh_id == "000009785005":
+            if not is_librarius_conclave:
+                return
+            unit.special_rules["enhancement_fusillade"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            anti_monster = _coerce_int(params.get("anti_monster", 5) or 5, default=5)
+            anti_vehicle = _coerce_int(params.get("anti_vehicle", 5) or 5, default=5)
+            sustained_hits = _coerce_int(params.get("pyromancy_sustained_hits", 1) or 1, default=1)
+            range_bonus = _coerce_int(params.get("telekinesis_range_bonus", 6) or 6, default=6)
+            unit.special_rules["enhancement_fusillade_anti_monster"] = int(max(2, anti_monster))
+            unit.special_rules["enhancement_fusillade_anti_vehicle"] = int(max(2, anti_vehicle))
+            unit.special_rules["enhancement_fusillade_pyromancy_sustained_hits"] = int(max(1, sustained_hits))
+            unit.special_rules["enhancement_fusillade_telekinesis_range_bonus"] = int(max(1, range_bonus))
+            unit.special_rules["enhancement_fusillade_source"] = str(getattr(self, "name", "") or "Fusillade").strip() or "Fusillade"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_fusillade_bearer_model_id"] = bearer_id
 
         if name == "eye of the primarch" or enh_id == "000010676002":
             if not is_bastion_task_force:

@@ -1916,6 +1916,325 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             "default_choice": "ignore_negative",
         }
 
+    def _librarius_enhancement_source_member(self, unit, flag_key: str):
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return None, None, None
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        members.sort(key=lambda member: str(get_entity_id(member) or ""))
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get(flag_key, False)):
+                return root, member, sr
+        return root, None, None
+
+    @staticmethod
+    def _librarius_enhancement_member_has_live_bearer(member, sr) -> bool:
+        if member is None or not isinstance(sr, dict):
+            return False
+        bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
+        if bearer_id:
+            for model in list(getattr(member, "models", []) or []):
+                if str(get_entity_id(model) or "") != bearer_id:
+                    continue
+                alive_attr = getattr(model, "is_alive", True)
+                return bool(alive_attr() if callable(alive_attr) else alive_attr)
+            return False
+        bearer = getattr(member, "_get_enhancement_bearer_model", lambda: None)()
+        if bearer is None:
+            return False
+        alive_attr = getattr(bearer, "is_alive", True)
+        return bool(alive_attr() if callable(alive_attr) else alive_attr)
+
+    def _librarius_prescience_turn_key(self, *, game=None) -> str:
+        game_obj = self._resolve_game_context(game=game)
+        try:
+            battle_round = int(getattr(game_obj, "turn", 0) or 0)
+        except Exception:
+            battle_round = 0
+        try:
+            current_player = getattr(game_obj, "get_current_player", lambda: None)()
+        except Exception:
+            current_player = None
+        owner = str(getattr(current_player, "id", "") or "").strip()
+        return f"{int(battle_round)}:{owner}"
+
+    def librarius_prescience_used_this_turn(self, unit, *, game=None) -> bool:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        return str(sr.get("enhancement_prescience_used_turn_key", "") or "") == self._librarius_prescience_turn_key(game=game)
+
+    def mark_librarius_prescience_used(self, unit, *, game=None) -> None:
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["enhancement_prescience_used_turn_key"] = self._librarius_prescience_turn_key(game=game)
+        root.special_rules = sr
+
+    def librarius_prescience_reactive_rule(self, unit, *, game=None) -> dict | None:
+        if not self.is_librarius_conclave():
+            return None
+        root, member, sr = self._librarius_enhancement_source_member(unit, "enhancement_prescience")
+        if root is None or member is None or not isinstance(sr, dict):
+            return None
+        try:
+            if root.get_parent_army() is not self.army:
+                return None
+        except Exception:
+            return None
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return None
+        if not self._librarius_enhancement_member_has_live_bearer(member, sr):
+            return None
+        try:
+            rng = int(sr.get("enhancement_prescience_trigger_range", 9) or 9)
+        except Exception:
+            rng = 9
+        source = str(sr.get("enhancement_prescience_source", "") or "Prescience").strip() or "Prescience"
+        rule = {"source": source, "range": int(max(1, rng))}
+        if self.librarius_psychic_discipline_is_active(self._LIBRARIUS_DISCIPLINE_DIVINATION, game=game):
+            try:
+                max_distance = int(sr.get("enhancement_prescience_divination_max_distance", 6) or 6)
+            except Exception:
+                max_distance = 6
+            rule["max_distance"] = int(max(1, max_distance))
+        else:
+            roll_spec = str(sr.get("enhancement_prescience_distance_roll", "D6") or "D6").strip().upper() or "D6"
+            rule["distance_roll"] = roll_spec
+        return rule
+
+    def librarius_prescience_can_trigger(
+        self,
+        unit,
+        *,
+        game=None,
+        game_map=None,
+        moving_unit=None,
+        range_override: int | None = None,
+    ) -> bool:
+        rule = self.librarius_prescience_reactive_rule(unit, game=game)
+        if not rule:
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        if not self._unit_is_on_battlefield(root):
+            return False
+        if self.librarius_prescience_used_this_turn(root, game=game):
+            return False
+        if moving_unit is not None:
+            moving_root = self._attached_unit_root(moving_unit)
+            if moving_root is None:
+                return False
+            try:
+                if moving_root.get_parent_army() is self.army:
+                    return False
+            except Exception:
+                return False
+            gm = game_map
+            if gm is None:
+                game_obj = self._resolve_game_context(game=game)
+                gm = getattr(game_obj, "map", None) if game_obj is not None else None
+            if gm is None:
+                return False
+            try:
+                rng = int(range_override or rule.get("range", 9) or 9)
+            except Exception:
+                rng = 9
+            try:
+                distance = float(gm.get_distance_between_units(root, moving_root))
+            except Exception:
+                return False
+            if distance > float(rng) + 1e-6:
+                return False
+        return True
+
+    def librarius_celerity_charge_after_advance_applies(self, unit, *, game=None) -> bool:
+        if not self.is_librarius_conclave():
+            return False
+        root, member, sr = self._librarius_enhancement_source_member(unit, "enhancement_celerity")
+        if root is None or member is None or not isinstance(sr, dict):
+            return False
+        try:
+            if root.get_parent_army() is not self.army:
+                return False
+        except Exception:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        if not self._librarius_enhancement_member_has_live_bearer(member, sr):
+            return False
+        return bool(sr.get("enhancement_celerity_charge_after_advance", True))
+
+    def librarius_celerity_charge_after_fall_back_applies(self, unit, *, game=None) -> bool:
+        if not self.librarius_celerity_charge_after_advance_applies(unit, game=game):
+            return False
+        _root, _member, sr = self._librarius_enhancement_source_member(unit, "enhancement_celerity")
+        if not isinstance(sr, dict):
+            return False
+        discipline = str(
+            sr.get("enhancement_celerity_fall_back_discipline", self._LIBRARIUS_DISCIPLINE_BIOMANCY)
+            or self._LIBRARIUS_DISCIPLINE_BIOMANCY
+        ).strip().upper()
+        if not discipline:
+            discipline = self._LIBRARIUS_DISCIPLINE_BIOMANCY
+        return self.librarius_psychic_discipline_is_active(discipline, game=game)
+
+    def librarius_obfuscation_overwatch_prevented(self, target_unit, *, source_unit=None, game=None) -> bool:
+        if not self.is_librarius_conclave():
+            return False
+        root, member, sr = self._librarius_enhancement_source_member(target_unit, "enhancement_obfuscation")
+        if root is None or member is None or not isinstance(sr, dict):
+            return False
+        try:
+            if root.get_parent_army() is not self.army:
+                return False
+        except Exception:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        if not self._librarius_enhancement_member_has_live_bearer(member, sr):
+            return False
+        if source_unit is not None:
+            source_root = self._attached_unit_root(source_unit)
+            if source_root is None:
+                return False
+            try:
+                if source_root.get_parent_army() is self.army:
+                    return False
+            except Exception:
+                return False
+        return True
+
+    def librarius_obfuscation_ranged_targeting_cap(self, target_unit, *, game=None) -> tuple[float, str]:
+        if not self.is_librarius_conclave():
+            return 0.0, ""
+        if not self.librarius_psychic_discipline_is_active(self._LIBRARIUS_DISCIPLINE_TELEPATHY, game=game):
+            return 0.0, ""
+        root, member, sr = self._librarius_enhancement_source_member(target_unit, "enhancement_obfuscation")
+        if root is None or member is None or not isinstance(sr, dict):
+            return 0.0, ""
+        try:
+            if root.get_parent_army() is not self.army:
+                return 0.0, ""
+        except Exception:
+            return 0.0, ""
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return 0.0, ""
+        if not self._librarius_enhancement_member_has_live_bearer(member, sr):
+            return 0.0, ""
+        try:
+            cap = float(sr.get("enhancement_obfuscation_telepathy_targeting_cap", 18) or 18)
+        except Exception:
+            cap = 18.0
+        source = str(sr.get("enhancement_obfuscation_source", "") or "Obfuscation").strip() or "Obfuscation"
+        return float(max(0.0, cap)), source
+
+    def librarius_fusillade_attack_keywords(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[list[str], str]:
+        if not self.is_librarius_conclave():
+            return [], ""
+        if attacker_model is None:
+            return [], ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        if attacker_unit is None:
+            return [], ""
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            if parent is None or not bool(getattr(parent, "is_ranged", lambda: False)()):
+                return [], ""
+        root, member, sr = self._librarius_enhancement_source_member(attacker_unit, "enhancement_fusillade")
+        if root is None or member is None or not isinstance(sr, dict):
+            return [], ""
+        attacker_root = self._attached_unit_root(attacker_unit)
+        if attacker_root is None or str(get_entity_id(attacker_root) or "") != str(get_entity_id(root) or ""):
+            return [], ""
+        try:
+            if root.get_parent_army() is not self.army:
+                return [], ""
+        except Exception:
+            return [], ""
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return [], ""
+        if not self._librarius_enhancement_member_has_live_bearer(member, sr):
+            return [], ""
+        try:
+            anti_monster = int(sr.get("enhancement_fusillade_anti_monster", 5) or 5)
+        except Exception:
+            anti_monster = 5
+        try:
+            anti_vehicle = int(sr.get("enhancement_fusillade_anti_vehicle", 5) or 5)
+        except Exception:
+            anti_vehicle = 5
+        keywords = [
+            f"ANTI-MONSTER {int(max(2, anti_monster))}+",
+            f"ANTI-VEHICLE {int(max(2, anti_vehicle))}+",
+        ]
+        if self.librarius_psychic_discipline_is_active(self._LIBRARIUS_DISCIPLINE_PYROMANCY, game=game):
+            try:
+                sustained_hits = int(sr.get("enhancement_fusillade_pyromancy_sustained_hits", 1) or 1)
+            except Exception:
+                sustained_hits = 1
+            keywords.append(f"SUSTAINED HITS {int(max(1, sustained_hits))}")
+        source = str(sr.get("enhancement_fusillade_source", "") or "Fusillade").strip() or "Fusillade"
+        return keywords, source
+
+    def librarius_fusillade_ranged_range_bonus(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if not self.is_librarius_conclave():
+            return 0, ""
+        if not self.librarius_psychic_discipline_is_active(self._LIBRARIUS_DISCIPLINE_TELEKINESIS, game=game):
+            return 0, ""
+        if attacker_model is None:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        if attacker_unit is None:
+            return 0, ""
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            if parent is None or not bool(getattr(parent, "is_ranged", lambda: False)()):
+                return 0, ""
+        root, member, sr = self._librarius_enhancement_source_member(attacker_unit, "enhancement_fusillade")
+        if root is None or member is None or not isinstance(sr, dict):
+            return 0, ""
+        attacker_root = self._attached_unit_root(attacker_unit)
+        if attacker_root is None or str(get_entity_id(attacker_root) or "") != str(get_entity_id(root) or ""):
+            return 0, ""
+        if not self._librarius_enhancement_member_has_live_bearer(member, sr):
+            return 0, ""
+        try:
+            bonus = int(sr.get("enhancement_fusillade_telekinesis_range_bonus", 6) or 6)
+        except Exception:
+            bonus = 6
+        if bonus <= 0:
+            return 0, ""
+        source = str(sr.get("enhancement_fusillade_source", "") or "Fusillade").strip() or "Fusillade"
+        return int(max(0, bonus)), source
+
     def _attached_unit_name_contains(self, unit, name_fragment: str) -> bool:
         root = self._attached_unit_root(unit)
         if root is None:
