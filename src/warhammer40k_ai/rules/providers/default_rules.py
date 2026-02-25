@@ -338,6 +338,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ctxs,
                 "space_marines_detachments",
                 (
+                    "is_1st_company_task_force",
                     "is_rage_cursed_onslaught",
                     "is_bastion_task_force",
                     "is_liberator_assault_group",
@@ -351,6 +352,8 @@ def build_default_rule_providers() -> List[RuleProvider]:
             subscriptions=[
                 ("fight_unit_selected", "_on_fight_unit_selected_maddened_ferocity"),
                 ("fight_unit_selected", "_on_fight_unit_selected_red_thirst"),
+                ("shooting_targets_selected", "_on_shooting_targets_selected_iron_resolve"),
+                ("fight_targets_selected", "_on_fight_targets_selected_iron_resolve"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_heroes_all"),
                 ("fight_unit_selected", "_on_fight_unit_selected_heroes_all"),
                 ("fight_unit_selected", "_on_fight_unit_selected_master_of_wolves_ferocious_strike"),

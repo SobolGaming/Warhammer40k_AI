@@ -323,6 +323,7 @@ class Enhancement:
         ac_mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
         as_mgr = getattr(army, "adepta_sororitas_detachments", None) if army is not None else None
         orks_mgr = getattr(army, "orks_detachments", None) if army is not None else None
+        sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
         cd_mgr = getattr(army, "chaos_daemons_detachments", None) if army is not None else None
         csm_mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
         lov_mgr = getattr(army, "leagues_of_votann_detachments", None) if army is not None else None
@@ -410,6 +411,9 @@ class Enhancement:
             is_hallowed_martyrs = bool(as_mgr and as_mgr.is_hallowed_martyrs())
         except Exception:
             is_hallowed_martyrs = False
+        is_1st_company_task_force = bool(
+            sm_mgr and getattr(sm_mgr, "is_1st_company_task_force", lambda: False)()
+        )
         is_lions = bool(ac_mgr and ac_mgr.is_lions_of_the_emperor())
         try:
             is_war_horde = bool(orks_mgr and orks_mgr.is_war_horde())
@@ -963,6 +967,85 @@ class Enhancement:
             if not is_berzerker_warband:
                 return
             unit.special_rules["enhancement_favoured_of_khorne_rerolls"] = 2
+
+        if name in ("the imperium's sword", "the imperiums sword") or enh_id == "000008494002":
+            if not is_1st_company_task_force:
+                return
+            unit.special_rules["enhancement_the_imperiums_sword"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            bearer_bonus = _coerce_int(params.get("bearer_melee_attacks_bonus", 1) or 1, default=1)
+            other_models_bonus = _coerce_int(params.get("unit_other_models_melee_attacks_bonus", 1) or 1, default=1)
+            once_key = str(params.get("once_per_battle_key", "the_imperiums_sword") or "the_imperiums_sword").strip().lower()
+            existing_bearer_bonus = _coerce_int(
+                unit.special_rules.get("enhancement_bearer_melee_attacks_bonus", 0) or 0,
+                default=0,
+            )
+            unit.special_rules["enhancement_bearer_melee_attacks_bonus"] = int(
+                max(existing_bearer_bonus, max(0, int(bearer_bonus)))
+            )
+            unit.special_rules["enhancement_the_imperiums_sword_other_models_bonus"] = int(max(0, int(other_models_bonus)))
+            unit.special_rules["enhancement_the_imperiums_sword_once_key"] = once_key
+            unit.special_rules["enhancement_the_imperiums_sword_source"] = "The Imperium's Sword"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "fear made manifest (aura)" or enh_id == "000008494003":
+            if not is_1st_company_task_force:
+                return
+            unit.special_rules["enhancement_fear_made_manifest"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            range_raw = params.get("range", getattr(desc, "range_in", 6.0) if desc is not None else 6.0)
+            try:
+                aura_range = float(range_raw if range_raw is not None else 6.0)
+            except Exception:
+                aura_range = 6.0
+            once_key = str(params.get("once_per_battle_key", "fear_made_manifest") or "fear_made_manifest").strip().lower()
+            once_roll = str(params.get("once_per_battle_models_destroyed_roll", "D3") or "D3").strip().upper() or "D3"
+            unit.special_rules["enhancement_fear_made_manifest_range"] = float(max(0.0, aura_range))
+            unit.special_rules["enhancement_fear_made_manifest_once_key"] = once_key
+            unit.special_rules["enhancement_fear_made_manifest_once_roll"] = once_roll
+            unit.special_rules["enhancement_fear_made_manifest_source"] = "Fear Made Manifest (Aura)"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "rites of war" or enh_id == "000008494004":
+            if not is_1st_company_task_force:
+                return
+            unit.special_rules["enhancement_rites_of_war"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            bearer_oc_bonus = _coerce_int(params.get("bearer_objective_control_bonus", 1) or 1, default=1)
+            other_models_bonus = _coerce_int(params.get("unit_other_models_objective_control_bonus", 1) or 1, default=1)
+            once_key = str(params.get("once_per_battle_key", "rites_of_war") or "rites_of_war").strip().lower()
+            unit.special_rules["enhancement_rites_of_war_bearer_oc_bonus"] = int(max(0, int(bearer_oc_bonus)))
+            unit.special_rules["enhancement_rites_of_war_other_models_bonus"] = int(max(0, int(other_models_bonus)))
+            unit.special_rules["enhancement_rites_of_war_once_key"] = once_key
+            unit.special_rules["enhancement_rites_of_war_source"] = "Rites of War"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "iron resolve" or enh_id == "000008494005":
+            if not is_1st_company_task_force:
+                return
+            unit.special_rules["enhancement_iron_resolve"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            bearer_fnp = _coerce_int(params.get("bearer_fnp", 5) or 5, default=5)
+            unit_fnp = _coerce_int(params.get("unit_fnp_on_trigger", 5) or 5, default=5)
+            once_key = str(params.get("once_per_battle_key", "iron_resolve") or "iron_resolve").strip().lower()
+            _ensure_enhancement_fnp_entry(
+                unit,
+                int(max(0, bearer_fnp)),
+                source="Iron Resolve",
+                tag="iron_resolve_bearer",
+            )
+            unit.special_rules["enhancement_iron_resolve_unit_fnp"] = int(max(0, int(unit_fnp)))
+            unit.special_rules["enhancement_iron_resolve_once_key"] = once_key
+            unit.special_rules["enhancement_iron_resolve_source"] = "Iron Resolve"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 
         if name == "gift of foresight" and enh_id == "000009899004":
             if not is_warhost:

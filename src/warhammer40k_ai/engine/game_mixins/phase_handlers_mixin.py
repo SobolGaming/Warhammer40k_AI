@@ -373,6 +373,128 @@ class GamePhaseHandlersMixin:
                             instance_key=f"{unit_id}:{ability_key}",
                         )
 
+                    # First Company Task Force: The Imperium's Sword (once per battle, start of any phase).
+                    try:
+                        find_source = getattr(self, "_attached_member_with_enhancement_flag", None)
+                        if callable(find_source):
+                            _source_root, source_member, source_sr = find_source(root, "enhancement_the_imperiums_sword")
+                        else:
+                            source_member = root
+                            source_sr = getattr(root, "special_rules", None)
+                        if source_member is not None and isinstance(source_sr, dict):
+                            bearer = getattr(source_member, "_get_enhancement_bearer_model", lambda: None)()
+                            if bearer is not None and bool(getattr(bearer, "is_alive", True)):
+                                once_key = str(
+                                    source_sr.get("enhancement_the_imperiums_sword_once_key", "the_imperiums_sword")
+                                    or "the_imperiums_sword"
+                                ).strip().lower()
+                                if once_key and not root.has_used_unit_once_per_battle(once_key):
+                                    try:
+                                        attacks_bonus = int(
+                                            source_sr.get("enhancement_the_imperiums_sword_other_models_bonus", 1) or 1
+                                        )
+                                    except Exception:
+                                        attacks_bonus = 1
+                                    if attacks_bonus > 0:
+                                        unit_id = maybe_entity_id(root)
+                                        source_member_unit_id = maybe_entity_id(source_member)
+                                        model_id = maybe_entity_id(bearer)
+                                        if unit_id and source_member_unit_id and model_id:
+                                            ability_name = (
+                                                str(
+                                                    source_sr.get(
+                                                        "enhancement_the_imperiums_sword_source",
+                                                        "The Imperium's Sword",
+                                                    )
+                                                    or "The Imperium's Sword"
+                                                ).strip()
+                                                or "The Imperium's Sword"
+                                            )
+                                            self._queue_optional_ability_confirmation(
+                                                player=p,
+                                                ability_key="the_imperiums_sword",
+                                                ability_name=ability_name,
+                                                message=f"Activate {ability_name} for {getattr(root, 'name', 'Unit')}?",
+                                                context={
+                                                    "ability_name": ability_name,
+                                                    "phase": pname.replace("_", " ").title(),
+                                                    "unit": getattr(root, "name", "") or "",
+                                                    "unit_id": unit_id,
+                                                    "source_unit_id": unit_id,
+                                                    "source_member_unit_id": source_member_unit_id,
+                                                    "model": getattr(bearer, "name", "") or "",
+                                                    "model_id": model_id,
+                                                    "ability_key": once_key,
+                                                    "attacks_bonus": int(attacks_bonus),
+                                                },
+                                                payload={
+                                                    "unit_id": unit_id,
+                                                    "source_member_unit_id": source_member_unit_id,
+                                                    "ability_key": once_key,
+                                                    "attacks_bonus": int(attacks_bonus),
+                                                },
+                                                instance_key=f"{unit_id}:{once_key}:{pname}",
+                                            )
+                    except Exception:
+                        pass
+
+                    # First Company Task Force: Rites of War (once per battle, start of any phase).
+                    try:
+                        find_source = getattr(self, "_attached_member_with_enhancement_flag", None)
+                        if callable(find_source):
+                            _source_root, source_member, source_sr = find_source(root, "enhancement_rites_of_war")
+                        else:
+                            source_member = root
+                            source_sr = getattr(root, "special_rules", None)
+                        if source_member is not None and isinstance(source_sr, dict):
+                            bearer = getattr(source_member, "_get_enhancement_bearer_model", lambda: None)()
+                            if bearer is not None and bool(getattr(bearer, "is_alive", True)):
+                                once_key = str(
+                                    source_sr.get("enhancement_rites_of_war_once_key", "rites_of_war")
+                                    or "rites_of_war"
+                                ).strip().lower()
+                                if once_key and not root.has_used_unit_once_per_battle(once_key):
+                                    try:
+                                        oc_bonus = int(source_sr.get("enhancement_rites_of_war_other_models_bonus", 1) or 1)
+                                    except Exception:
+                                        oc_bonus = 1
+                                    if oc_bonus > 0:
+                                        unit_id = maybe_entity_id(root)
+                                        source_member_unit_id = maybe_entity_id(source_member)
+                                        model_id = maybe_entity_id(bearer)
+                                        if unit_id and source_member_unit_id and model_id:
+                                            ability_name = (
+                                                str(source_sr.get("enhancement_rites_of_war_source", "Rites of War") or "Rites of War").strip()
+                                                or "Rites of War"
+                                            )
+                                            self._queue_optional_ability_confirmation(
+                                                player=p,
+                                                ability_key="rites_of_war",
+                                                ability_name=ability_name,
+                                                message=f"Activate {ability_name} for {getattr(root, 'name', 'Unit')}?",
+                                                context={
+                                                    "ability_name": ability_name,
+                                                    "phase": pname.replace("_", " ").title(),
+                                                    "unit": getattr(root, "name", "") or "",
+                                                    "unit_id": unit_id,
+                                                    "source_unit_id": unit_id,
+                                                    "source_member_unit_id": source_member_unit_id,
+                                                    "model": getattr(bearer, "name", "") or "",
+                                                    "model_id": model_id,
+                                                    "ability_key": once_key,
+                                                    "objective_control_bonus": int(oc_bonus),
+                                                },
+                                                payload={
+                                                    "unit_id": unit_id,
+                                                    "source_member_unit_id": source_member_unit_id,
+                                                    "ability_key": once_key,
+                                                    "objective_control_bonus": int(oc_bonus),
+                                                },
+                                                instance_key=f"{unit_id}:{once_key}:{pname}",
+                                            )
+                    except Exception:
+                        pass
+
                     # Unit-level: start-of-any-phase Battle-shock clear (once per battle).
                     get_clear_specs = getattr(root, "unit_start_any_phase_clear_battleshock_specs", None)
                     specs = list(get_clear_specs() or []) if callable(get_clear_specs) else []
@@ -9724,6 +9846,20 @@ class GamePhaseHandlersMixin:
                         "enhancement_bearer_melee_attacks_bonus",
                         "enhancement_bearer_melee_attacks_bonus_expires_phase",
                         "enhancement_fierce_conqueror_enemy_models",
+                    ):
+                        sr.pop(k, None)
+                exp = str(sr.get("enhancement_the_imperiums_sword_other_models_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "enhancement_the_imperiums_sword_other_models_active",
+                        "enhancement_the_imperiums_sword_other_models_expires_phase",
+                    ):
+                        sr.pop(k, None)
+                exp = str(sr.get("enhancement_rites_of_war_other_models_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "enhancement_rites_of_war_other_models_active",
+                        "enhancement_rites_of_war_other_models_expires_phase",
                     ):
                         sr.pop(k, None)
                 exp = str(sr.get("seductive_gambit_expires_phase", "") or "").strip().upper()

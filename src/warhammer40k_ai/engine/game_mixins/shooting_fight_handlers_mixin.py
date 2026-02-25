@@ -5571,6 +5571,145 @@ class GameShootingFightHandlersMixin:
                     instance_key=instance_key,
                 )
 
+    def _queue_iron_resolve_for_targets(self, *, target_units=None, attacking_unit=None, trigger_action: str = "") -> None:
+        if not target_units:
+            return
+        phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+        if phase_name not in ("SHOOTING_PHASE", "FIGHT_PHASE"):
+            return
+        try:
+            attacker_root = attacking_unit.get_attached_unit_root() if attacking_unit is not None else None
+        except Exception:
+            attacker_root = attacking_unit
+        attacker_unit_id = str(get_entity_id(attacker_root) or "") if attacker_root is not None else ""
+        action_key = str(trigger_action or "").strip().lower()
+        if action_key not in {"shoot", "fight"}:
+            action_key = "shoot" if phase_name == "SHOOTING_PHASE" else "fight"
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        seen_targets: set[str] = set()
+        seen_instance: set[str] = set()
+        for target in list(target_units or []):
+            if target is None:
+                continue
+            try:
+                target_root = target.get_attached_unit_root()
+            except Exception:
+                target_root = target
+            if target_root is None:
+                continue
+            target_root_id = str(get_entity_id(target_root) or "")
+            if not target_root_id or target_root_id in seen_targets:
+                continue
+            seen_targets.add(target_root_id)
+            if not bool(getattr(target_root, "is_alive", lambda: False)()):
+                continue
+            if not bool(getattr(target_root, "deployed", True)):
+                continue
+            try:
+                if target_root.is_in_reserves() or target_root.is_embarked:
+                    continue
+            except Exception:
+                pass
+
+            _root, source_member, source_sr = self._attached_member_with_enhancement_flag(
+                target_root,
+                "enhancement_iron_resolve",
+            )
+            if source_member is None or not isinstance(source_sr, dict):
+                continue
+            bearer = getattr(source_member, "_get_enhancement_bearer_model", lambda: None)()
+            if bearer is None or not bool(getattr(bearer, "is_alive", True)):
+                continue
+            once_key = str(source_sr.get("enhancement_iron_resolve_once_key", "iron_resolve") or "iron_resolve").strip().lower()
+            if target_root.has_used_unit_once_per_battle(once_key):
+                continue
+            try:
+                fnp_value = int(source_sr.get("enhancement_iron_resolve_unit_fnp", 5) or 5)
+            except Exception:
+                fnp_value = 5
+            if fnp_value <= 0:
+                continue
+            army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+            player = getattr(army, "player", None) if army is not None else None
+            if player is None:
+                continue
+            unit_id = str(get_entity_id(target_root) or "")
+            source_member_unit_id = str(get_entity_id(source_member) or "")
+            model_id = str(get_entity_id(bearer) or "")
+            if not unit_id or not source_member_unit_id or not model_id:
+                continue
+            ability_name = str(source_sr.get("enhancement_iron_resolve_source", "Iron Resolve") or "Iron Resolve").strip()
+            if not ability_name:
+                ability_name = "Iron Resolve"
+            instance_key = ":".join(
+                [
+                    unit_id,
+                    once_key,
+                    phase_name,
+                    str(int(turn or 0)),
+                    str(getattr(player, "id", "") or ""),
+                    action_key,
+                    attacker_unit_id,
+                ]
+            )
+            if instance_key in seen_instance:
+                continue
+            seen_instance.add(instance_key)
+            self._queue_optional_ability_confirmation(
+                player=player,
+                ability_key="start_any_phase_fnp",
+                ability_name=ability_name,
+                message=f"Use {ability_name} for {getattr(target_root, 'name', 'Unit')} after being selected as a target?",
+                context={
+                    "ability_name": ability_name,
+                    "phase": phase_name.replace("_", " ").title(),
+                    "unit": getattr(target_root, "name", "") or "",
+                    "unit_id": unit_id,
+                    "source_unit_id": unit_id,
+                    "source_member_unit_id": source_member_unit_id,
+                    "model": getattr(bearer, "name", "") or "",
+                    "model_id": model_id,
+                    "ability_key": once_key,
+                    "fnp_value": int(fnp_value),
+                    "trigger_action": action_key,
+                    "attacker_unit_id": attacker_unit_id,
+                    "turn": int(turn or 0),
+                },
+                payload={
+                    "unit_id": unit_id,
+                    "ability_key": once_key,
+                    "fnp_value": int(fnp_value),
+                    "source_member_unit_id": source_member_unit_id,
+                    "attacker_unit_id": attacker_unit_id,
+                },
+                instance_key=instance_key,
+            )
+
+    def _on_shooting_targets_selected_iron_resolve(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None or not target_units:
+            return
+        if not self.is_shooting_phase():
+            return
+        self._queue_iron_resolve_for_targets(
+            target_units=target_units,
+            attacking_unit=attacking_unit,
+            trigger_action="shoot",
+        )
+
+    def _on_fight_targets_selected_iron_resolve(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None or not target_units:
+            return
+        if not self.is_fight_phase():
+            return
+        self._queue_iron_resolve_for_targets(
+            target_units=target_units,
+            attacking_unit=attacking_unit,
+            trigger_action="fight",
+        )
+
     def _on_shooting_targets_selected_emperors_children(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None or not target_units:
             return

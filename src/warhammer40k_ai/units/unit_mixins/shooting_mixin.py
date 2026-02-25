@@ -2144,6 +2144,13 @@ class ShootingMixin:
             self.apply_status_effect(battle_shock_effect)
             logger.error(f"{self.name} has failed the battle shock test and is battle-shocked!")
 
+        try:
+            fear_queue_fn = getattr(game, "_queue_fear_made_manifest_trigger", None)
+            if callable(fear_queue_fn):
+                fear_queue_fn(unit=self, passed=passed, game=game)
+        except Exception:
+            pass
+
         if shadow_ctx is not None:
             try:
                 from ...rules.shadow_of_chaos import ShadowOfChaosManager, ShadowBattleShockContext

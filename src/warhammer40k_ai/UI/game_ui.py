@@ -3427,7 +3427,7 @@ class GameView:
         if decision_type == DECISION_SELECT_TARGET_MODEL:
             ctx = dict(getattr(request, "context", {}) or {})
             selection_kind = str(ctx.get("selection_kind", "") or "")
-            if selection_kind == "cankerblight_destroy":
+            if selection_kind in {"cankerblight_destroy", "fear_made_manifest_destroy"}:
                 player = self._resolve_player_by_id(getattr(request, "player_id", None))
                 if player is None:
                     return
@@ -3439,20 +3439,24 @@ class GameView:
                 from ..utility.decision_utils import resolve_decision_command
                 from .decision_ui_utils import first_option_id
 
-                if not hasattr(self, "cankerblight_model_dialog") or self.cankerblight_model_dialog is None:
+                dialog_attr = "cankerblight_model_dialog"
+                if selection_kind == "fear_made_manifest_destroy":
+                    dialog_attr = "fear_made_manifest_model_dialog"
+                if not hasattr(self, dialog_attr) or getattr(self, dialog_attr) is None:
                     try:
                         from .dialogs import QuarrySelectionDialog
-                        self.cankerblight_model_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+                        setattr(self, dialog_attr, QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height()))
                     except Exception:
-                        self.cankerblight_model_dialog = None
-                dlg = self.cankerblight_model_dialog
+                        setattr(self, dialog_attr, None)
+                dlg = getattr(self, dialog_attr)
                 default_id = first_option_id(request)
                 if dlg is None:
                     if default_id:
                         resolve_decision_command(self.game, request, default_id, player_id=getattr(player, "id", None))
                     return
 
-                ability_name = str(ctx.get("ability_name", "") or "Cankerblight").strip()
+                default_name = "Cankerblight" if selection_kind == "cankerblight_destroy" else "Fear Made Manifest (Aura)"
+                ability_name = str(ctx.get("ability_name", "") or default_name).strip()
                 target_unit_name = "Target unit"
                 try:
                     target_unit_id = str(ctx.get("target_unit_id", "") or "")
@@ -5953,6 +5957,60 @@ class GameView:
                 dlg.show(
                     title=ability_name,
                     header=header,
+                    subtitle=subtitle,
+                    on_confirm=_on_confirm,
+                    on_cancel=_on_cancel,
+                    decision_request=request,
+                    show_cancel=True,
+                )
+                try:
+                    self.dialog_manager.open(dlg, modal=True)
+                except Exception:
+                    pass
+                return
+
+            if ability == "fear_made_manifest":
+                from ..utility.decision_utils import resolve_decision_command
+                from .decision_ui_utils import first_option_id
+
+                if not hasattr(self, "fear_made_manifest_dialog") or self.fear_made_manifest_dialog is None:
+                    try:
+                        from .dialogs import QuarrySelectionDialog
+                        self.fear_made_manifest_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+                    except Exception:
+                        self.fear_made_manifest_dialog = None
+                dlg = self.fear_made_manifest_dialog
+                if dlg is None:
+                    return
+
+                default_id = first_option_id(request)
+
+                def _on_confirm(option_id: str):
+                    resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                def _on_cancel():
+                    if default_id:
+                        resolve_decision_command(self.game, request, default_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                ability_name = str(ctx.get("ability_name", "") or "Fear Made Manifest (Aura)").strip()
+                if not ability_name:
+                    ability_name = "Fear Made Manifest (Aura)"
+                can_use_once = bool(ctx.get("can_use_once", False))
+                once_roll = str(ctx.get("once_roll", "D3") or "D3").strip().upper() or "D3"
+                subtitle = "Select how many models are destroyed from the failed Battle-shock unit."
+                if can_use_once:
+                    subtitle = f"{subtitle} You may choose {once_roll} models once per battle."
+                dlg.show(
+                    title=ability_name,
+                    header="Fear Made Manifest",
                     subtitle=subtitle,
                     on_confirm=_on_confirm,
                     on_cancel=_on_cancel,

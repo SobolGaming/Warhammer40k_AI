@@ -1352,6 +1352,73 @@ _BLOOD_LEGION_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _BLOOD_LEGION_DESCRIPTORS.values()
 }
 
+_SPACE_MARINES_FIRST_COMPANY_TASK_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008494002": EnhancementToolDescriptor(
+        enhancement_id="000008494002",
+        name="The Imperium's Sword",
+        timing="passive_and_start_of_any_phase_optional",
+        target="bearer_and_bearer_unit_other_models",
+        duration="constant_and_until_end_of_phase_once_per_battle",
+        effect="bearer_melee_attacks_bonus_and_once_per_battle_unit_other_models_melee_attacks_bonus",
+        once_per_battle=True,
+        effect_params={
+            "bearer_melee_attacks_bonus": 1,
+            "unit_other_models_melee_attacks_bonus": 1,
+            "once_per_battle_key": "the_imperiums_sword",
+        },
+    ),
+    "000008494003": EnhancementToolDescriptor(
+        enhancement_id="000008494003",
+        name="Fear Made Manifest (Aura)",
+        timing="on_enemy_battleshock_fail_within_aura",
+        target="enemy_non_monster_non_vehicle_unit_within_range_of_bearer",
+        duration="instant_and_once_per_battle_upgrade",
+        effect="destroy_models_on_battleshock_fail_with_once_per_battle_d3_upgrade",
+        range_in=6.0,
+        once_per_battle=True,
+        effect_params={
+            "range": 6.0,
+            "exclude_keywords_any": ("MONSTER", "VEHICLE"),
+            "base_models_destroyed": 1,
+            "once_per_battle_models_destroyed_roll": "D3",
+            "once_per_battle_key": "fear_made_manifest",
+        },
+    ),
+    "000008494004": EnhancementToolDescriptor(
+        enhancement_id="000008494004",
+        name="Rites of War",
+        timing="passive_and_start_of_any_phase_optional",
+        target="bearer_and_bearer_unit_other_models",
+        duration="constant_and_until_end_of_phase_once_per_battle",
+        effect="bearer_objective_control_bonus_and_once_per_battle_unit_other_models_objective_control_bonus",
+        once_per_battle=True,
+        effect_params={
+            "bearer_objective_control_bonus": 1,
+            "unit_other_models_objective_control_bonus": 1,
+            "once_per_battle_key": "rites_of_war",
+        },
+    ),
+    "000008494005": EnhancementToolDescriptor(
+        enhancement_id="000008494005",
+        name="Iron Resolve",
+        timing="passive_and_when_targeted_optional",
+        target="bearer_and_bearer_unit",
+        duration="constant_and_until_end_of_phase_once_per_battle",
+        effect="bearer_fnp_and_once_per_battle_targeted_unit_fnp",
+        once_per_battle=True,
+        effect_params={
+            "bearer_fnp": 5,
+            "trigger": "unit_targeted_by_attacks",
+            "unit_fnp_on_trigger": 5,
+            "once_per_battle_key": "iron_resolve",
+        },
+    ),
+}
+
+_SPACE_MARINES_FIRST_COMPANY_TASK_FORCE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPACE_MARINES_FIRST_COMPANY_TASK_FORCE_DESCRIPTORS.values()
+}
+
 _LEGION_OF_EXCESS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009806002": EnhancementToolDescriptor(
         enhancement_id="000009806002",
@@ -1847,6 +1914,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _BLOOD_LEGION_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPACE_MARINES_FIRST_COMPANY_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _LEGION_OF_EXCESS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -1902,6 +1972,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _DAEMONIC_INCURSION_BY_NAME.get(key)
         or _SHADOW_LEGION_BY_NAME.get(key)
         or _BLOOD_LEGION_BY_NAME.get(key)
+        or _SPACE_MARINES_FIRST_COMPANY_TASK_FORCE_BY_NAME.get(key)
         or _LEGION_OF_EXCESS_BY_NAME.get(key)
         or _PLAGUE_LEGION_BY_NAME.get(key)
         or _SCINTILLATING_LEGION_BY_NAME.get(key)

@@ -670,6 +670,65 @@ class Unit(
                     mods.append(Modifier(ModifierOp.SET, int(max(1, oc_value)), source="enhancement:craftworlds_champion"))
                     break
 
+            # Rites of War (1st Company Task Force): bearer gains +1 OC; once per battle
+            # at start of any phase, other models in the bearer's unit gain +1 OC until phase end.
+            try:
+                root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+            except Exception:
+                root = self
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = [root]
+            if not members:
+                members = [root]
+            model_id = str(maybe_entity_id(model) or "")
+            phase_name = ""
+            try:
+                army_for_phase = root.get_parent_army() if root is not None else None
+            except Exception:
+                army_for_phase = None
+            if army_for_phase is not None:
+                try:
+                    game_obj = getattr(getattr(army_for_phase, "player", None), "game", None)
+                    phase_name = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+                except Exception:
+                    phase_name = ""
+            rites_bearer_bonus = 0
+            rites_other_bonus = 0
+            for member in members:
+                sr_member = getattr(member, "special_rules", None)
+                if not isinstance(sr_member, dict):
+                    continue
+                if not bool(sr_member.get("enhancement_rites_of_war", False)):
+                    continue
+                bearer_id = str(sr_member.get("enhancement_bearer_model_id", "") or "")
+                if not bearer_id:
+                    get_bearer = getattr(member, "_get_enhancement_bearer_model", None)
+                    bearer = get_bearer() if callable(get_bearer) else None
+                    bearer_id = str(maybe_entity_id(bearer) or "")
+                try:
+                    bearer_bonus = int(sr_member.get("enhancement_rites_of_war_bearer_oc_bonus", 1) or 1)
+                except Exception:
+                    bearer_bonus = 1
+                if bearer_id and model_id and bearer_id == model_id:
+                    rites_bearer_bonus = max(int(rites_bearer_bonus), int(max(0, bearer_bonus)))
+                    continue
+                if not bool(sr_member.get("enhancement_rites_of_war_other_models_active", False)):
+                    continue
+                expires_phase = str(sr_member.get("enhancement_rites_of_war_other_models_expires_phase", "") or "").strip().upper()
+                if expires_phase and (not phase_name or phase_name != expires_phase):
+                    continue
+                try:
+                    other_bonus = int(sr_member.get("enhancement_rites_of_war_other_models_bonus", 1) or 1)
+                except Exception:
+                    other_bonus = 1
+                rites_other_bonus = max(int(rites_other_bonus), int(max(0, other_bonus)))
+            if rites_bearer_bonus:
+                mods.append(Modifier(ModifierOp.ADD, int(rites_bearer_bonus), source="enhancement:rites_of_war_bearer"))
+            if rites_other_bonus:
+                mods.append(Modifier(ModifierOp.ADD, int(rites_other_bonus), source="enhancement:rites_of_war_other_models"))
+
             # Mandulian Reliquary (Warpbane Task Force): while the bearer's unit is not
             # Battle-shocked, add 3 to the bearer's Objective Control characteristic.
             try:

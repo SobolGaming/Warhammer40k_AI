@@ -1566,6 +1566,229 @@ class GameReactiveDecisionsMixin:
         self.request_decision(request)
         return True
 
+    def _queue_fear_made_manifest_trigger(self, *, unit=None, passed: bool = False, game=None) -> bool:
+        if unit is None or passed:
+            return False
+        try:
+            if unit.has_any_keyword("MONSTER") or unit.has_any_keyword("VEHICLE"):
+                return False
+        except Exception:
+            pass
+        try:
+            unit_army = unit.get_parent_army()
+        except Exception:
+            unit_army = getattr(unit, "parent_army", None)
+        if unit_army is None:
+            return False
+        game = game or self
+        target_id = ""
+        try:
+            target_id = str(get_entity_id(unit) or "")
+        except Exception:
+            target_id = str(getattr(unit, "_id", "") or "")
+        if not target_id:
+            return False
+
+        target_sr = getattr(unit, "special_rules", None)
+        if not isinstance(target_sr, dict):
+            target_sr = {}
+        pending = target_sr.get("fear_made_manifest_pending")
+        if isinstance(pending, dict):
+            try:
+                pending_turn = int(pending.get("turn", 0) or 0)
+            except Exception:
+                pending_turn = 0
+            if pending_turn == int(getattr(game, "turn", 0) or 0):
+                return True
+            target_sr.pop("fear_made_manifest_pending", None)
+            unit.special_rules = target_sr
+
+        sources = []
+        seen_roots: set[str] = set()
+        find_member = getattr(self, "_attached_member_with_enhancement_flag", None)
+        players = list(getattr(game, "players", []) or [])
+        for player in players:
+            if player is None:
+                continue
+            try:
+                army = player.get_army()
+            except Exception:
+                army = getattr(player, "army", None)
+            if army is None or army is unit_army:
+                continue
+            for source_unit in list(getattr(army, "units", []) or []):
+                if source_unit is None:
+                    continue
+                try:
+                    source_root = source_unit.get_attached_unit_root()
+                except Exception:
+                    source_root = source_unit
+                if source_root is None:
+                    continue
+                source_root_id = str(get_entity_id(source_root) or "")
+                if not source_root_id or source_root_id in seen_roots:
+                    continue
+                seen_roots.add(source_root_id)
+                if not bool(getattr(source_root, "is_alive", lambda: False)()):
+                    continue
+                if not bool(getattr(source_root, "deployed", True)):
+                    continue
+                try:
+                    if source_root.is_in_reserves() or source_root.is_embarked:
+                        continue
+                except Exception:
+                    pass
+
+                source_member = None
+                source_sr = {}
+                if callable(find_member):
+                    _root, source_member, source_sr = find_member(source_root, "enhancement_fear_made_manifest")
+                if source_member is None:
+                    try:
+                        members = list(source_root.get_attached_unit_members() or [])
+                    except Exception:
+                        members = [source_root]
+                    if not members:
+                        members = [source_root]
+                    try:
+                        members = sorted(members, key=lambda member: str(get_entity_id(member) or ""))
+                    except Exception:
+                        members = list(members)
+                    for member in members:
+                        if member is None:
+                            continue
+                        sr = getattr(member, "special_rules", None)
+                        if isinstance(sr, dict) and bool(sr.get("enhancement_fear_made_manifest", False)):
+                            source_member = member
+                            source_sr = sr
+                            break
+                if source_member is None or not isinstance(source_sr, dict):
+                    continue
+                bearer = getattr(source_member, "_get_enhancement_bearer_model", lambda: None)()
+                if bearer is None or not bool(getattr(bearer, "is_alive", True)):
+                    continue
+                try:
+                    range_value = float(source_sr.get("enhancement_fear_made_manifest_range", 6.0) or 6.0)
+                except Exception:
+                    range_value = 6.0
+                if range_value <= 0:
+                    continue
+                if unit not in self._enemy_candidates_within_range_of_model(
+                    model=bearer,
+                    enemy_roots=[unit],
+                    range_value=float(range_value),
+                ):
+                    continue
+
+                once_key = str(
+                    source_sr.get("enhancement_fear_made_manifest_once_key", "fear_made_manifest")
+                    or "fear_made_manifest"
+                ).strip().lower()
+                once_roll = str(source_sr.get("enhancement_fear_made_manifest_once_roll", "D3") or "D3").strip().upper()
+                if not once_roll:
+                    once_roll = "D3"
+                sources.append((player, source_root, source_member, source_sr, bearer, once_key, once_roll))
+
+        if not sources:
+            return False
+
+        def _source_sort_key(entry):
+            player_obj, source_root, source_member, _source_sr, bearer_model, _once_key, _once_roll = entry
+            return (
+                str(get_entity_id(source_root) or ""),
+                str(get_entity_id(source_member) or ""),
+                str(get_entity_id(bearer_model) or ""),
+                str(getattr(player_obj, "id", "") or ""),
+            )
+
+        sources.sort(key=_source_sort_key)
+        owner_player, source_root, source_member, source_sr, bearer_model, once_key, once_roll = sources[0]
+        if owner_player is None:
+            return False
+
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx_req = dict(getattr(req, "context", {}) or {})
+                if str(ctx_req.get("ability", "") or "") != "fear_made_manifest":
+                    continue
+                if str(ctx_req.get("target_unit_id", "") or "") == target_id:
+                    return True
+
+        can_use_once = False
+        if once_key:
+            has_used = getattr(source_root, "has_used_unit_once_per_battle", None)
+            if callable(has_used):
+                can_use_once = not bool(has_used(once_key))
+            else:
+                sr_root = getattr(source_root, "special_rules", None)
+                used_map = sr_root.get("once_per_battle_used") if isinstance(sr_root, dict) else {}
+                can_use_once = not bool(isinstance(used_map, dict) and used_map.get(once_key))
+
+        ability_name = (
+            str(source_sr.get("enhancement_fear_made_manifest_source", "Fear Made Manifest (Aura)") or "Fear Made Manifest (Aura)").strip()
+            or "Fear Made Manifest (Aura)"
+        )
+        source_unit_id = str(get_entity_id(source_root) or "")
+        source_member_unit_id = str(get_entity_id(source_member) or "")
+        source_model_id = str(get_entity_id(bearer_model) or "")
+        target_sr["fear_made_manifest_pending"] = {
+            "owner_id": str(getattr(owner_player, "id", "") or ""),
+            "source_unit_id": source_unit_id,
+            "source_member_unit_id": source_member_unit_id,
+            "source_model_id": source_model_id,
+            "turn": int(getattr(game, "turn", 0) or 0),
+            "ability_name": ability_name,
+            "once_key": once_key,
+            "once_roll": once_roll,
+            "can_use_once": bool(can_use_once),
+        }
+        unit.special_rules = target_sr
+
+        options = [
+            DecisionOption.create(
+                "Destroy 1 model",
+                payload={
+                    "target_unit_id": target_id,
+                    "destroy_count": 1,
+                    "use_once_per_battle": False,
+                },
+            ),
+        ]
+        if can_use_once:
+            options.append(
+                DecisionOption.create(
+                    f"Destroy {once_roll} models (once per battle)",
+                    payload={
+                        "target_unit_id": target_id,
+                        "destroy_count_roll": once_roll,
+                        "use_once_per_battle": True,
+                    },
+                )
+            )
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{ability_name}: choose models to destroy.",
+            player_id=getattr(owner_player, "id", None),
+            options=options,
+            context={
+                "ability": "fear_made_manifest",
+                "ability_name": ability_name,
+                "phase": "Battle-shock",
+                "target_unit_id": target_id,
+                "source_unit_id": source_unit_id,
+                "source_member_unit_id": source_member_unit_id,
+                "source_model_id": source_model_id,
+                "once_key": once_key,
+                "once_roll": once_roll,
+                "can_use_once": bool(can_use_once),
+            },
+        )
+        self.request_decision(request)
+        return True
+
     def _queue_aeldari_guiding_presence(
         self,
         *,
@@ -3429,6 +3652,8 @@ class GameReactiveDecisionsMixin:
             "aeldari_strength_from_death_lethal_surge",
             "our_time_is_nigh",
             "desperate_devotion",
+            "the_imperiums_sword",
+            "rites_of_war",
         ):
             return
         selected = None
@@ -3493,6 +3718,122 @@ class GameReactiveDecisionsMixin:
             )
             return
         if not choice:
+            return
+
+        if ability_key == "the_imperiums_sword":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None or not unit.is_alive():
+                return
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None or not root.is_alive():
+                return
+            source_member_id = str(payload.get("source_member_unit_id") or ctx.get("source_member_unit_id") or "")
+            source_member = self._resolve_unit_by_id(source_member_id) if source_member_id else None
+            if source_member is None:
+                find_source = getattr(self, "_attached_member_with_enhancement_flag", None)
+                if callable(find_source):
+                    _root, source_member, _source_sr = find_source(root, "enhancement_the_imperiums_sword")
+            if source_member is None:
+                return
+            sr = getattr(source_member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_the_imperiums_sword")):
+                return
+            once_key = str(
+                payload.get("ability_key")
+                or ctx.get("ability_key")
+                or sr.get("enhancement_the_imperiums_sword_once_key")
+                or "the_imperiums_sword"
+            ).strip().lower()
+            if not once_key:
+                once_key = "the_imperiums_sword"
+            if root.has_used_unit_once_per_battle(once_key):
+                return
+            try:
+                attacks_bonus = int(
+                    payload.get("attacks_bonus")
+                    or ctx.get("attacks_bonus")
+                    or sr.get("enhancement_the_imperiums_sword_other_models_bonus", 1)
+                    or 1
+                )
+            except Exception:
+                attacks_bonus = 1
+            if attacks_bonus <= 0:
+                return
+            phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+            if not phase_name:
+                phase_name = str(ctx.get("phase", "") or "").strip().upper()
+            if not phase_name:
+                phase_name = "FIGHT_PHASE"
+            sr["enhancement_the_imperiums_sword_other_models_active"] = True
+            sr["enhancement_the_imperiums_sword_other_models_bonus"] = int(attacks_bonus)
+            sr["enhancement_the_imperiums_sword_other_models_expires_phase"] = phase_name
+            source_member.special_rules = sr
+            ability_name = str(ctx.get("ability_name", "") or "The Imperium's Sword").strip() or "The Imperium's Sword"
+            root.mark_unit_once_per_battle_used(once_key, ability_name=ability_name)
+            return
+
+        if ability_key == "rites_of_war":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None or not unit.is_alive():
+                return
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None or not root.is_alive():
+                return
+            source_member_id = str(payload.get("source_member_unit_id") or ctx.get("source_member_unit_id") or "")
+            source_member = self._resolve_unit_by_id(source_member_id) if source_member_id else None
+            if source_member is None:
+                find_source = getattr(self, "_attached_member_with_enhancement_flag", None)
+                if callable(find_source):
+                    _root, source_member, _source_sr = find_source(root, "enhancement_rites_of_war")
+            if source_member is None:
+                return
+            sr = getattr(source_member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_rites_of_war")):
+                return
+            once_key = str(
+                payload.get("ability_key")
+                or ctx.get("ability_key")
+                or sr.get("enhancement_rites_of_war_once_key")
+                or "rites_of_war"
+            ).strip().lower()
+            if not once_key:
+                once_key = "rites_of_war"
+            if root.has_used_unit_once_per_battle(once_key):
+                return
+            try:
+                oc_bonus = int(
+                    payload.get("objective_control_bonus")
+                    or ctx.get("objective_control_bonus")
+                    or sr.get("enhancement_rites_of_war_other_models_bonus", 1)
+                    or 1
+                )
+            except Exception:
+                oc_bonus = 1
+            if oc_bonus <= 0:
+                return
+            phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+            if not phase_name:
+                phase_name = str(ctx.get("phase", "") or "").strip().upper()
+            if not phase_name:
+                phase_name = "FIGHT_PHASE"
+            sr["enhancement_rites_of_war_other_models_active"] = True
+            sr["enhancement_rites_of_war_other_models_bonus"] = int(oc_bonus)
+            sr["enhancement_rites_of_war_other_models_expires_phase"] = phase_name
+            source_member.special_rules = sr
+            ability_name = str(ctx.get("ability_name", "") or "Rites of War").strip() or "Rites of War"
+            root.mark_unit_once_per_battle_used(once_key, ability_name=ability_name)
             return
 
         if ability_key == "desperate_devotion":

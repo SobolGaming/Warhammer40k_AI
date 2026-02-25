@@ -10146,6 +10146,153 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         if game is not None and hasattr(game, "request_decision"):
             game.request_decision(req)
         return None
+    if ability == "fear_made_manifest":
+        payload = _option_payload(request, result)
+        target_val = payload.get("target_unit_id", payload.get("unit_id", ctx.get("target_unit_id")))
+        target_unit = resolve_unit(game, target_val)
+        if target_unit is None:
+            return None
+        sr = getattr(target_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        pending = sr.get("fear_made_manifest_pending")
+        ability_name = str(ctx.get("ability_name", "") or "Fear Made Manifest (Aura)").strip() or "Fear Made Manifest (Aura)"
+        if isinstance(pending, dict):
+            ability_name = str(pending.get("ability_name", "") or ability_name).strip() or ability_name
+        source_root = resolve_unit(
+            game,
+            (pending or {}).get("source_unit_id") if isinstance(pending, dict) else None,
+        )
+        if source_root is None:
+            source_root = resolve_unit(game, ctx.get("source_unit_id"))
+        source_member = resolve_unit(
+            game,
+            (pending or {}).get("source_member_unit_id") if isinstance(pending, dict) else None,
+        )
+        source_sr = getattr(source_member, "special_rules", None) if source_member is not None else None
+        if not isinstance(source_sr, dict):
+            source_sr = {}
+        once_key = str(
+            payload.get("once_key")
+            or ctx.get("once_key")
+            or ((pending or {}).get("once_key") if isinstance(pending, dict) else "")
+            or source_sr.get("enhancement_fear_made_manifest_once_key")
+            or "fear_made_manifest"
+        ).strip().lower()
+        if not once_key:
+            once_key = "fear_made_manifest"
+        once_roll = str(
+            payload.get("destroy_count_roll")
+            or ((pending or {}).get("once_roll") if isinstance(pending, dict) else "")
+            or source_sr.get("enhancement_fear_made_manifest_once_roll")
+            or "D3"
+        ).strip().upper()
+        if not once_roll:
+            once_roll = "D3"
+        use_once = bool(payload.get("use_once_per_battle", False))
+        can_use_once = bool((pending or {}).get("can_use_once", False)) if isinstance(pending, dict) else False
+        destroy_count = 1
+        try:
+            requested = int(payload.get("destroy_count", 0) or 0)
+        except Exception:
+            requested = 0
+        if requested > 0:
+            destroy_count = int(requested)
+        if use_once and can_use_once and source_root is not None and once_key:
+            has_used = getattr(source_root, "has_used_unit_once_per_battle", None)
+            already_used = bool(has_used(once_key)) if callable(has_used) else False
+            if not already_used:
+                try:
+                    from ...utility.dice import get_roll
+
+                    rolled_count = int(get_roll(once_roll) or 0)
+                except Exception:
+                    rolled_count = 0
+                destroy_count = int(max(1, rolled_count))
+                mark_used = getattr(source_root, "mark_unit_once_per_battle_used", None)
+                if callable(mark_used):
+                    mark_used(once_key, ability_name=ability_name)
+
+        sr.pop("fear_made_manifest_pending", None)
+        target_unit.special_rules = sr
+        try:
+            models = list(target_unit.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(target_unit, "models", []) or [])
+        models = [m for m in models if getattr(m, "is_alive", True)]
+        try:
+            models.sort(key=lambda m: str(get_entity_id(m)))
+        except Exception:
+            pass
+        if not models:
+            return None
+        destroy_count = max(1, min(int(destroy_count), len(models)))
+        if len(models) == 1:
+            try:
+                models[0].die(game_map=getattr(game, "map", None))
+            except Exception:
+                pass
+            try:
+                player = getattr(getattr(target_unit, "get_parent_army", lambda: None)(), "player", None)
+            except Exception:
+                player = None
+            try:
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"{ability_name}: {getattr(target_unit, 'name', 'Unit')} loses {getattr(models[0], 'name', 'a model')}.",
+                )
+            except Exception:
+                pass
+            return None
+
+        from ...engine.decision_kinds import DECISION_SELECT_TARGET_MODEL
+        from ...engine.decisions import DecisionOption, DecisionRequest
+
+        queue = getattr(game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_SELECT_TARGET_MODEL:
+                    continue
+                ctx_req = dict(getattr(req, "context", {}) or {})
+                if (
+                    str(ctx_req.get("selection_kind", "")) == "fear_made_manifest_destroy"
+                    and str(ctx_req.get("target_unit_id", "")) == str(get_entity_id(target_unit))
+                ):
+                    return None
+
+        options = []
+        for model in models:
+            label = str(getattr(model, "name", "Model") or "Model")
+            options.append(DecisionOption.create(label, payload={"model_id": get_entity_id(model)}))
+        if not options:
+            return None
+        try:
+            target_player = getattr(target_unit.get_parent_army(), "player", None)
+        except Exception:
+            target_player = None
+        source_unit_id = str(
+            (pending or {}).get("source_unit_id") if isinstance(pending, dict) else ctx.get("source_unit_id")
+            or ctx.get("source_unit_id")
+            or ""
+        )
+        ctx_request = {
+            "selection_kind": "fear_made_manifest_destroy",
+            "target_unit_id": get_entity_id(target_unit),
+            "source_unit_id": source_unit_id,
+            "ability_name": ability_name,
+            "destroy_remaining": int(destroy_count),
+        }
+        req = DecisionRequest.create(
+            DECISION_SELECT_TARGET_MODEL,
+            f"{ability_name}: select a model to destroy ({int(destroy_count)} remaining).",
+            player_id=getattr(target_player, "id", None),
+            options=options,
+            context=ctx_request,
+        )
+        if game is not None and hasattr(game, "request_decision"):
+            game.request_decision(req)
+        return None
     if ability == "curse_of_walking_pox":
         payload = _option_payload(request, result)
         source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))

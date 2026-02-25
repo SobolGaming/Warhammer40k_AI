@@ -416,6 +416,53 @@ class WargearProfile:
             return int(wounded_bonus)
         return int(base_bonus)
 
+    def _imperiums_sword_other_models_bonus(self, attacker: 'Model') -> int:
+        unit = getattr(attacker, "parent_unit", None)
+        if unit is None:
+            return 0
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return 0
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        phase_name = self._current_phase_name(attacker)
+        attacker_id = str(getattr(attacker, "id", getattr(attacker, "_id", "")) or "")
+        best_bonus = 0
+        for member in list(members or []):
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_the_imperiums_sword", False)):
+                continue
+            if not bool(sr.get("enhancement_the_imperiums_sword_other_models_active", False)):
+                continue
+            expires_phase = str(sr.get("enhancement_the_imperiums_sword_other_models_expires_phase", "") or "").strip().upper()
+            if expires_phase and (not phase_name or phase_name != expires_phase):
+                continue
+            bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "")
+            if bearer_id and attacker_id and bearer_id == attacker_id:
+                continue
+            if not bearer_id:
+                bearer = getattr(member, "_get_enhancement_bearer_model", lambda: None)()
+                if bearer is not None:
+                    fallback_bearer_id = str(getattr(bearer, "id", getattr(bearer, "_id", "")) or "")
+                    if fallback_bearer_id and fallback_bearer_id == attacker_id:
+                        continue
+            try:
+                bonus = int(sr.get("enhancement_the_imperiums_sword_other_models_bonus", 0) or 0)
+            except Exception:
+                bonus = 0
+            if bonus > best_bonus:
+                best_bonus = int(bonus)
+        return int(best_bonus)
+
     @staticmethod
     def _normalize_weapon_name_key(value: str) -> str:
         return re.sub(r"[^a-z0-9]+", "", str(value or "").strip().lower())
@@ -3938,6 +3985,18 @@ class WargearProfile:
                         Modifier(ModifierOp.ADD, int(bearer_bonus), source="enhancement:bearer_melee_attacks_add")
                     )
                     attack_result.attacks_special_modifiers.append(f"Enhancement bearer +{bearer_bonus}A (melee)")
+            imperiums_sword_other_bonus = int(self._imperiums_sword_other_models_bonus(attacker) or 0)
+            if imperiums_sword_other_bonus:
+                atk_mods.append(
+                    Modifier(
+                        ModifierOp.ADD,
+                        int(imperiums_sword_other_bonus),
+                        source="enhancement:the_imperiums_sword_other_models_attacks_add",
+                    )
+                )
+                attack_result.attacks_special_modifiers.append(
+                    f"The Imperium's Sword +{imperiums_sword_other_bonus}A (other models)"
+                )
             through_suffering_bonus = self._through_suffering_bonus(attacker, sr)
             if through_suffering_bonus:
                 atk_mods.append(

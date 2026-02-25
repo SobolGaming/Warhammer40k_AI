@@ -17,6 +17,7 @@ from ..decision_kinds import (
     DECISION_SPLIT_ATTACKS,
 )
 from ..decisions import DecisionRequest, DecisionResult
+from ...utility.entity_ids import get_entity_id
 from ._helpers import find_option, is_skip_choice, resolve_model, resolve_unit, resolve_wargear, validate_option_choice
 
 
@@ -355,11 +356,54 @@ def _apply_select_model(game: object, request: DecisionRequest, result: Decision
     model = resolve_model(game, model_val)
     ctx = dict(getattr(request, "context", {}) or {})
     selection_kind = str(ctx.get("selection_kind", "") or "")
-    if selection_kind == "cankerblight_destroy" and model is not None:
+    if selection_kind in {"cankerblight_destroy", "fear_made_manifest_destroy"} and model is not None:
         try:
             model.die(game_map=getattr(game, "map", None))
         except Exception:
             pass
+        if selection_kind == "fear_made_manifest_destroy":
+            try:
+                remaining = int(ctx.get("destroy_remaining", 1) or 1)
+            except Exception:
+                remaining = 1
+            remaining = int(remaining) - 1
+            if remaining > 0:
+                target_unit = resolve_unit(game, ctx.get("target_unit_id"))
+                if target_unit is not None:
+                    try:
+                        models = list(target_unit.get_attached_unit_models() or [])
+                    except Exception:
+                        models = list(getattr(target_unit, "models", []) or [])
+                    models = [m for m in models if getattr(m, "is_alive", True)]
+                    try:
+                        models.sort(key=lambda m: str(get_entity_id(m)))
+                    except Exception:
+                        pass
+                    if models:
+                        from ..decisions import DecisionOption
+
+                        options = [
+                            DecisionOption.create(
+                                str(getattr(next_model, "name", "Model") or "Model"),
+                                payload={"model_id": get_entity_id(next_model)},
+                            )
+                            for next_model in models
+                        ]
+                        if options:
+                            ability_name = str(ctx.get("ability_name", "") or "Fear Made Manifest (Aura)").strip()
+                            if not ability_name:
+                                ability_name = "Fear Made Manifest (Aura)"
+                            followup_ctx = dict(ctx)
+                            followup_ctx["destroy_remaining"] = int(remaining)
+                            req = DecisionRequest.create(
+                                DECISION_SELECT_TARGET_MODEL,
+                                f"{ability_name}: select a model to destroy ({int(remaining)} remaining).",
+                                player_id=getattr(request, "player_id", None),
+                                options=options,
+                                context=followup_ctx,
+                            )
+                            if game is not None and hasattr(game, "request_decision"):
+                                game.request_decision(req)
     return model
 
 
