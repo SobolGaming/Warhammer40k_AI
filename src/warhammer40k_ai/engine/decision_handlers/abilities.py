@@ -4871,6 +4871,60 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
             if not bool(in_range_fn(model, target_root, range_value=float(range_inches))):
                 return ("Spirit Conclave target is out of range.",)
         return ()
+    if ability in (
+        "space_marines_target_augury_web_target",
+        "space_marines_master_of_machine_war_target",
+    ):
+        if is_skip_choice(request, result):
+            return ("This Ironstorm Spearhead enhancement selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Ironstorm Spearhead source unit was not found.",)
+        source_army = getattr(source_unit, "get_parent_army", lambda: None)()
+        sm_mgr = getattr(source_army, "space_marines_detachments", None) if source_army is not None else None
+        if sm_mgr is None or not bool(getattr(sm_mgr, "is_ironstorm_spearhead", lambda: False)()):
+            return ("This selection requires a Space Marines Ironstorm Spearhead army.",)
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict):
+            source_sr = {}
+        if ability == "space_marines_target_augury_web_target" and not bool(source_sr.get("enhancement_target_augury_web")):
+            return ("Source unit does not have Target Augury Web.",)
+        if ability == "space_marines_master_of_machine_war_target" and not bool(
+            source_sr.get("enhancement_master_of_machine_war")
+        ):
+            return ("Source unit does not have Master of Machine War.",)
+
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"))
+        if target_unit is None:
+            return ("Ironstorm Spearhead target unit was not found.",)
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        if source_root is None or target_root is None:
+            return ("Ironstorm Spearhead source/target root was not found.",)
+        if source_root.get_parent_army() is not target_root.get_parent_army():
+            return ("Ironstorm Spearhead target must be a friendly unit.",)
+        if not bool(getattr(sm_mgr, "attached_unit_is_adeptus_astartes", lambda _u: False)(target_root)):
+            return ("Ironstorm Spearhead target must be a friendly ADEPTUS ASTARTES unit.",)
+        is_vehicle = False
+        try:
+            is_vehicle = bool(target_root.has_any_keyword("VEHICLE") or target_root.has_keyword("VEHICLE"))
+        except Exception:
+            is_vehicle = False
+        if not is_vehicle:
+            return ("Ironstorm Spearhead target must have the VEHICLE keyword.",)
+        model = resolve_model(game, ctx.get("model_id"))
+        if model is None:
+            return ("Ironstorm Spearhead bearer model was not found.",)
+        try:
+            range_inches = float(ctx.get("range", 6) or 6)
+        except (TypeError, ValueError):
+            range_inches = 6.0
+        in_range_fn = getattr(game, "_unit_within_range_of_model", None)
+        if callable(in_range_fn):
+            if not bool(in_range_fn(model, target_root, range_value=float(range_inches))):
+                return ("Ironstorm Spearhead target is out of range.",)
+        return ()
     if ability == "aeldari_lucid_eye_fate_die":
         source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
         if source_unit is None:
@@ -9203,6 +9257,43 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                     player=player,
                     ability_name=ability_name,
                     min_attacker_distance_for_cover=int(threshold),
+                )
+            return None
+        return None
+    if ability in (
+        "space_marines_target_augury_web_target",
+        "space_marines_master_of_machine_war_target",
+    ):
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"))
+        if source_unit is None or target_unit is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            try:
+                player = getattr(source_unit.get_parent_army(), "player", None)
+            except Exception:
+                player = None
+        ability_name = str(ctx.get("ability_name", "") or "Ironstorm Spearhead enhancement").strip() or "Ironstorm Spearhead enhancement"
+        if ability == "space_marines_target_augury_web_target":
+            apply_fn = getattr(game, "_apply_space_marines_target_augury_web_effect", None)
+            if callable(apply_fn):
+                return apply_fn(
+                    source_unit=source_unit,
+                    target_unit=target_unit,
+                    player=player,
+                    ability_name=ability_name,
+                )
+            return None
+        if ability == "space_marines_master_of_machine_war_target":
+            apply_fn = getattr(game, "_apply_space_marines_master_of_machine_war_effect", None)
+            if callable(apply_fn):
+                return apply_fn(
+                    source_unit=source_unit,
+                    target_unit=target_unit,
+                    player=player,
+                    ability_name=ability_name,
                 )
             return None
         return None

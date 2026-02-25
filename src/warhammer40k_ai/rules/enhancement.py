@@ -423,6 +423,9 @@ class Enhancement:
         is_anvil_siege_force = bool(
             sm_mgr and getattr(sm_mgr, "is_anvil_siege_force", lambda: False)()
         )
+        is_ironstorm_spearhead = bool(
+            sm_mgr and getattr(sm_mgr, "is_ironstorm_spearhead", lambda: False)()
+        )
         is_bastion_task_force = bool(
             sm_mgr and getattr(sm_mgr, "is_bastion_task_force", lambda: False)()
         )
@@ -1257,6 +1260,69 @@ class Enhancement:
             unit.special_rules["enhancement_architect_of_war_source"] = "Architect of War"
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "target augury web" or enh_id == "000008478002":
+            if not is_ironstorm_spearhead:
+                return
+            unit.special_rules["enhancement_target_augury_web"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            range_inches = _coerce_int(params.get("range", 6) or 6, default=6)
+            unit.special_rules["enhancement_target_augury_web_range"] = int(max(1, range_inches))
+            unit.special_rules["enhancement_target_augury_web_source"] = "Target Augury Web"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_target_augury_web_bearer_model_id"] = bearer_id
+
+        if name == "the flesh is weak" or enh_id == "000008478003":
+            if not is_ironstorm_spearhead:
+                return
+            unit.special_rules["enhancement_the_flesh_is_weak"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            fnp = _coerce_int(params.get("feel_no_pain", 4) or 4, default=4)
+            _ensure_enhancement_fnp_entry(
+                unit,
+                int(max(2, fnp)),
+                source="The Flesh is Weak",
+                tag="the_flesh_is_weak_bearer",
+                source_model_id=bearer_id,
+            )
+            unit.special_rules["enhancement_the_flesh_is_weak_fnp"] = int(max(2, fnp))
+            unit.special_rules["enhancement_the_flesh_is_weak_source"] = "The Flesh is Weak"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_the_flesh_is_weak_bearer_model_id"] = bearer_id
+
+        if name == "adept of the omnissiah" or enh_id == "000008478004":
+            if not is_ironstorm_spearhead:
+                return
+            unit.special_rules["enhancement_adept_of_the_omnissiah"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            range_inches = _coerce_int(params.get("range", 6) or 6, default=6)
+            usage = str(params.get("usage", "battle_round") or "battle_round").strip().lower()
+            if usage not in {"battle_round", "battle"}:
+                usage = "battle_round"
+            unit.special_rules["enhancement_adept_of_the_omnissiah_range"] = int(max(1, range_inches))
+            unit.special_rules["enhancement_adept_of_the_omnissiah_usage"] = usage
+            unit.special_rules["enhancement_adept_of_the_omnissiah_source"] = "Adept of the Omnissiah"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_adept_of_the_omnissiah_bearer_model_id"] = bearer_id
+
+        if name == "master of machine war" or enh_id == "000008478005":
+            if not is_ironstorm_spearhead:
+                return
+            unit.special_rules["enhancement_master_of_machine_war"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            range_inches = _coerce_int(params.get("range", 6) or 6, default=6)
+            unit.special_rules["enhancement_master_of_machine_war_range"] = int(max(1, range_inches))
+            unit.special_rules["enhancement_master_of_machine_war_source"] = "Master of Machine War"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_master_of_machine_war_bearer_model_id"] = bearer_id
 
         if name == "eye of the primarch" or enh_id == "000010676002":
             if not is_bastion_task_force:

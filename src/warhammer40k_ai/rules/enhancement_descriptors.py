@@ -1529,6 +1529,60 @@ _SPACE_MARINES_ANVIL_SIEGE_FORCE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPACE_MARINES_ANVIL_SIEGE_FORCE_DESCRIPTORS.values()
 }
 
+_SPACE_MARINES_IRONSTORM_SPEARHEAD_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008478002": EnhancementToolDescriptor(
+        enhancement_id="000008478002",
+        name="Target Augury Web",
+        timing="command_phase",
+        target="friendly_adeptus_astartes_vehicle_model_within_range_of_bearer",
+        duration="until_start_of_next_command_phase",
+        effect="target_vehicle_weapons_gain_lethal_hits_until_next_command_phase",
+        effect_params={
+            "range": 6,
+            "required_target_keywords": ("VEHICLE",),
+        },
+    ),
+    "000008478003": EnhancementToolDescriptor(
+        enhancement_id="000008478003",
+        name="The Flesh is Weak",
+        timing="passive",
+        target="bearer",
+        duration="constant",
+        effect="bearer_fnp",
+        effect_params={
+            "feel_no_pain": 4,
+        },
+    ),
+    "000008478004": EnhancementToolDescriptor(
+        enhancement_id="000008478004",
+        name="Adept of the Omnissiah",
+        timing="on_failed_save_for_friendly_vehicle_model_within_range_of_bearer",
+        target="friendly_adeptus_astartes_vehicle_model_within_range_of_bearer",
+        duration="instant_once_per_battle_round",
+        effect="first_failed_save_damage_set_zero_for_target_vehicle_model",
+        effect_params={
+            "range": 6,
+            "usage": "battle_round",
+        },
+    ),
+    "000008478005": EnhancementToolDescriptor(
+        enhancement_id="000008478005",
+        name="Master of Machine War",
+        timing="command_phase",
+        target="friendly_adeptus_astartes_vehicle_model_within_range_of_bearer",
+        duration="until_start_of_next_command_phase",
+        effect="target_vehicle_can_shoot_after_advance_or_fall_back_until_next_command_phase",
+        effect_params={
+            "range": 6,
+            "required_target_keywords": ("VEHICLE",),
+        },
+    ),
+}
+
+_SPACE_MARINES_IRONSTORM_SPEARHEAD_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPACE_MARINES_IRONSTORM_SPEARHEAD_DESCRIPTORS.values()
+}
+
 _SPACE_MARINES_BASTION_TASK_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010676002": EnhancementToolDescriptor(
         enhancement_id="000010676002",
@@ -2414,6 +2468,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPACE_MARINES_ANVIL_SIEGE_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPACE_MARINES_IRONSTORM_SPEARHEAD_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPACE_MARINES_BASTION_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -2493,6 +2550,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SPACE_MARINES_FIRST_COMPANY_TASK_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_ANGELIC_INHERITORS_BY_NAME.get(key)
         or _SPACE_MARINES_ANVIL_SIEGE_FORCE_BY_NAME.get(key)
+        or _SPACE_MARINES_IRONSTORM_SPEARHEAD_BY_NAME.get(key)
         or _SPACE_MARINES_BASTION_TASK_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_BLADE_OF_ULTRAMAR_BY_NAME.get(key)
         or _SPACE_MARINES_CHAMPIONS_OF_FENRIS_BY_NAME.get(key)

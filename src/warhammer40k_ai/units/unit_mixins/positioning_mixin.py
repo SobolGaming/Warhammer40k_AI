@@ -4041,6 +4041,11 @@ class PositioningMixin:
                 source = str(sr.get("aeldari_fate_inescapable_source", "") or "FATE INESCAPABLE").strip()
                 source = source or "FATE INESCAPABLE"
                 rules.append({"attack_type": "ranged", "keyword": "IGNORES COVER", "source": source})
+        if isinstance(sr, dict) and bool(sr.get("enhancement_target_augury_web_active")):
+            source_name = str(sr.get("enhancement_target_augury_web_source", "") or "Target Augury Web").strip()
+            if not source_name:
+                source_name = "Target Augury Web"
+            rules.append({"attack_type": "any", "keyword": "LETHAL HITS", "source": source_name})
         if not rules:
             return {}
         if target is None:

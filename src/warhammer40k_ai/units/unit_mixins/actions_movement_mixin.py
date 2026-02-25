@@ -11122,6 +11122,12 @@ class ActionsMovementMixin:
         except Exception:
             pass
         try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get("enhancement_master_of_machine_war_active")):
+                return True
+        except Exception:
+            pass
+        try:
             if self._thousand_sons_rubricae_stratagem_active(
                 active_key="aeldari_time_to_strike_active",
                 owner_key="aeldari_time_to_strike_turn_owner",
@@ -11343,6 +11349,12 @@ class ActionsMovementMixin:
                         return True
                 return False
             return True
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get("enhancement_master_of_machine_war_active")):
+                return True
+        except Exception:
+            pass
         try:
             army = self.get_parent_army()
             mgr = getattr(army, "chaos_space_marines_detachments", None) if army is not None else None
