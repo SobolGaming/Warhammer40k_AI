@@ -409,6 +409,32 @@ class PositioningMixin:
         self._ability_cache[cache_key] = bool(found)
         return bool(found)
 
+    def has_wolf_touched(self) -> bool:
+        """True if this unit has the Wolf-touched enhancement."""
+        cache_key = "wolf_touched"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache[cache_key])
+        found = False
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("enhancement_wolf_touched"):
+                found = True
+        except Exception:
+            found = False
+        if not found:
+            try:
+                enh = getattr(self, "enhancement", None)
+                name = str(getattr(enh, "name", "") or "").strip().lower().replace("\u2019", "'").replace("\u2018", "'")
+                enh_id = str(getattr(enh, "id", "") or "").strip()
+                if name == "wolf-touched" or enh_id == "000010269002":
+                    found = True
+            except Exception:
+                found = False
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = bool(found)
+        return bool(found)
+
     def _attached_unit_has_enhancement_flag(
         self,
         flag_key: str,
@@ -999,6 +1025,60 @@ class PositioningMixin:
         if not self._exalted_patron_is_bearer():
             return False
         return self._exalted_patron_bodyguard_allowed(bodyguard)
+
+    def _wolf_touched_bodyguard_allowed(self, bodyguard) -> bool:
+        if bodyguard is None:
+            return False
+        has_wulfen_keyword = False
+        has_infantry_keyword = False
+        try:
+            has_wulfen_keyword = bool(bodyguard.has_any_keyword("WULFEN"))
+        except Exception:
+            has_wulfen_keyword = False
+        try:
+            has_infantry_keyword = bool(bodyguard.has_any_keyword("INFANTRY"))
+        except Exception:
+            has_infantry_keyword = False
+        if has_wulfen_keyword and has_infantry_keyword:
+            return True
+        try:
+            name = self._normalize_attached_unit_name(getattr(bodyguard, "name", ""))
+        except Exception:
+            name = ""
+        if "wulfen" not in name:
+            return False
+        if "dreadnought" in name:
+            return False
+        if has_infantry_keyword:
+            return True
+        # Fallback for unit records where INFANTRY keyword may not be hydrated.
+        return True
+
+    def _wolf_touched_is_bearer(self) -> bool:
+        if not self.has_wolf_touched():
+            return False
+        if not bool(getattr(self, "is_leader", False)):
+            return False
+        try:
+            army = self.get_parent_army()
+        except Exception:
+            army = None
+        sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+        if sm_mgr is None:
+            return False
+        try:
+            if not sm_mgr.is_saga_of_the_beastslayer():
+                return False
+        except Exception:
+            return False
+        return True
+
+    def _wolf_touched_can_attach_to(self, bodyguard) -> bool:
+        if bodyguard is None:
+            return False
+        if not self._wolf_touched_is_bearer():
+            return False
+        return self._wolf_touched_bodyguard_allowed(bodyguard)
 
     def _disciple_of_khorne_active_leaders(self) -> list["Unit"]:
         try:
@@ -7069,6 +7149,45 @@ class PositioningMixin:
             self._ability_cache["redeploy"] = result
             if filters:
                 self._ability_cache["redeploy_filters"] = list(filters)
+            self._ability_cache["redeploy_ability_name"] = ability_name
+            self._ability_cache["redeploy_requires_source_on_battlefield"] = False
+            self._ability_cache["redeploy_allow_embarked_transport_on_battlefield"] = False
+            return result
+
+        if isinstance(sr, dict) and bool(sr.get("enhancement_hunters_guile", False)):
+            try:
+                count = int(sr.get("enhancement_hunters_guile_max_units", 3) or 3)
+            except Exception:
+                count = 3
+            if count <= 0:
+                count = 1
+            can_place_in_reserves = bool(sr.get("enhancement_hunters_guile_can_place_in_reserves", True))
+            raw_any_groups = list(sr.get("enhancement_hunters_guile_filter_any_groups", []) or [])
+            filter_any_groups: list[list[str]] = []
+            for raw_group in raw_any_groups:
+                if isinstance(raw_group, str):
+                    raw_values = [raw_group]
+                else:
+                    raw_values = list(raw_group or [])
+                group: list[str] = []
+                for value in raw_values:
+                    keyword = str(value or "").strip().upper()
+                    if not keyword or keyword in group:
+                        continue
+                    group.append(keyword)
+                if group:
+                    filter_any_groups.append(group)
+            ability_name = (
+                str(sr.get("enhancement_hunters_guile_source", "") or "Hunter's Guile")
+                .strip()
+                or "Hunter's Guile"
+            )
+            result = (True, int(count), bool(can_place_in_reserves))
+            if not hasattr(self, "_ability_cache"):
+                self._ability_cache = {}
+            self._ability_cache["redeploy"] = result
+            if filter_any_groups:
+                self._ability_cache["redeploy_filter_any_groups"] = [list(group) for group in filter_any_groups]
             self._ability_cache["redeploy_ability_name"] = ability_name
             self._ability_cache["redeploy_requires_source_on_battlefield"] = False
             self._ability_cache["redeploy_allow_embarked_transport_on_battlefield"] = False

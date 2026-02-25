@@ -496,6 +496,80 @@ class GamePhaseHandlersMixin:
                     except Exception:
                         pass
 
+                    # Saga of the Beastslayer: Elder's Guidance (once per battle, start of Fight phase).
+                    try:
+                        if pname == "FIGHT_PHASE":
+                            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                            can_activate_fn = (
+                                getattr(sm_mgr, "saga_of_the_beastslayer_elders_guidance_can_activate", None)
+                                if sm_mgr is not None
+                                else None
+                            )
+                            can_activate = bool(can_activate_fn(root, game=self)) if callable(can_activate_fn) else False
+                            if can_activate:
+                                find_source = getattr(self, "_attached_member_with_enhancement_flag", None)
+                                if callable(find_source):
+                                    _source_root, source_member, source_sr = find_source(root, "enhancement_elders_guidance")
+                                else:
+                                    source_member = root
+                                    source_sr = getattr(root, "special_rules", None)
+                                if source_member is not None and isinstance(source_sr, dict):
+                                    get_bearer = getattr(source_member, "_get_enhancement_bearer_model", None)
+                                    bearer = get_bearer() if callable(get_bearer) else None
+                                    once_key = str(
+                                        source_sr.get("enhancement_elders_guidance_once_key", "elders_guidance")
+                                        or "elders_guidance"
+                                    ).strip().lower()
+                                    if not once_key:
+                                        once_key = "elders_guidance"
+                                    if not root.has_used_unit_once_per_battle(once_key):
+                                        try:
+                                            ap_bonus = int(source_sr.get("enhancement_elders_guidance_ap_bonus", 1) or 1)
+                                        except Exception:
+                                            ap_bonus = 1
+                                        if ap_bonus > 0:
+                                            unit_id = maybe_entity_id(root)
+                                            source_member_unit_id = maybe_entity_id(source_member)
+                                            model_id = maybe_entity_id(bearer) if bearer is not None else ""
+                                            if unit_id and source_member_unit_id:
+                                                ability_name = (
+                                                    str(
+                                                        source_sr.get(
+                                                            "enhancement_elders_guidance_source",
+                                                            "Elder's Guidance",
+                                                        )
+                                                        or "Elder's Guidance"
+                                                    ).strip()
+                                                    or "Elder's Guidance"
+                                                )
+                                                self._queue_optional_ability_confirmation(
+                                                    player=p,
+                                                    ability_key="elders_guidance",
+                                                    ability_name=ability_name,
+                                                    message=f"Activate {ability_name} for {getattr(root, 'name', 'Unit')}?",
+                                                    context={
+                                                        "ability_name": ability_name,
+                                                        "phase": pname.replace("_", " ").title(),
+                                                        "unit": getattr(root, "name", "") or "",
+                                                        "unit_id": unit_id,
+                                                        "source_unit_id": unit_id,
+                                                        "source_member_unit_id": source_member_unit_id,
+                                                        "model": getattr(bearer, "name", "") or "",
+                                                        "model_id": model_id,
+                                                        "ability_key": once_key,
+                                                        "melee_ap_bonus": int(ap_bonus),
+                                                    },
+                                                    payload={
+                                                        "unit_id": unit_id,
+                                                        "source_member_unit_id": source_member_unit_id,
+                                                        "ability_key": once_key,
+                                                        "melee_ap_bonus": int(ap_bonus),
+                                                    },
+                                                    instance_key=f"{unit_id}:{once_key}:{pname}",
+                                                )
+                    except Exception:
+                        pass
+
                     # Angelic Inheritors: Troubling Visions (once per battle, your Command phase).
                     find_source = getattr(self, "_attached_member_with_enhancement_flag", None)
                     source_member = None
@@ -10721,6 +10795,13 @@ class GamePhaseHandlersMixin:
                     for k in (
                         "enhancement_rites_of_war_other_models_active",
                         "enhancement_rites_of_war_other_models_expires_phase",
+                    ):
+                        sr.pop(k, None)
+                exp = str(sr.get("enhancement_elders_guidance_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "enhancement_elders_guidance_active",
+                        "enhancement_elders_guidance_expires_phase",
                     ):
                         sr.pop(k, None)
                 exp = str(sr.get("seductive_gambit_expires_phase", "") or "").strip().upper()

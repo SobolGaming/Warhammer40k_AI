@@ -2026,6 +2026,68 @@ _SPACE_MARINES_CHAMPIONS_OF_FENRIS_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPACE_MARINES_CHAMPIONS_OF_FENRIS_DESCRIPTORS.values()
 }
 
+_SPACE_MARINES_SAGA_OF_THE_BEASTSLAYER_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010269002": EnhancementToolDescriptor(
+        enhancement_id="000010269002",
+        name="Wolf-touched",
+        timing="passive_and_declare_battle_formations_attachment_override",
+        target="bearer_and_bearer_attachment_eligibility",
+        duration="constant",
+        effect="bearer_move_bonus_and_attach_to_wulfen_infantry",
+        effect_params={
+            "bearer_move_bonus": 2,
+            "attach_override_target_keywords_all": ("WULFEN", "INFANTRY"),
+        },
+    ),
+    "000010269003": EnhancementToolDescriptor(
+        enhancement_id="000010269003",
+        name="Hunter's Guile",
+        timing="post_deployment",
+        target="friendly_units",
+        duration="redeploy_step",
+        effect="redeploy_units",
+        effect_params={
+            "max_units": 3,
+            "can_place_in_reserves": True,
+            "redeploy_filter_any_groups": (
+                ("THUNDERWOLF CAVALRY",),
+                ("WULFEN",),
+                ("BLOOD CLAWS",),
+            ),
+        },
+    ),
+    "000010269004": EnhancementToolDescriptor(
+        enhancement_id="000010269004",
+        name="Elder's Guidance",
+        timing="start_of_fight_phase_optional_once_per_battle_if_bearer_is_leading_blood_claws",
+        target="bearer_led_blood_claws_unit",
+        duration="until_end_of_phase_once_per_battle",
+        effect="once_per_battle_start_of_fight_phase_melee_ap_bonus_for_bearer_led_blood_claws_unit",
+        once_per_battle=True,
+        effect_params={
+            "once_per_battle_key": "elders_guidance",
+            "melee_ap_bonus": 1,
+            "requires_bearer_leading_blood_claws": True,
+        },
+    ),
+    "000010269005": EnhancementToolDescriptor(
+        enhancement_id="000010269005",
+        name="Helm of the Beastslayer",
+        timing="when_targeted_by_character_monster_vehicle_attacks",
+        target="attacks_targeting_bearer_unit",
+        duration="constant",
+        effect="ap_worsen_against_character_monster_vehicle_attacks_targeting_bearer_unit",
+        effect_params={
+            "ap_worsen": 1,
+            "attacker_keywords_any": ("CHARACTER", "MONSTER", "VEHICLE"),
+        },
+    ),
+}
+
+_SPACE_MARINES_SAGA_OF_THE_BEASTSLAYER_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPACE_MARINES_SAGA_OF_THE_BEASTSLAYER_DESCRIPTORS.values()
+}
+
 _SPACE_MARINES_COMPANY_OF_HUNTERS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008778002": EnhancementToolDescriptor(
         enhancement_id="000008778002",
@@ -2776,6 +2838,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPACE_MARINES_CHAMPIONS_OF_FENRIS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPACE_MARINES_SAGA_OF_THE_BEASTSLAYER_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPACE_MARINES_COMPANY_OF_HUNTERS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -2855,6 +2920,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SPACE_MARINES_BASTION_TASK_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_BLADE_OF_ULTRAMAR_BY_NAME.get(key)
         or _SPACE_MARINES_CHAMPIONS_OF_FENRIS_BY_NAME.get(key)
+        or _SPACE_MARINES_SAGA_OF_THE_BEASTSLAYER_BY_NAME.get(key)
         or _SPACE_MARINES_COMPANY_OF_HUNTERS_BY_NAME.get(key)
         or _SPACE_MARINES_COMPANIONS_OF_VEHEMENCE_BY_NAME.get(key)
         or _SPACE_MARINES_EMPERORS_SHIELD_BY_NAME.get(key)

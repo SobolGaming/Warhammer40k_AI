@@ -3031,6 +3031,18 @@ class WargearProfile:
                     )
                     if bonus:
                         ap_val -= int(bonus)
+                if sm_mgr is not None and callable(
+                    getattr(sm_mgr, "saga_of_the_beastslayer_elders_guidance_melee_ap_bonus", None)
+                ):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    bonus, _source = sm_mgr.saga_of_the_beastslayer_elders_guidance_melee_ap_bonus(
+                        attacker,
+                        target,
+                        weapon_profile=self,
+                        game=game,
+                    )
+                    if bonus:
+                        ap_val -= int(bonus)
         except Exception:
             pass
         try:
@@ -3395,6 +3407,20 @@ class WargearProfile:
                         except Exception:
                             continue
                     ap_val += int(self._bastion_shield_ap_worsen(attacker, target_root) or 0)
+                    if attacker is not None:
+                        target_army = target_root.get_parent_army() if target_root is not None else None
+                        sm_mgr = getattr(target_army, "space_marines_detachments", None) if target_army is not None else None
+                        if sm_mgr is not None and callable(
+                            getattr(sm_mgr, "saga_of_the_beastslayer_helm_of_the_beastslayer_ap_worsen", None)
+                        ):
+                            bonus, _source = sm_mgr.saga_of_the_beastslayer_helm_of_the_beastslayer_ap_worsen(
+                                attacker,
+                                target_root,
+                                weapon_profile=self,
+                                game=getattr(getattr(target_army, "player", None), "game", None),
+                            )
+                            if bonus:
+                                ap_val += int(bonus)
         except Exception:
             pass
         try:

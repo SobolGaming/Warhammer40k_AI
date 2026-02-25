@@ -450,6 +450,9 @@ class Enhancement:
         is_champions_of_fenris = bool(
             sm_mgr and getattr(sm_mgr, "is_champions_of_fenris", lambda: False)()
         )
+        is_saga_of_the_beastslayer = bool(
+            sm_mgr and getattr(sm_mgr, "is_saga_of_the_beastslayer", lambda: False)()
+        )
         is_company_of_hunters = bool(
             sm_mgr and getattr(sm_mgr, "is_company_of_hunters", lambda: False)()
         )
@@ -1951,6 +1954,117 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_longstrider_bearer_model_id"] = bearer_id
+
+        if name == "wolf-touched" or enh_id == "000010269002":
+            if not is_saga_of_the_beastslayer:
+                return
+            unit.special_rules["enhancement_wolf_touched"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            move_bonus = _coerce_int(params.get("bearer_move_bonus", 2) or 2, default=2)
+            move_bonus = int(max(0, move_bonus))
+            source_name = str(getattr(self, "name", "") or "Wolf-touched").strip() or "Wolf-touched"
+            unit.special_rules["enhancement_wolf_touched_bearer_move_bonus"] = int(move_bonus)
+            unit.special_rules["enhancement_wolf_touched_source"] = source_name
+            if move_bonus > 0 and bearer is not None:
+                effects = getattr(bearer, "_temporary_effects", None)
+                if not isinstance(effects, dict):
+                    effects = {}
+                    bearer._temporary_effects = effects
+                effects["enhancement_wolf_touched_move_bonus"] = {
+                    "movement_bonus": int(move_bonus),
+                    "movement_bonus_source": source_name,
+                }
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_wolf_touched_bearer_model_id"] = bearer_id
+            invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate_cache):
+                invalidate_cache()
+
+        if name in ("hunter's guile", "hunters guile") or enh_id == "000010269003":
+            if not is_saga_of_the_beastslayer:
+                return
+            unit.special_rules["enhancement_hunters_guile"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            max_units = _coerce_int(params.get("max_units", 3) or 3, default=3)
+            can_place_in_reserves = bool(params.get("can_place_in_reserves", True))
+            raw_any_groups = list(params.get("redeploy_filter_any_groups", ()) or ())
+            filter_any_groups: list[list[str]] = []
+            for raw_group in raw_any_groups:
+                if isinstance(raw_group, str):
+                    group_values = [raw_group]
+                else:
+                    group_values = list(raw_group or [])
+                normalized_group: list[str] = []
+                for keyword in group_values:
+                    norm_kw = str(keyword or "").strip().upper()
+                    if not norm_kw or norm_kw in normalized_group:
+                        continue
+                    normalized_group.append(norm_kw)
+                if normalized_group:
+                    filter_any_groups.append(normalized_group)
+            source_name = str(getattr(self, "name", "") or "Hunter's Guile").strip() or "Hunter's Guile"
+            unit.special_rules["enhancement_hunters_guile_max_units"] = int(max(1, max_units))
+            unit.special_rules["enhancement_hunters_guile_can_place_in_reserves"] = bool(can_place_in_reserves)
+            if filter_any_groups:
+                unit.special_rules["enhancement_hunters_guile_filter_any_groups"] = [
+                    list(group) for group in filter_any_groups
+                ]
+            unit.special_rules["enhancement_hunters_guile_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_hunters_guile_bearer_model_id"] = bearer_id
+            invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate_cache):
+                invalidate_cache()
+
+        if name in ("elder's guidance", "elders guidance") or enh_id == "000010269004":
+            if not is_saga_of_the_beastslayer:
+                return
+            unit.special_rules["enhancement_elders_guidance"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            once_key = str(params.get("once_per_battle_key", "elders_guidance") or "elders_guidance").strip().lower()
+            if not once_key:
+                once_key = "elders_guidance"
+            ap_bonus = _coerce_int(params.get("melee_ap_bonus", 1) or 1, default=1)
+            unit.special_rules["enhancement_elders_guidance_once_key"] = once_key
+            unit.special_rules["enhancement_elders_guidance_ap_bonus"] = int(max(0, ap_bonus))
+            unit.special_rules["enhancement_elders_guidance_requires_bearer_leading_blood_claws"] = bool(
+                params.get("requires_bearer_leading_blood_claws", True)
+            )
+            unit.special_rules["enhancement_elders_guidance_source"] = (
+                str(getattr(self, "name", "") or "Elder's Guidance").strip() or "Elder's Guidance"
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_elders_guidance_bearer_model_id"] = bearer_id
+
+        if name == "helm of the beastslayer" or enh_id == "000010269005":
+            if not is_saga_of_the_beastslayer:
+                return
+            unit.special_rules["enhancement_helm_of_the_beastslayer"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            ap_worsen = _coerce_int(params.get("ap_worsen", 1) or 1, default=1)
+            attacker_keywords: list[str] = []
+            for value in list(params.get("attacker_keywords_any", ("CHARACTER", "MONSTER", "VEHICLE")) or []):
+                kw = str(value or "").strip().upper()
+                if not kw or kw in attacker_keywords:
+                    continue
+                attacker_keywords.append(kw)
+            unit.special_rules["enhancement_helm_of_the_beastslayer_ap_worsen"] = int(max(0, ap_worsen))
+            if attacker_keywords:
+                unit.special_rules["enhancement_helm_of_the_beastslayer_attacker_keywords_any"] = attacker_keywords
+            unit.special_rules["enhancement_helm_of_the_beastslayer_source"] = (
+                str(getattr(self, "name", "") or "Helm of the Beastslayer").strip()
+                or "Helm of the Beastslayer"
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_helm_of_the_beastslayer_bearer_model_id"] = bearer_id
 
         if name in ("master-crafted weapon", "master crafted weapon") or enh_id == "000008778002":
             if not is_company_of_hunters:

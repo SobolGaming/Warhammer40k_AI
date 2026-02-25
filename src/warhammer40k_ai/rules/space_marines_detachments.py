@@ -1283,6 +1283,237 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False, ""
         return True, "Legendary Slayers"
 
+    def _saga_of_the_beastslayer_enhancement_source_member(self, unit, flag_key: str):
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return None, None, None
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        members.sort(key=lambda member: str(get_entity_id(member) or ""))
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get(flag_key, False)):
+                return root, member, sr
+        return root, None, None
+
+    @staticmethod
+    def _saga_of_the_beastslayer_resolve_bearer_model(member, sr):
+        bearer = getattr(member, "_get_enhancement_bearer_model", lambda: None)()
+        if bearer is None:
+            bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
+            if bearer_id:
+                for model in list(getattr(member, "models", []) or []):
+                    if str(get_entity_id(model) or "") != bearer_id:
+                        continue
+                    bearer = model
+                    break
+        return bearer
+
+    def _saga_of_the_beastslayer_member_has_live_bearer(
+        self,
+        member,
+        sr,
+        *,
+        require_leading: bool = False,
+    ) -> bool:
+        if member is None or not isinstance(sr, dict):
+            return False
+        if require_leading and not bool(getattr(member, "is_attached_leader", False)):
+            return False
+        bearer = self._saga_of_the_beastslayer_resolve_bearer_model(member, sr)
+        if bearer is None:
+            return False
+        alive_attr = getattr(bearer, "is_alive", True)
+        return bool(alive_attr() if callable(alive_attr) else alive_attr)
+
+    def _saga_of_the_beastslayer_unit_is_blood_claws(self, unit) -> bool:
+        if unit is None:
+            return False
+        if self._attached_unit_has_keyword(unit, "BLOOD CLAWS"):
+            return True
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        name = str(getattr(root, "name", "") or "").strip().lower()
+        return "blood claws" in name
+
+    def _saga_of_the_beastslayer_elders_guidance_bearer_leads_blood_claws(self, member, sr) -> bool:
+        if member is None or not isinstance(sr, dict):
+            return False
+        requires = bool(sr.get("enhancement_elders_guidance_requires_bearer_leading_blood_claws", True))
+        if not requires:
+            return True
+        if not bool(getattr(member, "is_attached_leader", False)):
+            return False
+        bodyguard = getattr(member, "attached_to", None)
+        if bodyguard is None:
+            return False
+        return self._saga_of_the_beastslayer_unit_is_blood_claws(bodyguard)
+
+    def saga_of_the_beastslayer_elders_guidance_can_activate(self, unit, *, game=None) -> bool:
+        if not self.is_saga_of_the_beastslayer():
+            return False
+        root, member, sr = self._saga_of_the_beastslayer_enhancement_source_member(
+            unit,
+            "enhancement_elders_guidance",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return False
+        try:
+            if root.get_parent_army() is not self.army:
+                return False
+        except Exception:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        if not self._saga_of_the_beastslayer_member_has_live_bearer(member, sr, require_leading=False):
+            return False
+        if not self._saga_of_the_beastslayer_elders_guidance_bearer_leads_blood_claws(member, sr):
+            return False
+        if not bool(sr.get("enhancement_elders_guidance_active", False)):
+            return True
+        expires_phase = str(sr.get("enhancement_elders_guidance_expires_phase", "") or "").strip().upper()
+        if not expires_phase:
+            return False
+        game_obj = self._resolve_game_context(game=game)
+        phase_name = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+        if not phase_name:
+            return False
+        return bool(phase_name != expires_phase)
+
+    def saga_of_the_beastslayer_elders_guidance_melee_ap_bonus(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        _ = target_unit
+        if not self.is_saga_of_the_beastslayer():
+            return 0, ""
+        if attacker_model is None:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        if attacker_unit is None:
+            return 0, ""
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            if parent is not None and not bool(getattr(parent, "is_melee", lambda: False)()):
+                return 0, ""
+        root, member, sr = self._saga_of_the_beastslayer_enhancement_source_member(
+            attacker_unit,
+            "enhancement_elders_guidance",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return 0, ""
+        try:
+            if root.get_parent_army() is not self.army:
+                return 0, ""
+        except Exception:
+            return 0, ""
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return 0, ""
+        if not bool(sr.get("enhancement_elders_guidance_active", False)):
+            return 0, ""
+        expires_phase = str(sr.get("enhancement_elders_guidance_expires_phase", "") or "").strip().upper()
+        if expires_phase:
+            game_obj = self._resolve_game_context(game=game)
+            phase_name = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+            if phase_name and phase_name != expires_phase:
+                return 0, ""
+        if not self._saga_of_the_beastslayer_member_has_live_bearer(member, sr, require_leading=False):
+            return 0, ""
+        if not self._saga_of_the_beastslayer_elders_guidance_bearer_leads_blood_claws(member, sr):
+            return 0, ""
+        try:
+            bonus = int(sr.get("enhancement_elders_guidance_ap_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        source = str(sr.get("enhancement_elders_guidance_source", "") or "Elder's Guidance").strip()
+        if not source:
+            source = "Elder's Guidance"
+        return int(bonus), source
+
+    def saga_of_the_beastslayer_helm_of_the_beastslayer_ap_worsen(
+        self,
+        attacker_model,
+        target_unit,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        _ = weapon_profile
+        _ = game
+        if not self.is_saga_of_the_beastslayer():
+            return 0, ""
+        if attacker_model is None or target_unit is None:
+            return 0, ""
+        target_root = self._attached_unit_root(target_unit)
+        if target_root is None:
+            return 0, ""
+        root, member, sr = self._saga_of_the_beastslayer_enhancement_source_member(
+            target_root,
+            "enhancement_helm_of_the_beastslayer",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return 0, ""
+        try:
+            if root.get_parent_army() is not self.army:
+                return 0, ""
+        except Exception:
+            return 0, ""
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return 0, ""
+        if not self._saga_of_the_beastslayer_member_has_live_bearer(member, sr, require_leading=False):
+            return 0, ""
+        attacker_keywords = [
+            str(v or "").strip().upper()
+            for v in list(
+                sr.get(
+                    "enhancement_helm_of_the_beastslayer_attacker_keywords_any",
+                    ("CHARACTER", "MONSTER", "VEHICLE"),
+                )
+                or ()
+            )
+            if str(v or "").strip()
+        ]
+        if not attacker_keywords:
+            attacker_keywords = ["CHARACTER", "MONSTER", "VEHICLE"]
+        attacker_matches = False
+        for keyword in attacker_keywords:
+            has_keyword = getattr(attacker_model, "has_any_keyword", None)
+            if callable(has_keyword) and bool(has_keyword(keyword)):
+                attacker_matches = True
+                break
+        if not attacker_matches:
+            attacker_unit = getattr(attacker_model, "parent_unit", None)
+            for keyword in attacker_keywords:
+                has_keyword = getattr(attacker_unit, "has_any_keyword", None)
+                if callable(has_keyword) and bool(has_keyword(keyword)):
+                    attacker_matches = True
+                    break
+        if not attacker_matches:
+            return 0, ""
+        try:
+            bonus = int(sr.get("enhancement_helm_of_the_beastslayer_ap_worsen", 1) or 1)
+        except (TypeError, ValueError):
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        source = str(sr.get("enhancement_helm_of_the_beastslayer_source", "") or "Helm of the Beastslayer").strip()
+        if not source:
+            source = "Helm of the Beastslayer"
+        return int(bonus), source
+
     def clear_pack_quarry_state(self) -> None:
         self.pack_quarry_tally = 0
         self.pack_quarry_target = 0

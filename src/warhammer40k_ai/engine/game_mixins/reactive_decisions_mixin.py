@@ -3732,6 +3732,7 @@ class GameReactiveDecisionsMixin:
             "desperate_devotion",
             "the_imperiums_sword",
             "rites_of_war",
+            "elders_guidance",
             "troubling_visions",
             "student_of_the_codex",
         ):
@@ -3913,6 +3914,73 @@ class GameReactiveDecisionsMixin:
             sr["enhancement_rites_of_war_other_models_expires_phase"] = phase_name
             source_member.special_rules = sr
             ability_name = str(ctx.get("ability_name", "") or "Rites of War").strip() or "Rites of War"
+            root.mark_unit_once_per_battle_used(once_key, ability_name=ability_name)
+            return
+
+        if ability_key == "elders_guidance":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None or not unit.is_alive():
+                return
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None or not root.is_alive():
+                return
+            source_member_id = str(payload.get("source_member_unit_id") or ctx.get("source_member_unit_id") or "")
+            source_member = self._resolve_unit_by_id(source_member_id) if source_member_id else None
+            if source_member is None:
+                find_source = getattr(self, "_attached_member_with_enhancement_flag", None)
+                if callable(find_source):
+                    _root, source_member, _source_sr = find_source(root, "enhancement_elders_guidance")
+            if source_member is None:
+                return
+            sr = getattr(source_member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_elders_guidance", False)):
+                return
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            can_activate_fn = (
+                getattr(sm_mgr, "saga_of_the_beastslayer_elders_guidance_can_activate", None)
+                if sm_mgr is not None
+                else None
+            )
+            if callable(can_activate_fn) and not bool(can_activate_fn(root, game=self)):
+                return
+            once_key = str(
+                payload.get("ability_key")
+                or ctx.get("ability_key")
+                or sr.get("enhancement_elders_guidance_once_key")
+                or "elders_guidance"
+            ).strip().lower()
+            if not once_key:
+                once_key = "elders_guidance"
+            if root.has_used_unit_once_per_battle(once_key):
+                return
+            try:
+                ap_bonus = int(
+                    payload.get("melee_ap_bonus")
+                    or ctx.get("melee_ap_bonus")
+                    or sr.get("enhancement_elders_guidance_ap_bonus", 1)
+                    or 1
+                )
+            except Exception:
+                ap_bonus = 1
+            if ap_bonus <= 0:
+                return
+            phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+            if not phase_name:
+                phase_name = str(ctx.get("phase", "") or "").strip().upper()
+            if not phase_name:
+                phase_name = "FIGHT_PHASE"
+            sr["enhancement_elders_guidance_active"] = True
+            sr["enhancement_elders_guidance_ap_bonus"] = int(ap_bonus)
+            sr["enhancement_elders_guidance_expires_phase"] = phase_name
+            source_member.special_rules = sr
+            ability_name = str(ctx.get("ability_name", "") or "Elder's Guidance").strip() or "Elder's Guidance"
             root.mark_unit_once_per_battle_used(once_key, ability_name=ability_name)
             return
 
