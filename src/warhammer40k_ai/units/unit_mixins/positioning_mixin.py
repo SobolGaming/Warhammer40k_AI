@@ -4199,6 +4199,39 @@ class PositioningMixin:
                         ]
         except Exception:
             pass
+        try:
+            root = self.get_attached_unit_root()
+            sr = getattr(root, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get("enhancement_wolf_master_active")):
+                apply_bonus = True
+                atype = str(attack_type or "").strip().lower()
+                if atype and atype not in ("any", "melee"):
+                    apply_bonus = False
+                current_weapon_name = str(weapon_name or "").strip()
+                if not current_weapon_name and weapon_profile is not None:
+                    try:
+                        current_weapon_name = str(
+                            getattr(getattr(weapon_profile, "parent_wargear", None), "name", "") or ""
+                        )
+                    except Exception:
+                        current_weapon_name = ""
+                    if not current_weapon_name:
+                        try:
+                            current_weapon_name = str(getattr(weapon_profile, "name", "") or "")
+                        except Exception:
+                            current_weapon_name = ""
+                weapon_names = list(sr.get("enhancement_wolf_master_weapon_names", []) or [])
+                if not weapon_names:
+                    weapon_names = ["teeth and claws", "tyrnak and fenrir"]
+                if not self._weapon_name_matches(weapon_names, current_weapon_name):
+                    apply_bonus = False
+                if apply_bonus:
+                    source = str(sr.get("enhancement_wolf_master_source", "") or "Wolf Master").strip() or "Wolf Master"
+                    rules = list(rules or []) + [
+                        {"attack_type": "melee", "keyword": "LETHAL HITS", "source": source}
+                    ]
+        except Exception:
+            pass
         if not rules:
             return {}
         return self._resolve_attack_keyword_bonuses_from_rules(rules, attack_type=attack_type)

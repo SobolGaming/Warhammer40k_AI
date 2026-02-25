@@ -2144,6 +2144,61 @@ _SPACE_MARINES_SAGA_OF_THE_BOLD_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPACE_MARINES_SAGA_OF_THE_BOLD_DESCRIPTORS.values()
 }
 
+_SPACE_MARINES_SAGA_OF_THE_HUNTER_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010261002": EnhancementToolDescriptor(
+        enhancement_id="000010261002",
+        name="Swift Hunter",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="grant_scouts_to_bearer_unit",
+        effect_params={
+            "scouts_distance": 7,
+        },
+    ),
+    "000010261003": EnhancementToolDescriptor(
+        enhancement_id="000010261003",
+        name="Fenrisian Grit",
+        timing="passive",
+        target="bearer",
+        duration="constant",
+        effect="bearer_fnp",
+        effect_params={
+            "feel_no_pain": 4,
+        },
+    ),
+    "000010261004": EnhancementToolDescriptor(
+        enhancement_id="000010261004",
+        name="Wolf Master",
+        timing="command_phase",
+        target="friendly_space_wolves_unit_within_range_of_bearer",
+        duration="until_start_of_next_command_phase",
+        effect="target_space_wolves_unit_specific_weapons_gain_lethal_hits_until_next_command_phase",
+        effect_params={
+            "range": 9,
+            "required_target_keywords_any": ("SPACE WOLVES",),
+            "weapon_names": ("teeth and claws", "tyrnak and fenrir"),
+            "granted_keywords": ("LETHAL HITS",),
+        },
+    ),
+    "000010261005": EnhancementToolDescriptor(
+        enhancement_id="000010261005",
+        name="Feral Rage",
+        timing="passive_and_on_charge",
+        target="bearer_melee_weapons",
+        duration="constant_and_until_end_of_turn_after_charge",
+        effect="bearer_melee_attacks_bonus_and_additional_bonus_after_charge",
+        effect_params={
+            "bearer_melee_attacks_bonus": 1,
+            "bearer_melee_attacks_bonus_on_charge": 1,
+        },
+    ),
+}
+
+_SPACE_MARINES_SAGA_OF_THE_HUNTER_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPACE_MARINES_SAGA_OF_THE_HUNTER_DESCRIPTORS.values()
+}
+
 _SPACE_MARINES_SAGA_OF_THE_GREAT_WOLF_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010660002": EnhancementToolDescriptor(
         enhancement_id="000010660002",
@@ -2959,6 +3014,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPACE_MARINES_SAGA_OF_THE_BOLD_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPACE_MARINES_SAGA_OF_THE_HUNTER_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPACE_MARINES_SAGA_OF_THE_GREAT_WOLF_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -3043,6 +3101,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SPACE_MARINES_CHAMPIONS_OF_FENRIS_BY_NAME.get(key)
         or _SPACE_MARINES_SAGA_OF_THE_BEASTSLAYER_BY_NAME.get(key)
         or _SPACE_MARINES_SAGA_OF_THE_BOLD_BY_NAME.get(key)
+        or _SPACE_MARINES_SAGA_OF_THE_HUNTER_BY_NAME.get(key)
         or _SPACE_MARINES_SAGA_OF_THE_GREAT_WOLF_BY_NAME.get(key)
         or _SPACE_MARINES_COMPANY_OF_HUNTERS_BY_NAME.get(key)
         or _SPACE_MARINES_COMPANIONS_OF_VEHEMENCE_BY_NAME.get(key)

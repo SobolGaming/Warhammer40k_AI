@@ -232,6 +232,7 @@ Command phase:
 - aeldari_light_of_clarity_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="aeldari_light_of_clarity_target"`, `source_unit_id`, `model_id`, `range`, `infantry_bonus`, `monster_bonus`)
 - aeldari_stave_of_kurnous_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="aeldari_stave_of_kurnous_target"`, `source_unit_id`, `model_id`, `range`, `exclude_titanic`)
 - aeldari_rune_of_mists_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="aeldari_rune_of_mists_target"`, `source_unit_id`, `model_id`, `range`, `min_attacker_distance_for_cover`)
+- space_marines_wolf_master_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="space_marines_wolf_master_target"`, `ability_name="Wolf Master"`, `source_unit_id`, `model_id`, `range=9`, `weapon_names[]`)
 - tears_of_isha_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="tears_of_isha_target"`, `source_unit_id`, `model_id`, `range`, `keyword`)
 - master_of_mechanisms_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="master_of_mechanisms"`, `source_unit_id`, `model_id`, `range`, `turn_owner`, `turn`, `optional=true`)
 - paragon_of_sanctity_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="paragon_of_sanctity"`, `source_unit_id`, `model_id`, `ability_key`, `range=18`, `optional=true`)

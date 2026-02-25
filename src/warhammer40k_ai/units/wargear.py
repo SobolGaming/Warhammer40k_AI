@@ -4112,6 +4112,22 @@ class WargearProfile:
                         Modifier(ModifierOp.ADD, int(bearer_bonus), source="enhancement:bearer_melee_attacks_add")
                     )
                     attack_result.attacks_special_modifiers.append(f"Enhancement bearer +{bearer_bonus}A (melee)")
+            feral_rage_charge_bonus = int(sr.get("enhancement_feral_rage_charge_bonus", 0) or 0)
+            if feral_rage_charge_bonus and self._attacker_is_enhancement_bearer(attacker, sr):
+                unit = getattr(attacker, "parent_unit", None)
+                charged = bool(getattr(getattr(unit, "round_state", None), "charged_this_round", False))
+                if charged:
+                    atk_mods.append(
+                        Modifier(
+                            ModifierOp.ADD,
+                            int(feral_rage_charge_bonus),
+                            source="enhancement:feral_rage_charge_attacks_add",
+                        )
+                    )
+                    source_name = str(sr.get("enhancement_feral_rage_source", "") or "Feral Rage").strip() or "Feral Rage"
+                    attack_result.attacks_special_modifiers.append(
+                        f"{source_name} +{int(feral_rage_charge_bonus)}A (charged)"
+                    )
             imperiums_sword_other_bonus = int(self._imperiums_sword_other_models_bonus(attacker) or 0)
             if imperiums_sword_other_bonus:
                 atk_mods.append(

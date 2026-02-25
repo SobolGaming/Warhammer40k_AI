@@ -456,6 +456,9 @@ class Enhancement:
         is_saga_of_the_bold = bool(
             sm_mgr and getattr(sm_mgr, "is_saga_of_the_bold", lambda: False)()
         )
+        is_saga_of_the_hunter = bool(
+            sm_mgr and getattr(sm_mgr, "is_saga_of_the_hunter", lambda: False)()
+        )
         is_saga_of_the_great_wolf = bool(
             sm_mgr and getattr(sm_mgr, "is_saga_of_the_great_wolf", lambda: False)()
         )
@@ -2163,6 +2166,97 @@ class Enhancement:
             refresh_return = getattr(unit, "_refresh_return_on_death_flags", None)
             if callable(refresh_return):
                 refresh_return()
+
+        if name == "swift hunter" or enh_id == "000010261002":
+            if not is_saga_of_the_hunter:
+                return
+            unit.special_rules["enhancement_swift_hunter"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            scout_distance = _coerce_int(params.get("scouts_distance", 7) or 7, default=7)
+            unit.special_rules["enhancement_scout_distance"] = max(
+                int(unit.special_rules.get("enhancement_scout_distance", 0) or 0),
+                int(max(0, scout_distance)),
+            )
+            unit.special_rules["enhancement_swift_hunter_source"] = "Swift Hunter"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_swift_hunter_bearer_model_id"] = bearer_id
+            invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate_cache):
+                invalidate_cache()
+
+        if name == "fenrisian grit" or enh_id == "000010261003":
+            if not is_saga_of_the_hunter:
+                return
+            unit.special_rules["enhancement_fenrisian_grit"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            fnp_value = _coerce_int(params.get("feel_no_pain", 4) or 4, default=4)
+            _ensure_enhancement_fnp_entry(
+                unit,
+                value=int(max(2, fnp_value)),
+                source="Fenrisian Grit",
+                tag="enhancement_fenrisian_grit",
+                source_model_id=bearer_id or None,
+            )
+            unit.special_rules["enhancement_fenrisian_grit_fnp"] = int(max(2, fnp_value))
+            unit.special_rules["enhancement_fenrisian_grit_source"] = "Fenrisian Grit"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_fenrisian_grit_bearer_model_id"] = bearer_id
+
+        if name == "wolf master" or enh_id == "000010261004":
+            if not is_saga_of_the_hunter:
+                return
+            unit.special_rules["enhancement_wolf_master"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            range_value = _coerce_int(params.get("range", 9) or 9, default=9)
+            raw_weapon_names = list(params.get("weapon_names", ("teeth and claws", "tyrnak and fenrir")) or ())
+            weapon_names: list[str] = []
+            for raw_name in raw_weapon_names:
+                normalized = str(raw_name or "").strip()
+                if not normalized or normalized in weapon_names:
+                    continue
+                weapon_names.append(normalized)
+            if not weapon_names:
+                weapon_names = ["teeth and claws", "tyrnak and fenrir"]
+            unit.special_rules["enhancement_wolf_master_range"] = int(max(1, range_value))
+            unit.special_rules["enhancement_wolf_master_weapon_names"] = list(weapon_names)
+            unit.special_rules["enhancement_wolf_master_source"] = "Wolf Master"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_wolf_master_bearer_model_id"] = bearer_id
+            invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate_cache):
+                invalidate_cache()
+
+        if name == "feral rage" or enh_id == "000010261005":
+            if not is_saga_of_the_hunter:
+                return
+            unit.special_rules["enhancement_feral_rage"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            base_attacks_bonus = _coerce_int(
+                params.get("bearer_melee_attacks_bonus", 1) or 1,
+                default=1,
+            )
+            charge_attacks_bonus = _coerce_int(
+                params.get("bearer_melee_attacks_bonus_on_charge", 1) or 1,
+                default=1,
+            )
+            unit.special_rules["enhancement_bearer_melee_attacks_bonus"] = int(
+                max(
+                    _coerce_int(unit.special_rules.get("enhancement_bearer_melee_attacks_bonus", 0) or 0, default=0),
+                    max(0, int(base_attacks_bonus)),
+                )
+            )
+            unit.special_rules["enhancement_feral_rage_charge_bonus"] = int(max(0, int(charge_attacks_bonus)))
+            unit.special_rules["enhancement_feral_rage_source"] = "Feral Rage"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_feral_rage_bearer_model_id"] = bearer_id
 
         if name in ("grimnar's mark", "grimnars mark") or enh_id == "000010660002":
             if not is_saga_of_the_great_wolf:

@@ -220,6 +220,7 @@ class GamePhaseHandlersMixin:
         self._on_phase_start_custodes_detachment_rules(player=player, phase=phase)
         self._on_phase_start_vowed_target(player=player, phase=phase)
         self._on_phase_start_master_of_wolves(player=player, phase=phase)
+        self._on_phase_start_saga_of_the_hunter_enhancements(player=player, phase=phase)
         self._on_phase_start_ironstorm_spearhead_enhancements(player=player, phase=phase)
         if pname:
             for p in list(getattr(self, "players", []) or []):
@@ -7077,6 +7078,296 @@ class GamePhaseHandlersMixin:
                         context=ctx,
                     )
                     self.request_decision(request)
+
+    def _on_phase_start_saga_of_the_hunter_enhancements(self, player=None, phase=None, **_kwargs) -> None:
+        """Saga of the Hunter command-phase enhancement targeting and expiry handling."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        army = player.get_army() if hasattr(player, "get_army") else None
+        if army is None:
+            return
+        sm_mgr = getattr(army, "space_marines_detachments", None)
+        if sm_mgr is None or not bool(getattr(sm_mgr, "is_saga_of_the_hunter", lambda: False)()):
+            return
+
+        from ...utility.aura_utils import distance_between_models_bases_3d
+        from ...utility.entity_ids import get_entity_id
+
+        def _iter_unique_roots(units) -> list:
+            roots: list = []
+            seen: set[str] = set()
+            for unit in list(units or []):
+                if unit is None:
+                    continue
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None:
+                    continue
+                rid = str(get_entity_id(root) or "")
+                if rid and rid in seen:
+                    continue
+                if rid:
+                    seen.add(rid)
+                roots.append(root)
+            roots.sort(key=lambda u: str(get_entity_id(u) or ""))
+            return roots
+
+        def _unit_active(unit) -> bool:
+            if unit is None:
+                return False
+            try:
+                if callable(getattr(unit, "is_alive", None)) and not bool(unit.is_alive()):
+                    return False
+            except Exception:
+                return False
+            if not bool(getattr(unit, "deployed", True)):
+                return False
+            try:
+                reserve_status = str(getattr(unit, "reserve_status", "deployed") or "deployed").strip().lower()
+                if reserve_status in {"reserves", "strategic_reserves"}:
+                    return False
+            except Exception:
+                pass
+            try:
+                if callable(getattr(unit, "is_in_reserves", None)) and bool(unit.is_in_reserves()):
+                    return False
+            except Exception:
+                pass
+            if bool(getattr(unit, "is_embarked", False) or getattr(unit, "embarked_in", None)):
+                return False
+            return True
+
+        def _unit_has_keyword(unit, keyword: str) -> bool:
+            if unit is None or not keyword:
+                return False
+            upper = str(keyword or "").strip().upper()
+            try:
+                if bool(unit.has_any_keyword(upper) or unit.has_keyword(upper)):
+                    return True
+            except Exception:
+                pass
+            keywords = list(getattr(unit, "keywords", []) or []) + list(getattr(unit, "faction_keywords", []) or [])
+            return any(str(entry or "").strip().upper() == upper for entry in keywords)
+
+        def _unit_is_space_wolves(unit) -> bool:
+            if unit is None:
+                return False
+            check_fn = getattr(sm_mgr, "_pack_quarry_unit_is_space_wolves", None)
+            if callable(check_fn):
+                return bool(check_fn(unit))
+            if not bool(getattr(sm_mgr, "attached_unit_is_adeptus_astartes", lambda _u: False)(unit)):
+                return False
+            if _unit_has_keyword(unit, "SPACE WOLVES"):
+                return True
+            chapter = str(getattr(sm_mgr, "get_committed_chapter_keyword", lambda: "")() or "").strip().upper()
+            return chapter == "SPACE WOLVES"
+
+        def _model_in_unit_range(model, unit, range_inches: float) -> bool:
+            if model is None or unit is None:
+                return False
+            in_range_fn = getattr(self, "_unit_within_range_of_model", None)
+            if callable(in_range_fn):
+                try:
+                    return bool(in_range_fn(model, unit, range_value=float(range_inches)))
+                except Exception:
+                    pass
+            try:
+                target_models = list(unit.get_attached_unit_models() or [])
+            except Exception:
+                target_models = list(getattr(unit, "models", []) or [])
+            for target_model in list(target_models or []):
+                if not bool(getattr(target_model, "is_alive", True)):
+                    continue
+                try:
+                    if float(distance_between_models_bases_3d(model, target_model)) <= float(range_inches) + 1e-6:
+                        return True
+                except Exception:
+                    continue
+            return False
+
+        own_player_id = str(getattr(player, "id", "") or "")
+        all_roots = _iter_unique_roots(getattr(army, "units", []) or [])
+
+        # Expire previous Command-phase applications for this player.
+        if own_player_id:
+            for root in list(all_roots):
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if str(sr.get("enhancement_wolf_master_owner", "") or "") == own_player_id:
+                    for key in (
+                        "enhancement_wolf_master_active",
+                        "enhancement_wolf_master_owner",
+                        "enhancement_wolf_master_source",
+                        "enhancement_wolf_master_source_unit_id",
+                        "enhancement_wolf_master_weapon_names",
+                    ):
+                        sr.pop(key, None)
+                root.special_rules = sr
+
+        for source_root in list(all_roots):
+            try:
+                members = list(source_root.get_attached_unit_members() or [])
+            except Exception:
+                members = [source_root]
+            if not members:
+                members = [source_root]
+            for source_unit in list(members or []):
+                source_sr = getattr(source_unit, "special_rules", None)
+                if not isinstance(source_sr, dict) or not bool(source_sr.get("enhancement_wolf_master")):
+                    continue
+                if not _unit_active(source_root):
+                    continue
+                bearer = getattr(source_unit, "_get_enhancement_bearer_model", lambda: None)()
+                if bearer is None:
+                    bearer = getattr(source_root, "_get_enhancement_bearer_model", lambda: None)()
+                if bearer is None or not bool(getattr(bearer, "is_alive", True)):
+                    continue
+                try:
+                    range_inches = int(source_sr.get("enhancement_wolf_master_range", 9) or 9)
+                except (TypeError, ValueError):
+                    range_inches = 9
+                range_inches = max(1, int(range_inches))
+                raw_weapon_names = list(
+                    source_sr.get("enhancement_wolf_master_weapon_names", ("teeth and claws", "tyrnak and fenrir")) or ()
+                )
+                weapon_names: list[str] = []
+                for value in raw_weapon_names:
+                    normalized = str(value or "").strip()
+                    if not normalized or normalized in weapon_names:
+                        continue
+                    weapon_names.append(normalized)
+                if not weapon_names:
+                    weapon_names = ["teeth and claws", "tyrnak and fenrir"]
+
+                candidates: list = []
+                for target_root in list(all_roots):
+                    if not _unit_active(target_root):
+                        continue
+                    if not _unit_is_space_wolves(target_root):
+                        continue
+                    if not _model_in_unit_range(bearer, target_root, float(range_inches)):
+                        continue
+                    candidates.append(target_root)
+                if not candidates:
+                    continue
+                candidates.sort(key=lambda u: str(get_entity_id(u) or ""))
+                ability_name = str(source_sr.get("enhancement_wolf_master_source", "") or "Wolf Master").strip() or "Wolf Master"
+                apply_fn = getattr(self, "_apply_space_marines_wolf_master_effect", None)
+                if len(candidates) == 1 and callable(apply_fn):
+                    apply_fn(
+                        source_unit=source_unit,
+                        target_unit=candidates[0],
+                        player=player,
+                        ability_name=ability_name,
+                        weapon_names=list(weapon_names),
+                    )
+                    continue
+                queue_fn = getattr(self, "_queue_aeldari_spirit_conclave_target", None)
+                if callable(queue_fn):
+                    queue_fn(
+                        player=player,
+                        source_unit=source_unit,
+                        model=bearer,
+                        candidates=candidates,
+                        ability_key="space_marines_wolf_master_target",
+                        ability_name=ability_name,
+                        range_inches=int(range_inches),
+                        allow_skip=False,
+                        extra_context={"weapon_names": list(weapon_names)},
+                    )
+
+    def _apply_space_marines_wolf_master_effect(
+        self,
+        *,
+        source_unit=None,
+        target_unit=None,
+        player=None,
+        ability_name: str = "Wolf Master",
+        weapon_names: list[str] | tuple[str, ...] | None = None,
+    ) -> bool:
+        if source_unit is None or target_unit is None:
+            return False
+        from ...utility.entity_ids import get_entity_id
+        from ...utility.event_bus import append_action
+
+        try:
+            source_root = source_unit.get_attached_unit_root()
+        except Exception:
+            source_root = source_unit
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        if source_root is None or target_root is None:
+            return False
+
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict) or not bool(source_sr.get("enhancement_wolf_master")):
+            return False
+        try:
+            if source_root.get_parent_army() is not target_root.get_parent_army():
+                return False
+        except Exception:
+            return False
+
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        sm_mgr = getattr(source_army, "space_marines_detachments", None) if source_army is not None else None
+        if sm_mgr is not None and not bool(getattr(sm_mgr, "attached_unit_is_adeptus_astartes", lambda _u: False)(target_root)):
+            return False
+        if sm_mgr is not None:
+            check_fn = getattr(sm_mgr, "_pack_quarry_unit_is_space_wolves", None)
+            if callable(check_fn):
+                if not bool(check_fn(target_root)):
+                    return False
+
+        owner_id = str(getattr(player, "id", "") or "")
+        if not owner_id:
+            try:
+                owner_id = str(getattr(getattr(source_root.get_parent_army(), "player", None), "id", "") or "")
+            except Exception:
+                owner_id = ""
+
+        raw_weapon_names = list(
+            weapon_names
+            or source_sr.get("enhancement_wolf_master_weapon_names", ("teeth and claws", "tyrnak and fenrir"))
+            or ()
+        )
+        allowed_weapon_names: list[str] = []
+        for value in raw_weapon_names:
+            normalized = str(value or "").strip()
+            if not normalized or normalized in allowed_weapon_names:
+                continue
+            allowed_weapon_names.append(normalized)
+        if not allowed_weapon_names:
+            allowed_weapon_names = ["teeth and claws", "tyrnak and fenrir"]
+
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["enhancement_wolf_master_active"] = True
+        sr["enhancement_wolf_master_owner"] = owner_id
+        sr["enhancement_wolf_master_source"] = str(ability_name or "Wolf Master").strip() or "Wolf Master"
+        source_unit_id = str(get_entity_id(source_unit) or "")
+        if not source_unit_id:
+            source_unit_id = str(get_entity_id(source_root) or "")
+        sr["enhancement_wolf_master_source_unit_id"] = source_unit_id
+        sr["enhancement_wolf_master_weapon_names"] = list(allowed_weapon_names)
+        target_root.special_rules = sr
+        try:
+            weapons_text = ", ".join(list(allowed_weapon_names or []))
+            append_action(
+                player,
+                f"{sr['enhancement_wolf_master_source']}: {getattr(target_root, 'name', 'Unit')} {weapons_text} gain [LETHAL HITS] until your next Command phase.",
+            )
+        except Exception:
+            pass
+        return True
 
     def _on_phase_start_ironstorm_spearhead_enhancements(self, player=None, phase=None, **_kwargs) -> None:
         """Ironstorm Spearhead command-phase enhancement targeting and expiry handling."""
