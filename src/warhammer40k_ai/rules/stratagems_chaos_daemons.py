@@ -980,6 +980,80 @@ class ChaosDaemonsStratagemMixin:
         targets.sort(key=self._chaos_daemons_sort_key)
         return targets
 
+    def _legion_of_excess_archagonists_monster_candidates(self) -> List[Any]:
+        candidates: List[Any] = []
+        for root in list(self._legion_of_excess_slaanesh_battlefield_unit_candidates(require_monster=True) or []):
+            if self._shadow_legion_unit_selected_to_fight_this_phase(root):
+                continue
+            candidates.append(root)
+        candidates.sort(key=self._chaos_daemons_sort_key)
+        return candidates
+
+    def _legion_of_excess_archagonists_non_monster_candidates(self) -> List[Any]:
+        candidates: List[Any] = []
+        for root in list(self._legion_of_excess_slaanesh_battlefield_unit_candidates() or []):
+            if bool(getattr(root, "has_any_keyword", lambda *_: False)("MONSTER")):
+                continue
+            if self._shadow_legion_unit_selected_to_fight_this_phase(root):
+                continue
+            candidates.append(root)
+        candidates.sort(key=self._chaos_daemons_sort_key)
+        return candidates
+
+    def _legion_of_excess_archagonists_candidate_union(self) -> List[Any]:
+        candidates: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(self._legion_of_excess_archagonists_monster_candidates()) + list(
+            self._legion_of_excess_archagonists_non_monster_candidates()
+        ):
+            uid = self._chaos_daemons_sort_key(unit)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            candidates.append(unit)
+        candidates.sort(key=self._chaos_daemons_sort_key)
+        return candidates
+
+    def _legion_of_excess_overwhelming_excess_candidates(self, *, attacking_unit: Any, target_units: List[Any]) -> List[Any]:
+        attacker_root = self._chaos_daemons_root(attacking_unit)
+        if attacker_root is None:
+            return []
+        attacker_army = getattr(attacker_root, "get_parent_army", lambda: None)()
+        if attacker_army is None or getattr(attacker_army, "player", None) is self.player:
+            return []
+        valid_ids = {
+            self._chaos_daemons_sort_key(candidate)
+            for candidate in self._legion_of_excess_slaanesh_battlefield_unit_candidates()
+        }
+        candidates: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(target_units or []):
+            root = self._chaos_daemons_root(unit)
+            if root is None:
+                continue
+            uid = self._chaos_daemons_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            if uid not in valid_ids:
+                continue
+            is_alive = getattr(root, "is_alive", None)
+            if callable(is_alive):
+                if not bool(is_alive()):
+                    continue
+            elif not bool(getattr(root, "is_alive", True)):
+                continue
+            if not bool(getattr(root, "deployed", False)):
+                continue
+            parent_army = getattr(root, "get_parent_army", lambda: None)()
+            if parent_army is None or getattr(parent_army, "player", None) is not self.player:
+                continue
+            candidates.append(root)
+        candidates.sort(key=self._chaos_daemons_sort_key)
+        return candidates
+
     def _blood_legion_khorne_battlefield_unit_candidates(self) -> List[Any]:
         if self.player is None:
             return []
@@ -1541,6 +1615,100 @@ class ChaosDaemonsStratagemMixin:
             payload["redirect_unit"] = redirect_candidates[0]
             payload["selected_unit"] = redirect_candidates[0]
         self._queue_reaction(payload, use_timer=False)
+
+    def _queue_legion_of_excess_shooting_target_reactions(self, *, attacking_unit: Any, target_units: List[Any]) -> None:
+        if self.player is None or self.game is None:
+            return
+        if not self._is_legion_of_excess_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "shooting phase":
+            return
+        attacker_root = self._chaos_daemons_root(attacking_unit)
+        if attacker_root is None:
+            return
+        attacker_army = getattr(attacker_root, "get_parent_army", lambda: None)()
+        if attacker_army is None or getattr(attacker_army, "player", None) is self.player:
+            return
+        stratagem = self.get_by_name("OVERWHELMING EXCESS")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if (stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._legion_of_excess_overwhelming_excess_candidates(
+            attacking_unit=attacking_unit,
+            target_units=list(target_units or []),
+        )
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "shooting_targets_selected":
+                continue
+            if self._chaos_daemons_normalize_stratagem_name(reaction.get("stratagem", "")) != "OVERWHELMING EXCESS":
+                continue
+            if reaction.get("attacking_unit") is attacking_unit:
+                return
+        payload = {
+            "event": "shooting_targets_selected",
+            "phase_name": "Shooting phase",
+            "stratagem": stratagem.name,
+            "cp_cost": int(getattr(stratagem, "cp_cost", 0) or 0),
+            "attacking_unit": attacking_unit,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
+
+    def _queue_legion_of_excess_fight_target_reactions(self, *, attacking_unit: Any, target_units: List[Any]) -> None:
+        if self.player is None or self.game is None:
+            return
+        if not self._is_legion_of_excess_detachment():
+            return
+        if str(getattr(self, "_current_phase_name", "") or "").strip().lower() != "fight phase":
+            return
+        attacker_root = self._chaos_daemons_root(attacking_unit)
+        if attacker_root is None:
+            return
+        attacker_army = getattr(attacker_root, "get_parent_army", lambda: None)()
+        if attacker_army is None or getattr(attacker_army, "player", None) is self.player:
+            return
+        stratagem = self.get_by_name("OVERWHELMING EXCESS")
+        if stratagem is None:
+            return
+        if int(getattr(self.player, "command_points", 0) or 0) < int(getattr(stratagem, "cp_cost", 0) or 0):
+            return
+        if (stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._legion_of_excess_overwhelming_excess_candidates(
+            attacking_unit=attacking_unit,
+            target_units=list(target_units or []),
+        )
+        if not candidates:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "") != "fight_targets_selected":
+                continue
+            if self._chaos_daemons_normalize_stratagem_name(reaction.get("stratagem", "")) != "OVERWHELMING EXCESS":
+                continue
+            if reaction.get("attacking_unit") is attacking_unit:
+                return
+        payload = {
+            "event": "fight_targets_selected",
+            "phase_name": "Fight phase",
+            "stratagem": stratagem.name,
+            "cp_cost": int(getattr(stratagem, "cp_cost", 0) or 0),
+            "attacking_unit": attacking_unit,
+            "target_units": list(target_units or []),
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
 
     def _queue_blood_legion_move_end_reactions(self, *, unit: Any, action: str) -> None:
         if str(action or "").strip().lower() != "fall_back":
@@ -2124,6 +2292,10 @@ class ChaosDaemonsStratagemMixin:
 
     def _use_chaos_daemons_legion_of_excess_stratagem(self, stratagem: Any, **kwargs) -> bool | None:
         name_u = self._chaos_daemons_normalize_stratagem_name(getattr(stratagem, "name", ""))
+        if name_u == "ARCHAGONISTS":
+            return self._use_legion_of_excess_archagonists(stratagem, **kwargs)
+        if name_u == "OVERWHELMING EXCESS":
+            return self._use_legion_of_excess_overwhelming_excess(stratagem, **kwargs)
         if name_u == "SENSORY EXCRUCIATION":
             return self._use_legion_of_excess_sensory_excruciation(stratagem, **kwargs)
         if name_u == "THIEVES OF PAIN":
@@ -2379,6 +2551,170 @@ class ChaosDaemonsStratagemMixin:
         special_rules["legion_of_excess_thieves_of_pain_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
         special_rules["legion_of_excess_thieves_of_pain_source"] = str(getattr(stratagem, "name", "") or "THIEVES OF PAIN")
         source_root.special_rules = special_rules
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
+        return True
+
+    def _use_legion_of_excess_archagonists(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_legion_of_excess_detachment():
+            return False
+        phase_name = str(kwargs.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            return False
+        candidates = list(kwargs.get("candidates") or [])
+        selected = (
+            kwargs.get("units")
+            or kwargs.get("target_units")
+            or kwargs.get("selected_units")
+            or kwargs.get("unit")
+            or kwargs.get("target_unit")
+        )
+        if selected is None:
+            selected = []
+        if not isinstance(selected, (list, tuple)):
+            selected = [selected]
+        resolved: List[Any] = []
+        seen: set[str] = set()
+        for entry in list(selected or []):
+            root = self._chaos_daemons_root(entry)
+            if root is None:
+                continue
+            uid = self._chaos_daemons_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            resolved.append(root)
+        if not resolved:
+            if len(candidates) == 1:
+                root = self._chaos_daemons_root(candidates[0])
+                if root is not None:
+                    resolved = [root]
+        if not resolved:
+            return False
+        if len(resolved) > 2:
+            return False
+        if candidates:
+            candidate_ids = {self._chaos_daemons_sort_key(self._chaos_daemons_root(candidate)) for candidate in candidates}
+            for root in resolved:
+                if self._chaos_daemons_sort_key(root) not in candidate_ids:
+                    return False
+        monster_ids = {self._chaos_daemons_sort_key(unit) for unit in self._legion_of_excess_archagonists_monster_candidates()}
+        non_monster_ids = {self._chaos_daemons_sort_key(unit) for unit in self._legion_of_excess_archagonists_non_monster_candidates()}
+        selected_monsters = [unit for unit in resolved if self._chaos_daemons_sort_key(unit) in monster_ids]
+        selected_non_monsters = [unit for unit in resolved if self._chaos_daemons_sort_key(unit) in non_monster_ids]
+        if len(selected_monsters) + len(selected_non_monsters) != len(resolved):
+            return False
+        if selected_monsters:
+            if len(selected_monsters) != 1 or len(resolved) != 1:
+                return False
+        else:
+            if len(selected_non_monsters) < 1 or len(selected_non_monsters) > 2:
+                return False
+        cp_cost = self._chaos_daemons_effective_cp_cost(stratagem, target_unit=resolved[0])
+        if not self.player.spend_command_points(cp_cost, reason=f"Stratagem: {stratagem.name}", source="stratagem"):
+            return False
+        turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        turn_owner = str(getattr(self.player, "id", "") or "")
+        for root in resolved:
+            special_rules = getattr(root, "special_rules", None)
+            if not isinstance(special_rules, dict):
+                special_rules = {}
+            special_rules["legion_of_excess_archagonists_active"] = True
+            special_rules["legion_of_excess_archagonists_melee_wound_bonus_active"] = True
+            special_rules["legion_of_excess_archagonists_melee_wound_bonus"] = 1
+            special_rules["legion_of_excess_archagonists_expires_phase"] = "FIGHT_PHASE"
+            special_rules["legion_of_excess_archagonists_turn_owner"] = turn_owner
+            special_rules["legion_of_excess_archagonists_turn"] = turn
+            special_rules["legion_of_excess_archagonists_source"] = str(getattr(stratagem, "name", "") or "ARCHAGONISTS")
+            root.special_rules = special_rules
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
+        return True
+
+    def _use_legion_of_excess_overwhelming_excess(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_legion_of_excess_detachment():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit") or kwargs.get("enemy_unit")
+        from_pending = False
+        if unit is None:
+            normalized_name = self._chaos_daemons_normalize_stratagem_name(getattr(stratagem, "name", ""))
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if self._chaos_daemons_normalize_stratagem_name(reaction.get("stratagem", "")) != normalized_name:
+                    continue
+                from_pending = True
+                unit = reaction.get("unit") or reaction.get("target_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                if attacking_unit is None:
+                    attacking_unit = reaction.get("attacking_unit")
+                kwargs.setdefault("phase_name", reaction.get("phase_name"))
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            return False
+        if not from_pending and attacking_unit is None:
+            return False
+        root = self._chaos_daemons_root(unit)
+        if root is None:
+            return False
+        if candidates:
+            candidate_ids = {self._chaos_daemons_sort_key(self._chaos_daemons_root(candidate)) for candidate in candidates}
+            if self._chaos_daemons_sort_key(root) not in candidate_ids:
+                return False
+        phase_name = str(kwargs.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name not in {"shooting phase", "fight phase"}:
+            return False
+        valid_ids = {
+            self._chaos_daemons_sort_key(candidate)
+            for candidate in self._legion_of_excess_slaanesh_battlefield_unit_candidates()
+        }
+        if self._chaos_daemons_sort_key(root) not in valid_ids:
+            return False
+        attacker_root = self._chaos_daemons_root(attacking_unit)
+        if attacker_root is not None:
+            attacker_army = getattr(attacker_root, "get_parent_army", lambda: None)()
+            if attacker_army is None or getattr(attacker_army, "player", None) is self.player:
+                return False
+        cp_cost = self._chaos_daemons_effective_cp_cost(stratagem, target_unit=root)
+        if not self.player.spend_command_points(cp_cost, reason=f"Stratagem: {stratagem.name}", source="stratagem"):
+            return False
+        phase_key = "SHOOTING_PHASE" if phase_name == "shooting phase" else "FIGHT_PHASE"
+        special_rules = getattr(root, "special_rules", None)
+        if not isinstance(special_rules, dict):
+            special_rules = {}
+        entries = list(special_rules.get("defensive_hit_mods") or [])
+        kept: List[Any] = []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                kept.append(entry)
+                continue
+            if str(entry.get("source_key", "") or "") == "legion_of_excess_overwhelming_excess":
+                continue
+            kept.append(entry)
+        kept.append(
+            {
+                "value": 1,
+                "attack_type": "any",
+                "expires_phase": phase_key,
+                "source": str(getattr(stratagem, "name", "") or "OVERWHELMING EXCESS"),
+                "source_key": "legion_of_excess_overwhelming_excess",
+            }
+        )
+        special_rules["defensive_hit_mods"] = kept
+        special_rules["legion_of_excess_overwhelming_excess_active"] = True
+        special_rules["legion_of_excess_overwhelming_excess_expires_phase"] = phase_key
+        special_rules["legion_of_excess_overwhelming_excess_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        special_rules["legion_of_excess_overwhelming_excess_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        special_rules["legion_of_excess_overwhelming_excess_source"] = str(
+            getattr(stratagem, "name", "") or "OVERWHELMING EXCESS"
+        )
+        root.special_rules = special_rules
         if kwargs.get("dequeue") is True:
             self._dequeue_reaction_by_name(stratagem.name)
         self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
@@ -2854,6 +3190,44 @@ class ChaosDaemonsStratagemMixin:
                     "legion_of_excess_thieves_of_pain_turn_owner",
                     "legion_of_excess_thieves_of_pain_turn",
                     "legion_of_excess_thieves_of_pain_source",
+                ):
+                    special_rules.pop(key, None)
+                changed = True
+            archagonists_expires = str(special_rules.get("legion_of_excess_archagonists_expires_phase", "") or "").strip().upper()
+            if special_rules.get("legion_of_excess_archagonists_active") and (not archagonists_expires or archagonists_expires == phase_name):
+                for key in (
+                    "legion_of_excess_archagonists_active",
+                    "legion_of_excess_archagonists_melee_wound_bonus_active",
+                    "legion_of_excess_archagonists_melee_wound_bonus",
+                    "legion_of_excess_archagonists_expires_phase",
+                    "legion_of_excess_archagonists_turn_owner",
+                    "legion_of_excess_archagonists_turn",
+                    "legion_of_excess_archagonists_source",
+                ):
+                    special_rules.pop(key, None)
+                changed = True
+            overwhelming_expires = str(
+                special_rules.get("legion_of_excess_overwhelming_excess_expires_phase", "") or ""
+            ).strip().upper()
+            if special_rules.get("legion_of_excess_overwhelming_excess_active") and (
+                not overwhelming_expires or overwhelming_expires == phase_name
+            ):
+                entries = list(special_rules.get("defensive_hit_mods") or [])
+                kept_entries: List[Any] = []
+                for entry in entries:
+                    if isinstance(entry, dict) and str(entry.get("source_key", "") or "") == "legion_of_excess_overwhelming_excess":
+                        continue
+                    kept_entries.append(entry)
+                if kept_entries:
+                    special_rules["defensive_hit_mods"] = kept_entries
+                else:
+                    special_rules.pop("defensive_hit_mods", None)
+                for key in (
+                    "legion_of_excess_overwhelming_excess_active",
+                    "legion_of_excess_overwhelming_excess_expires_phase",
+                    "legion_of_excess_overwhelming_excess_turn_owner",
+                    "legion_of_excess_overwhelming_excess_turn",
+                    "legion_of_excess_overwhelming_excess_source",
                 ):
                     special_rules.pop(key, None)
                 changed = True

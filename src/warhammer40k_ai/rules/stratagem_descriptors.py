@@ -377,6 +377,20 @@ _SHADOW_LEGION_STRATAGEM_BY_NAME = {
 }
 
 _LEGION_OF_EXCESS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009807003": StratagemToolDescriptor(
+        stratagem_id="000009807003",
+        name="Archagonists",
+        timing="fight_phase",
+        target="one_legiones_daemonica_slaanesh_monster_or_up_to_two_non_monster_units_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="melee_wound_bonus",
+        cp_cost=2,
+        effect_params={
+            "melee_wound_roll_modifier": 1,
+            "max_non_monster_units": 2,
+            "max_monster_units": 1,
+        },
+    ),
     "000009807004": StratagemToolDescriptor(
         stratagem_id="000009807004",
         name="Sensory Excruciation",
@@ -435,6 +449,16 @@ _LEGION_OF_EXCESS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "success_on": 4,
             "mortal_wounds_per_success": 1,
         },
+    ),
+    "000009807007": StratagemToolDescriptor(
+        stratagem_id="000009807007",
+        name="Overwhelming Excess",
+        timing="opponent_shooting_or_fight_phase_after_targets_selected",
+        target="legiones_daemonica_slaanesh_unit_targeted_by_attacking_unit",
+        duration="until_end_of_phase",
+        effect="defensive_hit_penalty",
+        cp_cost=1,
+        effect_params={"hit_roll_modifier": -1, "attack_type": "any"},
     ),
 }
 

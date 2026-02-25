@@ -103,7 +103,13 @@ def _build_game():
     return game, legion_player, enemy_player, legion_army, enemy_army
 
 
-def test_legion_of_excess_step1_step2_stratagem_descriptors_registered():
+def test_legion_of_excess_step1_step3_stratagem_descriptors_registered():
+    archagonists = get_stratagem_tool_descriptor(stratagem_id="000009807003")
+    assert archagonists is not None
+    assert archagonists.name == "Archagonists"
+    assert archagonists.effect == "melee_wound_bonus"
+    assert int(archagonists.cp_cost) == 2
+
     sensory = get_stratagem_tool_descriptor(stratagem_id="000009807004")
     assert sensory is not None
     assert sensory.name == "Sensory Excruciation"
@@ -128,6 +134,12 @@ def test_legion_of_excess_step1_step2_stratagem_descriptors_registered():
     assert cavalry.effect == "engagement_mortal_wound_burst"
     assert int(cavalry.cp_cost) == 1
 
+    overwhelming = get_stratagem_tool_descriptor(stratagem_id="000009807007")
+    assert overwhelming is not None
+    assert overwhelming.name == "Overwhelming Excess"
+    assert overwhelming.effect == "defensive_hit_penalty"
+    assert int(overwhelming.cp_cost) == 1
+
     by_name_phantasmal = get_stratagem_tool_descriptor(name="PHANTASMAL LONGING")
     assert by_name_phantasmal is not None
     assert str(by_name_phantasmal.stratagem_id) == "000009807005"
@@ -143,6 +155,14 @@ def test_legion_of_excess_step1_step2_stratagem_descriptors_registered():
     by_name_thieves = get_stratagem_tool_descriptor(name="THIEVES OF PAIN")
     assert by_name_thieves is not None
     assert str(by_name_thieves.stratagem_id) == "000009807002"
+
+    by_name_archagonists = get_stratagem_tool_descriptor(name="ARCHAGONISTS")
+    assert by_name_archagonists is not None
+    assert str(by_name_archagonists.stratagem_id) == "000009807003"
+
+    by_name_overwhelming = get_stratagem_tool_descriptor(name="OVERWHELMING EXCESS")
+    assert by_name_overwhelming is not None
+    assert str(by_name_overwhelming.stratagem_id) == "000009807007"
 
 
 def test_phantasmal_longing_applies_movement_phase_move_types_and_cleans_up():
@@ -394,6 +414,210 @@ def test_thieves_of_pain_queues_on_attack_allocation_and_redirects_damage_until_
     )
     assert int(result.get("damage_applied", 0) or 0) == 1
     assert int(source_model.wounds) == source_start_wounds - 1
+
+
+def test_archagonists_applies_melee_wound_bonus_and_expires_at_phase_end():
+    game, legion_player, enemy_player, legion_army, enemy_army = _build_game()
+    source_unit = _make_unit(
+        "Daemonettes",
+        keywords=["SLAANESH", "INFANTRY"],
+        faction_keywords=["LEGIONES DAEMONICA"],
+    )
+    enemy_unit = _make_unit("Enemy Unit", keywords=["INFANTRY"])
+    legion_army.add_unit(source_unit)
+    enemy_army.add_unit(enemy_unit)
+    game.map.units.extend([source_unit, enemy_unit])
+    _deploy_unit(source_unit, 0.0, 0.0)
+    _deploy_unit(enemy_unit, 1.0, 0.0)
+
+    game.turn = 2
+    game.phase = BattleRoundPhases.FIGHT_PHASE
+    game.current_player_index = 1
+    game.event_system.publish("phase_start", player=enemy_player, phase=BattleRoundPhases.FIGHT_PHASE)
+
+    strat_name = _find_stratagem_name(legion_player, "ARCHAGONISTS")
+    ok = legion_player.stratagems.use(
+        strat_name,
+        units=[source_unit],
+        phase_name="Fight phase",
+    )
+    assert ok is True
+    assert legion_player.command_points == 3
+
+    class _FakeMeleeWargear:
+        name = "Test Claws"
+
+        @staticmethod
+        def is_melee() -> bool:
+            return True
+
+        @staticmethod
+        def is_ranged() -> bool:
+            return False
+
+    weapon_profile = WargearProfile(
+        "Test Melee",
+        {
+            "range": "Melee",
+            "A": "1",
+            "BS_WS": "3+",
+            "S": "4",
+            "AP": "0",
+            "D": "1",
+            "description": "",
+        },
+        parent_wargear=_FakeMeleeWargear(),
+    )
+
+    attacker_model = source_unit.models[0]
+    wound_result = weapon_profile._wound_target_with_tracking(
+        enemy_unit,
+        attacker_model,
+        attack_instance={},
+        roll_value=3,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert bool(wound_result.get("wound", False)) is True
+    assert any("ARCHAGONISTS" in str(reason).upper() for reason in list(wound_result.get("modifiers", []) or []))
+
+    game.event_system.publish("phase_end", player=enemy_player, phase=BattleRoundPhases.FIGHT_PHASE)
+    wound_result_after_cleanup = weapon_profile._wound_target_with_tracking(
+        enemy_unit,
+        attacker_model,
+        attack_instance={},
+        roll_value=3,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert bool(wound_result_after_cleanup.get("wound", False)) is False
+
+
+def test_archagonists_rejects_mixed_monster_and_non_monster_selection():
+    game, legion_player, enemy_player, legion_army, enemy_army = _build_game()
+    monster_unit = _make_unit(
+        "Keeper of Secrets",
+        keywords=["SLAANESH", "MONSTER"],
+        faction_keywords=["LEGIONES DAEMONICA"],
+    )
+    non_monster_unit = _make_unit(
+        "Daemonettes",
+        keywords=["SLAANESH", "INFANTRY"],
+        faction_keywords=["LEGIONES DAEMONICA"],
+    )
+    enemy_unit = _make_unit("Enemy Unit", keywords=["INFANTRY"])
+    legion_army.add_unit(monster_unit)
+    legion_army.add_unit(non_monster_unit)
+    enemy_army.add_unit(enemy_unit)
+    game.map.units.extend([monster_unit, non_monster_unit, enemy_unit])
+    _deploy_unit(monster_unit, 0.0, 0.0)
+    _deploy_unit(non_monster_unit, 2.0, 0.0)
+    _deploy_unit(enemy_unit, 1.0, 0.0)
+
+    game.turn = 2
+    game.phase = BattleRoundPhases.FIGHT_PHASE
+    game.current_player_index = 1
+    game.event_system.publish("phase_start", player=enemy_player, phase=BattleRoundPhases.FIGHT_PHASE)
+
+    strat_name = _find_stratagem_name(legion_player, "ARCHAGONISTS")
+    ok = legion_player.stratagems.use(
+        strat_name,
+        units=[monster_unit, non_monster_unit],
+        phase_name="Fight phase",
+    )
+    assert ok is False
+    assert legion_player.command_points == 5
+
+
+def test_overwhelming_excess_queues_on_target_selection_applies_hit_penalty_and_expires():
+    game, legion_player, enemy_player, legion_army, enemy_army = _build_game()
+    legion_unit = _make_unit(
+        "Daemonettes",
+        keywords=["SLAANESH", "INFANTRY"],
+        faction_keywords=["LEGIONES DAEMONICA"],
+    )
+    enemy_unit = _make_unit("Enemy Unit", keywords=["INFANTRY"])
+    legion_army.add_unit(legion_unit)
+    enemy_army.add_unit(enemy_unit)
+    game.map.units.extend([legion_unit, enemy_unit])
+    _deploy_unit(legion_unit, 0.0, 0.0)
+    _deploy_unit(enemy_unit, 9.0, 0.0)
+
+    game.turn = 2
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.current_player_index = 1
+    game.event_system.publish("phase_start", player=enemy_player, phase=BattleRoundPhases.SHOOTING_PHASE)
+
+    game.event_system.publish(
+        "shooting_targets_selected",
+        attacking_unit=enemy_unit,
+        target_units=[legion_unit],
+    )
+    pending = legion_player.stratagems.get_pending_reactions()
+    reactions = [
+        reaction
+        for reaction in list(pending or [])
+        if _normalize_name(str(reaction.get("stratagem", "") or "")) == "OVERWHELMING EXCESS"
+    ]
+    assert len(reactions) == 1
+    assert legion_unit in list(reactions[0].get("candidates", []) or [])
+
+    strat_name = _find_stratagem_name(legion_player, "OVERWHELMING EXCESS")
+    ok = legion_player.stratagems.use(
+        strat_name,
+        unit=legion_unit,
+        attacking_unit=enemy_unit,
+        phase_name="Shooting phase",
+        dequeue=True,
+    )
+    assert ok is True
+    assert legion_player.command_points == 4
+
+    class _FakeRangedWargear:
+        @staticmethod
+        def is_melee() -> bool:
+            return False
+
+        @staticmethod
+        def is_ranged() -> bool:
+            return True
+
+    weapon_profile = WargearProfile(
+        "Test Ranged",
+        {
+            "range": "24",
+            "A": "1",
+            "BS_WS": "3+",
+            "S": "4",
+            "AP": "0",
+            "D": "1",
+            "description": "",
+        },
+        parent_wargear=_FakeRangedWargear(),
+    )
+
+    attacker_model = enemy_unit.models[0]
+    hit_result = weapon_profile._hit_target_with_tracking(
+        legion_unit,
+        attacker_model,
+        attack_instance={},
+        roll_value=3,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert bool(hit_result.get("hit", False)) is False
+    assert any("OVERWHELMING EXCESS" in str(reason).upper() for reason in list(hit_result.get("modifiers", []) or []))
+
+    game.event_system.publish("phase_end", player=enemy_player, phase=BattleRoundPhases.SHOOTING_PHASE)
+    hit_result_after_cleanup = weapon_profile._hit_target_with_tracking(
+        legion_unit,
+        attacker_model,
+        attack_instance={},
+        roll_value=3,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert bool(hit_result_after_cleanup.get("hit", False)) is True
 
 
 def test_cavalcade_of_blades_queues_on_charge_end_and_applies_mortal_wounds(monkeypatch):

@@ -259,6 +259,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ENDLESS PURSUIT OF VIOLENCE",
     "HORRIFYING VIOLENCE",
     "FATEBORNE NIGHTMARES",
+    "ARCHAGONISTS",
     "BLOOD BEGETS SKULLS",
     "CAVALCADE OF BLADES",
     "FOOLS' FLIGHT",
@@ -266,6 +267,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "FICKLEFIRE",
     "GORE-HUNGRY ONSLAUGHT",
     "GORE\u2011HUNGRY ONSLAUGHT",
+    "OVERWHELMING EXCESS",
     "PHANTASMAL LONGING",
     "SENSORY EXCRUCIATION",
     "SKULLS BEGET BLOOD",
@@ -435,6 +437,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "DAEMONIC INVULNERABILITY",
     "BINDING SHADOW",
     "CAVALCADE OF BLADES",
+    "OVERWHELMING EXCESS",
     "SHADE PATH",
     "SPITEFUL DEMISE",
     "THIEVES OF PAIN",
@@ -1603,6 +1606,7 @@ class StratagemManager(
             "\u2019ARD AS NAILS",
             "DAEMONIC INVULNERABILITY",
             "SHEATHED IN BRASS",
+            "OVERWHELMING EXCESS",
             "AEGIS ETERNAL",
             "CONTEMPTUOUS DISREGARD",
             "REACTIVE DISEMBARKATION",
@@ -1637,6 +1641,7 @@ class StratagemManager(
             "FRENZIED RESILIENCE",
             "IMMORTAL FURY",
             "WRATH UNDENIABLE",
+            "OVERWHELMING EXCESS",
             "ARMOUR OF CONTEMPT",
             "THE FOE FORESEEN",
             "IN THE SHADOW OF BRASS IDOLS",
@@ -1763,6 +1768,8 @@ class StratagemManager(
             "FLICKERING REALITY",
             "CHANNELLED WRATH",
             "ENCROACHING DARKNESS",
+            "ARCHAGONISTS",
+            "OVERWHELMING EXCESS",
             "PHANTASMAL LONGING",
             "SHADE PATH",
             "THIEVES OF PAIN",
@@ -4151,9 +4158,11 @@ class StratagemManager(
             "ENCROACHING DARKNESS": "Target: up to one SHADOW LEGION HERETIC ASTARTES unit and up to one SHADOW LEGION LEGIONES DAEMONICA unit that arrived from Reserves this turn; ranged weapons gain [IGNORES COVER] until end of phase",
             "SHADE PATH": "Target: SHADOW LEGION unit selected as a target of an enemy charge; that enemy charge roll is worsened by 2 (and takes a Battle-shock test if your unit has NURGLE)",
             "SPITEFUL DEMISE": "Target: just-destroyed SHADOW LEGION unit; roll for each enemy within Engagement Range of the last model (SLAANESH adds 2) to inflict D3/3 mortal wounds",
+            "ARCHAGONISTS": "Target: one LEGIONES DAEMONICA SLAANESH MONSTER unit or up to two LEGIONES DAEMONICA SLAANESH non-MONSTER units that have not been selected to fight this phase",
             "SENSORY EXCRUCIATION": "Target: LEGIONES DAEMONICA SLAANESH MONSTER unit on the battlefield; units within your Shadow of Chaos take Battle-shock tests (-1 if Below Half-strength)",
             "PHANTASMAL LONGING": "Target: LEGIONES DAEMONICA SLAANESH unit; models can move through terrain features until end of Movement/Charge phase",
             "CAVALCADE OF BLADES": "Target: LEGIONES DAEMONICA SLAANESH unit just after it ends a Charge move; select one enemy in Engagement Range and roll for mortal wounds",
+            "OVERWHELMING EXCESS": "Target: LEGIONES DAEMONICA SLAANESH unit selected by an enemy attacking unit in Shooting/Fight phase; until end of phase, attacks that target it suffer -1 to hit",
             "THIEVES OF PAIN": "Target: LEGIONES DAEMONICA SLAANESH unit (excluding MONSTER/VEHICLE) just after an attack or mortal wound is allocated; select another friendly SLAANESH unit within 9\" and visible to receive redirected mortal wounds until end of phase",
             "BLOOD BEGETS SKULLS": "Target: LEGIONES DAEMONICA KHORNE unit that has not been selected to charge this phase",
             "FOOLS' FLIGHT": "Target: LEGIONES DAEMONICA KHORNE unit within 6\" of enemy unit that Fell Back and eligible to charge it",
@@ -6232,7 +6241,7 @@ class StratagemManager(
                         root.special_rules = sr
         except Exception:
             raise
-        # Chaos Daemons: Legion of Excess phase-end cleanup (PHANTASMAL LONGING / THIEVES OF PAIN).
+        # Chaos Daemons: Legion of Excess phase-end cleanup (PHANTASMAL LONGING / THIEVES OF PAIN / ARCHAGONISTS / OVERWHELMING EXCESS).
         try:
             self._cleanup_legion_of_excess_phase_end_effects(phase=phase)
         except Exception:
@@ -8472,6 +8481,13 @@ class StratagemManager(
             )
         except Exception:
             raise
+        try:
+            self._queue_legion_of_excess_shooting_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
         # GO TO GROUND
         try:
             s = self.get_by_name("GO TO GROUND")
@@ -9245,6 +9261,13 @@ class StratagemManager(
             raise
         try:
             self._queue_blood_legion_fight_target_reactions(
+                attacking_unit=attacking_unit,
+                target_units=list(target_units or []),
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_legion_of_excess_fight_target_reactions(
                 attacking_unit=attacking_unit,
                 target_units=list(target_units or []),
             )

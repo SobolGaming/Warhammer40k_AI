@@ -13855,6 +13855,53 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Chaos Daemons: Legion of Excess - Archagonists (+1 to wound in melee).
+        is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+        if is_melee:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            attacker_root = (
+                attacker_unit.get_attached_unit_root()
+                if attacker_unit is not None and hasattr(attacker_unit, "get_attached_unit_root")
+                else attacker_unit
+            )
+            sr = getattr(attacker_root, "special_rules", None) if attacker_root is not None else None
+            if isinstance(sr, dict) and sr.get("legion_of_excess_archagonists_melee_wound_bonus_active"):
+                applies = True
+                source_name = str(
+                    sr.get("legion_of_excess_archagonists_source", "") or "Archagonists"
+                ).strip() or "Archagonists"
+                try:
+                    bonus = int(sr.get("legion_of_excess_archagonists_melee_wound_bonus", 1) or 1)
+                except (TypeError, ValueError):
+                    bonus = 1
+                try:
+                    effect_turn = int(sr.get("legion_of_excess_archagonists_turn", 0) or 0)
+                except (TypeError, ValueError):
+                    effect_turn = 0
+                army = (
+                    attacker_root.get_parent_army()
+                    if attacker_root is not None and hasattr(attacker_root, "get_parent_army")
+                    else None
+                )
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                expires_phase = str(sr.get("legion_of_excess_archagonists_expires_phase", "") or "").strip().upper()
+                current_phase = (
+                    str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    if game is not None
+                    else ""
+                )
+                if expires_phase and current_phase and expires_phase != current_phase:
+                    applies = False
+                try:
+                    current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                except (TypeError, ValueError):
+                    current_turn = 0
+                if applies and effect_turn and current_turn and effect_turn != current_turn:
+                    applies = False
+                if applies and bonus:
+                    dice_modifier += int(bonus)
+                    wound_result["modifiers"].append(f"+{int(bonus)} to wound from {source_name}")
+
         # First Prince of Chaos (Shadow Legion Nurgle): -1 to wound if Strength > Toughness.
         try:
             if hasattr(target, "has_first_prince_nurgle_defense") and target.has_first_prince_nurgle_defense():
