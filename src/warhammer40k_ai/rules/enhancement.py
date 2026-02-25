@@ -432,6 +432,9 @@ class Enhancement:
         is_librarius_conclave = bool(
             sm_mgr and getattr(sm_mgr, "is_librarius_conclave", lambda: False)()
         )
+        is_lions_blade_task_force = bool(
+            sm_mgr and getattr(sm_mgr, "is_lions_blade_task_force", lambda: False)()
+        )
         is_bastion_task_force = bool(
             sm_mgr and getattr(sm_mgr, "is_bastion_task_force", lambda: False)()
         )
@@ -1461,6 +1464,86 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_fusillade_bearer_model_id"] = bearer_id
+
+        if name == "calibanite armaments" or enh_id == "000009733002":
+            if not is_lions_blade_task_force:
+                return
+            unit.special_rules["enhancement_calibanite_armaments"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            dmg_bonus = _coerce_int(params.get("melee_damage_bonus", 1) or 1, default=1)
+            unit.special_rules["enhancement_bearer_melee_damage_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_damage_bonus", 0) or 0
+            ) + int(max(0, dmg_bonus))
+            unit.special_rules["enhancement_calibanite_armaments_source"] = (
+                str(getattr(self, "name", "") or "Calibanite Armaments").strip() or "Calibanite Armaments"
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_calibanite_armaments_bearer_model_id"] = bearer_id
+
+        if name == "lord of the hunt" or enh_id == "000009733003":
+            if not is_lions_blade_task_force:
+                return
+            unit.special_rules["enhancement_lord_of_the_hunt"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_lord_of_the_hunt_shoot_after_fall_back"] = bool(
+                params.get("shoot_after_fall_back", True)
+            )
+            unit.special_rules["enhancement_lord_of_the_hunt_charge_after_fall_back"] = bool(
+                params.get("charge_after_fall_back", True)
+            )
+            unit.special_rules["enhancement_lord_of_the_hunt_reroll_desperate_escape"] = bool(
+                params.get("reroll_desperate_escape_tests", True)
+            )
+            unit.special_rules["enhancement_lord_of_the_hunt_source"] = (
+                str(getattr(self, "name", "") or "Lord of the Hunt").strip() or "Lord of the Hunt"
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_lord_of_the_hunt_bearer_model_id"] = bearer_id
+
+        if name == "stalwart champion" or enh_id == "000009733004":
+            if not is_lions_blade_task_force:
+                return
+            unit.special_rules["enhancement_stalwart_champion"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            oc_bonus = _coerce_int(params.get("objective_control_bonus", 1) or 1, default=1)
+            unit.special_rules["enhancement_stalwart_champion_objective_control_bonus"] = int(max(0, oc_bonus))
+            unit.special_rules["enhancement_stalwart_champion_requires_not_battle_shocked"] = bool(
+                params.get("requires_not_battle_shocked", True)
+            )
+            unit.special_rules["enhancement_stalwart_champion_source"] = (
+                str(getattr(self, "name", "") or "Stalwart Champion").strip() or "Stalwart Champion"
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_stalwart_champion_bearer_model_id"] = bearer_id
+
+        if name == "fulgus magna" or enh_id == "000009733005":
+            if not is_lions_blade_task_force:
+                return
+            unit.special_rules["enhancement_fulgus_magna"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            once_key = str(params.get("once_per_battle_key", "fulgus_magna") or "fulgus_magna").strip().lower()
+            if not once_key:
+                once_key = "fulgus_magna"
+            unit.special_rules["enhancement_fulgus_magna_once_key"] = once_key
+            unit.special_rules["enhancement_fulgus_magna_requires_not_engagement_range"] = bool(
+                params.get("requires_not_engagement_range", True)
+            )
+            unit.special_rules["enhancement_fulgus_magna_source"] = (
+                str(getattr(self, "name", "") or "Fulgus Magna").strip() or "Fulgus Magna"
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_fulgus_magna_bearer_model_id"] = bearer_id
+            cache = getattr(unit, "_ability_cache", None)
+            if isinstance(cache, dict):
+                cache.pop("opponent_turn_strategic_reserves_ability", None)
 
         if name == "eye of the primarch" or enh_id == "000010676002":
             if not is_bastion_task_force:

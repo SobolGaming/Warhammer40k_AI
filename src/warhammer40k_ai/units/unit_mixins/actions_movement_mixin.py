@@ -11502,6 +11502,15 @@ class ActionsMovementMixin:
         except Exception:
             pass
         try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "lions_blade_lord_of_hunt_shoot_after_fall_back_applies", None):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if mgr.lions_blade_lord_of_hunt_shoot_after_fall_back_applies(self, weapon_profile=profile, game=game):
+                    return True
+        except Exception:
+            pass
+        try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("vectored_engines_active"):
                 army = self.get_parent_army()
@@ -11883,6 +11892,15 @@ class ActionsMovementMixin:
             mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
             if mgr is not None and getattr(mgr, "champions_of_fenris_fangrune_pendant_applies", None):
                 if mgr.champions_of_fenris_fangrune_pendant_applies(self):
+                    return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "lions_blade_lord_of_hunt_charge_after_fall_back_applies", None):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if mgr.lions_blade_lord_of_hunt_charge_after_fall_back_applies(self, game=game):
                     return True
         except Exception:
             pass

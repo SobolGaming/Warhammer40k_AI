@@ -1697,6 +1697,60 @@ _SPACE_MARINES_LIBRARIUS_CONCLAVE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPACE_MARINES_LIBRARIUS_CONCLAVE_DESCRIPTORS.values()
 }
 
+_SPACE_MARINES_LIONS_BLADE_TASK_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009733002": EnhancementToolDescriptor(
+        enhancement_id="000009733002",
+        name="Calibanite Armaments",
+        timing="passive",
+        target="bearer_melee_weapons",
+        duration="constant",
+        effect="bearer_melee_damage_bonus",
+        effect_params={"melee_damage_bonus": 1},
+    ),
+    "000009733003": EnhancementToolDescriptor(
+        enhancement_id="000009733003",
+        name="Lord of the Hunt",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant_while_bearer_alive",
+        effect="eligible_to_shoot_and_charge_after_fall_back_and_reroll_desperate_escape_tests",
+        effect_params={
+            "shoot_after_fall_back": True,
+            "charge_after_fall_back": True,
+            "reroll_desperate_escape_tests": True,
+        },
+    ),
+    "000009733004": EnhancementToolDescriptor(
+        enhancement_id="000009733004",
+        name="Stalwart Champion",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant_while_not_battle_shocked",
+        effect="while_not_battleshocked_bearer_unit_objective_control_bonus",
+        effect_params={
+            "objective_control_bonus": 1,
+            "requires_not_battle_shocked": True,
+        },
+    ),
+    "000009733005": EnhancementToolDescriptor(
+        enhancement_id="000009733005",
+        name="Fulgus Magna",
+        timing="end_of_opponent_turn_once_per_battle",
+        target="bearer_unit",
+        duration="instant_once_per_battle",
+        effect="once_per_battle_end_of_opponent_turn_enter_strategic_reserves",
+        effect_params={
+            "once_per_battle_key": "fulgus_magna",
+            "requires_not_engagement_range": True,
+            "destination": "strategic_reserves",
+        },
+    ),
+}
+
+_SPACE_MARINES_LIONS_BLADE_TASK_FORCE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPACE_MARINES_LIONS_BLADE_TASK_FORCE_DESCRIPTORS.values()
+}
+
 _SPACE_MARINES_BASTION_TASK_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010676002": EnhancementToolDescriptor(
         enhancement_id="000010676002",
@@ -2591,6 +2645,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPACE_MARINES_LIBRARIUS_CONCLAVE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPACE_MARINES_LIONS_BLADE_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPACE_MARINES_BASTION_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -2673,6 +2730,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SPACE_MARINES_IRONSTORM_SPEARHEAD_BY_NAME.get(key)
         or _SPACE_MARINES_LIBERATOR_ASSAULT_GROUP_BY_NAME.get(key)
         or _SPACE_MARINES_LIBRARIUS_CONCLAVE_BY_NAME.get(key)
+        or _SPACE_MARINES_LIONS_BLADE_TASK_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_BASTION_TASK_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_BLADE_OF_ULTRAMAR_BY_NAME.get(key)
         or _SPACE_MARINES_CHAMPIONS_OF_FENRIS_BY_NAME.get(key)

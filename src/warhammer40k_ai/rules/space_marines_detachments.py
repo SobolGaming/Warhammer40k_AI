@@ -3625,6 +3625,124 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
                     continue
         return 0, ""
 
+    def _lions_blade_enhancement_source_member(self, unit, flag_key: str):
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return None, None, None
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        members.sort(key=lambda member: str(get_entity_id(member) or ""))
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get(flag_key, False)):
+                return root, member, sr
+        return root, None, None
+
+    @staticmethod
+    def _lions_blade_member_has_live_bearer(member, sr) -> bool:
+        if member is None or not isinstance(sr, dict):
+            return False
+        bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
+        if bearer_id:
+            for model in list(getattr(member, "models", []) or []):
+                if str(get_entity_id(model) or "") != bearer_id:
+                    continue
+                alive_attr = getattr(model, "is_alive", True)
+                return bool(alive_attr() if callable(alive_attr) else alive_attr)
+            return False
+        bearer = getattr(member, "_get_enhancement_bearer_model", lambda: None)()
+        if bearer is None:
+            return False
+        alive_attr = getattr(bearer, "is_alive", True)
+        return bool(alive_attr() if callable(alive_attr) else alive_attr)
+
+    def _lions_blade_lord_of_hunt_applies(self, unit, *, rule_key: str) -> bool:
+        if not self.is_lions_blade_task_force():
+            return False
+        root, member, sr = self._lions_blade_enhancement_source_member(
+            unit,
+            "enhancement_lord_of_the_hunt",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return False
+        try:
+            if root.get_parent_army() is not self.army:
+                return False
+        except Exception:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        if not self._lions_blade_member_has_live_bearer(member, sr):
+            return False
+        return bool(sr.get(rule_key, True))
+
+    def lions_blade_lord_of_hunt_shoot_after_fall_back_applies(self, unit, weapon_profile=None, *, game=None) -> bool:
+        _ = weapon_profile
+        _ = game
+        return self._lions_blade_lord_of_hunt_applies(
+            unit,
+            rule_key="enhancement_lord_of_the_hunt_shoot_after_fall_back",
+        )
+
+    def lions_blade_lord_of_hunt_charge_after_fall_back_applies(self, unit, *, game=None) -> bool:
+        _ = game
+        return self._lions_blade_lord_of_hunt_applies(
+            unit,
+            rule_key="enhancement_lord_of_the_hunt_charge_after_fall_back",
+        )
+
+    def lions_blade_lord_of_hunt_reroll_desperate_escape_applies(self, unit, *, game=None) -> bool:
+        _ = game
+        return self._lions_blade_lord_of_hunt_applies(
+            unit,
+            rule_key="enhancement_lord_of_the_hunt_reroll_desperate_escape",
+        )
+
+    def lions_blade_stalwart_champion_objective_control_bonus(self, model, *, unit=None, game=None) -> tuple[int, str]:
+        _ = game
+        if not self.is_lions_blade_task_force() or model is None:
+            return 0, ""
+        source_unit = unit
+        if source_unit is None:
+            source_unit = getattr(model, "parent_unit", None)
+        source_root = self._attached_unit_root(source_unit)
+        if source_root is None:
+            return 0, ""
+        root, member, sr = self._lions_blade_enhancement_source_member(
+            source_root,
+            "enhancement_stalwart_champion",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return 0, ""
+        if str(get_entity_id(root) or "") != str(get_entity_id(source_root) or ""):
+            return 0, ""
+        try:
+            if root.get_parent_army() is not self.army:
+                return 0, ""
+        except Exception:
+            return 0, ""
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return 0, ""
+        if not self._lions_blade_member_has_live_bearer(member, sr):
+            return 0, ""
+        if bool(sr.get("enhancement_stalwart_champion_requires_not_battle_shocked", True)):
+            if bool(getattr(root, "is_battle_shocked", lambda: False)()):
+                return 0, ""
+        try:
+            bonus = int(sr.get("enhancement_stalwart_champion_objective_control_bonus", 1) or 1)
+        except Exception:
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        source = str(sr.get("enhancement_stalwart_champion_source", "") or "Stalwart Champion").strip() or "Stalwart Champion"
+        return int(max(0, bonus)), source
+
     def clear_vowed_target_selection(self) -> None:
         self.vowed_target_mode = ""
         self.vowed_objective_ids = ()

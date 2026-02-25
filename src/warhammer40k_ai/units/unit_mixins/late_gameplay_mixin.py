@@ -2399,24 +2399,61 @@ class LateGameplayMixin:
         models_to_test = self.models.copy()  # Copy to avoid modifying list while iterating
         models_destroyed = 0
         mod = int(roll_modifier or 0)
+        reroll_failed_tests = False
+        try:
+            army = self.get_parent_army()
+        except Exception:
+            army = None
+        try:
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            reroll_fn = (
+                getattr(sm_mgr, "lions_blade_lord_of_hunt_reroll_desperate_escape_applies", None)
+                if sm_mgr is not None
+                else None
+            )
+            if callable(reroll_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                reroll_failed_tests = bool(reroll_fn(self, game=game))
+        except Exception:
+            reroll_failed_tests = False
         
         for i, model in enumerate(models_to_test):
             roll = get_roll("D6")
             final_roll = roll + mod
+            reroll_roll = None
+            if final_roll <= 2 and reroll_failed_tests:
+                reroll_roll = get_roll("D6")
+                final_roll = int(reroll_roll) + int(mod)
             if final_roll <= 2:
                 # Model is destroyed
                 if mod:
-                    logger.info(f"Model {i+1}: Rolled {roll} ({mod:+d} -> {final_roll}) - DESTROYED! ")
+                    if reroll_roll is not None:
+                        logger.info(
+                            f"Model {i+1}: Rolled {roll}, re-rolled {reroll_roll} ({mod:+d} -> {final_roll}) - DESTROYED! "
+                        )
+                    else:
+                        logger.info(f"Model {i+1}: Rolled {roll} ({mod:+d} -> {final_roll}) - DESTROYED! ")
                 else:
-                    logger.info(f"Model {i+1}: Rolled {roll} - DESTROYED! ")
+                    if reroll_roll is not None:
+                        logger.info(f"Model {i+1}: Rolled {roll}, re-rolled {reroll_roll} - DESTROYED! ")
+                    else:
+                        logger.info(f"Model {i+1}: Rolled {roll} - DESTROYED! ")
                 self.remove_model(model, fleed=True, game_map=game_map)  # Mark as fled, not killed in combat
                 models_destroyed += 1
             else:
                 # Model survives
                 if mod:
-                    logger.info(f"Model {i+1}: Rolled {roll} ({mod:+d} -> {final_roll}) - Survives ")
+                    if reroll_roll is not None:
+                        logger.info(
+                            f"Model {i+1}: Rolled {roll}, re-rolled {reroll_roll} ({mod:+d} -> {final_roll}) - Survives "
+                        )
+                    else:
+                        logger.info(f"Model {i+1}: Rolled {roll} ({mod:+d} -> {final_roll}) - Survives ")
                 else:
-                    logger.info(f"Model {i+1}: Rolled {roll} - Survives ")
+                    if reroll_roll is not None:
+                        logger.info(f"Model {i+1}: Rolled {roll}, re-rolled {reroll_roll} - Survives ")
+                    else:
+                        logger.info(f"Model {i+1}: Rolled {roll} - Survives ")
         
         if models_destroyed > 0:
             logger.info(f"Desperate Escape Test complete: {models_destroyed} model(s) destroyed, {len(self.models)} remain")
