@@ -2724,6 +2724,23 @@ class GamePhaseHandlersMixin:
             except Exception:
                 return str(getattr(m, "name", "") or "")
 
+        def _unit_has_keyword(unit, keyword: str) -> bool:
+            kw = str(keyword or "").strip().upper()
+            if unit is None or not kw:
+                return False
+            has_any = getattr(unit, "has_any_keyword", None)
+            if callable(has_any):
+                try:
+                    return bool(has_any(kw))
+                except Exception:
+                    pass
+            try:
+                all_keywords = list(getattr(unit, "keywords", []) or []) + list(getattr(unit, "faction_keywords", []) or [])
+            except Exception:
+                all_keywords = []
+            normalized = {str(v or "").strip().upper() for v in all_keywords}
+            return kw in normalized
+
         def _model_alive(model) -> bool:
             if model is None:
                 return False
@@ -6481,6 +6498,28 @@ class GamePhaseHandlersMixin:
             except Exception:
                 return str(getattr(m, "name", "") or "")
 
+        def _unit_has_keyword(unit, keyword: str) -> bool:
+            kw = str(keyword or "").strip().upper()
+            if not kw or unit is None:
+                return False
+            has_any = getattr(unit, "has_any_keyword", None)
+            if callable(has_any):
+                try:
+                    if bool(has_any(kw)):
+                        return True
+                except Exception:
+                    pass
+            has_any_local = getattr(unit, "has_any_keyword_local", None)
+            if callable(has_any_local):
+                try:
+                    if bool(has_any_local(kw)):
+                        return True
+                except Exception:
+                    pass
+            keywords = [str(v or "").strip().upper() for v in list(getattr(unit, "keywords", []) or [])]
+            faction_keywords = [str(v or "").strip().upper() for v in list(getattr(unit, "faction_keywords", []) or [])]
+            return kw in set([k for k in keywords + faction_keywords if k])
+
         for opp in list(getattr(self, "players", []) or []):
             if opp is None or opp is player:
                 continue
@@ -6545,6 +6584,17 @@ class GamePhaseHandlersMixin:
                         optional = bool(spec.get("optional", False))
                         mortal_on_one = bool(spec.get("mortal_on_one", False))
                         grant_ranged_hazardous = bool(spec.get("grant_ranged_hazardous", False))
+                        resolution_mode = str(spec.get("resolution_mode", "") or "d6_table").strip().lower() or "d6_table"
+                        required_keywords: list[str] = []
+                        for keyword in list(spec.get("required_target_keywords", ()) or []):
+                            kw = str(keyword or "").strip().upper()
+                            if kw and kw not in required_keywords:
+                                required_keywords.append(kw)
+                        excluded_keywords: list[str] = []
+                        for keyword in list(spec.get("excluded_target_keywords", ()) or []):
+                            kw = str(keyword or "").strip().upper()
+                            if kw and kw not in excluded_keywords:
+                                excluded_keywords.append(kw)
                         used_fn = getattr(opp, "_ability_used_this_turn", None)
                         if limit_one and callable(used_fn) and used_fn(ability_key):
                             continue
@@ -6560,12 +6610,20 @@ class GamePhaseHandlersMixin:
                                 "limit_one": limit_one,
                                 "mortal_on_one": mortal_on_one,
                                 "grant_ranged_hazardous": grant_ranged_hazardous,
+                                "resolution_mode": resolution_mode,
+                                "required_target_keywords": list(required_keywords),
+                                "excluded_target_keywords": list(excluded_keywords),
                                 "model_id": None if limit_one else model_id,
                             }
                         entries = groups.setdefault(group_key, [])
                         for cand in list(candidates):
                             target_id = str(get_entity_id(cand) or "")
                             if not target_id:
+                                continue
+                            if required_keywords:
+                                if not all(_unit_has_keyword(cand, keyword) for keyword in required_keywords):
+                                    continue
+                            if excluded_keywords and any(_unit_has_keyword(cand, keyword) for keyword in excluded_keywords):
                                 continue
                             entries.append((model, cand, source_unit))
 
@@ -6624,10 +6682,17 @@ class GamePhaseHandlersMixin:
                         "ability_key": ability_key,
                         "mortal_on_one": bool(meta.get("mortal_on_one", False)),
                         "grant_ranged_hazardous": bool(meta.get("grant_ranged_hazardous", False)),
+                        "resolution_mode": str(meta.get("resolution_mode", "") or "d6_table").strip().lower() or "d6_table",
                         "optional": bool(meta.get("optional", False)),
                         "limit_one_per_army": bool(meta.get("limit_one", False)),
                         "phase": "Shooting phase",
                     }
+                    required_keywords = list(meta.get("required_target_keywords", []) or [])
+                    if required_keywords:
+                        ctx["required_target_keywords"] = list(required_keywords)
+                    excluded_keywords = list(meta.get("excluded_target_keywords", []) or [])
+                    if excluded_keywords:
+                        ctx["excluded_target_keywords"] = list(excluded_keywords)
                     if model_filter:
                         ctx["model_id"] = model_filter
                     request = DecisionRequest.create(
@@ -9672,6 +9737,70 @@ class GamePhaseHandlersMixin:
             return
         mgr.on_shooting_phase_end(game=self, player=player)
 
+    def _on_phase_end_space_marines_enhancements(self, player=None, phase=None, **_kwargs) -> None:
+        """Resolve Space Marines enhancement end-of-phase hooks."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "FIGHT_PHASE":
+            return
+        if player is None:
+            return
+        owner_id = str(getattr(player, "id", "") or "")
+        if not owner_id:
+            return
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        for p in list(self.players or []):
+            if p is None:
+                continue
+            army = p.get_army()
+            if army is None:
+                continue
+            for unit in list(getattr(army, "units", []) or []):
+                if unit is None:
+                    continue
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict) or not bool(sr.get("enhancement_thief_of_secrets")):
+                    continue
+                pending = bool(sr.get("enhancement_thief_of_secrets_pending_upgrade"))
+                pending_phase = str(sr.get("enhancement_thief_of_secrets_pending_phase", "") or "").strip().upper()
+                pending_owner = str(sr.get("enhancement_thief_of_secrets_pending_turn_owner", "") or "")
+                try:
+                    pending_turn = int(sr.get("enhancement_thief_of_secrets_pending_turn", 0) or 0)
+                except Exception:
+                    pending_turn = 0
+                try:
+                    kills = int(sr.get("enhancement_thief_of_secrets_phase_kills", 0) or 0)
+                except Exception:
+                    kills = 0
+                if (
+                    pending
+                    and kills > 0
+                    and (not pending_phase or pending_phase == "FIGHT_PHASE")
+                    and (not pending_owner or pending_owner == owner_id)
+                    and (not pending_turn or pending_turn == int(current_turn or 0))
+                    and not bool(sr.get("enhancement_thief_of_secrets_upgraded"))
+                ):
+                    try:
+                        upgraded_bonus = int(sr.get("enhancement_thief_of_secrets_upgraded_bonus", 2) or 2)
+                    except Exception:
+                        upgraded_bonus = 2
+                    upgraded_bonus = int(max(0, upgraded_bonus))
+                    sr["enhancement_bearer_melee_strength_bonus"] = int(upgraded_bonus)
+                    sr["enhancement_bearer_melee_damage_bonus"] = int(upgraded_bonus)
+                    sr["enhancement_bearer_melee_ap_bonus"] = int(upgraded_bonus)
+                    sr["enhancement_thief_of_secrets_upgraded"] = True
+                for key in (
+                    "enhancement_thief_of_secrets_phase_kills",
+                    "enhancement_thief_of_secrets_pending_upgrade",
+                    "enhancement_thief_of_secrets_pending_phase",
+                    "enhancement_thief_of_secrets_pending_turn",
+                    "enhancement_thief_of_secrets_pending_turn_owner",
+                ):
+                    sr.pop(key, None)
+                unit.special_rules = sr
+
     def _on_phase_end_cleanup(self, player=None, phase=None, **_kwargs) -> None:
         """Best-effort cleanup for model-level temporary effects that expire at end of a phase."""
         for p in list(self.players or []):
@@ -9690,6 +9819,7 @@ class GamePhaseHandlersMixin:
         active_name = str(getattr(player, "id", "") or "") if player is not None else ""
         if not pname:
             return
+        self._on_phase_end_space_marines_enhancements(player=player, phase=phase)
         for p in list(self.players or []):
             if p is None:
                 raise RuntimeError("Phase-end cleanup requires players.")

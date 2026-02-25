@@ -1586,6 +1586,66 @@ _SPACE_MARINES_BASTION_TASK_FORCE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPACE_MARINES_BASTION_TASK_FORCE_DESCRIPTORS.values()
 }
 
+_SPACE_MARINES_BLACK_SPEAR_TASK_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008522002": EnhancementToolDescriptor(
+        enhancement_id="000008522002",
+        name="Thief of Secrets",
+        timing="passive_and_end_of_fight_phase_on_bearer_melee_kill",
+        target="bearer_melee_weapons",
+        duration="constant_then_battle_long_upgrade",
+        effect="bearer_melee_strength_damage_ap_bonus_with_end_of_fight_upgrade",
+        effect_params={
+            "base_bonus": 1,
+            "upgraded_bonus": 2,
+        },
+    ),
+    "000008522003": EnhancementToolDescriptor(
+        enhancement_id="000008522003",
+        name="Osseus Key",
+        timing="start_of_opponent_shooting_phase",
+        target="enemy_vehicle_unit_within_range_visible_excluding_titanic",
+        duration="until_end_of_phase",
+        effect="leadership_test_then_hit_penalty_or_ineligible_to_shoot",
+        range_in=12.0,
+        effect_params={
+            "range": 12.0,
+            "required_target_keywords": ("VEHICLE",),
+            "excluded_target_keywords": ("TITANIC",),
+            "resolution_mode": "leadership_test",
+        },
+    ),
+    "000008522004": EnhancementToolDescriptor(
+        enhancement_id="000008522004",
+        name="Beacon Angelis",
+        timing="passive_and_stratagem_targeting",
+        target="bearer_unit",
+        duration="constant",
+        effect="grant_deep_strike_and_rapid_ingress_zero_cp",
+        effect_params={
+            "grants_deep_strike": True,
+            "stratagem_name": "RAPID INGRESS",
+            "cp_reduction": "to_zero",
+        },
+    ),
+    "000008522005": EnhancementToolDescriptor(
+        enhancement_id="000008522005",
+        name="The Tome of Ectoclades",
+        timing="after_selecting_oath_of_moment_target",
+        target="enemy_unit",
+        duration="until_next_command_phase_once_per_battle",
+        effect="optional_second_oath_of_moment_target",
+        once_per_battle=True,
+        effect_params={
+            "once_per_battle_key": "tome_of_ectoclades",
+            "target_slot": "secondary",
+        },
+    ),
+}
+
+_SPACE_MARINES_BLACK_SPEAR_TASK_FORCE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPACE_MARINES_BLACK_SPEAR_TASK_FORCE_DESCRIPTORS.values()
+}
+
 _LEGION_OF_EXCESS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009806002": EnhancementToolDescriptor(
         enhancement_id="000009806002",
@@ -2093,6 +2153,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPACE_MARINES_BASTION_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPACE_MARINES_BLACK_SPEAR_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _LEGION_OF_EXCESS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -2152,6 +2215,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SPACE_MARINES_ANGELIC_INHERITORS_BY_NAME.get(key)
         or _SPACE_MARINES_ANVIL_SIEGE_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_BASTION_TASK_FORCE_BY_NAME.get(key)
+        or _SPACE_MARINES_BLACK_SPEAR_TASK_FORCE_BY_NAME.get(key)
         or _LEGION_OF_EXCESS_BY_NAME.get(key)
         or _PLAGUE_LEGION_BY_NAME.get(key)
         or _SCINTILLATING_LEGION_BY_NAME.get(key)

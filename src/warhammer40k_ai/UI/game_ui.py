@@ -11468,13 +11468,13 @@ class GameView:
         if not options:
             return
         if len(options) == 1:
-            mgr.set_target(options[0])
+            mgr.set_target(options[0], game=game, player=player, source="Oath of Moment")
             return
 
         try:
             from .dialogs import QuarrySelectionDialog
         except Exception:
-            mgr.set_target(options[0])
+            mgr.set_target(options[0], game=game, player=player, source="Oath of Moment")
             return
 
         if not hasattr(self, "oath_of_moment_dialog") or self.oath_of_moment_dialog is None:

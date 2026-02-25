@@ -17,16 +17,22 @@ class OathOfMomentManager:
         self.army = army
         self.oathOfMomentTargetUnitId: Optional[str] = None
         self.oathOfMomentTargetName: Optional[str] = None
+        self.oathOfMomentSecondaryTargetUnitId: Optional[str] = None
+        self.oathOfMomentSecondaryTargetName: Optional[str] = None
         self.extremisLevelThreatActive: bool = False
         self.extremisLevelThreatUsed: bool = False
         self.recalculatingUsedBattleRound: int = 0
+        self.tomeOfEctocladesUsed: bool = False
         if self.army is not None:
             try:
                 setattr(self.army, "oathOfMomentTargetUnitId", None)
                 setattr(self.army, "oathOfMomentTargetName", None)
+                setattr(self.army, "oathOfMomentSecondaryTargetUnitId", None)
+                setattr(self.army, "oathOfMomentSecondaryTargetName", None)
                 setattr(self.army, "extremisLevelThreatActive", False)
                 setattr(self.army, "extremisLevelThreatUsed", False)
                 setattr(self.army, "recalculatingUsedBattleRound", 0)
+                setattr(self.army, "tomeOfEctocladesUsed", False)
             except Exception:
                 pass
 
@@ -207,6 +213,16 @@ class OathOfMomentManager:
             except Exception:
                 pass
 
+    def clear_secondary_target(self) -> None:
+        self.oathOfMomentSecondaryTargetUnitId = None
+        self.oathOfMomentSecondaryTargetName = None
+        if self.army is not None:
+            try:
+                setattr(self.army, "oathOfMomentSecondaryTargetUnitId", None)
+                setattr(self.army, "oathOfMomentSecondaryTargetName", None)
+            except Exception:
+                pass
+
     def clear_extremis_level_threat(self) -> None:
         self.extremisLevelThreatActive = False
         if self.army is not None:
@@ -228,6 +244,17 @@ class OathOfMomentManager:
                 setattr(self.army, "recalculatingUsedBattleRound", int(self.recalculatingUsedBattleRound or 0))
             except Exception:
                 pass
+
+    def _sync_tome_of_ectoclades_used(self) -> None:
+        if self.army is not None:
+            try:
+                setattr(self.army, "tomeOfEctocladesUsed", bool(self.tomeOfEctocladesUsed))
+            except Exception:
+                pass
+
+    def mark_tome_of_ectoclades_used(self) -> None:
+        self.tomeOfEctocladesUsed = True
+        self._sync_tome_of_ectoclades_used()
 
     def can_activate_extremis_level_threat(self) -> bool:
         if not self._army_has_oath():
@@ -384,6 +411,27 @@ class OathOfMomentManager:
             ctx = dict(getattr(req, "context", {}) or {})
             if str(ctx.get("ability", "") or "") != "oath_of_moment":
                 continue
+            target_slot = str(ctx.get("target_slot", "") or "primary").strip().lower() or "primary"
+            if target_slot != "primary":
+                continue
+            if army_id and str(ctx.get("army_id", "") or "") != army_id:
+                continue
+            return True
+        return False
+
+    def _pending_tome_of_ectoclades_request(self, *, game=None, army_id: str = "") -> bool:
+        queue = getattr(game, "decision_queue", None) if game is not None else None
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "")) != "CHOOSE_QUARRY":
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "") != "oath_of_moment":
+                continue
+            target_slot = str(ctx.get("target_slot", "") or "").strip().lower()
+            if target_slot != "secondary":
+                continue
             if army_id and str(ctx.get("army_id", "") or "") != army_id:
                 continue
             return True
@@ -479,6 +527,96 @@ class OathOfMomentManager:
         self._sync_recalculating_used_battle_round()
         return True
 
+    def _army_has_tome_of_ectoclades_available(self) -> bool:
+        if self.army is None:
+            return False
+        if bool(self.tomeOfEctocladesUsed):
+            return False
+        for unit in list(getattr(self.army, "units", []) or []):
+            if unit is None:
+                continue
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_tome_of_ectoclades")):
+                continue
+            bearer = getattr(unit, "_get_enhancement_bearer_model", lambda: None)()
+            if bearer is None:
+                continue
+            is_alive_attr = getattr(bearer, "is_alive", True)
+            try:
+                if not bool(is_alive_attr() if callable(is_alive_attr) else is_alive_attr):
+                    continue
+            except Exception:
+                continue
+            return True
+        return False
+
+    def _queue_tome_of_ectoclades_prompt(self, *, game=None, player=None, primary_target=None) -> None:
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return
+        if self.army is None or player is None:
+            return
+        try:
+            if getattr(player, "get_army", lambda: None)() is not self.army:
+                return
+        except Exception:
+            return
+        if not self._army_has_tome_of_ectoclades_available():
+            return
+        try:
+            phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        except Exception:
+            phase_name = ""
+        if phase_name and phase_name != "COMMAND_PHASE":
+            return
+        army_id = get_entity_id(self.army) if self.army is not None else ""
+        if self._pending_tome_of_ectoclades_request(game=game, army_id=str(army_id or "")):
+            return
+        options = self._eligible_enemy_units(game=game, player=player)
+        if not options:
+            return
+        primary_id = ""
+        if primary_target is not None:
+            try:
+                primary_root = primary_target.get_attached_unit_root()
+            except Exception:
+                primary_root = primary_target
+            primary_id = str(getattr(primary_root, "_id", "") or "")
+        filtered = []
+        for unit in list(options or []):
+            uid = str(getattr(unit, "_id", "") or "")
+            if primary_id and uid and uid == primary_id:
+                continue
+            filtered.append(unit)
+        if not filtered:
+            return
+        try:
+            from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+            from ..engine.decisions import DecisionOption, DecisionRequest
+        except Exception:
+            return
+        req_options = [DecisionOption.create("None", payload={"action": "skip", "target_slot": "secondary"})]
+        for unit in filtered:
+            req_options.append(
+                DecisionOption.create(
+                    getattr(unit, "name", "Unit"),
+                    payload={"target_unit_id": get_entity_id(unit), "target_slot": "secondary"},
+                )
+            )
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "The Tome of Ectoclades: select a second Oath of Moment target.",
+            player_id=getattr(player, "id", None),
+            options=req_options,
+            context={
+                "ability": "oath_of_moment",
+                "ability_name": "The Tome of Ectoclades",
+                "army_id": army_id,
+                "target_slot": "secondary",
+            },
+        )
+        if hasattr(game, "request_decision"):
+            game.request_decision(req)
+
     def on_oath_target_destroyed(self, destroyed_unit, *, game=None, player=None) -> bool:
         if self.army is None:
             return False
@@ -487,7 +625,7 @@ class OathOfMomentManager:
             return False
         return bool(self.queue_recalculating_prompt(destroyed_unit, game=game, player=owner))
 
-    def set_target(self, unit) -> None:
+    def set_target(self, unit, *, game=None, player=None, source: str = "") -> None:
         if unit is None:
             return
         try:
@@ -500,6 +638,7 @@ class OathOfMomentManager:
             rid = None
         if not rid:
             return
+        previous_target_id = str(self.oathOfMomentTargetUnitId or "")
         self.oathOfMomentTargetUnitId = rid
         try:
             self.oathOfMomentTargetName = str(getattr(root, "name", "") or "")
@@ -511,11 +650,40 @@ class OathOfMomentManager:
                 setattr(self.army, "oathOfMomentTargetName", self.oathOfMomentTargetName)
             except Exception:
                 pass
+        if previous_target_id and previous_target_id == str(rid):
+            return
+        owner = player if player is not None else getattr(self.army, "player", None)
+        self._queue_tome_of_ectoclades_prompt(game=game, player=owner, primary_target=root)
+
+    def set_secondary_target(self, unit) -> None:
+        if unit is None:
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        try:
+            rid = getattr(root, "_id", None)
+        except Exception:
+            rid = None
+        if not rid:
+            return
+        self.oathOfMomentSecondaryTargetUnitId = str(rid)
+        try:
+            self.oathOfMomentSecondaryTargetName = str(getattr(root, "name", "") or "")
+        except Exception:
+            self.oathOfMomentSecondaryTargetName = None
+        if self.army is not None:
+            try:
+                setattr(self.army, "oathOfMomentSecondaryTargetUnitId", self.oathOfMomentSecondaryTargetUnitId)
+                setattr(self.army, "oathOfMomentSecondaryTargetName", self.oathOfMomentSecondaryTargetName)
+            except Exception:
+                pass
 
     def is_oath_target(self, target_unit) -> bool:
         if target_unit is None:
             return False
-        if not self.oathOfMomentTargetUnitId:
+        if not self.oathOfMomentTargetUnitId and not self.oathOfMomentSecondaryTargetUnitId:
             return False
         try:
             root = target_unit.get_attached_unit_root()
@@ -527,7 +695,10 @@ class OathOfMomentManager:
         except Exception:
             tid = getattr(target_unit, "_id", None)
             rid = None
-        return bool(self.oathOfMomentTargetUnitId in {tid, rid})
+        ids = {str(tid or ""), str(rid or "")}
+        primary_id = str(self.oathOfMomentTargetUnitId or "")
+        secondary_id = str(self.oathOfMomentSecondaryTargetUnitId or "")
+        return bool((primary_id and primary_id in ids) or (secondary_id and secondary_id in ids))
 
     def can_reroll_hit(self, attacker_unit, target_unit) -> bool:
         if not self._army_has_oath():
@@ -597,6 +768,7 @@ class OathOfMomentManager:
 
         # Always clear at the start of the Command phase before new selection.
         self.clear_target()
+        self.clear_secondary_target()
         self.clear_extremis_level_threat()
 
         if not self._army_has_oath():

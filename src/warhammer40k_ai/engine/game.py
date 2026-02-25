@@ -5651,6 +5651,36 @@ class Game(
                         sr["enhancement_soul_glutton_turn_owner"] = owner
                         attacker_unit.special_rules = sr
 
+        if isinstance(sr, dict) and sr.get("enhancement_thief_of_secrets"):
+            if attacker_model is not None:
+                bearer_id = str(
+                    sr.get("enhancement_thief_of_secrets_bearer_model_id", "")
+                    or sr.get("enhancement_bearer_model_id", "")
+                    or ""
+                )
+                attacker_id = str(getattr(attacker_model, "id", getattr(attacker_model, "_id", "")) or "")
+                if not bearer_id or attacker_id == bearer_id:
+                    wp = _kwargs.get("weapon_profile", None)
+                    pw = getattr(wp, "parent_wargear", None)
+                    is_melee_attack = bool(wp is not None and pw is not None and pw.is_melee())
+                    phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+                    if is_melee_attack and phase_name == "FIGHT_PHASE":
+                        try:
+                            current_player = self.get_current_player()
+                        except Exception:
+                            current_player = None
+                        owner = str(getattr(current_player, "id", "") or "")
+                        try:
+                            kills = int(sr.get("enhancement_thief_of_secrets_phase_kills", 0) or 0)
+                        except Exception:
+                            kills = 0
+                        sr["enhancement_thief_of_secrets_phase_kills"] = int(max(0, kills) + 1)
+                        sr["enhancement_thief_of_secrets_pending_upgrade"] = True
+                        sr["enhancement_thief_of_secrets_pending_phase"] = "FIGHT_PHASE"
+                        sr["enhancement_thief_of_secrets_pending_turn"] = int(getattr(self, "turn", 0) or 0)
+                        sr["enhancement_thief_of_secrets_pending_turn_owner"] = owner
+                        attacker_unit.special_rules = sr
+
         from ..rules.reverberating_summons import (
             ABILITY_NAME,
             get_reverberating_summons_candidates,

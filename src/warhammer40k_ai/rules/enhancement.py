@@ -423,6 +423,9 @@ class Enhancement:
         is_bastion_task_force = bool(
             sm_mgr and getattr(sm_mgr, "is_bastion_task_force", lambda: False)()
         )
+        is_black_spear_task_force = bool(
+            sm_mgr and getattr(sm_mgr, "is_black_spear_task_force", lambda: False)()
+        )
         is_lions = bool(ac_mgr and ac_mgr.is_lions_of_the_emperor())
         try:
             is_war_horde = bool(orks_mgr and orks_mgr.is_war_horde())
@@ -1281,6 +1284,99 @@ class Enhancement:
             unit.special_rules["stratagem_target_cp_refund_specs"] = deduped_specs
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "thief of secrets" or enh_id == "000008522002":
+            if not is_black_spear_task_force:
+                return
+            unit.special_rules["enhancement_thief_of_secrets"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            base_bonus = _coerce_int(params.get("base_bonus", 1) or 1, default=1)
+            upgraded_bonus = _coerce_int(params.get("upgraded_bonus", 2) or 2, default=2)
+            base_bonus = int(max(0, base_bonus))
+            upgraded_bonus = int(max(base_bonus, upgraded_bonus))
+            unit.special_rules["enhancement_thief_of_secrets_base_bonus"] = int(base_bonus)
+            unit.special_rules["enhancement_thief_of_secrets_upgraded_bonus"] = int(upgraded_bonus)
+            unit.special_rules["enhancement_thief_of_secrets_upgraded"] = False
+            unit.special_rules["enhancement_bearer_melee_strength_bonus"] = int(base_bonus)
+            unit.special_rules["enhancement_bearer_melee_damage_bonus"] = int(base_bonus)
+            unit.special_rules["enhancement_bearer_melee_ap_bonus"] = int(base_bonus)
+            unit.special_rules["enhancement_thief_of_secrets_source"] = "Thief of Secrets"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_thief_of_secrets_bearer_model_id"] = bearer_id
+
+        if name == "osseus key" or enh_id == "000008522003":
+            if not is_black_spear_task_force:
+                return
+            unit.special_rules["enhancement_osseus_key"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                key_range = float(params.get("range", 12.0) or 12.0)
+            except Exception:
+                key_range = 12.0
+            required_keywords: list[str] = []
+            seen_required: set[str] = set()
+            for kw in list(params.get("required_target_keywords", ("VEHICLE",)) or []):
+                norm_kw = str(kw or "").strip().upper()
+                if not norm_kw or norm_kw in seen_required:
+                    continue
+                seen_required.add(norm_kw)
+                required_keywords.append(norm_kw)
+            excluded_keywords: list[str] = []
+            seen_excluded: set[str] = set()
+            for kw in list(params.get("excluded_target_keywords", ("TITANIC",)) or []):
+                norm_kw = str(kw or "").strip().upper()
+                if not norm_kw or norm_kw in seen_excluded:
+                    continue
+                seen_excluded.add(norm_kw)
+                excluded_keywords.append(norm_kw)
+            resolution_mode = str(params.get("resolution_mode", "leadership_test") or "leadership_test").strip().lower()
+            if not resolution_mode:
+                resolution_mode = "leadership_test"
+            unit.special_rules["enhancement_osseus_key_range"] = float(max(0.0, key_range))
+            unit.special_rules["enhancement_osseus_key_required_target_keywords"] = required_keywords
+            unit.special_rules["enhancement_osseus_key_excluded_target_keywords"] = excluded_keywords
+            unit.special_rules["enhancement_osseus_key_resolution_mode"] = resolution_mode
+            unit.special_rules["enhancement_osseus_key_source"] = "Osseus Key"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_osseus_key_bearer_model_id"] = bearer_id
+            cache = getattr(unit, "_ability_cache", None)
+            if isinstance(cache, dict):
+                cache_key = f"model_start_opponent_shooting_phase_disrupt:{bearer_id}"
+                cache.pop(cache_key, None)
+
+        if name == "beacon angelis" or enh_id == "000008522004":
+            if not is_black_spear_task_force:
+                return
+            unit.special_rules["enhancement_beacon_angelis"] = True
+            unit.special_rules["enhancement_beacon_angelis_source"] = "Beacon Angelis"
+            unit.special_rules["enhancement_beacon_angelis_rapid_ingress_discount"] = True
+            unit.special_rules["bearer_unit_deep_strike"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_beacon_angelis_bearer_model_id"] = bearer_id
+            cache = getattr(unit, "_ability_cache", None)
+            if isinstance(cache, dict):
+                cache.pop("deep_strike", None)
+                cache.pop("opponent_turn_strategic_reserves_ability", None)
+
+        if name == "the tome of ectoclades" or enh_id == "000008522005":
+            if not is_black_spear_task_force:
+                return
+            unit.special_rules["enhancement_tome_of_ectoclades"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            once_key = str(params.get("once_per_battle_key", "tome_of_ectoclades") or "tome_of_ectoclades").strip().lower()
+            if not once_key:
+                once_key = "tome_of_ectoclades"
+            unit.special_rules["enhancement_tome_of_ectoclades_once_key"] = once_key
+            unit.special_rules["enhancement_tome_of_ectoclades_source"] = "The Tome of Ectoclades"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_tome_of_ectoclades_bearer_model_id"] = bearer_id
 
         if name == "gift of foresight" and enh_id == "000009899004":
             if not is_warhost:

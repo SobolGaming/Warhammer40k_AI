@@ -5374,6 +5374,9 @@ class AbilitySpecsMixin:
             - optional: bool
             - limit_one_per_army: bool
             - grant_ranged_hazardous: bool
+            - resolution_mode: str
+            - required_target_keywords: list[str]
+            - excluded_target_keywords: list[str]
         """
         if model is None:
             return []
@@ -5382,7 +5385,7 @@ class AbilitySpecsMixin:
             return list(self._ability_cache[cache_key])
 
         specs: list[dict] = []
-        seen: set[tuple[str, int, bool, bool]] = set()
+        seen: set[tuple] = set()
 
         for name, desc in self._iter_model_specific_ability_entries(model):
             text_src = desc or name or ""
@@ -5417,7 +5420,17 @@ class AbilitySpecsMixin:
             if range_value <= 0:
                 continue
             source = str(name or "Opponent Shooting phase disruption").strip() or "Opponent Shooting phase disruption"
-            key = (source.lower(), int(range_value), bool(mortal_on_one), bool(grant_ranged_hazardous))
+            key = (
+                source.lower(),
+                int(range_value),
+                bool(mortal_on_one),
+                bool(grant_ranged_hazardous),
+                bool(optional),
+                bool(limit_one),
+                "d6_table",
+                tuple(),
+                tuple(),
+            )
             if key in seen:
                 continue
             seen.add(key)
@@ -5431,6 +5444,63 @@ class AbilitySpecsMixin:
                     "grant_ranged_hazardous": bool(grant_ranged_hazardous),
                 }
             )
+
+        sr = getattr(self, "special_rules", None)
+        if isinstance(sr, dict) and bool(sr.get("enhancement_osseus_key")):
+            try:
+                model_id = str(get_entity_id(model) or "")
+            except Exception:
+                model_id = ""
+            bearer_model_id = str(
+                sr.get("enhancement_osseus_key_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            if not bearer_model_id or not model_id or model_id == bearer_model_id:
+                source = str(sr.get("enhancement_osseus_key_source", "") or "Osseus Key").strip() or "Osseus Key"
+                try:
+                    range_value = int(float(sr.get("enhancement_osseus_key_range", 12.0) or 12.0))
+                except Exception:
+                    range_value = 12
+                resolution_mode = str(
+                    sr.get("enhancement_osseus_key_resolution_mode", "") or "leadership_test"
+                ).strip().lower() or "leadership_test"
+                required_keywords: list[str] = []
+                for keyword in list(sr.get("enhancement_osseus_key_required_target_keywords", ()) or ()):
+                    kw = str(keyword or "").strip().upper()
+                    if kw and kw not in required_keywords:
+                        required_keywords.append(kw)
+                excluded_keywords: list[str] = []
+                for keyword in list(sr.get("enhancement_osseus_key_excluded_target_keywords", ()) or ()):
+                    kw = str(keyword or "").strip().upper()
+                    if kw and kw not in excluded_keywords:
+                        excluded_keywords.append(kw)
+                key = (
+                    source.lower(),
+                    int(range_value),
+                    False,
+                    False,
+                    False,
+                    True,
+                    resolution_mode,
+                    tuple(required_keywords),
+                    tuple(excluded_keywords),
+                )
+                if range_value > 0 and key not in seen:
+                    seen.add(key)
+                    specs.append(
+                        {
+                            "source": source,
+                            "range": int(range_value),
+                            "mortal_on_one": False,
+                            "optional": False,
+                            "limit_one_per_army": True,
+                            "grant_ranged_hazardous": False,
+                            "resolution_mode": resolution_mode,
+                            "required_target_keywords": list(required_keywords),
+                            "excluded_target_keywords": list(excluded_keywords),
+                        }
+                    )
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
@@ -6299,6 +6369,63 @@ class AbilitySpecsMixin:
                     "mortal_high_bonus": 3,
                 }
             )
+
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if isinstance(sr, dict) and sr.get("enhancement_osseus_key"):
+            bearer_id = str(
+                sr.get("enhancement_osseus_key_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            model_id = str(get_entity_id(model) or "").strip()
+            if model_id and (not bearer_id or bearer_id == model_id):
+                try:
+                    range_value = int(float(sr.get("enhancement_osseus_key_range", 12.0) or 12.0))
+                except Exception:
+                    range_value = 12
+                if range_value > 0:
+                    source = str(sr.get("enhancement_osseus_key_source", "") or "Osseus Key").strip() or "Osseus Key"
+                    required_keywords: list[str] = []
+                    for keyword in list(sr.get("enhancement_osseus_key_required_target_keywords", ("VEHICLE",)) or []):
+                        kw = str(keyword or "").strip().upper()
+                        if kw and kw not in required_keywords:
+                            required_keywords.append(kw)
+                    excluded_keywords: list[str] = []
+                    for keyword in list(sr.get("enhancement_osseus_key_excluded_target_keywords", ("TITANIC",)) or []):
+                        kw = str(keyword or "").strip().upper()
+                        if kw and kw not in excluded_keywords:
+                            excluded_keywords.append(kw)
+                    resolution_mode = str(
+                        sr.get("enhancement_osseus_key_resolution_mode", "") or "leadership_test"
+                    ).strip().lower() or "leadership_test"
+                    key = (
+                        source.lower(),
+                        int(range_value),
+                        bool(False),
+                        bool(False),
+                        str(resolution_mode),
+                        tuple(required_keywords),
+                        tuple(excluded_keywords),
+                    )
+                    if key not in seen:
+                        seen.add(key)
+                        specs.append(
+                            {
+                                "source": source,
+                                "range": int(range_value),
+                                "mortal_on_one": False,
+                                "optional": False,
+                                "limit_one_per_army": False,
+                                "grant_ranged_hazardous": False,
+                                "resolution_mode": str(resolution_mode),
+                                "required_target_keywords": list(required_keywords),
+                                "excluded_target_keywords": list(excluded_keywords),
+                            }
+                        )
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}

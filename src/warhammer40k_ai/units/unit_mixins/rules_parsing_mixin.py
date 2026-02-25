@@ -2616,6 +2616,19 @@ class RulesParsingMixin:
                 sr["bearer_unit_assault_ranged"] = True
                 u.special_rules = sr
 
+        try:
+            if not grant_deep_strike:
+                for u in members:
+                    sr = getattr(u, "special_rules", None)
+                    if isinstance(sr, dict) and (
+                        sr.get("enhancement_beacon_angelis")
+                        or sr.get("enhancement_webway_pathstone")
+                    ):
+                        grant_deep_strike = True
+                        break
+        except Exception:
+            pass
+
         if benefit_of_cover_entries:
             for u in members:
                 sr = getattr(u, "special_rules", None)

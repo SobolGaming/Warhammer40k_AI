@@ -5663,6 +5663,51 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not bool(valid):
             return (str(reason or "Bondsman selection is not valid."),)
         return ()
+    if ability == "opponent_shooting_phase_disrupt":
+        if is_skip_choice(request, result):
+            return ()
+        payload = _option_payload(request, result)
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return ("Opponent Shooting phase disruption target was not found.",)
+
+        def _unit_has_keyword(unit, keyword: str) -> bool:
+            kw = str(keyword or "").strip().upper()
+            if unit is None or not kw:
+                return False
+            has_any = getattr(unit, "has_any_keyword", None)
+            if callable(has_any):
+                try:
+                    return bool(has_any(kw))
+                except Exception:
+                    pass
+            try:
+                values = list(getattr(unit, "keywords", []) or []) + list(getattr(unit, "faction_keywords", []) or [])
+            except Exception:
+                values = []
+            normalized = {str(v or "").strip().upper() for v in values}
+            return kw in normalized
+
+        required_keywords = [
+            str(v or "").strip().upper()
+            for v in list(ctx.get("required_target_keywords", []) or [])
+            if str(v or "").strip()
+        ]
+        for keyword in required_keywords:
+            if not _unit_has_keyword(target_unit, keyword):
+                return (f"Opponent Shooting phase disruption target must have keyword {keyword}.",)
+        excluded_keywords = [
+            str(v or "").strip().upper()
+            for v in list(ctx.get("excluded_target_keywords", []) or [])
+            if str(v or "").strip()
+        ]
+        for keyword in excluded_keywords:
+            if _unit_has_keyword(target_unit, keyword):
+                return (f"Opponent Shooting phase disruption target cannot have keyword {keyword}.",)
+        return ()
     if is_skip_choice(request, result):
         return ()
     if ability not in ("strategic_conqueror", "archons_will_objective"):
@@ -12042,6 +12087,34 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             turn = int(getattr(game, "turn", 0) or 0)
         except Exception:
             turn = 0
+        def _apply_hit_penalty() -> None:
+            for unit in members:
+                if unit is None:
+                    continue
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["shooting_phase_hit_penalty_active"] = True
+                sr["shooting_phase_hit_penalty_owner"] = owner_id
+                sr["shooting_phase_hit_penalty_turn"] = int(turn or 0)
+                sr["shooting_phase_hit_penalty_source"] = ability_name
+                sr["shooting_phase_hit_penalty_expires_phase"] = "SHOOTING_PHASE"
+                unit.special_rules = sr
+
+        def _apply_ineligible_to_shoot() -> None:
+            for unit in members:
+                if unit is None:
+                    continue
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["shooting_phase_ineligible_active"] = True
+                sr["shooting_phase_ineligible_owner"] = owner_id
+                sr["shooting_phase_ineligible_turn"] = int(turn or 0)
+                sr["shooting_phase_ineligible_source"] = ability_name
+                sr["shooting_phase_ineligible_expires_phase"] = "SHOOTING_PHASE"
+                unit.special_rules = sr
+
         if bool(ctx.get("grant_ranged_hazardous")):
             for unit in members:
                 if unit is None:
@@ -12061,6 +12134,60 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             except Exception:
                 pass
             return target_unit
+
+        resolution_mode = str(
+            ctx.get("resolution_mode", payload.get("resolution_mode", ""))
+            or payload.get("resolution_mode", "")
+            or "d6_table"
+        ).strip().lower()
+        if not resolution_mode:
+            resolution_mode = "d6_table"
+
+        if resolution_mode == "leadership_test":
+            leadership_test_passed = None
+            pass_check = getattr(target_root, "pass_leadership_check", None)
+            if not callable(pass_check):
+                pass_check = getattr(target_unit, "pass_leadership_check", None)
+            if callable(pass_check):
+                try:
+                    leadership_test_passed = bool(pass_check())
+                except Exception:
+                    leadership_test_passed = None
+            if leadership_test_passed is None:
+                try:
+                    from ...utility.dice import get_roll as _get_roll
+                except Exception:
+                    _get_roll = None
+                roll = int(_get_roll("2D6") or 0) if callable(_get_roll) else 0
+                try:
+                    leadership = int(getattr(target_root, "leadership", getattr(target_unit, "leadership", 0)) or 0)
+                except Exception:
+                    leadership = 0
+                leadership_test_passed = bool(leadership > 0 and roll <= leadership)
+            if bool(leadership_test_passed):
+                _apply_hit_penalty()
+                try:
+                    tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                    _log_action_for_players(
+                        game,
+                        player,
+                        f"{ability_name}: Leadership test passed; {tname} suffers -1 to hit this phase.",
+                    )
+                except Exception:
+                    pass
+            else:
+                _apply_ineligible_to_shoot()
+                try:
+                    tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                    _log_action_for_players(
+                        game,
+                        player,
+                        f"{ability_name}: Leadership test failed; {tname} cannot shoot this phase.",
+                    )
+                except Exception:
+                    pass
+            return target_unit
+
         try:
             from ...utility.dice import get_roll
             from ...utility.event_bus import append_dice
@@ -12092,41 +12219,20 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                     pass
             return target_unit
         if 2 <= roll <= 5:
-            for unit in members:
-                if unit is None:
-                    continue
-                sr = getattr(unit, "special_rules", None)
-                if not isinstance(sr, dict):
-                    sr = {}
-                sr["shooting_phase_hit_penalty_active"] = True
-                sr["shooting_phase_hit_penalty_owner"] = owner_id
-                sr["shooting_phase_hit_penalty_turn"] = int(turn or 0)
-                sr["shooting_phase_hit_penalty_source"] = ability_name
-                sr["shooting_phase_hit_penalty_expires_phase"] = "SHOOTING_PHASE"
-                unit.special_rules = sr
+            _apply_hit_penalty()
             try:
                 tname = str(getattr(target_root, "name", "Unit") or "Unit")
                 _log_action_for_players(game, player, f"{ability_name}: {tname} suffers -1 to hit this phase.")
             except Exception:
                 pass
         elif roll >= 6:
-            for unit in members:
-                if unit is None:
-                    continue
-                sr = getattr(unit, "special_rules", None)
-                if not isinstance(sr, dict):
-                    sr = {}
-                sr["shooting_phase_ineligible_active"] = True
-                sr["shooting_phase_ineligible_owner"] = owner_id
-                sr["shooting_phase_ineligible_turn"] = int(turn or 0)
-                sr["shooting_phase_ineligible_source"] = ability_name
-                sr["shooting_phase_ineligible_expires_phase"] = "SHOOTING_PHASE"
-                unit.special_rules = sr
+            _apply_ineligible_to_shoot()
             try:
                 tname = str(getattr(target_root, "name", "Unit") or "Unit")
                 _log_action_for_players(game, player, f"{ability_name}: {tname} cannot shoot this phase.")
             except Exception:
                 pass
+        return target_unit
     if str(ctx.get("ability", "") or "") == "maggot_maws":
         source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
         if chosen is not None:
@@ -14032,15 +14138,29 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         army = _resolve_army(game, request, payload)
         mgr = getattr(army, "oath_of_moment", None) if army is not None else None
         if mgr is not None and chosen is not None:
+            target_slot = str(ctx.get("target_slot", "") or payload.get("target_slot", "") or "primary").strip().lower()
+            source_name = str(ctx.get("ability_name", "") or "Oath of Moment").strip() or "Oath of Moment"
             try:
-                mgr.set_target(chosen)
+                if target_slot == "secondary":
+                    set_secondary = getattr(mgr, "set_secondary_target", None)
+                    if callable(set_secondary):
+                        set_secondary(chosen)
+                    mark_used = getattr(mgr, "mark_tome_of_ectoclades_used", None)
+                    if callable(mark_used):
+                        mark_used()
+                else:
+                    set_target = getattr(mgr, "set_target", None)
+                    if callable(set_target):
+                        set_target(chosen, game=game, player=getattr(army, "player", None), source=source_name)
             except Exception:
                 pass
             try:
                 player = getattr(army, "player", None)
                 tname = str(getattr(chosen, "name", "Unit") or "Unit")
-                source_name = str(ctx.get("ability_name", "") or "Oath of Moment").strip() or "Oath of Moment"
-                _log_action_for_players(game, player, f"{source_name}: selected {tname} as target.")
+                if target_slot == "secondary":
+                    _log_action_for_players(game, player, f"{source_name}: selected {tname} as secondary target.")
+                else:
+                    _log_action_for_players(game, player, f"{source_name}: selected {tname} as target.")
             except Exception:
                 pass
     return chosen

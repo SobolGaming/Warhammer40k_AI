@@ -1267,6 +1267,32 @@ class Player:
             return True
         return False
 
+    def _target_unit_has_beacon_angelis(self, target_unit) -> bool:
+        if target_unit is None:
+            return False
+        parent = self._target_unit_parent_army(target_unit)
+        if parent is not None and parent is not self.get_army():
+            return False
+        members = self._attached_members(target_unit)
+        for u in members:
+            sr = getattr(u, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if not bool(sr.get("enhancement_beacon_angelis_rapid_ingress_discount")):
+                continue
+            if not self._unit_is_alive_or_unknown(u):
+                continue
+            get_bearer = getattr(u, "_get_enhancement_bearer_model", None)
+            bearer = get_bearer() if callable(get_bearer) else None
+            if bearer is None:
+                continue
+            alive_attr = getattr(bearer, "is_alive", True)
+            is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            if not is_alive:
+                continue
+            return True
+        return False
+
     def _target_unit_can_use_beast_handler_heroic_intervention(self, target_unit) -> bool:
         if target_unit is None:
             return False
@@ -1442,6 +1468,17 @@ class Player:
         if name_u not in ("HEROIC INTERVENTION", "COUNTER-OFFENSIVE", "COUNTER OFFENSIVE"):
             return 0
         if not self._target_unit_can_use_intraneural_biotech_stratagem_discount(target_unit, stratagem_name=name_u):
+            return 0
+        base = int(getattr(stratagem, "cp_cost", 0) or 0)
+        return max(0, base)
+
+    def _preview_beacon_angelis_rapid_ingress_discount(self, *, stratagem=None, target_unit=None) -> int:
+        if stratagem is None or target_unit is None:
+            return 0
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u != "RAPID INGRESS":
+            return 0
+        if not self._target_unit_has_beacon_angelis(target_unit):
             return 0
         base = int(getattr(stratagem, "cp_cost", 0) or 0)
         return max(0, base)
@@ -1923,6 +1960,15 @@ class Player:
                     discount = base
                     reasons.append(f"{ability_name}: Counter-offensive for 0CP.")
                     return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
+
+        beacon = self._preview_beacon_angelis_rapid_ingress_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if beacon:
+            discount = base
+            reasons.append("Beacon Angelis: Rapid Ingress for 0CP.")
+            return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
 
         dts = self._preview_direct_the_slaughter_discount(target_unit=target_unit)
         if dts:
@@ -2659,6 +2705,39 @@ class Player:
                     }
             if counter_used:
                 return {"denied": True, "reason": "Counter-offensive already used this phase"}
+
+        beacon = self._preview_beacon_angelis_rapid_ingress_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if beacon:
+            cost = 0
+            increase = 0
+            increase_reasons: list[str] = []
+            opponent = self._get_opponent_player()
+            if opponent is not None:
+                inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                    target_unit=target_unit,
+                    stratagem=stratagem,
+                    current_cost=cost,
+                )
+                increase = int(inc_info.get("increase", 0) or 0)
+                increase_reasons = list(inc_info.get("reasons", []) or [])
+                if increase:
+                    cost = max(0, cost + increase)
+            self._pending_stratagem_cp_increase = {
+                "increase": int(increase or 0),
+                "reasons": increase_reasons,
+                "stratagem_name": getattr(stratagem, "name", None) or "",
+            }
+            return {
+                "base": base,
+                "discount": base,
+                "cost": cost,
+                "reasons": ["Beacon Angelis: Rapid Ingress for 0CP."],
+                "increase": increase,
+                "increase_reasons": increase_reasons,
+            }
         # For application, we still compute "available" discounts (even if declined), but affordability uses applied discount.
         preview = self.preview_stratagem_cp_cost(
             stratagem,
