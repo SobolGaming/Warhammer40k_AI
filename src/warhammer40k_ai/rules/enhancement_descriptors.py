@@ -1789,6 +1789,67 @@ _SPACE_MARINES_COMPANIONS_OF_VEHEMENCE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPACE_MARINES_COMPANIONS_OF_VEHEMENCE_DESCRIPTORS.values()
 }
 
+_SPACE_MARINES_EMPERORS_SHIELD_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010460002": EnhancementToolDescriptor(
+        enhancement_id="000010460002",
+        name="Champion of the Feast",
+        timing="passive_and_start_of_any_phase_optional",
+        target="bearer_and_bearer_unit_other_models",
+        duration="constant_and_until_end_of_phase_once_per_battle",
+        effect="bearer_melee_attacks_bonus_and_once_per_battle_unit_other_models_melee_attacks_bonus",
+        once_per_battle=True,
+        effect_params={
+            "bearer_melee_attacks_bonus": 1,
+            "unit_other_models_melee_attacks_bonus": 1,
+            "once_per_battle_key": "champion_of_the_feast",
+        },
+    ),
+    "000010460003": EnhancementToolDescriptor(
+        enhancement_id="000010460003",
+        name="Disciple of Rhetoricus",
+        timing="passive_and_start_of_any_phase_optional",
+        target="bearer_and_bearer_unit_other_models",
+        duration="constant_and_until_end_of_phase_once_per_battle",
+        effect="bearer_objective_control_bonus_and_once_per_battle_unit_other_models_objective_control_bonus",
+        once_per_battle=True,
+        effect_params={
+            "bearer_objective_control_bonus": 1,
+            "unit_other_models_objective_control_bonus": 1,
+            "once_per_battle_key": "disciple_of_rhetoricus",
+        },
+    ),
+    "000010460004": EnhancementToolDescriptor(
+        enhancement_id="000010460004",
+        name="Indomitable Champion",
+        timing="on_bearer_destroyed",
+        target="bearer",
+        duration="resolve_at_end_of_phase_first_time",
+        effect="return_bearer_on_2plus_with_fixed_wounds",
+        once_per_battle=True,
+        effect_params={
+            "roll_min": 2,
+            "wounds_on_return": 3,
+            "return_on_death_key": "indomitable_champion",
+        },
+    ),
+    "000010460005": EnhancementToolDescriptor(
+        enhancement_id="000010460005",
+        name="Malodraxian Standard",
+        timing="passive",
+        target="attacks_targeting_bearer_unit",
+        duration="constant",
+        effect="wound_roll_penalty_when_attack_strength_exceeds_bearer_unit_toughness",
+        effect_params={
+            "wound_roll_penalty": 1,
+            "requires_strength_gt_toughness": True,
+        },
+    ),
+}
+
+_SPACE_MARINES_EMPERORS_SHIELD_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPACE_MARINES_EMPERORS_SHIELD_DESCRIPTORS.values()
+}
+
 _SPACE_MARINES_BLACK_SPEAR_TASK_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008522002": EnhancementToolDescriptor(
         enhancement_id="000008522002",
@@ -2368,6 +2429,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPACE_MARINES_COMPANIONS_OF_VEHEMENCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPACE_MARINES_EMPERORS_SHIELD_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPACE_MARINES_BLACK_SPEAR_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -2434,6 +2498,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SPACE_MARINES_CHAMPIONS_OF_FENRIS_BY_NAME.get(key)
         or _SPACE_MARINES_COMPANY_OF_HUNTERS_BY_NAME.get(key)
         or _SPACE_MARINES_COMPANIONS_OF_VEHEMENCE_BY_NAME.get(key)
+        or _SPACE_MARINES_EMPERORS_SHIELD_BY_NAME.get(key)
         or _SPACE_MARINES_BLACK_SPEAR_TASK_FORCE_BY_NAME.get(key)
         or _LEGION_OF_EXCESS_BY_NAME.get(key)
         or _PLAGUE_LEGION_BY_NAME.get(key)

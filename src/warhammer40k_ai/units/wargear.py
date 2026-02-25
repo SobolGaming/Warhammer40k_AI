@@ -13777,6 +13777,22 @@ class WargearProfile:
                     wound_result["modifiers"].append(f"-{int(penalty)} to wound from {source_name}")
         except Exception:
             pass
+        # Space Marines: Emperor's Shield (Malodraxian Standard) defensive wound penalty.
+        try:
+            target_army = target.get_parent_army()
+            sm_mgr = getattr(target_army, "space_marines_detachments", None) if target_army is not None else None
+            if sm_mgr is not None and callable(getattr(sm_mgr, "emperors_shield_malodraxian_standard_wound_roll_penalty", None)):
+                penalty, source = sm_mgr.emperors_shield_malodraxian_standard_wound_roll_penalty(
+                    target,
+                    strength=strength,
+                    target_toughness=target_toughness,
+                )
+                if penalty:
+                    dice_modifier -= int(penalty)
+                    source_name = str(source or "Malodraxian Standard").strip() or "Malodraxian Standard"
+                    wound_result["modifiers"].append(f"-{int(penalty)} to wound from {source_name}")
+        except Exception:
+            pass
         # Necrons: Merciless Reclamation (+1 to wound vs targets within objective range).
         try:
             unit = getattr(attacker, "parent_unit", None)

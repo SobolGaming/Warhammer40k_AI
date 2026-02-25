@@ -4866,6 +4866,92 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             bonus = 1
         return max(0, int(bonus))
 
+    def _emperors_shield_enhancement_source_member(self, unit, flag_key: str):
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return None, None, None
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if not members:
+            members = [root]
+        members.sort(key=lambda member: str(get_entity_id(member) or ""))
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get(flag_key, False)):
+                return root, member, sr
+        return root, None, None
+
+    @staticmethod
+    def _emperors_shield_member_has_live_bearer(member, sr) -> bool:
+        if member is None or not isinstance(sr, dict):
+            return False
+        bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
+        if bearer_id:
+            for model in list(getattr(member, "models", []) or []):
+                if str(get_entity_id(model) or "") != bearer_id:
+                    continue
+                alive_attr = getattr(model, "is_alive", True)
+                return bool(alive_attr() if callable(alive_attr) else alive_attr)
+            return False
+        bearer = getattr(member, "_get_enhancement_bearer_model", lambda: None)()
+        if bearer is None:
+            return False
+        alive_attr = getattr(bearer, "is_alive", True)
+        return bool(alive_attr() if callable(alive_attr) else alive_attr)
+
+    def emperors_shield_malodraxian_standard_wound_roll_penalty(
+        self,
+        target_unit,
+        *,
+        strength=None,
+        target_toughness=None,
+    ) -> tuple[int, str]:
+        if not self.is_emperors_shield():
+            return 0, ""
+        if target_unit is None:
+            return 0, ""
+        root, member, sr = self._emperors_shield_enhancement_source_member(
+            target_unit,
+            "enhancement_malodraxian_standard",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return 0, ""
+        try:
+            if root.get_parent_army() is not self.army:
+                return 0, ""
+        except Exception:
+            return 0, ""
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return 0, ""
+        if not self._emperors_shield_member_has_live_bearer(member, sr):
+            return 0, ""
+        try:
+            strength_value = int(strength)
+        except (TypeError, ValueError):
+            return 0, ""
+        if isinstance(target_toughness, int):
+            toughness_value = int(target_toughness)
+        else:
+            try:
+                toughness_value = int(getattr(root, "toughness", 0) or 0)
+            except Exception:
+                toughness_value = 0
+        requires_gt = bool(sr.get("enhancement_malodraxian_standard_requires_strength_gt_toughness", True))
+        if requires_gt and (toughness_value <= 0 or strength_value <= toughness_value):
+            return 0, ""
+        try:
+            penalty = int(sr.get("enhancement_malodraxian_standard_wound_roll_penalty", 1) or 1)
+        except (TypeError, ValueError):
+            penalty = 1
+        if penalty <= 0:
+            return 0, ""
+        source = str(sr.get("enhancement_malodraxian_standard_source", "") or "Malodraxian Standard").strip()
+        if not source:
+            source = "Malodraxian Standard"
+        return int(penalty), source
+
     def _unit_is_company_of_hunters_outrider(self, unit) -> bool:
         if unit is None:
             return False

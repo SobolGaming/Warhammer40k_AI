@@ -438,6 +438,9 @@ class Enhancement:
         is_companions_of_vehemence = bool(
             sm_mgr and getattr(sm_mgr, "is_companions_of_vehemence", lambda: False)()
         )
+        is_emperors_shield = bool(
+            sm_mgr and getattr(sm_mgr, "is_emperors_shield", lambda: False)()
+        )
         is_black_spear_task_force = bool(
             sm_mgr and getattr(sm_mgr, "is_black_spear_task_force", lambda: False)()
         )
@@ -1537,6 +1540,88 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_recon_hunter_bearer_model_id"] = bearer_id
+
+        if name == "champion of the feast" or enh_id == "000010460002":
+            if not is_emperors_shield:
+                return
+            unit.special_rules["enhancement_champion_of_the_feast"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            bearer_bonus = _coerce_int(params.get("bearer_melee_attacks_bonus", 1) or 1, default=1)
+            other_models_bonus = _coerce_int(params.get("unit_other_models_melee_attacks_bonus", 1) or 1, default=1)
+            once_key = str(params.get("once_per_battle_key", "champion_of_the_feast") or "champion_of_the_feast").strip().lower()
+            existing_bearer_bonus = _coerce_int(
+                unit.special_rules.get("enhancement_bearer_melee_attacks_bonus", 0) or 0,
+                default=0,
+            )
+            unit.special_rules["enhancement_bearer_melee_attacks_bonus"] = int(
+                max(existing_bearer_bonus, max(0, int(bearer_bonus)))
+            )
+            # Reuse the existing start-of-phase optional activation path for other models.
+            unit.special_rules["enhancement_the_imperiums_sword"] = True
+            unit.special_rules["enhancement_the_imperiums_sword_other_models_bonus"] = int(max(0, int(other_models_bonus)))
+            unit.special_rules["enhancement_the_imperiums_sword_once_key"] = once_key if once_key else "champion_of_the_feast"
+            unit.special_rules["enhancement_the_imperiums_sword_source"] = "Champion of the Feast"
+            unit.special_rules["enhancement_champion_of_the_feast_source"] = "Champion of the Feast"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_champion_of_the_feast_bearer_model_id"] = bearer_id
+
+        if name == "disciple of rhetoricus" or enh_id == "000010460003":
+            if not is_emperors_shield:
+                return
+            unit.special_rules["enhancement_disciple_of_rhetoricus"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            bearer_oc_bonus = _coerce_int(params.get("bearer_objective_control_bonus", 1) or 1, default=1)
+            other_models_bonus = _coerce_int(params.get("unit_other_models_objective_control_bonus", 1) or 1, default=1)
+            once_key = str(params.get("once_per_battle_key", "disciple_of_rhetoricus") or "disciple_of_rhetoricus").strip().lower()
+            # Reuse the existing start-of-phase optional activation path for Objective Control.
+            unit.special_rules["enhancement_rites_of_war"] = True
+            unit.special_rules["enhancement_rites_of_war_bearer_oc_bonus"] = int(max(0, int(bearer_oc_bonus)))
+            unit.special_rules["enhancement_rites_of_war_other_models_bonus"] = int(max(0, int(other_models_bonus)))
+            unit.special_rules["enhancement_rites_of_war_once_key"] = once_key if once_key else "disciple_of_rhetoricus"
+            unit.special_rules["enhancement_rites_of_war_source"] = "Disciple of Rhetoricus"
+            unit.special_rules["enhancement_disciple_of_rhetoricus_source"] = "Disciple of Rhetoricus"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_disciple_of_rhetoricus_bearer_model_id"] = bearer_id
+
+        if name == "indomitable champion" or enh_id == "000010460004":
+            if not is_emperors_shield:
+                return
+            unit.special_rules["enhancement_indomitable_champion"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            roll_min = _coerce_int(params.get("roll_min", 2) or 2, default=2)
+            return_wounds = _coerce_int(params.get("wounds_on_return", 3) or 3, default=3)
+            key = str(params.get("return_on_death_key", "indomitable_champion") or "indomitable_champion").strip().lower()
+            unit.special_rules["enhancement_indomitable_champion_roll_min"] = int(max(2, roll_min))
+            unit.special_rules["enhancement_indomitable_champion_wounds"] = int(max(1, return_wounds))
+            unit.special_rules["enhancement_indomitable_champion_key"] = key if key else "indomitable_champion"
+            unit.special_rules["enhancement_indomitable_champion_source"] = "Indomitable Champion"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_indomitable_champion_bearer_model_id"] = bearer_id
+            refresh_return = getattr(unit, "_refresh_return_on_death_flags", None)
+            if callable(refresh_return):
+                refresh_return()
+
+        if name == "malodraxian standard" or enh_id == "000010460005":
+            if not is_emperors_shield:
+                return
+            unit.special_rules["enhancement_malodraxian_standard"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            penalty = _coerce_int(params.get("wound_roll_penalty", 1) or 1, default=1)
+            unit.special_rules["enhancement_malodraxian_standard_wound_roll_penalty"] = int(max(0, int(penalty)))
+            unit.special_rules["enhancement_malodraxian_standard_requires_strength_gt_toughness"] = bool(
+                params.get("requires_strength_gt_toughness", True)
+            )
+            unit.special_rules["enhancement_malodraxian_standard_source"] = "Malodraxian Standard"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_malodraxian_standard_bearer_model_id"] = bearer_id
 
         if name == "thief of secrets" or enh_id == "000008522002":
             if not is_black_spear_task_force:
