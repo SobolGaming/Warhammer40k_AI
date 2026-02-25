@@ -309,6 +309,32 @@ _PLAGUE_LEGION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
             "monster_heal_roll": "D3+1",
         },
     ),
+    "000009820005": StratagemToolDescriptor(
+        stratagem_id="000009820005",
+        name="Rot and Renewal",
+        timing="movement_or_charge_phase",
+        target="legiones_daemonica_nurgle_unit",
+        duration="until_end_of_phase",
+        effect="move_through_terrain",
+        cp_cost=1,
+        effect_params={
+            "movement_phase_move_types": ["move", "advance", "fall_back"],
+            "charge_phase_move_types": ["charge"],
+        },
+    ),
+    "000009820006": StratagemToolDescriptor(
+        stratagem_id="000009820006",
+        name="Murkshadows",
+        timing="movement_phase",
+        target="legiones_daemonica_nurgle_infantry_unit",
+        duration="until_end_of_phase",
+        effect="normal_move_move_characteristic_bonus",
+        cp_cost=1,
+        effect_params={
+            "move_bonus": 5,
+            "applies_to_move_types": ["move"],
+        },
+    ),
     "000009820007": StratagemToolDescriptor(
         stratagem_id="000009820007",
         name="Plague of Woes",

@@ -4585,6 +4585,11 @@ class BattlePhaseHandler(BasePhaseHandler):
                 return
 
             max_distance = unit.movement
+            if choice == "move":
+                try:
+                    max_distance += float(unit.get_phase_movement_distance_bonus("move", game=self.game) or 0)
+                except Exception:
+                    pass
 
             if choice != 'stationary':
                 from ...engine.decision_kinds import DECISION_MOVE_UNIT

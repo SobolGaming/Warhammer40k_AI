@@ -135,6 +135,28 @@ def test_plague_legion_step1_stratagem_descriptors_registered():
     assert str(by_name_woes.stratagem_id) == "000009820007"
 
 
+def test_plague_legion_step2_stratagem_descriptors_registered():
+    murkshadows = get_stratagem_tool_descriptor(stratagem_id="000009820006")
+    assert murkshadows is not None
+    assert murkshadows.name == "Murkshadows"
+    assert murkshadows.effect == "normal_move_move_characteristic_bonus"
+    assert int(murkshadows.cp_cost) == 1
+
+    rot_and_renewal = get_stratagem_tool_descriptor(stratagem_id="000009820005")
+    assert rot_and_renewal is not None
+    assert rot_and_renewal.name == "Rot and Renewal"
+    assert rot_and_renewal.effect == "move_through_terrain"
+    assert int(rot_and_renewal.cp_cost) == 1
+
+    by_name_murkshadows = get_stratagem_tool_descriptor(name="MURKSHADOWS")
+    assert by_name_murkshadows is not None
+    assert str(by_name_murkshadows.stratagem_id) == "000009820006"
+
+    by_name_rot = get_stratagem_tool_descriptor(name="ROT AND RENEWAL")
+    assert by_name_rot is not None
+    assert str(by_name_rot.stratagem_id) == "000009820005"
+
+
 def test_foetid_resurgence_returns_d3_models_for_battleline(monkeypatch):
     game, plague_player, _enemy_player, plague_army, enemy_army = _build_game()
     plague_unit = _make_unit(
@@ -212,6 +234,130 @@ def test_foetid_resurgence_heals_monster_by_d3_plus_one(monkeypatch):
     assert ok is True
     assert plague_player.command_points == 3
     assert int(model.wounds or 0) == min(int(base_wounds), int(before_wounds + 3))
+
+
+def test_murkshadows_applies_normal_move_bonus_only_and_cleans_up():
+    game, plague_player, _enemy_player, plague_army, enemy_army = _build_game()
+    source = _make_unit(
+        "Plaguebearers",
+        keywords=["NURGLE", "INFANTRY"],
+        faction_keywords=["LEGIONES DAEMONICA"],
+        model_count=5,
+    )
+    enemy_unit = _make_unit("Enemy Unit", keywords=["INFANTRY"], model_count=1)
+    plague_army.add_unit(source)
+    enemy_army.add_unit(enemy_unit)
+    game.map.units.extend([source, enemy_unit])
+    _deploy_unit(source, 0.0, 0.0)
+    _deploy_unit(enemy_unit, 12.0, 0.0)
+
+    game.turn = 2
+    game.phase = BattleRoundPhases.MOVEMENT_PHASE
+    game.current_player_index = 0
+    game.event_system.publish("phase_start", player=plague_player, phase=BattleRoundPhases.MOVEMENT_PHASE)
+
+    murk_name = _find_stratagem_name(plague_player, "MURKSHADOWS")
+    ok = plague_player.stratagems.use(
+        murk_name,
+        unit=source,
+        phase_name="Movement phase",
+    )
+    assert ok is True
+    assert plague_player.command_points == 4
+
+    rules = dict(getattr(source, "special_rules", {}) or {})
+    assert bool(rules.get("plague_legion_murkshadows_active", False)) is True
+    assert int(rules.get("plague_legion_murkshadows_move_bonus", 0) or 0) == 5
+    assert int(source.get_phase_movement_distance_bonus("move", game=game) or 0) == 5
+    assert int(source.get_phase_movement_distance_bonus("advance", game=game) or 0) == 0
+    assert int(source.get_phase_movement_distance_bonus("fall_back", game=game) or 0) == 0
+
+    game.event_system.publish("phase_end", player=plague_player, phase=BattleRoundPhases.MOVEMENT_PHASE)
+    rules = dict(getattr(source, "special_rules", {}) or {})
+    assert "plague_legion_murkshadows_active" not in rules
+    assert "plague_legion_murkshadows_move_bonus" not in rules
+    assert "plague_legion_murkshadows_expires_phase" not in rules
+    assert int(source.get_phase_movement_distance_bonus("move", game=game) or 0) == 0
+
+
+def test_rot_and_renewal_applies_movement_phase_move_types_and_cleans_up():
+    game, plague_player, _enemy_player, plague_army, enemy_army = _build_game()
+    source = _make_unit(
+        "Plaguebearers",
+        keywords=["NURGLE", "INFANTRY"],
+        faction_keywords=["LEGIONES DAEMONICA"],
+        model_count=5,
+    )
+    enemy_unit = _make_unit("Enemy Unit", keywords=["INFANTRY"], model_count=1)
+    plague_army.add_unit(source)
+    enemy_army.add_unit(enemy_unit)
+    game.map.units.extend([source, enemy_unit])
+    _deploy_unit(source, 0.0, 0.0)
+    _deploy_unit(enemy_unit, 12.0, 0.0)
+
+    game.turn = 2
+    game.phase = BattleRoundPhases.MOVEMENT_PHASE
+    game.current_player_index = 0
+    game.event_system.publish("phase_start", player=plague_player, phase=BattleRoundPhases.MOVEMENT_PHASE)
+
+    rot_name = _find_stratagem_name(plague_player, "ROT AND RENEWAL")
+    ok = plague_player.stratagems.use(
+        rot_name,
+        unit=source,
+        phase_name="Movement phase",
+    )
+    assert ok is True
+    assert plague_player.command_points == 4
+
+    rules = dict(getattr(source, "special_rules", {}) or {})
+    assert bool(rules.get("plague_legion_rot_and_renewal_active", False)) is True
+    assert set(rules.get("bearer_unit_phase_move_terrain_only_types", [])) >= {"move", "advance", "fall_back"}
+
+    game.event_system.publish("phase_end", player=plague_player, phase=BattleRoundPhases.MOVEMENT_PHASE)
+    rules = dict(getattr(source, "special_rules", {}) or {})
+    assert "plague_legion_rot_and_renewal_active" not in rules
+    assert "plague_legion_rot_and_renewal_expires_phase" not in rules
+    assert "bearer_unit_phase_move_terrain_only_types" not in rules
+
+
+def test_rot_and_renewal_applies_charge_move_type_and_cleans_up():
+    game, plague_player, _enemy_player, plague_army, enemy_army = _build_game()
+    source = _make_unit(
+        "Plague Drones",
+        keywords=["NURGLE", "MOUNTED"],
+        faction_keywords=["LEGIONES DAEMONICA"],
+        model_count=3,
+    )
+    enemy_unit = _make_unit("Enemy Unit", keywords=["INFANTRY"], model_count=1)
+    plague_army.add_unit(source)
+    enemy_army.add_unit(enemy_unit)
+    game.map.units.extend([source, enemy_unit])
+    _deploy_unit(source, 0.0, 0.0)
+    _deploy_unit(enemy_unit, 12.0, 0.0)
+
+    game.turn = 2
+    game.phase = BattleRoundPhases.CHARGE_PHASE
+    game.current_player_index = 0
+    game.event_system.publish("phase_start", player=plague_player, phase=BattleRoundPhases.CHARGE_PHASE)
+
+    rot_name = _find_stratagem_name(plague_player, "ROT AND RENEWAL")
+    ok = plague_player.stratagems.use(
+        rot_name,
+        unit=source,
+        phase_name="Charge phase",
+    )
+    assert ok is True
+    assert plague_player.command_points == 4
+
+    rules = dict(getattr(source, "special_rules", {}) or {})
+    assert bool(rules.get("plague_legion_rot_and_renewal_active", False)) is True
+    assert set(rules.get("bearer_unit_phase_move_terrain_only_types", [])) >= {"charge"}
+
+    game.event_system.publish("phase_end", player=plague_player, phase=BattleRoundPhases.CHARGE_PHASE)
+    rules = dict(getattr(source, "special_rules", {}) or {})
+    assert "plague_legion_rot_and_renewal_active" not in rules
+    assert "plague_legion_rot_and_renewal_expires_phase" not in rules
+    assert "bearer_unit_phase_move_terrain_only_types" not in rules
 
 
 def test_plague_of_woes_triggers_secondary_battleshock_and_cleans_up():

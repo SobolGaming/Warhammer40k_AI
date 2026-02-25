@@ -8706,6 +8706,59 @@ class ActionsMovementMixin:
             f"- distance: {forward_dist:.1f}\"{pivot_note}")
         return True
 
+    def get_phase_movement_distance_bonus(self, movement_kind: str, *, game: Optional['Game'] = None) -> int:
+        """Return active phase-scoped movement distance bonus for the given movement kind."""
+        movement_key = str(movement_kind or "").strip().lower().replace(" ", "_")
+        if movement_key in ("normal", "normal_move"):
+            movement_key = "move"
+        if movement_key != "move":
+            return 0
+        if game is None:
+            try:
+                game = self.get_parent_army().player.game
+            except Exception:
+                game = None
+        if game is None:
+            return 0
+        root = self
+        try:
+            resolver = getattr(self, "get_attached_unit_root", None)
+            if callable(resolver):
+                root = resolver() or self
+        except Exception:
+            root = self
+        special_rules = getattr(root, "special_rules", None)
+        if not isinstance(special_rules, dict):
+            return 0
+        if not bool(special_rules.get("plague_legion_murkshadows_active", False)):
+            return 0
+        try:
+            bonus = int(special_rules.get("plague_legion_murkshadows_move_bonus", 0) or 0)
+        except Exception:
+            bonus = 0
+        if bonus <= 0:
+            return 0
+        expires_phase = str(special_rules.get("plague_legion_murkshadows_expires_phase", "") or "").strip().upper()
+        current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if expires_phase and current_phase and expires_phase != current_phase:
+            return 0
+        turn_owner = str(special_rules.get("plague_legion_murkshadows_turn_owner", "") or "").strip()
+        current_player = getattr(game, "get_current_player", lambda: None)()
+        current_player_id = str(getattr(current_player, "id", "") or "").strip()
+        if turn_owner and current_player_id and turn_owner != current_player_id:
+            return 0
+        try:
+            effect_turn = int(special_rules.get("plague_legion_murkshadows_turn", 0) or 0)
+        except Exception:
+            effect_turn = 0
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        if effect_turn > 0 and current_turn > 0 and effect_turn != current_turn:
+            return 0
+        return int(bonus)
+
     def move(
         self,
         destination: Tuple[float, float, float],
@@ -8760,8 +8813,17 @@ class ActionsMovementMixin:
         for model in self.models:
             original_model_positions.append(model.get_location())
 
-        # Get the movement range from the first model (assuming all models have the same movement)
+        # Get the movement range from the first model (assuming all models have the same movement).
         movement_range = self.movement
+        if not advance:
+            try:
+                game = self.get_parent_army().player.game
+            except Exception:
+                game = None
+            try:
+                movement_range += int(self.get_phase_movement_distance_bonus("move", game=game) or 0)
+            except Exception:
+                pass
 
         # If advancing, use stored advance roll or roll new one
         if advance:
