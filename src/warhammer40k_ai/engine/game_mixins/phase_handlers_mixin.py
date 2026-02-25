@@ -579,6 +579,139 @@ class GamePhaseHandlersMixin:
                                             instance_key=f"{unit_id}:{once_key}:{pname}:{int(current_round)}",
                                         )
 
+                    # Anvil Siege Force: Fleet Commander (place first marker now; second marker next owner Shooting phase).
+                    if pname == "SHOOTING_PHASE":
+                        current_player = self.get_current_player() if hasattr(self, "get_current_player") else None
+                        if current_player is p:
+                            from ..decision_kinds import DECISION_PICK_POINT
+                            from ..decisions import DecisionOption as _DecisionOption
+                            from ..decisions import DecisionRequest as _DecisionRequest
+
+                            def _pending_pick_point(ability_key: str, unit_id: str) -> bool:
+                                queue_obj = getattr(self, "decision_queue", None)
+                                if queue_obj is None or not hasattr(queue_obj, "list"):
+                                    return False
+                                for req in list(queue_obj.list() or []):
+                                    if str(getattr(req, "decision_type", "") or "") != DECISION_PICK_POINT:
+                                        continue
+                                    req_ctx = dict(getattr(req, "context", {}) or {})
+                                    if str(req_ctx.get("ability", "") or "").strip().lower() != ability_key:
+                                        continue
+                                    if str(req_ctx.get("unit_id", "") or "") != unit_id:
+                                        continue
+                                    return True
+                                return False
+
+                            find_source = getattr(self, "_attached_member_with_enhancement_flag", None)
+                            source_member = None
+                            source_sr = {}
+                            if callable(find_source):
+                                _source_root, source_member, source_sr = find_source(root, "enhancement_fleet_commander")
+                            if source_member is None:
+                                source_member = root
+                                source_sr = getattr(root, "special_rules", None)
+                            if source_member is not None and isinstance(source_sr, dict) and bool(source_sr.get("enhancement_fleet_commander")):
+                                unit_id = maybe_entity_id(root)
+                                source_member_unit_id = maybe_entity_id(source_member)
+                                if unit_id and source_member_unit_id:
+                                    ability_name = (
+                                        str(source_sr.get("enhancement_fleet_commander_source", "Fleet Commander") or "Fleet Commander").strip()
+                                        or "Fleet Commander"
+                                    )
+                                    once_key = str(
+                                        source_sr.get("enhancement_fleet_commander_once_key", "fleet_commander")
+                                        or "fleet_commander"
+                                    ).strip().lower()
+                                    if not once_key:
+                                        once_key = "fleet_commander"
+                                    try:
+                                        marker_range = float(source_sr.get("enhancement_fleet_commander_marker_range", 12.0) or 12.0)
+                                    except Exception:
+                                        marker_range = 12.0
+                                    try:
+                                        roll_min = int(source_sr.get("enhancement_fleet_commander_roll_min", 3) or 3)
+                                    except Exception:
+                                        roll_min = 3
+                                    mortal_roll = (
+                                        str(source_sr.get("enhancement_fleet_commander_mortal_wounds_roll", "D3") or "D3").strip().upper()
+                                        or "D3"
+                                    )
+
+                                    raw_first_point = source_sr.get("enhancement_fleet_commander_first_marker_point")
+                                    first_point = None
+                                    if isinstance(raw_first_point, (list, tuple)) and len(raw_first_point) >= 2:
+                                        try:
+                                            first_point = (float(raw_first_point[0]), float(raw_first_point[1]))
+                                        except (TypeError, ValueError):
+                                            first_point = None
+                                    pending_second_marker = bool(source_sr.get("enhancement_fleet_commander_pending_second_marker", False))
+
+                                    if pending_second_marker and first_point is not None:
+                                        if not _pending_pick_point("fleet_commander_marker_2", unit_id):
+                                            request = _DecisionRequest.create(
+                                                DECISION_PICK_POINT,
+                                                f"{ability_name}: place the second marker within {int(marker_range)}\" of the first marker.",
+                                                player_id=getattr(p, "id", None),
+                                                options=[
+                                                    _DecisionOption.create("Confirm", payload={"action": "confirm"}),
+                                                    _DecisionOption.create("Skip", payload={"action": "skip"}),
+                                                ],
+                                                context={
+                                                    "ability": "fleet_commander_marker_2",
+                                                    "ability_name": ability_name,
+                                                    "phase": "Shooting phase",
+                                                    "unit": getattr(root, "name", "") or "",
+                                                    "unit_id": unit_id,
+                                                    "source_unit_id": unit_id,
+                                                    "source_member_unit_id": source_member_unit_id,
+                                                    "first_marker_point": [float(first_point[0]), float(first_point[1])],
+                                                    "marker_range": float(max(0.0, marker_range)),
+                                                    "roll_min": int(max(2, roll_min)),
+                                                    "mortal_wounds_roll": mortal_roll,
+                                                    "ability_key": once_key,
+                                                    "optional": False,
+                                                    "instruction": (
+                                                        f"Select the second Fleet Commander marker within {int(marker_range)}\" of the first marker."
+                                                    ),
+                                                },
+                                            )
+                                            self.request_decision(request)
+                                    else:
+                                        if root.has_used_unit_once_per_battle(once_key):
+                                            pass
+                                        else:
+                                            bearer = getattr(source_member, "_get_enhancement_bearer_model", lambda: None)()
+                                            if bearer is not None and bool(getattr(bearer, "is_alive", True)):
+                                                if not _pending_pick_point("fleet_commander_marker_1", unit_id):
+                                                    model_id = maybe_entity_id(bearer)
+                                                    request = _DecisionRequest.create(
+                                                        DECISION_PICK_POINT,
+                                                        f"{ability_name}: place the first marker (or Skip).",
+                                                        player_id=getattr(p, "id", None),
+                                                        options=[
+                                                            _DecisionOption.create("Confirm", payload={"action": "confirm"}),
+                                                            _DecisionOption.create("Skip", payload={"action": "skip"}),
+                                                        ],
+                                                        context={
+                                                            "ability": "fleet_commander_marker_1",
+                                                            "ability_name": ability_name,
+                                                            "phase": "Shooting phase",
+                                                            "unit": getattr(root, "name", "") or "",
+                                                            "unit_id": unit_id,
+                                                            "source_unit_id": unit_id,
+                                                            "source_member_unit_id": source_member_unit_id,
+                                                            "model": getattr(bearer, "name", "") or "",
+                                                            "model_id": model_id,
+                                                            "ability_key": once_key,
+                                                            "marker_range": float(max(0.0, marker_range)),
+                                                            "roll_min": int(max(2, roll_min)),
+                                                            "mortal_wounds_roll": mortal_roll,
+                                                            "optional": True,
+                                                            "instruction": "Select the first Fleet Commander marker point, or Skip.",
+                                                        },
+                                                    )
+                                                    self.request_decision(request)
+
                     # Unit-level: start-of-any-phase Battle-shock clear (once per battle).
                     get_clear_specs = getattr(root, "unit_start_any_phase_clear_battleshock_specs", None)
                     specs = list(get_clear_specs() or []) if callable(get_clear_specs) else []

@@ -1536,6 +1536,52 @@ class LateGameplayMixin:
         except Exception:
             pass
         try:
+            root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+        except Exception:
+            root = self
+        try:
+            has_stoic_defender = False
+            checker = getattr(root, "_attached_unit_has_active_leading_enhancement", None)
+            if callable(checker):
+                has_stoic_defender = bool(
+                    checker(
+                        "enhancement_stoic_defender",
+                        enhancement_id="000008474004",
+                        enhancement_name="stoic defender",
+                    )
+                )
+            if has_stoic_defender:
+                within_controlled_objective = False
+                controlled_check = getattr(root, "_within_controlled_objective_range", None)
+                if callable(controlled_check):
+                    within_controlled_objective = bool(controlled_check())
+                if within_controlled_objective:
+                    fnp_val = 6
+                    try:
+                        members = list(root.get_attached_unit_members() or [])
+                    except Exception:
+                        members = [root]
+                    if not members:
+                        members = [root]
+                    for member in members:
+                        sr_member = getattr(member, "special_rules", None)
+                        if not isinstance(sr_member, dict):
+                            continue
+                        if not bool(sr_member.get("enhancement_stoic_defender", False)):
+                            continue
+                        try:
+                            fnp_val = int(sr_member.get("enhancement_stoic_defender_fnp", 6) or 6)
+                        except Exception:
+                            fnp_val = 6
+                        break
+                    fnp_val = max(2, int(fnp_val))
+                    key = (int(fnp_val), "")
+                    seen = set((int(v), (c or "")) for v, c in result)
+                    if key not in seen:
+                        result.append((int(fnp_val), None))
+        except Exception:
+            pass
+        try:
             from ...utility.aura_effects import get_aura_fnp_entries
 
             aura_entries = list(get_aura_fnp_entries(self) or [])

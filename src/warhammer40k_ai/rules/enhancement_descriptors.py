@@ -1468,6 +1468,67 @@ _SPACE_MARINES_ANGELIC_INHERITORS_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPACE_MARINES_ANGELIC_INHERITORS_DESCRIPTORS.values()
 }
 
+_SPACE_MARINES_ANVIL_SIEGE_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008474002": EnhancementToolDescriptor(
+        enhancement_id="000008474002",
+        name="Indomitable Fury",
+        timing="on_bearer_destroyed",
+        target="bearer",
+        duration="resolve_at_end_of_phase_first_time",
+        effect="return_bearer_on_2plus_with_full_wounds",
+        once_per_battle=True,
+        effect_params={
+            "roll_min": 2,
+            "wounds_on_return": "full",
+            "return_on_death_key": "indomitable_fury",
+        },
+    ),
+    "000008474003": EnhancementToolDescriptor(
+        enhancement_id="000008474003",
+        name="Fleet Commander",
+        timing="start_of_shooting_phase_and_next_start_of_shooting_phase",
+        target="battlefield_points_and_units_crossed_by_line",
+        duration="two_step_once_per_battle",
+        effect="pick_two_markers_then_roll_mortal_wounds_for_units_line_passes_over",
+        once_per_battle=True,
+        effect_params={
+            "marker_range": 12.0,
+            "roll_min": 3,
+            "mortal_wounds_roll": "D3",
+            "once_per_battle_key": "fleet_commander",
+        },
+    ),
+    "000008474004": EnhancementToolDescriptor(
+        enhancement_id="000008474004",
+        name="Stoic Defender",
+        timing="passive_while_leading",
+        target="bearer_unit_models",
+        duration="constant_conditional",
+        effect="grant_fnp_on_controlled_objective_and_battleshock_oc_halving",
+        effect_params={
+            "feel_no_pain": 6,
+            "requires_within_controlled_objective": True,
+            "battle_shock_objective_control_divisor": 2,
+        },
+    ),
+    "000008474005": EnhancementToolDescriptor(
+        enhancement_id="000008474005",
+        name="Architect of War",
+        timing="passive_while_leading",
+        target="bearer_unit_ranged_weapons",
+        duration="constant",
+        effect="grant_weapon_keywords",
+        effect_params={
+            "attack_type": "ranged",
+            "keywords": ("IGNORES COVER",),
+        },
+    ),
+}
+
+_SPACE_MARINES_ANVIL_SIEGE_FORCE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPACE_MARINES_ANVIL_SIEGE_FORCE_DESCRIPTORS.values()
+}
+
 _LEGION_OF_EXCESS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009806002": EnhancementToolDescriptor(
         enhancement_id="000009806002",
@@ -1969,6 +2030,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPACE_MARINES_ANGELIC_INHERITORS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPACE_MARINES_ANVIL_SIEGE_FORCE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _LEGION_OF_EXCESS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -2026,6 +2090,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _BLOOD_LEGION_BY_NAME.get(key)
         or _SPACE_MARINES_FIRST_COMPANY_TASK_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_ANGELIC_INHERITORS_BY_NAME.get(key)
+        or _SPACE_MARINES_ANVIL_SIEGE_FORCE_BY_NAME.get(key)
         or _LEGION_OF_EXCESS_BY_NAME.get(key)
         or _PLAGUE_LEGION_BY_NAME.get(key)
         or _SCINTILLATING_LEGION_BY_NAME.get(key)

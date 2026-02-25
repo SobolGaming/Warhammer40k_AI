@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import Iterable, Sequence
 
 from ..decision_dispatcher import register_decision_handler
@@ -34,6 +35,7 @@ from ...utility.deployment_special_rules import (
     is_convergence_of_dominion_deployment_unit,
     validate_convergence_of_dominion_deployment,
 )
+from ...utility.dice import get_roll
 from ...utility.entity_ids import get_entity_id
 
 
@@ -58,6 +60,102 @@ def _clear_battle_focus_reactive_flags(unit) -> None:
             "battle_focus_reactive_move_expires_phase",
         ):
             sr.pop(key, None)
+
+
+def _parse_xy_point(value: object) -> tuple[float, float] | None:
+    if not isinstance(value, (list, tuple)) or len(value) < 2:
+        return None
+    try:
+        return (float(value[0]), float(value[1]))
+    except (TypeError, ValueError):
+        return None
+
+
+def _fleet_commander_effect_roll(token: object) -> int:
+    text = str(token or "D3").strip().upper() or "D3"
+    if text == "D3":
+        return int(get_roll("D3") or 0)
+    if text == "D6":
+        return int(get_roll("D6") or 0)
+    if text == "D3+3":
+        return int(get_roll("D3") or 0) + 3
+    try:
+        return max(0, int(text))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _iter_active_battlefield_roots(game: object) -> list[object]:
+    game_map = getattr(game, "map", None)
+    if game_map is None:
+        return []
+    roots_by_id: dict[str, object] = {}
+    for entry in list(getattr(game_map, "units", []) or []):
+        if entry is None:
+            continue
+        get_root = getattr(entry, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else entry
+        if root is None:
+            continue
+        root_id = str(get_entity_id(root) or "")
+        if not root_id:
+            root_id = f"anon:{str(getattr(root, 'name', '') or '')}:{id(root)}"
+        if root_id in roots_by_id:
+            continue
+        is_alive_fn = getattr(root, "is_alive", None)
+        if callable(is_alive_fn):
+            if not bool(is_alive_fn()):
+                continue
+        elif bool(getattr(root, "is_alive", True)) is False:
+            continue
+        if not bool(getattr(root, "deployed", True)):
+            continue
+        if bool(getattr(root, "is_embarked", False)) or getattr(root, "embarked_in", None) is not None:
+            continue
+        is_in_reserves = getattr(root, "is_in_reserves", None)
+        if callable(is_in_reserves) and bool(is_in_reserves()):
+            continue
+        reserve_status = str(getattr(root, "reserve_status", "deployed") or "deployed").strip().lower()
+        if reserve_status and reserve_status != "deployed":
+            continue
+        roots_by_id[root_id] = root
+    return [roots_by_id[k] for k in sorted(roots_by_id.keys())]
+
+
+def _unit_line_intersects(root: object, *, start_xy: tuple[float, float], end_xy: tuple[float, float]) -> bool:
+    if root is None:
+        return False
+    if float(start_xy[0]) == float(end_xy[0]) and float(start_xy[1]) == float(end_xy[1]):
+        return False
+    try:
+        from shapely.geometry import LineString, Point
+    except ImportError:
+        return False
+    line = LineString([tuple(start_xy), tuple(end_xy)])
+    get_models = getattr(root, "get_attached_unit_models", None)
+    models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+    models.sort(key=lambda m: str(get_entity_id(m) or ""))
+    for model in models:
+        if model is None:
+            continue
+        alive_attr = getattr(model, "is_alive", False)
+        alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+        if not alive:
+            continue
+        model_base = getattr(model, "model_base", None)
+        get_shape = getattr(model_base, "get_base_shape", None) if model_base is not None else None
+        if callable(get_shape):
+            shape = get_shape()
+            if shape is not None and bool(getattr(line, "intersects", lambda _shape: False)(shape)):
+                return True
+        get_location = getattr(model, "get_location", None)
+        if callable(get_location):
+            loc = get_location()
+            if isinstance(loc, tuple) and len(loc) >= 2:
+                point = Point(float(loc[0]), float(loc[1]))
+                if bool(line.distance(point) <= 1e-6):
+                    return True
+    return False
 
 
 def _maybe_request_move_modifier_choice(game: object, unit: object, *, action_type: str) -> None:
@@ -1569,6 +1667,8 @@ def _validate_pick_point(game: object, request: DecisionRequest, result: Decisio
     if is_skip_choice(request, result):
         if ability_key == "subterranean_assault_tunnel_marker_placement":
             return ("Tunnel Marker placement cannot be skipped.",)
+        if ability_key == "fleet_commander_marker_2":
+            return ("Fleet Commander second marker placement cannot be skipped.",)
         return ()
     payload = dict(result.payload or {})
     point = payload.get("point")
@@ -1581,6 +1681,22 @@ def _validate_pick_point(game: object, request: DecisionRequest, result: Decisio
             float(point[2])
     except (TypeError, ValueError):
         return ("Point coordinates must be numeric.",)
+    if ability_key == "fleet_commander_marker_2":
+        first_marker = _parse_xy_point(ctx.get("first_marker_point"))
+        if first_marker is None:
+            return ("Fleet Commander second marker requires a valid first marker point.",)
+        try:
+            marker_range = float(ctx.get("marker_range", 12.0) or 12.0)
+        except (TypeError, ValueError):
+            marker_range = 12.0
+        point_xy = _parse_xy_point(point)
+        if point_xy is None:
+            return ("Fleet Commander second marker requires point coordinates.",)
+        dx = float(point_xy[0]) - float(first_marker[0])
+        dy = float(point_xy[1]) - float(first_marker[1])
+        dist = math.sqrt(dx * dx + dy * dy)
+        if dist > float(max(0.0, marker_range)) + 1e-6:
+            return (f"Fleet Commander second marker must be within {float(max(0.0, marker_range)):.1f}\" of the first marker.",)
     if ability_key == "subterranean_assault_tunnel_marker_placement":
         unit_id = str(ctx.get("unit_id", "") or "")
         unit = get_unit(game, unit_id)
@@ -1598,16 +1714,116 @@ def _validate_pick_point(game: object, request: DecisionRequest, result: Decisio
 
 
 def _apply_pick_point(game: object, request: DecisionRequest, result: DecisionResult) -> None:
-    if is_skip_choice(request, result):
-        return None
     ctx = dict(getattr(request, "context", {}) or {})
     ability_key = str(ctx.get("ability", "") or "").strip().lower()
+    if is_skip_choice(request, result):
+        if ability_key == "fleet_commander_marker_1":
+            source_member = get_unit(game, str(ctx.get("source_member_unit_id", "") or ""))
+            if source_member is not None:
+                sr = getattr(source_member, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr.pop("enhancement_fleet_commander_first_marker_point", None)
+                sr.pop("enhancement_fleet_commander_pending_second_marker", None)
+                source_member.special_rules = sr
+        return None
     payload = dict(result.payload or {})
     point = payload.get("point") or []
     if not isinstance(point, (list, tuple)) or len(point) < 2:
         return None
     x = float(point[0])
     y = float(point[1])
+    if ability_key == "fleet_commander_marker_1":
+        source_root = get_unit(game, str(ctx.get("source_unit_id", "") or ctx.get("unit_id", "") or ""))
+        source_member = get_unit(game, str(ctx.get("source_member_unit_id", "") or ""))
+        if source_member is None:
+            source_member = source_root
+        if source_member is None:
+            return (x, y)
+        source_sr = getattr(source_member, "special_rules", None)
+        if not isinstance(source_sr, dict):
+            source_sr = {}
+        source_sr["enhancement_fleet_commander_first_marker_point"] = [x, y]
+        source_sr["enhancement_fleet_commander_pending_second_marker"] = True
+        source_member.special_rules = source_sr
+
+        if source_root is not None:
+            ability_key_name = str(ctx.get("ability_key", "fleet_commander") or "fleet_commander").strip().lower()
+            if not ability_key_name:
+                ability_key_name = "fleet_commander"
+            mark_used = getattr(source_root, "mark_unit_once_per_battle_used", None)
+            if callable(mark_used):
+                ability_name = str(ctx.get("ability_name", "Fleet Commander") or "Fleet Commander").strip() or "Fleet Commander"
+                mark_used(ability_key_name, ability_name=ability_name)
+        return (x, y)
+    if ability_key == "fleet_commander_marker_2":
+        source_root = get_unit(game, str(ctx.get("source_unit_id", "") or ctx.get("unit_id", "") or ""))
+        source_member = get_unit(game, str(ctx.get("source_member_unit_id", "") or ""))
+        if source_member is None:
+            source_member = source_root
+        if source_member is None:
+            return (x, y)
+        source_sr = getattr(source_member, "special_rules", None)
+        if not isinstance(source_sr, dict):
+            source_sr = {}
+        first_marker_point = _parse_xy_point(ctx.get("first_marker_point"))
+        if first_marker_point is None:
+            first_marker_point = _parse_xy_point(source_sr.get("enhancement_fleet_commander_first_marker_point"))
+        if first_marker_point is None:
+            source_sr["enhancement_fleet_commander_pending_second_marker"] = False
+            source_sr.pop("enhancement_fleet_commander_first_marker_point", None)
+            source_member.special_rules = source_sr
+            return (x, y)
+
+        try:
+            roll_min = int(ctx.get("roll_min", source_sr.get("enhancement_fleet_commander_roll_min", 3)) or 3)
+        except (TypeError, ValueError):
+            roll_min = 3
+        roll_min = max(2, int(roll_min))
+        mortal_roll = str(
+            ctx.get("mortal_wounds_roll", source_sr.get("enhancement_fleet_commander_mortal_wounds_roll", "D3"))
+            or "D3"
+        ).strip().upper() or "D3"
+
+        affected: list[dict] = []
+        for target_root in _iter_active_battlefield_roots(game):
+            target_id = str(get_entity_id(target_root) or "")
+            if not target_id:
+                continue
+            if not _unit_line_intersects(
+                target_root,
+                start_xy=(float(first_marker_point[0]), float(first_marker_point[1])),
+                end_xy=(x, y),
+            ):
+                continue
+            roll = int(get_roll("D6") or 0)
+            mortals = 0
+            if roll >= int(roll_min):
+                mortals = int(max(0, _fleet_commander_effect_roll(mortal_roll)))
+                if mortals > 0:
+                    source_for_apply = source_root if source_root is not None else source_member
+                    applier = getattr(source_for_apply, "_apply_mortal_wounds_to_unit", None)
+                    if callable(applier):
+                        applier(target_root, int(mortals), game_map=getattr(game, "map", None))
+            affected.append(
+                {
+                    "unit_id": target_id,
+                    "roll": int(roll),
+                    "triggered": bool(roll >= int(roll_min)),
+                    "mortal_wounds": int(max(0, mortals)),
+                }
+            )
+
+        source_sr["enhancement_fleet_commander_last_resolution"] = list(affected)
+        source_sr["enhancement_fleet_commander_last_first_marker_point"] = [
+            float(first_marker_point[0]),
+            float(first_marker_point[1]),
+        ]
+        source_sr["enhancement_fleet_commander_last_second_marker_point"] = [x, y]
+        source_sr.pop("enhancement_fleet_commander_first_marker_point", None)
+        source_sr["enhancement_fleet_commander_pending_second_marker"] = False
+        source_member.special_rules = source_sr
+        return (x, y)
     if ability_key == "subterranean_assault_tunnel_marker_placement":
         unit_id = str(ctx.get("unit_id", "") or "")
         unit = get_unit(game, unit_id)

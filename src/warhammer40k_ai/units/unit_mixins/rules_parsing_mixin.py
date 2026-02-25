@@ -1613,6 +1613,42 @@ class RulesParsingMixin:
                 }
             )
 
+        if isinstance(sr, dict) and sr.get("enhancement_indomitable_fury"):
+            bearer_id = str(
+                sr.get("enhancement_indomitable_fury_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+            ).strip()
+            try:
+                roll_min = int(sr.get("enhancement_indomitable_fury_roll_min", 2) or 2)
+            except (TypeError, ValueError):
+                roll_min = 2
+            wounds_spec = sr.get("enhancement_indomitable_fury_wounds", "full")
+            if isinstance(wounds_spec, str):
+                wounds_key = str(wounds_spec or "full").strip().lower()
+                if wounds_key not in {"full", "d3", "d6"}:
+                    try:
+                        wounds_spec = int(wounds_key or 1)
+                    except (TypeError, ValueError):
+                        wounds_spec = "full"
+                else:
+                    wounds_spec = wounds_key
+            else:
+                try:
+                    wounds_spec = int(wounds_spec or 1)
+                except (TypeError, ValueError):
+                    wounds_spec = "full"
+            key = str(sr.get("enhancement_indomitable_fury_key", "indomitable_fury") or "indomitable_fury").strip().lower()
+            specs.append(
+                {
+                    "name": str(sr.get("enhancement_indomitable_fury_source", "Indomitable Fury") or "Indomitable Fury"),
+                    "roll_min": int(max(2, roll_min)),
+                    "wounds": wounds_spec,
+                    "skip_deadly_demise": False,
+                    "key": key if key else "indomitable_fury",
+                    "bearer_model_id": bearer_id,
+                }
+            )
+
         seen: set[tuple] = set()
         deduped: list[dict] = []
         for spec in specs:

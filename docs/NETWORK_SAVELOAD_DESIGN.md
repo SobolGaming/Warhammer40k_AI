@@ -273,6 +273,8 @@ Movement:
 - setup_reactive_target_dialog: SELECT_SETUP_REACTIVE_TARGET {unit_id, target_unit_id | skip}
 - setup_reactive_action_dialog: CHOOSE_SETUP_REACTIVE_ACTION {action}
 - battlefield_point_pick_dialog: PICK_POINT {point}
+- fleet_commander_first_marker_dialog: PICK_POINT {point | skip} (context `ability="fleet_commander_marker_1"`, `ability_name="Fleet Commander"`, `unit_id`, `source_member_unit_id`, `ability_key`, `marker_range`, `roll_min`, `mortal_wounds_roll`, `optional=true`)
+- fleet_commander_second_marker_dialog: PICK_POINT {point} (context `ability="fleet_commander_marker_2"`, `ability_name="Fleet Commander"`, `unit_id`, `source_member_unit_id`, `first_marker_point`, `marker_range`, `roll_min`, `mortal_wounds_roll`, `optional=false`)
 - hazard_objective_select_dialog: PICK_OBJECTIVE {objective_id}
 - move_over_mortal_wounds_target_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `mortal_wounds_kind="move_over"`, `unit_id`, `model_id` optional, `ability_name`, `spec`)
 - bomb_squigs_target_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `mortal_wounds_kind="bomb_squigs"`, `unit_id`, `ability_name`, `spec.max_uses`, `spec.remaining_uses`)

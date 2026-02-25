@@ -546,6 +546,42 @@ class Unit(
                     source = str(fenris_source or "The Great Wolf Watches").strip() or "The Great Wolf Watches"
                     mods.append(Modifier(ModifierOp.ADD, int(fenris_bonus), source=f"detachment:{source}"))
 
+            # Stoic Defender (Anvil Siege Force): while leading, Battle-shocked models in the
+            # bearer's unit halve Objective Control instead of setting it to 0.
+            is_battle_shocked = False
+            check_battle_shock = getattr(self, "is_battle_shocked", None)
+            if callable(check_battle_shock):
+                try:
+                    is_battle_shocked = bool(check_battle_shock())
+                except Exception:
+                    is_battle_shocked = False
+            if is_battle_shocked and _enhancement_bearer_is_leading("enhancement_stoic_defender"):
+                oc_divisor = 2
+                try:
+                    root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+                except Exception:
+                    root = self
+                try:
+                    leaders = list(getattr(root, "attached_leaders", []) or [])
+                except Exception:
+                    leaders = []
+                for leader in leaders:
+                    sr_leader = getattr(leader, "special_rules", None)
+                    if not isinstance(sr_leader, dict) or not bool(sr_leader.get("enhancement_stoic_defender", False)):
+                        continue
+                    try:
+                        oc_divisor = int(sr_leader.get("enhancement_stoic_defender_oc_divisor", 2) or 2)
+                    except (TypeError, ValueError):
+                        oc_divisor = 2
+                    break
+                oc_divisor = max(2, int(oc_divisor))
+                mods = [
+                    mod
+                    for mod in list(mods or [])
+                    if str(getattr(mod, "source", "") or "").strip().lower() != "status:battle-shock"
+                ]
+                mods.append(Modifier(ModifierOp.DIV, int(oc_divisor), source="enhancement:stoic_defender_battleshock"))
+
             # Inspiring Commander: while included in your army, named units gain
             # a fixed Objective Control value for non-CHARACTER models while not Battle-shocked.
             try:

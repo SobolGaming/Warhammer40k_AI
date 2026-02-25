@@ -417,6 +417,9 @@ class Enhancement:
         is_angelic_inheritors = bool(
             sm_mgr and getattr(sm_mgr, "is_angelic_inheritors", lambda: False)()
         )
+        is_anvil_siege_force = bool(
+            sm_mgr and getattr(sm_mgr, "is_anvil_siege_force", lambda: False)()
+        )
         is_lions = bool(ac_mgr and ac_mgr.is_lions_of_the_emperor())
         try:
             is_war_horde = bool(orks_mgr and orks_mgr.is_war_horde())
@@ -1105,6 +1108,76 @@ class Enhancement:
             refresh_return = getattr(unit, "_refresh_return_on_death_flags", None)
             if callable(refresh_return):
                 refresh_return()
+
+        if name == "indomitable fury" or enh_id == "000008474002":
+            if not is_anvil_siege_force:
+                return
+            unit.special_rules["enhancement_indomitable_fury"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            roll_min = _coerce_int(params.get("roll_min", 2) or 2, default=2)
+            wounds_on_return = params.get("wounds_on_return", "full")
+            wounds_expr = str(wounds_on_return or "full").strip().lower() if isinstance(wounds_on_return, str) else wounds_on_return
+            if isinstance(wounds_expr, str):
+                if wounds_expr not in {"full", "d3", "d6"}:
+                    wounds_expr = _coerce_int(wounds_expr, default=1)
+            else:
+                wounds_expr = _coerce_int(wounds_expr, default=1)
+            key = str(params.get("return_on_death_key", "indomitable_fury") or "indomitable_fury").strip().lower()
+            unit.special_rules["enhancement_indomitable_fury_roll_min"] = int(max(2, roll_min))
+            unit.special_rules["enhancement_indomitable_fury_wounds"] = wounds_expr
+            unit.special_rules["enhancement_indomitable_fury_key"] = key if key else "indomitable_fury"
+            unit.special_rules["enhancement_indomitable_fury_source"] = "Indomitable Fury"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_indomitable_fury_bearer_model_id"] = bearer_id
+            refresh_return = getattr(unit, "_refresh_return_on_death_flags", None)
+            if callable(refresh_return):
+                refresh_return()
+
+        if name == "fleet commander" or enh_id == "000008474003":
+            if not is_anvil_siege_force:
+                return
+            unit.special_rules["enhancement_fleet_commander"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            once_key = str(params.get("once_per_battle_key", "fleet_commander") or "fleet_commander").strip().lower()
+            try:
+                marker_range = float(params.get("marker_range", 12.0) or 12.0)
+            except Exception:
+                marker_range = 12.0
+            roll_min = _coerce_int(params.get("roll_min", 3) or 3, default=3)
+            mortal_roll = str(params.get("mortal_wounds_roll", "D3") or "D3").strip().upper() or "D3"
+            unit.special_rules["enhancement_fleet_commander_once_key"] = once_key if once_key else "fleet_commander"
+            unit.special_rules["enhancement_fleet_commander_marker_range"] = float(max(0.0, marker_range))
+            unit.special_rules["enhancement_fleet_commander_roll_min"] = int(max(2, roll_min))
+            unit.special_rules["enhancement_fleet_commander_mortal_wounds_roll"] = mortal_roll
+            unit.special_rules["enhancement_fleet_commander_source"] = "Fleet Commander"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_fleet_commander_bearer_model_id"] = bearer_id
+
+        if name == "stoic defender" or enh_id == "000008474004":
+            if not is_anvil_siege_force:
+                return
+            unit.special_rules["enhancement_stoic_defender"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            fnp_value = _coerce_int(params.get("feel_no_pain", 6) or 6, default=6)
+            oc_divisor = _coerce_int(params.get("battle_shock_objective_control_divisor", 2) or 2, default=2)
+            unit.special_rules["enhancement_stoic_defender_fnp"] = int(max(2, fnp_value))
+            unit.special_rules["enhancement_stoic_defender_oc_divisor"] = int(max(2, oc_divisor))
+            unit.special_rules["enhancement_stoic_defender_source"] = "Stoic Defender"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "architect of war" or enh_id == "000008474005":
+            if not is_anvil_siege_force:
+                return
+            unit.special_rules["enhancement_architect_of_war"] = True
+            unit.special_rules["enhancement_architect_of_war_source"] = "Architect of War"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 
         if name == "gift of foresight" and enh_id == "000009899004":
             if not is_warhost:

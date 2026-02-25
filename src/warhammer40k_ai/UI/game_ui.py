@@ -3817,6 +3817,31 @@ class GameView:
                     if not bool(valid):
                         return {"valid": False, "reason": str(reason or "Invalid point.")}
                     return {"valid": True, "reason": "OK"}
+                if ability_key == "fleet_commander_marker_2":
+                    first = ctx.get("first_marker_point")
+                    if not isinstance(first, (list, tuple)) or len(first) < 2:
+                        return {"valid": False, "reason": "First marker point is unavailable."}
+                    try:
+                        fx = float(first[0])
+                        fy = float(first[1])
+                        px = float(x)
+                        py = float(y)
+                    except (TypeError, ValueError):
+                        return {"valid": False, "reason": "Point coordinates must be numeric."}
+                    try:
+                        marker_range = float(ctx.get("marker_range", 12.0) or 12.0)
+                    except (TypeError, ValueError):
+                        marker_range = 12.0
+                    marker_range = float(max(0.0, marker_range))
+                    dx = float(px - fx)
+                    dy = float(py - fy)
+                    dist = float((dx * dx + dy * dy) ** 0.5)
+                    if dist > marker_range + 1e-6:
+                        return {
+                            "valid": False,
+                            "reason": f"Second marker must be within {marker_range:.1f}\" of the first marker.",
+                        }
+                    return {"valid": True, "reason": "OK"}
                 return {"valid": True, "reason": "OK"}
 
             def _on_confirm(option_id: str, point):

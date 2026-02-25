@@ -2582,6 +2582,48 @@ class PositioningMixin:
         except Exception:
             pass
 
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            has_architect_of_war = False
+            checker = getattr(root, "_attached_unit_has_active_leading_enhancement", None)
+            if callable(checker):
+                has_architect_of_war = bool(
+                    checker(
+                        "enhancement_architect_of_war",
+                        enhancement_id="000008474005",
+                        enhancement_name="architect of war",
+                    )
+                )
+            if has_architect_of_war:
+                source_name = "Architect of War"
+                leaders = list(getattr(root, "attached_leaders", []) or [])
+                for leader in leaders:
+                    sr_leader = getattr(leader, "special_rules", None)
+                    if not isinstance(sr_leader, dict):
+                        continue
+                    if not bool(sr_leader.get("enhancement_architect_of_war", False)):
+                        continue
+                    source_name = (
+                        str(sr_leader.get("enhancement_architect_of_war_source", "Architect of War") or "Architect of War").strip()
+                        or "Architect of War"
+                    )
+                    break
+                key = ("always_kw", "ranged", "ignores cover")
+                if key not in seen:
+                    seen.add(key)
+                    rules.append(
+                        {
+                            "attack_type": "ranged",
+                            "keyword": "IGNORES COVER",
+                            "source": source_name,
+                        }
+                    )
+        except Exception:
+            pass
+
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
         self._ability_cache[cache_key] = rules
@@ -2804,6 +2846,48 @@ class PositioningMixin:
                     continue
                 seen.add(key)
                 rules.append({"attack_type": atype, "keyword": keyword, "source": source})
+
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            has_architect_of_war = False
+            checker = getattr(root, "_attached_unit_has_active_leading_enhancement", None)
+            if callable(checker):
+                has_architect_of_war = bool(
+                    checker(
+                        "enhancement_architect_of_war",
+                        enhancement_id="000008474005",
+                        enhancement_name="architect of war",
+                    )
+                )
+            if has_architect_of_war:
+                source_name = "Architect of War"
+                leaders = list(getattr(root, "attached_leaders", []) or [])
+                for leader in leaders:
+                    sr_leader = getattr(leader, "special_rules", None)
+                    if not isinstance(sr_leader, dict):
+                        continue
+                    if not bool(sr_leader.get("enhancement_architect_of_war", False)):
+                        continue
+                    source_name = (
+                        str(sr_leader.get("enhancement_architect_of_war_source", "Architect of War") or "Architect of War").strip()
+                        or "Architect of War"
+                    )
+                    break
+                key = ("ranged", "ignores cover", source_name.lower())
+                if key not in seen:
+                    seen.add(key)
+                    rules.append(
+                        {
+                            "attack_type": "ranged",
+                            "keyword": "IGNORES COVER",
+                            "source": source_name,
+                        }
+                    )
+        except Exception:
+            pass
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
