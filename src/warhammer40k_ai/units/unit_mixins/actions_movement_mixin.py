@@ -5463,6 +5463,35 @@ class ActionsMovementMixin:
             return bool(sr.get("enhancement_avatar_of_perfection_ignore_charge_modifiers", True))
         return False
 
+    def _diabolical_resilience_ignore_modifiers_active(self, *, kind: str) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        checker = getattr(root, "_attached_unit_has_active_enhancement", None)
+        has_enhancement = False
+        if callable(checker):
+            has_enhancement = bool(
+                checker(
+                    "enhancement_iconoclast_diabolical_resilience",
+                    enhancement_id="000009765005",
+                    enhancement_name="diabolical resilience",
+                )
+            )
+        if not has_enhancement:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        kind_key = str(kind or "").strip().lower()
+        if kind_key == "move":
+            return bool(sr.get("enhancement_diabolical_resilience_ignore_move_modifiers", True))
+        if kind_key == "advance":
+            return bool(sr.get("enhancement_diabolical_resilience_ignore_advance_modifiers", True))
+        if kind_key == "charge":
+            return bool(sr.get("enhancement_diabolical_resilience_ignore_charge_modifiers", True))
+        return False
+
     def _preternatural_agility_ignore_modifiers_active(self) -> bool:
         try:
             root = self.get_attached_unit_root()
@@ -5829,6 +5858,67 @@ class ActionsMovementMixin:
                 pass
         return kept
 
+    def _filter_diabolical_resilience_roll_modifiers(self, modifiers, *, kind: str) -> list[tuple[int, str]]:
+        if not modifiers:
+            return list(modifiers or [])
+        kind_key = str(kind or "").strip().lower()
+        if kind_key not in ("advance", "charge"):
+            return list(modifiers or [])
+        try:
+            if not self._diabolical_resilience_ignore_modifiers_active(kind=kind_key):
+                return list(modifiers or [])
+        except Exception:
+            return list(modifiers or [])
+        from ...utility.modifier_choice import (
+            CHOICE_KEEP_ALL,
+            CHOICE_IGNORE_NEGATIVE,
+            CHOICE_IGNORE_POSITIVE,
+            CHOICE_IGNORE_ALL,
+            filter_signed_modifiers,
+        )
+        try:
+            choice = getattr(self.round_state, f"{kind_key}_modifier_choice", None)
+        except Exception:
+            choice = None
+        if not choice:
+            choice = CHOICE_KEEP_ALL
+        if choice == CHOICE_KEEP_ALL:
+            return list(modifiers or [])
+
+        kept, ignored = filter_signed_modifiers(modifiers, str(choice))
+        if ignored:
+            try:
+                sr = getattr(self, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                ignored_sources = tuple(sorted(str(s or "") for _v, s in ignored if str(s or "").strip()))
+                kept_sources = tuple(sorted(str(s or "") for _v, s in kept if str(s or "").strip()))
+                sig = (ignored_sources, kept_sources, str(choice))
+                key = f"diabolical_resilience_{kind_key}_mod_signature"
+                if sr.get(key) != sig:
+                    sr[key] = sig
+                    self.special_rules = sr
+                    from ...utility.event_bus import append_action
+
+                    pn = self.get_parent_army().player
+                    label = "Advance roll" if kind_key == "advance" else "Charge roll"
+                    ignored_text = ", ".join(s for s in ignored_sources if s) or "unnamed sources"
+                    tag = (
+                        "negative"
+                        if choice == CHOICE_IGNORE_NEGATIVE
+                        else "positive"
+                        if choice == CHOICE_IGNORE_POSITIVE
+                        else "all"
+                    )
+                    append_action(pn, f"Diabolical Resilience: ignored {tag} {label} modifiers ({ignored_text}).")
+                    if kept_sources:
+                        kept_text = ", ".join(s for s in kept_sources if s)
+                        if kept_text:
+                            append_action(pn, f"Diabolical Resilience: applied {label} modifiers ({kept_text}).")
+            except Exception:
+                pass
+        return kept
+
     def _collect_advance_roll_modifiers(self) -> list[tuple[int, str]]:
         if bool(getattr(self, "has_siege_crawler", lambda: False)()):
             return []
@@ -5941,6 +6031,7 @@ class ActionsMovementMixin:
         mods = self._filter_bestial_aspect_roll_modifiers(mods, kind="advance")
         mods = self._filter_preternatural_agility_roll_modifiers(mods, kind="advance")
         mods = self._filter_avatar_of_perfection_roll_modifiers(mods, kind="advance")
+        mods = self._filter_diabolical_resilience_roll_modifiers(mods, kind="advance")
         for val, source in mods:
             if not val:
                 continue

@@ -3182,7 +3182,30 @@ class PositioningMixin:
                         }
                     ]
             dark_sacrifice_fn = getattr(mgr, "iconoclast_dark_sacrifice_weapon_keyword", None) if mgr is not None else None
-            if callable(dark_sacrifice_fn):
+            dark_sacrifice_multi_fn = (
+                getattr(mgr, "iconoclast_dark_sacrifice_weapon_keywords", None)
+                if mgr is not None
+                else None
+            )
+            if callable(dark_sacrifice_multi_fn):
+                source_player = getattr(source_army, "player", None) if source_army is not None else None
+                game = getattr(source_player, "game", None) if source_player is not None else None
+                keywords, source = dark_sacrifice_multi_fn(
+                    model,
+                    attack_type=str(attack_type or ""),
+                    game=game,
+                )
+                for keyword in list(keywords or []):
+                    if not str(keyword or "").strip():
+                        continue
+                    rules = list(rules or []) + [
+                        {
+                            "attack_type": "any",
+                            "keyword": str(keyword).strip().upper(),
+                            "source": str(source or "Dark Sacrifice"),
+                        }
+                    ]
+            elif callable(dark_sacrifice_fn):
                 source_player = getattr(source_army, "player", None) if source_army is not None else None
                 game = getattr(source_player, "game", None) if source_player is not None else None
                 keyword, source = dark_sacrifice_fn(
@@ -6601,10 +6624,15 @@ class PositioningMixin:
             sr = getattr(u, "special_rules", None)
             if not isinstance(sr, dict):
                 continue
+            val = 0.0
             try:
-                val = float(sr.get("enhancement_scout_distance", 0) or 0)
+                val = max(val, float(sr.get("enhancement_scout_distance", 0) or 0))
             except Exception:
-                val = 0.0
+                pass
+            try:
+                val = max(val, float(sr.get("iconoclast_pave_the_way_scout_distance", 0) or 0))
+            except Exception:
+                pass
             if val > max_dist:
                 max_dist = val
         return float(max_dist)

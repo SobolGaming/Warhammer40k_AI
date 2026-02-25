@@ -92,7 +92,14 @@ def _maybe_request_move_modifier_choice(game: object, unit: object, *, action_ty
             avatar_of_perfection = bool(active_fn(kind="move"))
     except Exception:
         avatar_of_perfection = False
-    if not internal_rivalries and not driven_by_rage and not bestial_aspect and not avatar_of_perfection:
+    diabolical_resilience = False
+    try:
+        active_fn = getattr(unit, "_diabolical_resilience_ignore_modifiers_active", None)
+        if callable(active_fn):
+            diabolical_resilience = bool(active_fn(kind="move"))
+    except Exception:
+        diabolical_resilience = False
+    if not internal_rivalries and not driven_by_rage and not bestial_aspect and not diabolical_resilience and not avatar_of_perfection:
         return
     if internal_rivalries:
         ability_name = INTERNAL_RIVALRIES_NAME
@@ -100,6 +107,8 @@ def _maybe_request_move_modifier_choice(game: object, unit: object, *, action_ty
         ability_name = DRIVEN_BY_ULTIMATE_RAGE_NAME
     elif bestial_aspect:
         ability_name = "Bestial Aspect"
+    elif diabolical_resilience:
+        ability_name = "Diabolical Resilience"
     else:
         ability_name = "Avatar of Perfection"
     try:

@@ -499,6 +499,10 @@ class Enhancement:
             is_infernal_lance = bool(ck_mgr and ck_mgr.is_infernal_lance())
         except Exception:
             is_infernal_lance = False
+        try:
+            is_iconoclast_fiefdom = bool(ck_mgr and ck_mgr.is_iconoclast_fiefdom())
+        except Exception:
+            is_iconoclast_fiefdom = False
         ik_mgr = getattr(army, "imperial_knights_detachments", None) if army is not None else None
         try:
             is_valourstrike_lance = bool(ik_mgr and ik_mgr.is_valourstrike_lance())
@@ -2732,6 +2736,44 @@ class Enhancement:
                 return
             unit.special_rules["enhancement_bestial_aspect"] = True
             unit.special_rules["bearer_unit_assault_ranged"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "profane altar" or enh_id == "000009765002":
+            if not is_iconoclast_fiefdom:
+                return
+            unit.special_rules["enhancement_iconoclast_profane_altar"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "pave the way" or enh_id == "000009765003":
+            if not is_iconoclast_fiefdom:
+                return
+            unit.special_rules["enhancement_iconoclast_pave_the_way"] = True
+            unit.special_rules["enhancement_iconoclast_pave_the_way_scouts_distance"] = 6
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "tyrant's banner" or enh_id == "000009765004":
+            if not is_iconoclast_fiefdom:
+                return
+            unit.special_rules["enhancement_iconoclast_tyrants_banner"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "diabolical resilience" or enh_id == "000009765005":
+            if not is_iconoclast_fiefdom:
+                return
+            unit.special_rules["enhancement_iconoclast_diabolical_resilience"] = True
+            unit.special_rules["enhancement_diabolical_resilience_ignore_move_modifiers"] = True
+            unit.special_rules["enhancement_diabolical_resilience_ignore_advance_modifiers"] = True
+            unit.special_rules["enhancement_diabolical_resilience_ignore_charge_modifiers"] = True
+            _ensure_enhancement_fnp_entry(
+                unit,
+                6,
+                source="Diabolical Resilience",
+                tag="diabolical_resilience",
+            )
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 

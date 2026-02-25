@@ -9450,6 +9450,9 @@ class Game(
         filt = getattr(charging_unit, "_filter_avatar_of_perfection_roll_modifiers", None)
         if callable(filt):
             modifiers = filt(modifiers, kind="charge")
+        filt = getattr(charging_unit, "_filter_diabolical_resilience_roll_modifiers", None)
+        if callable(filt):
+            modifiers = filt(modifiers, kind="charge")
 
         # IMPEDING FIRE: not cumulative with other negative charge modifiers.
         has_impeding_fire = False

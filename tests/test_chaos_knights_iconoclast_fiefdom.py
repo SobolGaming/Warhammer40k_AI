@@ -3,11 +3,12 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from warhammer40k_ai.engine.decision_dispatcher import dispatch_decision
-from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY, DECISION_SELECT_REALM_OF_CHAOS_UNITS
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionQueue, DecisionRequest, DecisionResult
 from warhammer40k_ai.engine.event.system import EventSystem
 from warhammer40k_ai.roster.army import Army, ArmyValidationError
 from warhammer40k_ai.roster.player import Player, PlayerControl
+from warhammer40k_ai.rules.enhancement import Enhancement
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.utility.aura_effects import get_aura_attack_modifiers
 
@@ -314,6 +315,206 @@ class TestChaosKnightsIconoclastFiefdom(unittest.TestCase):
         )
         apply_result = dispatch_decision(game, bad_request, bad_result)
         self.assertFalse(apply_result.ok)
+
+    def test_iconoclast_profane_altar_dark_sacrifice_grants_both_keywords_and_max_models(self):
+        ck_army, ck_player, enemy_army, enemy_player = self._setup_players()
+        source = self._make_chaos_knight("Knight Desecrator", titanic=True)
+        damned = self._make_damned("Cultist Mob")
+        enemy = _make_unit(
+            "Enemy Unit",
+            faction_name="Enemy",
+            keywords=["INFANTRY"],
+            faction_keywords=["ENEMY"],
+            cost=100,
+        )
+        ck_army.add_unit(source)
+        ck_army.add_unit(damned)
+        enemy_army.add_unit(enemy)
+        _set_unit_position(source, 0.0, 0.0, 0.0)
+        _set_unit_position(damned, 3.0, 0.0, 0.0)
+        _set_unit_position(enemy, 10.0, 0.0, 0.0)
+
+        source._get_enhancement_bearer_model = lambda: source.models[0]
+        Enhancement(
+            id="000009765002",
+            name="Profane Altar",
+            faction_id="QT",
+            detachment="Iconoclast Fiefdom",
+            description="",
+        ).apply_to_unit(source)
+        self.assertTrue(bool(source.special_rules.get("enhancement_iconoclast_profane_altar")))
+
+        all_units = list(ck_army.units) + list(enemy_army.units)
+        game = _GameStub(
+            current_player=ck_player,
+            enemy_units_by_player={
+                ck_player.id: [enemy],
+                enemy_player.id: list(ck_army.units),
+            },
+            units=all_units,
+            players=[ck_player, enemy_player],
+            phase_name="SHOOTING_PHASE",
+        )
+        ck_player.game = game
+        enemy_player.game = game
+
+        damned.pass_leadership_check = lambda *_a, **_k: False
+        mgr = ck_army.chaos_knights_detachments
+        with patch("warhammer40k_ai.rules.chaos_knights_detachments.get_roll", return_value=1):
+            outcome = mgr.apply_iconoclast_dark_sacrifice(
+                source,
+                damned,
+                mode="LETHAL_HITS",
+                game=game,
+                player=ck_player,
+            )
+        self.assertTrue(bool(outcome.get("ok")))
+        self.assertEqual(int(outcome.get("destroy_target", 0) or 0), 6)
+        self.assertEqual(set(outcome.get("weapon_keywords") or []), {"LETHAL HITS", "SUSTAINED HITS 1"})
+
+        source_model = source.models[0]
+        bonuses = source.get_model_weapon_keyword_bonuses(
+            attack_type="ranged",
+            model=source_model,
+            weapon_name="Desecrator Cannon",
+            target=enemy,
+        )
+        self.assertTrue(bool(bonuses.get("lethal_hits", False)))
+        self.assertEqual(int(bonuses.get("sustained_hits_value", 0) or 0), 1)
+
+    def test_iconoclast_tyrants_banner_allows_visible_dark_sacrifice_target(self):
+        ck_army, ck_player, enemy_army, enemy_player = self._setup_players()
+        source = self._make_chaos_knight("Knight Desecrator", titanic=True)
+        damned = self._make_damned("Cultist Mob")
+        enemy = _make_unit(
+            "Enemy Unit",
+            faction_name="Enemy",
+            keywords=["INFANTRY"],
+            faction_keywords=["ENEMY"],
+            cost=100,
+        )
+        ck_army.add_unit(source)
+        ck_army.add_unit(damned)
+        enemy_army.add_unit(enemy)
+        _set_unit_position(source, 0.0, 0.0, 0.0)
+        _set_unit_position(damned, 12.0, 0.0, 0.0)
+        _set_unit_position(enemy, 20.0, 0.0, 0.0)
+
+        source._get_enhancement_bearer_model = lambda: source.models[0]
+        Enhancement(
+            id="000009765004",
+            name="Tyrant's Banner",
+            faction_id="QT",
+            detachment="Iconoclast Fiefdom",
+            description="",
+        ).apply_to_unit(source)
+        self.assertTrue(bool(source.special_rules.get("enhancement_iconoclast_tyrants_banner")))
+
+        all_units = list(ck_army.units) + list(enemy_army.units)
+        game = _GameStub(
+            current_player=ck_player,
+            enemy_units_by_player={
+                ck_player.id: [enemy],
+                enemy_player.id: list(ck_army.units),
+            },
+            units=all_units,
+            players=[ck_player, enemy_player],
+            phase_name="SHOOTING_PHASE",
+        )
+        game._model_can_see_unit = lambda model, target, game_map=None: target is damned
+        ck_player.game = game
+        enemy_player.game = game
+
+        mgr = ck_army.chaos_knights_detachments
+        mgr.queue_iconoclast_dark_sacrifice_choice(source, trigger="shooting", game=game)
+        requests = [
+            req
+            for req in list(game.decision_queue.list() or [])
+            if str(getattr(req, "decision_type", "") or "") == DECISION_CHOOSE_QUARRY
+            and str((getattr(req, "context", {}) or {}).get("ability", "") or "") == "iconoclast_dark_sacrifice"
+        ]
+        self.assertTrue(requests)
+        request = requests[-1]
+        self.assertIn(str(getattr(damned, "_id", "")), list((request.context or {}).get("candidate_damned_unit_ids", []) or []))
+
+        option = next(
+            opt
+            for opt in list(request.options or [])
+            if str((getattr(opt, "payload", {}) or {}).get("damned_unit_id", "") or "") == str(getattr(damned, "_id", ""))
+        )
+        damned.pass_leadership_check = lambda *_a, **_k: True
+        result = DecisionResult(
+            decision_id=request.decision_id,
+            player_id=ck_player.id,
+            option_id=option.option_id,
+            payload={},
+        )
+        with patch("warhammer40k_ai.rules.chaos_knights_detachments.get_roll", return_value=1):
+            apply_result = dispatch_decision(game, request, result)
+        self.assertTrue(apply_result.ok)
+
+    def test_iconoclast_pave_the_way_selection_applies_scouts(self):
+        ck_army, ck_player, enemy_army, enemy_player = self._setup_players()
+        source = self._make_chaos_knight("Knight Rampager", titanic=True)
+        damned_a = self._make_damned("Damned A")
+        damned_b = self._make_damned("Damned B")
+        damned_c = self._make_damned("Damned C")
+        damned_d = self._make_damned("Damned D")
+        ck_army.add_unit(source)
+        ck_army.add_unit(damned_a)
+        ck_army.add_unit(damned_b)
+        ck_army.add_unit(damned_c)
+        ck_army.add_unit(damned_d)
+
+        source._get_enhancement_bearer_model = lambda: source.models[0]
+        Enhancement(
+            id="000009765003",
+            name="Pave the Way",
+            faction_id="QT",
+            detachment="Iconoclast Fiefdom",
+            description="",
+        ).apply_to_unit(source)
+        self.assertTrue(bool(source.special_rules.get("enhancement_iconoclast_pave_the_way")))
+
+        all_units = list(ck_army.units) + list(enemy_army.units)
+        game = _GameStub(
+            current_player=ck_player,
+            enemy_units_by_player={
+                ck_player.id: list(enemy_army.units),
+                enemy_player.id: list(ck_army.units),
+            },
+            units=all_units,
+            players=[ck_player, enemy_player],
+            phase_name="DECLARE_BATTLE_FORMATIONS",
+        )
+        ck_player.game = game
+        enemy_player.game = game
+
+        mgr = ck_army.chaos_knights_detachments
+        mgr.queue_iconoclast_pave_the_way_selection_request(game=game, player=ck_player)
+        requests = [
+            req
+            for req in list(game.decision_queue.list() or [])
+            if str(getattr(req, "decision_type", "") or "") == DECISION_SELECT_REALM_OF_CHAOS_UNITS
+            and str((getattr(req, "context", {}) or {}).get("ability", "") or "") == "iconoclast_pave_the_way_selection"
+        ]
+        self.assertTrue(requests)
+        request = requests[-1]
+        select_ids = [str(getattr(damned_a, "_id", "")), str(getattr(damned_b, "_id", "")), str(getattr(damned_c, "_id", ""))]
+        result = DecisionResult(
+            decision_id=request.decision_id,
+            player_id=ck_player.id,
+            option_id=request.options[0].option_id,
+            payload={"unit_ids": list(select_ids)},
+        )
+        apply_result = dispatch_decision(game, request, result)
+        self.assertTrue(apply_result.ok)
+        for unit in (damned_a, damned_b, damned_c):
+            self.assertTrue(bool(unit.special_rules.get("iconoclast_pave_the_way_active")))
+            has_scout, distance = unit.has_scout()
+            self.assertTrue(bool(has_scout))
+            self.assertEqual(float(distance), 6.0)
+        self.assertFalse(bool(damned_d.special_rules.get("iconoclast_pave_the_way_active")))
 
     def test_iconoclast_dread_tyrants_aura_applies_within_range(self):
         ck_army, _ck_player, enemy_army, _enemy_player = self._setup_players()

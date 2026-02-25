@@ -23,7 +23,12 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
     DETACHMENT_TRAITORIS_LANCE = "Traitoris Lance"
     HOUNDPACK_CHARACTER_SELECTION_ABILITY = "houndpack_lance_character_selection"
     ICONOCLAST_DARK_SACRIFICE_ABILITY = "iconoclast_dark_sacrifice"
+    ICONOCLAST_PAVE_THE_WAY_SELECTION_ABILITY = "iconoclast_pave_the_way_selection"
     TRAITORIS_PARAGONS_ABILITY = "traitoris_paragons_of_terror_bonus"
+    ICONOCLAST_PROFANE_ALTAR_ENHANCEMENT_ID = "000009765002"
+    ICONOCLAST_PAVE_THE_WAY_ENHANCEMENT_ID = "000009765003"
+    ICONOCLAST_TYRANTS_BANNER_ENHANCEMENT_ID = "000009765004"
+    ICONOCLAST_DIABOLICAL_RESILIENCE_ENHANCEMENT_ID = "000009765005"
 
     def __init__(self, army=None):
         super().__init__(army)
@@ -34,6 +39,8 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
         self.houndpack_marked_prey_owner_id: str = ""
         self._houndpack_character_unit_ids: set[str] = set()
         self._houndpack_character_selection_resolved: bool = False
+        self._iconoclast_pave_the_way_unit_ids: set[str] = set()
+        self._iconoclast_pave_the_way_selection_resolved: bool = False
         self._lords_of_dread_claimed_for_dark_gods_used_round: int = 0
         self._traitoris_paragons_bonus_round: int = 0
 
@@ -170,6 +177,130 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
             return 500
         return 750
 
+    def _iconoclast_unit_has_active_enhancement(
+        self,
+        unit,
+        *,
+        flag_key: str,
+        enhancement_id: str,
+        enhancement_name: str,
+    ) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        checker = getattr(root, "_attached_unit_has_active_enhancement", None)
+        if callable(checker):
+            return bool(
+                checker(
+                    flag_key,
+                    enhancement_id=enhancement_id,
+                    enhancement_name=enhancement_name,
+                )
+            )
+        sr = self._unit_sr(root)
+        if flag_key and bool(sr.get(flag_key)):
+            return True
+        enh = getattr(root, "enhancement", None)
+        if enh is None:
+            return False
+        enh_id = str(getattr(enh, "id", "") or "").strip()
+        if enhancement_id and enh_id == enhancement_id:
+            return True
+        enh_name = str(getattr(enh, "name", "") or "").strip().lower()
+        return bool(enhancement_name and enh_name == enhancement_name.strip().lower())
+
+    def _iconoclast_profane_altar_active(self, source_unit) -> bool:
+        return self._iconoclast_unit_has_active_enhancement(
+            source_unit,
+            flag_key="enhancement_iconoclast_profane_altar",
+            enhancement_id=self.ICONOCLAST_PROFANE_ALTAR_ENHANCEMENT_ID,
+            enhancement_name="Profane Altar",
+        )
+
+    def _iconoclast_tyrants_banner_active(self, source_unit) -> bool:
+        return self._iconoclast_unit_has_active_enhancement(
+            source_unit,
+            flag_key="enhancement_iconoclast_tyrants_banner",
+            enhancement_id=self.ICONOCLAST_TYRANTS_BANNER_ENHANCEMENT_ID,
+            enhancement_name="Tyrant's Banner",
+        )
+
+    def _iconoclast_pave_the_way_active(self, source_unit) -> bool:
+        return self._iconoclast_unit_has_active_enhancement(
+            source_unit,
+            flag_key="enhancement_iconoclast_pave_the_way",
+            enhancement_id=self.ICONOCLAST_PAVE_THE_WAY_ENHANCEMENT_ID,
+            enhancement_name="Pave the Way",
+        )
+
+    @staticmethod
+    def _iter_alive_models(unit) -> list:
+        root = ChaosKnightsDetachmentManager._unit_root(unit)
+        if root is None:
+            return []
+        models_fn = getattr(root, "get_attached_unit_models", None)
+        models = list(models_fn() or []) if callable(models_fn) else list(getattr(root, "models", []) or [])
+        alive = []
+        for model in models:
+            if model is None:
+                continue
+            alive_attr = getattr(model, "is_alive", True)
+            try:
+                is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            except (TypeError, ValueError):
+                is_alive = True
+            if not is_alive:
+                continue
+            alive.append(model)
+        alive.sort(key=lambda m: str(get_entity_id(m) or ""))
+        return alive
+
+    def _iconoclast_units_visible(self, source_unit, target_unit, *, game=None) -> bool:
+        source_root = self._unit_root(source_unit)
+        target_root = self._unit_root(target_unit)
+        if source_root is None or target_root is None:
+            return False
+        if source_root is target_root:
+            return True
+
+        resolved_game = game
+        if resolved_game is None:
+            player = getattr(getattr(self.army, "player", None), "game", None) if self.army is not None else None
+            resolved_game = player
+        resolved_map = getattr(resolved_game, "map", None) if resolved_game is not None else None
+        if resolved_map is None:
+            return True
+
+        source_models = list(self._iter_alive_models(source_root) or [])
+        if not source_models:
+            return False
+
+        can_see_unit = getattr(resolved_game, "_model_can_see_unit", None)
+        if callable(can_see_unit):
+            for model in source_models:
+                if bool(can_see_unit(model, target_root, game_map=resolved_map)):
+                    return True
+            return False
+
+        los_fn = getattr(source_root, "_has_line_of_sight_to_target", None)
+        if callable(los_fn):
+            for model in source_models:
+                if bool(los_fn(model, target_root, resolved_map)):
+                    return True
+            return False
+
+        can_see_model = getattr(resolved_map, "can_model_see_model", None)
+        if not callable(can_see_model):
+            return True
+        target_models = list(self._iter_alive_models(target_root) or [])
+        if not target_models:
+            return True
+        for source_model in source_models:
+            for target_model in target_models:
+                if bool(can_see_model(source_model, target_model)):
+                    return True
+        return False
+
     @staticmethod
     def _iconoclast_mode_is_valid(mode: str) -> bool:
         return str(mode or "").strip().upper() in {"LETHAL_HITS", "SUSTAINED_HITS_1"}
@@ -182,6 +313,7 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
         for key in (
             "iconoclast_dark_sacrifice_active",
             "iconoclast_dark_sacrifice_choice",
+            "iconoclast_dark_sacrifice_dual_keywords",
             "iconoclast_dark_sacrifice_source",
             "iconoclast_dark_sacrifice_expires_phase",
             "iconoclast_dark_sacrifice_turn",
@@ -236,26 +368,43 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
                 return ""
         return mode
 
-    def iconoclast_dark_sacrifice_weapon_keyword(self, model, *, attack_type: str = "", game=None) -> tuple[str, str]:
+    def iconoclast_dark_sacrifice_weapon_keywords(self, model, *, attack_type: str = "", game=None) -> tuple[list[str], str]:
         del attack_type
         if not self.is_iconoclast_fiefdom():
-            return "", ""
+            return [], ""
         if model is None:
-            return "", ""
+            return [], ""
         source_unit = getattr(model, "parent_unit", None)
         root = self._unit_root(source_unit)
         if root is None:
-            return "", ""
+            return [], ""
         if not self._unit_belongs_to_army(root):
-            return "", ""
+            return [], ""
         if not self._unit_is_chaos_knights(root):
-            return "", ""
+            return [], ""
         mode = self.active_iconoclast_dark_sacrifice_mode(root, game=game)
-        if mode == "LETHAL_HITS":
-            return "LETHAL HITS", self.DARK_SACRIFICE_NAME
-        if mode == "SUSTAINED_HITS_1":
-            return "SUSTAINED HITS 1", self.DARK_SACRIFICE_NAME
-        return "", ""
+        if not mode:
+            return [], ""
+        sr = self._unit_sr(root)
+        dual_keywords = bool(sr.get("iconoclast_dark_sacrifice_dual_keywords"))
+        keywords: list[str] = []
+        if dual_keywords or mode == "LETHAL_HITS":
+            keywords.append("LETHAL HITS")
+        if dual_keywords or mode == "SUSTAINED_HITS_1":
+            keywords.append("SUSTAINED HITS 1")
+        if not keywords:
+            return [], ""
+        return keywords, self.DARK_SACRIFICE_NAME
+
+    def iconoclast_dark_sacrifice_weapon_keyword(self, model, *, attack_type: str = "", game=None) -> tuple[str, str]:
+        keywords, source = self.iconoclast_dark_sacrifice_weapon_keywords(
+            model,
+            attack_type=attack_type,
+            game=game,
+        )
+        if not keywords:
+            return "", ""
+        return str(keywords[0] or ""), source
 
     def iconoclast_dread_tyrants_applies(self, *, attacker_unit=None, source_unit=None) -> bool:
         if not self.is_iconoclast_fiefdom():
@@ -283,12 +432,13 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
             )
         )
 
-    def _iconoclast_dark_sacrifice_candidates(self, source_unit) -> list:
+    def _iconoclast_dark_sacrifice_candidates(self, source_unit, *, game=None) -> list:
         source_root = self._unit_root(source_unit)
         if source_root is None:
             return []
         if not self._unit_on_battlefield(source_root):
             return []
+        tyrants_banner_active = self._iconoclast_tyrants_banner_active(source_root)
         candidates = []
         seen_ids: set[str] = set()
         for root in list(self._iter_unique_army_roots()):
@@ -298,7 +448,9 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
                 continue
             if not self._unit_on_battlefield(root):
                 continue
-            if not bool(unit_within_range_of_unit(source_root, root, 6.0, use_attached_aggregate=True)):
+            within_6 = bool(unit_within_range_of_unit(source_root, root, 6.0, use_attached_aggregate=True))
+            visible = bool(tyrants_banner_active and self._iconoclast_units_visible(source_root, root, game=game))
+            if not within_6 and not visible:
                 continue
             unit_id = self._unit_root_id(root)
             if not unit_id or unit_id in seen_ids:
@@ -365,9 +517,11 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
         ):
             return None
 
-        candidates = list(self._iconoclast_dark_sacrifice_candidates(source_root) or [])
+        candidates = list(self._iconoclast_dark_sacrifice_candidates(source_root, game=game) or [])
         if not candidates:
             return None
+        profane_altar_active = self._iconoclast_profane_altar_active(source_root)
+        tyrants_banner_active = self._iconoclast_tyrants_banner_active(source_root)
         from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
         from ..engine.decisions import DecisionOption, DecisionRequest
 
@@ -389,6 +543,20 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
                 continue
             candidate_ids.append(candidate_id)
             name = str(getattr(candidate, "name", "Unit") or "Unit")
+            if profane_altar_active:
+                options.append(
+                    DecisionOption.create(
+                        f"{name}: Lethal Hits + Sustained Hits 1",
+                        payload={
+                            "target_unit_id": candidate_id,
+                            "damned_unit_id": candidate_id,
+                            "source_unit_id": source_unit_id,
+                            "sacrifice_mode": "LETHAL_HITS",
+                            "trigger": trigger_key,
+                        },
+                    )
+                )
+                continue
             options.append(
                 DecisionOption.create(
                     f"{name}: Lethal Hits",
@@ -416,9 +584,11 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
         if len(options) <= 1:
             return None
 
+        range_or_visibility_text = 'within 6"' if not tyrants_banner_active else 'within 6" or visible'
+
         request = DecisionRequest.create(
             DECISION_CHOOSE_QUARRY,
-            "Dark Sacrifice: select one friendly DAMNED unit within 6\" and choose a weapon bonus (or None).",
+            f"Dark Sacrifice: select one friendly DAMNED unit {range_or_visibility_text} and choose a weapon bonus (or None).",
             player_id=getattr(owner, "id", None),
             options=options,
             context={
@@ -428,7 +598,9 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
                 "source_unit_id": source_unit_id,
                 "trigger": trigger_key,
                 "candidate_damned_unit_ids": sorted({cid for cid in candidate_ids if cid}),
-                "allowed_modes": ["LETHAL_HITS", "SUSTAINED_HITS_1"],
+                "allowed_modes": ["LETHAL_HITS"] if profane_altar_active else ["LETHAL_HITS", "SUSTAINED_HITS_1"],
+                "profane_altar_active": bool(profane_altar_active),
+                "tyrants_banner_active": bool(tyrants_banner_active),
                 "optional": True,
             },
         )
@@ -442,6 +614,7 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
         damned_unit,
         *,
         mode: str,
+        game=None,
         player=None,
     ) -> tuple[bool, str]:
         if not self.is_iconoclast_fiefdom():
@@ -469,7 +642,12 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
             return False, "Dark Sacrifice target must have the DAMNED keyword."
         if not self._unit_on_battlefield(damned_root):
             return False, "Dark Sacrifice target must be on the battlefield."
-        if not bool(unit_within_range_of_unit(source_root, damned_root, 6.0, use_attached_aggregate=True)):
+        within_6 = bool(unit_within_range_of_unit(source_root, damned_root, 6.0, use_attached_aggregate=True))
+        tyrants_banner_active = self._iconoclast_tyrants_banner_active(source_root)
+        visible = bool(tyrants_banner_active and self._iconoclast_units_visible(source_root, damned_root, game=game))
+        if not within_6 and not visible:
+            if tyrants_banner_active:
+                return False, "Dark Sacrifice target must be within 6\" or visible."
             return False, "Dark Sacrifice target must be within 6\"."
         return True, ""
 
@@ -511,6 +689,7 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
             source_root,
             damned_root,
             mode=mode,
+            game=game,
             player=player,
         )
         if not valid:
@@ -527,24 +706,36 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
             rolled = 0
         if rolled <= 0:
             rolled = 1
-        destroy_count = rolled if passed else rolled + 3
+        profane_altar_active = self._iconoclast_profane_altar_active(source_root)
+        if profane_altar_active:
+            destroy_count = 3 if passed else 6
+        else:
+            destroy_count = rolled if passed else rolled + 3
         destroyed_models = self._destroy_models_for_dark_sacrifice(damned_root, count=destroy_count, game=game)
 
         sr = self._unit_sr(source_root)
         sr["iconoclast_dark_sacrifice_active"] = True
         sr["iconoclast_dark_sacrifice_choice"] = mode_key
+        sr["iconoclast_dark_sacrifice_dual_keywords"] = bool(profane_altar_active)
         sr["iconoclast_dark_sacrifice_source"] = self.DARK_SACRIFICE_NAME
         sr["iconoclast_dark_sacrifice_expires_phase"] = self._iconoclast_current_phase(game)
         sr["iconoclast_dark_sacrifice_turn"] = int(getattr(game, "turn", 0) or 0) if game is not None else 0
         owner = player if player is not None else getattr(self.army, "player", None)
         sr["iconoclast_dark_sacrifice_owner"] = str(getattr(owner, "id", "") or "")
         source_root.special_rules = sr
+        granted_keywords = (
+            ["LETHAL HITS", "SUSTAINED HITS 1"]
+            if profane_altar_active
+            else (["LETHAL HITS"] if mode_key == "LETHAL_HITS" else ["SUSTAINED HITS 1"])
+        )
         return {
             "ok": True,
             "source_unit_id": self._unit_root_id(source_root),
             "damned_unit_id": self._unit_root_id(damned_root),
             "mode": mode_key,
+            "weapon_keywords": list(granted_keywords),
             "leadership_passed": passed,
+            "destroy_target": int(destroy_count),
             "destroyed_models": int(destroyed_models or 0),
         }
 
@@ -1000,6 +1191,169 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
         self._houndpack_character_selection_resolved = True
         self._reconcile_houndpack_character_keywords()
         return list(selected)
+
+    def _iconoclast_pave_the_way_sources(self) -> list:
+        if not self.is_iconoclast_fiefdom():
+            return []
+        sources = []
+        seen_ids: set[str] = set()
+        for root in list(self._iter_unique_army_roots()):
+            if root is None:
+                continue
+            if not self._iconoclast_pave_the_way_active(root):
+                continue
+            unit_id = self._unit_root_id(root)
+            if not unit_id or unit_id in seen_ids:
+                continue
+            seen_ids.add(unit_id)
+            sources.append(root)
+        sources.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+        return sources
+
+    def _iconoclast_pave_the_way_scout_distance(self) -> float:
+        distance = 6.0
+        for source in list(self._iconoclast_pave_the_way_sources() or []):
+            sr = self._unit_sr(source)
+            try:
+                value = float(sr.get("enhancement_iconoclast_pave_the_way_scouts_distance", 6) or 6)
+            except (TypeError, ValueError):
+                value = 6.0
+            if value > distance:
+                distance = float(value)
+        return float(max(0.0, distance))
+
+    def _iconoclast_pave_the_way_candidates(self) -> list:
+        if not self.is_iconoclast_fiefdom():
+            return []
+        if not list(self._iconoclast_pave_the_way_sources() or []):
+            return []
+        candidates = []
+        seen_ids: set[str] = set()
+        for root in list(self._iter_unique_army_roots()):
+            if root is None:
+                continue
+            if not self._unit_is_damned(root):
+                continue
+            unit_id = self._unit_root_id(root)
+            if not unit_id or unit_id in seen_ids:
+                continue
+            seen_ids.add(unit_id)
+            candidates.append(root)
+        candidates.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+        return candidates
+
+    def _pending_iconoclast_pave_the_way_request(self, game, *, army_id: str) -> bool:
+        if game is None:
+            return False
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        from ..engine.decision_kinds import DECISION_SELECT_REALM_OF_CHAOS_UNITS
+
+        target_army_id = str(army_id or "")
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != DECISION_SELECT_REALM_OF_CHAOS_UNITS:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "").strip().lower() != self.ICONOCLAST_PAVE_THE_WAY_SELECTION_ABILITY:
+                continue
+            if target_army_id and str(ctx.get("army_id", "") or "") != target_army_id:
+                continue
+            return True
+        return False
+
+    def queue_iconoclast_pave_the_way_selection_request(self, *, game=None, player=None) -> None:
+        if not self.is_iconoclast_fiefdom():
+            return
+        if self.army is None:
+            return
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return
+        if self._iconoclast_pave_the_way_selection_resolved:
+            return
+        candidates = list(self._iconoclast_pave_the_way_candidates() or [])
+        if not candidates:
+            return
+        army_id = str(get_entity_id(self.army) or "")
+        if self._pending_iconoclast_pave_the_way_request(game, army_id=army_id):
+            return
+        candidate_ids = [str(get_entity_id(unit) or "") for unit in candidates if str(get_entity_id(unit) or "")]
+        if not candidate_ids:
+            return
+
+        from ..engine.decision_kinds import DECISION_SELECT_REALM_OF_CHAOS_UNITS
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        request = DecisionRequest.create(
+            DECISION_SELECT_REALM_OF_CHAOS_UNITS,
+            'Pave the Way: select up to three friendly DAMNED units to gain Scouts 6" (or None).',
+            player_id=getattr(owner, "id", None),
+            options=[DecisionOption.create("Confirm", payload={"action": "confirm"})],
+            context={
+                "army_id": army_id,
+                "ability": self.ICONOCLAST_PAVE_THE_WAY_SELECTION_ABILITY,
+                "ability_name": "Pave the Way",
+                "phase": "Declare Battle Formations step",
+                "max_units": 3,
+                "allowed_unit_ids": list(candidate_ids),
+                "title": "Pave the Way",
+                "subtitle": "Select up to three DAMNED units.",
+                "instruction": 'Selected units gain Scouts 6" for this battle.',
+                "optional": True,
+            },
+        )
+        if hasattr(game, "request_decision"):
+            game.request_decision(request)
+
+    def iconoclast_pave_the_way_selection_is_valid(self, unit_ids, *, game=None, player=None) -> tuple[bool, str]:
+        del game
+        if not self.is_iconoclast_fiefdom():
+            return False, "Pave the Way requires Iconoclast Fiefdom."
+        if player is not None and getattr(self.army, "player", None) is not player:
+            return False, "Pave the Way can only be selected by the controlling player."
+        if not isinstance(unit_ids, list):
+            return False, "Pave the Way selection requires unit_ids."
+        selected = sorted({str(uid or "").strip() for uid in list(unit_ids or []) if str(uid or "").strip()})
+        if len(selected) > 3:
+            return False, "Pave the Way can select up to three units."
+        candidate_ids = {
+            str(get_entity_id(unit) or "")
+            for unit in list(self._iconoclast_pave_the_way_candidates() or [])
+            if str(get_entity_id(unit) or "")
+        }
+        for uid in selected:
+            if uid not in candidate_ids:
+                return False, "Pave the Way selection contains an ineligible unit."
+        return True, ""
+
+    def apply_iconoclast_pave_the_way_selection(self, unit_ids, *, game=None, player=None) -> list[str]:
+        del game
+        selected = sorted({str(uid or "").strip() for uid in list(unit_ids or []) if str(uid or "").strip()})
+        valid, _reason = self.iconoclast_pave_the_way_selection_is_valid(selected, player=player)
+        if not valid:
+            return []
+        selected_ids = set(selected)
+        scout_distance = self._iconoclast_pave_the_way_scout_distance()
+        for root in list(self._iter_unique_army_roots()):
+            if root is None:
+                continue
+            root_id = self._unit_root_id(root)
+            sr = self._unit_sr(root)
+            if root_id in selected_ids:
+                sr["iconoclast_pave_the_way_active"] = True
+                sr["iconoclast_pave_the_way_source"] = "Pave the Way"
+                sr["iconoclast_pave_the_way_scout_distance"] = float(scout_distance)
+            else:
+                sr.pop("iconoclast_pave_the_way_active", None)
+                sr.pop("iconoclast_pave_the_way_source", None)
+                sr.pop("iconoclast_pave_the_way_scout_distance", None)
+            root.special_rules = sr
+        self._iconoclast_pave_the_way_unit_ids = set(selected_ids)
+        self._iconoclast_pave_the_way_selection_resolved = True
+        return list(sorted(selected_ids))
 
     def clear_marked_prey(self) -> None:
         self.houndpack_marked_prey_unit_id = ""

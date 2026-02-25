@@ -451,6 +451,23 @@ def _validate_select_realm_of_chaos_units(game: object, request: DecisionRequest
         if not bool(valid):
             return (str(reason or "Houndpack Lance selection is invalid."),)
         return ()
+    if ability_key == "iconoclast_pave_the_way_selection":
+        player = resolve_player(game, request.player_id)
+        if player is None:
+            return ("Pave the Way requires a player.",)
+        army = getattr(player, "get_army", lambda: None)()
+        if army is None:
+            return ("Pave the Way requires an army.",)
+        mgr = getattr(army, "chaos_knights_detachments", None)
+        if mgr is None or not getattr(mgr, "is_iconoclast_fiefdom", lambda: False)():
+            return ("Pave the Way requires Iconoclast Fiefdom.",)
+        validate_fn = getattr(mgr, "iconoclast_pave_the_way_selection_is_valid", None)
+        if not callable(validate_fn):
+            return ("Pave the Way validation is unavailable.",)
+        valid, reason = validate_fn(list(seen), game=game, player=player)
+        if not bool(valid):
+            return (str(reason or "Pave the Way selection is invalid."),)
+        return ()
     if ability_key == "miasmic_bombardment":
         player = resolve_player(game, request.player_id)
         if player is None:
@@ -817,6 +834,40 @@ def _apply_select_realm_of_chaos_units(game: object, request: DecisionRequest, r
             unit = resolve_unit(game, str(uid))
             if unit is not None:
                 units.append(unit)
+        return units
+    if ability_key == "iconoclast_pave_the_way_selection":
+        player = resolve_player(game, request.player_id)
+        if player is None:
+            raise RuntimeError("Pave the Way player not found.")
+        army = getattr(player, "get_army", lambda: None)()
+        if army is None:
+            raise RuntimeError("Pave the Way army not found.")
+        mgr = getattr(army, "chaos_knights_detachments", None)
+        if mgr is None:
+            raise RuntimeError("Pave the Way detachment manager not found.")
+        unit_ids = []
+        if not is_skip_choice(request, result):
+            unit_ids = sorted({str(uid or "").strip() for uid in list(result.payload.get("unit_ids") or []) if str(uid or "").strip()})
+        apply_fn = getattr(mgr, "apply_iconoclast_pave_the_way_selection", None)
+        if not callable(apply_fn):
+            raise RuntimeError("Pave the Way apply function is unavailable.")
+        applied_ids = list(apply_fn(unit_ids, game=game, player=player) or [])
+        labels = []
+        units = []
+        for uid in list(applied_ids or []):
+            unit = resolve_unit(game, str(uid))
+            if unit is None:
+                continue
+            labels.append(str(getattr(unit, "name", "Unit") or "Unit"))
+            units.append(unit)
+        if labels:
+            _log_action_for_players(
+                game,
+                player,
+                'Pave the Way: ' + ", ".join(labels) + ' gain Scouts 6" for this battle.',
+            )
+        else:
+            _log_action_for_players(game, player, "Pave the Way: no units selected.")
         return units
     if ability_key == "miasmic_bombardment":
         player = resolve_player(game, request.player_id)
@@ -3619,6 +3670,7 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
             source_root,
             damned_root,
             mode=mode,
+            game=game,
             player=player,
         )
         if not bool(valid):
@@ -13799,7 +13851,11 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                         damned_name = str(getattr(chosen, "name", "Unit") or "Unit")
                         destroyed = int(outcome.get("destroyed_models", 0) or 0)
                         passed = bool(outcome.get("leadership_passed"))
-                        mode_label = "Lethal Hits" if mode == "LETHAL_HITS" else "Sustained Hits 1"
+                        keywords = [str(v or "").strip() for v in list(outcome.get("weapon_keywords", []) or []) if str(v or "").strip()]
+                        if keywords:
+                            mode_label = " + ".join(keywords)
+                        else:
+                            mode_label = "Lethal Hits" if mode == "LETHAL_HITS" else "Sustained Hits 1"
                         test_result = "passed" if passed else "failed"
                         ability_name = str(ctx.get("ability_name", "") or "Dark Sacrifice").strip() or "Dark Sacrifice"
                         _log_action_for_players(
@@ -15571,6 +15627,12 @@ def _apply_choose_advance_modifier_ignores(game: object, request: DecisionReques
     except Exception:
         pass
     try:
+        filt = getattr(unit, "_filter_driven_by_ultimate_rage_roll_modifiers", None)
+        if callable(filt):
+            mods = filt(mods, kind="advance")
+    except Exception:
+        pass
+    try:
         filt = getattr(unit, "_filter_bestial_aspect_roll_modifiers", None)
         if callable(filt):
             mods = filt(mods, kind="advance")
@@ -15578,6 +15640,12 @@ def _apply_choose_advance_modifier_ignores(game: object, request: DecisionReques
         pass
     try:
         filt = getattr(unit, "_filter_avatar_of_perfection_roll_modifiers", None)
+        if callable(filt):
+            mods = filt(mods, kind="advance")
+    except Exception:
+        pass
+    try:
+        filt = getattr(unit, "_filter_diabolical_resilience_roll_modifiers", None)
         if callable(filt):
             mods = filt(mods, kind="advance")
     except Exception:

@@ -13,8 +13,8 @@ from warhammer40k_ai.utility.model_base import Base, BaseType
 
 
 class TestChaosKnightsEnhancements(unittest.TestCase):
-    def _setup_game(self, phase_name: str = "COMMAND_PHASE"):
-        army = Army("Chaos Knights", detachment_type="Infernal Lance")
+    def _setup_game(self, phase_name: str = "COMMAND_PHASE", detachment_type: str = "Infernal Lance"):
+        army = Army("Chaos Knights", detachment_type=detachment_type)
         army.faction_id = "QT"
         player = Player("CK", PlayerControl.REMOTE, army=army)
         phase = SimpleNamespace(name=phase_name)
@@ -228,6 +228,40 @@ class TestChaosKnightsEnhancements(unittest.TestCase):
         unit.add_characteristic_modifier("movement", Modifier(ModifierOp.SUB, 2, source="test:slow"))
         mv = unit.get_effective_model_characteristic(model, "movement")
         self.assertEqual(mv, 10)
+
+    def test_diabolical_resilience_fnp_and_modifier_ignores(self):
+        army, _player, _game = self._setup_game(phase_name="MOVEMENT_PHASE", detachment_type="Iconoclast Fiefdom")
+        unit = self._make_unit("Knight", army)
+        model = self._make_model("Knight", unit, movement=10)
+        unit.models = [model]
+        army.units = [unit]
+        unit._get_enhancement_bearer_model = lambda: model
+        enh = Enhancement(
+            id="000009765005",
+            name="Diabolical Resilience",
+            faction_id="QT",
+            detachment="Iconoclast Fiefdom",
+            description="",
+        )
+        enh.apply_to_unit(unit)
+        self.assertTrue(bool(unit.special_rules.get("enhancement_iconoclast_diabolical_resilience")))
+        fnp_entries = list(unit.special_rules.get("enhancement_bearer_fnp_entries", []) or [])
+        self.assertTrue(any(int(entry.get("value", 0) or 0) == 6 for entry in fnp_entries if isinstance(entry, dict)))
+
+        unit.round_state.move_modifier_choice = "ignore_negative"
+        unit.add_characteristic_modifier("movement", Modifier(ModifierOp.SUB, 2, source="test:slow"))
+        self.assertEqual(unit.get_effective_model_characteristic(model, "movement"), 10)
+
+        unit.special_rules["advance_roll_modifiers"] = [(-2, "test:slow")]
+        unit.round_state.advance_modifier_choice = "ignore_negative"
+        self.assertEqual(unit._apply_advance_roll_modifiers(4), 4)
+
+        unit.round_state.charge_modifier_choice = "ignore_negative"
+        filtered = unit._filter_diabolical_resilience_roll_modifiers(
+            [(-2, "test:slow"), (1, "test:boost")],
+            kind="charge",
+        )
+        self.assertEqual(filtered, [(1, "test:boost")])
 
 
 if __name__ == "__main__":

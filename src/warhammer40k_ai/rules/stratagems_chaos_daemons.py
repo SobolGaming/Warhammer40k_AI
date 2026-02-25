@@ -1851,14 +1851,15 @@ class ChaosDaemonsStratagemMixin:
         self._queue_reaction(payload)
 
     def _queue_plague_legion_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
-        if self.player is None or self.game is None:
+        game = getattr(self, "game", None)
+        if self.player is None or game is None:
             return
         if not self._is_plague_legion_detachment():
             return
         phase_name = str(getattr(phase, "name", "") or "").strip().upper()
         if phase_name != "COMMAND_PHASE":
             return
-        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        active_player = getattr(game, "get_current_player", lambda: None)()
         if active_player is self.player:
             return
         stratagem = self.get_by_name("PLAGUE OF WOES")
