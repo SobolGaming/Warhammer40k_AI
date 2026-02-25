@@ -7042,6 +7042,38 @@ class PositioningMixin:
         if 'redeploy' in getattr(self, '_ability_cache', {}):
             return self._ability_cache['redeploy']
 
+        sr = getattr(self, "special_rules", None)
+        if isinstance(sr, dict) and bool(sr.get("enhancement_orbital_uplink_reliquary", False)):
+            try:
+                count = int(sr.get("enhancement_orbital_uplink_reliquary_max_units", 3) or 3)
+            except Exception:
+                count = 3
+            if count <= 0:
+                count = 1
+            can_place_in_reserves = bool(
+                sr.get("enhancement_orbital_uplink_reliquary_can_place_in_reserves", True)
+            )
+            filters = [
+                str(v or "").strip().upper()
+                for v in list(sr.get("enhancement_orbital_uplink_reliquary_filters", []) or [])
+                if str(v or "").strip()
+            ]
+            ability_name = (
+                str(sr.get("enhancement_orbital_uplink_reliquary_source", "") or "Orbital Uplink Reliquary")
+                .strip()
+                or "Orbital Uplink Reliquary"
+            )
+            result = (True, int(count), bool(can_place_in_reserves))
+            if not hasattr(self, "_ability_cache"):
+                self._ability_cache = {}
+            self._ability_cache["redeploy"] = result
+            if filters:
+                self._ability_cache["redeploy_filters"] = list(filters)
+            self._ability_cache["redeploy_ability_name"] = ability_name
+            self._ability_cache["redeploy_requires_source_on_battlefield"] = False
+            self._ability_cache["redeploy_allow_embarked_transport_on_battlefield"] = False
+            return result
+
         has_redeploy = False
         count = 0
         can_place_in_reserves = False

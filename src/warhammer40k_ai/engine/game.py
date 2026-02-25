@@ -1951,6 +1951,8 @@ class Game(
                 if not ability:
                     continue
                 ability_key = str(ability.get("ability_key") or "opponent_turn_strategic_reserves").strip().lower()
+                if ability_key == "dedicated_gunship":
+                    continue
                 if ability.get("once_per_battle") and ability_key:
                     if root.has_used_unit_once_per_battle(ability_key):
                         continue

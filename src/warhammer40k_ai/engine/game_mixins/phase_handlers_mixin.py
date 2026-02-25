@@ -12977,6 +12977,84 @@ class GamePhaseHandlersMixin:
                                     f"{ability_name}: {target_name} suffers no mortal wounds.",
                                 )
 
+    def _on_phase_end_opponent_fight_phase_strategic_reserves(self, player=None, phase=None, **_kwargs) -> None:
+        """Fight phase end: Dedicated Gunship may move eligible bearer units into Strategic Reserves."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "FIGHT_PHASE":
+            return
+        turn_ending_player = player
+        if turn_ending_player is None:
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+
+        for opp in list(self.players or []):
+            if opp is None or opp is turn_ending_player:
+                continue
+            army = self._get_player_army(opp)
+            if army is None:
+                continue
+            seen = set()
+            for unit in list(getattr(army, "units", []) or []):
+                if unit is None:
+                    continue
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                uid = get_entity_id(root)
+                if not uid or uid in seen:
+                    continue
+                seen.add(uid)
+                if not root.is_alive() or not getattr(root, "deployed", True):
+                    continue
+                if root.is_in_reserves() or root.is_embarked:
+                    continue
+                ability = root.get_end_of_opponent_turn_strategic_reserves_ability()
+                if not ability:
+                    continue
+                ability_key = str(ability.get("ability_key") or "").strip().lower()
+                if ability_key != "dedicated_gunship":
+                    continue
+                if bool(ability.get("once_per_battle")) and root.has_used_unit_once_per_battle(ability_key):
+                    continue
+                engaged = False
+                for enemy in list(game_map.get_enemy_units(root) or []):
+                    if not enemy.is_alive() or not getattr(enemy, "deployed", True):
+                        continue
+                    if game_map.is_within_engagement_range(root, enemy):
+                        engaged = True
+                        break
+                if engaged:
+                    continue
+                ability_name = str(ability.get("name", "") or "Dedicated Gunship").strip() or "Dedicated Gunship"
+                ctx = {
+                    "ability_name": ability_name,
+                    "unit": getattr(root, "name", "") or "",
+                    "phase": "End of opponent's Fight phase",
+                    "unit_id": uid,
+                    "ability_key": ability_key,
+                    "once_per_battle": bool(ability.get("once_per_battle")),
+                }
+                message = (
+                    f"{getattr(root, 'name', 'Unit')} can enter Strategic Reserves at the end of the opponent's Fight phase.\n\n"
+                    "Use this ability?"
+                )
+                self._queue_optional_ability_confirmation(
+                    player=opp,
+                    ability_key="opponent_turn_strategic_reserves",
+                    ability_name=ability_name,
+                    message=message,
+                    context=ctx,
+                    payload={
+                        "unit_id": uid,
+                        "ability_key": ability_key,
+                        "once_per_battle": bool(ability.get("once_per_battle")),
+                    },
+                    instance_key=f"dedicated_gunship:{uid}",
+                )
+
     def _on_phase_end_fight_phase_destroyed_strategic_reserves(self, player=None, phase=None, **_kwargs) -> None:
         """Fight phase end: units that destroyed enemies can enter Strategic Reserves (Warp Strike)."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

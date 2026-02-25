@@ -1751,6 +1751,63 @@ _SPACE_MARINES_LIONS_BLADE_TASK_FORCE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPACE_MARINES_LIONS_BLADE_TASK_FORCE_DESCRIPTORS.values()
 }
 
+_SPACE_MARINES_ORBITAL_ASSAULT_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010680002": EnhancementToolDescriptor(
+        enhancement_id="000010680002",
+        name="Laurels of Thunder",
+        timing="passive",
+        target="bearer_unit",
+        duration="conditional_on_setup_turn_while_bearer_alive",
+        effect="charge_reroll_on_setup_turn",
+        effect_params={
+            "charge_reroll_on_setup_turn": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010680003": EnhancementToolDescriptor(
+        enhancement_id="000010680003",
+        name="Veteran of the Vanguard",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant_while_bearer_alive",
+        effect="bearer_unit_gain_scouts",
+        effect_params={
+            "scouts_distance": 6,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010680004": EnhancementToolDescriptor(
+        enhancement_id="000010680004",
+        name="Orbital Uplink Reliquary",
+        timing="post_deployment",
+        target="friendly_units",
+        duration="redeploy_step",
+        effect="redeploy_units",
+        effect_params={
+            "max_units": 3,
+            "can_place_in_reserves": True,
+            "redeploy_filters": ("ADEPTUS ASTARTES",),
+        },
+    ),
+    "000010680005": EnhancementToolDescriptor(
+        enhancement_id="000010680005",
+        name="Dedicated Gunship",
+        timing="end_of_opponent_fight_phase_once_per_battle",
+        target="bearer_unit",
+        duration="instant_once_per_battle",
+        effect="once_per_battle_end_of_opponent_fight_phase_enter_strategic_reserves",
+        effect_params={
+            "once_per_battle_key": "dedicated_gunship",
+            "requires_not_engagement_range": True,
+            "destination": "strategic_reserves",
+        },
+    ),
+}
+
+_SPACE_MARINES_ORBITAL_ASSAULT_FORCE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPACE_MARINES_ORBITAL_ASSAULT_FORCE_DESCRIPTORS.values()
+}
+
 _SPACE_MARINES_BASTION_TASK_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010676002": EnhancementToolDescriptor(
         enhancement_id="000010676002",
@@ -2648,6 +2705,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPACE_MARINES_LIONS_BLADE_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPACE_MARINES_ORBITAL_ASSAULT_FORCE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPACE_MARINES_BASTION_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -2731,6 +2791,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SPACE_MARINES_LIBERATOR_ASSAULT_GROUP_BY_NAME.get(key)
         or _SPACE_MARINES_LIBRARIUS_CONCLAVE_BY_NAME.get(key)
         or _SPACE_MARINES_LIONS_BLADE_TASK_FORCE_BY_NAME.get(key)
+        or _SPACE_MARINES_ORBITAL_ASSAULT_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_BASTION_TASK_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_BLADE_OF_ULTRAMAR_BY_NAME.get(key)
         or _SPACE_MARINES_CHAMPIONS_OF_FENRIS_BY_NAME.get(key)

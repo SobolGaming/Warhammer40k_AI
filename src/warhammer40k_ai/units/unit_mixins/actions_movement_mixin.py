@@ -6944,6 +6944,52 @@ class ActionsMovementMixin:
 
         conditional_found = False
         try:
+            has_laurels_of_thunder = bool(
+                self._attached_unit_has_active_enhancement(
+                    "enhancement_laurels_of_thunder",
+                    enhancement_id="000010680002",
+                    enhancement_name="Laurels of Thunder",
+                    require_bearer_alive=True,
+                )
+            )
+        except Exception:
+            has_laurels_of_thunder = False
+        try:
+            laurels_of_thunder_present = bool(
+                self._attached_unit_has_enhancement_flag(
+                    "enhancement_laurels_of_thunder",
+                    enhancement_id="000010680002",
+                    enhancement_name="Laurels of Thunder",
+                )
+            )
+        except Exception:
+            laurels_of_thunder_present = False
+        if has_laurels_of_thunder:
+            conditional_found = True
+            laurels_enabled = False
+            try:
+                root = self.get_attached_unit_root()
+            except Exception:
+                root = self
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = [root]
+            if not members:
+                members = [root]
+            for member in list(members or []):
+                if member is None:
+                    continue
+                sr = getattr(member, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if not bool(sr.get("enhancement_laurels_of_thunder", False)):
+                    continue
+                laurels_enabled = bool(sr.get("enhancement_laurels_of_thunder_charge_reroll_on_setup_turn", True))
+                break
+            if laurels_enabled and self._was_set_up_this_turn(game=game):
+                return True
+        try:
             rule = self.get_selected_to_shoot_charge_reroll_rule()
             if rule:
                 conditional_found = True
@@ -6994,11 +7040,13 @@ class ActionsMovementMixin:
                     low = text.lower()
                     if self._REROLL_CHARGE_OBJECTIVE_RE.search(low):
                         conditional_found = True
-                        if any(self._target_within_objective_range(t, game_map) for t in (target_units or [])):
-                            return True
+                    if any(self._target_within_objective_range(t, game_map) for t in (target_units or [])):
+                        return True
                         continue
                     if self._REROLL_CHARGE_SETUP_TURN_RE.search(low):
                         conditional_found = True
+                        if laurels_of_thunder_present and not has_laurels_of_thunder:
+                            continue
                         if self._was_set_up_this_turn(game=game):
                             return True
                         continue

@@ -435,6 +435,9 @@ class Enhancement:
         is_lions_blade_task_force = bool(
             sm_mgr and getattr(sm_mgr, "is_lions_blade_task_force", lambda: False)()
         )
+        is_orbital_assault_force = bool(
+            sm_mgr and getattr(sm_mgr, "is_orbital_assault_force", lambda: False)()
+        )
         is_bastion_task_force = bool(
             sm_mgr and getattr(sm_mgr, "is_bastion_task_force", lambda: False)()
         )
@@ -1541,6 +1544,95 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_fulgus_magna_bearer_model_id"] = bearer_id
+            cache = getattr(unit, "_ability_cache", None)
+            if isinstance(cache, dict):
+                cache.pop("opponent_turn_strategic_reserves_ability", None)
+
+        if name == "laurels of thunder" or enh_id == "000010680002":
+            if not is_orbital_assault_force:
+                return
+            unit.special_rules["enhancement_laurels_of_thunder"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_laurels_of_thunder_charge_reroll_on_setup_turn"] = bool(
+                params.get("charge_reroll_on_setup_turn", True)
+            )
+            unit.special_rules["enhancement_laurels_of_thunder_source"] = (
+                str(getattr(self, "name", "") or "Laurels of Thunder").strip() or "Laurels of Thunder"
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_laurels_of_thunder_bearer_model_id"] = bearer_id
+
+        if name == "veteran of the vanguard" or enh_id == "000010680003":
+            if not is_orbital_assault_force:
+                return
+            unit.special_rules["enhancement_veteran_of_the_vanguard"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            scout_distance = _coerce_int(params.get("scouts_distance", 6) or 6, default=6)
+            unit.special_rules["enhancement_scout_distance"] = max(
+                int(unit.special_rules.get("enhancement_scout_distance", 0) or 0),
+                int(max(0, scout_distance)),
+            )
+            unit.special_rules["enhancement_veteran_of_the_vanguard_source"] = (
+                str(getattr(self, "name", "") or "Veteran of the Vanguard").strip() or "Veteran of the Vanguard"
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_veteran_of_the_vanguard_bearer_model_id"] = bearer_id
+
+        if name == "orbital uplink reliquary" or enh_id == "000010680004":
+            if not is_orbital_assault_force:
+                return
+            unit.special_rules["enhancement_orbital_uplink_reliquary"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            max_units = _coerce_int(params.get("max_units", 3) or 3, default=3)
+            can_place_in_reserves = bool(params.get("can_place_in_reserves", True))
+            raw_filters = list(params.get("redeploy_filters", ("ADEPTUS ASTARTES",)) or ())
+            redeploy_filters: list[str] = []
+            for keyword in raw_filters:
+                key = str(keyword or "").strip().upper()
+                if not key:
+                    continue
+                if key in redeploy_filters:
+                    continue
+                redeploy_filters.append(key)
+            source_name = (
+                str(getattr(self, "name", "") or "Orbital Uplink Reliquary").strip()
+                or "Orbital Uplink Reliquary"
+            )
+            unit.special_rules["enhancement_orbital_uplink_reliquary_max_units"] = int(max(1, max_units))
+            unit.special_rules["enhancement_orbital_uplink_reliquary_can_place_in_reserves"] = bool(
+                can_place_in_reserves
+            )
+            if redeploy_filters:
+                unit.special_rules["enhancement_orbital_uplink_reliquary_filters"] = list(redeploy_filters)
+            unit.special_rules["enhancement_orbital_uplink_reliquary_source"] = source_name
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_orbital_uplink_reliquary_bearer_model_id"] = bearer_id
+
+        if name == "dedicated gunship" or enh_id == "000010680005":
+            if not is_orbital_assault_force:
+                return
+            unit.special_rules["enhancement_dedicated_gunship"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            once_key = str(params.get("once_per_battle_key", "dedicated_gunship") or "dedicated_gunship").strip().lower()
+            if not once_key:
+                once_key = "dedicated_gunship"
+            unit.special_rules["enhancement_dedicated_gunship_once_key"] = once_key
+            unit.special_rules["enhancement_dedicated_gunship_requires_not_engagement_range"] = bool(
+                params.get("requires_not_engagement_range", True)
+            )
+            unit.special_rules["enhancement_dedicated_gunship_source"] = (
+                str(getattr(self, "name", "") or "Dedicated Gunship").strip() or "Dedicated Gunship"
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_dedicated_gunship_bearer_model_id"] = bearer_id
             cache = getattr(unit, "_ability_cache", None)
             if isinstance(cache, dict):
                 cache.pop("opponent_turn_strategic_reserves_ability", None)

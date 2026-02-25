@@ -709,6 +709,41 @@ class RulesParsingMixin:
                     "min_enemy_distance_horiz": 0,
                     "min_battlefield_edge_distance_horiz": 0,
                 }
+        if isinstance(sr, dict) and bool(sr.get("enhancement_dedicated_gunship")):
+            bearer_alive = False
+            bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
+            if bearer_id:
+                for model in list(getattr(self, "models", []) or []):
+                    if str(get_entity_id(model) or "") != bearer_id:
+                        continue
+                    alive_attr = getattr(model, "is_alive", True)
+                    bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                    break
+            else:
+                bearer = getattr(self, "_get_enhancement_bearer_model", lambda: None)()
+                if bearer is not None:
+                    alive_attr = getattr(bearer, "is_alive", True)
+                    bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            if bearer_alive:
+                ability_name = (
+                    str(sr.get("enhancement_dedicated_gunship_source", "") or "Dedicated Gunship").strip()
+                    or "Dedicated Gunship"
+                )
+                ability_key = (
+                    str(sr.get("enhancement_dedicated_gunship_once_key", "") or "dedicated_gunship")
+                    .strip()
+                    .lower()
+                )
+                if not ability_key:
+                    ability_key = "dedicated_gunship"
+                return {
+                    "name": ability_name,
+                    "description": "",
+                    "once_per_battle": True,
+                    "ability_key": ability_key,
+                    "min_enemy_distance_horiz": 0,
+                    "min_battlefield_edge_distance_horiz": 0,
+                }
 
         pattern = self._OPPONENT_TURN_STRATEGIC_RESERVES_RE
         for ab in self._iter_active_abilities():
