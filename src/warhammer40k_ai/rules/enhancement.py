@@ -414,6 +414,9 @@ class Enhancement:
         is_1st_company_task_force = bool(
             sm_mgr and getattr(sm_mgr, "is_1st_company_task_force", lambda: False)()
         )
+        is_angelic_inheritors = bool(
+            sm_mgr and getattr(sm_mgr, "is_angelic_inheritors", lambda: False)()
+        )
         is_lions = bool(ac_mgr and ac_mgr.is_lions_of_the_emperor())
         try:
             is_war_horde = bool(orks_mgr and orks_mgr.is_war_horde())
@@ -1046,6 +1049,62 @@ class Enhancement:
             unit.special_rules["enhancement_iron_resolve_source"] = "Iron Resolve"
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "prescient flash" or enh_id == "000009835002":
+            if not is_angelic_inheritors:
+                return
+            unit.special_rules["enhancement_prescient_flash"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            scout_distance = _coerce_int(params.get("scouts_distance", 6) or 6, default=6)
+            unit.special_rules["enhancement_scout_distance"] = max(
+                int(unit.special_rules.get("enhancement_scout_distance", 0) or 0),
+                int(max(0, scout_distance)),
+            )
+            unit.special_rules["enhancement_prescient_flash_source"] = "Prescient Flash"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "troubling visions" or enh_id == "000009835003":
+            if not is_angelic_inheritors:
+                return
+            unit.special_rules["enhancement_troubling_visions"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            once_key = str(params.get("once_per_battle_key", "troubling_visions") or "troubling_visions").strip().lower()
+            unit.special_rules["enhancement_troubling_visions_once_key"] = once_key
+            unit.special_rules["enhancement_troubling_visions_source"] = "Troubling Visions"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_troubling_visions_bearer_model_id"] = bearer_id
+
+        if name == "blazing icon" or enh_id == "000009835004":
+            if not is_angelic_inheritors:
+                return
+            unit.special_rules["enhancement_blazing_icon"] = True
+            unit.special_rules["enhancement_blazing_icon_source"] = "Blazing Icon"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "ordained sacrifice" or enh_id == "000009835005":
+            if not is_angelic_inheritors:
+                return
+            unit.special_rules["enhancement_ordained_sacrifice"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            roll_min = _coerce_int(params.get("roll_min", 2) or 2, default=2)
+            return_wounds = _coerce_int(params.get("wounds_on_return", 3) or 3, default=3)
+            key = str(params.get("return_on_death_key", "ordained_sacrifice") or "ordained_sacrifice").strip().lower()
+            unit.special_rules["enhancement_ordained_sacrifice_roll_min"] = int(max(2, roll_min))
+            unit.special_rules["enhancement_ordained_sacrifice_wounds"] = int(max(1, return_wounds))
+            unit.special_rules["enhancement_ordained_sacrifice_key"] = key if key else "ordained_sacrifice"
+            unit.special_rules["enhancement_ordained_sacrifice_source"] = "Ordained Sacrifice"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_ordained_sacrifice_bearer_model_id"] = bearer_id
+            refresh_return = getattr(unit, "_refresh_return_on_death_flags", None)
+            if callable(refresh_return):
+                refresh_return()
 
         if name == "gift of foresight" and enh_id == "000009899004":
             if not is_warhost:

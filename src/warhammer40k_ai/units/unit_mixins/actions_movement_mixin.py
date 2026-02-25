@@ -7387,6 +7387,63 @@ class ActionsMovementMixin:
             return True
         return my_army is not target_army
 
+    def _blazing_icon_no_overwatch_active(self, *, target_unit: Optional['Unit'] = None) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        try:
+            members.sort(key=lambda member: str(get_entity_id(member) or ""))
+        except Exception:
+            pass
+        for member in list(members or []):
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_blazing_icon", False)):
+                continue
+            bearer = None
+            bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
+            if bearer_id:
+                try:
+                    root_models = list(root.get_attached_unit_models() or [])
+                except Exception:
+                    root_models = list(getattr(root, "models", []) or [])
+                bearer = next(
+                    (
+                        model
+                        for model in list(root_models or [])
+                        if str(get_entity_id(model) or "") == bearer_id
+                    ),
+                    None,
+                )
+            if bearer is None and not bearer_id:
+                bearer = getattr(member, "_get_enhancement_bearer_model", lambda: None)()
+            if bearer is None or not bool(getattr(bearer, "is_alive", True)):
+                continue
+            if target_unit is None:
+                return True
+            try:
+                my_army = root.get_parent_army()
+            except Exception:
+                my_army = None
+            try:
+                target_army = target_unit.get_parent_army()
+            except Exception:
+                target_army = None
+            if my_army is not None and target_army is not None and my_army is target_army:
+                return False
+            return True
+        return False
+
     def is_overwatch_prevented_against(self, target_unit: 'Unit', *, game: Optional['Game'] = None) -> bool:
         if self._post_shoot_no_overwatch_active(game=game):
             return True
@@ -7395,6 +7452,8 @@ class ActionsMovementMixin:
         if self._spearhead_striker_no_overwatch_active(game=game):
             return True
         if self._periapt_of_torments_no_overwatch_active(target_unit=target_unit):
+            return True
+        if self._blazing_icon_no_overwatch_active(target_unit=target_unit):
             return True
         entry = self._get_wargear_charge_keyword_effects(target_unit, game=game)
         if not entry:

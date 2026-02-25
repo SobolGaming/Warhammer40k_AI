@@ -4059,20 +4059,78 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False
         return self._attached_unit_has_keyword(unit, "CHARACTER")
 
-    def legacy_of_the_angel_sanguinary_grace_applies(self, unit) -> bool:
-        if not self._legacy_of_the_angel_recipient(unit):
+    def _legacy_of_the_angel_troubling_visions_applies(self, unit) -> bool:
+        if unit is None:
             return False
-        return self.angelic_legacy_option_active(self._ANGELIC_LEGACY_SANGUINARY_GRACE)
+        if not self.is_angelic_inheritors():
+            return False
+        if not self.attached_unit_is_adeptus_astartes(unit):
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return False
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        try:
+            members.sort(key=lambda member: str(get_entity_id(member) or ""))
+        except Exception:
+            pass
+        game = None
+        player = getattr(self.army, "player", None) if self.army is not None else None
+        if player is not None:
+            game = getattr(player, "game", None)
+        current_round = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+        current_player_id = ""
+        if game is not None:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+            current_player_id = str(getattr(current_player, "id", "") or "")
+        for member in list(members or []):
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_troubling_visions_active", False)):
+                continue
+            bearer = getattr(member, "_get_enhancement_bearer_model", lambda: None)()
+            if bearer is None or not bool(getattr(bearer, "is_alive", True)):
+                continue
+            owner_id = str(sr.get("enhancement_troubling_visions_owner_id", "") or "")
+            try:
+                expires_round = int(sr.get("enhancement_troubling_visions_expires_round", 0) or 0)
+            except (TypeError, ValueError):
+                expires_round = 0
+            if (
+                expires_round > 0
+                and current_round >= expires_round
+                and owner_id
+                and current_player_id == owner_id
+                and phase_name == "COMMAND_PHASE"
+            ):
+                continue
+            return True
+        return False
+
+    def legacy_of_the_angel_sanguinary_grace_applies(self, unit) -> bool:
+        if self._legacy_of_the_angel_recipient(unit):
+            if self.angelic_legacy_option_active(self._ANGELIC_LEGACY_SANGUINARY_GRACE):
+                return True
+        return self._legacy_of_the_angel_troubling_visions_applies(unit)
 
     def legacy_of_the_angel_carmine_wrath_applies(self, unit) -> bool:
-        if not self._legacy_of_the_angel_recipient(unit):
-            return False
-        return self.angelic_legacy_option_active(self._ANGELIC_LEGACY_CARMINE_WRATH)
+        if self._legacy_of_the_angel_recipient(unit):
+            if self.angelic_legacy_option_active(self._ANGELIC_LEGACY_CARMINE_WRATH):
+                return True
+        return self._legacy_of_the_angel_troubling_visions_applies(unit)
 
     def legacy_of_the_angel_their_appointed_hour_applies(self, unit) -> bool:
-        if not self._legacy_of_the_angel_recipient(unit):
-            return False
-        return self.angelic_legacy_option_active(self._ANGELIC_LEGACY_THEIR_APPOINTED_HOUR)
+        if self._legacy_of_the_angel_recipient(unit):
+            if self.angelic_legacy_option_active(self._ANGELIC_LEGACY_THEIR_APPOINTED_HOUR):
+                return True
+        return self._legacy_of_the_angel_troubling_visions_applies(unit)
 
     def shield_of_the_imperium_heavy_applies(self, unit, weapon_profile=None) -> bool:
         if not self.is_anvil_siege_force():

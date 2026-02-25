@@ -1419,6 +1419,55 @@ _SPACE_MARINES_FIRST_COMPANY_TASK_FORCE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPACE_MARINES_FIRST_COMPANY_TASK_FORCE_DESCRIPTORS.values()
 }
 
+_SPACE_MARINES_ANGELIC_INHERITORS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009835002": EnhancementToolDescriptor(
+        enhancement_id="000009835002",
+        name="Prescient Flash",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="grant_scouts_to_bearer_unit",
+        effect_params={"scouts_distance": 6},
+    ),
+    "000009835003": EnhancementToolDescriptor(
+        enhancement_id="000009835003",
+        name="Troubling Visions",
+        timing="command_phase_optional",
+        target="bearer_unit",
+        duration="until_start_of_next_command_phase",
+        effect="once_per_battle_activate_all_angelic_legacy_for_bearer_unit",
+        once_per_battle=True,
+        effect_params={"once_per_battle_key": "troubling_visions"},
+    ),
+    "000009835004": EnhancementToolDescriptor(
+        enhancement_id="000009835004",
+        name="Blazing Icon",
+        timing="passive",
+        target="enemy_units_targeting_bearer_unit_with_fire_overwatch",
+        duration="constant",
+        effect="prevent_fire_overwatch_against_bearer_unit",
+        effect_params={"stratagem_name": "Fire Overwatch"},
+    ),
+    "000009835005": EnhancementToolDescriptor(
+        enhancement_id="000009835005",
+        name="Ordained Sacrifice",
+        timing="on_bearer_destroyed",
+        target="bearer",
+        duration="resolve_at_end_of_phase_first_time",
+        effect="return_bearer_on_2plus_with_fixed_wounds",
+        once_per_battle=True,
+        effect_params={
+            "roll_min": 2,
+            "wounds_on_return": 3,
+            "return_on_death_key": "ordained_sacrifice",
+        },
+    ),
+}
+
+_SPACE_MARINES_ANGELIC_INHERITORS_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPACE_MARINES_ANGELIC_INHERITORS_DESCRIPTORS.values()
+}
+
 _LEGION_OF_EXCESS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009806002": EnhancementToolDescriptor(
         enhancement_id="000009806002",
@@ -1917,6 +1966,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPACE_MARINES_FIRST_COMPANY_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPACE_MARINES_ANGELIC_INHERITORS_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _LEGION_OF_EXCESS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -1973,6 +2025,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SHADOW_LEGION_BY_NAME.get(key)
         or _BLOOD_LEGION_BY_NAME.get(key)
         or _SPACE_MARINES_FIRST_COMPANY_TASK_FORCE_BY_NAME.get(key)
+        or _SPACE_MARINES_ANGELIC_INHERITORS_BY_NAME.get(key)
         or _LEGION_OF_EXCESS_BY_NAME.get(key)
         or _PLAGUE_LEGION_BY_NAME.get(key)
         or _SCINTILLATING_LEGION_BY_NAME.get(key)

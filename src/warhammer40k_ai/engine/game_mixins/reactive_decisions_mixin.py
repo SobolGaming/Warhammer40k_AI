@@ -3654,6 +3654,7 @@ class GameReactiveDecisionsMixin:
             "desperate_devotion",
             "the_imperiums_sword",
             "rites_of_war",
+            "troubling_visions",
         ):
             return
         selected = None
@@ -3833,6 +3834,64 @@ class GameReactiveDecisionsMixin:
             sr["enhancement_rites_of_war_other_models_expires_phase"] = phase_name
             source_member.special_rules = sr
             ability_name = str(ctx.get("ability_name", "") or "Rites of War").strip() or "Rites of War"
+            root.mark_unit_once_per_battle_used(once_key, ability_name=ability_name)
+            return
+
+        if ability_key == "troubling_visions":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None or not unit.is_alive():
+                return
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None or not root.is_alive():
+                return
+            source_member_id = str(payload.get("source_member_unit_id") or ctx.get("source_member_unit_id") or "")
+            source_member = self._resolve_unit_by_id(source_member_id) if source_member_id else None
+            if source_member is None:
+                find_source = getattr(self, "_attached_member_with_enhancement_flag", None)
+                if callable(find_source):
+                    _root, source_member, _source_sr = find_source(root, "enhancement_troubling_visions")
+            if source_member is None:
+                return
+            sr = getattr(source_member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_troubling_visions", False)):
+                return
+            once_key = str(
+                payload.get("ability_key")
+                or ctx.get("ability_key")
+                or sr.get("enhancement_troubling_visions_once_key")
+                or "troubling_visions"
+            ).strip().lower()
+            if not once_key:
+                once_key = "troubling_visions"
+            if root.has_used_unit_once_per_battle(once_key):
+                return
+            try:
+                current_round = int(getattr(self, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_round = 0
+            try:
+                expires_round = int(payload.get("expires_round") or ctx.get("expires_round") or (current_round + 1))
+            except (TypeError, ValueError):
+                expires_round = int(current_round + 1)
+            if expires_round <= current_round:
+                expires_round = int(current_round + 1)
+            owner_id = str(
+                getattr(request, "player_id", None)
+                or getattr(result, "player_id", None)
+                or ""
+            )
+            sr["enhancement_troubling_visions_active"] = True
+            sr["enhancement_troubling_visions_owner_id"] = owner_id
+            sr["enhancement_troubling_visions_turn_started"] = int(current_round)
+            sr["enhancement_troubling_visions_expires_round"] = int(expires_round)
+            source_member.special_rules = sr
+            ability_name = str(ctx.get("ability_name", "") or "Troubling Visions").strip() or "Troubling Visions"
             root.mark_unit_once_per_battle_used(once_key, ability_name=ability_name)
             return
 

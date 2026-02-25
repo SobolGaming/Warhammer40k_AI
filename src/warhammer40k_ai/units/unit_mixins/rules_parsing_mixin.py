@@ -1591,6 +1591,28 @@ class RulesParsingMixin:
                 }
             )
 
+        if isinstance(sr, dict) and sr.get("enhancement_ordained_sacrifice"):
+            bearer_id = str(sr.get("enhancement_ordained_sacrifice_bearer_model_id", "") or sr.get("enhancement_bearer_model_id", "")).strip()
+            try:
+                roll_min = int(sr.get("enhancement_ordained_sacrifice_roll_min", 2) or 2)
+            except (TypeError, ValueError):
+                roll_min = 2
+            try:
+                wounds = int(sr.get("enhancement_ordained_sacrifice_wounds", 3) or 3)
+            except (TypeError, ValueError):
+                wounds = 3
+            key = str(sr.get("enhancement_ordained_sacrifice_key", "ordained_sacrifice") or "ordained_sacrifice").strip().lower()
+            specs.append(
+                {
+                    "name": str(sr.get("enhancement_ordained_sacrifice_source", "Ordained Sacrifice") or "Ordained Sacrifice"),
+                    "roll_min": int(max(2, roll_min)),
+                    "wounds": int(max(1, wounds)),
+                    "skip_deadly_demise": False,
+                    "key": key if key else "ordained_sacrifice",
+                    "bearer_model_id": bearer_id,
+                }
+            )
+
         seen: set[tuple] = set()
         deduped: list[dict] = []
         for spec in specs:

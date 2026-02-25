@@ -495,6 +495,90 @@ class GamePhaseHandlersMixin:
                     except Exception:
                         pass
 
+                    # Angelic Inheritors: Troubling Visions (once per battle, your Command phase).
+                    find_source = getattr(self, "_attached_member_with_enhancement_flag", None)
+                    source_member = None
+                    source_sr = {}
+                    if callable(find_source):
+                        _source_root, source_member, source_sr = find_source(root, "enhancement_troubling_visions")
+                    if source_member is None:
+                        source_member = root
+                        source_sr = getattr(root, "special_rules", None)
+                    if source_member is not None and isinstance(source_sr, dict) and bool(source_sr.get("enhancement_troubling_visions", False)):
+                        bearer = getattr(source_member, "_get_enhancement_bearer_model", lambda: None)()
+                        current_player = self.get_current_player() if hasattr(self, "get_current_player") else None
+                        is_owner_command_phase = bool(pname == "COMMAND_PHASE" and current_player is p)
+                        owner_id = str(getattr(p, "id", "") or "")
+
+                        # Expire at the start of the owner's next Command phase.
+                        if is_owner_command_phase and bool(source_sr.get("enhancement_troubling_visions_active", False)):
+                            active_owner = str(source_sr.get("enhancement_troubling_visions_owner_id", "") or "")
+                            try:
+                                expires_round = int(source_sr.get("enhancement_troubling_visions_expires_round", 0) or 0)
+                            except (TypeError, ValueError):
+                                expires_round = 0
+                            try:
+                                current_round = int(getattr(self, "turn", 0) or 0)
+                            except (TypeError, ValueError):
+                                current_round = 0
+                            if active_owner and active_owner == owner_id and expires_round > 0 and current_round >= expires_round:
+                                for key in (
+                                    "enhancement_troubling_visions_active",
+                                    "enhancement_troubling_visions_owner_id",
+                                    "enhancement_troubling_visions_turn_started",
+                                    "enhancement_troubling_visions_expires_round",
+                                ):
+                                    source_sr.pop(key, None)
+                                source_member.special_rules = source_sr
+
+                        if is_owner_command_phase and bearer is not None and bool(getattr(bearer, "is_alive", True)):
+                            if not bool(source_sr.get("enhancement_troubling_visions_active", False)):
+                                once_key = str(
+                                    source_sr.get("enhancement_troubling_visions_once_key", "troubling_visions")
+                                    or "troubling_visions"
+                                ).strip().lower()
+                                if not once_key:
+                                    once_key = "troubling_visions"
+                                if not root.has_used_unit_once_per_battle(once_key):
+                                    unit_id = maybe_entity_id(root)
+                                    source_member_unit_id = maybe_entity_id(source_member)
+                                    model_id = maybe_entity_id(bearer)
+                                    if unit_id and source_member_unit_id and model_id:
+                                        ability_name = (
+                                            str(source_sr.get("enhancement_troubling_visions_source", "Troubling Visions") or "Troubling Visions").strip()
+                                            or "Troubling Visions"
+                                        )
+                                        try:
+                                            current_round = int(getattr(self, "turn", 0) or 0)
+                                        except (TypeError, ValueError):
+                                            current_round = 0
+                                        expires_round = int(max(1, current_round + 1))
+                                        self._queue_optional_ability_confirmation(
+                                            player=p,
+                                            ability_key="troubling_visions",
+                                            ability_name=ability_name,
+                                            message=f"Activate {ability_name} for {getattr(root, 'name', 'Unit')}?",
+                                            context={
+                                                "ability_name": ability_name,
+                                                "phase": pname.replace("_", " ").title(),
+                                                "unit": getattr(root, "name", "") or "",
+                                                "unit_id": unit_id,
+                                                "source_unit_id": unit_id,
+                                                "source_member_unit_id": source_member_unit_id,
+                                                "model": getattr(bearer, "name", "") or "",
+                                                "model_id": model_id,
+                                                "ability_key": once_key,
+                                                "expires_round": int(expires_round),
+                                            },
+                                            payload={
+                                                "unit_id": unit_id,
+                                                "source_member_unit_id": source_member_unit_id,
+                                                "ability_key": once_key,
+                                                "expires_round": int(expires_round),
+                                            },
+                                            instance_key=f"{unit_id}:{once_key}:{pname}:{int(current_round)}",
+                                        )
+
                     # Unit-level: start-of-any-phase Battle-shock clear (once per battle).
                     get_clear_specs = getattr(root, "unit_start_any_phase_clear_battleshock_specs", None)
                     specs = list(get_clear_specs() or []) if callable(get_clear_specs) else []
