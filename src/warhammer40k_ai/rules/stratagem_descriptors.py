@@ -294,6 +294,42 @@ _BLOOD_LEGION_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _BLOOD_LEGION_STRATAGEM_DESCRIPTORS.values()
 }
 
+_PLAGUE_LEGION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009820004": StratagemToolDescriptor(
+        stratagem_id="000009820004",
+        name="Foetid Resurgence",
+        timing="command_phase",
+        target="legiones_daemonica_nurgle_unit_on_battlefield",
+        duration="immediate",
+        effect="return_models_or_heal_monster",
+        cp_cost=2,
+        effect_params={
+            "return_models_max": 1,
+            "battleline_return_models_roll": "D3",
+            "monster_heal_roll": "D3+1",
+        },
+    ),
+    "000009820007": StratagemToolDescriptor(
+        stratagem_id="000009820007",
+        name="Plague of Woes",
+        timing="opponent_command_phase_before_melancholic_miasma_target_selection",
+        target="legiones_daemonica_nurgle_unit",
+        duration="until_end_of_phase",
+        effect="melancholic_miasma_secondary_battleshock",
+        cp_cost=1,
+        range_in=9.0,
+        effect_params={
+            "requires_melancholic_miasma": True,
+            "secondary_target_count": 1,
+            "secondary_target_must_be_other_enemy": True,
+        },
+    ),
+}
+
+_PLAGUE_LEGION_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _PLAGUE_LEGION_STRATAGEM_DESCRIPTORS.values()
+}
+
 _SHADOW_LEGION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000009979007": StratagemToolDescriptor(
         stratagem_id="000009979007",
@@ -3080,6 +3116,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _BLOOD_LEGION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _PLAGUE_LEGION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _SHADOW_LEGION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -3196,6 +3235,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _DAEMONIC_INCURSION_STRATAGEM_BY_NAME.get(key)
         or _SCINTILLATING_LEGION_STRATAGEM_BY_NAME.get(key)
         or _BLOOD_LEGION_STRATAGEM_BY_NAME.get(key)
+        or _PLAGUE_LEGION_STRATAGEM_BY_NAME.get(key)
         or _SHADOW_LEGION_STRATAGEM_BY_NAME.get(key)
         or _LEGION_OF_EXCESS_STRATAGEM_BY_NAME.get(key)
         or _GORETRACK_ONSLAUGHT_STRATAGEM_BY_NAME.get(key)

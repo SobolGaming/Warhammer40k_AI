@@ -108,6 +108,18 @@ class ChaosDaemonsStratagemMixin:
         det = " ".join(str(getattr(army, "detachment_type", "") or "").lower().split())
         return det == "legion of excess"
 
+    def _is_plague_legion_detachment(self) -> bool:
+        if self.player is None:
+            return False
+        army = self.player.get_army()
+        if army is None:
+            return False
+        mgr = getattr(army, "chaos_daemons_detachments", None)
+        if mgr is not None and hasattr(mgr, "is_plague_legion_detachment"):
+            return bool(mgr.is_plague_legion_detachment())
+        det = " ".join(str(getattr(army, "detachment_type", "") or "").lower().split())
+        return det == "plague legion"
+
     def _is_khorne_legiones_unit(self, unit: Any) -> bool:
         if unit is None:
             return False
@@ -144,6 +156,19 @@ class ChaosDaemonsStratagemMixin:
             return False
         try:
             return bool(root.has_any_keyword("SLAANESH"))
+        except Exception:
+            return False
+
+    def _is_nurgle_legiones_unit(self, unit: Any) -> bool:
+        if unit is None:
+            return False
+        root = self._chaos_daemons_root(unit)
+        if root is None:
+            return False
+        if not self._is_legiones_daemonica_unit(root):
+            return False
+        try:
+            return bool(root.has_any_keyword("NURGLE"))
         except Exception:
             return False
 
@@ -776,6 +801,91 @@ class ChaosDaemonsStratagemMixin:
             return bool(mgr.is_unit_within_shadow(unit, game=self.game))
         except Exception:
             return False
+
+    def _plague_legion_nurgle_battlefield_unit_candidates(self) -> List[Any]:
+        if self.player is None:
+            return []
+        if not self._is_plague_legion_detachment():
+            return []
+        army = self.player.get_army()
+        if army is None:
+            return []
+        candidates: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._chaos_daemons_root(unit)
+            if root is None:
+                continue
+            uid = self._chaos_daemons_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            is_alive = getattr(root, "is_alive", None)
+            if callable(is_alive):
+                if not bool(is_alive()):
+                    continue
+            elif not bool(getattr(root, "is_alive", True)):
+                continue
+            if not bool(getattr(root, "deployed", False)):
+                continue
+            in_reserves = getattr(root, "is_in_reserves", None)
+            if callable(in_reserves) and bool(in_reserves()):
+                continue
+            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                continue
+            if self._unit_cannot_be_target_of_stratagem(root):
+                continue
+            if not self._is_nurgle_legiones_unit(root):
+                continue
+            candidates.append(root)
+        candidates.sort(key=self._chaos_daemons_sort_key)
+        return candidates
+
+    def _plague_legion_miasma_enemy_candidates(self) -> List[Any]:
+        if self.player is None or self.game is None:
+            return []
+        army = self.player.get_army()
+        if army is None:
+            return []
+        shadow_mgr = getattr(army, "shadow_of_chaos", None)
+        if shadow_mgr is None or not callable(getattr(shadow_mgr, "_unit_within_shadow_for_player", None)):
+            return []
+        game_map = getattr(self.game, "map", None)
+        if game_map is None:
+            return []
+        enemies: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(game_map, "units", []) or []):
+            root = self._chaos_daemons_root(unit)
+            if root is None:
+                continue
+            uid = self._chaos_daemons_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            root_army = getattr(root, "get_parent_army", lambda: None)()
+            if root_army is None or root_army is army:
+                continue
+            is_alive = getattr(root, "is_alive", None)
+            if callable(is_alive):
+                if not bool(is_alive()):
+                    continue
+            elif not bool(getattr(root, "is_alive", True)):
+                continue
+            if not bool(getattr(root, "deployed", False)):
+                continue
+            in_reserves = getattr(root, "is_in_reserves", None)
+            if callable(in_reserves) and bool(in_reserves()):
+                continue
+            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                continue
+            if not bool(shadow_mgr._unit_within_shadow_for_player(root, game=self.game, player=self.player)):
+                continue
+            enemies.append(root)
+        enemies.sort(key=self._chaos_daemons_sort_key)
+        return enemies
 
     def _legion_of_excess_slaanesh_battlefield_unit_candidates(self, *, require_monster: bool = False) -> List[Any]:
         if self.player is None:
@@ -1710,6 +1820,53 @@ class ChaosDaemonsStratagemMixin:
             payload["target_unit"] = candidates[0]
         self._queue_reaction(payload)
 
+    def _queue_plague_legion_phase_start_reactions(self, *, player: Any, phase: Any) -> None:
+        if self.player is None or self.game is None:
+            return
+        if not self._is_plague_legion_detachment():
+            return
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_name != "COMMAND_PHASE":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is self.player:
+            return
+        stratagem = self.get_by_name("PLAGUE OF WOES")
+        if stratagem is None:
+            return
+        cp_cost = int(getattr(stratagem, "cp_cost", 0) or 0)
+        if int(getattr(self.player, "command_points", 0) or 0) < cp_cost:
+            return
+        if (stratagem.name or "").strip().upper() in set(getattr(self, "_used_stratagems_this_phase", set()) or set()):
+            return
+        candidates = self._plague_legion_nurgle_battlefield_unit_candidates()
+        if not candidates:
+            return
+        miasma_targets = self._plague_legion_miasma_enemy_candidates()
+        if not miasma_targets:
+            return
+        for reaction in list(getattr(self, "_pending_reactions", []) or []):
+            if str(reaction.get("event", "") or "").strip().lower() != "phase_start":
+                continue
+            if self._chaos_daemons_normalize_stratagem_name(reaction.get("stratagem", "")) != "PLAGUE OF WOES":
+                continue
+            pending_phase = str(reaction.get("phase_name", "") or reaction.get("phase", "")).strip().lower()
+            if pending_phase == "command phase":
+                return
+        payload = {
+            "event": "phase_start",
+            "phase_name": "Command phase",
+            "phase": "Command phase",
+            "stratagem": stratagem.name,
+            "cp_cost": cp_cost,
+            "candidates": candidates,
+            "miasma_candidate_ids": [self._chaos_daemons_sort_key(unit) for unit in miasma_targets],
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload, use_timer=False)
+
     def _queue_blood_legion_move_end_reactions(self, *, unit: Any, action: str) -> None:
         if str(action or "").strip().lower() != "fall_back":
             return
@@ -1770,6 +1927,173 @@ class ChaosDaemonsStratagemMixin:
             preview = apply_fn(stratagem, target_unit=target_unit) or {}
             cp_cost = int(preview.get("cost", cp_cost))
         return cp_cost
+
+    def _use_chaos_daemons_plague_legion_stratagem(self, stratagem: Any, **kwargs) -> bool | None:
+        name_u = self._chaos_daemons_normalize_stratagem_name(getattr(stratagem, "name", ""))
+        if name_u == "FOETID RESURGENCE":
+            return self._use_plague_legion_foetid_resurgence(stratagem, **kwargs)
+        if name_u == "PLAGUE OF WOES":
+            return self._use_plague_legion_plague_of_woes(stratagem, **kwargs)
+        return None
+
+    def _use_plague_legion_foetid_resurgence(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_plague_legion_detachment():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            return False
+        root = self._chaos_daemons_root(unit)
+        if root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "command phase":
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return False
+        if candidates:
+            candidate_ids = {self._chaos_daemons_sort_key(self._chaos_daemons_root(candidate)) for candidate in candidates}
+            if self._chaos_daemons_sort_key(root) not in candidate_ids:
+                return False
+        valid_ids = {
+            self._chaos_daemons_sort_key(candidate)
+            for candidate in self._plague_legion_nurgle_battlefield_unit_candidates()
+        }
+        if self._chaos_daemons_sort_key(root) not in valid_ids:
+            return False
+
+        cp_cost = self._chaos_daemons_effective_cp_cost(stratagem, target_unit=root)
+        if not self.player.spend_command_points(cp_cost, reason=f"Stratagem: {stratagem.name}", source="stratagem"):
+            return False
+
+        if bool(getattr(root, "has_any_keyword", lambda *_: False)("MONSTER")):
+            models = list(getattr(root, "models", []) or [])
+            alive_models = []
+            for model in list(models or []):
+                is_alive = getattr(model, "is_alive", None)
+                model_alive = bool(is_alive() if callable(is_alive) else is_alive if is_alive is not None else True)
+                if not model_alive:
+                    continue
+                alive_models.append(model)
+            heal_model = kwargs.get("model") or kwargs.get("target_model")
+            if heal_model is None:
+                wounded_models: List[Any] = []
+                for model in list(alive_models or []):
+                    base_wounds = int(getattr(model, "_base_wounds", getattr(model, "base_wounds", 0)) or 0)
+                    current_wounds = int(getattr(model, "wounds", 0) or 0)
+                    if base_wounds > current_wounds:
+                        wounded_models.append(model)
+                wounded_models.sort(key=lambda m: str(get_entity_id(m) or ""))
+                if wounded_models:
+                    heal_model = wounded_models[0]
+            if heal_model is not None and heal_model in list(models or []):
+                heal_amount = int(dice_module.get_roll("D3") or 0) + 1
+                heal_fn = getattr(heal_model, "heal", None)
+                if callable(heal_fn):
+                    heal_fn(int(heal_amount))
+                else:
+                    base_wounds = int(getattr(heal_model, "_base_wounds", getattr(heal_model, "base_wounds", 0)) or 0)
+                    current_wounds = int(getattr(heal_model, "wounds", 0) or 0)
+                    heal_model.wounds = min(base_wounds, current_wounds + int(heal_amount))
+        else:
+            is_battleline = bool(getattr(root, "has_any_keyword", lambda *_: False)("BATTLELINE"))
+            model_count = int(dice_module.get_roll("D3") or 0) if is_battleline else 1
+            model_count = max(0, int(model_count))
+            return_full = getattr(self, "_return_destroyed_models_full", None)
+            if callable(return_full):
+                return_full(
+                    root,
+                    amount=int(model_count),
+                    game_map=getattr(self.game, "map", None),
+                    skip_character=False,
+                )
+            elif model_count > 0:
+                root.return_destroyed_bodyguard_models(
+                    int(model_count),
+                    game_map=getattr(self.game, "map", None),
+                    placement_source=str(getattr(stratagem, "name", "") or "FOETID RESURGENCE"),
+                )
+
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
+        return True
+
+    def _use_plague_legion_plague_of_woes(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_plague_legion_detachment():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None:
+            normalized_name = self._chaos_daemons_normalize_stratagem_name(getattr(stratagem, "name", ""))
+            for reaction in reversed(list(getattr(self, "_pending_reactions", []) or [])):
+                if self._chaos_daemons_normalize_stratagem_name(reaction.get("stratagem", "")) != normalized_name:
+                    continue
+                unit = reaction.get("unit") or reaction.get("target_unit")
+                if not candidates:
+                    candidates = list(reaction.get("candidates") or [])
+                kwargs.setdefault("phase_name", reaction.get("phase_name"))
+                break
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            return False
+        root = self._chaos_daemons_root(unit)
+        if root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "command phase":
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is self.player:
+            return False
+        if candidates:
+            candidate_ids = {self._chaos_daemons_sort_key(self._chaos_daemons_root(candidate)) for candidate in candidates}
+            if self._chaos_daemons_sort_key(root) not in candidate_ids:
+                return False
+        valid_ids = {
+            self._chaos_daemons_sort_key(candidate)
+            for candidate in self._plague_legion_nurgle_battlefield_unit_candidates()
+        }
+        if self._chaos_daemons_sort_key(root) not in valid_ids:
+            return False
+
+        pending_miasma = False
+        queue = getattr(self.game, "decision_queue", None) if self.game is not None else None
+        if queue is not None and hasattr(queue, "list"):
+            for request in list(queue.list() or []):
+                context = dict(getattr(request, "context", {}) or {})
+                if str(context.get("ability", "") or "") != "melancholic_miasma":
+                    continue
+                if str(getattr(request, "player_id", "") or "") != str(getattr(self.player, "id", "") or ""):
+                    continue
+                pending_miasma = True
+                break
+        if not pending_miasma:
+            return False
+
+        cp_cost = self._chaos_daemons_effective_cp_cost(stratagem, target_unit=root)
+        if not self.player.spend_command_points(cp_cost, reason=f"Stratagem: {stratagem.name}", source="stratagem"):
+            return False
+
+        special_rules = getattr(root, "special_rules", None)
+        if not isinstance(special_rules, dict):
+            special_rules = {}
+        special_rules["plague_legion_plague_of_woes_active"] = True
+        special_rules["plague_legion_plague_of_woes_expires_phase"] = "COMMAND_PHASE"
+        special_rules["plague_legion_plague_of_woes_turn_owner"] = str(getattr(active_player, "id", "") or "")
+        special_rules["plague_legion_plague_of_woes_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        special_rules["plague_legion_plague_of_woes_source"] = str(getattr(stratagem, "name", "") or "PLAGUE OF WOES")
+        special_rules["plague_legion_plague_of_woes_source_unit_id"] = str(self._chaos_daemons_sort_key(root) or "")
+        root.special_rules = special_rules
+
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
+        return True
 
     def _use_chaos_daemons_shadow_legion_stratagem(self, stratagem: Any, **kwargs) -> bool | None:
         name_u = self._chaos_daemons_normalize_stratagem_name(getattr(stratagem, "name", ""))
@@ -3136,6 +3460,44 @@ class ChaosDaemonsStratagemMixin:
             self._dequeue_reaction_by_name(stratagem.name)
         self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
         return True
+
+    def _cleanup_plague_legion_phase_end_effects(self, *, phase: Any) -> None:
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        if phase_name != "COMMAND_PHASE":
+            return
+        if self.player is None:
+            return
+        army = self.player.get_army()
+        if army is None:
+            return
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            root = self._chaos_daemons_root(unit)
+            if root is None:
+                continue
+            uid = self._chaos_daemons_sort_key(root)
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            special_rules = getattr(root, "special_rules", None)
+            if not isinstance(special_rules, dict):
+                continue
+            expires_phase = str(special_rules.get("plague_legion_plague_of_woes_expires_phase", "") or "").strip().upper()
+            if not bool(special_rules.get("plague_legion_plague_of_woes_active")):
+                continue
+            if expires_phase and expires_phase != phase_name:
+                continue
+            for key in (
+                "plague_legion_plague_of_woes_active",
+                "plague_legion_plague_of_woes_expires_phase",
+                "plague_legion_plague_of_woes_turn_owner",
+                "plague_legion_plague_of_woes_turn",
+                "plague_legion_plague_of_woes_source",
+                "plague_legion_plague_of_woes_source_unit_id",
+            ):
+                special_rules.pop(key, None)
+            root.special_rules = special_rules
 
     def _cleanup_legion_of_excess_phase_end_effects(self, *, phase: Any) -> None:
         phase_name = str(getattr(phase, "name", "") or "").strip().upper()

@@ -5256,6 +5256,75 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not bool(shadow_mgr._unit_within_shadow_for_player(target_root, game=game, player=player)):
             return ("Melancholic Miasma target must be within your army's Shadow of Chaos.",)
         return ()
+    if ability == "plague_of_woes":
+        if is_skip_choice(request, result):
+            return ("Plague of Woes selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, payload.get("source_unit_id") or ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Plague of Woes source unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None or not _resurrection_orb_unit_on_battlefield(source_root):
+            return ("Plague of Woes source unit must be on the battlefield.",)
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"))
+        if target_unit is None:
+            return ("Plague of Woes target unit was not found.",)
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None or not _resurrection_orb_unit_on_battlefield(target_root):
+            return ("Plague of Woes target unit must be on the battlefield.",)
+        target_id = str(get_entity_id(target_root) or "")
+        source_id = str(get_entity_id(source_root) or "")
+        if target_id and source_id and target_id == source_id:
+            return ("Plague of Woes target must be an enemy unit.",)
+        candidate_ids = {str(value) for value in list(ctx.get("candidate_unit_ids", []) or []) if str(value)}
+        if candidate_ids and target_id not in candidate_ids:
+            return ("Plague of Woes selected unit is not an eligible candidate.",)
+        primary_target_id = str(ctx.get("primary_target_unit_id", "") or ctx.get("miasma_target_unit_id", "") or "")
+        if primary_target_id and target_id == primary_target_id:
+            return ("Plague of Woes target must be a different enemy unit.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            return ("Plague of Woes source player was not found.",)
+        army = getattr(player, "get_army", lambda: None)()
+        if army is None:
+            return ("Plague of Woes source army was not found.",)
+        cd_mgr = getattr(army, "chaos_daemons_detachments", None)
+        if cd_mgr is None or not bool(getattr(cd_mgr, "is_plague_legion_detachment", lambda: False)()):
+            return ("Plague of Woes requires a Plague Legion army.",)
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if source_army is not army:
+            return ("Plague of Woes source unit does not belong to the source army.",)
+        if target_army is army:
+            return ("Plague of Woes target must be an enemy unit.",)
+        from ...utility.aura_utils import unit_within_range_of_unit
+
+        if not bool(unit_within_range_of_unit(source_root, target_root, 9.0, use_attached_aggregate=True)):
+            return ("Plague of Woes target must be within 9\" of the source unit.",)
+        special_rules = getattr(source_root, "special_rules", None)
+        if not isinstance(special_rules, dict) or not bool(special_rules.get("plague_legion_plague_of_woes_active", False)):
+            return ("Plague of Woes source unit is not currently empowered by the stratagem.",)
+        turn_owner_id = str(ctx.get("turn_owner_id", "") or "")
+        if turn_owner_id:
+            active_player = getattr(game, "get_current_player", lambda: None)()
+            active_player_id = str(getattr(active_player, "id", "") or "")
+            if active_player_id != turn_owner_id:
+                return ("Plague of Woes turn ownership context no longer matches.",)
+        try:
+            turn_ctx = int(ctx.get("turn", 0) or 0)
+        except Exception:
+            turn_ctx = 0
+        if turn_ctx and int(getattr(game, "turn", 0) or 0) != turn_ctx:
+            return ("Plague of Woes turn context no longer matches.",)
+        return ()
     if ability == "singular_purpose":
         if is_skip_choice(request, result):
             return ("Singular Purpose selection cannot be skipped.",)
@@ -7294,6 +7363,220 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             game,
             player,
             f"{ability_name}: {getattr(target_root, 'name', 'Unit')} takes a Battle-shock test.",
+        )
+
+        source_candidates: list[object] = []
+        seen_source_ids: set[str] = set()
+        current_turn = int(getattr(game, "turn", 0) or 0)
+        current_player = getattr(game, "get_current_player", lambda: None)()
+        current_player_id = str(getattr(current_player, "id", "") or "")
+        for candidate in list(getattr(army, "units", []) or []):
+            if candidate is None:
+                continue
+            candidate_root = (
+                candidate.get_attached_unit_root()
+                if hasattr(candidate, "get_attached_unit_root")
+                else candidate
+            )
+            if candidate_root is None or not _resurrection_orb_unit_on_battlefield(candidate_root):
+                continue
+            candidate_id = str(get_entity_id(candidate_root) or "")
+            if candidate_id and candidate_id in seen_source_ids:
+                continue
+            if candidate_id:
+                seen_source_ids.add(candidate_id)
+            special_rules = getattr(candidate_root, "special_rules", None)
+            if not isinstance(special_rules, dict):
+                continue
+            if not bool(special_rules.get("plague_legion_plague_of_woes_active", False)):
+                continue
+            owner_raw = str(special_rules.get("plague_legion_plague_of_woes_turn_owner", "") or "")
+            if owner_raw and current_player_id and owner_raw != current_player_id:
+                continue
+            try:
+                turn_raw = int(special_rules.get("plague_legion_plague_of_woes_turn", 0) or 0)
+            except Exception:
+                turn_raw = 0
+            if turn_raw and turn_raw != current_turn:
+                continue
+            source_candidates.append(candidate_root)
+        source_candidates.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+
+        if source_candidates:
+            source_root = source_candidates[0]
+            from ...utility.aura_utils import unit_within_range_of_unit
+
+            enemies: list[object] = []
+            seen_enemy_ids: set[str] = set()
+            for unit in list(getattr(getattr(game, "map", None), "units", []) or []):
+                enemy_root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+                if enemy_root is None or not _resurrection_orb_unit_on_battlefield(enemy_root):
+                    continue
+                enemy_id = str(get_entity_id(enemy_root) or "")
+                if enemy_id and enemy_id in seen_enemy_ids:
+                    continue
+                if enemy_id:
+                    seen_enemy_ids.add(enemy_id)
+                enemy_army = enemy_root.get_parent_army() if hasattr(enemy_root, "get_parent_army") else None
+                if enemy_army is None or enemy_army is army:
+                    continue
+                if enemy_root is target_root:
+                    continue
+                if not bool(unit_within_range_of_unit(source_root, enemy_root, 9.0, use_attached_aggregate=True)):
+                    continue
+                enemies.append(enemy_root)
+            enemies.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+            if enemies and hasattr(game, "request_decision"):
+                source_id = str(get_entity_id(source_root) or "")
+                target_id = str(get_entity_id(target_root) or "")
+                duplicate = False
+                queue = getattr(game, "decision_queue", None)
+                if queue is not None and hasattr(queue, "list"):
+                    for pending in list(queue.list() or []):
+                        if str(getattr(pending, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                            continue
+                        pending_ctx = dict(getattr(pending, "context", {}) or {})
+                        if str(pending_ctx.get("ability", "") or "") != "plague_of_woes":
+                            continue
+                        if str(pending_ctx.get("source_unit_id", "") or "") != source_id:
+                            continue
+                        if str(pending_ctx.get("primary_target_unit_id", "") or "") != target_id:
+                            continue
+                        if int(pending_ctx.get("turn", 0) or 0) != int(current_turn):
+                            continue
+                        duplicate = True
+                        break
+                if not duplicate:
+                    from ..decisions import DecisionOption as _DecisionOption
+                    from ..decisions import DecisionRequest as _DecisionRequest
+
+                    options = [
+                        _DecisionOption.create(
+                            str(getattr(enemy, "name", "Unit") or "Unit"),
+                            payload={"target_unit_id": get_entity_id(enemy)},
+                        )
+                        for enemy in list(enemies or [])
+                        if str(get_entity_id(enemy) or "")
+                    ]
+                    if options:
+                        request_ability = str(
+                            ctx.get("plague_of_woes_ability_name", "") or "Plague of Woes"
+                        ).strip() or "Plague of Woes"
+                        request_ctx = {
+                            "ability": "plague_of_woes",
+                            "ability_name": request_ability,
+                            "source_unit_id": source_id,
+                            "unit_id": source_id,
+                            "turn": int(current_turn),
+                            "turn_owner_id": current_player_id,
+                            "primary_target_unit_id": target_id,
+                            "miasma_target_unit_id": target_id,
+                            "candidate_unit_ids": [
+                                str(get_entity_id(enemy) or "")
+                                for enemy in list(enemies or [])
+                                if str(get_entity_id(enemy) or "")
+                            ],
+                        }
+                        game.request_decision(
+                            _DecisionRequest.create(
+                                DECISION_CHOOSE_QUARRY,
+                                (
+                                    f"{request_ability}: select one other enemy unit within 9\" of "
+                                    f"{getattr(source_root, 'name', 'Unit')} to take a Battle-shock test."
+                                ),
+                                player_id=getattr(player, "id", None),
+                                options=options,
+                                context=request_ctx,
+                            )
+                        )
+                        _log_action_for_players(
+                            game,
+                            player,
+                            (
+                                f"{request_ability}: select one other enemy unit within 9\" of "
+                                f"{getattr(source_root, 'name', 'Unit')}."
+                            ),
+                        )
+        return target_root
+    if ability == "plague_of_woes":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, payload.get("source_unit_id") or ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None or not _resurrection_orb_unit_on_battlefield(source_root):
+            return None
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return None
+        target_root = (
+            target_unit.get_attached_unit_root()
+            if hasattr(target_unit, "get_attached_unit_root")
+            else target_unit
+        )
+        if target_root is None or not _resurrection_orb_unit_on_battlefield(target_root):
+            return None
+        source_id = str(get_entity_id(source_root) or "")
+        target_id = str(get_entity_id(target_root) or "")
+        if source_id and target_id and source_id == target_id:
+            return None
+        candidate_ids = {str(value) for value in list(ctx.get("candidate_unit_ids", []) or []) if str(value)}
+        if candidate_ids and target_id not in candidate_ids:
+            return None
+        primary_target_id = str(ctx.get("primary_target_unit_id", "") or ctx.get("miasma_target_unit_id", "") or "")
+        if primary_target_id and target_id == primary_target_id:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            return None
+        army = getattr(player, "get_army", lambda: None)()
+        if army is None:
+            return None
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if source_army is not army:
+            return None
+        if target_army is army:
+            return None
+        from ...utility.aura_utils import unit_within_range_of_unit
+
+        if not bool(unit_within_range_of_unit(source_root, target_root, 9.0, use_attached_aggregate=True)):
+            return None
+        source_rules = getattr(source_root, "special_rules", None)
+        if not isinstance(source_rules, dict):
+            return None
+        if not bool(source_rules.get("plague_legion_plague_of_woes_active", False)):
+            return None
+        owner_raw = str(source_rules.get("plague_legion_plague_of_woes_turn_owner", "") or "")
+        current_player = getattr(game, "get_current_player", lambda: None)()
+        current_player_id = str(getattr(current_player, "id", "") or "")
+        if owner_raw and current_player_id and owner_raw != current_player_id:
+            return None
+        try:
+            turn_raw = int(source_rules.get("plague_legion_plague_of_woes_turn", 0) or 0)
+        except Exception:
+            turn_raw = 0
+        current_turn = int(getattr(game, "turn", 0) or 0)
+        if turn_raw and turn_raw != current_turn:
+            return None
+        target_root.take_battle_shock_test(int(current_turn or 1))
+        ability_name = str(ctx.get("ability_name", "") or "Plague of Woes").strip() or "Plague of Woes"
+        _log_action_for_players(
+            game,
+            player,
+            (
+                f"{ability_name}: {getattr(target_root, 'name', 'Unit')} takes a Battle-shock test "
+                f"(within 9\" of {getattr(source_root, 'name', 'Unit')})."
+            ),
         )
         return target_root
     if ability == "resurrection_orb":

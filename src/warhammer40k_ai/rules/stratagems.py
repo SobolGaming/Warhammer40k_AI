@@ -249,6 +249,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "DAEMONIC INVULNERABILITY",
     "DENIZENS OF THE WARP",
     "DRAUGHT OF TERROR",
+    "FOETID RESURGENCE",
+    "PLAGUE OF WOES",
     "BINDING SHADOW",
     "CHANNELLED WRATH",
     "DEATH DENIED",
@@ -436,6 +438,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "CORRUPT REALSPACE",
     "DAEMONIC INVULNERABILITY",
     "BINDING SHADOW",
+    "PLAGUE OF WOES",
     "CAVALCADE OF BLADES",
     "OVERWHELMING EXCESS",
     "SHADE PATH",
@@ -1777,6 +1780,7 @@ class StratagemManager(
             "GORE-HUNGRY ONSLAUGHT",
             "SHEATHED IN BRASS",
             "WRATH UNDENIABLE",
+            "PLAGUE OF WOES",
             "IMPOSSIBLE ECLIPSE",
             "PRETERNATURAL AGILITY",
             "PYROGENESIS",
@@ -4149,6 +4153,8 @@ class StratagemManager(
             "WARP VISION": "Target: CHAOS KNIGHTS unit (not yet shot)",
             "CORRUPT REALSPACE": "Target: LEGIONES DAEMONICA unit; select objective you control",
             "DAEMONIC INVULNERABILITY": "Target: LEGIONES DAEMONICA unit (defensive reaction)",
+            "FOETID RESURGENCE": "Target: LEGIONES DAEMONICA NURGLE unit on the battlefield; return destroyed models (or heal D3+1 on MONSTER)",
+            "PLAGUE OF WOES": "Target: LEGIONES DAEMONICA NURGLE unit (opponent Command phase, before Melancholic Miasma target selection)",
             "BINDING SHADOW": "Target: up to one SHADOW LEGION HERETIC ASTARTES unit and up to one SHADOW LEGION LEGIONES DAEMONICA unit, both not in Engagement Range (end of opponent Fight phase)",
             "DENIZENS OF THE WARP": "Target: LEGIONES DAEMONICA unit (arriving via Deep Strike)",
             "DEATH DENIED": "Target: SHADOW LEGION unit; one model regains up to 3 lost wounds (TZEENTCH units can also return one destroyed non-CHARACTER model at full wounds)",
@@ -4760,6 +4766,10 @@ class StratagemManager(
             raise
         try:
             self._clear_plaguesurge_bonus_if_expired(player=player, phase=phase)
+        except Exception:
+            raise
+        try:
+            self._queue_plague_legion_phase_start_reactions(player=player, phase=phase)
         except Exception:
             raise
         try:
@@ -6249,6 +6259,11 @@ class StratagemManager(
         # Chaos Daemons: Blood Legion phase-end cleanup.
         try:
             self._cleanup_blood_legion_phase_end_effects(phase=phase)
+        except Exception:
+            raise
+        # Chaos Daemons: Plague Legion phase-end cleanup (PLAGUE OF WOES).
+        try:
+            self._cleanup_plague_legion_phase_end_effects(phase=phase)
         except Exception:
             raise
         # Chaos Daemons: Shadow Legion phase-end cleanup (SHADE PATH / ENCROACHING DARKNESS / CHANNELLED WRATH).
@@ -11900,6 +11915,9 @@ class StratagemManager(
         imperial_agents_result = self._use_imperial_agents_veiled_blade_stratagem(s, **kwargs)
         if imperial_agents_result is not None:
             return imperial_agents_result
+        chaos_daemons_plague_legion_result = self._use_chaos_daemons_plague_legion_stratagem(s, **kwargs)
+        if chaos_daemons_plague_legion_result is not None:
+            return chaos_daemons_plague_legion_result
         chaos_daemons_shadow_legion_result = self._use_chaos_daemons_shadow_legion_stratagem(s, **kwargs)
         if chaos_daemons_shadow_legion_result is not None:
             return chaos_daemons_shadow_legion_result
