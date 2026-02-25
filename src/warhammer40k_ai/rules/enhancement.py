@@ -426,6 +426,9 @@ class Enhancement:
         is_ironstorm_spearhead = bool(
             sm_mgr and getattr(sm_mgr, "is_ironstorm_spearhead", lambda: False)()
         )
+        is_liberator_assault_group = bool(
+            sm_mgr and getattr(sm_mgr, "is_liberator_assault_group", lambda: False)()
+        )
         is_bastion_task_force = bool(
             sm_mgr and getattr(sm_mgr, "is_bastion_task_force", lambda: False)()
         )
@@ -1323,6 +1326,67 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_master_of_machine_war_bearer_model_id"] = bearer_id
+
+        if name == "speed of the primarch" or enh_id == "000008376002":
+            if not is_liberator_assault_group:
+                return
+            unit.special_rules["enhancement_speed_of_the_primarch"] = True
+            unit.special_rules["enhancement_fight_first_once_per_battle"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            once_key = str(params.get("once_per_battle_key", "speed_of_the_primarch") or "speed_of_the_primarch").strip().lower()
+            unit.special_rules["enhancement_speed_of_the_primarch_once_key"] = once_key if once_key else "speed_of_the_primarch"
+            unit.special_rules["enhancement_speed_of_the_primarch_source"] = "Speed of the Primarch"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_speed_of_the_primarch_bearer_model_id"] = bearer_id
+
+        if name == "rage-fuelled warrior" or enh_id == "000008376003":
+            if not is_liberator_assault_group:
+                return
+            unit.special_rules["enhancement_rage_fuelled_warrior"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            sustained_hits = _coerce_int(params.get("sustained_hits", 3) or 3, default=3)
+            once_key = str(params.get("once_per_battle_key", "rage_fuelled_warrior") or "rage_fuelled_warrior").strip().lower()
+            unit.special_rules["enhancement_rage_fuelled_warrior_sustained_hits"] = int(max(1, sustained_hits))
+            unit.special_rules["enhancement_rage_fuelled_warrior_once_key"] = once_key if once_key else "rage_fuelled_warrior"
+            unit.special_rules["enhancement_rage_fuelled_warrior_source"] = "Rage-fuelled Warrior"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_rage_fuelled_warrior_bearer_model_id"] = bearer_id
+
+        if name == "icon of the angel" or enh_id == "000008376004":
+            if not is_liberator_assault_group:
+                return
+            unit.special_rules["enhancement_icon_of_the_angel"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            excluded = {str(v or "").strip().upper() for v in list(params.get("exclude_target_keywords", ()) or [])}
+            requires_exclude_mv = {"MONSTER", "VEHICLE"}.issubset(excluded)
+            bs_penalty = _coerce_int(params.get("battleshock_penalty", 1) or 1, default=1)
+            unit.special_rules["enemy_fallback_desperate_escape"] = True
+            unit.special_rules["enemy_fallback_desperate_escape_exclude_monster_vehicle"] = bool(requires_exclude_mv)
+            unit.special_rules["enemy_fallback_desperate_escape_bs_penalty"] = int(max(0, bs_penalty))
+            unit.special_rules["enhancement_icon_of_the_angel_source"] = "Icon of the Angel"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_icon_of_the_angel_bearer_model_id"] = bearer_id
+
+        if enh_id == "000008376005" or (name == "gift of foresight" and is_liberator_assault_group):
+            if not is_liberator_assault_group:
+                return
+            unit.special_rules["enhancement_liberator_gift_of_foresight"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            usage = str(params.get("usage", "battle_round") or "battle_round").strip().lower()
+            if usage not in {"battle_round", "battle"}:
+                usage = "battle_round"
+            unit.special_rules["enhancement_liberator_gift_of_foresight_usage"] = usage
+            unit.special_rules["enhancement_liberator_gift_of_foresight_source"] = "Gift of Foresight"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_liberator_gift_of_foresight_bearer_model_id"] = bearer_id
 
         if name == "eye of the primarch" or enh_id == "000010676002":
             if not is_bastion_task_force:

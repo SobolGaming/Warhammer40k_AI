@@ -1583,6 +1583,59 @@ _SPACE_MARINES_IRONSTORM_SPEARHEAD_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPACE_MARINES_IRONSTORM_SPEARHEAD_DESCRIPTORS.values()
 }
 
+_SPACE_MARINES_LIBERATOR_ASSAULT_GROUP_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008376002": EnhancementToolDescriptor(
+        enhancement_id="000008376002",
+        name="Speed of the Primarch",
+        timing="start_of_fight_phase_once_per_battle",
+        target="bearers_unit",
+        duration="until_end_of_phase",
+        effect="bearer_unit_gains_fights_first_once_per_battle",
+        effect_params={
+            "once_per_battle_key": "speed_of_the_primarch",
+        },
+    ),
+    "000008376003": EnhancementToolDescriptor(
+        enhancement_id="000008376003",
+        name="Rage-fuelled Warrior",
+        timing="start_of_fight_phase_once_per_battle",
+        target="bearer",
+        duration="until_end_of_phase",
+        effect="bearer_melee_gains_sustained_hits_once_per_battle",
+        effect_params={
+            "sustained_hits": 3,
+            "once_per_battle_key": "rage_fuelled_warrior",
+        },
+    ),
+    "000008376004": EnhancementToolDescriptor(
+        enhancement_id="000008376004",
+        name="Icon of the Angel",
+        timing="enemy_fall_back_trigger",
+        target="enemy_non_monster_non_vehicle_within_engagement_of_bearers_unit",
+        duration="while_bearer_alive",
+        effect="enemy_fall_back_forces_desperate_escape_with_battleshock_penalty",
+        effect_params={
+            "exclude_target_keywords": ("MONSTER", "VEHICLE"),
+            "battleshock_penalty": 1,
+        },
+    ),
+    "000008376005": EnhancementToolDescriptor(
+        enhancement_id="000008376005",
+        name="Gift of Foresight",
+        timing="after_bearer_hit_wound_or_save_roll_once_per_battle_round",
+        target="bearer",
+        duration="instant_once_per_battle_round",
+        effect="set_bearer_hit_wound_or_save_roll_to_unmodified_six",
+        effect_params={
+            "usage": "battle_round",
+        },
+    ),
+}
+
+_SPACE_MARINES_LIBERATOR_ASSAULT_GROUP_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPACE_MARINES_LIBERATOR_ASSAULT_GROUP_DESCRIPTORS.values()
+}
+
 _SPACE_MARINES_BASTION_TASK_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010676002": EnhancementToolDescriptor(
         enhancement_id="000010676002",
@@ -2471,6 +2524,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPACE_MARINES_IRONSTORM_SPEARHEAD_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPACE_MARINES_LIBERATOR_ASSAULT_GROUP_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPACE_MARINES_BASTION_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -2551,6 +2607,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SPACE_MARINES_ANGELIC_INHERITORS_BY_NAME.get(key)
         or _SPACE_MARINES_ANVIL_SIEGE_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_IRONSTORM_SPEARHEAD_BY_NAME.get(key)
+        or _SPACE_MARINES_LIBERATOR_ASSAULT_GROUP_BY_NAME.get(key)
         or _SPACE_MARINES_BASTION_TASK_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_BLADE_OF_ULTRAMAR_BY_NAME.get(key)
         or _SPACE_MARINES_CHAMPIONS_OF_FENRIS_BY_NAME.get(key)

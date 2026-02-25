@@ -3649,6 +3649,7 @@ class GameReactiveDecisionsMixin:
             "warpmeld_sacrifice",
             "possessed_blade_fight",
             "furys_cage",
+            "space_marines_rage_fuelled_warrior",
             "aeldari_strength_from_death_lethal_surge",
             "our_time_is_nigh",
             "desperate_devotion",
@@ -4617,6 +4618,105 @@ class GameReactiveDecisionsMixin:
                 ):
                     sr.pop(key, None)
             unit.special_rules = sr
+            return
+
+        if ability_key == "space_marines_rage_fuelled_warrior":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None or not unit.is_alive():
+                return
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None or not root.is_alive():
+                return
+            source_member_id = str(payload.get("source_member_unit_id") or ctx.get("source_member_unit_id") or "")
+            source_member = self._resolve_unit_by_id(source_member_id) if source_member_id else None
+            if source_member is None:
+                find_source = getattr(self, "_attached_member_with_enhancement_flag", None)
+                if callable(find_source):
+                    _root, source_member, _source_sr = find_source(root, "enhancement_rage_fuelled_warrior")
+            if source_member is None:
+                source_member = unit
+            sr = getattr(source_member, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_rage_fuelled_warrior")):
+                return
+            once_key = str(
+                payload.get("once_key")
+                or ctx.get("once_key")
+                or sr.get("enhancement_rage_fuelled_warrior_once_key")
+                or "rage_fuelled_warrior"
+            ).strip().lower()
+            if not once_key:
+                once_key = "rage_fuelled_warrior"
+            if bool(getattr(root, "has_used_unit_once_per_battle", lambda _k: False)(once_key)):
+                return
+            if bool(getattr(source_member, "has_used_unit_once_per_battle", lambda _k: False)(once_key)):
+                return
+            model_id = str(
+                payload.get("model_id")
+                or ctx.get("model_id")
+                or sr.get("enhancement_rage_fuelled_warrior_bearer_model_id")
+                or sr.get("enhancement_bearer_model_id")
+                or ""
+            )
+            if not model_id:
+                bearer_model = getattr(source_member, "_get_enhancement_bearer_model", lambda: None)()
+                model_id = str(get_entity_id(bearer_model) or "") if bearer_model is not None else ""
+            model = self._resolve_model_by_id(model_id) if model_id else None
+            if model is None:
+                return
+            if not bool(getattr(model, "is_alive", True)):
+                return
+            try:
+                sustained_hits = int(
+                    payload.get("sustained_hits")
+                    or ctx.get("sustained_hits")
+                    or sr.get("enhancement_rage_fuelled_warrior_sustained_hits", 3)
+                    or 3
+                )
+            except Exception:
+                sustained_hits = 3
+            sustained_hits = int(max(1, sustained_hits))
+            phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+            if not phase_name:
+                phase_name = str(ctx.get("phase", "") or "").strip().upper()
+            if not phase_name:
+                phase_name = "FIGHT_PHASE"
+            player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+            if player is None:
+                try:
+                    player = source_member.get_parent_army().player
+                except Exception:
+                    player = None
+            owner_id = str(getattr(player, "id", "") or "")
+            try:
+                turn = int(getattr(self, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            ability_name = str(
+                ctx.get("ability_name", "")
+                or sr.get("enhancement_rage_fuelled_warrior_source", "")
+                or "Rage-fuelled Warrior"
+            ).strip() or "Rage-fuelled Warrior"
+            sr["enhancement_rage_fuelled_warrior_active"] = True
+            sr["enhancement_rage_fuelled_warrior_turn"] = int(turn)
+            sr["enhancement_rage_fuelled_warrior_turn_owner"] = owner_id
+            sr["enhancement_rage_fuelled_warrior_expires_phase"] = phase_name
+            sr["enhancement_rage_fuelled_warrior_active_model_id"] = model_id
+            sr["enhancement_rage_fuelled_warrior_active_sustained_hits"] = int(sustained_hits)
+            sr["enhancement_rage_fuelled_warrior_source"] = ability_name
+            source_member.special_rules = sr
+            mark_used = getattr(root, "mark_unit_once_per_battle_used", None)
+            if callable(mark_used):
+                mark_used(once_key, ability_name=ability_name)
+            if source_member is not root:
+                mark_member = getattr(source_member, "mark_unit_once_per_battle_used", None)
+                if callable(mark_member):
+                    mark_member(once_key, ability_name=ability_name)
             return
 
         if ability_key == "possessed_lord":

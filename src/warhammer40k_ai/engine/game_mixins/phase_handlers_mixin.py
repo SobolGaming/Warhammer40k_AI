@@ -1208,6 +1208,68 @@ class GamePhaseHandlersMixin:
                     instance_key=str(ctx.get("unit_id") or ""),
                 )
 
+            # Liberator Assault Group: once per battle, start of Fight phase -> bearer melee gets Sustained Hits 3.
+            for unit in list(army.units):
+                if unit is None or not unit.is_alive():
+                    continue
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict) or not bool(sr.get("enhancement_rage_fuelled_warrior")):
+                    continue
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None:
+                    root = unit
+                get_bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+                bearer = get_bearer() if callable(get_bearer) else None
+                if bearer is None:
+                    continue
+                alive_attr = getattr(bearer, "is_alive", False)
+                bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                if not bearer_alive:
+                    continue
+                once_key = str(sr.get("enhancement_rage_fuelled_warrior_once_key", "rage_fuelled_warrior") or "rage_fuelled_warrior").strip().lower()
+                if not once_key:
+                    once_key = "rage_fuelled_warrior"
+                if bool(getattr(unit, "has_used_unit_once_per_battle", lambda _k: False)(once_key)):
+                    continue
+                if bool(getattr(root, "has_used_unit_once_per_battle", lambda _k: False)(once_key)):
+                    continue
+                try:
+                    sustained_hits = int(sr.get("enhancement_rage_fuelled_warrior_sustained_hits", 3) or 3)
+                except Exception:
+                    sustained_hits = 3
+                sustained_hits = max(1, int(sustained_hits))
+                unit_id = maybe_entity_id(unit)
+                model_id = maybe_entity_id(bearer)
+                ability_name = str(sr.get("enhancement_rage_fuelled_warrior_source", "") or "Rage-fuelled Warrior").strip() or "Rage-fuelled Warrior"
+                ctx = {
+                    "ability_name": ability_name,
+                    "unit": getattr(unit, "name", "") or "",
+                    "model": getattr(bearer, "name", "") or "",
+                    "phase": "Fight phase",
+                    "unit_id": unit_id,
+                    "model_id": model_id,
+                    "once_key": once_key,
+                    "sustained_hits": int(sustained_hits),
+                }
+                message = f"Activate {ability_name} for {getattr(bearer, 'name', 'Model')}?"
+                self._queue_optional_ability_confirmation(
+                    player=player,
+                    ability_key="space_marines_rage_fuelled_warrior",
+                    ability_name=ability_name,
+                    message=message,
+                    context=ctx,
+                    payload={
+                        "unit_id": unit_id,
+                        "model_id": model_id,
+                        "once_key": once_key,
+                        "sustained_hits": int(sustained_hits),
+                    },
+                    instance_key=f"{unit_id}:{model_id}:{once_key}",
+                )
+
             # Moment Shackle: once per battle, start of Fight phase, choose one effect.
             from ..decision_kinds import DECISION_CHOOSE_MOMENT_SHACKLE
             from ..decisions import DecisionOption, DecisionRequest
@@ -10598,6 +10660,17 @@ class GamePhaseHandlersMixin:
                         "enhancement_fight_first_active",
                         "enhancement_fight_first_expires_phase",
                         "enhancement_fight_first_source",
+                    ):
+                        sr.pop(k, None)
+                exp = str(sr.get("enhancement_rage_fuelled_warrior_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "enhancement_rage_fuelled_warrior_active",
+                        "enhancement_rage_fuelled_warrior_turn",
+                        "enhancement_rage_fuelled_warrior_turn_owner",
+                        "enhancement_rage_fuelled_warrior_expires_phase",
+                        "enhancement_rage_fuelled_warrior_active_model_id",
+                        "enhancement_rage_fuelled_warrior_active_sustained_hits",
                     ):
                         sr.pop(k, None)
                 exp = str(sr.get("imperial_knights_judicants_helm_expires_phase", "") or "").strip().upper()

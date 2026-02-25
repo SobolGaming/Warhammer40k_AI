@@ -1828,6 +1828,49 @@ class ActionsMovementMixin:
                 }
             )
 
+        # Liberator Assault Group enhancement: Gift of Foresight (bearer-only).
+        try:
+            model_id = str(get_entity_id(model) or "")
+        except Exception:
+            model_id = ""
+        if model_id:
+            try:
+                root = self.get_attached_unit_root()
+            except Exception:
+                root = self
+            holders = [root]
+            holders.extend(list(getattr(root, "attached_leaders", []) or []))
+            for holder in holders:
+                sr = getattr(holder, "special_rules", None)
+                if not isinstance(sr, dict) or not bool(sr.get("enhancement_liberator_gift_of_foresight")):
+                    continue
+                bearer_id = str(
+                    sr.get("enhancement_liberator_gift_of_foresight_bearer_model_id", "")
+                    or sr.get("enhancement_bearer_model_id", "")
+                    or ""
+                )
+                if not bearer_id or bearer_id != model_id:
+                    continue
+                usage = str(sr.get("enhancement_liberator_gift_of_foresight_usage", "battle_round") or "battle_round").strip().lower()
+                if usage not in {"battle_round", "battle"}:
+                    usage = "battle_round"
+                source = str(
+                    sr.get("enhancement_liberator_gift_of_foresight_source", "")
+                    or "Gift of Foresight"
+                ).strip() or "Gift of Foresight"
+                key = f"model_unmodified_six:liberator_gift_of_foresight:{usage}:{bearer_id}".lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "key": key,
+                        "limit": usage,
+                        "yield_points_cost": 0,
+                    }
+                )
+
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
         self._ability_cache[cache_key] = list(specs)
@@ -10351,7 +10394,25 @@ class ActionsMovementMixin:
                     source_sr = getattr(source_unit, "special_rules", None)
                     if not isinstance(source_sr, dict):
                         source_sr = {}
-                    if source_sr.get("enemy_fallback_desperate_escape"):
+                    apply_enemy_fallback = True
+                    if bool(source_sr.get("enhancement_icon_of_the_angel")):
+                        try:
+                            active_enh = getattr(enemy_root, "_attached_unit_has_active_enhancement", None)
+                            if callable(active_enh):
+                                apply_enemy_fallback = bool(
+                                    active_enh(
+                                        "enhancement_icon_of_the_angel",
+                                        enhancement_id="000008376004",
+                                        enhancement_name="icon of the angel",
+                                        require_bearer_alive=True,
+                                    )
+                                )
+                            else:
+                                bearer = getattr(source_unit, "_get_enhancement_bearer_model", lambda: None)()
+                                apply_enemy_fallback = bearer is not None
+                        except Exception:
+                            apply_enemy_fallback = False
+                    if apply_enemy_fallback and source_sr.get("enemy_fallback_desperate_escape"):
                         source_desperate = True
                         if source_sr.get("enemy_fallback_desperate_escape_exclude_monster_vehicle"):
                             source_exclude_mv = True

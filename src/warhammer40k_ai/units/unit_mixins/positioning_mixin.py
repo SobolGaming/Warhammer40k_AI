@@ -4046,6 +4046,85 @@ class PositioningMixin:
             if not source_name:
                 source_name = "Target Augury Web"
             rules.append({"attack_type": "any", "keyword": "LETHAL HITS", "source": source_name})
+        try:
+            attack_kind = str(attack_type or "").strip().lower()
+            if attack_kind in ("", "any", "melee") and model is not None:
+                attacker_model_id = str(get_entity_id(model) or "")
+                if attacker_model_id:
+                    try:
+                        members = list(root.get_attached_unit_members() or [])
+                    except Exception:
+                        members = [root]
+                    if not members:
+                        members = [root]
+                    for member in list(members or []):
+                        if member is None:
+                            continue
+                        member_sr = getattr(member, "special_rules", None)
+                        if not isinstance(member_sr, dict) or not bool(member_sr.get("enhancement_rage_fuelled_warrior_active")):
+                            continue
+                        source_model_id = str(
+                            member_sr.get("enhancement_rage_fuelled_warrior_active_model_id", "")
+                            or member_sr.get("enhancement_rage_fuelled_warrior_bearer_model_id", "")
+                            or member_sr.get("enhancement_bearer_model_id", "")
+                            or ""
+                        )
+                        if source_model_id and source_model_id != attacker_model_id:
+                            continue
+                        applies = True
+                        owner_id = str(member_sr.get("enhancement_rage_fuelled_warrior_turn_owner", "") or "")
+                        try:
+                            effect_turn = int(member_sr.get("enhancement_rage_fuelled_warrior_turn", 0) or 0)
+                        except Exception:
+                            effect_turn = 0
+                        exp = str(member_sr.get("enhancement_rage_fuelled_warrior_expires_phase", "") or "").strip().upper()
+                        try:
+                            source_army = member.get_parent_army()
+                        except Exception:
+                            source_army = None
+                        game = getattr(getattr(source_army, "player", None), "game", None) if source_army is not None else None
+                        if game is not None:
+                            if owner_id:
+                                current_owner = str(getattr(getattr(game, "get_current_player", lambda: None)(), "id", "") or "")
+                                if current_owner and current_owner != owner_id:
+                                    applies = False
+                            if applies and effect_turn:
+                                try:
+                                    if int(getattr(game, "turn", 0) or 0) != effect_turn:
+                                        applies = False
+                                except Exception:
+                                    applies = False
+                            if applies and exp:
+                                phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                                if phase_name and phase_name != exp:
+                                    applies = False
+                        if not applies:
+                            continue
+                        try:
+                            sustained_hits = int(
+                                member_sr.get(
+                                    "enhancement_rage_fuelled_warrior_active_sustained_hits",
+                                    member_sr.get("enhancement_rage_fuelled_warrior_sustained_hits", 3),
+                                )
+                                or 3
+                            )
+                        except Exception:
+                            sustained_hits = 3
+                        sustained_hits = int(max(1, sustained_hits))
+                        source_name = str(
+                            member_sr.get("enhancement_rage_fuelled_warrior_source", "")
+                            or "Rage-fuelled Warrior"
+                        ).strip() or "Rage-fuelled Warrior"
+                        rules.append(
+                            {
+                                "attack_type": "melee",
+                                "keyword": f"SUSTAINED HITS {int(sustained_hits)}",
+                                "source": source_name,
+                            }
+                        )
+                        break
+        except Exception:
+            pass
         if not rules:
             return {}
         if target is None:
