@@ -807,6 +807,9 @@ class GameMissionsScoringActionsMixin:
         if sm_mgr is not None and getattr(sm_mgr, "seekers_companions_allow_action_after_advance", None):
             if sm_mgr.seekers_companions_allow_action_after_advance(unit, self):
                 allow_advance_action = True
+        if sm_mgr is not None and getattr(sm_mgr, "companions_of_vehemence_oathbound_exemplar_allow_action_after_advance", None):
+            if sm_mgr.companions_of_vehemence_oathbound_exemplar_allow_action_after_advance(unit, self):
+                allow_advance_action = True
         if unit.round_state.fell_back_this_round and not allow_fall_back_action:
             return {"valid": False, "reason": "Units that Fell Back cannot perform Actions"}
         if unit.round_state.advanced_this_round and not allow_advance_action:

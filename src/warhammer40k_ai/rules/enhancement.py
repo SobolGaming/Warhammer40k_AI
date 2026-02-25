@@ -432,6 +432,9 @@ class Enhancement:
         is_champions_of_fenris = bool(
             sm_mgr and getattr(sm_mgr, "is_champions_of_fenris", lambda: False)()
         )
+        is_companions_of_vehemence = bool(
+            sm_mgr and getattr(sm_mgr, "is_companions_of_vehemence", lambda: False)()
+        )
         is_black_spear_task_force = bool(
             sm_mgr and getattr(sm_mgr, "is_black_spear_task_force", lambda: False)()
         )
@@ -1123,6 +1126,61 @@ class Enhancement:
             refresh_return = getattr(unit, "_refresh_return_on_death_flags", None)
             if callable(refresh_return):
                 refresh_return()
+
+        if name == "incendiary animus" or enh_id == "000010392002":
+            if not is_companions_of_vehemence:
+                return
+            unit.special_rules["enhancement_incendiary_animus"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            ap_bonus = _coerce_int(params.get("ap_bonus", 1) or 1, default=1)
+            unit.special_rules["enhancement_incendiary_animus_ap_bonus"] = int(max(0, ap_bonus))
+            unit.special_rules["enhancement_incendiary_animus_source"] = "Incendiary Animus"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_incendiary_animus_bearer_model_id"] = bearer_id
+
+        if name == "oathbound exemplar" or enh_id == "000010392003":
+            if not is_companions_of_vehemence:
+                return
+            unit.special_rules["enhancement_oathbound_exemplar"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            advance_bonus = _coerce_int(params.get("advance_bonus", 1) or 1, default=1)
+            allow_action_after_advance = bool(params.get("allow_action_after_advance", True))
+            unit.special_rules["enhancement_oathbound_exemplar_advance_bonus"] = int(max(0, advance_bonus))
+            unit.special_rules["enhancement_oathbound_exemplar_allow_action_after_advance"] = bool(
+                allow_action_after_advance
+            )
+            unit.special_rules["enhancement_oathbound_exemplar_source"] = "Oathbound Exemplar"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_oathbound_exemplar_bearer_model_id"] = bearer_id
+
+        if name == "merciless denunciation" or enh_id == "000010392004":
+            if not is_companions_of_vehemence:
+                return
+            unit.special_rules["enhancement_merciless_denunciation"] = True
+            unit.special_rules["enhancement_merciless_denunciation_source"] = "Merciless Denunciation"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_merciless_denunciation_bearer_model_id"] = bearer_id
+
+        if name == "zealous vanguard" or enh_id == "000010392005":
+            if not is_companions_of_vehemence:
+                return
+            unit.special_rules["enhancement_zealous_vanguard"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            scout_distance = _coerce_int(params.get("scouts_distance", 6) or 6, default=6)
+            unit.special_rules["enhancement_scout_distance"] = max(
+                int(unit.special_rules.get("enhancement_scout_distance", 0) or 0),
+                int(max(0, scout_distance)),
+            )
+            unit.special_rules["enhancement_zealous_vanguard_source"] = "Zealous Vanguard"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_zealous_vanguard_bearer_model_id"] = bearer_id
 
         if name == "indomitable fury" or enh_id == "000008474002":
             if not is_anvil_siege_force:

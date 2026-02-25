@@ -4607,6 +4607,162 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
     def righteous_fervour_reroll_charge_applies(self, unit) -> bool:
         return self.righteous_fervour_reroll_advance_applies(unit)
 
+    def _companions_of_vehemence_enhancement_source_member(self, unit, flag_key: str):
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return None, None, None
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if not members:
+            members = [root]
+        members.sort(key=lambda member: str(get_entity_id(member) or ""))
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get(flag_key, False)):
+                return root, member, sr
+        return root, None, None
+
+    @staticmethod
+    def _companions_of_vehemence_member_has_live_bearer(member, sr) -> bool:
+        if member is None or not isinstance(sr, dict):
+            return False
+        bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
+        if bearer_id:
+            for model in list(getattr(member, "models", []) or []):
+                if str(get_entity_id(model) or "") != bearer_id:
+                    continue
+                alive_attr = getattr(model, "is_alive", True)
+                return bool(alive_attr() if callable(alive_attr) else alive_attr)
+            return False
+        bearer = getattr(member, "_get_enhancement_bearer_model", lambda: None)()
+        if bearer is None:
+            return False
+        alive_attr = getattr(bearer, "is_alive", True)
+        return bool(alive_attr() if callable(alive_attr) else alive_attr)
+
+    def companions_of_vehemence_oathbound_exemplar_advance_roll_bonus(self, unit, *, game=None) -> tuple[int, str]:
+        if not self.is_companions_of_vehemence():
+            return 0, ""
+        if unit is None:
+            return 0, ""
+        root, member, sr = self._companions_of_vehemence_enhancement_source_member(
+            unit,
+            "enhancement_oathbound_exemplar",
+        )
+        if root is None:
+            return 0, ""
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return 0, ""
+        if not self._companions_of_vehemence_member_has_live_bearer(member, sr):
+            return 0, ""
+        try:
+            bonus = int(sr.get("enhancement_oathbound_exemplar_advance_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        source = str(sr.get("enhancement_oathbound_exemplar_source", "") or "Oathbound Exemplar").strip()
+        if not source:
+            source = "Oathbound Exemplar"
+        return int(bonus), source
+
+    def companions_of_vehemence_incendiary_animus_melee_ap_bonus(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if not self.is_companions_of_vehemence():
+            return 0, ""
+        if attacker_model is None:
+            return 0, ""
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            if parent is None or not bool(getattr(parent, "is_melee", lambda: False)()):
+                return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        root, member, sr = self._companions_of_vehemence_enhancement_source_member(
+            attacker_unit,
+            "enhancement_incendiary_animus",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return 0, ""
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return 0, ""
+        if not self._companions_of_vehemence_member_has_live_bearer(member, sr):
+            return 0, ""
+        attacker_root = self._attached_unit_root(attacker_unit)
+        if attacker_root is None or str(get_entity_id(attacker_root) or "") != str(get_entity_id(root) or ""):
+            return 0, ""
+        try:
+            bonus = int(sr.get("enhancement_incendiary_animus_ap_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        source = str(sr.get("enhancement_incendiary_animus_source", "") or "Incendiary Animus").strip()
+        if not source:
+            source = "Incendiary Animus"
+        return int(bonus), source
+
+    def companions_of_vehemence_oathbound_exemplar_allow_action_after_advance(self, unit, game) -> bool:
+        if game is None:
+            return False
+        bonus, _source = self.companions_of_vehemence_oathbound_exemplar_advance_roll_bonus(unit, game=game)
+        if int(bonus or 0) <= 0:
+            return False
+        root, member, sr = self._companions_of_vehemence_enhancement_source_member(
+            unit,
+            "enhancement_oathbound_exemplar",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return False
+        if not bool(sr.get("enhancement_oathbound_exemplar_allow_action_after_advance", True)):
+            return False
+        for flag in ("actions_enabled", "mission_actions_enabled", "mission_has_actions"):
+            enabled = getattr(game, flag, None)
+            if enabled is False:
+                return False
+        return True
+
+    def companions_of_vehemence_merciless_denunciation_hit_reroll(
+        self,
+        unit,
+        *,
+        model=None,
+        attack_type: str = "any",
+    ) -> tuple[bool, str]:
+        if not self.is_companions_of_vehemence():
+            return False, ""
+        if unit is None:
+            return False, ""
+        attack_scope = str(attack_type or "").strip().lower()
+        if attack_scope not in {"any", "melee"}:
+            return False, ""
+        root, member, sr = self._companions_of_vehemence_enhancement_source_member(
+            unit,
+            "enhancement_merciless_denunciation",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return False, ""
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False, ""
+        if not self._companions_of_vehemence_member_has_live_bearer(member, sr):
+            return False, ""
+        if model is not None:
+            model_unit = getattr(model, "parent_unit", None)
+            model_root = self._attached_unit_root(model_unit)
+            if model_root is None or str(get_entity_id(model_root) or "") != str(get_entity_id(root) or ""):
+                return False, ""
+        source = str(sr.get("enhancement_merciless_denunciation_source", "") or "Merciless Denunciation").strip()
+        if not source:
+            source = "Merciless Denunciation"
+        return True, source
+
     def _unit_is_company_of_hunters_outrider(self, unit) -> bool:
         if unit is None:
             return False

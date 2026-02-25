@@ -6889,6 +6889,27 @@ class KeywordsDetachmentsMixin:
                 reroll_full_reasons.append(
                     f"{silent_source}: re-roll Hit roll vs targets below Starting Strength"
                 )
+        if model is not None:
+            attack_scope = str(attack_type or "").strip().lower()
+            if attack_scope not in {"melee", "ranged"}:
+                attack_scope = "any"
+            army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            apply_fn = getattr(
+                sm_mgr,
+                "companions_of_vehemence_merciless_denunciation_hit_reroll",
+                None,
+            ) if sm_mgr is not None else None
+            if callable(apply_fn):
+                applies, source = apply_fn(
+                    self,
+                    model=model,
+                    attack_type=attack_scope,
+                )
+                if bool(applies):
+                    reroll_full = True
+                    source_name = str(source or "Merciless Denunciation").strip() or "Merciless Denunciation"
+                    reroll_full_reasons.append(f"{source_name}: re-roll Hit roll")
         seen = set()
         deduped_reasons: list[str] = []
         for reason in reroll_reasons:

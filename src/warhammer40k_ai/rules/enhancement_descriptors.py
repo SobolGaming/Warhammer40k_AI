@@ -1691,6 +1691,56 @@ _SPACE_MARINES_CHAMPIONS_OF_FENRIS_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPACE_MARINES_CHAMPIONS_OF_FENRIS_DESCRIPTORS.values()
 }
 
+_SPACE_MARINES_COMPANIONS_OF_VEHEMENCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010392002": EnhancementToolDescriptor(
+        enhancement_id="000010392002",
+        name="Incendiary Animus",
+        timing="passive",
+        target="bearer_unit_melee_weapons",
+        duration="constant",
+        effect="melee_ap_bonus_for_bearer_unit",
+        effect_params={
+            "ap_bonus": 1,
+        },
+    ),
+    "000010392003": EnhancementToolDescriptor(
+        enhancement_id="000010392003",
+        name="Oathbound Exemplar",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="advance_bonus_and_action_after_advance_for_bearer_unit",
+        effect_params={
+            "advance_bonus": 1,
+            "allow_action_after_advance": True,
+        },
+    ),
+    "000010392004": EnhancementToolDescriptor(
+        enhancement_id="000010392004",
+        name="Merciless Denunciation",
+        timing="passive",
+        target="bearer_unit_melee_attacks",
+        duration="constant",
+        effect="reroll_hit_rolls_for_bearer_unit_melee_attacks",
+        effect_params={},
+    ),
+    "000010392005": EnhancementToolDescriptor(
+        enhancement_id="000010392005",
+        name="Zealous Vanguard",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="grant_scouts_to_bearer_unit",
+        effect_params={
+            "scouts_distance": 6,
+        },
+    ),
+}
+
+_SPACE_MARINES_COMPANIONS_OF_VEHEMENCE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPACE_MARINES_COMPANIONS_OF_VEHEMENCE_DESCRIPTORS.values()
+}
+
 _SPACE_MARINES_BLACK_SPEAR_TASK_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008522002": EnhancementToolDescriptor(
         enhancement_id="000008522002",
@@ -2264,6 +2314,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPACE_MARINES_CHAMPIONS_OF_FENRIS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPACE_MARINES_COMPANIONS_OF_VEHEMENCE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPACE_MARINES_BLACK_SPEAR_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -2328,6 +2381,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SPACE_MARINES_BASTION_TASK_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_BLADE_OF_ULTRAMAR_BY_NAME.get(key)
         or _SPACE_MARINES_CHAMPIONS_OF_FENRIS_BY_NAME.get(key)
+        or _SPACE_MARINES_COMPANIONS_OF_VEHEMENCE_BY_NAME.get(key)
         or _SPACE_MARINES_BLACK_SPEAR_TASK_FORCE_BY_NAME.get(key)
         or _LEGION_OF_EXCESS_BY_NAME.get(key)
         or _PLAGUE_LEGION_BY_NAME.get(key)

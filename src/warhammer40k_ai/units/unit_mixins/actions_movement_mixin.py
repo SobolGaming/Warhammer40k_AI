@@ -5970,6 +5970,16 @@ class ActionsMovementMixin:
                 if int(bonus or 0):
                     source_name = str(source or "Zealous Litanies").strip() or "Zealous Litanies"
                     mods.append((int(bonus), source_name))
+            if sm_mgr is not None and callable(
+                getattr(sm_mgr, "companions_of_vehemence_oathbound_exemplar_advance_roll_bonus", None)
+            ):
+                bonus, source = sm_mgr.companions_of_vehemence_oathbound_exemplar_advance_roll_bonus(
+                    self,
+                    game=game,
+                )
+                if int(bonus or 0):
+                    source_name = str(source or "Oathbound Exemplar").strip() or "Oathbound Exemplar"
+                    mods.append((int(bonus), source_name))
             tyr_mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
             synaptic_bonus_fn = getattr(tyr_mgr, "synaptic_imperatives_advance_roll_bonus", None) if tyr_mgr is not None else None
             if callable(synaptic_bonus_fn):

@@ -2995,6 +2995,18 @@ class WargearProfile:
                 unit = getattr(attacker, "parent_unit", None)
                 army = unit.get_parent_army() if unit is not None else None
                 sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                if sm_mgr is not None and callable(
+                    getattr(sm_mgr, "companions_of_vehemence_incendiary_animus_melee_ap_bonus", None)
+                ):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    bonus, _source = sm_mgr.companions_of_vehemence_incendiary_animus_melee_ap_bonus(
+                        attacker,
+                        target,
+                        weapon_profile=self,
+                        game=game,
+                    )
+                    if bonus:
+                        ap_val -= int(bonus)
                 if sm_mgr is not None and callable(getattr(sm_mgr, "oath_of_reclamation_melee_ap_bonus", None)):
                     game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                     bonus, _source = sm_mgr.oath_of_reclamation_melee_ap_bonus(
