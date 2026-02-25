@@ -751,9 +751,50 @@ class ShadowOfChaosManager:
         lost = getattr(unit, "models_lost", None)
         if not isinstance(lost, list) or not lost:
             return 0
+        try:
+            models = list(getattr(unit, "models", []) or [])
+        except Exception:
+            models = []
+        current_count = 0
+        for model in models:
+            try:
+                alive_attr = getattr(model, "is_alive", True)
+                alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            except Exception:
+                alive = True
+            if alive:
+                current_count += 1
+        try:
+            starting_count = int(getattr(unit, "starting_model_count", 0) or 0)
+        except Exception:
+            starting_count = 0
+        max_restore = int(amount)
+        if starting_count > 0:
+            max_restore = min(max_restore, max(0, starting_count - current_count))
+        if max_restore <= 0:
+            return 0
+        can_return_model = getattr(unit, "_horrors_can_return_model", None)
+        to_restore = []
+        for model in reversed(list(lost)):
+            allowed = True
+            if callable(can_return_model):
+                try:
+                    allowed = bool(can_return_model(model))
+                except Exception:
+                    allowed = False
+            if not allowed:
+                continue
+            to_restore.append(model)
+            if len(to_restore) >= max_restore:
+                break
+        if not to_restore:
+            return 0
         restored = 0
-        while restored < amount and lost:
-            model = lost.pop()
+        for model in list(to_restore):
+            try:
+                lost.remove(model)
+            except Exception:
+                continue
             try:
                 if hasattr(model, "set_parent_unit"):
                     model.set_parent_unit(unit)

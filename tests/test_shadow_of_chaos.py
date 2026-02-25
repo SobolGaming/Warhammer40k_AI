@@ -3,7 +3,8 @@ from unittest.mock import patch
 
 
 class _ModelStub:
-    def __init__(self, *, wounds: int, base_wounds: int):
+    def __init__(self, *, wounds: int, base_wounds: int, name: str = "Model"):
+        self.name = name
         self._base_wounds = base_wounds
         self._wounds = wounds
         self.parent_unit = None
@@ -164,6 +165,43 @@ class TestShadowOfChaos(unittest.TestCase):
             ShadowOfChaosManager.apply_battle_shock_outcome(unit, passed=False, context=ctx, game=None)
 
         self.assertEqual(unit.mortal_applied, 2)
+
+    def test_manifestation_return_respects_starting_strength_cap(self):
+        from warhammer40k_ai.rules.shadow_of_chaos import ShadowBattleShockContext, ShadowOfChaosManager
+
+        alive = _ModelStub(wounds=3, base_wounds=3, name="Blue Horror")
+        lost = _ModelStub(wounds=0, base_wounds=3, name="Brimstone Horror")
+        unit = _UnitStub(models=[alive], lost=[lost], battleline=True)
+        unit.starting_model_count = 1
+        ctx = ShadowBattleShockContext(manifestation_active=True)
+
+        with patch("warhammer40k_ai.rules.shadow_of_chaos.get_roll", return_value=3):
+            ShadowOfChaosManager.apply_battle_shock_outcome(unit, passed=True, context=ctx, game=None)
+
+        self.assertEqual(len(unit.models), 1)
+        self.assertEqual(len(unit.models_lost), 1)
+        self.assertIs(unit.models_lost[0], lost)
+
+    def test_manifestation_return_skips_pink_after_horrors_swap(self):
+        from warhammer40k_ai.rules.shadow_of_chaos import ShadowBattleShockContext, ShadowOfChaosManager
+
+        alive = _ModelStub(wounds=3, base_wounds=3, name="Blue Horror")
+        lost_pink = _ModelStub(wounds=0, base_wounds=3, name="Pink Horror")
+        lost_blue = _ModelStub(wounds=0, base_wounds=3, name="Blue Horror")
+        unit = _UnitStub(models=[alive], lost=[lost_pink, lost_blue], battleline=True)
+        unit.starting_model_count = 3
+        unit._horrors_origin = "pink"
+        unit._horrors_state = "blue"
+        unit._horrors_can_return_model = lambda model: "pink horror" not in str(getattr(model, "name", "")).lower()
+        ctx = ShadowBattleShockContext(manifestation_active=True)
+
+        with patch("warhammer40k_ai.rules.shadow_of_chaos.get_roll", return_value=2):
+            ShadowOfChaosManager.apply_battle_shock_outcome(unit, passed=True, context=ctx, game=None)
+
+        self.assertEqual(len(unit.models), 2)
+        self.assertIn(lost_blue, unit.models)
+        self.assertIn(lost_pink, unit.models_lost)
+        self.assertNotIn(lost_pink, unit.models)
 
     def test_dark_master_aura_counts_as_shadow(self):
         from warhammer40k_ai.rules.shadow_of_chaos import ShadowOfChaosManager
