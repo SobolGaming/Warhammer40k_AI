@@ -376,6 +376,42 @@ _SHADOW_LEGION_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SHADOW_LEGION_STRATAGEM_DESCRIPTORS.values()
 }
 
+_LEGION_OF_EXCESS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009807005": StratagemToolDescriptor(
+        stratagem_id="000009807005",
+        name="Phantasmal Longing",
+        timing="movement_or_charge_phase",
+        target="legiones_daemonica_slaanesh_unit",
+        duration="until_end_of_phase",
+        effect="move_through_terrain",
+        cp_cost=1,
+        effect_params={
+            "move_types_by_phase": {
+                "movement": ["move", "advance", "fall_back"],
+                "charge": ["charge"],
+            }
+        },
+    ),
+    "000009807006": StratagemToolDescriptor(
+        stratagem_id="000009807006",
+        name="Cavalcade of Blades",
+        timing="charge_phase_after_friendly_charge_move",
+        target="legiones_daemonica_slaanesh_unit_just_ended_charge_move",
+        duration="immediate",
+        effect="engagement_mortal_wound_burst",
+        cp_cost=1,
+        effect_params={
+            "roll_count": "per_model_within_engagement_or_six_if_monster",
+            "success_on": 4,
+            "mortal_wounds_per_success": 1,
+        },
+    ),
+}
+
+_LEGION_OF_EXCESS_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _LEGION_OF_EXCESS_STRATAGEM_DESCRIPTORS.values()
+}
+
 _GORETRACK_ONSLAUGHT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
     "000010087007": StratagemToolDescriptor(
         stratagem_id="000010087007",
@@ -2993,6 +3029,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _SHADOW_LEGION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _LEGION_OF_EXCESS_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
         desc = _GORETRACK_ONSLAUGHT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
@@ -3104,6 +3143,7 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _SCINTILLATING_LEGION_STRATAGEM_BY_NAME.get(key)
         or _BLOOD_LEGION_STRATAGEM_BY_NAME.get(key)
         or _SHADOW_LEGION_STRATAGEM_BY_NAME.get(key)
+        or _LEGION_OF_EXCESS_STRATAGEM_BY_NAME.get(key)
         or _GORETRACK_ONSLAUGHT_STRATAGEM_BY_NAME.get(key)
         or _POSSESSED_SLAUGHTERBAND_STRATAGEM_BY_NAME.get(key)
         or _HOST_OF_ASCENSION_STRATAGEM_BY_NAME.get(key)

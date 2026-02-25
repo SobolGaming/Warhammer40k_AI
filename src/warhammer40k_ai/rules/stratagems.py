@@ -260,11 +260,13 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "HORRIFYING VIOLENCE",
     "FATEBORNE NIGHTMARES",
     "BLOOD BEGETS SKULLS",
+    "CAVALCADE OF BLADES",
     "FOOLS' FLIGHT",
     "FOOLS\u2019 FLIGHT",
     "FICKLEFIRE",
     "GORE-HUNGRY ONSLAUGHT",
     "GORE\u2011HUNGRY ONSLAUGHT",
+    "PHANTASMAL LONGING",
     "SKULLS BEGET BLOOD",
     "SHEATHED IN BRASS",
     "WRATH UNDENIABLE",
@@ -430,6 +432,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "CORRUPT REALSPACE",
     "DAEMONIC INVULNERABILITY",
     "BINDING SHADOW",
+    "CAVALCADE OF BLADES",
     "SHADE PATH",
     "SPITEFUL DEMISE",
     "DELIRIUM UNMADE",
@@ -1478,6 +1481,7 @@ class StratagemManager(
             "ISHA'S FURY",
             "ISHA\u2019S FURY",
             "WEAVING STRIDE",
+            "CAVALCADE OF BLADES",
             "FOOLS' FLIGHT",
         }:
             add("unit_move_ended", self._on_unit_move_ended)
@@ -1756,6 +1760,7 @@ class StratagemManager(
             "FLICKERING REALITY",
             "CHANNELLED WRATH",
             "ENCROACHING DARKNESS",
+            "PHANTASMAL LONGING",
             "SHADE PATH",
             "BLOOD BEGETS SKULLS",
             "GORE-HUNGRY ONSLAUGHT",
@@ -4142,6 +4147,8 @@ class StratagemManager(
             "ENCROACHING DARKNESS": "Target: up to one SHADOW LEGION HERETIC ASTARTES unit and up to one SHADOW LEGION LEGIONES DAEMONICA unit that arrived from Reserves this turn; ranged weapons gain [IGNORES COVER] until end of phase",
             "SHADE PATH": "Target: SHADOW LEGION unit selected as a target of an enemy charge; that enemy charge roll is worsened by 2 (and takes a Battle-shock test if your unit has NURGLE)",
             "SPITEFUL DEMISE": "Target: just-destroyed SHADOW LEGION unit; roll for each enemy within Engagement Range of the last model (SLAANESH adds 2) to inflict D3/3 mortal wounds",
+            "PHANTASMAL LONGING": "Target: LEGIONES DAEMONICA SLAANESH unit; models can move through terrain features until end of Movement/Charge phase",
+            "CAVALCADE OF BLADES": "Target: LEGIONES DAEMONICA SLAANESH unit just after it ends a Charge move; select one enemy in Engagement Range and roll for mortal wounds",
             "BLOOD BEGETS SKULLS": "Target: LEGIONES DAEMONICA KHORNE unit that has not been selected to charge this phase",
             "FOOLS' FLIGHT": "Target: LEGIONES DAEMONICA KHORNE unit within 6\" of enemy unit that Fell Back and eligible to charge it",
             "SHEATHED IN BRASS": "Target: LEGIONES DAEMONICA KHORNE unit selected as a target of enemy shooting attacks",
@@ -6219,7 +6226,12 @@ class StratagemManager(
                         root.special_rules = sr
         except Exception:
             raise
-        # Chaos Daemons: Blood Legion GORE-HUNGRY ONSLAUGHT (expires at end of Movement/Charge phase).
+        # Chaos Daemons: Legion of Excess PHANTASMAL LONGING (expires at end of Movement/Charge phase).
+        try:
+            self._cleanup_legion_of_excess_phase_end_effects(phase=phase)
+        except Exception:
+            raise
+        # Chaos Daemons: Blood Legion phase-end cleanup.
         try:
             self._cleanup_blood_legion_phase_end_effects(phase=phase)
         except Exception:
@@ -7357,6 +7369,7 @@ class StratagemManager(
         self._queue_aeldari_corsair_move_end_reactions(unit=unit, action=action)
         self._queue_aeldari_serpents_move_end_reactions(unit=unit, action=action)
         self._queue_aeldari_ghosts_move_end_reactions(unit=unit, action=action)
+        self._queue_legion_of_excess_move_end_reactions(unit=unit, action=action)
         self._queue_blood_legion_move_end_reactions(unit=unit, action=action)
         self._queue_votann_needgaard_move_end_reactions(unit=unit, action=action)
         self._queue_imperial_knights_valourstrike_move_end_reactions(unit=unit, action=action)
@@ -11841,6 +11854,9 @@ class StratagemManager(
         chaos_daemons_shadow_legion_result = self._use_chaos_daemons_shadow_legion_stratagem(s, **kwargs)
         if chaos_daemons_shadow_legion_result is not None:
             return chaos_daemons_shadow_legion_result
+        chaos_daemons_legion_of_excess_result = self._use_chaos_daemons_legion_of_excess_stratagem(s, **kwargs)
+        if chaos_daemons_legion_of_excess_result is not None:
+            return chaos_daemons_legion_of_excess_result
         chaos_daemons_blood_legion_result = self._use_chaos_daemons_blood_legion_stratagem(s, **kwargs)
         if chaos_daemons_blood_legion_result is not None:
             return chaos_daemons_blood_legion_result
