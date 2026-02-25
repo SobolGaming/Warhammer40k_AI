@@ -432,6 +432,9 @@ class Enhancement:
         is_champions_of_fenris = bool(
             sm_mgr and getattr(sm_mgr, "is_champions_of_fenris", lambda: False)()
         )
+        is_company_of_hunters = bool(
+            sm_mgr and getattr(sm_mgr, "is_company_of_hunters", lambda: False)()
+        )
         is_companions_of_vehemence = bool(
             sm_mgr and getattr(sm_mgr, "is_companions_of_vehemence", lambda: False)()
         )
@@ -1479,6 +1482,61 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_longstrider_bearer_model_id"] = bearer_id
+
+        if name in ("master-crafted weapon", "master crafted weapon") or enh_id == "000008778002":
+            if not is_company_of_hunters:
+                return
+            unit.special_rules["enhancement_master_crafted_weapon"] = True
+            unit.special_rules["enhancement_bearer_melee_precision"] = True
+            unit.special_rules["enhancement_master_crafted_weapon_source"] = "Master-crafted Weapon"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_master_crafted_weapon_bearer_model_id"] = bearer_id
+
+        if name == "mounted strategist" or enh_id == "000008778003":
+            if not is_company_of_hunters:
+                return
+            unit.special_rules["enhancement_mounted_strategist"] = True
+            unit.special_rules["enhancement_mounted_strategist_source"] = "Mounted Strategist"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_mounted_strategist_bearer_model_id"] = bearer_id
+
+        if name in ("master of manoeuvre", "master of maneuver") or enh_id == "000008778004":
+            if not is_company_of_hunters:
+                return
+            unit.special_rules["enhancement_master_of_manoeuvre"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            ignore_strategic_points_limit = bool(params.get("ignore_strategic_reserve_points_limit", True))
+            setup_round_bonus = _coerce_int(
+                params.get("strategic_reserves_setup_round_bonus", 1) or 1,
+                default=1,
+            )
+            unit.special_rules["enhancement_master_of_manoeuvre_ignore_strategic_reserve_points"] = bool(
+                ignore_strategic_points_limit
+            )
+            unit.special_rules["enhancement_master_of_manoeuvre_round_bonus"] = int(max(0, setup_round_bonus))
+            unit.special_rules["enhancement_master_of_manoeuvre_source"] = "Master of Manoeuvre"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_master_of_manoeuvre_bearer_model_id"] = bearer_id
+
+        if name == "recon hunter" or enh_id == "000008778005":
+            if not is_company_of_hunters:
+                return
+            unit.special_rules["enhancement_recon_hunter"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            scout_distance = _coerce_int(params.get("scouts_distance", 9) or 9, default=9)
+            unit.special_rules["enhancement_scout_distance"] = max(
+                int(unit.special_rules.get("enhancement_scout_distance", 0) or 0),
+                int(max(0, scout_distance)),
+            )
+            unit.special_rules["enhancement_recon_hunter_source"] = "Recon Hunter"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_recon_hunter_bearer_model_id"] = bearer_id
 
         if name == "thief of secrets" or enh_id == "000008522002":
             if not is_black_spear_task_force:

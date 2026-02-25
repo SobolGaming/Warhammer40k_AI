@@ -4763,6 +4763,109 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             source = "Merciless Denunciation"
         return True, source
 
+    def _company_of_hunters_enhancement_source_member(self, unit, flag_key: str):
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return None, None, None
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if not members:
+            members = [root]
+        members.sort(key=lambda member: str(get_entity_id(member) or ""))
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get(flag_key, False)):
+                return root, member, sr
+        return root, None, None
+
+    @staticmethod
+    def _company_of_hunters_member_has_live_bearer(member, sr) -> bool:
+        if member is None or not isinstance(sr, dict):
+            return False
+        bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
+        if bearer_id:
+            for model in list(getattr(member, "models", []) or []):
+                if str(get_entity_id(model) or "") != bearer_id:
+                    continue
+                alive_attr = getattr(model, "is_alive", True)
+                return bool(alive_attr() if callable(alive_attr) else alive_attr)
+            return False
+        bearer = getattr(member, "_get_enhancement_bearer_model", lambda: None)()
+        if bearer is None:
+            return False
+        alive_attr = getattr(bearer, "is_alive", True)
+        return bool(alive_attr() if callable(alive_attr) else alive_attr)
+
+    def company_of_hunters_mounted_strategist_applies(self, unit) -> bool:
+        if not self.is_company_of_hunters():
+            return False
+        if unit is None:
+            return False
+        root, member, sr = self._company_of_hunters_enhancement_source_member(
+            unit,
+            "enhancement_mounted_strategist",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        return self._company_of_hunters_member_has_live_bearer(member, sr)
+
+    def company_of_hunters_mounted_strategist_reroll_advance_applies(self, unit) -> bool:
+        return self.company_of_hunters_mounted_strategist_applies(unit)
+
+    def company_of_hunters_mounted_strategist_reroll_charge_applies(self, unit) -> bool:
+        return self.company_of_hunters_mounted_strategist_applies(unit)
+
+    def company_of_hunters_master_of_manoeuvre_ignore_strategic_reserve_points(self, unit) -> bool:
+        if not self.is_company_of_hunters():
+            return False
+        if unit is None:
+            return False
+        root, member, sr = self._company_of_hunters_enhancement_source_member(
+            unit,
+            "enhancement_master_of_manoeuvre",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        if not bool(sr.get("enhancement_master_of_manoeuvre_ignore_strategic_reserve_points", True)):
+            return False
+        return self._company_of_hunters_member_has_live_bearer(member, sr)
+
+    def company_of_hunters_master_of_manoeuvre_strategic_reserves_round_bonus(self, unit, *, game=None) -> int:
+        if not self.is_company_of_hunters():
+            return 0
+        if unit is None:
+            return 0
+        root, member, sr = self._company_of_hunters_enhancement_source_member(
+            unit,
+            "enhancement_master_of_manoeuvre",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return 0
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return 0
+        if not self._company_of_hunters_member_has_live_bearer(member, sr):
+            return 0
+        if not bool(getattr(root, "_started_in_reserves", False)):
+            return 0
+        in_strategic_fn = getattr(root, "is_in_strategic_reserves", None)
+        if callable(in_strategic_fn):
+            if not bool(in_strategic_fn()):
+                return 0
+        else:
+            if str(getattr(root, "reserve_status", "") or "").strip().lower() != "strategic_reserves":
+                return 0
+        try:
+            bonus = int(sr.get("enhancement_master_of_manoeuvre_round_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            bonus = 1
+        return max(0, int(bonus))
+
     def _unit_is_company_of_hunters_outrider(self, unit) -> bool:
         if unit is None:
             return False

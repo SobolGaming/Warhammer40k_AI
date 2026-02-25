@@ -2355,6 +2355,17 @@ class ActionsMovementMixin:
         seen = set()
         for u in members:
             for name, desc in u._iter_ability_entries_for_rules(model=None):
+                name_key = str(name or "").strip().lower()
+                if name_key == "mounted strategist":
+                    army = root.get_parent_army() if root is not None else None
+                    sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                    apply_fn = (
+                        getattr(sm_mgr, "company_of_hunters_mounted_strategist_applies", None)
+                        if sm_mgr is not None
+                        else None
+                    )
+                    if callable(apply_fn) and not bool(apply_fn(root)):
+                        continue
                 text = u._normalize_rules_text(desc or name or "")
                 if not text:
                     continue
@@ -5313,6 +5324,14 @@ class ActionsMovementMixin:
         try:
             army = self.get_parent_army()
             mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "company_of_hunters_mounted_strategist_reroll_advance_applies", None):
+                if mgr.company_of_hunters_mounted_strategist_reroll_advance_applies(self):
+                    return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
             if mgr is not None and getattr(mgr, "blade_of_ultramar_veteran_of_behemoth_reroll_advance_applies", None):
                 if mgr.blade_of_ultramar_veteran_of_behemoth_reroll_advance_applies(self):
                     return True
@@ -6755,6 +6774,14 @@ class ActionsMovementMixin:
             mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
             if mgr is not None and getattr(mgr, "master_of_wolves_reroll_charge_applies", None):
                 if mgr.master_of_wolves_reroll_charge_applies(self):
+                    return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "company_of_hunters_mounted_strategist_reroll_charge_applies", None):
+                if mgr.company_of_hunters_mounted_strategist_reroll_charge_applies(self):
                     return True
         except Exception:
             pass

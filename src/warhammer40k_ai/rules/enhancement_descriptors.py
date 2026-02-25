@@ -1691,6 +1691,54 @@ _SPACE_MARINES_CHAMPIONS_OF_FENRIS_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPACE_MARINES_CHAMPIONS_OF_FENRIS_DESCRIPTORS.values()
 }
 
+_SPACE_MARINES_COMPANY_OF_HUNTERS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008778002": EnhancementToolDescriptor(
+        enhancement_id="000008778002",
+        name="Master-crafted Weapon",
+        timing="passive",
+        target="bearer_melee_weapons",
+        duration="constant",
+        effect="grant_precision_to_bearer_melee_weapons",
+        effect_params={},
+    ),
+    "000008778003": EnhancementToolDescriptor(
+        enhancement_id="000008778003",
+        name="Mounted Strategist",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="reroll_advance_and_charge_rolls_for_bearer_unit",
+        effect_params={},
+    ),
+    "000008778004": EnhancementToolDescriptor(
+        enhancement_id="000008778004",
+        name="Master of Manoeuvre",
+        timing="deployment_phase_passive",
+        target="bearer_unit_in_strategic_reserves",
+        duration="constant_while_in_strategic_reserves",
+        effect="ignore_strategic_reserves_points_limit_and_add_setup_round_for_bearer_unit",
+        effect_params={
+            "ignore_strategic_reserve_points_limit": True,
+            "strategic_reserves_setup_round_bonus": 1,
+        },
+    ),
+    "000008778005": EnhancementToolDescriptor(
+        enhancement_id="000008778005",
+        name="Recon Hunter",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="grant_scouts_to_bearer_unit",
+        effect_params={
+            "scouts_distance": 9,
+        },
+    ),
+}
+
+_SPACE_MARINES_COMPANY_OF_HUNTERS_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPACE_MARINES_COMPANY_OF_HUNTERS_DESCRIPTORS.values()
+}
+
 _SPACE_MARINES_COMPANIONS_OF_VEHEMENCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010392002": EnhancementToolDescriptor(
         enhancement_id="000010392002",
@@ -2314,6 +2362,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPACE_MARINES_CHAMPIONS_OF_FENRIS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPACE_MARINES_COMPANY_OF_HUNTERS_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPACE_MARINES_COMPANIONS_OF_VEHEMENCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -2381,6 +2432,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SPACE_MARINES_BASTION_TASK_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_BLADE_OF_ULTRAMAR_BY_NAME.get(key)
         or _SPACE_MARINES_CHAMPIONS_OF_FENRIS_BY_NAME.get(key)
+        or _SPACE_MARINES_COMPANY_OF_HUNTERS_BY_NAME.get(key)
         or _SPACE_MARINES_COMPANIONS_OF_VEHEMENCE_BY_NAME.get(key)
         or _SPACE_MARINES_BLACK_SPEAR_TASK_FORCE_BY_NAME.get(key)
         or _LEGION_OF_EXCESS_BY_NAME.get(key)

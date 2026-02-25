@@ -4053,9 +4053,38 @@ class KeywordsDetachmentsMixin:
             root = self
         total_bonus = 0
         try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        try:
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        except Exception:
+            game = None
+        sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+        master_of_manoeuvre_bonus = 0
+        master_of_manoeuvre_bonus_fn = (
+            getattr(sm_mgr, "company_of_hunters_master_of_manoeuvre_strategic_reserves_round_bonus", None)
+            if sm_mgr is not None
+            else None
+        )
+        if callable(master_of_manoeuvre_bonus_fn):
+            try:
+                master_of_manoeuvre_bonus = int(master_of_manoeuvre_bonus_fn(root, game=game) or 0)
+            except (TypeError, ValueError):
+                master_of_manoeuvre_bonus = 0
+        if master_of_manoeuvre_bonus > 0:
+            total_bonus += int(master_of_manoeuvre_bonus)
+        try:
             rule = root.get_strategic_reserves_round_bonus_rule()
         except Exception:
             rule = None
+        if rule:
+            source_name = str(rule.get("source", "") or "").strip().lower() if isinstance(rule, dict) else ""
+            if (
+                master_of_manoeuvre_bonus > 0
+                and source_name in {"master of manoeuvre", "master of maneuver"}
+            ):
+                rule = None
         if rule:
             try:
                 started = bool(getattr(root, "_started_in_reserves", False))
@@ -4120,14 +4149,6 @@ class KeywordsDetachmentsMixin:
                     except Exception:
                         pass
 
-        try:
-            army = root.get_parent_army()
-        except Exception:
-            army = None
-        try:
-            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
-        except Exception:
-            game = None
         ae_mgr = getattr(army, "aeldari_detachments", None) if army is not None else None
         ride_bonus_fn = getattr(ae_mgr, "ride_the_wind_strategic_reserves_round_bonus", None) if ae_mgr is not None else None
         if callable(ride_bonus_fn):

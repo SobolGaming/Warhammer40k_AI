@@ -747,7 +747,9 @@ class Army:
                 pts = self._reserve_group_points(root)
                 reserve_points += pts
                 if decision == "strategic_reserves":
-                    strategic_points += pts
+                    strategic_points += int(
+                        self._strategic_reserve_points_cost(root, pts, decision=decision)
+                    )
 
         if reserve_units > limits["max_units"]:
             errors.append(f"Too many units in reserves: {reserve_units}/{limits['max_units']} allowed")
@@ -825,11 +827,17 @@ class Army:
                     k = _root_key(r)
                     decision = modified.get(k, "deploy")
                     if decision == "strategic_reserves" and not _must_start_in_reserves(r):
-                        strategic_roots.append(r)
-                strategic_roots.sort(key=lambda u: self._reserve_group_points(u), reverse=True)
+                        group_points = self._reserve_group_points(r)
+                        strategic_cost = int(
+                            self._strategic_reserve_points_cost(r, group_points, decision=decision)
+                        )
+                        if strategic_cost <= 0:
+                            continue
+                        strategic_roots.append((r, strategic_cost, group_points))
+                strategic_roots.sort(key=lambda item: (item[1], item[2]), reverse=True)
                 if not strategic_roots:
                     break
-                r = strategic_roots[0]
+                r = strategic_roots[0][0]
                 k = _root_key(r)
                 # Prefer keeping in (standard) reserves if unit can Deep Strike; else deploy it.
                 can_standard = bool(r.has_deep_strike()) or bool(self._ride_the_wind_allows_standard_reserves(r))
@@ -903,7 +911,9 @@ class Army:
                 reserve_units += 1
                 pts = self._reserve_group_points(root)
                 reserve_points += pts
-                strategic_points += pts
+                strategic_points += int(
+                    self._strategic_reserve_points_cost(root, pts, decision=decision)
+                )
                 strategic_reserve_unit_names.append(getattr(root, "name", "Unit"))
 
         return {
@@ -962,6 +972,21 @@ class Army:
         if not callable(allow_fn):
             return False
         return bool(allow_fn(unit))
+
+    def _strategic_reserve_points_cost(self, root: Unit, points: int, *, decision: str = "strategic_reserves") -> int:
+        if str(decision or "").strip().lower() != "strategic_reserves":
+            return 0
+        if root is None:
+            return int(points or 0)
+        sm_mgr = getattr(self, "space_marines_detachments", None)
+        ignore_fn = (
+            getattr(sm_mgr, "company_of_hunters_master_of_manoeuvre_ignore_strategic_reserve_points", None)
+            if sm_mgr is not None
+            else None
+        )
+        if callable(ignore_fn) and bool(ignore_fn(root)):
+            return 0
+        return int(points or 0)
 
     def validate_spawn_only_units(self):
         for unit in self.units:

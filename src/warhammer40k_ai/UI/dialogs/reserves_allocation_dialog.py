@@ -214,7 +214,11 @@ class ReservesAllocationDialog(BaseDialog):
                 pts = self._group_points(u)
                 reserve_points += pts
                 if decision == "strategic_reserves" and not self._must_start_in_reserves(u):
-                    strategic_points += pts
+                    points_cost_fn = getattr(self.army, "_strategic_reserve_points_cost", None) if self.army is not None else None
+                    if callable(points_cost_fn):
+                        strategic_points += int(points_cost_fn(u, pts, decision=decision) or 0)
+                    else:
+                        strategic_points += int(pts or 0)
         return reserve_units, reserve_points, strategic_points
 
     def _can_set_decision(self, idx: int, decision: str) -> Tuple[bool, str]:
