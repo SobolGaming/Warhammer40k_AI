@@ -4140,6 +4140,36 @@ class WargearProfile:
                 unit = getattr(attacker, "parent_unit", None)
                 army = unit.get_parent_army() if unit is not None else None
                 sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                hordeslayer_bonus_fn = (
+                    getattr(sm_mgr, "saga_of_the_bold_hordeslayer_melee_attacks_bonus", None)
+                    if sm_mgr is not None
+                    else None
+                )
+                if callable(hordeslayer_bonus_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    hordeslayer_bonus, hordeslayer_source = hordeslayer_bonus_fn(
+                        attacker,
+                        weapon_profile=self,
+                        game=game,
+                    )
+                    if int(hordeslayer_bonus or 0):
+                        source_name = str(hordeslayer_source or "Hordeslayer").strip() or "Hordeslayer"
+                        atk_mods.append(
+                            Modifier(
+                                ModifierOp.ADD,
+                                int(hordeslayer_bonus),
+                                source="enhancement:hordeslayer_attacks_add",
+                            )
+                        )
+                        attack_result.attacks_special_modifiers.append(
+                            f"{source_name} +{int(hordeslayer_bonus)}A (bearer melee)"
+                        )
+            except Exception:
+                pass
+            try:
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
                 oath_bonus_fn = getattr(sm_mgr, "blade_of_ultramar_oath_of_macragge_bonus", None) if sm_mgr is not None else None
                 if callable(oath_bonus_fn):
                     game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
@@ -18643,6 +18673,36 @@ class WargearProfile:
                 damage_result['special_effects'].append(
                     f"Through Suffering, Strength +{int(through_suffering_bonus)}D (bearer melee)"
                 )
+            try:
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                braggarts_bonus_fn = (
+                    getattr(sm_mgr, "saga_of_the_bold_braggarts_steel_melee_damage_bonus", None)
+                    if sm_mgr is not None
+                    else None
+                )
+                if callable(braggarts_bonus_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    braggarts_bonus, braggarts_source = braggarts_bonus_fn(
+                        attacker,
+                        weapon_profile=self,
+                        game=game,
+                    )
+                    if int(braggarts_bonus or 0):
+                        source_name = str(braggarts_source or "Braggart's Steel").strip() or "Braggart's Steel"
+                        damage_mods.append(
+                            Modifier(
+                                ModifierOp.ADD,
+                                int(braggarts_bonus),
+                                source="enhancement:braggarts_steel_damage_add",
+                            )
+                        )
+                        damage_result['special_effects'].append(
+                            f"{source_name} +{int(braggarts_bonus)}D (bearer melee)"
+                        )
+            except Exception:
+                pass
             possessed_blade = self._get_possessed_blade_state(attacker)
             if possessed_blade and possessed_blade.get("active", False) and possessed_blade.get("weapon_matches", False):
                 pb_damage = int(possessed_blade.get("active_damage_bonus", 0) or 0)

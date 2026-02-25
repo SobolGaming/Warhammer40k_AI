@@ -453,6 +453,9 @@ class Enhancement:
         is_saga_of_the_beastslayer = bool(
             sm_mgr and getattr(sm_mgr, "is_saga_of_the_beastslayer", lambda: False)()
         )
+        is_saga_of_the_bold = bool(
+            sm_mgr and getattr(sm_mgr, "is_saga_of_the_bold", lambda: False)()
+        )
         is_company_of_hunters = bool(
             sm_mgr and getattr(sm_mgr, "is_company_of_hunters", lambda: False)()
         )
@@ -2065,6 +2068,98 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_helm_of_the_beastslayer_bearer_model_id"] = bearer_id
+
+        if name in ("braggart's steel", "braggarts steel") or enh_id == "000010265002":
+            if not is_saga_of_the_bold:
+                return
+            unit.special_rules["enhancement_braggarts_steel"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            strength_bonus = _coerce_int(params.get("strength_bonus", 2) or 2, default=2)
+            damage_bonus_if_boast = _coerce_int(
+                params.get("damage_bonus_if_unit_has_boast", 1) or 1,
+                default=1,
+            )
+            existing_strength_bonus = _coerce_int(
+                unit.special_rules.get("enhancement_bearer_melee_strength_bonus", 0) or 0,
+                default=0,
+            )
+            unit.special_rules["enhancement_bearer_melee_strength_bonus"] = int(
+                max(existing_strength_bonus, max(0, int(strength_bonus)))
+            )
+            unit.special_rules["enhancement_braggarts_steel_damage_bonus_on_boast"] = int(
+                max(0, int(damage_bonus_if_boast))
+            )
+            unit.special_rules["enhancement_braggarts_steel_source"] = "Braggart's Steel"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_braggarts_steel_bearer_model_id"] = bearer_id
+
+        if name == "skjald" or enh_id == "000010265003":
+            if not is_saga_of_the_bold:
+                return
+            unit.special_rules["enhancement_skjald"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            cp_gain = _coerce_int(params.get("cp_gain", 1) or 1, default=1)
+            unit.special_rules["enhancement_skjald_cp_gain"] = int(max(0, int(cp_gain)))
+            unit.special_rules["enhancement_skjald_source"] = "Skjald"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_skjald_bearer_model_id"] = bearer_id
+
+        if name == "hordeslayer" or enh_id == "000010265004":
+            if not is_saga_of_the_bold:
+                return
+            unit.special_rules["enhancement_hordeslayer"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                trigger_range = float(params.get("range", 6) or 6)
+            except Exception:
+                trigger_range = 6.0
+            attacks_bonus = _coerce_int(params.get("attacks_bonus", 2) or 2, default=2)
+            attacks_bonus_with_boast = _coerce_int(
+                params.get("attacks_bonus_with_boast", 3) or 3,
+                default=3,
+            )
+            base_bonus = int(max(0, int(attacks_bonus)))
+            boosted_bonus = int(max(base_bonus, int(attacks_bonus_with_boast)))
+            unit.special_rules["enhancement_hordeslayer_range"] = float(max(0.0, trigger_range))
+            unit.special_rules["enhancement_hordeslayer_attacks_bonus"] = base_bonus
+            unit.special_rules["enhancement_hordeslayer_attacks_bonus_with_boast"] = boosted_bonus
+            unit.special_rules["enhancement_hordeslayer_source"] = "Hordeslayer"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_hordeslayer_bearer_model_id"] = bearer_id
+
+        if name in ("thunderwolf's fortitude", "thunderwolfs fortitude") or enh_id == "000010265005":
+            if not is_saga_of_the_bold:
+                return
+            unit.special_rules["enhancement_thunderwolfs_fortitude"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            roll_min = _coerce_int(params.get("roll_min", 2) or 2, default=2)
+            return_wounds = _coerce_int(params.get("wounds_on_return", 3) or 3, default=3)
+            key = str(
+                params.get("return_on_death_key", "thunderwolfs_fortitude") or "thunderwolfs_fortitude"
+            ).strip().lower()
+            if not key:
+                key = "thunderwolfs_fortitude"
+            # Reuse the existing return-on-death enhancement path consumed by Unit return specs.
+            unit.special_rules["enhancement_indomitable_champion"] = True
+            unit.special_rules["enhancement_indomitable_champion_roll_min"] = int(max(2, roll_min))
+            unit.special_rules["enhancement_indomitable_champion_wounds"] = int(max(1, return_wounds))
+            unit.special_rules["enhancement_indomitable_champion_key"] = key
+            unit.special_rules["enhancement_indomitable_champion_source"] = "Thunderwolf's Fortitude"
+            unit.special_rules["enhancement_thunderwolfs_fortitude_source"] = "Thunderwolf's Fortitude"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_thunderwolfs_fortitude_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_indomitable_champion_bearer_model_id"] = bearer_id
+            refresh_return = getattr(unit, "_refresh_return_on_death_flags", None)
+            if callable(refresh_return):
+                refresh_return()
 
         if name in ("master-crafted weapon", "master crafted weapon") or enh_id == "000008778002":
             if not is_company_of_hunters:

@@ -570,6 +570,20 @@ class GamePhaseHandlersMixin:
                     except Exception:
                         pass
 
+                    # Saga of the Bold: Hordeslayer (start of Fight phase, mandatory conditional bonus).
+                    try:
+                        if pname == "FIGHT_PHASE":
+                            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                            apply_fn = (
+                                getattr(sm_mgr, "saga_of_the_bold_hordeslayer_start_of_fight", None)
+                                if sm_mgr is not None
+                                else None
+                            )
+                            if callable(apply_fn):
+                                apply_fn(root, game=self)
+                    except Exception:
+                        pass
+
                     # Angelic Inheritors: Troubling Visions (once per battle, your Command phase).
                     find_source = getattr(self, "_attached_member_with_enhancement_flag", None)
                     source_member = None
@@ -10802,6 +10816,16 @@ class GamePhaseHandlersMixin:
                     for k in (
                         "enhancement_elders_guidance_active",
                         "enhancement_elders_guidance_expires_phase",
+                    ):
+                        sr.pop(k, None)
+                exp = str(sr.get("enhancement_hordeslayer_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "enhancement_hordeslayer_active",
+                        "enhancement_hordeslayer_active_bonus",
+                        "enhancement_hordeslayer_expires_phase",
+                        "enhancement_hordeslayer_enemy_models_within_range",
+                        "enhancement_hordeslayer_friendly_models_within_range",
                     ):
                         sr.pop(k, None)
                 exp = str(sr.get("seductive_gambit_expires_phase", "") or "").strip().upper()

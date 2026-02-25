@@ -2088,6 +2088,62 @@ _SPACE_MARINES_SAGA_OF_THE_BEASTSLAYER_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPACE_MARINES_SAGA_OF_THE_BEASTSLAYER_DESCRIPTORS.values()
 }
 
+_SPACE_MARINES_SAGA_OF_THE_BOLD_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010265002": EnhancementToolDescriptor(
+        enhancement_id="000010265002",
+        name="Braggart's Steel",
+        timing="passive",
+        target="bearer_melee_weapons",
+        duration="constant",
+        effect="bearer_melee_strength_bonus_and_conditional_damage_bonus_on_boast",
+        effect_params={
+            "strength_bonus": 2,
+            "damage_bonus_if_unit_has_boast": 1,
+        },
+    ),
+    "000010265003": EnhancementToolDescriptor(
+        enhancement_id="000010265003",
+        name="Skjald",
+        timing="on_space_wolves_character_unit_achieves_boast",
+        target="army_command_points",
+        duration="instant",
+        effect="gain_cp_when_space_wolves_character_unit_achieves_boast_if_bearer_on_battlefield",
+        effect_params={
+            "cp_gain": 1,
+        },
+    ),
+    "000010265004": EnhancementToolDescriptor(
+        enhancement_id="000010265004",
+        name="Hordeslayer",
+        timing="start_of_fight_phase_if_enemy_models_outnumber_friendly_within_6_of_bearer",
+        target="bearer_melee_weapons",
+        duration="until_end_of_phase",
+        effect="start_of_fight_phase_conditional_bearer_melee_attacks_bonus",
+        effect_params={
+            "range": 6,
+            "attacks_bonus": 2,
+            "attacks_bonus_with_boast": 3,
+        },
+    ),
+    "000010265005": EnhancementToolDescriptor(
+        enhancement_id="000010265005",
+        name="Thunderwolf's Fortitude",
+        timing="on_first_bearer_destroyed_end_of_phase",
+        target="bearer",
+        duration="once",
+        effect="return_bearer_on_death_on_2_plus",
+        effect_params={
+            "roll_min": 2,
+            "wounds_on_return": 3,
+            "return_on_death_key": "thunderwolfs_fortitude",
+        },
+    ),
+}
+
+_SPACE_MARINES_SAGA_OF_THE_BOLD_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPACE_MARINES_SAGA_OF_THE_BOLD_DESCRIPTORS.values()
+}
+
 _SPACE_MARINES_COMPANY_OF_HUNTERS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008778002": EnhancementToolDescriptor(
         enhancement_id="000008778002",
@@ -2841,6 +2897,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPACE_MARINES_SAGA_OF_THE_BEASTSLAYER_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPACE_MARINES_SAGA_OF_THE_BOLD_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPACE_MARINES_COMPANY_OF_HUNTERS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -2921,6 +2980,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SPACE_MARINES_BLADE_OF_ULTRAMAR_BY_NAME.get(key)
         or _SPACE_MARINES_CHAMPIONS_OF_FENRIS_BY_NAME.get(key)
         or _SPACE_MARINES_SAGA_OF_THE_BEASTSLAYER_BY_NAME.get(key)
+        or _SPACE_MARINES_SAGA_OF_THE_BOLD_BY_NAME.get(key)
         or _SPACE_MARINES_COMPANY_OF_HUNTERS_BY_NAME.get(key)
         or _SPACE_MARINES_COMPANIONS_OF_VEHEMENCE_BY_NAME.get(key)
         or _SPACE_MARINES_EMPERORS_SHIELD_BY_NAME.get(key)

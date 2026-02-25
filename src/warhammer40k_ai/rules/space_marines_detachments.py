@@ -269,6 +269,7 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         self.beastslayer_completed: bool = False
         self.beastslayer_initialized: bool = False
         self.heroes_all_achieved_boast_keys: tuple[str, ...] = ()
+        self.heroes_all_achieved_boast_keys_by_unit_id: dict[str, tuple[str, ...]] = {}
         self.heroes_all_oath_target_destroyed_count_by_unit_id: dict[str, int] = {}
         self.heroes_all_selection_state_by_key: dict[str, dict[str, object]] = {}
 
@@ -3522,6 +3523,353 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False
         return started_turn > 0 and started_turn == battle_round
 
+    def _saga_of_the_bold_enhancement_source_member(self, unit, flag_key: str):
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return None, None, None
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        members.sort(key=lambda member: str(get_entity_id(member) or ""))
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get(flag_key, False)):
+                return root, member, sr
+        return root, None, None
+
+    @staticmethod
+    def _saga_of_the_bold_resolve_bearer_model(member, sr):
+        if member is None or not isinstance(sr, dict):
+            return None
+        bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
+        if bearer_id:
+            for model in list(getattr(member, "models", []) or []):
+                if str(get_entity_id(model) or "") == bearer_id:
+                    return model
+            return None
+        return getattr(member, "_get_enhancement_bearer_model", lambda: None)()
+
+    @staticmethod
+    def _saga_of_the_bold_member_has_live_bearer(member, sr) -> bool:
+        bearer = SpaceMarinesDetachmentManager._saga_of_the_bold_resolve_bearer_model(member, sr)
+        if bearer is None:
+            return False
+        alive_attr = getattr(bearer, "is_alive", True)
+        return bool(alive_attr() if callable(alive_attr) else alive_attr)
+
+    def _heroes_all_mark_boast_for_unit(self, unit, key: str) -> tuple[bool, bool]:
+        if not self.is_saga_of_the_bold():
+            return False, False
+        boast_key = str(key or "").strip().upper()
+        if boast_key not in set(self._HEROES_ALL_BOAST_KEYS):
+            return False, False
+
+        global_changed = False
+        existing_global = set(self.heroes_all_achieved_boast_keys or ())
+        if boast_key not in existing_global:
+            existing_global.add(boast_key)
+            self.heroes_all_achieved_boast_keys = tuple(
+                key_name for key_name in self._HEROES_ALL_BOAST_KEYS if key_name in existing_global
+            )
+            global_changed = True
+
+        unit_changed = False
+        root = self._attached_unit_root(unit)
+        unit_id = str(get_entity_id(root) or "") if root is not None else ""
+        if unit_id:
+            existing_unit = set(self.heroes_all_achieved_boast_keys_by_unit_id.get(unit_id, ()) or ())
+            if boast_key not in existing_unit:
+                existing_unit.add(boast_key)
+                unit_changed = True
+            self.heroes_all_achieved_boast_keys_by_unit_id[unit_id] = tuple(
+                key_name for key_name in self._HEROES_ALL_BOAST_KEYS if key_name in existing_unit
+            )
+
+        return global_changed, unit_changed
+
+    def heroes_all_unit_achieved_boasts(self, unit) -> tuple[str, ...]:
+        if not self.is_saga_of_the_bold():
+            return ()
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return ()
+        unit_id = str(get_entity_id(root) or "")
+        if not unit_id:
+            return ()
+        return tuple(self.heroes_all_achieved_boast_keys_by_unit_id.get(unit_id, ()) or ())
+
+    def heroes_all_unit_has_any_boast(self, unit) -> bool:
+        return len(self.heroes_all_unit_achieved_boasts(unit)) > 0
+
+    def _saga_of_the_bold_trigger_skjald_cp_gain(self, source_unit, *, game=None, boast_key: str = "") -> int:
+        if not self.is_saga_of_the_bold():
+            return 0
+        if not self._heroes_all_unit_is_space_wolves_character(source_unit):
+            return 0
+        player = getattr(self.army, "player", None) if self.army is not None else None
+        if player is None:
+            return 0
+        game_obj = self._resolve_game_context(game=game)
+        for root in self._iter_unique_army_roots():
+            if not self._unit_is_on_battlefield(root):
+                continue
+            if not self.attached_unit_is_adeptus_astartes(root):
+                continue
+            _source_root, source_member, source_sr = self._saga_of_the_bold_enhancement_source_member(
+                root,
+                "enhancement_skjald",
+            )
+            if source_member is None or not isinstance(source_sr, dict):
+                continue
+            if not self._saga_of_the_bold_member_has_live_bearer(source_member, source_sr):
+                continue
+            try:
+                cp_gain = int(source_sr.get("enhancement_skjald_cp_gain", 1) or 1)
+            except (TypeError, ValueError):
+                cp_gain = 1
+            if cp_gain <= 0:
+                return 0
+            reason = str(source_sr.get("enhancement_skjald_source", "") or "Skjald").strip() or "Skjald"
+            gained = int(player.gain_command_points(int(cp_gain), reason=reason) or 0)
+            if gained > 0 and game_obj is not None:
+                event_system = getattr(game_obj, "event_system", None)
+                if event_system is not None:
+                    event_system.publish(
+                        "command_points_gained",
+                        player=player,
+                        amount=int(gained),
+                        reason=reason,
+                        source_unit_id=str(get_entity_id(source_unit) or ""),
+                        source_ability="Skjald",
+                        boast_key=str(boast_key or "").strip().upper(),
+                    )
+            return gained
+        return 0
+
+    def _saga_of_the_bold_count_models_wholly_within_range_of_model(
+        self,
+        source_model,
+        radius: float,
+        *,
+        game=None,
+    ) -> tuple[int, int]:
+        if source_model is None:
+            return 0, 0
+        try:
+            rng = float(radius)
+        except (TypeError, ValueError):
+            return 0, 0
+        if rng <= 0:
+            return 0, 0
+        source_unit = getattr(source_model, "parent_unit", None)
+        source_army = source_unit.get_parent_army() if source_unit is not None else None
+        if source_army is None:
+            return 0, 0
+        game_obj = self._resolve_game_context(game=game)
+        game_map = getattr(game_obj, "map", None) if game_obj is not None else None
+        if game_map is None:
+            return 0, 0
+        try:
+            from ..utility.aura_utils import model_wholly_within_range_of_unit
+        except ImportError:
+            return 0, 0
+
+        class _SingleModelSource:
+            def __init__(self, model):
+                self._model = model
+
+            def get_attached_unit_models(self):
+                return [self._model]
+
+        source_proxy = _SingleModelSource(source_model)
+        friendly_count = 0
+        enemy_count = 0
+        seen_root_ids: set[str] = set()
+        for unit in list(getattr(game_map, "units", []) or []):
+            root = self._attached_unit_root(unit)
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if not root_id or root_id in seen_root_ids:
+                continue
+            seen_root_ids.add(root_id)
+            if not self._unit_is_on_battlefield(root):
+                continue
+            try:
+                root_army = root.get_parent_army()
+            except Exception:
+                root_army = None
+            if root_army is None:
+                continue
+            get_models = getattr(root, "get_attached_unit_models", None)
+            models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+            for model in models:
+                if model is None or not bool(getattr(model, "is_alive", True)):
+                    continue
+                if not bool(model_wholly_within_range_of_unit(source_proxy, model, float(rng), use_attached_aggregate=True)):
+                    continue
+                if root_army is source_army:
+                    friendly_count += 1
+                else:
+                    enemy_count += 1
+        return int(friendly_count), int(enemy_count)
+
+    def saga_of_the_bold_hordeslayer_start_of_fight(self, unit, *, game=None) -> int:
+        if not self.is_saga_of_the_bold():
+            return 0
+        root, member, sr = self._saga_of_the_bold_enhancement_source_member(unit, "enhancement_hordeslayer")
+        if root is None or member is None or not isinstance(sr, dict):
+            return 0
+        for key in (
+            "enhancement_hordeslayer_active",
+            "enhancement_hordeslayer_active_bonus",
+            "enhancement_hordeslayer_expires_phase",
+            "enhancement_hordeslayer_enemy_models_within_range",
+            "enhancement_hordeslayer_friendly_models_within_range",
+        ):
+            sr.pop(key, None)
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return 0
+        if not self._unit_is_on_battlefield(root):
+            return 0
+        if not self._saga_of_the_bold_member_has_live_bearer(member, sr):
+            return 0
+        bearer = self._saga_of_the_bold_resolve_bearer_model(member, sr)
+        if bearer is None:
+            return 0
+        try:
+            trigger_range = float(sr.get("enhancement_hordeslayer_range", 6.0) or 6.0)
+        except (TypeError, ValueError):
+            trigger_range = 6.0
+        if trigger_range <= 0:
+            return 0
+        friendly_count, enemy_count = self._saga_of_the_bold_count_models_wholly_within_range_of_model(
+            bearer,
+            trigger_range,
+            game=game,
+        )
+        sr["enhancement_hordeslayer_enemy_models_within_range"] = int(enemy_count)
+        sr["enhancement_hordeslayer_friendly_models_within_range"] = int(friendly_count)
+        if enemy_count <= friendly_count:
+            return 0
+        try:
+            base_bonus = int(sr.get("enhancement_hordeslayer_attacks_bonus", 2) or 2)
+        except (TypeError, ValueError):
+            base_bonus = 2
+        try:
+            boosted_bonus = int(sr.get("enhancement_hordeslayer_attacks_bonus_with_boast", 3) or 3)
+        except (TypeError, ValueError):
+            boosted_bonus = 3
+        base_bonus = max(0, base_bonus)
+        boosted_bonus = max(base_bonus, boosted_bonus)
+        applied_bonus = boosted_bonus if self.heroes_all_unit_has_any_boast(root) else base_bonus
+        if applied_bonus <= 0:
+            return 0
+        sr["enhancement_hordeslayer_active"] = True
+        sr["enhancement_hordeslayer_active_bonus"] = int(applied_bonus)
+        sr["enhancement_hordeslayer_expires_phase"] = "FIGHT_PHASE"
+        member.special_rules = sr
+        return int(applied_bonus)
+
+    def saga_of_the_bold_hordeslayer_melee_attacks_bonus(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if not self.is_saga_of_the_bold():
+            return 0, ""
+        if attacker_model is None:
+            return 0, ""
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            if parent is not None and not bool(getattr(parent, "is_melee", lambda: False)()):
+                return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        root = self._attached_unit_root(attacker_unit)
+        if root is None:
+            return 0, ""
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return 0, ""
+        game_obj = self._resolve_game_context(game=game)
+        phase_name = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+        if phase_name == "FIGHT_PHASE":
+            self.saga_of_the_bold_hordeslayer_start_of_fight(root, game=game_obj)
+        _source_root, source_member, source_sr = self._saga_of_the_bold_enhancement_source_member(
+            root,
+            "enhancement_hordeslayer",
+        )
+        if source_member is None or not isinstance(source_sr, dict):
+            return 0, ""
+        if not bool(source_sr.get("enhancement_hordeslayer_active", False)):
+            return 0, ""
+        expires_phase = str(source_sr.get("enhancement_hordeslayer_expires_phase", "") or "").strip().upper()
+        if expires_phase and phase_name and phase_name != expires_phase:
+            return 0, ""
+        if not self._saga_of_the_bold_member_has_live_bearer(source_member, source_sr):
+            return 0, ""
+        bearer = self._saga_of_the_bold_resolve_bearer_model(source_member, source_sr)
+        attacker_id = str(get_entity_id(attacker_model) or "")
+        bearer_id = str(get_entity_id(bearer) or "") if bearer is not None else ""
+        if not attacker_id or not bearer_id or attacker_id != bearer_id:
+            return 0, ""
+        try:
+            bonus = int(source_sr.get("enhancement_hordeslayer_active_bonus", 0) or 0)
+        except (TypeError, ValueError):
+            bonus = 0
+        if bonus <= 0:
+            return 0, ""
+        source = str(source_sr.get("enhancement_hordeslayer_source", "") or "Hordeslayer").strip()
+        return int(bonus), source or "Hordeslayer"
+
+    def saga_of_the_bold_braggarts_steel_melee_damage_bonus(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if not self.is_saga_of_the_bold():
+            return 0, ""
+        if attacker_model is None:
+            return 0, ""
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            if parent is not None and not bool(getattr(parent, "is_melee", lambda: False)()):
+                return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        root, source_member, source_sr = self._saga_of_the_bold_enhancement_source_member(
+            attacker_unit,
+            "enhancement_braggarts_steel",
+        )
+        if root is None or source_member is None or not isinstance(source_sr, dict):
+            return 0, ""
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return 0, ""
+        if not self._saga_of_the_bold_member_has_live_bearer(source_member, source_sr):
+            return 0, ""
+        bearer = self._saga_of_the_bold_resolve_bearer_model(source_member, source_sr)
+        attacker_id = str(get_entity_id(attacker_model) or "")
+        bearer_id = str(get_entity_id(bearer) or "") if bearer is not None else ""
+        if not attacker_id or not bearer_id or attacker_id != bearer_id:
+            return 0, ""
+        if not self.heroes_all_unit_has_any_boast(root):
+            return 0, ""
+        try:
+            bonus = int(source_sr.get("enhancement_braggarts_steel_damage_bonus_on_boast", 1) or 1)
+        except (TypeError, ValueError):
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        source = str(source_sr.get("enhancement_braggarts_steel_source", "") or "Braggart's Steel").strip()
+        return int(bonus), source or "Braggart's Steel"
+
     def heroes_all_achieved_boasts(self) -> tuple[str, ...]:
         if not self.is_saga_of_the_bold():
             return ()
@@ -3531,19 +3879,8 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         return len(self.heroes_all_achieved_boasts()) >= 3
 
     def _heroes_all_mark_boast(self, key: str) -> bool:
-        if not self.is_saga_of_the_bold():
-            return False
-        boast_key = str(key or "").strip().upper()
-        if boast_key not in set(self._HEROES_ALL_BOAST_KEYS):
-            return False
-        existing = set(self.heroes_all_achieved_boast_keys or ())
-        if boast_key in existing:
-            return False
-        existing.add(boast_key)
-        self.heroes_all_achieved_boast_keys = tuple(
-            key_name for key_name in self._HEROES_ALL_BOAST_KEYS if key_name in existing
-        )
-        return True
+        changed, _unit_changed = self._heroes_all_mark_boast_for_unit(None, key)
+        return bool(changed)
 
     def _heroes_all_unit_is_space_wolves_character(self, unit) -> bool:
         root = self._attached_unit_root(unit)
@@ -3695,9 +4032,28 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         new_count = current + 1
         self.heroes_all_oath_target_destroyed_count_by_unit_id[attacker_id] = new_count
 
-        changed = self._heroes_all_mark_boast(self._HEROES_ALL_BOAST_HIDE_AS_TROPHY)
+        changed, unit_changed = self._heroes_all_mark_boast_for_unit(
+            attacker_root,
+            self._HEROES_ALL_BOAST_HIDE_AS_TROPHY,
+        )
+        if unit_changed:
+            self._saga_of_the_bold_trigger_skjald_cp_gain(
+                attacker_root,
+                game=game,
+                boast_key=self._HEROES_ALL_BOAST_HIDE_AS_TROPHY,
+            )
         if new_count >= 2:
-            changed = self._heroes_all_mark_boast(self._HEROES_ALL_BOAST_SLAY_THEM_ALL) or changed
+            slay_changed, slay_unit_changed = self._heroes_all_mark_boast_for_unit(
+                attacker_root,
+                self._HEROES_ALL_BOAST_SLAY_THEM_ALL,
+            )
+            if slay_unit_changed:
+                self._saga_of_the_bold_trigger_skjald_cp_gain(
+                    attacker_root,
+                    game=game,
+                    boast_key=self._HEROES_ALL_BOAST_SLAY_THEM_ALL,
+                )
+            changed = bool(changed or slay_changed)
         return changed
 
     def _heroes_all_unit_wholly_in_opponent_deployment_zone(self, unit, *, game=None) -> bool:
@@ -3790,9 +4146,17 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
                     continue
                 if not self._heroes_all_unit_wholly_in_opponent_deployment_zone(root, game=game_obj):
                     continue
-                changed = self._heroes_all_mark_boast(self._HEROES_ALL_BOAST_OVERRUN_THEIR_POSITION) or changed
-                if changed:
-                    break
+                boast_changed, unit_changed = self._heroes_all_mark_boast_for_unit(
+                    root,
+                    self._HEROES_ALL_BOAST_OVERRUN_THEIR_POSITION,
+                )
+                if unit_changed:
+                    self._saga_of_the_bold_trigger_skjald_cp_gain(
+                        root,
+                        game=game_obj,
+                        boast_key=self._HEROES_ALL_BOAST_OVERRUN_THEIR_POSITION,
+                    )
+                changed = bool(boast_changed or changed)
         if phase_name == "COMMAND_PHASE":
             owner = getattr(self.army, "player", None)
             if owner is None or owner is not active_player:
@@ -3807,9 +4171,17 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
                     continue
                 if not self._heroes_all_unit_holds_non_home_objective(root, game=game_obj, owner_player=owner):
                     continue
-                changed = self._heroes_all_mark_boast(self._HEROES_ALL_BOAST_HOLD_THE_LINE) or changed
-                if changed:
-                    break
+                boast_changed, unit_changed = self._heroes_all_mark_boast_for_unit(
+                    root,
+                    self._HEROES_ALL_BOAST_HOLD_THE_LINE,
+                )
+                if unit_changed:
+                    self._saga_of_the_bold_trigger_skjald_cp_gain(
+                        root,
+                        game=game_obj,
+                        boast_key=self._HEROES_ALL_BOAST_HOLD_THE_LINE,
+                    )
+                changed = bool(boast_changed or changed)
         return changed
 
     def _armoured_wrath_phase_key(self, *, game=None, unit=None) -> str:
