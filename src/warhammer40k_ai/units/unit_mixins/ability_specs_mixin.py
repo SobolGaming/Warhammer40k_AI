@@ -329,6 +329,29 @@ class AbilitySpecsMixin:
                     }
                 )
 
+        context_fn = getattr(root, "_plague_legion_fever_visions_context", None)
+        if callable(context_fn):
+            game = None
+            try:
+                game = root.get_parent_army().player.game
+            except Exception:
+                game = None
+            context = context_fn(game=game)
+            if isinstance(context, dict) and str(context.get("phase_name", "") or "").strip().upper() == "SHOOTING_PHASE":
+                source = str(context.get("source", "") or "FEVER VISIONS").strip() or "FEVER VISIONS"
+                key = (source.lower(), False, False, False, False)
+                if key not in seen:
+                    seen.add(key)
+                    specs.append(
+                        {
+                            "infantry_only": False,
+                            "exclude_monster_vehicle": False,
+                            "exclude_vehicle_only": False,
+                            "applies_after_fight": False,
+                            "source": source,
+                        }
+                    )
+
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}
         root._ability_cache[cache_key] = list(specs)
@@ -1611,6 +1634,38 @@ class AbilitySpecsMixin:
             entry = dict(spec)
             entry["source"] = source
             specs.append(entry)
+
+        context_fn = getattr(root, "_plague_legion_fever_visions_context", None)
+        if callable(context_fn):
+            game = None
+            try:
+                game = root.get_parent_army().player.game
+            except Exception:
+                game = None
+            context = context_fn(game=game)
+            if isinstance(context, dict) and str(context.get("phase_name", "") or "").strip().upper() == "FIGHT_PHASE":
+                source = str(context.get("source", "") or "FEVER VISIONS").strip() or "FEVER VISIONS"
+                key = (
+                    source.lower(),
+                    False,
+                    False,
+                    False,
+                    0,
+                    0,
+                    0,
+                    0,
+                    "",
+                )
+                if key not in seen:
+                    seen.add(key)
+                    specs.append(
+                        {
+                            "infantry_only": False,
+                            "exclude_monster_vehicle": False,
+                            "exclude_vehicle_only": False,
+                            "source": source,
+                        }
+                    )
 
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}

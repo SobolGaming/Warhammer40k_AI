@@ -295,6 +295,31 @@ _BLOOD_LEGION_STRATAGEM_BY_NAME = {
 }
 
 _PLAGUE_LEGION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009820002": StratagemToolDescriptor(
+        stratagem_id="000009820002",
+        name="Seeping Virulence",
+        timing="fight_phase",
+        target="legiones_daemonica_nurgle_unit_not_yet_selected_to_fight",
+        duration="until_end_of_phase",
+        effect="melee_critical_hits_on_5plus",
+        cp_cost=1,
+        effect_params={
+            "critical_hit_threshold": 5,
+        },
+    ),
+    "000009820003": StratagemToolDescriptor(
+        stratagem_id="000009820003",
+        name="Fever Visions",
+        timing="shooting_or_fight_phase",
+        target="legiones_daemonica_nurgle_unit_not_yet_selected_to_shoot_or_fight",
+        duration="until_end_of_phase",
+        effect="hit_bonus_and_post_attack_battleshock",
+        cp_cost=1,
+        effect_params={
+            "hit_roll_modifier": 1,
+            "post_attack_battleshock": True,
+        },
+    ),
     "000009820004": StratagemToolDescriptor(
         stratagem_id="000009820004",
         name="Foetid Resurgence",

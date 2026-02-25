@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from warhammer40k_ai.engine.battlefield import Battlefield, BattlefieldSize
-from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+from warhammer40k_ai.engine.decision_kinds import (
+    DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
+    DECISION_CHOOSE_QUARRY,
+)
 from warhammer40k_ai.engine.game import Game
 from warhammer40k_ai.engine.phase import BattleRoundPhases
 from warhammer40k_ai.roster.army import Army
@@ -155,6 +158,28 @@ def test_plague_legion_step2_stratagem_descriptors_registered():
     by_name_rot = get_stratagem_tool_descriptor(name="ROT AND RENEWAL")
     assert by_name_rot is not None
     assert str(by_name_rot.stratagem_id) == "000009820005"
+
+
+def test_plague_legion_step3_stratagem_descriptors_registered():
+    fever_visions = get_stratagem_tool_descriptor(stratagem_id="000009820003")
+    assert fever_visions is not None
+    assert fever_visions.name == "Fever Visions"
+    assert fever_visions.effect == "hit_bonus_and_post_attack_battleshock"
+    assert int(fever_visions.cp_cost) == 1
+
+    seeping_virulence = get_stratagem_tool_descriptor(stratagem_id="000009820002")
+    assert seeping_virulence is not None
+    assert seeping_virulence.name == "Seeping Virulence"
+    assert seeping_virulence.effect == "melee_critical_hits_on_5plus"
+    assert int(seeping_virulence.cp_cost) == 1
+
+    by_name_fever = get_stratagem_tool_descriptor(name="FEVER VISIONS")
+    assert by_name_fever is not None
+    assert str(by_name_fever.stratagem_id) == "000009820003"
+
+    by_name_seeping = get_stratagem_tool_descriptor(name="SEEPING VIRULENCE")
+    assert by_name_seeping is not None
+    assert str(by_name_seeping.stratagem_id) == "000009820002"
 
 
 def test_foetid_resurgence_returns_d3_models_for_battleline(monkeypatch):
@@ -358,6 +383,204 @@ def test_rot_and_renewal_applies_charge_move_type_and_cleans_up():
     assert "plague_legion_rot_and_renewal_active" not in rules
     assert "plague_legion_rot_and_renewal_expires_phase" not in rules
     assert "bearer_unit_phase_move_terrain_only_types" not in rules
+
+
+def test_fever_visions_shooting_applies_hit_bonus_post_shoot_battleshock_and_cleans_up():
+    game, plague_player, _enemy_player, plague_army, enemy_army = _build_game()
+    source = _make_unit(
+        "Plaguebearers",
+        keywords=["NURGLE", "INFANTRY"],
+        faction_keywords=["LEGIONES DAEMONICA"],
+        model_count=5,
+    )
+    enemy = _make_unit("Enemy Target", keywords=["INFANTRY"], model_count=3)
+    plague_army.add_unit(source)
+    enemy_army.add_unit(enemy)
+    game.map.units.extend([source, enemy])
+    _deploy_unit(source, 0.0, 0.0)
+    _deploy_unit(enemy, 8.0, 0.0)
+
+    bs_calls = {"enemy": 0}
+    enemy.take_battle_shock_test = lambda _turn: bs_calls.__setitem__("enemy", bs_calls["enemy"] + 1)
+
+    game.turn = 2
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.current_player_index = 0
+    game.event_system.publish("phase_start", player=plague_player, phase=BattleRoundPhases.SHOOTING_PHASE)
+
+    fever_name = _find_stratagem_name(plague_player, "FEVER VISIONS")
+    ok = plague_player.stratagems.use(
+        fever_name,
+        unit=source,
+        phase_name="Shooting phase",
+    )
+    assert ok is True
+    assert plague_player.command_points == 4
+
+    rules = dict(getattr(source, "special_rules", {}) or {})
+    assert bool(rules.get("plague_legion_fever_visions_active", False)) is True
+    assert int(rules.get("plague_legion_fever_visions_hit_bonus", 0) or 0) == 1
+
+    hit_mods = source.get_unit_hit_reroll_modifiers("ranged", target=enemy)
+    assert int(hit_mods.get("hit", 0) or 0) == 1
+    assert any(
+        "FEVER VISIONS" in str(reason or "").upper()
+        for reason in list(hit_mods.get("hit_reasons", ()) or ())
+    )
+
+    game._on_unit_shooting_resolved_post_shoot_battleshock(
+        attacker_unit=source,
+        hits_by_target={enemy: 1},
+        hit_models_by_target={enemy: [source.models[0]]},
+    )
+    requests = [
+        req
+        for req in list(game.decision_queue.list() or [])
+        if str(getattr(req, "decision_type", "") or "") == DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET
+        and str((getattr(req, "context", {}) or {}).get("ability_name", "") or "") == "FEVER VISIONS"
+    ]
+    assert len(requests) == 1
+    request = requests[0]
+    option = next(
+        opt
+        for opt in list(request.options or [])
+        if str((opt.payload or {}).get("unit_id", "") or "") == str(get_entity_id(enemy) or "")
+    )
+    result = resolve_decision_command(game, request, option.option_id, player_id=plague_player.id)
+    assert bool(getattr(result, "ok", False)) is True
+    assert bs_calls["enemy"] == 1
+
+    game.event_system.publish("phase_end", player=plague_player, phase=BattleRoundPhases.SHOOTING_PHASE)
+    rules = dict(getattr(source, "special_rules", {}) or {})
+    assert "plague_legion_fever_visions_active" not in rules
+    assert "plague_legion_fever_visions_hit_bonus" not in rules
+    assert "plague_legion_fever_visions_expires_phase" not in rules
+    assert source.unit_post_shoot_battleshock_specs() == []
+
+
+def test_fever_visions_fight_applies_hit_bonus_post_fight_battleshock_and_cleans_up():
+    game, plague_player, _enemy_player, plague_army, enemy_army = _build_game()
+    source = _make_unit(
+        "Plaguebearers",
+        keywords=["NURGLE", "INFANTRY"],
+        faction_keywords=["LEGIONES DAEMONICA"],
+        model_count=5,
+    )
+    enemy = _make_unit("Enemy Target", keywords=["INFANTRY"], model_count=3)
+    plague_army.add_unit(source)
+    enemy_army.add_unit(enemy)
+    game.map.units.extend([source, enemy])
+    _deploy_unit(source, 0.0, 0.0)
+    _deploy_unit(enemy, 1.0, 0.0)
+
+    bs_calls = {"enemy": 0}
+    enemy.take_battle_shock_test = lambda _turn: bs_calls.__setitem__("enemy", bs_calls["enemy"] + 1)
+
+    game.turn = 2
+    game.phase = BattleRoundPhases.FIGHT_PHASE
+    game.current_player_index = 0
+    game.event_system.publish("phase_start", player=plague_player, phase=BattleRoundPhases.FIGHT_PHASE)
+
+    fever_name = _find_stratagem_name(plague_player, "FEVER VISIONS")
+    ok = plague_player.stratagems.use(
+        fever_name,
+        unit=source,
+        phase_name="Fight phase",
+    )
+    assert ok is True
+    assert plague_player.command_points == 4
+
+    hit_mods = source.get_unit_hit_reroll_modifiers("melee", target=enemy)
+    assert int(hit_mods.get("hit", 0) or 0) == 1
+
+    game._on_fight_attacks_resolved_post_fight_battleshock(
+        attacker_unit=source,
+        hits_by_target={enemy: 2},
+        hit_models_by_target={enemy: [source.models[0]]},
+    )
+    requests = [
+        req
+        for req in list(game.decision_queue.list() or [])
+        if str(getattr(req, "decision_type", "") or "") == DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET
+        and str((getattr(req, "context", {}) or {}).get("ability_name", "") or "") == "FEVER VISIONS"
+    ]
+    assert len(requests) == 1
+    request = requests[0]
+    option = next(
+        opt
+        for opt in list(request.options or [])
+        if str((opt.payload or {}).get("unit_id", "") or "") == str(get_entity_id(enemy) or "")
+    )
+    result = resolve_decision_command(game, request, option.option_id, player_id=plague_player.id)
+    assert bool(getattr(result, "ok", False)) is True
+    assert bs_calls["enemy"] == 1
+
+    game.event_system.publish("phase_end", player=plague_player, phase=BattleRoundPhases.FIGHT_PHASE)
+    rules = dict(getattr(source, "special_rules", {}) or {})
+    assert "plague_legion_fever_visions_active" not in rules
+    assert "plague_legion_fever_visions_hit_bonus" not in rules
+    assert "plague_legion_fever_visions_expires_phase" not in rules
+    assert source.unit_post_fight_battleshock_specs() == []
+
+
+def test_seeping_virulence_sets_melee_critical_hit_threshold_and_cleans_up():
+    game, plague_player, _enemy_player, plague_army, enemy_army = _build_game()
+    source = _make_unit(
+        "Plaguebearers",
+        keywords=["NURGLE", "INFANTRY"],
+        faction_keywords=["LEGIONES DAEMONICA"],
+        model_count=5,
+    )
+    enemy = _make_unit("Enemy Target", keywords=["INFANTRY"], model_count=3)
+    plague_army.add_unit(source)
+    enemy_army.add_unit(enemy)
+    game.map.units.extend([source, enemy])
+    _deploy_unit(source, 0.0, 0.0)
+    _deploy_unit(enemy, 1.0, 0.0)
+
+    game.turn = 2
+    game.phase = BattleRoundPhases.FIGHT_PHASE
+    game.current_player_index = 0
+    game.event_system.publish("phase_start", player=plague_player, phase=BattleRoundPhases.FIGHT_PHASE)
+
+    source.round_state.fought_this_phase = True
+    seeping_name = _find_stratagem_name(plague_player, "SEEPING VIRULENCE")
+    not_ok = plague_player.stratagems.use(
+        seeping_name,
+        unit=source,
+        phase_name="Fight phase",
+    )
+    assert not_ok is False
+
+    source.round_state.fought_this_phase = False
+    ok = plague_player.stratagems.use(
+        seeping_name,
+        unit=source,
+        phase_name="Fight phase",
+    )
+    assert ok is True
+    assert plague_player.command_points == 4
+
+    rules = dict(getattr(source, "special_rules", {}) or {})
+    assert bool(rules.get("plague_legion_seeping_virulence_active", False)) is True
+    assert int(rules.get("plague_legion_seeping_virulence_crit_threshold", 0) or 0) == 5
+
+    melee_mods = source.get_unit_hit_reroll_modifiers("melee", target=enemy)
+    assert int(melee_mods.get("crit_hit_threshold", 0) or 0) == 5
+    assert any(
+        "SEEPING VIRULENCE" in str(reason or "").upper()
+        for reason in list(melee_mods.get("crit_hit_reasons", ()) or ())
+    )
+
+    ranged_mods = source.get_unit_hit_reroll_modifiers("ranged", target=enemy)
+    assert ranged_mods.get("crit_hit_threshold") is None
+
+    game.event_system.publish("phase_end", player=plague_player, phase=BattleRoundPhases.FIGHT_PHASE)
+    rules = dict(getattr(source, "special_rules", {}) or {})
+    assert "plague_legion_seeping_virulence_active" not in rules
+    assert "plague_legion_seeping_virulence_crit_threshold" not in rules
+    assert "plague_legion_seeping_virulence_expires_phase" not in rules
+    assert source.get_unit_hit_reroll_modifiers("melee", target=enemy).get("crit_hit_threshold") is None
 
 
 def test_plague_of_woes_triggers_secondary_battleshock_and_cleans_up():

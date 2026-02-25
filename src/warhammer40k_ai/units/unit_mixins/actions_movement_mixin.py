@@ -3764,6 +3764,50 @@ class ActionsMovementMixin:
                 reroll_hit_full_reasons.append(f"{source}: re-roll Hit roll")
         except Exception:
             pass
+        try:
+            context_fn = getattr(root, "_plague_legion_fever_visions_context", None)
+            if callable(context_fn):
+                game_now = None
+                try:
+                    army_now = root.get_parent_army() if root is not None else None
+                    game_now = getattr(getattr(army_now, "player", None), "game", None) if army_now is not None else None
+                except Exception:
+                    game_now = None
+                ctx = context_fn(game=game_now)
+                if isinstance(ctx, dict):
+                    phase_name = str(ctx.get("phase_name", "") or "").strip().upper()
+                    apply_ranged = phase_name == "SHOOTING_PHASE" and atype in ("any", "ranged")
+                    apply_melee = phase_name == "FIGHT_PHASE" and atype in ("any", "melee")
+                    if apply_ranged or apply_melee:
+                        bonus = int(ctx.get("hit_bonus", 0) or 0)
+                        if bonus:
+                            source = str(ctx.get("source", "") or "FEVER VISIONS").strip() or "FEVER VISIONS"
+                            mods["hit"] += int(bonus)
+                            hit_reasons.append(f"+{int(bonus)} to hit from {source}")
+        except Exception:
+            pass
+        try:
+            context_fn = getattr(root, "_plague_legion_seeping_virulence_context", None)
+            if callable(context_fn) and atype in ("any", "melee"):
+                game_now = None
+                try:
+                    army_now = root.get_parent_army() if root is not None else None
+                    game_now = getattr(getattr(army_now, "player", None), "game", None) if army_now is not None else None
+                except Exception:
+                    game_now = None
+                ctx = context_fn(game=game_now)
+                if isinstance(ctx, dict):
+                    threshold = int(ctx.get("crit_threshold", 0) or 0)
+                    if threshold:
+                        crit_hit_threshold = (
+                            int(threshold)
+                            if crit_hit_threshold is None
+                            else min(int(crit_hit_threshold), int(threshold))
+                        )
+                        source = str(ctx.get("source", "") or "SEEPING VIRULENCE").strip() or "SEEPING VIRULENCE"
+                        crit_hit_reasons.append(f"{source}: critical hit on {int(threshold)}+")
+        except Exception:
+            pass
 
         mods["reroll_hit_values"] = tuple(sorted(reroll_hit_values))
         mods["reroll_hit_ones"] = bool(1 in reroll_hit_values)
@@ -3773,6 +3817,89 @@ class ActionsMovementMixin:
         mods["reroll_hit_full_reasons"] = tuple(reroll_hit_full_reasons)
         mods["crit_hit_reasons"] = tuple(crit_hit_reasons)
         return mods
+
+    def _plague_legion_fever_visions_context(self, *, game=None) -> Optional[dict]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("plague_legion_fever_visions_active")):
+            return None
+        source = str(sr.get("plague_legion_fever_visions_source", "") or "FEVER VISIONS").strip() or "FEVER VISIONS"
+        try:
+            hit_bonus = int(sr.get("plague_legion_fever_visions_hit_bonus", 1) or 1)
+        except Exception:
+            hit_bonus = 1
+        if hit_bonus == 0:
+            return None
+        phase_name = str(sr.get("plague_legion_fever_visions_expires_phase", "") or "").strip().upper()
+        if game is None:
+            return {"hit_bonus": int(hit_bonus), "phase_name": phase_name, "source": source}
+
+        current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        if phase_name and current_phase and phase_name != current_phase:
+            return None
+        try:
+            effect_turn = int(sr.get("plague_legion_fever_visions_turn", 0) or 0)
+        except Exception:
+            effect_turn = 0
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return None
+        effect_owner = str(sr.get("plague_legion_fever_visions_turn_owner", "") or "")
+        if effect_owner:
+            try:
+                current_owner = str(getattr(getattr(game, "get_current_player", lambda: None)(), "id", "") or "")
+            except Exception:
+                current_owner = ""
+            if current_owner and effect_owner != current_owner:
+                return None
+        return {"hit_bonus": int(hit_bonus), "phase_name": phase_name, "source": source}
+
+    def _plague_legion_seeping_virulence_context(self, *, game=None) -> Optional[dict]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("plague_legion_seeping_virulence_active")):
+            return None
+        source = str(sr.get("plague_legion_seeping_virulence_source", "") or "SEEPING VIRULENCE").strip() or "SEEPING VIRULENCE"
+        try:
+            threshold = int(sr.get("plague_legion_seeping_virulence_crit_threshold", 5) or 5)
+        except Exception:
+            threshold = 5
+        threshold = max(2, min(6, int(threshold)))
+        if game is None:
+            return {"crit_threshold": int(threshold), "source": source}
+
+        current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        expected_phase = str(sr.get("plague_legion_seeping_virulence_expires_phase", "") or "").strip().upper()
+        if expected_phase and current_phase and expected_phase != current_phase:
+            return None
+        try:
+            effect_turn = int(sr.get("plague_legion_seeping_virulence_turn", 0) or 0)
+        except Exception:
+            effect_turn = 0
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return None
+        effect_owner = str(sr.get("plague_legion_seeping_virulence_turn_owner", "") or "")
+        if effect_owner:
+            try:
+                current_owner = str(getattr(getattr(game, "get_current_player", lambda: None)(), "id", "") or "")
+            except Exception:
+                current_owner = ""
+            if current_owner and effect_owner != current_owner:
+                return None
+        return {"crit_threshold": int(threshold), "source": source}
 
     def _gsc_primed_and_readied_context(self, *, game=None) -> Optional[dict]:
         try:

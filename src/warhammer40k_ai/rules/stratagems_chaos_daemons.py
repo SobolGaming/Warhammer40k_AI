@@ -214,6 +214,20 @@ class ChaosDaemonsStratagemMixin:
             return False
         return bool(getattr(round_state, "fought_this_phase", False))
 
+    @staticmethod
+    def _plague_legion_unit_selected_to_shoot_this_phase(unit: Any) -> bool:
+        round_state = getattr(unit, "round_state", None)
+        if round_state is None:
+            return False
+        return bool(getattr(round_state, "shot_this_round", False))
+
+    @staticmethod
+    def _plague_legion_unit_selected_to_fight_this_phase(unit: Any) -> bool:
+        round_state = getattr(unit, "round_state", None)
+        if round_state is None:
+            return False
+        return bool(getattr(round_state, "fought_this_phase", False))
+
     def _shadow_legion_battlefield_unit_candidates(
         self,
         *,
@@ -888,6 +902,20 @@ class ChaosDaemonsStratagemMixin:
             enemies.append(root)
         enemies.sort(key=self._chaos_daemons_sort_key)
         return enemies
+
+    def _plague_legion_attack_phase_candidates(self, *, phase_name: str) -> List[Any]:
+        phase_key = str(phase_name or "").strip().lower()
+        if phase_key not in ("shooting phase", "fight phase"):
+            return []
+        candidates: List[Any] = []
+        for unit in list(self._plague_legion_nurgle_battlefield_unit_candidates() or []):
+            if phase_key == "shooting phase" and self._plague_legion_unit_selected_to_shoot_this_phase(unit):
+                continue
+            if phase_key == "fight phase" and self._plague_legion_unit_selected_to_fight_this_phase(unit):
+                continue
+            candidates.append(unit)
+        candidates.sort(key=self._chaos_daemons_sort_key)
+        return candidates
 
     def _legion_of_excess_slaanesh_battlefield_unit_candidates(self, *, require_monster: bool = False) -> List[Any]:
         if self.player is None:
@@ -1932,6 +1960,10 @@ class ChaosDaemonsStratagemMixin:
 
     def _use_chaos_daemons_plague_legion_stratagem(self, stratagem: Any, **kwargs) -> bool | None:
         name_u = self._chaos_daemons_normalize_stratagem_name(getattr(stratagem, "name", ""))
+        if name_u == "FEVER VISIONS":
+            return self._use_plague_legion_fever_visions(stratagem, **kwargs)
+        if name_u == "SEEPING VIRULENCE":
+            return self._use_plague_legion_seeping_virulence(stratagem, **kwargs)
         if name_u == "MURKSHADOWS":
             return self._use_plague_legion_murkshadows(stratagem, **kwargs)
         if name_u == "ROT AND RENEWAL":
@@ -2199,6 +2231,104 @@ class ChaosDaemonsStratagemMixin:
         special_rules["plague_legion_rot_and_renewal_turn_owner"] = str(getattr(self.player, "id", "") or "")
         special_rules["plague_legion_rot_and_renewal_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
         special_rules["plague_legion_rot_and_renewal_source"] = str(getattr(stratagem, "name", "") or "ROT AND RENEWAL")
+        root.special_rules = special_rules
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
+        return True
+
+    def _use_plague_legion_fever_visions(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_plague_legion_detachment():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            return False
+        root = self._chaos_daemons_root(unit)
+        if root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name not in ("shooting phase", "fight phase"):
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return False
+        if candidates:
+            candidate_ids = {self._chaos_daemons_sort_key(self._chaos_daemons_root(candidate)) for candidate in candidates}
+            if self._chaos_daemons_sort_key(root) not in candidate_ids:
+                return False
+        valid_ids = {
+            self._chaos_daemons_sort_key(candidate)
+            for candidate in self._plague_legion_attack_phase_candidates(phase_name=phase_name)
+        }
+        if self._chaos_daemons_sort_key(root) not in valid_ids:
+            return False
+        cp_cost = self._chaos_daemons_effective_cp_cost(stratagem, target_unit=root)
+        if not self.player.spend_command_points(cp_cost, reason=f"Stratagem: {stratagem.name}", source="stratagem"):
+            return False
+        special_rules = getattr(root, "special_rules", None)
+        if not isinstance(special_rules, dict):
+            special_rules = {}
+        special_rules["plague_legion_fever_visions_active"] = True
+        special_rules["plague_legion_fever_visions_hit_bonus"] = 1
+        special_rules["plague_legion_fever_visions_expires_phase"] = (
+            "FIGHT_PHASE" if phase_name == "fight phase" else "SHOOTING_PHASE"
+        )
+        special_rules["plague_legion_fever_visions_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        special_rules["plague_legion_fever_visions_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        special_rules["plague_legion_fever_visions_source"] = str(getattr(stratagem, "name", "") or "FEVER VISIONS")
+        root.special_rules = special_rules
+        ability_cache = getattr(root, "_ability_cache", None)
+        if isinstance(ability_cache, dict):
+            ability_cache.pop("unit_post_shoot_battleshock_specs", None)
+            ability_cache.pop("unit_post_fight_battleshock_specs", None)
+        if kwargs.get("dequeue") is True:
+            self._dequeue_reaction_by_name(stratagem.name)
+        self._used_stratagems_this_phase.add((stratagem.name or "").strip().upper())
+        return True
+
+    def _use_plague_legion_seeping_virulence(self, stratagem: Any, **kwargs) -> bool:
+        if not self._is_plague_legion_detachment():
+            return False
+        unit = kwargs.get("unit") or kwargs.get("target_unit")
+        candidates = list(kwargs.get("candidates") or [])
+        if unit is None and len(candidates) == 1:
+            unit = candidates[0]
+        if unit is None:
+            return False
+        root = self._chaos_daemons_root(unit)
+        if root is None:
+            return False
+        phase_name = str(kwargs.get("phase_name") or getattr(self, "_current_phase_name", "") or "").strip().lower()
+        if phase_name != "fight phase":
+            return False
+        active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        if active_player is not self.player:
+            return False
+        if candidates:
+            candidate_ids = {self._chaos_daemons_sort_key(self._chaos_daemons_root(candidate)) for candidate in candidates}
+            if self._chaos_daemons_sort_key(root) not in candidate_ids:
+                return False
+        valid_ids = {
+            self._chaos_daemons_sort_key(candidate)
+            for candidate in self._plague_legion_attack_phase_candidates(phase_name=phase_name)
+        }
+        if self._chaos_daemons_sort_key(root) not in valid_ids:
+            return False
+        cp_cost = self._chaos_daemons_effective_cp_cost(stratagem, target_unit=root)
+        if not self.player.spend_command_points(cp_cost, reason=f"Stratagem: {stratagem.name}", source="stratagem"):
+            return False
+        special_rules = getattr(root, "special_rules", None)
+        if not isinstance(special_rules, dict):
+            special_rules = {}
+        special_rules["plague_legion_seeping_virulence_active"] = True
+        special_rules["plague_legion_seeping_virulence_crit_threshold"] = 5
+        special_rules["plague_legion_seeping_virulence_expires_phase"] = "FIGHT_PHASE"
+        special_rules["plague_legion_seeping_virulence_turn_owner"] = str(getattr(self.player, "id", "") or "")
+        special_rules["plague_legion_seeping_virulence_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        special_rules["plague_legion_seeping_virulence_source"] = str(getattr(stratagem, "name", "") or "SEEPING VIRULENCE")
         root.special_rules = special_rules
         if kwargs.get("dequeue") is True:
             self._dequeue_reaction_by_name(stratagem.name)
@@ -3573,7 +3703,7 @@ class ChaosDaemonsStratagemMixin:
 
     def _cleanup_plague_legion_phase_end_effects(self, *, phase: Any) -> None:
         phase_name = str(getattr(phase, "name", "") or "").strip().upper()
-        if phase_name not in ("COMMAND_PHASE", "MOVEMENT_PHASE", "CHARGE_PHASE"):
+        if phase_name not in ("COMMAND_PHASE", "MOVEMENT_PHASE", "SHOOTING_PHASE", "CHARGE_PHASE", "FIGHT_PHASE"):
             return
         if self.player is None:
             return
@@ -3638,6 +3768,36 @@ class ChaosDaemonsStratagemMixin:
                         "plague_legion_murkshadows_turn_owner",
                         "plague_legion_murkshadows_turn",
                         "plague_legion_murkshadows_source",
+                    ):
+                        special_rules.pop(key, None)
+                    changed = True
+            if phase_name in ("SHOOTING_PHASE", "FIGHT_PHASE"):
+                expires_phase = str(special_rules.get("plague_legion_fever_visions_expires_phase", "") or "").strip().upper()
+                if bool(special_rules.get("plague_legion_fever_visions_active")) and (not expires_phase or expires_phase == phase_name):
+                    for key in (
+                        "plague_legion_fever_visions_active",
+                        "plague_legion_fever_visions_hit_bonus",
+                        "plague_legion_fever_visions_expires_phase",
+                        "plague_legion_fever_visions_turn_owner",
+                        "plague_legion_fever_visions_turn",
+                        "plague_legion_fever_visions_source",
+                    ):
+                        special_rules.pop(key, None)
+                    ability_cache = getattr(root, "_ability_cache", None)
+                    if isinstance(ability_cache, dict):
+                        ability_cache.pop("unit_post_shoot_battleshock_specs", None)
+                        ability_cache.pop("unit_post_fight_battleshock_specs", None)
+                    changed = True
+            if phase_name == "FIGHT_PHASE":
+                expires_phase = str(special_rules.get("plague_legion_seeping_virulence_expires_phase", "") or "").strip().upper()
+                if bool(special_rules.get("plague_legion_seeping_virulence_active")) and (not expires_phase or expires_phase == phase_name):
+                    for key in (
+                        "plague_legion_seeping_virulence_active",
+                        "plague_legion_seeping_virulence_crit_threshold",
+                        "plague_legion_seeping_virulence_expires_phase",
+                        "plague_legion_seeping_virulence_turn_owner",
+                        "plague_legion_seeping_virulence_turn",
+                        "plague_legion_seeping_virulence_source",
                     ):
                         special_rules.pop(key, None)
                     changed = True
