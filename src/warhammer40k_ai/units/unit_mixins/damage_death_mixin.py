@@ -1530,6 +1530,106 @@ class DamageDeathMixin:
         
         return units_within_range
 
+    def _legion_of_excess_thieves_of_pain_redirect_target(self, *, game_map: Optional['Map'] = None):
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return None
+        special_rules = getattr(root, "special_rules", None)
+        if not isinstance(special_rules, dict):
+            return None
+        if not bool(special_rules.get("legion_of_excess_thieves_of_pain_active", False)):
+            return None
+        redirect_unit_id = str(special_rules.get("legion_of_excess_thieves_of_pain_redirect_unit_id", "") or "").strip()
+        if not redirect_unit_id:
+            return None
+
+        game = None
+        try:
+            army = root.get_parent_army()
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        except Exception:
+            game = None
+        if game_map is None and game is not None:
+            game_map = getattr(game, "map", None)
+        if game_map is None:
+            return None
+
+        expires_phase = str(special_rules.get("legion_of_excess_thieves_of_pain_expires_phase", "") or "").strip().upper()
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+        if expires_phase and phase_name and phase_name != expires_phase:
+            return None
+
+        for unit in list(getattr(game_map, "units", []) or []):
+            try:
+                candidate = unit.get_attached_unit_root()
+            except Exception:
+                candidate = unit
+            if candidate is None:
+                continue
+            if str(get_entity_id(candidate) or "") != redirect_unit_id:
+                continue
+            if candidate is root:
+                return None
+            try:
+                if not candidate.is_alive():
+                    return None
+            except Exception:
+                return None
+            try:
+                if not bool(getattr(candidate, "deployed", False)):
+                    return None
+            except Exception:
+                return None
+            try:
+                if getattr(candidate, "is_in_reserves", lambda: False)():
+                    return None
+            except Exception:
+                return None
+            try:
+                if bool(getattr(candidate, "is_embarked", False)) or bool(getattr(candidate, "embarked_in", None)):
+                    return None
+            except Exception:
+                return None
+            return candidate
+        return None
+
+    def _apply_legion_of_excess_thieves_of_pain_redirect(
+        self,
+        wound_count: int,
+        *,
+        game_map: Optional['Map'] = None,
+        source_model: Optional['Model'] = None,
+        damage_source: str = "",
+    ) -> int:
+        wounds = int(wound_count or 0)
+        if wounds <= 0:
+            return 0
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return 0
+
+        redirected = 0
+        for _ in range(wounds):
+            redirect_target = root._legion_of_excess_thieves_of_pain_redirect_target(game_map=game_map)
+            if redirect_target is None:
+                break
+            root._apply_mortal_wounds_to_unit(
+                redirect_target,
+                1,
+                game_map=game_map,
+                attacker_unit=root,
+                attacker_model=source_model,
+                damage_source="legion_of_excess_thieves_of_pain",
+            )
+            redirected += 1
+        return int(redirected)
+
     def _apply_mortal_wounds_to_unit(
         self,
         target_unit: 'Unit',
@@ -1543,6 +1643,7 @@ class DamageDeathMixin:
         apply_fn: Optional[Callable[['Model'], None]] = None,
         allocation_ctx: Optional[object] = None,
         allow_initial_model_outside_candidates: bool = False,
+        damage_source: str = "mortal",
     ) -> int:
         """Apply mortal wounds to a unit, distributing them among models.
 
@@ -1553,6 +1654,7 @@ class DamageDeathMixin:
             apply_fn: Optional callback to apply each mortal wound to a model (defaults to Model.take_damage)
             allocation_ctx: Optional DamageAllocationCtx override for UI context
             allow_initial_model_outside_candidates: Allow initial_model even if not in allocation candidates
+            damage_source: Label used for per-wound damage source context
 
         Returns:
             Number of models destroyed by the mortal wounds
@@ -1580,7 +1682,10 @@ class DamageDeathMixin:
             game = None
 
         can_request_decision = bool(game is not None and getattr(game, "is_authoritative", False) and apply_fn is None)
-        ctx = allocation_ctx or DamageAllocationCtx(reason="Allocate mortal wound", damage_source="mortal")
+        ctx = allocation_ctx or DamageAllocationCtx(
+            reason="Allocate mortal wound",
+            damage_source=str(damage_source or "mortal"),
+        )
         ctx_dict = {
             "reason": ctx.reason,
             "damage_source": ctx.damage_source,

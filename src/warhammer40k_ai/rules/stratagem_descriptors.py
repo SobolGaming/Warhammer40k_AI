@@ -377,6 +377,36 @@ _SHADOW_LEGION_STRATAGEM_BY_NAME = {
 }
 
 _LEGION_OF_EXCESS_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009807004": StratagemToolDescriptor(
+        stratagem_id="000009807004",
+        name="Sensory Excruciation",
+        timing="command_phase",
+        target="legiones_daemonica_slaanesh_monster_unit_on_battlefield",
+        duration="immediate",
+        effect="shadow_of_chaos_battle_shock_sweep",
+        cp_cost=1,
+        effect_params={
+            "targets": "all_units_within_players_shadow_of_chaos",
+            "battle_shock_test_modifier_if_below_half_strength": -1,
+            "includes_friendly_and_enemy": True,
+        },
+    ),
+    "000009807002": StratagemToolDescriptor(
+        stratagem_id="000009807002",
+        name="Thieves of Pain",
+        timing="any_phase_after_attack_or_mortal_wound_allocated",
+        target="legiones_daemonica_slaanesh_unit_excluding_monster_vehicle",
+        duration="until_end_of_phase",
+        effect="redirect_wound_loss_to_friendly_mortal_wounds",
+        cp_cost=1,
+        range_in=9.0,
+        effect_params={
+            "requires_visible_secondary_target": True,
+            "secondary_target": "other_friendly_legiones_daemonica_slaanesh_unit",
+            "redirect_rule": "each_wound_loss_on_target_becomes_1_mortal_wound_on_secondary_target",
+            "secondary_target_must_remain_on_battlefield": True,
+        },
+    ),
     "000009807005": StratagemToolDescriptor(
         stratagem_id="000009807005",
         name="Phantasmal Longing",

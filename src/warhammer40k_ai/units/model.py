@@ -1867,6 +1867,24 @@ class Model:
                     logger.info(f"{self.name} prevented {fnp_saves} damage with Feel No Pain{condition_text}")
             else:
                 logger.info(f"{self.name} has Feel No Pain abilities but none apply to this damage source")
+
+        redirected_amount = 0
+        try:
+            redirect_fn = getattr(self.parent_unit, "_apply_legion_of_excess_thieves_of_pain_redirect", None)
+            if callable(redirect_fn) and int(amount or 0) > 0:
+                redirected_amount = int(
+                    redirect_fn(
+                        int(amount or 0),
+                        game_map=game_map,
+                        source_model=self,
+                        damage_source=str(damage_source or ""),
+                    )
+                    or 0
+                )
+        except Exception:
+            redirected_amount = 0
+        if redirected_amount > 0:
+            amount = max(0, int(amount or 0) - int(redirected_amount or 0))
         
         self.wounds -= amount
         logger.info(f"{self.name} takes {amount} damage. It is {'Alive' if self.is_alive else 'Dead'}")

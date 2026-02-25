@@ -18962,6 +18962,26 @@ class WargearProfile:
                 
                 final_damage = damage_amount - fnp_saves
                 result['fnp_saves'] = fnp_saves
+
+        redirected_damage = 0
+        try:
+            target_unit = getattr(target_model, "parent_unit", None)
+            redirect_fn = getattr(target_unit, "_apply_legion_of_excess_thieves_of_pain_redirect", None)
+            if callable(redirect_fn) and int(final_damage or 0) > 0:
+                redirected_damage = int(
+                    redirect_fn(
+                        int(final_damage or 0),
+                        game_map=game_map,
+                        source_model=target_model,
+                        damage_source="attack",
+                    )
+                    or 0
+                )
+        except Exception:
+            redirected_damage = 0
+        if redirected_damage > 0:
+            final_damage = max(0, int(final_damage or 0) - int(redirected_damage or 0))
+            result['redirected_damage'] = int(redirected_damage)
         
         # Apply the final damage
         result['damage_applied'] = final_damage

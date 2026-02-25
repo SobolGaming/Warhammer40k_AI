@@ -267,8 +267,10 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "GORE-HUNGRY ONSLAUGHT",
     "GORE\u2011HUNGRY ONSLAUGHT",
     "PHANTASMAL LONGING",
+    "SENSORY EXCRUCIATION",
     "SKULLS BEGET BLOOD",
     "SHEATHED IN BRASS",
+    "THIEVES OF PAIN",
     "WRATH UNDENIABLE",
     "FLICKERING REALITY",
     "IMMORTAL FURY",
@@ -435,6 +437,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "CAVALCADE OF BLADES",
     "SHADE PATH",
     "SPITEFUL DEMISE",
+    "THIEVES OF PAIN",
     "DELIRIUM UNMADE",
     "ENDLESS PURSUIT OF VIOLENCE",
     "FOOLS' FLIGHT",
@@ -1516,9 +1519,9 @@ class StratagemManager(
 
         if names & {"SUMMONED BY SLAUGHTER", "PUTRID DETONATION", "SANCTIFIED IMMOLATION", "STAGED DEATH"}:
             add("model_destroyed_before_removal", self._on_model_destroyed_before_removal)
-        if names & {"BALEFUL BLESSING", "PROTECTION OF THE DARK PRINCE", "LAYERED WARDS"}:
+        if names & {"BALEFUL BLESSING", "PROTECTION OF THE DARK PRINCE", "LAYERED WARDS", "THIEVES OF PAIN"}:
             add("mortal_wound_allocated", self._on_mortal_wound_allocated)
-        if "PROTECTION OF THE DARK PRINCE" in names:
+        if names & {"PROTECTION OF THE DARK PRINCE", "THIEVES OF PAIN"}:
             add("attack_allocated", self._on_attack_allocated)
 
         if "FIRE AND FADE" in names:
@@ -1762,6 +1765,7 @@ class StratagemManager(
             "ENCROACHING DARKNESS",
             "PHANTASMAL LONGING",
             "SHADE PATH",
+            "THIEVES OF PAIN",
             "BLOOD BEGETS SKULLS",
             "GORE-HUNGRY ONSLAUGHT",
             "SHEATHED IN BRASS",
@@ -4147,8 +4151,10 @@ class StratagemManager(
             "ENCROACHING DARKNESS": "Target: up to one SHADOW LEGION HERETIC ASTARTES unit and up to one SHADOW LEGION LEGIONES DAEMONICA unit that arrived from Reserves this turn; ranged weapons gain [IGNORES COVER] until end of phase",
             "SHADE PATH": "Target: SHADOW LEGION unit selected as a target of an enemy charge; that enemy charge roll is worsened by 2 (and takes a Battle-shock test if your unit has NURGLE)",
             "SPITEFUL DEMISE": "Target: just-destroyed SHADOW LEGION unit; roll for each enemy within Engagement Range of the last model (SLAANESH adds 2) to inflict D3/3 mortal wounds",
+            "SENSORY EXCRUCIATION": "Target: LEGIONES DAEMONICA SLAANESH MONSTER unit on the battlefield; units within your Shadow of Chaos take Battle-shock tests (-1 if Below Half-strength)",
             "PHANTASMAL LONGING": "Target: LEGIONES DAEMONICA SLAANESH unit; models can move through terrain features until end of Movement/Charge phase",
             "CAVALCADE OF BLADES": "Target: LEGIONES DAEMONICA SLAANESH unit just after it ends a Charge move; select one enemy in Engagement Range and roll for mortal wounds",
+            "THIEVES OF PAIN": "Target: LEGIONES DAEMONICA SLAANESH unit (excluding MONSTER/VEHICLE) just after an attack or mortal wound is allocated; select another friendly SLAANESH unit within 9\" and visible to receive redirected mortal wounds until end of phase",
             "BLOOD BEGETS SKULLS": "Target: LEGIONES DAEMONICA KHORNE unit that has not been selected to charge this phase",
             "FOOLS' FLIGHT": "Target: LEGIONES DAEMONICA KHORNE unit within 6\" of enemy unit that Fell Back and eligible to charge it",
             "SHEATHED IN BRASS": "Target: LEGIONES DAEMONICA KHORNE unit selected as a target of enemy shooting attacks",
@@ -6226,7 +6232,7 @@ class StratagemManager(
                         root.special_rules = sr
         except Exception:
             raise
-        # Chaos Daemons: Legion of Excess PHANTASMAL LONGING (expires at end of Movement/Charge phase).
+        # Chaos Daemons: Legion of Excess phase-end cleanup (PHANTASMAL LONGING / THIEVES OF PAIN).
         try:
             self._cleanup_legion_of_excess_phase_end_effects(phase=phase)
         except Exception:
@@ -10981,6 +10987,16 @@ class StratagemManager(
             )
         except Exception:
             raise
+        try:
+            self._queue_legion_of_excess_allocation_reactions(
+                target_unit=target_unit,
+                attacker_unit=attacker_unit,
+                target_model=target_model,
+                phase_name=phase_name,
+                trigger_event="mortal_wound_allocated",
+            )
+        except Exception:
+            raise
 
     def _on_attack_allocated(
         self,
@@ -10992,6 +11008,16 @@ class StratagemManager(
     ) -> None:
         try:
             self._queue_emperors_children_coterie_protection_reaction(
+                target_unit=target_unit,
+                attacker_unit=attacker_unit,
+                target_model=target_model,
+                phase_name=phase_name,
+                trigger_event="attack_allocated",
+            )
+        except Exception:
+            raise
+        try:
+            self._queue_legion_of_excess_allocation_reactions(
                 target_unit=target_unit,
                 attacker_unit=attacker_unit,
                 target_model=target_model,

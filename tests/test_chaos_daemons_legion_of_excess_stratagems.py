@@ -7,6 +7,7 @@ from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.rules.stratagem_descriptors import get_stratagem_tool_descriptor
 from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.units.wargear import WargearProfile
 
 
 class _MockDatasheet:
@@ -102,7 +103,19 @@ def _build_game():
     return game, legion_player, enemy_player, legion_army, enemy_army
 
 
-def test_legion_of_excess_step1_stratagem_descriptors_registered():
+def test_legion_of_excess_step1_step2_stratagem_descriptors_registered():
+    sensory = get_stratagem_tool_descriptor(stratagem_id="000009807004")
+    assert sensory is not None
+    assert sensory.name == "Sensory Excruciation"
+    assert sensory.effect == "shadow_of_chaos_battle_shock_sweep"
+    assert int(sensory.cp_cost) == 1
+
+    thieves = get_stratagem_tool_descriptor(stratagem_id="000009807002")
+    assert thieves is not None
+    assert thieves.name == "Thieves of Pain"
+    assert thieves.effect == "redirect_wound_loss_to_friendly_mortal_wounds"
+    assert int(thieves.cp_cost) == 1
+
     phantasmal = get_stratagem_tool_descriptor(stratagem_id="000009807005")
     assert phantasmal is not None
     assert phantasmal.name == "Phantasmal Longing"
@@ -122,6 +135,14 @@ def test_legion_of_excess_step1_stratagem_descriptors_registered():
     by_name_cavalcade = get_stratagem_tool_descriptor(name="CAVALCADE OF BLADES")
     assert by_name_cavalcade is not None
     assert str(by_name_cavalcade.stratagem_id) == "000009807006"
+
+    by_name_sensory = get_stratagem_tool_descriptor(name="SENSORY EXCRUCIATION")
+    assert by_name_sensory is not None
+    assert str(by_name_sensory.stratagem_id) == "000009807004"
+
+    by_name_thieves = get_stratagem_tool_descriptor(name="THIEVES OF PAIN")
+    assert by_name_thieves is not None
+    assert str(by_name_thieves.stratagem_id) == "000009807002"
 
 
 def test_phantasmal_longing_applies_movement_phase_move_types_and_cleans_up():
@@ -202,6 +223,179 @@ def test_phantasmal_longing_applies_charge_move_type_and_cleans_up():
     assert "bearer_unit_phase_move_terrain_only_types" not in rules
 
 
+def test_sensory_excruciation_forces_battleshock_with_below_half_modifier(monkeypatch):
+    game, legion_player, enemy_player, legion_army, enemy_army = _build_game()
+    monster_source = _make_unit(
+        "Keeper of Secrets",
+        keywords=["SLAANESH", "MONSTER"],
+        faction_keywords=["LEGIONES DAEMONICA"],
+    )
+    friendly_target = _make_unit(
+        "Daemonettes",
+        keywords=["SLAANESH", "INFANTRY"],
+        faction_keywords=["LEGIONES DAEMONICA"],
+    )
+    enemy_target = _make_unit("Enemy Unit", keywords=["INFANTRY"])
+    outsider = _make_unit("Outsider Unit", keywords=["INFANTRY"])
+    legion_army.add_unit(monster_source)
+    legion_army.add_unit(friendly_target)
+    enemy_army.add_unit(enemy_target)
+    enemy_army.add_unit(outsider)
+    game.map.units.extend([monster_source, friendly_target, enemy_target, outsider])
+    _deploy_unit(monster_source, 0.0, 0.0)
+    _deploy_unit(friendly_target, 2.0, 0.0)
+    _deploy_unit(enemy_target, 4.0, 0.0)
+    _deploy_unit(outsider, 20.0, 0.0)
+
+    game.turn = 2
+    game.phase = BattleRoundPhases.COMMAND_PHASE
+    game.current_player_index = 0
+    game.event_system.publish("phase_start", player=legion_player, phase=BattleRoundPhases.COMMAND_PHASE)
+
+    in_shadow = {monster_source, friendly_target, enemy_target}
+    monkeypatch.setattr(
+        legion_player.stratagems,
+        "_unit_within_shadow_of_chaos",
+        lambda unit: unit in in_shadow,
+    )
+    monkeypatch.setattr(friendly_target, "is_below_half_strength", lambda: False)
+    monkeypatch.setattr(enemy_target, "is_below_half_strength", lambda: True)
+    monkeypatch.setattr(monster_source, "is_below_half_strength", lambda: False)
+
+    calls = []
+
+    def _capture_test(unit):
+        def _record(turn):
+            sr = dict(getattr(unit, "special_rules", {}) or {})
+            calls.append((unit, int(turn), int(sr.get("battle_shock_test_modifier", 0) or 0)))
+
+        return _record
+
+    monkeypatch.setattr(monster_source, "take_battle_shock_test", _capture_test(monster_source))
+    monkeypatch.setattr(friendly_target, "take_battle_shock_test", _capture_test(friendly_target))
+    monkeypatch.setattr(enemy_target, "take_battle_shock_test", _capture_test(enemy_target))
+    monkeypatch.setattr(outsider, "take_battle_shock_test", _capture_test(outsider))
+
+    strat_name = _find_stratagem_name(legion_player, "SENSORY EXCRUCIATION")
+    ok = legion_player.stratagems.use(
+        strat_name,
+        unit=monster_source,
+        phase_name="Command phase",
+    )
+    assert ok is True
+    assert legion_player.command_points == 4
+
+    tested_units = {entry[0] for entry in calls}
+    assert tested_units == {monster_source, friendly_target, enemy_target}
+    enemy_entries = [entry for entry in calls if entry[0] is enemy_target]
+    assert enemy_entries
+    assert enemy_entries[-1][2] == -1
+    assert outsider not in tested_units
+
+
+def test_thieves_of_pain_queues_on_attack_allocation_and_redirects_damage_until_phase_end():
+    game, legion_player, enemy_player, legion_army, enemy_army = _build_game()
+    source_unit = _make_unit(
+        "Daemonettes A",
+        keywords=["SLAANESH", "INFANTRY"],
+        faction_keywords=["LEGIONES DAEMONICA"],
+    )
+    redirect_unit = _make_unit(
+        "Daemonettes B",
+        keywords=["SLAANESH", "INFANTRY"],
+        faction_keywords=["LEGIONES DAEMONICA"],
+    )
+    enemy_unit = _make_unit("Enemy Unit", keywords=["INFANTRY"])
+    legion_army.add_unit(source_unit)
+    legion_army.add_unit(redirect_unit)
+    enemy_army.add_unit(enemy_unit)
+    game.map.units.extend([source_unit, redirect_unit, enemy_unit])
+    _deploy_unit(source_unit, 0.0, 0.0)
+    _deploy_unit(redirect_unit, 4.0, 0.0)
+    _deploy_unit(enemy_unit, 8.0, 0.0)
+
+    game.turn = 2
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.current_player_index = 1
+    game.event_system.publish("phase_start", player=enemy_player, phase=BattleRoundPhases.SHOOTING_PHASE)
+
+    source_model = source_unit.models[0]
+    enemy_model = enemy_unit.models[0]
+    game.event_system.publish(
+        "attack_allocated",
+        attacker_model=enemy_model,
+        attacker_unit=enemy_unit,
+        target_model=source_model,
+        target_unit=source_unit,
+        phase_name="Shooting phase",
+    )
+    pending = legion_player.stratagems.get_pending_reactions()
+    reactions = [
+        reaction
+        for reaction in list(pending or [])
+        if _normalize_name(str(reaction.get("stratagem", "") or "")) == "THIEVES OF PAIN"
+    ]
+    assert len(reactions) == 1
+    assert source_unit in list(reactions[0].get("candidates", []) or [])
+    assert redirect_unit in list(reactions[0].get("redirect_candidates", []) or [])
+
+    strat_name = _find_stratagem_name(legion_player, "THIEVES OF PAIN")
+    ok = legion_player.stratagems.use(
+        strat_name,
+        unit=source_unit,
+        redirect_unit=redirect_unit,
+        phase_name="Shooting phase",
+        dequeue=True,
+    )
+    assert ok is True
+    assert legion_player.command_points == 4
+
+    class _FakeRangedWargear:
+        @staticmethod
+        def is_melee() -> bool:
+            return False
+
+    weapon_profile = WargearProfile(
+        "Test Profile",
+        {
+            "range": "24",
+            "A": "1",
+            "BS_WS": "3+",
+            "S": "4",
+            "AP": "0",
+            "D": "1",
+            "description": "",
+        },
+        parent_wargear=_FakeRangedWargear(),
+    )
+
+    source_start_wounds = int(source_model.wounds)
+    redirect_start_wounds = int(redirect_unit.models[0].wounds)
+    result = weapon_profile._apply_damage_with_tracking(
+        source_model,
+        enemy_model,
+        1,
+        False,
+        attack_instance={},
+        game_map=game.map,
+    )
+    assert int(result.get("damage_applied", 0) or 0) == 0
+    assert int(source_model.wounds) == source_start_wounds
+    assert int(redirect_unit.models[0].wounds) == redirect_start_wounds - 1
+
+    game.event_system.publish("phase_end", player=enemy_player, phase=BattleRoundPhases.SHOOTING_PHASE)
+    result = weapon_profile._apply_damage_with_tracking(
+        source_model,
+        enemy_model,
+        1,
+        False,
+        attack_instance={},
+        game_map=game.map,
+    )
+    assert int(result.get("damage_applied", 0) or 0) == 1
+    assert int(source_model.wounds) == source_start_wounds - 1
+
+
 def test_cavalcade_of_blades_queues_on_charge_end_and_applies_mortal_wounds(monkeypatch):
     game, legion_player, enemy_player, legion_army, enemy_army = _build_game()
     legion_unit = _make_unit(
@@ -252,4 +446,3 @@ def test_cavalcade_of_blades_queues_on_charge_end_and_applies_mortal_wounds(monk
     assert ok is True
     assert legion_player.command_points == 4
     assert applied == {"target": enemy_unit, "amount": 1}
-
