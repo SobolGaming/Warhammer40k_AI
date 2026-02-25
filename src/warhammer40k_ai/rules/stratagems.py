@@ -1363,6 +1363,8 @@ class StratagemManager(
         self._used_stratagems_this_phase: set[str] = set()
         # Track Heroic Intervention targets per phase for named exceptions.
         self._heroic_intervention_units_this_phase: set[str] = set()
+        # Track Rapid Ingress targets per phase for named exceptions.
+        self._rapid_ingress_units_this_phase: set[str] = set()
         # CSM: Daemonforge allows one Counter-offensive repeat per Fight phase.
         self._daemonforge_used_phase_key: str = ""
         # Once-per-battle limits (e.g., INSANE BRAVERY once per battle)
@@ -2477,6 +2479,14 @@ class StratagemManager(
             return bool(fn(self.game))
         return False
 
+    def _unit_can_use_grimnars_mark_stratagem_discount(self, unit, *, stratagem_name: str = "") -> bool:
+        if unit is None:
+            return False
+        can_use_fn = getattr(self.player, "_target_unit_can_use_grimnars_mark_stratagem_discount", None)
+        if callable(can_use_fn):
+            return bool(can_use_fn(unit, stratagem_name=stratagem_name))
+        return False
+
     def _daemonforge_phase_key(self) -> str:
         turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
         phase_name = str(self._current_phase_name or "").strip().upper()
@@ -2572,6 +2582,10 @@ class StratagemManager(
                     target_unit,
                     stratagem_name="HEROIC INTERVENTION",
                 )
+                or self._unit_can_use_grimnars_mark_stratagem_discount(
+                    target_unit,
+                    stratagem_name="HEROIC INTERVENTION",
+                )
             ):
                 return False
             uid = self._heroic_intervention_target_id(target_unit)
@@ -2589,6 +2603,10 @@ class StratagemManager(
                     cand,
                     stratagem_name="HEROIC INTERVENTION",
                 )
+                or self._unit_can_use_grimnars_mark_stratagem_discount(
+                    cand,
+                    stratagem_name="HEROIC INTERVENTION",
+                )
             ):
                 continue
             uid = self._heroic_intervention_target_id(cand)
@@ -2600,6 +2618,31 @@ class StratagemManager(
         uid = self._heroic_intervention_target_id(unit)
         if uid:
             self._heroic_intervention_units_this_phase.add(uid)
+
+    def _rapid_ingress_repeat_allowed(self, *, target_unit=None, candidates=None) -> bool:
+        if target_unit is not None:
+            if not self._unit_can_use_grimnars_mark_stratagem_discount(
+                target_unit,
+                stratagem_name="RAPID INGRESS",
+            ):
+                return False
+            uid = self._heroic_intervention_target_id(target_unit)
+            return bool(uid and uid not in self._rapid_ingress_units_this_phase)
+        for cand in list(candidates or []):
+            if not self._unit_can_use_grimnars_mark_stratagem_discount(
+                cand,
+                stratagem_name="RAPID INGRESS",
+            ):
+                continue
+            uid = self._heroic_intervention_target_id(cand)
+            if uid and uid not in self._rapid_ingress_units_this_phase:
+                return True
+        return False
+
+    def _record_rapid_ingress_use(self, unit) -> None:
+        uid = self._heroic_intervention_target_id(unit)
+        if uid:
+            self._rapid_ingress_units_this_phase.add(uid)
 
     def _grenade_mortal_wound_threshold(self, target_unit) -> int:
         threshold = 4
@@ -4687,6 +4730,13 @@ class StratagemManager(
                 self._heroic_intervention_units_this_phase = set()
             else:
                 self._heroic_intervention_units_this_phase.clear()
+        except Exception:
+            raise
+        try:
+            if not hasattr(self, "_rapid_ingress_units_this_phase"):
+                self._rapid_ingress_units_this_phase = set()
+            else:
+                self._rapid_ingress_units_this_phase.clear()
         except Exception:
             raise
         # Chaos Daemons: CORRUPT REALSPACE (start of any Command phase)
@@ -11867,6 +11917,11 @@ class StratagemManager(
                         enemy_unit=kwargs.get("enemy_unit"),
                     ):
                         pass
+                    elif key == "RAPID INGRESS" and self._rapid_ingress_repeat_allowed(
+                        target_unit=kwargs.get("target_unit") or kwargs.get("unit"),
+                        candidates=kwargs.get("candidates"),
+                    ):
+                        pass
                     elif key == "COUNTER-OFFENSIVE" and self._counter_offensive_daemonforge_available(
                         target_unit=kwargs.get("target_unit") or kwargs.get("unit"),
                         candidates=kwargs.get("candidates"),
@@ -12391,6 +12446,7 @@ class StratagemManager(
                 self._dequeue_reaction_by_name(s.name)
             try:
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+                self._record_rapid_ingress_use(target)
             except Exception:
                 raise
             return True

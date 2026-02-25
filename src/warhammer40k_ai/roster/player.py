@@ -1293,6 +1293,63 @@ class Player:
             return True
         return False
 
+    def _target_unit_can_use_grimnars_mark_stratagem_discount(self, target_unit, *, stratagem_name: str = "") -> bool:
+        if target_unit is None:
+            return False
+        parent = self._target_unit_parent_army(target_unit)
+        if parent is not None and parent is not self.get_army():
+            return False
+        stratagem_key = str(stratagem_name or "").strip().upper()
+        if stratagem_key not in ("RAPID INGRESS", "HEROIC INTERVENTION"):
+            return False
+        battle_round = self._battle_round()
+        if battle_round < 2:
+            return False
+        usage_key = "GRIMNARS_MARK_FREE_STRATAGEM"
+        if int(self._ability_used_battle_round.get(usage_key, 0) or 0) == battle_round:
+            return False
+        army = self.get_army()
+        sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+        if sm_mgr is None or not bool(getattr(sm_mgr, "is_saga_of_the_great_wolf", lambda: False)()):
+            return False
+        members = self._attached_members(target_unit)
+        for u in members:
+            sr = getattr(u, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if not bool(sr.get("enhancement_grimnars_mark", False)):
+                continue
+            if not self._unit_is_alive_or_unknown(u):
+                continue
+            configured_usage_key = str(sr.get("enhancement_grimnars_mark_usage_key", "") or "").strip().upper()
+            if configured_usage_key:
+                usage_key = configured_usage_key
+                if int(self._ability_used_battle_round.get(usage_key, 0) or 0) == battle_round:
+                    continue
+            try:
+                min_round = int(sr.get("enhancement_grimnars_mark_min_battle_round", 2) or 2)
+            except Exception:
+                min_round = 2
+            if battle_round < int(max(1, min_round)):
+                continue
+            configured_names = [
+                str(v or "").strip().upper()
+                for v in list(sr.get("enhancement_grimnars_mark_stratagem_names", []) or [])
+                if str(v or "").strip()
+            ]
+            if configured_names and stratagem_key not in set(configured_names):
+                continue
+            get_bearer = getattr(u, "_get_enhancement_bearer_model", None)
+            bearer = get_bearer() if callable(get_bearer) else None
+            if bearer is None:
+                continue
+            alive_attr = getattr(bearer, "is_alive", True)
+            is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            if not is_alive:
+                continue
+            return True
+        return False
+
     def _target_unit_can_use_beast_handler_heroic_intervention(self, target_unit) -> bool:
         if target_unit is None:
             return False
@@ -1479,6 +1536,17 @@ class Player:
         if name_u != "RAPID INGRESS":
             return 0
         if not self._target_unit_has_beacon_angelis(target_unit):
+            return 0
+        base = int(getattr(stratagem, "cp_cost", 0) or 0)
+        return max(0, base)
+
+    def _preview_grimnars_mark_discount(self, *, stratagem=None, target_unit=None) -> int:
+        if stratagem is None or target_unit is None:
+            return 0
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name_u not in ("RAPID INGRESS", "HEROIC INTERVENTION"):
+            return 0
+        if not self._target_unit_can_use_grimnars_mark_stratagem_discount(target_unit, stratagem_name=name_u):
             return 0
         base = int(getattr(stratagem, "cp_cost", 0) or 0)
         return max(0, base)
@@ -1960,6 +2028,19 @@ class Player:
                     discount = base
                     reasons.append(f"{ability_name}: Counter-offensive for 0CP.")
                     return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
+
+        grimnars_mark = self._preview_grimnars_mark_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if grimnars_mark:
+            discount = base
+            name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+            if name_u == "HEROIC INTERVENTION":
+                reasons.append("Grimnar's Mark: Heroic Intervention for 0CP.")
+            else:
+                reasons.append("Grimnar's Mark: Rapid Ingress for 0CP.")
+            return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
 
         beacon = self._preview_beacon_angelis_rapid_ingress_discount(
             stratagem=stratagem,
@@ -2705,6 +2786,59 @@ class Player:
                     }
             if counter_used:
                 return {"denied": True, "reason": "Counter-offensive already used this phase"}
+
+        grimnars_mark = self._preview_grimnars_mark_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if grimnars_mark:
+            cost = 0
+            increase = 0
+            increase_reasons: list[str] = []
+            opponent = self._get_opponent_player()
+            if opponent is not None:
+                inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                    target_unit=target_unit,
+                    stratagem=stratagem,
+                    current_cost=cost,
+                )
+                increase = int(inc_info.get("increase", 0) or 0)
+                increase_reasons = list(inc_info.get("reasons", []) or [])
+                if increase:
+                    cost = max(0, cost + increase)
+            self._pending_stratagem_cp_increase = {
+                "increase": int(increase or 0),
+                "reasons": increase_reasons,
+                "stratagem_name": getattr(stratagem, "name", None) or "",
+            }
+            usage_key = "GRIMNARS_MARK_FREE_STRATAGEM"
+            members = self._attached_members(target_unit)
+            for member in members:
+                sr = getattr(member, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if not bool(sr.get("enhancement_grimnars_mark", False)):
+                    continue
+                configured_key = str(sr.get("enhancement_grimnars_mark_usage_key", "") or "").strip().upper()
+                if configured_key:
+                    usage_key = configured_key
+                break
+            br = self._battle_round()
+            if br > 0:
+                self._ability_used_battle_round[usage_key] = br
+            stratagem_label = str(getattr(stratagem, "name", "") or "").strip().upper()
+            if stratagem_label == "HEROIC INTERVENTION":
+                reason = "Grimnar's Mark: Heroic Intervention for 0CP."
+            else:
+                reason = "Grimnar's Mark: Rapid Ingress for 0CP."
+            return {
+                "base": base,
+                "discount": base,
+                "cost": cost,
+                "reasons": [reason],
+                "increase": increase,
+                "increase_reasons": increase_reasons,
+            }
 
         beacon = self._preview_beacon_angelis_rapid_ingress_discount(
             stratagem=stratagem,

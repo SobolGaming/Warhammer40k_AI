@@ -456,6 +456,9 @@ class Enhancement:
         is_saga_of_the_bold = bool(
             sm_mgr and getattr(sm_mgr, "is_saga_of_the_bold", lambda: False)()
         )
+        is_saga_of_the_great_wolf = bool(
+            sm_mgr and getattr(sm_mgr, "is_saga_of_the_great_wolf", lambda: False)()
+        )
         is_company_of_hunters = bool(
             sm_mgr and getattr(sm_mgr, "is_company_of_hunters", lambda: False)()
         )
@@ -2160,6 +2163,111 @@ class Enhancement:
             refresh_return = getattr(unit, "_refresh_return_on_death_flags", None)
             if callable(refresh_return):
                 refresh_return()
+
+        if name in ("grimnar's mark", "grimnars mark") or enh_id == "000010660002":
+            if not is_saga_of_the_great_wolf:
+                return
+            unit.special_rules["enhancement_grimnars_mark"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            min_battle_round = _coerce_int(params.get("min_battle_round", 2) or 2, default=2)
+            usage_key = str(
+                params.get("once_per_battle_round_key", "grimnars_mark_free_stratagem")
+                or "grimnars_mark_free_stratagem"
+            ).strip().upper()
+            if not usage_key:
+                usage_key = "GRIMNARS_MARK_FREE_STRATAGEM"
+            raw_stratagem_names = list(params.get("stratagem_names", ("RAPID INGRESS", "HEROIC INTERVENTION")) or ())
+            stratagem_names: list[str] = []
+            for value in raw_stratagem_names:
+                key = str(value or "").strip().upper()
+                if not key or key in stratagem_names:
+                    continue
+                stratagem_names.append(key)
+            if not stratagem_names:
+                stratagem_names = ["RAPID INGRESS", "HEROIC INTERVENTION"]
+            raw_attach_names = list(params.get("attach_override_unit_names_any", ("Wolf Guard Terminators",)) or ())
+            attach_names: list[str] = []
+            for value in raw_attach_names:
+                text = str(value or "").strip()
+                if not text or text in attach_names:
+                    continue
+                attach_names.append(text)
+            if not attach_names:
+                attach_names = ["Wolf Guard Terminators"]
+            unit.special_rules["enhancement_grimnars_mark_min_battle_round"] = int(max(1, min_battle_round))
+            unit.special_rules["enhancement_grimnars_mark_usage_key"] = usage_key
+            unit.special_rules["enhancement_grimnars_mark_stratagem_names"] = list(stratagem_names)
+            unit.special_rules["enhancement_grimnars_mark_attach_unit_names"] = list(attach_names)
+            unit.special_rules["enhancement_grimnars_mark_source"] = "Grimnar's Mark"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_grimnars_mark_bearer_model_id"] = bearer_id
+            invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate_cache):
+                invalidate_cache()
+
+        if name == "howlmaw" or enh_id == "000010660003":
+            if not is_saga_of_the_great_wolf:
+                return
+            unit.special_rules["enhancement_howlmaw"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                range_value = float(params.get("range", 6) or 6)
+            except (TypeError, ValueError):
+                range_value = 6.0
+            test_modifier = _coerce_int(params.get("battleshock_test_modifier", -1) or -1, default=-1)
+            if test_modifier > 0:
+                test_modifier = -int(test_modifier)
+            unit.special_rules["enhancement_howlmaw_range"] = float(max(0.0, range_value))
+            unit.special_rules["enhancement_howlmaw_battleshock_test_modifier"] = int(test_modifier)
+            unit.special_rules["enhancement_howlmaw_source"] = "Howlmaw"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_howlmaw_bearer_model_id"] = bearer_id
+
+        if name == "chariots of the storm" or enh_id == "000010660004":
+            if not is_saga_of_the_great_wolf:
+                return
+            unit.special_rules["enhancement_chariots_of_the_storm"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            max_units = _coerce_int(params.get("max_units", 3) or 3, default=3)
+            can_place_in_reserves = bool(params.get("can_place_in_reserves", True))
+            raw_filters = list(params.get("redeploy_filters", ("ADEPTUS ASTARTES",)) or ())
+            redeploy_filters: list[str] = []
+            for keyword in raw_filters:
+                key = str(keyword or "").strip().upper()
+                if not key or key in redeploy_filters:
+                    continue
+                redeploy_filters.append(key)
+            if not redeploy_filters:
+                redeploy_filters = ["ADEPTUS ASTARTES"]
+            unit.special_rules["enhancement_chariots_of_the_storm_max_units"] = int(max(1, max_units))
+            unit.special_rules["enhancement_chariots_of_the_storm_can_place_in_reserves"] = bool(can_place_in_reserves)
+            unit.special_rules["enhancement_chariots_of_the_storm_filters"] = list(redeploy_filters)
+            unit.special_rules["enhancement_chariots_of_the_storm_source"] = "Chariots of the Storm"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_chariots_of_the_storm_bearer_model_id"] = bearer_id
+            invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate_cache):
+                invalidate_cache()
+
+        if name in ("skjald's foretelling", "skjalds foretelling") or enh_id == "000010660005":
+            if not is_saga_of_the_great_wolf:
+                return
+            unit.special_rules["enhancement_skjalds_foretelling"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_skjalds_foretelling_requires_bearer_leading"] = bool(
+                params.get("requires_bearer_leading", True)
+            )
+            unit.special_rules["enhancement_skjalds_foretelling_source"] = "Skjald's Foretelling"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_skjalds_foretelling_bearer_model_id"] = bearer_id
 
         if name in ("master-crafted weapon", "master crafted weapon") or enh_id == "000008778002":
             if not is_company_of_hunters:

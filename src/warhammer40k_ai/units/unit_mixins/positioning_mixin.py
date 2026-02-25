@@ -435,6 +435,38 @@ class PositioningMixin:
         self._ability_cache[cache_key] = bool(found)
         return bool(found)
 
+    def has_grimnars_mark(self) -> bool:
+        """True if this unit has the Grimnar's Mark enhancement."""
+        cache_key = "grimnars_mark"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache[cache_key])
+        found = False
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("enhancement_grimnars_mark"):
+                found = True
+        except Exception:
+            found = False
+        if not found:
+            try:
+                enh = getattr(self, "enhancement", None)
+                name = (
+                    str(getattr(enh, "name", "") or "")
+                    .strip()
+                    .lower()
+                    .replace("\u2019", "'")
+                    .replace("\u2018", "'")
+                )
+                enh_id = str(getattr(enh, "id", "") or "").strip()
+                if name in ("grimnar's mark", "grimnars mark") or enh_id == "000010660002":
+                    found = True
+            except Exception:
+                found = False
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = bool(found)
+        return bool(found)
+
     def _attached_unit_has_enhancement_flag(
         self,
         flag_key: str,
@@ -1079,6 +1111,78 @@ class PositioningMixin:
         if not self._wolf_touched_is_bearer():
             return False
         return self._wolf_touched_bodyguard_allowed(bodyguard)
+
+    def _grimnars_mark_bodyguard_allowed(self, bodyguard) -> bool:
+        if bodyguard is None:
+            return False
+        configured_names: list[str] = []
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict):
+                configured_names = [
+                    self._normalize_attached_unit_name(v)
+                    for v in list(sr.get("enhancement_grimnars_mark_attach_unit_names", ()) or ())
+                    if str(v or "").strip()
+                ]
+        except Exception:
+            configured_names = []
+        try:
+            name = self._normalize_attached_unit_name(getattr(bodyguard, "name", ""))
+        except Exception:
+            name = ""
+        if name in set(configured_names):
+            return True
+        if "wolf guard terminator" in name:
+            return True
+        try:
+            if bool(bodyguard.has_any_keyword("WOLF GUARD TERMINATORS")):
+                return True
+        except Exception:
+            pass
+        return False
+
+    def _grimnars_mark_is_bearer(self) -> bool:
+        if not self.has_grimnars_mark():
+            return False
+        if not bool(getattr(self, "is_leader", False)):
+            return False
+        try:
+            army = self.get_parent_army()
+        except Exception:
+            army = None
+        sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+        if sm_mgr is None:
+            return False
+        try:
+            if not sm_mgr.is_saga_of_the_great_wolf():
+                return False
+        except Exception:
+            return False
+        try:
+            has_terminator_keyword = bool(self.has_any_keyword("TERMINATOR"))
+        except Exception:
+            has_terminator_keyword = False
+        if not has_terminator_keyword:
+            return False
+        name_norm = ""
+        try:
+            name_norm = self._normalize_attached_unit_name(getattr(self, "name", ""))
+        except Exception:
+            name_norm = ""
+        try:
+            has_captain_keyword = bool(self.has_any_keyword("CAPTAIN"))
+        except Exception:
+            has_captain_keyword = False
+        if not has_captain_keyword and "captain" not in name_norm:
+            return False
+        return True
+
+    def _grimnars_mark_can_attach_to(self, bodyguard) -> bool:
+        if bodyguard is None:
+            return False
+        if not self._grimnars_mark_is_bearer():
+            return False
+        return self._grimnars_mark_bodyguard_allowed(bodyguard)
 
     def _disciple_of_khorne_active_leaders(self) -> list["Unit"]:
         try:
@@ -3539,6 +3643,34 @@ class PositioningMixin:
                     if not sr.get("enhancement_alacritous_assault"):
                         continue
                     source = str(sr.get("enhancement_alacritous_assault_source", "") or "").strip() or "Alacritous Assault"
+                    break
+                rules = list(rules or []) + [
+                    {"attack_type": "melee", "keyword": "LANCE", "source": source}
+                ]
+        except Exception:
+            pass
+        try:
+            if self._attached_unit_has_active_leading_enhancement(
+                "enhancement_skjalds_foretelling",
+                enhancement_id="000010660005",
+                enhancement_name="skjald's foretelling",
+            ):
+                source = "Skjald's Foretelling"
+                try:
+                    root = self.get_attached_unit_root()
+                except Exception:
+                    root = self
+                leaders = list(getattr(root, "attached_leaders", []) or [])
+                for leader in list(leaders or []):
+                    sr = getattr(leader, "special_rules", None)
+                    if not isinstance(sr, dict):
+                        continue
+                    if not sr.get("enhancement_skjalds_foretelling"):
+                        continue
+                    source = (
+                        str(sr.get("enhancement_skjalds_foretelling_source", "") or "Skjald's Foretelling").strip()
+                        or "Skjald's Foretelling"
+                    )
                     break
                 rules = list(rules or []) + [
                     {"attack_type": "melee", "keyword": "LANCE", "source": source}
@@ -7188,6 +7320,35 @@ class PositioningMixin:
             self._ability_cache["redeploy"] = result
             if filter_any_groups:
                 self._ability_cache["redeploy_filter_any_groups"] = [list(group) for group in filter_any_groups]
+            self._ability_cache["redeploy_ability_name"] = ability_name
+            self._ability_cache["redeploy_requires_source_on_battlefield"] = False
+            self._ability_cache["redeploy_allow_embarked_transport_on_battlefield"] = False
+            return result
+
+        if isinstance(sr, dict) and bool(sr.get("enhancement_chariots_of_the_storm", False)):
+            try:
+                count = int(sr.get("enhancement_chariots_of_the_storm_max_units", 3) or 3)
+            except Exception:
+                count = 3
+            if count <= 0:
+                count = 1
+            can_place_in_reserves = bool(sr.get("enhancement_chariots_of_the_storm_can_place_in_reserves", True))
+            filters = [
+                str(v or "").strip().upper()
+                for v in list(sr.get("enhancement_chariots_of_the_storm_filters", []) or [])
+                if str(v or "").strip()
+            ]
+            ability_name = (
+                str(sr.get("enhancement_chariots_of_the_storm_source", "") or "Chariots of the Storm")
+                .strip()
+                or "Chariots of the Storm"
+            )
+            result = (True, int(count), bool(can_place_in_reserves))
+            if not hasattr(self, "_ability_cache"):
+                self._ability_cache = {}
+            self._ability_cache["redeploy"] = result
+            if filters:
+                self._ability_cache["redeploy_filters"] = list(filters)
             self._ability_cache["redeploy_ability_name"] = ability_name
             self._ability_cache["redeploy_requires_source_on_battlefield"] = False
             self._ability_cache["redeploy_allow_embarked_transport_on_battlefield"] = False

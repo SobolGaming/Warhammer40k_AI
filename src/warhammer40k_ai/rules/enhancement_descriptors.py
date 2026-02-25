@@ -2144,6 +2144,65 @@ _SPACE_MARINES_SAGA_OF_THE_BOLD_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPACE_MARINES_SAGA_OF_THE_BOLD_DESCRIPTORS.values()
 }
 
+_SPACE_MARINES_SAGA_OF_THE_GREAT_WOLF_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010660002": EnhancementToolDescriptor(
+        enhancement_id="000010660002",
+        name="Grimnar's Mark",
+        timing="once_per_battle_round_battle_round_2_plus_when_targeting_bearer_unit_with_rapid_ingress_or_heroic_intervention",
+        target="bearer_unit_and_bearer_attachment_eligibility",
+        duration="instant_and_constant_attachment_override",
+        effect="zero_cp_target_bearer_unit_with_rapid_ingress_or_heroic_intervention_and_attach_to_wolf_guard_terminators",
+        effect_params={
+            "stratagem_names": ("RAPID INGRESS", "HEROIC INTERVENTION"),
+            "cp_cost": 0,
+            "once_per_battle_round_key": "grimnars_mark_free_stratagem",
+            "min_battle_round": 2,
+            "attach_override_unit_names_any": ("Wolf Guard Terminators",),
+        },
+    ),
+    "000010660003": EnhancementToolDescriptor(
+        enhancement_id="000010660003",
+        name="Howlmaw",
+        timing="start_of_fight_phase_optional",
+        target="one_enemy_unit_within_6_of_bearer",
+        duration="instant",
+        effect="select_enemy_within_6_of_bearer_take_battleshock_with_minus_1_modifier",
+        effect_params={
+            "range": 6,
+            "battleshock_test_modifier": -1,
+        },
+    ),
+    "000010660004": EnhancementToolDescriptor(
+        enhancement_id="000010660004",
+        name="Chariots of the Storm",
+        timing="post_deployment",
+        target="friendly_adeptus_astartes_units",
+        duration="redeploy_step",
+        effect="redeploy_units",
+        effect_params={
+            "max_units": 3,
+            "can_place_in_reserves": True,
+            "redeploy_filters": ("ADEPTUS ASTARTES",),
+        },
+    ),
+    "000010660005": EnhancementToolDescriptor(
+        enhancement_id="000010660005",
+        name="Skjald's Foretelling",
+        timing="while_bearer_is_leading",
+        target="bearer_led_unit_melee_weapons",
+        duration="constant_while_bearer_is_leading",
+        effect="grant_lance_to_weapons_of_models_in_bearer_led_unit",
+        effect_params={
+            "keywords": ("LANCE",),
+            "requires_bearer_leading": True,
+        },
+    ),
+}
+
+_SPACE_MARINES_SAGA_OF_THE_GREAT_WOLF_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPACE_MARINES_SAGA_OF_THE_GREAT_WOLF_DESCRIPTORS.values()
+}
+
 _SPACE_MARINES_COMPANY_OF_HUNTERS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008778002": EnhancementToolDescriptor(
         enhancement_id="000008778002",
@@ -2900,6 +2959,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPACE_MARINES_SAGA_OF_THE_BOLD_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPACE_MARINES_SAGA_OF_THE_GREAT_WOLF_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPACE_MARINES_COMPANY_OF_HUNTERS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -2981,6 +3043,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SPACE_MARINES_CHAMPIONS_OF_FENRIS_BY_NAME.get(key)
         or _SPACE_MARINES_SAGA_OF_THE_BEASTSLAYER_BY_NAME.get(key)
         or _SPACE_MARINES_SAGA_OF_THE_BOLD_BY_NAME.get(key)
+        or _SPACE_MARINES_SAGA_OF_THE_GREAT_WOLF_BY_NAME.get(key)
         or _SPACE_MARINES_COMPANY_OF_HUNTERS_BY_NAME.get(key)
         or _SPACE_MARINES_COMPANIONS_OF_VEHEMENCE_BY_NAME.get(key)
         or _SPACE_MARINES_EMPERORS_SHIELD_BY_NAME.get(key)

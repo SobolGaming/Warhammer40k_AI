@@ -5241,6 +5241,213 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return True, 0, source
         return False, 1, source
 
+    def _saga_of_the_great_wolf_enhancement_source_member(self, unit, flag_key: str):
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return None, None, None
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        members.sort(key=lambda member: str(get_entity_id(member) or ""))
+        for member in list(members or []):
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get(flag_key, False)):
+                return root, member, sr
+        return root, None, None
+
+    @staticmethod
+    def _saga_of_the_great_wolf_resolve_bearer_model(member, sr):
+        bearer = getattr(member, "_get_enhancement_bearer_model", lambda: None)()
+        if bearer is None:
+            bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
+            if bearer_id:
+                for model in list(getattr(member, "models", []) or []):
+                    if str(get_entity_id(model) or "") != bearer_id:
+                        continue
+                    bearer = model
+                    break
+        return bearer
+
+    def _saga_of_the_great_wolf_member_has_live_bearer(self, member, sr, *, require_leading: bool = False) -> bool:
+        if member is None or not isinstance(sr, dict):
+            return False
+        if require_leading and not bool(getattr(member, "is_attached_leader", False)):
+            return False
+        bearer = self._saga_of_the_great_wolf_resolve_bearer_model(member, sr)
+        if bearer is None:
+            return False
+        alive_attr = getattr(bearer, "is_alive", True)
+        return bool(alive_attr() if callable(alive_attr) else alive_attr)
+
+    def saga_of_the_great_wolf_queue_howlmaw_request(self, unit, *, game=None, player=None) -> bool:
+        if not self.is_saga_of_the_great_wolf():
+            return False
+        root, member, sr = self._saga_of_the_great_wolf_enhancement_source_member(unit, "enhancement_howlmaw")
+        if root is None or member is None or not isinstance(sr, dict):
+            return False
+        try:
+            if root.get_parent_army() is not self.army:
+                return False
+        except Exception:
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        if not self._saga_of_the_great_wolf_member_has_live_bearer(member, sr, require_leading=False):
+            return False
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is None or not bool(getattr(game_obj, "is_authoritative", True)):
+            return False
+        phase_name = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+        if phase_name != "FIGHT_PHASE":
+            return False
+        game_map = getattr(game_obj, "map", None)
+        if game_map is None:
+            return False
+
+        try:
+            range_value = float(sr.get("enhancement_howlmaw_range", 6.0) or 6.0)
+        except Exception:
+            range_value = 6.0
+        if range_value <= 0:
+            return False
+        try:
+            test_modifier = int(sr.get("enhancement_howlmaw_battleshock_test_modifier", -1) or -1)
+        except Exception:
+            test_modifier = -1
+        source = str(sr.get("enhancement_howlmaw_source", "") or "Howlmaw").strip() or "Howlmaw"
+        bearer = self._saga_of_the_great_wolf_resolve_bearer_model(member, sr)
+        if bearer is None:
+            return False
+
+        owner = player
+        if owner is None:
+            owner = getattr(self.army, "player", None) if self.army is not None else None
+        if owner is None:
+            return False
+        owner_id = str(getattr(owner, "id", "") or "")
+        if not owner_id:
+            return False
+        root_id = str(get_entity_id(root) or "")
+        if not root_id:
+            return False
+        try:
+            turn_now = int(getattr(game_obj, "turn", 0) or 0)
+        except Exception:
+            turn_now = 0
+
+        try:
+            from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+            from ..engine.decisions import DecisionOption, DecisionRequest
+        except Exception:
+            return False
+
+        queue = getattr(game_obj, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            stale_ids: list[str] = []
+            for request in list(queue.list() or []):
+                if str(getattr(request, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                    continue
+                context = dict(getattr(request, "context", {}) or {})
+                if str(context.get("ability", "") or "") != "charge_end_select_one_battleshock":
+                    continue
+                if str(context.get("source_unit_id", "") or "") != root_id:
+                    continue
+                if str(context.get("ability_name", "") or "") != source:
+                    continue
+                request_turn = int(context.get("turn", 0) or 0)
+                if request_turn and turn_now and request_turn != turn_now:
+                    stale_ids.append(str(getattr(request, "decision_id", "") or ""))
+                    continue
+                return False
+            for decision_id in list(stale_ids or []):
+                if decision_id:
+                    queue.pop(decision_id)
+
+        from ..utility.aura_utils import model_within_range_of_unit
+
+        candidates: list[object] = []
+        seen_ids: set[str] = set()
+        enemy_units = list(getattr(game_map, "get_enemy_units", lambda _u: [])(root) or [])
+        for enemy in list(enemy_units or []):
+            enemy_root = self._attached_unit_root(enemy)
+            if enemy_root is None:
+                continue
+            enemy_id = str(get_entity_id(enemy_root) or "")
+            if not enemy_id or enemy_id in seen_ids:
+                continue
+            seen_ids.add(enemy_id)
+            try:
+                if enemy_root.get_parent_army() is self.army:
+                    continue
+            except Exception:
+                continue
+            try:
+                if not enemy_root.is_alive() or not bool(getattr(enemy_root, "deployed", True)):
+                    continue
+                if enemy_root.is_in_reserves() or enemy_root.is_embarked:
+                    continue
+            except Exception:
+                continue
+            try:
+                if not model_within_range_of_unit(
+                    bearer,
+                    enemy_root,
+                    float(range_value),
+                    use_attached_aggregate=True,
+                ):
+                    continue
+            except Exception:
+                continue
+            candidates.append(enemy_root)
+
+        if not candidates:
+            return False
+        candidates.sort(key=lambda value: str(get_entity_id(value) or ""))
+
+        options = [DecisionOption.create("None", payload={"action": "skip"})]
+        for enemy_root in list(candidates or []):
+            enemy_id = str(get_entity_id(enemy_root) or "")
+            if not enemy_id:
+                continue
+            options.append(
+                DecisionOption.create(
+                    str(getattr(enemy_root, "name", "Unit") or "Unit"),
+                    payload={
+                        "target_unit_id": enemy_id,
+                        "source_unit_id": root_id,
+                    },
+                )
+            )
+        if len(options) <= 1:
+            return False
+
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{source}: select one enemy unit within {int(range_value)}\" of the bearer (or None).",
+            player_id=getattr(owner, "id", None),
+            options=options,
+            context={
+                "ability": "charge_end_select_one_battleshock",
+                "ability_name": source,
+                "source_unit_id": root_id,
+                "unit_id": root_id,
+                "model_id": str(get_entity_id(bearer) or ""),
+                "test_modifier": int(test_modifier),
+                "phase": "Fight phase",
+                "optional": True,
+                "turn": int(turn_now),
+            },
+        )
+        if hasattr(game_obj, "request_decision"):
+            game_obj.request_decision(request)
+            return True
+        return False
+
     def _mission_tactics_recipient(self, unit) -> bool:
         if unit is None:
             return False

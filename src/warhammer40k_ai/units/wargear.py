@@ -7929,6 +7929,14 @@ class WargearProfile:
             nonlocal bonus_lance, bonus_lance_label, bonus_anti_specs, bonus_precision
             if not isinstance(bonus, dict):
                 return
+            def _extract_source(keyword_name: str) -> str:
+                prefix = f"{keyword_name} ("
+                for source_entry in list(bonus.get("sources", ()) or ()):
+                    text = str(source_entry or "").strip()
+                    if not text or not text.startswith(prefix) or not text.endswith(")"):
+                        continue
+                    return str(text[len(prefix):-1] or "").strip()
+                return ""
             if bool(bonus.get("lethal_hits")):
                 bonus_lethal = True
             if bool(bonus.get("precision")):
@@ -7949,8 +7957,14 @@ class WargearProfile:
                     bonus_heavy_label = heavy_label
             if bool(bonus.get("lance")):
                 bonus_lance = True
-                if lance_label and not bonus_lance_label:
-                    bonus_lance_label = lance_label
+                inferred_lance_label = _extract_source("Lance")
+                chosen_lance_label = lance_label
+                if inferred_lance_label and (not chosen_lance_label or chosen_lance_label.strip().lower() == "ability"):
+                    chosen_lance_label = inferred_lance_label
+                if not chosen_lance_label:
+                    chosen_lance_label = inferred_lance_label
+                if chosen_lance_label and not bonus_lance_label:
+                    bonus_lance_label = chosen_lance_label
             bonus_anti_specs = _merge_anti_specs(bonus_anti_specs, tuple(bonus.get("anti_specs") or ()))
             if bool(bonus.get("ignores_cover")) and attack_is_ranged:
                 attack_instance["ignores_cover"] = True

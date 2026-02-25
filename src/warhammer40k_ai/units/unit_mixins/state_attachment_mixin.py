@@ -3141,6 +3141,12 @@ class StateAttachmentMixin:
                 return True
         except Exception:
             pass
+        # Grimnar's Mark (Saga of the Great Wolf): bearer can attach to Wolf Guard Terminators.
+        try:
+            if self._grimnars_mark_can_attach_to(bodyguard):
+                return True
+        except Exception:
+            pass
         # Bodyguard datasheet id must be in leader's allowed attached_to list (IDs)
         allowed = getattr(self, "can_be_attached_to", []) or []
         try:

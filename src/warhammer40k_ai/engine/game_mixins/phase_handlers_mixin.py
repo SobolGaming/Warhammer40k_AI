@@ -584,6 +584,20 @@ class GamePhaseHandlersMixin:
                     except Exception:
                         pass
 
+                    # Saga of the Great Wolf: Howlmaw (start of Fight phase, select one enemy within 6").
+                    try:
+                        if pname == "FIGHT_PHASE":
+                            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                            queue_fn = (
+                                getattr(sm_mgr, "saga_of_the_great_wolf_queue_howlmaw_request", None)
+                                if sm_mgr is not None
+                                else None
+                            )
+                            if callable(queue_fn):
+                                queue_fn(root, game=self, player=p)
+                    except Exception:
+                        pass
+
                     # Angelic Inheritors: Troubling Visions (once per battle, your Command phase).
                     find_source = getattr(self, "_attached_member_with_enhancement_flag", None)
                     source_member = None
