@@ -132,6 +132,14 @@ class CombatDoctrinesManager:
     def get_active_doctrine_for_unit(self, unit, *, game=None) -> Optional[CombatDoctrine]:
         if not self._unit_is_adeptus_astartes(unit):
             return None
+        mgr = self._space_marines_mgr()
+        if mgr is not None:
+            override_fn = getattr(mgr, "blade_of_ultramar_student_of_the_codex_active_doctrine", None)
+            if callable(override_fn):
+                override_key = str(override_fn(unit, game=game) or "").strip().upper()
+                doctrine = COMBAT_DOCTRINE_BY_KEY.get(override_key)
+                if doctrine is not None:
+                    return doctrine
         return self.get_active_doctrine(game=game)
 
     def _doctrine_selection_limit(self) -> Optional[int]:

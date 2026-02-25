@@ -12,6 +12,7 @@ def _ensure_enhancement_fnp_entry(
     condition: str | None = None,
     source: str | None = None,
     tag: str | None = None,
+    source_model_id: str | None = None,
 ) -> bool:
     if unit is None:
         return False
@@ -29,6 +30,8 @@ def _ensure_enhancement_fnp_entry(
         "source": str(source or "Enhancement"),
         "tag": str(tag or ""),
     }
+    if source_model_id:
+        entry["source_model_id"] = str(source_model_id)
     entries.append(entry)
     sr["enhancement_bearer_fnp_entries"] = entries
     unit.special_rules = sr
@@ -422,6 +425,9 @@ class Enhancement:
         )
         is_bastion_task_force = bool(
             sm_mgr and getattr(sm_mgr, "is_bastion_task_force", lambda: False)()
+        )
+        is_blade_of_ultramar = bool(
+            sm_mgr and getattr(sm_mgr, "is_blade_of_ultramar", lambda: False)()
         )
         is_black_spear_task_force = bool(
             sm_mgr and getattr(sm_mgr, "is_black_spear_task_force", lambda: False)()
@@ -1284,6 +1290,83 @@ class Enhancement:
             unit.special_rules["stratagem_target_cp_refund_specs"] = deduped_specs
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "armour of antoninus" or enh_id == "000010633002":
+            if not is_blade_of_ultramar:
+                return
+            unit.special_rules["enhancement_armour_of_antoninus"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            save_value = _coerce_int(params.get("save_characteristic", 2) or 2, default=2)
+            fnp_value = _coerce_int(params.get("feel_no_pain", 5) or 5, default=5)
+            unit.special_rules["enhancement_armour_of_antoninus_save"] = int(max(2, save_value))
+            _ensure_enhancement_fnp_entry(
+                unit,
+                int(max(2, fnp_value)),
+                source="Armour of Antoninus",
+                tag="armour_of_antoninus_bearer",
+                source_model_id=bearer_id,
+            )
+            unit.special_rules["enhancement_armour_of_antoninus_source"] = "Armour of Antoninus"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_armour_of_antoninus_bearer_model_id"] = bearer_id
+
+        if name == "oath of macragge" or enh_id == "000010633003":
+            if not is_blade_of_ultramar:
+                return
+            unit.special_rules["enhancement_oath_of_macragge"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            base_bonus = _coerce_int(params.get("base_bonus", 1) or 1, default=1)
+            assault_bonus = _coerce_int(params.get("assault_doctrine_bonus", 2) or 2, default=2)
+            base_bonus = int(max(0, base_bonus))
+            assault_bonus = int(max(base_bonus, assault_bonus))
+            unit.special_rules["enhancement_oath_of_macragge_base_bonus"] = int(base_bonus)
+            unit.special_rules["enhancement_oath_of_macragge_assault_bonus"] = int(assault_bonus)
+            unit.special_rules["enhancement_oath_of_macragge_source"] = "Oath of Macragge"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_oath_of_macragge_bearer_model_id"] = bearer_id
+
+        if name == "student of the codex" or enh_id == "000010633004":
+            if not is_blade_of_ultramar:
+                return
+            unit.special_rules["enhancement_student_of_the_codex"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            doctrine = str(params.get("doctrine", "TACTICAL") or "TACTICAL").strip().upper() or "TACTICAL"
+            unit.special_rules["enhancement_student_of_the_codex_doctrine"] = doctrine
+            unit.special_rules["enhancement_student_of_the_codex_source"] = "Student of the Codex"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_student_of_the_codex_bearer_model_id"] = bearer_id
+
+        if name == "veteran of behemoth" or enh_id == "000010633005":
+            if not is_blade_of_ultramar:
+                return
+            unit.special_rules["enhancement_veteran_of_behemoth"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            sustained_hits = _coerce_int(params.get("sustained_hits", 1) or 1, default=1)
+            advance_reroll_doctrine = str(
+                params.get("advance_reroll_requires_doctrine", "DEVASTATOR") or "DEVASTATOR"
+            ).strip().upper()
+            if not advance_reroll_doctrine:
+                advance_reroll_doctrine = "DEVASTATOR"
+            unit.special_rules["enhancement_veteran_of_behemoth_sustained_hits_value"] = int(
+                max(0, sustained_hits)
+            )
+            unit.special_rules["enhancement_veteran_of_behemoth_requires_leading"] = bool(
+                params.get("requires_leading", True)
+            )
+            unit.special_rules["enhancement_veteran_of_behemoth_advance_reroll_doctrine"] = (
+                advance_reroll_doctrine
+            )
+            unit.special_rules["enhancement_veteran_of_behemoth_source"] = "Veteran of Behemoth"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_veteran_of_behemoth_bearer_model_id"] = bearer_id
 
         if name == "thief of secrets" or enh_id == "000008522002":
             if not is_black_spear_task_force:

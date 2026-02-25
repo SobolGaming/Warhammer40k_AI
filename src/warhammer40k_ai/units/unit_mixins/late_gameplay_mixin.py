@@ -1162,11 +1162,19 @@ class LateGameplayMixin:
                     if isinstance(entry, dict):
                         val = entry.get("value")
                         cond = entry.get("condition")
+                        source_model_id = str(entry.get("source_model_id", "") or "").strip()
                     elif isinstance(entry, (list, tuple)):
                         val = entry[0] if entry else None
                         cond = entry[1] if len(entry) > 1 else None
+                        source_model_id = ""
                     else:
                         continue
+                    if source_model_id:
+                        if target_model is None:
+                            continue
+                        target_model_id = str(get_entity_id(target_model) or "")
+                        if not target_model_id or target_model_id != source_model_id:
+                            continue
                     try:
                         val = int(val)
                     except Exception:

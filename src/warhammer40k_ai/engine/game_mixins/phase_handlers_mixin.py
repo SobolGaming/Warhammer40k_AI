@@ -579,6 +579,85 @@ class GamePhaseHandlersMixin:
                                             instance_key=f"{unit_id}:{once_key}:{pname}:{int(current_round)}",
                                         )
 
+                    # Blade of Ultramar: Student of the Codex (start of your Command phase).
+                    find_source = getattr(self, "_attached_member_with_enhancement_flag", None)
+                    source_member = None
+                    source_sr = {}
+                    if callable(find_source):
+                        _source_root, source_member, source_sr = find_source(root, "enhancement_student_of_the_codex")
+                    if source_member is None:
+                        source_member = root
+                        source_sr = getattr(root, "special_rules", None)
+                    if source_member is not None and isinstance(source_sr, dict) and bool(source_sr.get("enhancement_student_of_the_codex", False)):
+                        bearer = getattr(source_member, "_get_enhancement_bearer_model", lambda: None)()
+                        current_player = self.get_current_player() if hasattr(self, "get_current_player") else None
+                        is_owner_command_phase = bool(pname == "COMMAND_PHASE" and current_player is p)
+                        owner_id = str(getattr(p, "id", "") or "")
+
+                        # Expire at the start of the owner's next Command phase.
+                        if is_owner_command_phase and bool(source_sr.get("enhancement_student_of_the_codex_active", False)):
+                            active_owner = str(source_sr.get("enhancement_student_of_the_codex_owner_id", "") or "")
+                            try:
+                                expires_round = int(source_sr.get("enhancement_student_of_the_codex_expires_round", 0) or 0)
+                            except (TypeError, ValueError):
+                                expires_round = 0
+                            try:
+                                current_round = int(getattr(self, "turn", 0) or 0)
+                            except (TypeError, ValueError):
+                                current_round = 0
+                            if active_owner and active_owner == owner_id and expires_round > 0 and current_round >= expires_round:
+                                for key in (
+                                    "enhancement_student_of_the_codex_active",
+                                    "enhancement_student_of_the_codex_owner_id",
+                                    "enhancement_student_of_the_codex_turn_started",
+                                    "enhancement_student_of_the_codex_expires_round",
+                                ):
+                                    source_sr.pop(key, None)
+                                source_member.special_rules = source_sr
+
+                        if is_owner_command_phase and bearer is not None and bool(getattr(bearer, "is_alive", True)):
+                            unit_id = maybe_entity_id(root)
+                            source_member_unit_id = maybe_entity_id(source_member)
+                            model_id = maybe_entity_id(bearer)
+                            if unit_id and source_member_unit_id and model_id:
+                                try:
+                                    current_round = int(getattr(self, "turn", 0) or 0)
+                                except (TypeError, ValueError):
+                                    current_round = 0
+                                expires_round = int(max(1, current_round + 1))
+                                ability_name = (
+                                    str(source_sr.get("enhancement_student_of_the_codex_source", "Student of the Codex") or "Student of the Codex").strip()
+                                    or "Student of the Codex"
+                                )
+                                doctrine = str(source_sr.get("enhancement_student_of_the_codex_doctrine", "TACTICAL") or "TACTICAL").strip().upper()
+                                if not doctrine:
+                                    doctrine = "TACTICAL"
+                                self._queue_optional_ability_confirmation(
+                                    player=p,
+                                    ability_key="student_of_the_codex",
+                                    ability_name=ability_name,
+                                    message=f"Activate {ability_name} for {getattr(root, 'name', 'Unit')}?",
+                                    context={
+                                        "ability_name": ability_name,
+                                        "phase": pname.replace("_", " ").title(),
+                                        "unit": getattr(root, "name", "") or "",
+                                        "unit_id": unit_id,
+                                        "source_unit_id": unit_id,
+                                        "source_member_unit_id": source_member_unit_id,
+                                        "model": getattr(bearer, "name", "") or "",
+                                        "model_id": model_id,
+                                        "doctrine": doctrine,
+                                        "expires_round": int(expires_round),
+                                    },
+                                    payload={
+                                        "unit_id": unit_id,
+                                        "source_member_unit_id": source_member_unit_id,
+                                        "doctrine": doctrine,
+                                        "expires_round": int(expires_round),
+                                    },
+                                    instance_key=f"{unit_id}:student_of_the_codex:{int(current_round)}",
+                                )
+
                     # Anvil Siege Force: Fleet Commander (place first marker now; second marker next owner Shooting phase).
                     if pname == "SHOOTING_PHASE":
                         current_player = self.get_current_player() if hasattr(self, "get_current_player") else None

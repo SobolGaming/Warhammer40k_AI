@@ -322,6 +322,7 @@ Shooting:
 - dark_blessings_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="start_any_phase_invulnerable_save"`, `unit_id`, `model_id`, `buff_key`, `invuln`; triggered after enemy target selection in Shooting/Fight)
 - iron_resolve_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="start_any_phase_fnp"`, `unit_id`, `ability_key`, `fnp_value`, `trigger_action`; triggered after bearer unit is selected as a target in Shooting/Fight)
 - troubling_visions_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="troubling_visions"`, `unit_id`, `source_member_unit_id`, `ability_key`, `expires_round`; triggered in the owner's Command phase)
+- student_of_the_codex_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="student_of_the_codex"`, `unit_id`, `source_member_unit_id`, `model_id`, `doctrine`, `expires_round`; triggered in the owner's Command phase)
 - malefic_surge_diabolic_power_dialog: CHOOSE_MALEFIC_SURGE_ABILITY {choice | skip} (context `ability="malefic_surge"`, `unit_id`, `trigger="shooting"`)
 - malefic_surge_unnatural_fortitude_dialog: CHOOSE_MALEFIC_SURGE_ABILITY {choice | skip} (context `ability="malefic_surge"`, `unit_id`, `trigger="targeted_shooting"`)
 - warpmeld_sacrifice_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="warpmeld_sacrifice"`, `unit_id`, `ability_mode`, `trigger_action`, `source_unit_id`, `turn`, `turn_owner_id`)

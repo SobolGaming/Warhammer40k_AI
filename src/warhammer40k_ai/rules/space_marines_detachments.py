@@ -4048,6 +4048,263 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False, ""
         return True, self.mission_tactic_label(self._MISSION_TACTIC_PURGATUS)
 
+    def _blade_of_ultramar_enhancement_source_member(self, unit, flag_key: str):
+        if unit is None:
+            return None, None, {}
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return None, None, {}
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        try:
+            members.sort(key=lambda member: str(get_entity_id(member) or ""))
+        except Exception:
+            pass
+        for member in list(members or []):
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get(flag_key, False)):
+                return root, member, sr
+        return root, None, {}
+
+    def _blade_of_ultramar_member_has_live_bearer(self, member, sr, *, require_leading: bool = False) -> bool:
+        if member is None or not isinstance(sr, dict):
+            return False
+        if require_leading and not bool(getattr(member, "is_attached_leader", False)):
+            return False
+        bearer = self._blade_of_ultramar_resolve_bearer_model(member, sr)
+        if bearer is None:
+            return False
+        alive_attr = getattr(bearer, "is_alive", True)
+        return bool(alive_attr() if callable(alive_attr) else alive_attr)
+
+    @staticmethod
+    def _blade_of_ultramar_resolve_bearer_model(member, sr):
+        bearer = getattr(member, "_get_enhancement_bearer_model", lambda: None)()
+        if bearer is None:
+            bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
+            if bearer_id:
+                for model in list(getattr(member, "models", []) or []):
+                    if str(get_entity_id(model) or "") != bearer_id:
+                        continue
+                    bearer = model
+                    break
+        return bearer
+
+    def _blade_of_ultramar_model_is_live_bearer(self, model, member, sr) -> bool:
+        if model is None:
+            return False
+        bearer = self._blade_of_ultramar_resolve_bearer_model(member, sr)
+        if bearer is None:
+            return False
+        alive_attr = getattr(bearer, "is_alive", True)
+        is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+        if not is_alive:
+            return False
+        return str(get_entity_id(model) or "") == str(get_entity_id(bearer) or "")
+
+    def blade_of_ultramar_student_of_the_codex_active_doctrine(self, unit, *, game=None) -> str:
+        if not self.is_blade_of_ultramar():
+            return ""
+        root, member, sr = self._blade_of_ultramar_enhancement_source_member(
+            unit,
+            "enhancement_student_of_the_codex",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return ""
+        if not bool(sr.get("enhancement_student_of_the_codex_active", False)):
+            return ""
+        if not self._blade_of_ultramar_member_has_live_bearer(member, sr, require_leading=False):
+            return ""
+        doctrine = str(sr.get("enhancement_student_of_the_codex_doctrine", "TACTICAL") or "TACTICAL").strip().upper()
+        if not doctrine:
+            doctrine = "TACTICAL"
+        game_obj = game
+        if game_obj is None and self.army is not None:
+            game_obj = getattr(getattr(self.army, "player", None), "game", None)
+        if game_obj is not None:
+            owner_id = str(sr.get("enhancement_student_of_the_codex_owner_id", "") or "")
+            try:
+                expires_round = int(sr.get("enhancement_student_of_the_codex_expires_round", 0) or 0)
+            except Exception:
+                expires_round = 0
+            try:
+                current_round = int(getattr(game_obj, "turn", 0) or 0)
+            except Exception:
+                current_round = 0
+            current_player = getattr(game_obj, "get_current_player", lambda: None)()
+            current_owner = str(getattr(current_player, "id", "") or "")
+            phase_name = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+            if (
+                expires_round > 0
+                and current_round >= expires_round
+                and owner_id
+                and current_owner == owner_id
+                and phase_name == "COMMAND_PHASE"
+            ):
+                return ""
+        return doctrine
+
+    def blade_of_ultramar_veteran_of_behemoth_sustained_hits(
+        self,
+        attacker_model,
+        weapon_profile=None,
+        *,
+        game=None,
+    ) -> tuple[int, str]:
+        if not self.is_blade_of_ultramar():
+            return 0, ""
+        if attacker_model is None:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        if attacker_unit is None:
+            return 0, ""
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            if parent is not None and not bool(getattr(parent, "is_ranged", lambda: False)()):
+                return 0, ""
+        root, member, sr = self._blade_of_ultramar_enhancement_source_member(
+            attacker_unit,
+            "enhancement_veteran_of_behemoth",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return 0, ""
+        requires_leading = bool(sr.get("enhancement_veteran_of_behemoth_requires_leading", True))
+        if not self._blade_of_ultramar_member_has_live_bearer(member, sr, require_leading=requires_leading):
+            return 0, ""
+        try:
+            sustained_hits = int(sr.get("enhancement_veteran_of_behemoth_sustained_hits_value", 1) or 1)
+        except Exception:
+            sustained_hits = 1
+        if sustained_hits <= 0:
+            return 0, ""
+        source = str(sr.get("enhancement_veteran_of_behemoth_source", "") or "Veteran of Behemoth").strip()
+        if not source:
+            source = "Veteran of Behemoth"
+        return int(sustained_hits), source
+
+    def blade_of_ultramar_armour_of_antoninus_save_override(
+        self,
+        model,
+        *,
+        game=None,
+    ) -> tuple[int, str]:
+        if not self.is_blade_of_ultramar():
+            return 0, ""
+        if model is None:
+            return 0, ""
+        unit = getattr(model, "parent_unit", None)
+        if unit is None:
+            return 0, ""
+        _root, member, sr = self._blade_of_ultramar_enhancement_source_member(
+            unit,
+            "enhancement_armour_of_antoninus",
+        )
+        if member is None or not isinstance(sr, dict):
+            return 0, ""
+        if not self._blade_of_ultramar_model_is_live_bearer(model, member, sr):
+            return 0, ""
+        try:
+            save_value = int(sr.get("enhancement_armour_of_antoninus_save", 2) or 2)
+        except Exception:
+            save_value = 2
+        if save_value <= 0:
+            return 0, ""
+        source = str(sr.get("enhancement_armour_of_antoninus_source", "") or "Armour of Antoninus").strip()
+        if not source:
+            source = "Armour of Antoninus"
+        return int(max(2, save_value)), source
+
+    def blade_of_ultramar_oath_of_macragge_bonus(
+        self,
+        attacker_model,
+        weapon_profile=None,
+        *,
+        game=None,
+    ) -> tuple[int, str]:
+        if not self.is_blade_of_ultramar():
+            return 0, ""
+        if attacker_model is None:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        if attacker_unit is None:
+            return 0, ""
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            if parent is not None and not bool(getattr(parent, "is_melee", lambda: False)()):
+                return 0, ""
+        root, member, sr = self._blade_of_ultramar_enhancement_source_member(
+            attacker_unit,
+            "enhancement_oath_of_macragge",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return 0, ""
+        if not self._blade_of_ultramar_model_is_live_bearer(attacker_model, member, sr):
+            return 0, ""
+        doctrine_mgr = getattr(self.army, "combat_doctrines", None) if self.army is not None else None
+        if doctrine_mgr is None:
+            return 0, ""
+        game_obj = game
+        if game_obj is None and self.army is not None:
+            game_obj = getattr(getattr(self.army, "player", None), "game", None)
+        active = getattr(doctrine_mgr, "get_active_doctrine_for_unit", lambda _u, game=None: None)(
+            root,
+            game=game_obj,
+        )
+        active_key = str(getattr(active, "key", "") or "").strip().upper() if active is not None else ""
+        try:
+            base_bonus = int(sr.get("enhancement_oath_of_macragge_base_bonus", 1) or 1)
+        except Exception:
+            base_bonus = 1
+        try:
+            assault_bonus = int(sr.get("enhancement_oath_of_macragge_assault_bonus", 2) or 2)
+        except Exception:
+            assault_bonus = 2
+        bonus = int(assault_bonus if active_key == "ASSAULT" else base_bonus)
+        if bonus <= 0:
+            return 0, ""
+        source = str(sr.get("enhancement_oath_of_macragge_source", "") or "Oath of Macragge").strip()
+        if not source:
+            source = "Oath of Macragge"
+        return int(bonus), source
+
+    def blade_of_ultramar_veteran_of_behemoth_reroll_advance_applies(self, unit, *, game=None) -> bool:
+        if not self.is_blade_of_ultramar():
+            return False
+        root, member, sr = self._blade_of_ultramar_enhancement_source_member(
+            unit,
+            "enhancement_veteran_of_behemoth",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return False
+        requires_leading = bool(sr.get("enhancement_veteran_of_behemoth_requires_leading", True))
+        if not self._blade_of_ultramar_member_has_live_bearer(member, sr, require_leading=requires_leading):
+            return False
+        doctrine_key = str(
+            sr.get("enhancement_veteran_of_behemoth_advance_reroll_doctrine", "DEVASTATOR") or "DEVASTATOR"
+        ).strip().upper()
+        if not doctrine_key:
+            doctrine_key = "DEVASTATOR"
+        doctrine_mgr = getattr(self.army, "combat_doctrines", None) if self.army is not None else None
+        if doctrine_mgr is None:
+            return False
+        game_obj = game
+        if game_obj is None and self.army is not None:
+            game_obj = getattr(getattr(self.army, "player", None), "game", None)
+        active = getattr(doctrine_mgr, "get_active_doctrine_for_unit", lambda _u, game=None: None)(
+            root,
+            game=game_obj,
+        )
+        if active is None:
+            return False
+        active_key = str(getattr(active, "key", "") or "").strip().upper()
+        return bool(active_key and active_key == doctrine_key)
+
     def _legacy_of_the_angel_recipient(self, unit) -> bool:
         if unit is None:
             return False

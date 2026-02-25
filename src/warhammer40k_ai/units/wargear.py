@@ -4084,6 +4084,28 @@ class WargearProfile:
                 attack_result.attacks_special_modifiers.append(
                     f"Through Suffering, Strength +{through_suffering_bonus}A (bearer melee)"
                 )
+            try:
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                oath_bonus_fn = getattr(sm_mgr, "blade_of_ultramar_oath_of_macragge_bonus", None) if sm_mgr is not None else None
+                if callable(oath_bonus_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    oath_bonus, oath_source = oath_bonus_fn(attacker, weapon_profile=self, game=game)
+                    if int(oath_bonus or 0):
+                        source_name = str(oath_source or "Oath of Macragge").strip() or "Oath of Macragge"
+                        atk_mods.append(
+                            Modifier(
+                                ModifierOp.ADD,
+                                int(oath_bonus),
+                                source="enhancement:oath_of_macragge_attacks_add",
+                            )
+                        )
+                        attack_result.attacks_special_modifiers.append(
+                            f"{source_name} +{int(oath_bonus)}A (bearer melee)"
+                        )
+            except Exception:
+                pass
             shadow_extra = int(sr.get("enhancement_bearer_melee_attacks_bonus_shadow_extra", 0) or 0)
             if shadow_extra and self._attacker_is_enhancement_bearer(attacker, sr):
                 if self._attacker_in_shadow_of_chaos(attacker):
@@ -7738,6 +7760,22 @@ class WargearProfile:
                         _set_bonus_sustained(
                             int(ferocious_sustained or 0),
                             str(ferocious_source or "Ferocious Strike"),
+                        )
+                veteran_sustained_fn = getattr(
+                    sm_mgr,
+                    "blade_of_ultramar_veteran_of_behemoth_sustained_hits",
+                    None,
+                )
+                if callable(veteran_sustained_fn):
+                    veteran_sustained, veteran_source = veteran_sustained_fn(
+                        attacker,
+                        weapon_profile=self,
+                        game=None,
+                    )
+                    if int(veteran_sustained or 0) > 0:
+                        _set_bonus_sustained(
+                            int(veteran_sustained or 0),
+                            str(veteran_source or "Veteran of Behemoth"),
                         )
         except Exception:
             pass
@@ -12665,6 +12703,22 @@ class WargearProfile:
                 wound_result.setdefault("modifiers", []).append(
                     f"+{int(through_suffering_bonus)}S from Through Suffering, Strength"
                 )
+            try:
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                oath_bonus_fn = getattr(sm_mgr, "blade_of_ultramar_oath_of_macragge_bonus", None) if sm_mgr is not None else None
+                if callable(oath_bonus_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    oath_bonus, oath_source = oath_bonus_fn(attacker, weapon_profile=self, game=game)
+                    if int(oath_bonus or 0):
+                        strength = strength + int(oath_bonus)
+                        source_name = str(oath_source or "Oath of Macragge").strip() or "Oath of Macragge"
+                        wound_result.setdefault("modifiers", []).append(
+                            f"+{int(oath_bonus)}S from {source_name}"
+                        )
+            except Exception:
+                pass
             shadow_extra = int(sr.get("enhancement_bearer_melee_strength_bonus_shadow_extra", 0) or 0)
             if shadow_extra and self._attacker_is_enhancement_bearer(attacker, sr):
                 if self._attacker_in_shadow_of_chaos(attacker):

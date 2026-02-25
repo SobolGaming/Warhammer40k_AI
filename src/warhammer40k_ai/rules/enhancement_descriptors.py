@@ -1586,6 +1586,62 @@ _SPACE_MARINES_BASTION_TASK_FORCE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPACE_MARINES_BASTION_TASK_FORCE_DESCRIPTORS.values()
 }
 
+_SPACE_MARINES_BLADE_OF_ULTRAMAR_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010633002": EnhancementToolDescriptor(
+        enhancement_id="000010633002",
+        name="Armour of Antoninus",
+        timing="passive",
+        target="bearer",
+        duration="constant",
+        effect="bearer_save_and_fnp",
+        effect_params={
+            "save_characteristic": 2,
+            "feel_no_pain": 5,
+        },
+    ),
+    "000010633003": EnhancementToolDescriptor(
+        enhancement_id="000010633003",
+        name="Oath of Macragge",
+        timing="passive",
+        target="bearer_melee_weapons",
+        duration="constant_conditional",
+        effect="bearer_melee_attacks_strength_bonus_with_assault_doctrine_scaling",
+        effect_params={
+            "base_bonus": 1,
+            "assault_doctrine_bonus": 2,
+        },
+    ),
+    "000010633004": EnhancementToolDescriptor(
+        enhancement_id="000010633004",
+        name="Student of the Codex",
+        timing="start_of_command_phase_optional",
+        target="bearer_unit",
+        duration="until_next_command_phase",
+        effect="unit_tactical_doctrine_override",
+        effect_params={
+            "doctrine": "TACTICAL",
+            "optional": True,
+        },
+    ),
+    "000010633005": EnhancementToolDescriptor(
+        enhancement_id="000010633005",
+        name="Veteran of Behemoth",
+        timing="passive_while_leading_and_doctrine_conditional",
+        target="bearer_unit_ranged_weapons_and_advance_rolls",
+        duration="constant_conditional",
+        effect="grant_sustained_hits_and_devastator_advance_reroll",
+        effect_params={
+            "sustained_hits": 1,
+            "requires_leading": True,
+            "advance_reroll_requires_doctrine": "DEVASTATOR",
+        },
+    ),
+}
+
+_SPACE_MARINES_BLADE_OF_ULTRAMAR_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPACE_MARINES_BLADE_OF_ULTRAMAR_DESCRIPTORS.values()
+}
+
 _SPACE_MARINES_BLACK_SPEAR_TASK_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008522002": EnhancementToolDescriptor(
         enhancement_id="000008522002",
@@ -2153,6 +2209,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPACE_MARINES_BASTION_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPACE_MARINES_BLADE_OF_ULTRAMAR_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPACE_MARINES_BLACK_SPEAR_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -2215,6 +2274,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SPACE_MARINES_ANGELIC_INHERITORS_BY_NAME.get(key)
         or _SPACE_MARINES_ANVIL_SIEGE_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_BASTION_TASK_FORCE_BY_NAME.get(key)
+        or _SPACE_MARINES_BLADE_OF_ULTRAMAR_BY_NAME.get(key)
         or _SPACE_MARINES_BLACK_SPEAR_TASK_FORCE_BY_NAME.get(key)
         or _LEGION_OF_EXCESS_BY_NAME.get(key)
         or _PLAGUE_LEGION_BY_NAME.get(key)
