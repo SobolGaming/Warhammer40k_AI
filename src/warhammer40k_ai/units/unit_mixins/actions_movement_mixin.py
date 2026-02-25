@@ -2399,11 +2399,22 @@ class ActionsMovementMixin:
         for u in members:
             for name, desc in u._iter_ability_entries_for_rules(model=None):
                 name_key = str(name or "").strip().lower()
+                name_key = name_key.replace("\u2019", "'").replace("\u0192?T", "'")
                 if name_key == "mounted strategist":
                     army = root.get_parent_army() if root is not None else None
                     sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
                     apply_fn = (
                         getattr(sm_mgr, "company_of_hunters_mounted_strategist_applies", None)
+                        if sm_mgr is not None
+                        else None
+                    )
+                    if callable(apply_fn) and not bool(apply_fn(root)):
+                        continue
+                if name_key == "stormseers' wisdom":
+                    army = root.get_parent_army() if root is not None else None
+                    sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                    apply_fn = (
+                        getattr(sm_mgr, "spearpoint_stormseers_wisdom_reroll_advance_applies", None)
                         if sm_mgr is not None
                         else None
                     )
@@ -5369,6 +5380,14 @@ class ActionsMovementMixin:
             mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
             if mgr is not None and getattr(mgr, "company_of_hunters_mounted_strategist_reroll_advance_applies", None):
                 if mgr.company_of_hunters_mounted_strategist_reroll_advance_applies(self):
+                    return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "spearpoint_stormseers_wisdom_reroll_advance_applies", None):
+                if mgr.spearpoint_stormseers_wisdom_reroll_advance_applies(self):
                     return True
         except Exception:
             pass
@@ -10108,6 +10127,61 @@ class ActionsMovementMixin:
             members = [root]
 
         applied = False
+
+        def _model_alive(candidate_model) -> bool:
+            if candidate_model is None:
+                return False
+            alive_attr = getattr(candidate_model, "is_alive", True)
+            try:
+                return bool(alive_attr() if callable(alive_attr) else alive_attr)
+            except Exception:
+                return False
+
+        # Spearpoint Paragon: bearer always has +1S/+1AP; after ending a Charge move this
+        # temporary bonus adds +1S/+1AP more so the total becomes +2/+2 until turn end.
+        for unit in members:
+            if unit is None:
+                continue
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_spearpoint_paragon")):
+                continue
+            try:
+                extra_strength_bonus = int(sr.get("enhancement_spearpoint_paragon_charge_extra_strength_bonus", 1) or 1)
+            except Exception:
+                extra_strength_bonus = 1
+            try:
+                extra_ap_bonus = int(sr.get("enhancement_spearpoint_paragon_charge_extra_ap_bonus", 1) or 1)
+            except Exception:
+                extra_ap_bonus = 1
+            if extra_strength_bonus <= 0 and extra_ap_bonus <= 0:
+                continue
+            source = str(sr.get("enhancement_spearpoint_paragon_source", "") or "Spearpoint Paragon").strip()
+            if not source:
+                source = "Spearpoint Paragon"
+            bearer = None
+            bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
+            if bearer_id:
+                for model in list(getattr(unit, "models", []) or []):
+                    if str(get_entity_id(model) or "") == bearer_id:
+                        bearer = model
+                        break
+            if bearer is None:
+                get_bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+                if callable(get_bearer):
+                    try:
+                        bearer = get_bearer()
+                    except Exception:
+                        bearer = None
+            if not _model_alive(bearer):
+                continue
+            if self._grant_charge_end_model_melee_strength_ap_bonus(
+                bearer,
+                strength_bonus=int(max(0, extra_strength_bonus)),
+                ap_bonus=int(max(0, extra_ap_bonus)),
+                source=source,
+            ):
+                applied = True
+
         for unit in members:
             if unit is None:
                 continue

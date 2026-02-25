@@ -6247,6 +6247,63 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             bonus = 1
         return max(0, int(bonus))
 
+    def spearpoint_stormseers_wisdom_reroll_advance_applies(self, unit) -> bool:
+        if not self.is_spearpoint_task_force():
+            return False
+        if unit is None:
+            return False
+        root, member, sr = self._company_of_hunters_enhancement_source_member(
+            unit,
+            "enhancement_stormseers_wisdom",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return False
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        member_is_leader = bool(getattr(member, "is_attached_leader", False))
+        if not member_is_leader:
+            try:
+                attached_leaders = list(getattr(root, "attached_leaders", []) or [])
+            except Exception:
+                attached_leaders = []
+            attached_leader_ids = {
+                str(get_entity_id(leader) or "")
+                for leader in attached_leaders
+                if leader is not None
+            }
+            member_id = str(get_entity_id(member) or "")
+            if not member_id or member_id not in attached_leader_ids:
+                return False
+        return self._company_of_hunters_member_has_live_bearer(member, sr)
+
+    def spearpoint_chogorian_huntmaster_strategic_reserves_round_bonus(self, unit, *, game=None) -> int:
+        if not self.is_spearpoint_task_force():
+            return 0
+        if unit is None:
+            return 0
+        root, member, sr = self._company_of_hunters_enhancement_source_member(
+            unit,
+            "enhancement_chogorian_huntmaster",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return 0
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return 0
+        if not self._company_of_hunters_member_has_live_bearer(member, sr):
+            return 0
+        in_strategic_fn = getattr(root, "is_in_strategic_reserves", None)
+        if callable(in_strategic_fn):
+            if not bool(in_strategic_fn()):
+                return 0
+        else:
+            if str(getattr(root, "reserve_status", "") or "").strip().lower() != "strategic_reserves":
+                return 0
+        try:
+            bonus = int(sr.get("enhancement_chogorian_huntmaster_round_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            bonus = 1
+        return max(0, int(bonus))
+
     def _emperors_shield_enhancement_source_member(self, unit, flag_key: str):
         root = self._attached_unit_root(unit)
         if root is None:

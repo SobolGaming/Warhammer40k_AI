@@ -465,6 +465,9 @@ class Enhancement:
         is_company_of_hunters = bool(
             sm_mgr and getattr(sm_mgr, "is_company_of_hunters", lambda: False)()
         )
+        is_spearpoint_task_force = bool(
+            sm_mgr and getattr(sm_mgr, "is_spearpoint_task_force", lambda: False)()
+        )
         is_shadowmark_talon = bool(
             sm_mgr and getattr(sm_mgr, "is_shadowmark_talon", lambda: False)()
         )
@@ -2420,6 +2423,96 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_recon_hunter_bearer_model_id"] = bearer_id
+
+        if name == "spearpoint paragon" or enh_id == "000010629002":
+            if not is_spearpoint_task_force:
+                return
+            unit.special_rules["enhancement_spearpoint_paragon"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            base_strength_bonus = _coerce_int(
+                params.get("base_bearer_melee_strength_bonus", 1) or 1,
+                default=1,
+            )
+            base_ap_bonus = _coerce_int(
+                params.get("base_bearer_melee_ap_bonus", 1) or 1,
+                default=1,
+            )
+            charged_strength_bonus = _coerce_int(
+                params.get("charged_bearer_melee_strength_bonus", 2) or 2,
+                default=2,
+            )
+            charged_ap_bonus = _coerce_int(
+                params.get("charged_bearer_melee_ap_bonus", 2) or 2,
+                default=2,
+            )
+            base_strength_bonus = int(max(0, base_strength_bonus))
+            base_ap_bonus = int(max(0, base_ap_bonus))
+            charged_strength_bonus = int(max(base_strength_bonus, charged_strength_bonus))
+            charged_ap_bonus = int(max(base_ap_bonus, charged_ap_bonus))
+
+            existing_strength = _coerce_int(unit.special_rules.get("enhancement_bearer_melee_strength_bonus", 0), default=0)
+            existing_ap = _coerce_int(unit.special_rules.get("enhancement_bearer_melee_ap_bonus", 0), default=0)
+            unit.special_rules["enhancement_bearer_melee_strength_bonus"] = int(max(existing_strength, base_strength_bonus))
+            unit.special_rules["enhancement_bearer_melee_ap_bonus"] = int(max(existing_ap, base_ap_bonus))
+            unit.special_rules["enhancement_spearpoint_paragon_charge_extra_strength_bonus"] = int(
+                max(0, charged_strength_bonus - base_strength_bonus)
+            )
+            unit.special_rules["enhancement_spearpoint_paragon_charge_extra_ap_bonus"] = int(
+                max(0, charged_ap_bonus - base_ap_bonus)
+            )
+            unit.special_rules["enhancement_spearpoint_paragon_source"] = "Spearpoint Paragon"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_spearpoint_paragon_bearer_model_id"] = bearer_id
+
+        if name in ("stormseers' wisdom", "stormseers wisdom") or enh_id == "000010629003":
+            if not is_spearpoint_task_force:
+                return
+            unit.special_rules["enhancement_stormseers_wisdom"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_stormseers_wisdom_requires_bearer_leading"] = bool(
+                params.get("requires_bearer_leading", True)
+            )
+            unit.special_rules["enhancement_stormseers_wisdom_source"] = "Stormseers' Wisdom"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_stormseers_wisdom_bearer_model_id"] = bearer_id
+
+        if name in ("hunter's eye", "hunters eye") or enh_id == "000010629004":
+            if not is_spearpoint_task_force:
+                return
+            unit.special_rules["enhancement_hunters_eye"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            keywords = [
+                str(v or "").strip().upper()
+                for v in list(params.get("keywords", ("SUSTAINED HITS 1", "IGNORES COVER")) or ())
+                if str(v or "").strip()
+            ]
+            if keywords:
+                unit.special_rules["enhancement_hunters_eye_keywords"] = keywords
+            unit.special_rules["enhancement_hunters_eye_source"] = "Hunter's Eye"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_hunters_eye_bearer_model_id"] = bearer_id
+
+        if name == "chogorian huntmaster" or enh_id == "000010629005":
+            if not is_spearpoint_task_force:
+                return
+            unit.special_rules["enhancement_chogorian_huntmaster"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            round_bonus = _coerce_int(
+                params.get("strategic_reserves_setup_round_bonus", 1) or 1,
+                default=1,
+            )
+            unit.special_rules["enhancement_chogorian_huntmaster_round_bonus"] = int(max(0, round_bonus))
+            unit.special_rules["enhancement_chogorian_huntmaster_source"] = "Chogorian Huntmaster"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_chogorian_huntmaster_bearer_model_id"] = bearer_id
 
         if name == "blackwing shroud" or enh_id == "000010466002":
             if not is_shadowmark_talon:

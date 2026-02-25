@@ -2350,6 +2350,54 @@ _SPACE_MARINES_SHADOWMARK_TALON_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPACE_MARINES_SHADOWMARK_TALON_DESCRIPTORS.values()
 }
 
+_SPACE_MARINES_SPEARPOINT_TASK_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010629002": EnhancementToolDescriptor(
+        enhancement_id="000010629002",
+        name="Spearpoint Paragon",
+        timing="passive_and_charge_move_end",
+        target="bearer_model_melee_weapons",
+        duration="constant_with_charge_move_end_bonus_until_end_of_turn",
+        effect="bearer_melee_strength_and_ap_bonus_with_charge_upgrade",
+        effect_params={
+            "base_bearer_melee_strength_bonus": 1,
+            "base_bearer_melee_ap_bonus": 1,
+            "charged_bearer_melee_strength_bonus": 2,
+            "charged_bearer_melee_ap_bonus": 2,
+        },
+    ),
+    "000010629003": EnhancementToolDescriptor(
+        enhancement_id="000010629003",
+        name="Stormseers' Wisdom",
+        timing="while_bearer_is_leading",
+        target="bearer_led_unit",
+        duration="constant_while_bearer_is_leading",
+        effect="reroll_advance_rolls_for_bearer_led_unit",
+        effect_params={"requires_bearer_leading": True},
+    ),
+    "000010629004": EnhancementToolDescriptor(
+        enhancement_id="000010629004",
+        name="Hunter's Eye",
+        timing="passive",
+        target="bearer_unit_ranged_weapons",
+        duration="constant",
+        effect="grant_sustained_hits_and_ignores_cover_to_bearer_unit_ranged_weapons",
+        effect_params={"keywords": ("SUSTAINED HITS 1", "IGNORES COVER")},
+    ),
+    "000010629005": EnhancementToolDescriptor(
+        enhancement_id="000010629005",
+        name="Chogorian Huntmaster",
+        timing="movement_phase_while_in_strategic_reserves",
+        target="bearer_unit_in_strategic_reserves",
+        duration="constant_while_in_strategic_reserves",
+        effect="add_setup_round_for_bearer_unit_in_strategic_reserves",
+        effect_params={"strategic_reserves_setup_round_bonus": 1},
+    ),
+}
+
+_SPACE_MARINES_SPEARPOINT_TASK_FORCE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPACE_MARINES_SPEARPOINT_TASK_FORCE_DESCRIPTORS.values()
+}
+
 _SPACE_MARINES_COMPANIONS_OF_VEHEMENCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010392002": EnhancementToolDescriptor(
         enhancement_id="000010392002",
@@ -3070,6 +3118,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPACE_MARINES_SHADOWMARK_TALON_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPACE_MARINES_SPEARPOINT_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPACE_MARINES_COMPANIONS_OF_VEHEMENCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -3152,6 +3203,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SPACE_MARINES_SAGA_OF_THE_GREAT_WOLF_BY_NAME.get(key)
         or _SPACE_MARINES_COMPANY_OF_HUNTERS_BY_NAME.get(key)
         or _SPACE_MARINES_SHADOWMARK_TALON_BY_NAME.get(key)
+        or _SPACE_MARINES_SPEARPOINT_TASK_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_COMPANIONS_OF_VEHEMENCE_BY_NAME.get(key)
         or _SPACE_MARINES_EMPERORS_SHIELD_BY_NAME.get(key)
         or _SPACE_MARINES_BLACK_SPEAR_TASK_FORCE_BY_NAME.get(key)

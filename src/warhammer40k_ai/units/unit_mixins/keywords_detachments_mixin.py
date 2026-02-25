@@ -4089,6 +4089,21 @@ class KeywordsDetachmentsMixin:
                 shadowmark_hunters_instincts_bonus = 0
         if shadowmark_hunters_instincts_bonus > 0:
             total_bonus += int(shadowmark_hunters_instincts_bonus)
+        spearpoint_chogorian_huntmaster_bonus = 0
+        spearpoint_chogorian_huntmaster_bonus_fn = (
+            getattr(sm_mgr, "spearpoint_chogorian_huntmaster_strategic_reserves_round_bonus", None)
+            if sm_mgr is not None
+            else None
+        )
+        if callable(spearpoint_chogorian_huntmaster_bonus_fn):
+            try:
+                spearpoint_chogorian_huntmaster_bonus = int(
+                    spearpoint_chogorian_huntmaster_bonus_fn(root, game=game) or 0
+                )
+            except (TypeError, ValueError):
+                spearpoint_chogorian_huntmaster_bonus = 0
+        if spearpoint_chogorian_huntmaster_bonus > 0:
+            total_bonus += int(spearpoint_chogorian_huntmaster_bonus)
         try:
             rule = root.get_strategic_reserves_round_bonus_rule()
         except Exception:

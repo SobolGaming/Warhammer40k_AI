@@ -3811,6 +3811,45 @@ class PositioningMixin:
             rules = list(rules or []) + [
                 {"attack_type": "ranged", "keyword": "SUSTAINED HITS 1", "source": "Peerless Eradicator"}
             ]
+        if is_ranged_attack and self._attached_unit_has_active_enhancement(
+            "enhancement_hunters_eye",
+            enhancement_id="000010629004",
+            enhancement_name="hunter's eye",
+        ):
+            try:
+                root = self.get_attached_unit_root()
+            except Exception:
+                root = self
+            source = "Hunter's Eye"
+            keywords = ["SUSTAINED HITS 1", "IGNORES COVER"]
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = [root]
+            if not members:
+                members = [root]
+            for member in members:
+                sr = getattr(member, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if not sr.get("enhancement_hunters_eye"):
+                    continue
+                source = str(sr.get("enhancement_hunters_eye_source", "") or "").strip() or "Hunter's Eye"
+                configured = [
+                    str(v or "").strip().upper()
+                    for v in list(sr.get("enhancement_hunters_eye_keywords", []) or [])
+                    if str(v or "").strip()
+                ]
+                if configured:
+                    keywords = configured
+                break
+            allowed = {"SUSTAINED HITS 1", "IGNORES COVER"}
+            for keyword in keywords:
+                key = str(keyword or "").strip().upper()
+                if key and key in allowed:
+                    rules = list(rules or []) + [
+                        {"attack_type": "ranged", "keyword": key, "source": source}
+                    ]
         if is_ranged_attack and self._attached_unit_model_is_enhancement_bearer(
             model,
             flag_key="enhancement_autoclavic_denunciation",
