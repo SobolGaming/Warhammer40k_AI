@@ -1109,8 +1109,55 @@ class ActionsMovementMixin:
         # Leading/bearer unit abilities that grant an invulnerable save to the unit.
         try:
             sr = getattr(self, "special_rules", None)
-            entries = sr.get("bearer_unit_invulnerable_save") if isinstance(sr, dict) else None
-            if isinstance(entries, list):
+            entry_sets: list = []
+            if isinstance(sr, dict):
+                entries = sr.get("bearer_unit_invulnerable_save")
+                if isinstance(entries, list):
+                    entry_sets.append(entries)
+            try:
+                root = self.get_attached_unit_root()
+            except Exception:
+                root = self
+            if root is not None:
+                try:
+                    members = list(root.get_attached_unit_members() or [])
+                except Exception:
+                    members = []
+                if not members:
+                    members = [root]
+                for member in members:
+                    if member is None or member is self:
+                        continue
+                    member_sr = getattr(member, "special_rules", None)
+                    if not isinstance(member_sr, dict):
+                        continue
+                    member_entries = member_sr.get("bearer_unit_invulnerable_save")
+                    if not isinstance(member_entries, list):
+                        continue
+                    requires_live_bearer = any(
+                        str(key).startswith("enhancement_") and bool(val)
+                        for key, val in member_sr.items()
+                    )
+                    if requires_live_bearer:
+                        bearer_alive = False
+                        bearer_id = str(member_sr.get("enhancement_bearer_model_id", "") or "").strip()
+                        if bearer_id:
+                            for candidate in list(getattr(member, "models", []) or []):
+                                if str(get_entity_id(candidate) or "") != bearer_id:
+                                    continue
+                                alive_attr = getattr(candidate, "is_alive", True)
+                                bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                                break
+                        if not bearer_alive:
+                            bearer = getattr(member, "_get_enhancement_bearer_model", lambda: None)()
+                            if bearer is not None:
+                                alive_attr = getattr(bearer, "is_alive", True)
+                                bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                        if not bearer_alive:
+                            continue
+                    entry_sets.append(member_entries)
+            seen_entries: set[tuple[int, str]] = set()
+            for entries in entry_sets:
                 for entry in entries:
                     if isinstance(entry, dict):
                         val = entry.get("value")
@@ -1128,6 +1175,10 @@ class ActionsMovementMixin:
                     source_norm = source_text.lower().replace("\u2019", "'")
                     if ("archon's will" in source_norm or "archons will" in source_norm) and not archons_active:
                         continue
+                    dedupe_key = (int(val), source_norm)
+                    if dedupe_key in seen_entries:
+                        continue
+                    seen_entries.add(dedupe_key)
                     if best_value is None or val < best_value:
                         best_value = int(val)
                         best_source = source_text or "Bearer unit ability"
@@ -7365,6 +7416,76 @@ class ActionsMovementMixin:
                         penalty = 2
                 source = str(sr.get("repelling_sphere_source", "") or "Repelling Sphere").strip()
                 modifiers.append((-int(abs(penalty)), f"{source}: charge roll modifier"))
+
+        # Vindication Task Force: Imperialis of the Eternal Crusade.
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is not None:
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            is_vindication = bool(
+                sm_mgr is not None and getattr(sm_mgr, "is_vindication_task_force", lambda: False)()
+            )
+            if is_vindication:
+                try:
+                    members = list(root.get_attached_unit_members() or [])
+                except Exception:
+                    members = []
+                if not members:
+                    members = [root]
+                members = sorted(members, key=lambda u: str(get_entity_id(u) or ""))
+                best_penalty = 0
+                best_source = "Imperialis of the Eternal Crusade"
+                for member in members:
+                    if member is None:
+                        continue
+                    member_sr = getattr(member, "special_rules", None)
+                    if not (
+                        isinstance(member_sr, dict)
+                        and bool(member_sr.get("enhancement_imperialis_of_the_eternal_crusade"))
+                    ):
+                        continue
+                    if bool(member_sr.get("enhancement_imperialis_of_the_eternal_crusade_requires_bearer_leading", False)):
+                        if not bool(getattr(member, "is_attached_leader", False)):
+                            continue
+                    bearer_alive = False
+                    bearer_id = str(
+                        member_sr.get("enhancement_imperialis_of_the_eternal_crusade_bearer_model_id", "")
+                        or member_sr.get("enhancement_bearer_model_id", "")
+                        or ""
+                    ).strip()
+                    if bearer_id:
+                        for candidate in list(getattr(member, "models", []) or []):
+                            if str(get_entity_id(candidate) or "") != bearer_id:
+                                continue
+                            alive_attr = getattr(candidate, "is_alive", True)
+                            bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                            break
+                    if not bearer_alive:
+                        bearer = getattr(member, "_get_enhancement_bearer_model", lambda: None)()
+                        if bearer is not None:
+                            alive_attr = getattr(bearer, "is_alive", True)
+                            bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                    if not bearer_alive:
+                        continue
+                    try:
+                        penalty_value = int(
+                            member_sr.get("enhancement_imperialis_of_the_eternal_crusade_charge_roll_penalty", 2) or 2
+                        )
+                    except Exception:
+                        penalty_value = 2
+                    penalty_value = int(max(0, penalty_value))
+                    if penalty_value <= best_penalty:
+                        continue
+                    best_penalty = penalty_value
+                    best_source = str(
+                        member_sr.get("enhancement_imperialis_of_the_eternal_crusade_source", "")
+                        or "Imperialis of the Eternal Crusade"
+                    ).strip() or "Imperialis of the Eternal Crusade"
+                if best_penalty > 0:
+                    modifiers.append((-int(abs(best_penalty)), f"{best_source}: charge roll modifier"))
         return modifiers
 
     def register_wargear_charge_keyword_hit(

@@ -477,6 +477,9 @@ class Enhancement:
         is_vanguard_spearhead = bool(
             sm_mgr and getattr(sm_mgr, "is_vanguard_spearhead", lambda: False)()
         )
+        is_vindication_task_force = bool(
+            sm_mgr and getattr(sm_mgr, "is_vindication_task_force", lambda: False)()
+        )
         is_company_of_hunters = bool(
             sm_mgr and getattr(sm_mgr, "is_company_of_hunters", lambda: False)()
         )
@@ -2869,6 +2872,109 @@ class Enhancement:
                 seen_spec_keys.add(key)
                 deduped_specs.append(existing_spec)
             unit.special_rules["stratagem_target_cp_increase_aura"] = deduped_specs
+
+        if name == "imperialis of the eternal crusade" or enh_id == "000010396002":
+            if not is_vindication_task_force:
+                return
+            unit.special_rules["enhancement_imperialis_of_the_eternal_crusade"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            penalty = _coerce_int(params.get("charge_roll_penalty", 2) or 2, default=2)
+            unit.special_rules["enhancement_imperialis_of_the_eternal_crusade_charge_roll_penalty"] = int(
+                max(0, penalty)
+            )
+            unit.special_rules["enhancement_imperialis_of_the_eternal_crusade_non_cumulative"] = bool(
+                params.get("not_cumulative_with_other_negative_modifiers", True)
+            )
+            unit.special_rules["enhancement_imperialis_of_the_eternal_crusade_source"] = (
+                str(getattr(self, "name", "") or "Imperialis of the Eternal Crusade").strip()
+                or "Imperialis of the Eternal Crusade"
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_imperialis_of_the_eternal_crusade_bearer_model_id"] = bearer_id
+
+        if name == "consecrating aura" or enh_id == "000010396003":
+            if not is_vindication_task_force:
+                return
+            unit.special_rules["enhancement_consecrating_aura"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            invuln = _coerce_int(params.get("invulnerable_save", 5) or 5, default=5)
+            invuln = int(max(2, min(7, invuln)))
+            source_name = (
+                str(getattr(self, "name", "") or "Consecrating Aura").strip() or "Consecrating Aura"
+            )
+            entries = list(unit.special_rules.get("bearer_unit_invulnerable_save", []) or [])
+            entry = {"value": int(invuln), "source": source_name}
+            found = False
+            for existing in entries:
+                if not isinstance(existing, dict):
+                    continue
+                try:
+                    val = int(existing.get("value"))
+                except (TypeError, ValueError):
+                    continue
+                src = str(existing.get("source", "") or "").strip()
+                if val == int(invuln) and src == source_name:
+                    found = True
+                    break
+            if not found:
+                entries.append(entry)
+            unit.special_rules["bearer_unit_invulnerable_save"] = entries
+            unit.special_rules["enhancement_consecrating_aura_source"] = source_name
+            unit.special_rules["enhancement_consecrating_aura_requires_bearer_alive"] = bool(
+                params.get("requires_bearer_alive", True)
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_consecrating_aura_bearer_model_id"] = bearer_id
+            invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate_cache):
+                invalidate_cache()
+
+        if (
+            enh_id == "000010396004"
+            or name in ("orb of the emperor's aegis", "orb of the emperor’s aegis")
+        ):
+            if not is_vindication_task_force:
+                return
+            unit.special_rules["enhancement_orb_of_the_emperors_aegis"] = True
+            unit.special_rules["bearer_unit_deep_strike"] = True
+            unit.special_rules["enhancement_orb_of_the_emperors_aegis_source"] = (
+                str(getattr(self, "name", "") or "Orb of the Emperor's Aegis").strip()
+                or "Orb of the Emperor's Aegis"
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_orb_of_the_emperors_aegis_bearer_model_id"] = bearer_id
+            cache = getattr(unit, "_ability_cache", None)
+            if isinstance(cache, dict):
+                cache.pop("deep_strike", None)
+                cache.pop("opponent_turn_strategic_reserves_ability", None)
+
+        if name == "warden of honour" or enh_id == "000010396005":
+            if not is_vindication_task_force:
+                return
+            unit.special_rules["enhancement_warden_of_honour"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            roll_bonus = _coerce_int(params.get("vengeful_exhortation_roll_bonus", 1) or 1, default=1)
+            unit.special_rules["enhancement_warden_of_honour_vengeful_exhortation_roll_bonus"] = int(
+                max(0, roll_bonus)
+            )
+            unit.special_rules["enhancement_warden_of_honour_requires_bearer_leading"] = bool(
+                params.get("requires_bearer_leading", True)
+            )
+            unit.special_rules["enhancement_warden_of_honour_source"] = (
+                str(getattr(self, "name", "") or "Warden of Honour").strip() or "Warden of Honour"
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_warden_of_honour_bearer_model_id"] = bearer_id
+            invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate_cache):
+                invalidate_cache()
 
         if name in ("master-crafted weapon", "master crafted weapon") or enh_id == "000008778002":
             if not is_company_of_hunters:

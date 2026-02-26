@@ -2805,6 +2805,7 @@ class RulesParsingMixin:
                     sr = getattr(u, "special_rules", None)
                     if isinstance(sr, dict) and (
                         sr.get("enhancement_beacon_angelis")
+                        or sr.get("enhancement_orb_of_the_emperors_aegis")
                         or sr.get("enhancement_webway_pathstone")
                     ):
                         grant_deep_strike = True

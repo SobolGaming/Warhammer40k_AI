@@ -6363,6 +6363,12 @@ class PositioningMixin:
             except Exception:
                 found = False
         if not found:
+            try:
+                if self._root_has_attached_unit_deep_strike_grant():
+                    found = True
+            except Exception:
+                found = False
+        if not found:
             if (
                 self._first_prince_of_chaos_active()
                 and self._is_chaos_undivided()

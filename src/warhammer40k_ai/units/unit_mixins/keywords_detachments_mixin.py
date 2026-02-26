@@ -929,46 +929,85 @@ class KeywordsDetachmentsMixin:
                     return {"threshold": int(threshold), "source": source}
 
         if cache_key in getattr(self, "_ability_cache", {}):
-            return self._ability_cache[cache_key]
+            cached_rule = self._ability_cache[cache_key]
+            return self._apply_vindication_warden_of_honour_to_fight_on_death_rule(
+                cached_rule,
+                model=model,
+            )
 
         rule = None
+        def _parse_melee_fight_on_death_rule(name: str, desc: str) -> Optional[dict]:
+            text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
+            if not text:
+                return None
+            low = text.lower().replace("\u2019", "'")
+            if "destroyed by a melee attack" not in low:
+                return None
+            if "has not fought this phase" not in low:
+                return None
+            if "roll one d6" not in low:
+                return None
+            if "do not remove" not in low:
+                return None
+            if (
+                "can fight after the attacking unit has finished making its attacks" not in low
+                and "can fight after the attacking model's unit has finished making its attacks" not in low
+            ):
+                return None
+            m = re.search(r"on a (\d+)\+?", low)
+            if not m:
+                return None
+            threshold = int(m.group(1))
+            if threshold < 2 or threshold > 6:
+                return None
+            source = str(name or "Fight on death").strip() or "Fight on death"
+            fortify_bonus = 0
+            if "adding 1 to the result if units from your army have fortify takeover" in low:
+                fortify_bonus = 1
+            return {
+                "threshold": threshold,
+                "source": source,
+                "fortify_takeover_bonus": int(fortify_bonus),
+            }
+
         try:
             for name, desc in self._iter_ability_entries_for_rules(model=model):
-                text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
-                if not text:
+                parsed = _parse_melee_fight_on_death_rule(name, desc)
+                if parsed is None:
                     continue
-                low = text.lower().replace("\u2019", "'")
-                if "destroyed by a melee attack" not in low:
-                    continue
-                if "has not fought this phase" not in low:
-                    continue
-                if "roll one d6" not in low:
-                    continue
-                if "do not remove" not in low:
-                    continue
-                if (
-                    "can fight after the attacking unit has finished making its attacks" not in low
-                    and "can fight after the attacking model's unit has finished making its attacks" not in low
-                ):
-                    continue
-                m = re.search(r"on a (\d+)\+?", low)
-                if not m:
-                    continue
-                threshold = int(m.group(1))
-                if threshold < 2 or threshold > 6:
-                    continue
-                source = str(name or "Fight on death").strip() or "Fight on death"
-                fortify_bonus = 0
-                if "adding 1 to the result if units from your army have fortify takeover" in low:
-                    fortify_bonus = 1
-                rule = {
-                    "threshold": threshold,
-                    "source": source,
-                    "fortify_takeover_bonus": int(fortify_bonus),
-                }
+                rule = parsed
                 break
         except Exception:
             rule = None
+
+        if rule is None:
+            try:
+                root = self.get_attached_unit_root()
+            except Exception:
+                root = self
+            if root is not None:
+                try:
+                    members = list(root.get_attached_unit_members() or [])
+                except Exception:
+                    members = []
+                if not members:
+                    members = [root]
+                members = sorted(members, key=lambda u: str(get_entity_id(u) or ""))
+                for member in members:
+                    if member is None or member is self:
+                        continue
+                    try:
+                        entries = list(member._iter_ability_entries_for_rules(model=None))
+                    except Exception:
+                        entries = []
+                    for name, desc in entries:
+                        parsed = _parse_melee_fight_on_death_rule(name, desc)
+                        if parsed is None:
+                            continue
+                        rule = parsed
+                        break
+                    if rule is not None:
+                        break
 
         # Enhancement: Avenger's Crown (Vessels of Wrath) bearer-only melee fight-on-death on 2+.
         if rule is None and model is not None:
@@ -1019,7 +1058,94 @@ class KeywordsDetachmentsMixin:
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
         self._ability_cache[cache_key] = rule
-        return rule
+        return self._apply_vindication_warden_of_honour_to_fight_on_death_rule(
+            rule,
+            model=model,
+        )
+
+    def _vindication_warden_of_honour_vengeful_exhortation_roll_bonus(self, *, model: Optional['Model'] = None) -> int:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return 0
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+        if sm_mgr is None or not bool(getattr(sm_mgr, "is_vindication_task_force", lambda: False)()):
+            return 0
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = []
+        if not members:
+            members = [root]
+        members = sorted(members, key=lambda u: str(get_entity_id(u) or ""))
+
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not (isinstance(sr, dict) and bool(sr.get("enhancement_warden_of_honour"))):
+                continue
+            if bool(sr.get("enhancement_warden_of_honour_requires_bearer_leading", True)):
+                if not bool(getattr(member, "is_attached_leader", False)):
+                    continue
+            bearer_alive = False
+            bearer_id = str(
+                sr.get("enhancement_warden_of_honour_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            if bearer_id:
+                for candidate in list(getattr(member, "models", []) or []):
+                    if str(get_entity_id(candidate) or "") != bearer_id:
+                        continue
+                    alive_attr = getattr(candidate, "is_alive", True)
+                    bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                    break
+            if not bearer_alive:
+                bearer = getattr(member, "_get_enhancement_bearer_model", lambda: None)()
+                if bearer is not None:
+                    alive_attr = getattr(bearer, "is_alive", True)
+                    bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            if not bearer_alive:
+                continue
+            try:
+                bonus = int(sr.get("enhancement_warden_of_honour_vengeful_exhortation_roll_bonus", 1) or 1)
+            except Exception:
+                bonus = 1
+            return int(max(0, bonus))
+        return 0
+
+    def _apply_vindication_warden_of_honour_to_fight_on_death_rule(
+        self,
+        rule: Optional[dict],
+        *,
+        model: Optional['Model'] = None,
+    ) -> Optional[dict]:
+        if not isinstance(rule, dict):
+            return rule
+        source = str(rule.get("source", "") or "").strip().lower().replace("\u2019", "'")
+        if "vengeful exhortation" not in source:
+            return rule
+        bonus = self._vindication_warden_of_honour_vengeful_exhortation_roll_bonus(model=model)
+        if bonus <= 0:
+            return rule
+        adjusted = dict(rule)
+        try:
+            threshold = int(adjusted.get("threshold", 0) or 0)
+        except Exception:
+            threshold = 0
+        if threshold > 0:
+            adjusted["threshold"] = int(max(2, threshold - int(bonus)))
+        source_text = str(adjusted.get("source", "") or "Vengeful Exhortation").strip() or "Vengeful Exhortation"
+        adjusted["source"] = f"{source_text} + Warden of Honour"
+        return adjusted
 
     def has_shoot_on_death(self) -> bool:
         """Check if the unit has a Shoot on Death style ability.

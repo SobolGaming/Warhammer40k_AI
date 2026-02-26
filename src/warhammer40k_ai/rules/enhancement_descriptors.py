@@ -2845,6 +2845,61 @@ _SPACE_MARINES_BLACK_SPEAR_TASK_FORCE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPACE_MARINES_BLACK_SPEAR_TASK_FORCE_DESCRIPTORS.values()
 }
 
+_SPACE_MARINES_VINDICATION_TASK_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010396002": EnhancementToolDescriptor(
+        enhancement_id="000010396002",
+        name="Imperialis of the Eternal Crusade",
+        timing="enemy_charge_targeting_bearer_unit",
+        target="enemy_unit_declaring_charge_against_bearer_unit",
+        duration="instant_per_charge_declaration",
+        effect="charge_roll_penalty_against_enemy_unit_targeting_bearer_unit",
+        effect_params={
+            "charge_roll_penalty": 2,
+            "not_cumulative_with_other_negative_modifiers": True,
+        },
+    ),
+    "000010396003": EnhancementToolDescriptor(
+        enhancement_id="000010396003",
+        name="Consecrating Aura",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant_while_bearer_alive",
+        effect="bearer_unit_invulnerable_save",
+        effect_params={
+            "invulnerable_save": 5,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010396004": EnhancementToolDescriptor(
+        enhancement_id="000010396004",
+        name="Orb of the Emperor's Aegis",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant_while_bearer_alive",
+        effect="grant_deep_strike_to_bearer_unit",
+        effect_params={
+            "grants_deep_strike": True,
+            "requires_bearer_alive": True,
+        },
+    ),
+    "000010396005": EnhancementToolDescriptor(
+        enhancement_id="000010396005",
+        name="Warden of Honour",
+        timing="while_bearer_is_leading",
+        target="vengeful_exhortation_rolls_for_bearer_unit",
+        duration="constant_while_bearer_is_leading",
+        effect="vengeful_exhortation_roll_bonus",
+        effect_params={
+            "vengeful_exhortation_roll_bonus": 1,
+            "requires_bearer_leading": True,
+        },
+    ),
+}
+
+_SPACE_MARINES_VINDICATION_TASK_FORCE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPACE_MARINES_VINDICATION_TASK_FORCE_DESCRIPTORS.values()
+}
+
 _LEGION_OF_EXCESS_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009806002": EnhancementToolDescriptor(
         enhancement_id="000009806002",
@@ -3421,6 +3476,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPACE_MARINES_BLACK_SPEAR_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPACE_MARINES_VINDICATION_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _LEGION_OF_EXCESS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -3503,6 +3561,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SPACE_MARINES_COMPANIONS_OF_VEHEMENCE_BY_NAME.get(key)
         or _SPACE_MARINES_EMPERORS_SHIELD_BY_NAME.get(key)
         or _SPACE_MARINES_BLACK_SPEAR_TASK_FORCE_BY_NAME.get(key)
+        or _SPACE_MARINES_VINDICATION_TASK_FORCE_BY_NAME.get(key)
         or _LEGION_OF_EXCESS_BY_NAME.get(key)
         or _PLAGUE_LEGION_BY_NAME.get(key)
         or _SCINTILLATING_LEGION_BY_NAME.get(key)
