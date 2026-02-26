@@ -18208,7 +18208,131 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Repulsor Grid: on unmodified saving throw of 6 against ranged attacks allocated
+        # to a KASTELAN ROBOT model, queue mortal wounds on the attacking unit for resolution
+        # after it has finished making its attacks.
+        try:
+            self._queue_repulsor_grid_retaliation(
+                target_model=target_model,
+                attack_instance=attack_instance,
+                save_result=save_result,
+            )
+        except Exception:
+            pass
+
         return save_result
+
+    def _queue_repulsor_grid_retaliation(
+        self,
+        *,
+        target_model: Optional['Model'],
+        attack_instance: Optional[Dict],
+        save_result: Optional[Dict],
+    ) -> None:
+        if target_model is None or not isinstance(save_result, dict):
+            return
+        try:
+            roll = int(save_result.get("roll", 0) or 0)
+        except Exception:
+            return
+        if roll != 6:
+            return
+
+        parent_wargear = getattr(self, "parent_wargear", None)
+        if parent_wargear is None:
+            return
+        is_ranged = getattr(parent_wargear, "is_ranged", None)
+        if not callable(is_ranged) or not bool(is_ranged()):
+            return
+
+        target_unit = getattr(target_model, "parent_unit", None)
+        if target_unit is None:
+            return
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        if target_root is None:
+            return
+
+        get_rule = getattr(target_root, "get_repulsor_grid_rule", None)
+        if not callable(get_rule):
+            return
+        rule = get_rule()
+        if not isinstance(rule, dict):
+            return
+
+        model_keyword = str(rule.get("target_model_keyword", "KASTELAN ROBOT") or "KASTELAN ROBOT").strip()
+        if model_keyword:
+            has_keyword = False
+            has_any_keyword = getattr(target_model, "has_any_keyword", None)
+            if callable(has_any_keyword):
+                try:
+                    has_keyword = bool(has_any_keyword(model_keyword))
+                except Exception:
+                    has_keyword = False
+            if not has_keyword:
+                has_keyword_fn = getattr(target_model, "has_keyword", None)
+                if callable(has_keyword_fn):
+                    try:
+                        has_keyword = bool(has_keyword_fn(model_keyword))
+                    except Exception:
+                        has_keyword = False
+            if not has_keyword:
+                keywords = list(getattr(target_model, "keywords", []) or [])
+                has_keyword = any(str(keyword or "").strip().upper() == model_keyword.upper() for keyword in keywords)
+            if not has_keyword:
+                return
+
+        attack_instance = attack_instance if isinstance(attack_instance, dict) else {}
+        attacker_unit = attack_instance.get("attacker_unit")
+        if attacker_unit is None:
+            attacker_model = attack_instance.get("attacker_model")
+            attacker_unit = getattr(attacker_model, "parent_unit", None)
+        if attacker_unit is None:
+            return
+        try:
+            attacker_root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = attacker_unit
+        if attacker_root is None:
+            return
+        attacker_id = str(get_entity_id(attacker_root) or "")
+        if not attacker_id:
+            return
+
+        try:
+            target_army = target_root.get_parent_army()
+            attacker_army = attacker_root.get_parent_army()
+            if target_army is attacker_army:
+                return
+        except Exception:
+            pass
+
+        try:
+            per_trigger = int(rule.get("mortal_wounds", 1) or 1)
+        except Exception:
+            per_trigger = 1
+        per_trigger = int(max(1, per_trigger))
+        source_name = str(rule.get("source", "") or "Repulsor Grid").strip() or "Repulsor Grid"
+
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        pending = sr.get("repulsor_grid_pending_by_attacker")
+        if not isinstance(pending, dict):
+            pending = {}
+        try:
+            current = int(pending.get(attacker_id, 0) or 0)
+        except Exception:
+            current = 0
+        pending[attacker_id] = int(current + per_trigger)
+        sr["repulsor_grid_pending_by_attacker"] = pending
+        sr["repulsor_grid_source"] = source_name
+        target_root.special_rules = sr
+        save_result.setdefault("special_effects", []).append(
+            f"{source_name}: pending {int(per_trigger)} mortal wound(s) after attacking unit resolves"
+        )
 
     def _check_invulnerable_save_condition(self, condition: str, attack_instance: dict) -> bool:
         """

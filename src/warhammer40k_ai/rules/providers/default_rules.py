@@ -113,6 +113,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_harvester_of_souls"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_inflamed_reprisal"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_curse_of_the_walking_pox"),
+                ("unit_shooting_resolved", "_on_unit_shooting_resolved_repulsor_grid"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_cold_fervour"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_blood_surge"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_repair_barge"),

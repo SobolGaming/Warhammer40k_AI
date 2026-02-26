@@ -9822,6 +9822,84 @@ class GameShootingFightHandlersMixin:
                 sr.pop("lethal_ichor_source", None)
             enemy_root.special_rules = sr
 
+    def _on_unit_shooting_resolved_repulsor_grid(self, attacker_unit=None, **_kwargs) -> None:
+        if attacker_unit is None:
+            return
+        try:
+            attacker_root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = attacker_unit
+        if attacker_root is None:
+            return
+        attacker_id = str(get_entity_id(attacker_root) or "")
+        if not attacker_id:
+            return
+
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return
+        enemy_roots: list[Any] = []
+        seen_enemy_ids: set[str] = set()
+        try:
+            attacker_army = attacker_root.get_parent_army()
+        except Exception:
+            attacker_army = None
+        for player in list(getattr(self, "players", []) or []):
+            if player is None:
+                continue
+            get_army = getattr(player, "get_army", None)
+            army = get_army() if callable(get_army) else getattr(player, "army", None)
+            if army is None or army is attacker_army:
+                continue
+            for root in list(self._iter_unique_army_roots(army) or []):
+                if root is None:
+                    continue
+                rid = str(get_entity_id(root) or "")
+                if rid and rid in seen_enemy_ids:
+                    continue
+                if rid:
+                    seen_enemy_ids.add(rid)
+                enemy_roots.append(root)
+
+        for enemy_root in enemy_roots:
+            if enemy_root is None:
+                continue
+            get_rule = getattr(enemy_root, "get_repulsor_grid_rule", None)
+            if not callable(get_rule):
+                continue
+            rule = get_rule()
+            if not isinstance(rule, dict):
+                continue
+            sr = getattr(enemy_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            pending = sr.get("repulsor_grid_pending_by_attacker")
+            if not isinstance(pending, dict):
+                continue
+            try:
+                pending_mw = int(pending.get(attacker_id, 0) or 0)
+            except Exception:
+                pending_mw = 0
+            if pending_mw <= 0:
+                continue
+            if game_map is not None and bool(getattr(attacker_root, "is_alive", lambda: False)()):
+                try:
+                    enemy_root._apply_mortal_wounds_to_unit(
+                        attacker_root,
+                        int(pending_mw),
+                        game_map=game_map,
+                        attacker_unit=enemy_root,
+                    )
+                except Exception:
+                    pass
+            pending.pop(attacker_id, None)
+            if pending:
+                sr["repulsor_grid_pending_by_attacker"] = pending
+            else:
+                sr.pop("repulsor_grid_pending_by_attacker", None)
+                sr.pop("repulsor_grid_source", None)
+            enemy_root.special_rules = sr
+
     def _on_unit_destroyed_explosive_blight(
         self,
         unit=None,

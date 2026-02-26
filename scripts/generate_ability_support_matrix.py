@@ -3811,6 +3811,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Friendly ADEPTUS MECHANICUS BATTLELINE models wholly within 6\" gain a 4+ invulnerable save against ranged attacks.",
         ),
+        ("ADM", "Repulsor Grid"): (
+            "Supported",
+            "On unmodified saving throw 6 for allocated ranged attacks to KASTELAN ROBOT models, the attacking unit suffers mortal wounds after it finishes making its attacks.",
+        ),
         ("ADM", "Canticles of the Omnissiah"): (
             "Supported",
             "Start of Command phase: Belisarius Cawl selects Invocation of Machine Vengeance, Mantra of Discipline, or Shroudpsalm until next Command phase.",
@@ -5195,6 +5199,7 @@ def _classify_ability_base(
     command_phase_regain_wound_support = _command_phase_regain_wound_support(description)
     command_phase_model_repair_fnp_support = _command_phase_model_repair_fnp_support(description)
     wholly_within_friendly_battleline_ranged_invuln_support = _wholly_within_friendly_battleline_ranged_invuln_support(description)
+    repulsor_grid_support = _repulsor_grid_support(description)
     start_shooting_phase_visible_battleshock_support = _start_shooting_phase_visible_battleshock_support(description)
     shooting_phase_dice_pool_mortal_support = _shooting_phase_dice_pool_mortal_support(description)
     start_shooting_phase_vehicle_mortal_heal_support = _start_shooting_phase_vehicle_mortal_heal_support(description)
@@ -5476,6 +5481,8 @@ def _classify_ability_base(
         return command_phase_model_repair_fnp_support
     if wholly_within_friendly_battleline_ranged_invuln_support:
         return wholly_within_friendly_battleline_ranged_invuln_support
+    if repulsor_grid_support:
+        return repulsor_grid_support
     if start_shooting_phase_visible_battleshock_support:
         return start_shooting_phase_visible_battleshock_support
     if shooting_phase_dice_pool_mortal_support:
@@ -9069,6 +9076,29 @@ def _wholly_within_friendly_battleline_ranged_invuln_support(description: str) -
     return (
         "Supported",
         f"Friendly {keyword} BATTLELINE models wholly within {range_val}\" gain a {inv}+ invulnerable save against ranged attacks.",
+    )
+
+
+def _repulsor_grid_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time a ranged attack is allocated to a (?P<model_keyword>[a-z0-9 ]+) model in this unit "
+        r"on an unmodified saving throw of (?P<threshold>\d+) "
+        r"the attacking unit suffers (?P<mw>\d+) mortal wounds? after it has finished making its attacks"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    model_keyword = str(m.group("model_keyword") or "").strip().upper()
+    threshold = str(m.group("threshold") or "6")
+    mortal = str(m.group("mw") or "1")
+    return (
+        "Supported",
+        f"Ranged attacks allocated to {model_keyword} models: on unmodified save roll {threshold}, attacking unit suffers {mortal} mortal wound(s) after resolving attacks.",
     )
 
 

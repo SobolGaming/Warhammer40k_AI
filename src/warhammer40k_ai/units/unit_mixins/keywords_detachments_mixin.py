@@ -4184,6 +4184,76 @@ class KeywordsDetachmentsMixin:
         root._ability_cache[cache_key] = rule
         return rule
 
+    def get_repulsor_grid_rule(self) -> Optional[dict]:
+        """
+        Return rule info for Repulsor Grid-like abilities:
+        "Each time a ranged attack is allocated to a KASTELAN ROBOT model in this unit,
+        on an unmodified saving throw of 6, the attacking unit suffers 1 mortal wound after
+        it has finished making its attacks."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "repulsor_grid_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text_src = unit._strip_eligibility_prefix(text_src)
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if "ranged attack is allocated" not in normalized:
+                    continue
+                if "kastelan robot model in this unit" not in normalized:
+                    continue
+                if "unmodified saving throw of 6" not in normalized:
+                    continue
+                if "attacking unit suffers" not in normalized:
+                    continue
+                if "after it has finished making its attacks" not in normalized:
+                    continue
+                m_mortal = re.search(r"attacking unit suffers (\d+) mortal wound", normalized)
+                mortal_wounds = 1
+                if m_mortal:
+                    try:
+                        mortal_wounds = int(m_mortal.group(1) or 1)
+                    except Exception:
+                        mortal_wounds = 1
+                source = str(name or "Repulsor Grid").strip() or "Repulsor Grid"
+                rule = {
+                    "source": source,
+                    "attack_type": "ranged",
+                    "target_model_keyword": "KASTELAN ROBOT",
+                    "save_roll_threshold": 6,
+                    "mortal_wounds": int(max(1, mortal_wounds)),
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
     def get_selfless_protector_rule(self) -> Optional[dict]:
         """
         Return rule info for Selfless Protector-like abilities:
