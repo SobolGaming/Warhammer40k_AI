@@ -11675,16 +11675,29 @@
     },
     {
         "faction_id": "ORK",
-        "name": "UNBRIDLED CARNAGE",
-        "id": "000008366004",
+        "name": "ERE WE GO",
+        "id": "000008366007",
         "type": "War Horde \u2013 Battle Tactic Stratagem",
         "cp_cost": "1",
-        "legend": "When Orks get stuck into the foe, the carnage is wonderful to behold, at least for other Orks.",
-        "turn": "Either player\u2019s turn",
-        "phase": "Fight phase",
+        "legend": "Even Orks can put on a surprising turn of speed when the promise of a good face-to-face fight is in the offing.",
+        "turn": "Your turn",
+        "phase": "Movement phase",
         "detachment": "War Horde",
         "detachment_id": "000000852",
-        "description": "<b>WHEN:</b> Fight phase.<br><br><b>TARGET:</b> One <span class=\"kwb\">ORKS</span> unit from your army that has not been selected to fight this phase.<br><br><b>EFFECT:</b> Until the end of the phase, each time a model in your unit makes a melee attack, an unmodified hit roll of 5+ scores a Critical Hit."
+        "description": "<b>WHEN:</b> Start of your Movement phase.<br><br><b>TARGET:</b> One Orks Infantry unit from your army.<br><br><b>EFFECT:</b> Until the end of the turn, add 2 to Advance and Charge rolls made for your unit."
+    },
+    {
+        "faction_id": "ORK",
+        "name": "MOB RULE",
+        "id": "000008366006",
+        "type": "War Horde \u2013 Battle Tactic Stratagem",
+        "cp_cost": "1",
+        "legend": "The more Orks that gather in one place the more the Waaagh! energy flows, and the more fearless they all become.",
+        "turn": "Your turn",
+        "phase": "Command phase",
+        "detachment": "War Horde",
+        "detachment_id": "000000852",
+        "description": "<b>WHEN:</b> End of your Command phase.<br><br><b>TARGET:</b> One Mob unit from your army that contains 10 or more models and is not Below Half-strength.  <br><br><b>EFFECT:</b> Select one friendly Battle-shocked Orks Infantry unit within 6\" of that <span class=\"kwb\">MOB</span> unit. That <span class=\"kwb\">ORKS</span> <span class=\"kwb\">INFANTRY</span> unit is no longer Battle-shocked."
     },
     {
         "faction_id": "ORK",
@@ -11701,42 +11714,16 @@
     },
     {
         "faction_id": "ORK",
-        "name": "MOB RULE",
-        "id": "000008366006",
+        "name": "UNBRIDLED CARNAGE",
+        "id": "000008366004",
         "type": "War Horde \u2013 Battle Tactic Stratagem",
         "cp_cost": "1",
-        "legend": "The more Orks that gather in one place the more the Waaagh! energy flows, and the more fearless they all become.",
-        "turn": "Your turn",
-        "phase": "Command phase",
-        "detachment": "War Horde",
-        "detachment_id": "000000852",
-        "description": "<b>WHEN:</b> Your Command phase.  <br><br><b>TARGET:</b> One Mob unit from your army that contains 10 or more models and is not Below Half-strength.  <br><br><b>EFFECT:</b> Select one friendly Battle-shocked Orks Infantry unit within 6\" of that <span class=\"kwb\">MOB</span> unit. That <span class=\"kwb\">ORKS</span> <span class=\"kwb\">INFANTRY</span> unit is no longer Battle-shocked."
-    },
-    {
-        "faction_id": "ORK",
-        "name": "ERE WE GO",
-        "id": "000008366007",
-        "type": "War Horde \u2013 Battle Tactic Stratagem",
-        "cp_cost": "1",
-        "legend": "Even Orks can put on a surprising turn of speed when the promise of a good face-to-face fight is in the offing.",
-        "turn": "Your turn",
-        "phase": "Movement phase",
-        "detachment": "War Horde",
-        "detachment_id": "000000852",
-        "description": "<b>WHEN:</b> Start of your Movement phase.<br><br><b>TARGET:</b> One Orks Infantry unit from your army.<br><br><b>EFFECT:</b> Until the end of the turn, add 2 to Advance and Charge rolls made for your unit."
-    },
-    {
-        "faction_id": "ORK",
-        "name": "CAREEN!",
-        "id": "000008366002",
-        "type": "War Horde \u2013 Epic Deed Stratagem",
-        "cp_cost": "1",
-        "legend": "If their vehicle is on its last legs, any Ork worth their steering wheel will aim its blazing remains into the nearest cluster of enemies. The ensuing explosions never fail to raise a rousing cheer from nearby Ork onlookers.",
+        "legend": "When Orks get stuck into the foe, the carnage is wonderful to behold, at least for other Orks.",
         "turn": "Either player\u2019s turn",
-        "phase": "Any phase",
+        "phase": "Fight phase",
         "detachment": "War Horde",
         "detachment_id": "000000852",
-        "description": "<b>WHEN:</b> Any phase, just after an Orks Vehicle unit from your army with the Deadly Demise ability is destroyed.<br><br><b>TARGET:</b> That destroyed <span class=\"kwb\">ORKS</span> <span class=\"kwb\">VEHICLE</span> unit, if you roll a 6 for its Deadly Demise ability. You can use this Stratagem on that unit even though it was just destroyed.<br><br><b>EFFECT:</b> Your unit can make a Normal or Fall Back move before its Deadly Demise ability is resolved, and before any embarked units perform an Emergency Disembarkation. When making this move, your unit can move over enemy units (excluding <span class=\"kwb\">MONSTERS</span> and <span class=\"kwb\">VEHICLES</span>) as if they were not there."
+        "description": "<b>WHEN:</b> Fight phase.<br><br><b>TARGET:</b> One <span class=\"kwb\">ORKS</span> unit from your army that has not been selected to fight this phase.<br><br><b>EFFECT:</b> Until the end of the phase, each time a model in your unit makes a melee attack, an unmodified hit roll of 5+ scores a Critical Hit."
     },
     {
         "faction_id": "ORK",
@@ -11750,6 +11737,19 @@
         "detachment": "War Horde",
         "detachment_id": "000000852",
         "description": "<b>WHEN:</b> Fight phase, just after an enemy unit has selected its targets.<br><br><b>TARGET:</b> One <span class=\"kwb\">ORKS</span> unit from your army that was selected as the target of one or more of the attacking unit\u2019s attacks.<br><br><b>EFFECT:</b> Until the end of the phase, each time a model in your unit is destroyed, if that model has not fought this phase, do not remove it from play. The destroyed model can fight after the attacking model\u2019s unit has finished making attacks, and is then removed from play."
+    },
+    {
+        "faction_id": "ORK",
+        "name": "CAREEN!",
+        "id": "000008366002",
+        "type": "War Horde \u2013 Epic Deed Stratagem",
+        "cp_cost": "1",
+        "legend": "If their vehicle is on its last legs, any Ork worth their steering wheel will aim its blazing remains into the nearest cluster of enemies. The ensuing explosions never fail to raise a rousing cheer from nearby Ork onlookers.",
+        "turn": "Either player\u2019s turn",
+        "phase": "Any phase",
+        "detachment": "War Horde",
+        "detachment_id": "000000852",
+        "description": "<b>WHEN:</b> Any phase, just after an Orks Vehicle unit from your army with the Deadly Demise ability is destroyed.<br><br><b>TARGET:</b> That destroyed <span class=\"kwb\">ORKS</span> <span class=\"kwb\">VEHICLE</span> unit, if you roll a 6 for its Deadly Demise ability. You can use this Stratagem on that unit even though it was just destroyed.<br><br><b>EFFECT:</b> Your unit can make a Normal or Fall Back move before its Deadly Demise ability is resolved, and before any embarked units perform an Emergency Disembarkation. When making this move, your unit can move over enemy units (excluding <span class=\"kwb\">MONSTERS</span> and <span class=\"kwb\">VEHICLES</span>) as if they were not there."
     },
     {
         "faction_id": "QI",

@@ -70308,5 +70308,185 @@
         "description": "At the end of the Fight phase, if this unit was eligible to fight this phase, and is not within Engagement Range of one or more enemy units, it can make a Normal move of up to D3+3\". Otherwise, if this unit was eligible to fight this phase, this unit can make a Fall Back move of up to D3+3\".",
         "type": "Datasheet",
         "parameter": ""
+    },
+    {
+        "datasheet_id": "000004197",
+        "line": "1",
+        "ability_id": "000008346",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Core",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004197",
+        "line": "2",
+        "ability_id": "000008344",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Core",
+        "parameter": "7\""
+    },
+    {
+        "datasheet_id": "000004197",
+        "line": "3",
+        "ability_id": "000009894",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Faction",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004197",
+        "line": "4",
+        "ability_id": "",
+        "model": "",
+        "name": "Aethersense (Psychic)",
+        "description": "Enemy units that are set up on the battlefield from Reserves cannot be set up within 12\" of this model.",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004197",
+        "line": "5",
+        "ability_id": "",
+        "model": "",
+        "name": "Fury of the Void (Psychic)",
+        "description": "In your Shooting phase, after this model\u2019s unit has shot, select one enemy unit hit by one or more attacks made with this model\u2019s Dread of the Deep Void. Until the end of the turn, that unit is riven. Each time an <span class=\"kwb\">AELDARI</span> model from your army makes an attack that targets a riven unit, add 1 to the Strength characteristic of that attack.",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004198",
+        "line": "1",
+        "ability_id": "000008346",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Core",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004198",
+        "line": "2",
+        "ability_id": "000008344",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Core",
+        "parameter": "7\""
+    },
+    {
+        "datasheet_id": "000004198",
+        "line": "3",
+        "ability_id": "000009894",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Faction",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004198",
+        "line": "4",
+        "ability_id": "",
+        "model": "",
+        "name": "Piratical Hero",
+        "description": "While this model is leading a unit, each time a model in that unit makes an attack, that attack has the [SUSTAINED HITS 1] ability and add 1 to the Hit roll.",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004198",
+        "line": "5",
+        "ability_id": "",
+        "model": "",
+        "name": "Prince of Corsairs",
+        "description": "After both players have deployed their armies, if this unit is on the battlefield (or any Transport it is embarked within is on the battlefield), select up to three <span class=\"kwb\">AELDARI</span> units from your army and redeploy them. When doing so, you can set those units up in Strategic Reserves, regardless of how many units are already in Strategic Reserves. ",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004199",
+        "line": "1",
+        "ability_id": "000008343",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Core",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004199",
+        "line": "2",
+        "ability_id": "000008344",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Core",
+        "parameter": "7\""
+    },
+    {
+        "datasheet_id": "000004199",
+        "line": "3",
+        "ability_id": "000009894",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004199",
+        "line": "4",
+        "ability_id": "",
+        "model": "",
+        "name": "Raid and Run",
+        "description": "At the end of the Fight phase, if this unit was eligible to fight this phase, and is not within Engagement Range of one or more enemy units, it can make a Normal move of up to D3+3\". Otherwise, if this unit was eligible to fight this phase, this unit can make a Fall Back move of up to D3+3\".",
+        "type": "Datasheet",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004200",
+        "line": "1",
+        "ability_id": "000008339",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Core",
+        "parameter": "1"
+    },
+    {
+        "datasheet_id": "000004200",
+        "line": "2",
+        "ability_id": "000008344",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Core",
+        "parameter": "7\""
+    },
+    {
+        "datasheet_id": "000004200",
+        "line": "3",
+        "ability_id": "000009894",
+        "model": "",
+        "name": "",
+        "description": "",
+        "type": "Faction",
+        "parameter": ""
+    },
+    {
+        "datasheet_id": "000004200",
+        "line": "4",
+        "ability_id": "",
+        "model": "",
+        "name": "Hallucinogen Grenades",
+        "description": "At the start of your opponent\u2019s Shooting phase, this unit can use this ability. If it does, select one Aeldari Infantry unit from your army visible to and within 36\" of this unit: until the end of the phase, that unit has the Stealth ability.",
+        "type": "Datasheet",
+        "parameter": ""
     }
 ]

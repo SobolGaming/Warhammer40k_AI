@@ -332,9 +332,85 @@ class TestOrksWarHordeStratagems(unittest.TestCase):
         game.phase = SimpleNamespace(name="COMMAND_PHASE")
         game.current_player_index = 0
 
-        ok = p1.stratagems.use("MOB RULE", mob_unit=mob_unit, battle_shocked_unit=bs_unit, phase_name="Command phase")
+        ok = p1.stratagems.use(
+            "MOB RULE",
+            mob_unit=mob_unit,
+            battle_shocked_unit=bs_unit,
+            phase_name="Command phase",
+            event="phase_end",
+        )
         self.assertTrue(ok)
         self.assertFalse(bs_unit.is_battle_shocked())
+
+    def test_mob_rule_requires_end_of_command_phase_context(self):
+        from warhammer40k_ai.units.status_effects import BattleShockEffect
+
+        game, p1, _p2, army1, _army2 = _build_game()
+        mob_unit = _make_unit("Boyz Mob", keywords=["INFANTRY", "MOB"], faction_keywords=["ORKS"])
+        mob_unit.unit_composition = {"Test Model": (10, 10)}
+        mob_unit.unit_composition_options = [mob_unit.unit_composition]
+        mob_unit.models = mob_unit._create_models(mob_unit._datasheet, quantity=10)
+        bs_unit = _make_unit("Boyz", keywords=["INFANTRY"], faction_keywords=["ORKS"])
+        army1.add_unit(mob_unit)
+        army1.add_unit(bs_unit)
+        mob_unit.deployed = True
+        mob_unit.reserve_status = "deployed"
+        for idx, model in enumerate(mob_unit.models):
+            model.set_location(20.0 + (idx * 0.5), 10.0, 0.0, 0.0)
+        if mob_unit not in game.map.units:
+            game.map.units.append(mob_unit)
+        bs_unit.deployed = True
+        bs_unit.reserve_status = "deployed"
+        bs_unit.models[0].set_location(22.0, 10.0, 0.0, 0.0)
+        if bs_unit not in game.map.units:
+            game.map.units.append(bs_unit)
+
+        bs_unit.apply_status_effect(BattleShockEffect(current_turn=1))
+        self.assertTrue(bs_unit.is_battle_shocked())
+
+        game.phase = SimpleNamespace(name="COMMAND_PHASE")
+        game.current_player_index = 0
+
+        ok = p1.stratagems.use("MOB RULE", mob_unit=mob_unit, battle_shocked_unit=bs_unit, phase_name="Command phase")
+        self.assertFalse(ok)
+        self.assertTrue(bs_unit.is_battle_shocked())
+
+    def test_mob_rule_is_queued_at_end_of_command_phase(self):
+        from warhammer40k_ai.units.status_effects import BattleShockEffect
+
+        game, p1, _p2, army1, _army2 = _build_game()
+        mob_unit = _make_unit("Boyz Mob", keywords=["INFANTRY", "MOB"], faction_keywords=["ORKS"])
+        mob_unit.unit_composition = {"Test Model": (10, 10)}
+        mob_unit.unit_composition_options = [mob_unit.unit_composition]
+        mob_unit.models = mob_unit._create_models(mob_unit._datasheet, quantity=10)
+        bs_unit = _make_unit("Boyz", keywords=["INFANTRY"], faction_keywords=["ORKS"])
+        army1.add_unit(mob_unit)
+        army1.add_unit(bs_unit)
+        mob_unit.deployed = True
+        mob_unit.reserve_status = "deployed"
+        for idx, model in enumerate(mob_unit.models):
+            model.set_location(30.0 + (idx * 0.5), 10.0, 0.0, 0.0)
+        if mob_unit not in game.map.units:
+            game.map.units.append(mob_unit)
+        bs_unit.deployed = True
+        bs_unit.reserve_status = "deployed"
+        bs_unit.models[0].set_location(32.0, 10.0, 0.0, 0.0)
+        if bs_unit not in game.map.units:
+            game.map.units.append(bs_unit)
+        bs_unit.apply_status_effect(BattleShockEffect(current_turn=1))
+
+        game.phase = SimpleNamespace(name="COMMAND_PHASE")
+        game.current_player_index = 0
+        p1.stratagems._current_phase_name = "Command phase"
+        p1.stratagems._on_phase_end(player=p1, phase=game.phase)
+
+        queued = [
+            r for r in list(getattr(p1.stratagems, "_pending_reactions", []) or [])
+            if str(r.get("event", "") or "") == "phase_end"
+            and str(r.get("phase", "") or "") == "Command phase"
+            and str(r.get("stratagem", "") or "").upper() == "MOB RULE"
+        ]
+        self.assertTrue(queued)
 
     def test_careen_queues_move_and_resolves_skip(self):
         from warhammer40k_ai.engine.decision_kinds import DECISION_MOVE_UNIT, DECISION_USE_CAREEN

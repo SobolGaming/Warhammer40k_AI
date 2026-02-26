@@ -4194,7 +4194,7 @@ class StratagemManager(
             "UNBRIDLED CARNAGE": "Target: ORKS unit (not yet fought)",
             "ORKS IS NEVER BEATEN": "Target: ORKS unit (fight on death)",
             "ERE WE GO": "Target: ORKS INFANTRY unit",
-            "MOB RULE": "Target: ORKS MOB unit (10+ models)",
+            "MOB RULE": "Target: ORKS MOB unit (10+ models) at end of your Command phase",
             "CAREEN!": "Target: destroyed ORKS VEHICLE (Deadly Demise 6)",
             "'ARD AS NAILS": "Target: ORKS unit (non-Grots/Monster/Vehicle)",
             "\u2019ARD AS NAILS": "Target: ORKS unit (non-Grots/Monster/Vehicle)",
@@ -5605,6 +5605,111 @@ class StratagemManager(
         self._queue_careen_decision(game, prepared)
         return True
 
+    @staticmethod
+    def _mob_rule_is_end_of_command_phase_context(context: Dict[str, Any]) -> bool:
+        event = str(context.get("event", "") or "").strip().lower()
+        if event == "phase_end":
+            return True
+        timing = str(context.get("timing", context.get("timing_window", "")) or "").strip().lower()
+        if timing in {
+            "phase_end",
+            "end_of_command_phase",
+            "command_phase_end",
+            "end of command phase",
+            "end of your command phase",
+        }:
+            return True
+        phase_timing = str(context.get("phase_timing", context.get("phase_step", context.get("subphase", ""))) or "").strip().lower()
+        return phase_timing in {"phase_end", "end", "end_of_command_phase", "command_phase_end"}
+
+    def _mob_rule_mob_candidates(self) -> List[Any]:
+        if not self._is_war_horde_detachment():
+            return []
+        army_fn = getattr(self.player, "get_army", None)
+        army = army_fn() if callable(army_fn) else None
+        if army is None:
+            return []
+        candidates: list[Any] = []
+        for unit in list(getattr(army, "units", []) or []):
+            root_fn = getattr(unit, "get_attached_unit_root", None)
+            root = root_fn() if callable(root_fn) else unit
+            if root is None:
+                continue
+            if not self._is_orks_unit(root):
+                continue
+            is_alive_fn = getattr(root, "is_alive", None)
+            if callable(is_alive_fn) and not bool(is_alive_fn()):
+                continue
+            if not bool(getattr(root, "deployed", False)):
+                continue
+            is_in_reserves_fn = getattr(root, "is_in_reserves", None)
+            if callable(is_in_reserves_fn) and bool(is_in_reserves_fn()):
+                continue
+            if _unit_cannot_be_target_of_stratagem(root):
+                continue
+            has_any_keyword_fn = getattr(root, "has_any_keyword", None)
+            if not callable(has_any_keyword_fn) or not bool(has_any_keyword_fn("MOB")):
+                continue
+            members_fn = getattr(root, "get_attached_unit_members", None)
+            members = list(members_fn() or []) if callable(members_fn) else [root]
+            total_models = 0
+            for member in members:
+                total_models += int(len(getattr(member, "models", []) or []))
+            if total_models < 10:
+                continue
+            below_half_fn = getattr(root, "is_below_half_strength", None)
+            if callable(below_half_fn) and bool(below_half_fn()):
+                continue
+            candidates.append(root)
+        candidates.sort(key=lambda u: str(get_entity_id(u) or ""))
+        return candidates
+
+    def _mob_rule_battleshocked_candidates(self, mob_unit: Any) -> List[Any]:
+        mob_root_fn = getattr(mob_unit, "get_attached_unit_root", None)
+        mob_root = mob_root_fn() if callable(mob_root_fn) else mob_unit
+        if mob_root is None:
+            return []
+        army_fn = getattr(self.player, "get_army", None)
+        army = army_fn() if callable(army_fn) else None
+        if army is None:
+            return []
+        candidates: list[Any] = []
+        game_map = getattr(self.game, "map", None)
+        for unit in list(getattr(army, "units", []) or []):
+            cand_root_fn = getattr(unit, "get_attached_unit_root", None)
+            cand_root = cand_root_fn() if callable(cand_root_fn) else unit
+            if cand_root is None:
+                continue
+            is_alive_fn = getattr(cand_root, "is_alive", None)
+            if callable(is_alive_fn) and not bool(is_alive_fn()):
+                continue
+            if not bool(getattr(cand_root, "deployed", False)):
+                continue
+            is_in_reserves_fn = getattr(cand_root, "is_in_reserves", None)
+            if callable(is_in_reserves_fn) and bool(is_in_reserves_fn()):
+                continue
+            has_any_keyword_fn = getattr(cand_root, "has_any_keyword", None)
+            if not callable(has_any_keyword_fn):
+                continue
+            if not (bool(has_any_keyword_fn("ORKS")) and bool(has_any_keyword_fn("INFANTRY"))):
+                continue
+            is_battle_shocked_fn = getattr(cand_root, "is_battle_shocked", None)
+            if not callable(is_battle_shocked_fn) or not bool(is_battle_shocked_fn()):
+                continue
+            if game_map is not None:
+                distance_value = game_map.get_distance_between_units(mob_root, cand_root)
+                if distance_value is None:
+                    continue
+                try:
+                    dist = float(distance_value)
+                except (TypeError, ValueError):
+                    continue
+                if dist > 6.0:
+                    continue
+            candidates.append(cand_root)
+        candidates.sort(key=lambda u: str(get_entity_id(u) or ""))
+        return candidates
+
     def _on_phase_end(self, player, phase, **kwargs):
         # Queue NEW ORDERS at end of your Command phase
         try:
@@ -5631,6 +5736,38 @@ class StratagemManager(
                             }, use_timer=False)
         except Exception:
             raise
+        # War Horde: MOB RULE (end of your Command phase)
+        is_your_turn = player is self.player
+        phase_name = getattr(phase, "name", None)
+        if is_your_turn and phase_name == "COMMAND_PHASE":
+            s = self.get_by_name("MOB RULE")
+            if s and self._is_war_horde_detachment():
+                can_pay = self.player.command_points >= s.cp_cost
+                already_used = (s.name or "").strip().upper() in self._used_stratagems_this_phase
+                if can_pay and not already_used:
+                    mob_candidates = self._mob_rule_mob_candidates()
+                    if mob_candidates:
+                        already = False
+                        for r in self._pending_reactions:
+                            if (
+                                r.get("event") == "phase_end"
+                                and r.get("stratagem") == s.name
+                                and r.get("phase") == "Command phase"
+                            ):
+                                already = True
+                                break
+                        if not already:
+                            payload = {
+                                "event": "phase_end",
+                                "phase": "Command phase",
+                                "phase_name": "Command phase",
+                                "stratagem": s.name,
+                                "cp_cost": s.cp_cost,
+                            }
+                            if len(mob_candidates) == 1:
+                                payload["mob_unit"] = mob_candidates[0]
+                                payload["target_unit"] = mob_candidates[0]
+                            self._queue_reaction(payload, use_timer=False)
         # Chaos Knights: PROFANE SYMBIOSIS (end of any phase)
         try:
             s = self.get_by_name("PROFANE SYMBIOSIS")
@@ -16001,6 +16138,9 @@ class StratagemManager(
             if active_player is not self.player:
                 logger.error("ERROR: MOB RULE: not your turn")
                 return False
+            if not self._mob_rule_is_end_of_command_phase_context(kwargs):
+                logger.error("ERROR: MOB RULE: can only be used at end of your Command phase")
+                return False
             try:
                 if _unit_cannot_be_target_of_stratagem(root):
                     logger.error("ERROR: MOB RULE: MOB unit cannot be targeted")
@@ -16041,52 +16181,7 @@ class StratagemManager(
             if bs_unit is None and kwargs.get("mob_unit") is not None:
                 bs_unit = kwargs.get("target_unit")
 
-            candidates: list[Any] = []
-            game_map = getattr(self.game, "map", None)
-            try:
-                army = self.player.get_army()
-            except Exception:
-                raise
-            for unit in list(getattr(army, "units", []) or []):
-                try:
-                    cand_root = unit.get_attached_unit_root()
-                except Exception:
-                    cand_root = unit
-                if cand_root is None:
-                    continue
-                try:
-                    if not cand_root.is_alive():
-                        continue
-                except Exception:
-                    continue
-                try:
-                    if not getattr(cand_root, "deployed", False):
-                        continue
-                except Exception:
-                    continue
-                try:
-                    if getattr(cand_root, "is_in_reserves", lambda: False)():
-                        continue
-                except Exception:
-                    pass
-                try:
-                    if not (cand_root.has_any_keyword("ORKS") and cand_root.has_any_keyword("INFANTRY")):
-                        continue
-                except Exception:
-                    continue
-                try:
-                    if not bool(cand_root.is_battle_shocked()):
-                        continue
-                except Exception:
-                    continue
-                if game_map is not None:
-                    try:
-                        dist = float(game_map.get_distance_between_units(root, cand_root))
-                    except Exception:
-                        dist = None
-                    if dist is None or dist > 6.0:
-                        continue
-                candidates.append(cand_root)
+            candidates = self._mob_rule_battleshocked_candidates(root)
 
             if not candidates:
                 logger.error("ERROR: MOB RULE: no eligible Battle-shocked ORKS INFANTRY units within 6\"")

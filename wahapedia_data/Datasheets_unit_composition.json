@@ -10688,5 +10688,30 @@
         "datasheet_id": "000004196",
         "line": "2",
         "description": "4-9 Skyreavers"
+    },
+    {
+        "datasheet_id": "000004197",
+        "line": "1",
+        "description": "1 Kharseth \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+    },
+    {
+        "datasheet_id": "000004198",
+        "line": "1",
+        "description": "1 Prince Yriel \u2013 <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span>"
+    },
+    {
+        "datasheet_id": "000004199",
+        "line": "1",
+        "description": "1 Skyreaver Felarch"
+    },
+    {
+        "datasheet_id": "000004199",
+        "line": "2",
+        "description": "4-9 Skyreavers"
+    },
+    {
+        "datasheet_id": "000004200",
+        "line": "1",
+        "description": "1-2 Starfangs"
     }
 ]

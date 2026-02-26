@@ -26,6 +26,11 @@ python3 scripts/get_wahapedia_data.py -f -c -o wahapedia_data -s wahapedia_data
 python3 scripts/diff_wahapedia_data.py --old wahapedia_data/Archive/ --new wahapedia_data/ --out docs/wahapedia_diff.txt
 ```
 
+Afterwards, I issue the following prompt to GPT-5.3-Codex:
+```bash
+Review the latest wahapedia pull resulting in docs/wahapedia_diff.txt and summarize what the changes are in terms of what factions, detachments, enhancements, stratagems, units or unit abilitty or datasheet changes have occurred. Also, inform me if any of the changes, and which ones, require us to modify any implemented engine behavior.
+```
+
 ### Usage Examples
 
 #### Interactive Gameplay

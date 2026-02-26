@@ -12622,5 +12622,41 @@
         "line": "2",
         "description": "10 models",
         "cost": "150"
+    },
+    {
+        "datasheet_id": "000004197",
+        "line": "1",
+        "description": "1 model",
+        "cost": "95"
+    },
+    {
+        "datasheet_id": "000004198",
+        "line": "1",
+        "description": "1 model",
+        "cost": "95"
+    },
+    {
+        "datasheet_id": "000004199",
+        "line": "1",
+        "description": "5 models",
+        "cost": "75"
+    },
+    {
+        "datasheet_id": "000004199",
+        "line": "2",
+        "description": "10 models",
+        "cost": "150"
+    },
+    {
+        "datasheet_id": "000004200",
+        "line": "1",
+        "description": "1 model",
+        "cost": "75"
+    },
+    {
+        "datasheet_id": "000004200",
+        "line": "2",
+        "description": "2 models",
+        "cost": "150"
     }
 ]

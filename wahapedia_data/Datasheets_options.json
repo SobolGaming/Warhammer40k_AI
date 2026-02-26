@@ -10359,13 +10359,13 @@
         "datasheet_id": "000002769",
         "line": "1",
         "button": "\u2022",
-        "description": "This model\u2019s graviton pulsar can be replaced with one of the following;<ul style=\"list-style-type:circle\"><li>1 siege claw and 1 rad cleanser</li><li>1 lightning lock</li><li>1 conversion beam cannon</li><li>1 volkite veuglaire</li></ul>"
+        "description": "This model\u2019s volkite veuglaire can be replaced with one of the following:<ul style=\"list-style-type:circle\"><li>1 siege claw and 1 rad cleanser</li><li>1 graviton pulsar</li><li>1 lightning lock</li><li>1 conversion beam cannon</li></ul>"
     },
     {
         "datasheet_id": "000002769",
         "line": "2",
         "button": "\u2022",
-        "description": "This model\u2019s volkite veuglaire can be replaced with one of the following:<ul style=\"list-style-type:circle\"><li>1 siege claw and 1 rad cleanser</li><li>1 graviton pulsar</li><li>1 lightning lock</li><li>1 conversion beam cannon</li></ul>"
+        "description": "This model\u2019s graviton pulsar can be replaced with one of the following;<ul style=\"list-style-type:circle\"><li>1 siege claw and 1 rad cleanser</li><li>1 lightning lock</li><li>1 conversion beam cannon</li><li>1 volkite veuglaire</li></ul>"
     },
     {
         "datasheet_id": "000002775",
@@ -16738,5 +16738,41 @@
         "line": "3",
         "button": "*",
         "description": "* You cannot select the same option more than once per unit unless it contains 10 models, in which case you cannot select the same weapon more than twice per unit."
+    },
+    {
+        "datasheet_id": "000004197",
+        "line": "1",
+        "button": "\u2022",
+        "description": "None"
+    },
+    {
+        "datasheet_id": "000004198",
+        "line": "1",
+        "button": "\u2022",
+        "description": "None"
+    },
+    {
+        "datasheet_id": "000004199",
+        "line": "1",
+        "button": "\u2022",
+        "description": "The Skyreaver Felarch can replace its shuriken pistol with one of the following:<ul style=\"list-style-type:circle\"><li>1  blast pistol</li><li>1 neuro disruptor</li></ul>"
+    },
+    {
+        "datasheet_id": "000004199",
+        "line": "2",
+        "button": "\u2022",
+        "description": "For every 5 models in the unit, up to 2 Skyreaver models can each have their shuriken pistol and Corsair blade replaced with one of the following*:<ul style=\"list-style-type:circle\"><li>1 blaster and 1 close combat weapon</li><li>1 flamer and 1 close combat weapon</li><li>1 fusion gun and 1 close combat weapon</li><li>1 shredder and 1 close combat weapon</li></ul>"
+    },
+    {
+        "datasheet_id": "000004199",
+        "line": "3",
+        "button": "*",
+        "description": "* You cannot select the same option more than once per unit unless it contains 10 models, in which case you cannot select the same weapon more than twice per unit."
+    },
+    {
+        "datasheet_id": "000004200",
+        "line": "1",
+        "button": "\u2022",
+        "description": "None"
     }
 ]
