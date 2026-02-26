@@ -17646,6 +17646,26 @@ class WargearProfile:
                         attack_instance["inv_save_override_reason"] = source
         except Exception:
             pass
+        # Chaos Knights: Traitoris Lance (Veil of Medrengard).
+        t_unit = getattr(target_model, "parent_unit", None)
+        if t_unit is not None:
+            attack_type = "melee" if (self.parent_wargear and self.parent_wargear.is_melee()) else "ranged"
+            get_parent_army = getattr(t_unit, "get_parent_army", None)
+            army = get_parent_army() if callable(get_parent_army) else None
+            ck_mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
+            inv_fn = getattr(ck_mgr, "traitoris_veil_invulnerable_save", None) if ck_mgr is not None else None
+            if callable(inv_fn):
+                inv_value, inv_source = inv_fn(target_model, attack_type=attack_type)
+                if inv_value:
+                    current = attack_instance.get("inv_save_override", None)
+                    try:
+                        current_value = int(current) if current is not None else None
+                    except (TypeError, ValueError):
+                        current_value = None
+                    if current_value is None or current_value > int(inv_value):
+                        attack_instance["inv_save_override"] = int(inv_value)
+                        source = str(inv_source or "Veil of Medrengard").strip() or "Veil of Medrengard"
+                        attack_instance["inv_save_override_reason"] = source
         # Thousand Sons: Changehost of Deceit (Infernal Pacts - Daemonic Illusions).
         t_unit = getattr(target_model, "parent_unit", None)
         if t_unit is not None:

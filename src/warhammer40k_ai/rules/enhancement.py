@@ -623,6 +623,10 @@ class Enhancement:
             is_lords_of_dread = bool(ck_mgr and ck_mgr.is_lords_of_dread())
         except Exception:
             is_lords_of_dread = False
+        try:
+            is_traitoris_lance = bool(ck_mgr and ck_mgr.is_traitoris_lance())
+        except Exception:
+            is_traitoris_lance = False
         ik_mgr = getattr(army, "imperial_knights_detachments", None) if army is not None else None
         try:
             is_valourstrike_lance = bool(ik_mgr and ik_mgr.is_valourstrike_lance())
@@ -5802,6 +5806,36 @@ class Enhancement:
                 return
             unit.special_rules["enhancement_bestial_aspect"] = True
             unit.special_rules["bearer_unit_assault_ranged"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "nightmare's master" or enh_id == "000008516002":
+            if not is_traitoris_lance:
+                return
+            unit.special_rules["enhancement_traitoris_nightmares_master"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "tyrant's shadow" or enh_id == "000008516003":
+            if not is_traitoris_lance:
+                return
+            unit.special_rules["enhancement_traitoris_tyrants_shadow"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "malevolent heraldry" or enh_id == "000008516004":
+            if not is_traitoris_lance:
+                return
+            unit.special_rules["enhancement_traitoris_malevolent_heraldry"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "veil of medrengard" or enh_id == "000008516005":
+            if not is_traitoris_lance:
+                return
+            unit.special_rules["enhancement_traitoris_veil_of_medrengard"] = True
+            unit.special_rules["enhancement_traitoris_veil_ranged_invulnerable"] = 4
+            unit.special_rules["enhancement_traitoris_veil_melee_invulnerable"] = 5
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 

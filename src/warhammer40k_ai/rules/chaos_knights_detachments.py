@@ -25,6 +25,8 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
     ICONOCLAST_DARK_SACRIFICE_ABILITY = "iconoclast_dark_sacrifice"
     ICONOCLAST_PAVE_THE_WAY_SELECTION_ABILITY = "iconoclast_pave_the_way_selection"
     TRAITORIS_PARAGONS_ABILITY = "traitoris_paragons_of_terror_bonus"
+    TRAITORIS_TYRANTS_SHADOW_ABILITY = "traitoris_tyrants_shadow_objective"
+    TRAITORIS_MALEVOLENT_HERALDRY_ABILITY = "traitoris_malevolent_heraldry"
     HOUNDPACK_PREYSLAYERS_MANTLE_ENHANCEMENT_ID = "000010312002"
     HOUNDPACK_FINAL_HOWL_ENHANCEMENT_ID = "000010312003"
     HOUNDPACK_LOPING_PREDATOR_ENHANCEMENT_ID = "000010312004"
@@ -33,6 +35,11 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
     ICONOCLAST_PAVE_THE_WAY_ENHANCEMENT_ID = "000009765003"
     ICONOCLAST_TYRANTS_BANNER_ENHANCEMENT_ID = "000009765004"
     ICONOCLAST_DIABOLICAL_RESILIENCE_ENHANCEMENT_ID = "000009765005"
+    TRAITORIS_NIGHTMARES_MASTER_ENHANCEMENT_ID = "000008516002"
+    TRAITORIS_TYRANTS_SHADOW_ENHANCEMENT_ID = "000008516003"
+    TRAITORIS_MALEVOLENT_HERALDRY_ENHANCEMENT_ID = "000008516004"
+    TRAITORIS_VEIL_OF_MEDRENGARD_ENHANCEMENT_ID = "000008516005"
+    _TRAITORIS_MALEVOLENT_REROLL_MODES = {"keep", "reroll_first", "reroll_second", "reroll_both"}
 
     def __init__(self, army=None):
         super().__init__(army)
@@ -47,6 +54,8 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
         self._iconoclast_pave_the_way_selection_resolved: bool = False
         self._lords_of_dread_claimed_for_dark_gods_used_round: int = 0
         self._traitoris_paragons_bonus_round: int = 0
+        self._traitoris_malevolent_pending_rolls: list[int] = []
+        self._traitoris_malevolent_pending_round: int = 0
 
     def is_infernal_lance(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -89,6 +98,15 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
         if root is None:
             return ""
         return str(get_entity_id(root) or "")
+
+    @staticmethod
+    def _objective_id(objective) -> str:
+        if objective is None:
+            return ""
+        obj_id = str(get_entity_id(objective) or "").strip()
+        if obj_id:
+            return obj_id
+        return str(getattr(objective, "id", "") or "").strip()
 
     def _iter_unique_army_roots(self) -> Iterable:
         army = self.army
@@ -267,6 +285,104 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
             enhancement_id=self.HOUNDPACK_PANOPLY_ENHANCEMENT_ID,
             enhancement_name="Panoply of the Cursed Knight",
         )
+
+    def _traitoris_unit_has_active_enhancement(
+        self,
+        unit,
+        *,
+        flag_key: str,
+        enhancement_id: str,
+        enhancement_name: str,
+    ) -> bool:
+        return self._iconoclast_unit_has_active_enhancement(
+            unit,
+            flag_key=flag_key,
+            enhancement_id=enhancement_id,
+            enhancement_name=enhancement_name,
+        )
+
+    def _traitoris_nightmares_master_active(self, source_unit) -> bool:
+        return self._traitoris_unit_has_active_enhancement(
+            source_unit,
+            flag_key="enhancement_traitoris_nightmares_master",
+            enhancement_id=self.TRAITORIS_NIGHTMARES_MASTER_ENHANCEMENT_ID,
+            enhancement_name="Nightmare's Master",
+        )
+
+    def _traitoris_tyrants_shadow_active(self, source_unit) -> bool:
+        return self._traitoris_unit_has_active_enhancement(
+            source_unit,
+            flag_key="enhancement_traitoris_tyrants_shadow",
+            enhancement_id=self.TRAITORIS_TYRANTS_SHADOW_ENHANCEMENT_ID,
+            enhancement_name="Tyrant's Shadow",
+        )
+
+    def _traitoris_malevolent_heraldry_active(self, source_unit) -> bool:
+        return self._traitoris_unit_has_active_enhancement(
+            source_unit,
+            flag_key="enhancement_traitoris_malevolent_heraldry",
+            enhancement_id=self.TRAITORIS_MALEVOLENT_HERALDRY_ENHANCEMENT_ID,
+            enhancement_name="Malevolent Heraldry",
+        )
+
+    def _traitoris_veil_of_medrengard_active(self, source_unit) -> bool:
+        return self._traitoris_unit_has_active_enhancement(
+            source_unit,
+            flag_key="enhancement_traitoris_veil_of_medrengard",
+            enhancement_id=self.TRAITORIS_VEIL_OF_MEDRENGARD_ENHANCEMENT_ID,
+            enhancement_name="Veil of Medrengard",
+        )
+
+    @staticmethod
+    def _model_alive(model) -> bool:
+        if model is None:
+            return False
+        alive_attr = getattr(model, "is_alive", True)
+        return bool(alive_attr() if callable(alive_attr) else alive_attr)
+
+    def _enhancement_bearer_alive(self, unit) -> bool:
+        root = self._unit_root(unit)
+        if root is None:
+            return False
+        sr = self._unit_sr(root)
+        bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
+        if not bearer_id:
+            model = getattr(root, "_get_enhancement_bearer_model", lambda: None)()
+            if model is not None:
+                return self._model_alive(model)
+            return bool(getattr(root, "is_alive", lambda: False)())
+        for model in list(getattr(root, "models", []) or []):
+            if str(get_entity_id(model) or "") != bearer_id:
+                continue
+            return self._model_alive(model)
+        model = getattr(root, "_get_enhancement_bearer_model", lambda: None)()
+        if model is not None and str(get_entity_id(model) or "") == bearer_id:
+            return self._model_alive(model)
+        return False
+
+    def _iter_traitoris_enhancement_sources(self, active_checker) -> list:
+        if not self.is_traitoris_lance():
+            return []
+        sources = []
+        seen_ids: set[str] = set()
+        for root in list(self._iter_unique_army_roots() or []):
+            if root is None:
+                continue
+            root_id = self._unit_root_id(root)
+            if not root_id or root_id in seen_ids:
+                continue
+            if not self._unit_belongs_to_army(root):
+                continue
+            if not self._unit_is_chaos_knights(root):
+                continue
+            if not self._unit_on_battlefield(root):
+                continue
+            if not active_checker(root):
+                continue
+            seen_ids.add(root_id)
+            sources.append(root)
+        sources.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+        return sources
 
     def houndpack_final_howl_applies(self, *, attacker_unit=None, source_unit=None) -> bool:
         if not self.is_houndpack_lance():
@@ -1041,6 +1157,382 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
             game.request_decision(request)
         return request
 
+    def _clear_traitoris_malevolent_pending(self) -> None:
+        self._traitoris_malevolent_pending_rolls = []
+        self._traitoris_malevolent_pending_round = 0
+
+    def _traitoris_malevolent_sources(self) -> list:
+        sources = self._iter_traitoris_enhancement_sources(self._traitoris_malevolent_heraldry_active)
+        return [source for source in sources if self._enhancement_bearer_alive(source)]
+
+    def has_pending_traitoris_malevolent_heraldry_rolls(self) -> bool:
+        return bool(self._traitoris_malevolent_pending_rolls)
+
+    def can_queue_traitoris_malevolent_heraldry_reroll_choice(self, *, battle_round: int | None = None, game=None) -> bool:
+        del battle_round
+        if not self.is_traitoris_lance():
+            return False
+        if game is not None and not bool(getattr(game, "is_authoritative", True)):
+            return False
+        if self.has_pending_traitoris_malevolent_heraldry_rolls():
+            return False
+        return bool(self._traitoris_malevolent_sources())
+
+    def _pending_traitoris_malevolent_request(self, game, *, army_id: str, battle_round: int) -> bool:
+        if game is None:
+            return False
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+
+        target_army_id = str(army_id or "")
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "").strip().lower() != self.TRAITORIS_MALEVOLENT_HERALDRY_ABILITY:
+                continue
+            if target_army_id and str(ctx.get("army_id", "") or "") != target_army_id:
+                continue
+            try:
+                req_round = int(ctx.get("battle_round", 0) or 0)
+            except (TypeError, ValueError):
+                req_round = 0
+            if req_round and req_round != int(battle_round or 0):
+                continue
+            return True
+        return False
+
+    def queue_traitoris_malevolent_heraldry_reroll_choice(
+        self,
+        *,
+        initial_rolls: Iterable[int],
+        battle_round: int,
+        game=None,
+        player=None,
+    ):
+        if not self.can_queue_traitoris_malevolent_heraldry_reroll_choice(battle_round=battle_round, game=game):
+            return None
+        if game is None:
+            return None
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return None
+
+        rolls: list[int] = []
+        for value in list(initial_rolls or []):
+            try:
+                rolls.append(int(value or 0))
+            except (TypeError, ValueError):
+                continue
+        if len(rolls) < 2:
+            return None
+        rolls = list(rolls[:2])
+
+        sources = list(self._traitoris_malevolent_sources() or [])
+        if not sources:
+            return None
+        source_unit = sources[0]
+        source_unit_id = self._unit_root_id(source_unit)
+        if not source_unit_id:
+            return None
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        army_id = str(get_entity_id(self.army) or "")
+        if self._pending_traitoris_malevolent_request(game, army_id=army_id, battle_round=int(battle_round or 0)):
+            return None
+
+        self._traitoris_malevolent_pending_rolls = list(rolls)
+        self._traitoris_malevolent_pending_round = int(battle_round or 0)
+
+        option_defs = (
+            ("Keep results", "keep"),
+            ("Re-roll first die", "reroll_first"),
+            ("Re-roll second die", "reroll_second"),
+            ("Re-roll both dice", "reroll_both"),
+        )
+        options = [
+            DecisionOption.create(
+                label,
+                payload={
+                    "reroll_mode": str(mode),
+                    "source_unit_id": source_unit_id,
+                    "army_id": army_id,
+                },
+            )
+            for (label, mode) in option_defs
+        ]
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Malevolent Heraldry: choose whether to re-roll one or both Dread ability dice.",
+            player_id=getattr(owner, "id", None),
+            options=options,
+            context={
+                "ability": self.TRAITORIS_MALEVOLENT_HERALDRY_ABILITY,
+                "ability_name": "Malevolent Heraldry",
+                "army_id": army_id,
+                "battle_round": int(battle_round or 0),
+                "source_unit_id": source_unit_id,
+                "initial_rolls": list(rolls),
+                "available_reroll_modes": ["keep", "reroll_first", "reroll_second", "reroll_both"],
+                "optional": False,
+            },
+        )
+        if hasattr(game, "request_decision"):
+            game.request_decision(request)
+        return request
+
+    def resolve_traitoris_malevolent_heraldry_reroll(self, mode: str, *, battle_round: int | None = None) -> dict:
+        if not self.has_pending_traitoris_malevolent_heraldry_rolls():
+            return {"ok": False, "reason": "No pending Malevolent Heraldry rolls."}
+        reroll_mode = str(mode or "").strip().lower()
+        if reroll_mode not in self._TRAITORIS_MALEVOLENT_REROLL_MODES:
+            return {"ok": False, "reason": "Invalid Malevolent Heraldry reroll mode."}
+
+        original_rolls = list(self._traitoris_malevolent_pending_rolls)
+        updated_rolls = list(original_rolls)
+        if len(updated_rolls) >= 1 and reroll_mode in {"reroll_first", "reroll_both"}:
+            updated_rolls[0] = int(get_roll("D6") or 0)
+        if len(updated_rolls) >= 2 and reroll_mode in {"reroll_second", "reroll_both"}:
+            updated_rolls[1] = int(get_roll("D6") or 0)
+
+        selected_round = int(battle_round or 0)
+        if selected_round <= 0:
+            selected_round = int(self._traitoris_malevolent_pending_round or 0)
+        if selected_round <= 0:
+            selected_round = None
+
+        harbingers = getattr(self.army, "harbingers_of_dread", None) if self.army is not None else None
+        apply_rolls = getattr(harbingers, "apply_roll_results", None) if harbingers is not None else None
+        if not callable(apply_rolls):
+            self._clear_traitoris_malevolent_pending()
+            return {"ok": False, "reason": "Harbingers manager unavailable."}
+        outcome = apply_rolls(rolls=list(updated_rolls), battle_round=selected_round)
+        self._clear_traitoris_malevolent_pending()
+
+        selected = list(outcome.get("selected", []) or [])
+        selected_keys = [str(getattr(item, "key", "") or "").strip().upper() for item in selected if str(getattr(item, "key", "") or "").strip()]
+        selected_names = [str(getattr(item, "name", "") or "").strip() for item in selected if str(getattr(item, "name", "") or "").strip()]
+        return {
+            "ok": True,
+            "reroll_mode": reroll_mode,
+            "original_rolls": list(original_rolls),
+            "rolls": list(updated_rolls),
+            "selected_keys": list(selected_keys),
+            "selected_names": list(selected_names),
+            "battle_round": int(selected_round or 0),
+        }
+
+    def _find_objective(self, game, objective_id: str):
+        obj_id = str(objective_id or "").strip()
+        if not obj_id:
+            return None
+        game_map = getattr(game, "map", None) if game is not None else None
+        for objective in list(getattr(game_map, "objectives", []) or []):
+            if str(self._objective_id(objective)) == obj_id:
+                return objective
+        for objective in list(getattr(game, "objectives", []) or []):
+            if str(self._objective_id(objective)) == obj_id:
+                return objective
+        return None
+
+    def _traitoris_tyrants_shadow_sources(self) -> list:
+        sources = self._iter_traitoris_enhancement_sources(self._traitoris_tyrants_shadow_active)
+        return [source for source in sources if self._enhancement_bearer_alive(source)]
+
+    def _traitoris_tyrants_shadow_candidates(self, source_unit, *, game=None, player=None) -> list:
+        root = self._unit_root(source_unit)
+        if root is None:
+            return []
+        resolved_player = player if player is not None else getattr(self.army, "player", None)
+        if resolved_player is None:
+            return []
+        game_map = getattr(game, "map", None) if game is not None else None
+        if game_map is None:
+            return []
+
+        candidates: list[tuple[str, object]] = []
+        seen_ids: set[str] = set()
+        for objective in list(getattr(game_map, "objectives", []) or []):
+            if objective is None:
+                continue
+            objective_id = self._objective_id(objective)
+            if not objective_id or objective_id in seen_ids:
+                continue
+            loc = getattr(objective, "location", None)
+            if loc is None or bool(getattr(loc, "removed", False)):
+                continue
+            if getattr(loc, "controlling_player", None) is not resolved_player:
+                continue
+            if not bool(getattr(root, "is_within_objective_range", lambda *_a, **_k: False)(loc)):
+                continue
+            seen_ids.add(objective_id)
+            candidates.append((objective_id, objective))
+        candidates.sort(key=lambda item: str(item[0]))
+        return candidates
+
+    def _pending_traitoris_tyrants_shadow_request(
+        self,
+        game,
+        *,
+        army_id: str,
+        source_unit_id: str,
+        battle_round: int,
+    ) -> bool:
+        if game is None:
+            return False
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+
+        target_army_id = str(army_id or "")
+        target_source_id = str(source_unit_id or "")
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "").strip().lower() != self.TRAITORIS_TYRANTS_SHADOW_ABILITY:
+                continue
+            if target_army_id and str(ctx.get("army_id", "") or "") != target_army_id:
+                continue
+            if target_source_id and str(ctx.get("source_unit_id", "") or "") != target_source_id:
+                continue
+            try:
+                req_round = int(ctx.get("battle_round", 0) or 0)
+            except (TypeError, ValueError):
+                req_round = 0
+            if req_round and req_round != int(battle_round or 0):
+                continue
+            return True
+        return False
+
+    def queue_traitoris_tyrants_shadow_objective_choice(self, *, game=None, player=None, battle_round: int | None = None) -> list:
+        if not self.is_traitoris_lance():
+            return []
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return []
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return []
+
+        resolved_round = int(battle_round or getattr(game, "turn", 0) or 0)
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        army_id = str(get_entity_id(self.army) or "")
+        queued: list = []
+        for source_unit in list(self._traitoris_tyrants_shadow_sources() or []):
+            source_unit_id = self._unit_root_id(source_unit)
+            if not source_unit_id:
+                continue
+            if self._pending_traitoris_tyrants_shadow_request(
+                game,
+                army_id=army_id,
+                source_unit_id=source_unit_id,
+                battle_round=resolved_round,
+            ):
+                continue
+            candidates = list(self._traitoris_tyrants_shadow_candidates(source_unit, game=game, player=owner) or [])
+            if not candidates:
+                continue
+            options = []
+            candidate_objective_ids: list[str] = []
+            for objective_id, objective in candidates:
+                candidate_objective_ids.append(str(objective_id))
+                objective_name = str(getattr(objective, "name", "") or "Objective marker").strip() or "Objective marker"
+                options.append(
+                    DecisionOption.create(
+                        objective_name,
+                        payload={
+                            "objective_id": str(objective_id),
+                            "source_unit_id": source_unit_id,
+                            "army_id": army_id,
+                        },
+                    )
+                )
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                "Tyrant's Shadow: select one objective marker within range that you control.",
+                player_id=getattr(owner, "id", None),
+                options=options,
+                context={
+                    "ability": self.TRAITORIS_TYRANTS_SHADOW_ABILITY,
+                    "ability_name": "Tyrant's Shadow",
+                    "army_id": army_id,
+                    "battle_round": int(resolved_round or 0),
+                    "source_unit_id": source_unit_id,
+                    "candidate_objective_ids": list(candidate_objective_ids),
+                    "optional": False,
+                },
+            )
+            if hasattr(game, "request_decision"):
+                game.request_decision(request)
+            queued.append(request)
+        return queued
+
+    def traitoris_tyrants_shadow_choice_is_valid(self, source_unit, objective_id: str, *, game=None, player=None) -> tuple[bool, str]:
+        if not self.is_traitoris_lance():
+            return False, "Tyrant's Shadow requires Traitoris Lance."
+        root = self._unit_root(source_unit)
+        if root is None:
+            return False, "Tyrant's Shadow source unit was not found."
+        if not self._unit_belongs_to_army(root) or not self._unit_is_chaos_knights(root):
+            return False, "Tyrant's Shadow source unit is invalid."
+        if not self._traitoris_tyrants_shadow_active(root):
+            return False, "Tyrant's Shadow is not active on the source unit."
+        if not self._unit_on_battlefield(root):
+            return False, "Tyrant's Shadow source unit must be on the battlefield."
+        if not self._enhancement_bearer_alive(root):
+            return False, "Tyrant's Shadow bearer must be alive."
+
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return False, "Tyrant's Shadow controlling player was not found."
+        if getattr(self.army, "player", None) is not owner:
+            return False, "Tyrant's Shadow can only be selected by the controlling player."
+
+        objective = self._find_objective(game, str(objective_id or ""))
+        if objective is None:
+            return False, "Tyrant's Shadow selected objective marker was not found."
+        loc = getattr(objective, "location", None)
+        if loc is None or bool(getattr(loc, "removed", False)):
+            return False, "Tyrant's Shadow selected objective marker is unavailable."
+        if getattr(loc, "controlling_player", None) is not owner:
+            return False, "Tyrant's Shadow selected objective marker must be controlled by you."
+        if not bool(getattr(root, "is_within_objective_range", lambda *_a, **_k: False)(loc)):
+            return False, "Tyrant's Shadow source unit must be within range of the selected objective marker."
+        return True, ""
+
+    def apply_traitoris_tyrants_shadow_choice(self, source_unit, objective_id: str, *, game=None, player=None):
+        valid, _reason = self.traitoris_tyrants_shadow_choice_is_valid(
+            source_unit,
+            objective_id,
+            game=game,
+            player=player,
+        )
+        if not valid:
+            return None
+        objective = self._find_objective(game, str(objective_id or ""))
+        if objective is None:
+            return None
+        loc = getattr(objective, "location", None)
+        if loc is None:
+            return None
+        owner = player if player is not None else getattr(self.army, "player", None)
+        if owner is None:
+            return None
+        if hasattr(loc, "set_sticky_control"):
+            loc.set_sticky_control(owner, source="traitoris_tyrants_shadow")
+        else:
+            loc.sticky_controller = owner
+            loc.sticky_source = "traitoris_tyrants_shadow"
+            loc.controlling_player = owner
+        return objective
+
     def apply_houndpack_lance_battleline_keywords(self, unit=None) -> None:
         if not self.is_houndpack_lance():
             return
@@ -1591,6 +2083,43 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
                 return 0, ""
         return 1, self.MARKED_PREY_NAME
 
+    def traitoris_veil_invulnerable_save(self, target_model, *, attack_type: str = "") -> tuple[int, str]:
+        if not self.is_traitoris_lance():
+            return 0, ""
+        if target_model is None:
+            return 0, ""
+        atype = str(attack_type or "").strip().lower()
+        if atype not in {"ranged", "melee"}:
+            return 0, ""
+
+        source_unit = getattr(target_model, "parent_unit", None)
+        root = self._unit_root(source_unit)
+        if root is None:
+            return 0, ""
+        if not self._unit_belongs_to_army(root):
+            return 0, ""
+        if not self._unit_on_battlefield(root):
+            return 0, ""
+        if not self._traitoris_veil_of_medrengard_active(root):
+            return 0, ""
+        if not self._enhancement_bearer_alive(root):
+            return 0, ""
+
+        sr = self._unit_sr(root)
+        bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
+        target_id = str(get_entity_id(target_model) or "")
+        if bearer_id and target_id and bearer_id != target_id:
+            return 0, ""
+
+        key = "enhancement_traitoris_veil_ranged_invulnerable" if atype == "ranged" else "enhancement_traitoris_veil_melee_invulnerable"
+        try:
+            inv_value = int(sr.get(key, 0) or 0)
+        except (TypeError, ValueError):
+            inv_value = 0
+        if inv_value <= 0:
+            inv_value = 4 if atype == "ranged" else 5
+        return int(inv_value), "Veil of Medrengard"
+
     def on_command_phase_start(self, *, game=None, player=None) -> None:
         if game is None or player is None or self.army is None:
             return
@@ -1604,6 +2133,19 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
         if self.is_infernal_lance():
             self.clear_empowered_at_command_phase_start(game=game, player=player)
             self.prompt_malefic_surge_selection(game=game, player=player)
+
+    def on_command_phase_end(self, *, game=None, player=None) -> None:
+        if game is None or player is None or self.army is None:
+            return
+        if getattr(self.army, "player", None) is not player:
+            return
+        if not self.is_traitoris_lance():
+            return
+        self.queue_traitoris_tyrants_shadow_objective_choice(
+            game=game,
+            player=player,
+            battle_round=int(getattr(game, "turn", 0) or 0),
+        )
 
     def validate_detachment_rules(self) -> list[str]:
         errors: list[str] = []

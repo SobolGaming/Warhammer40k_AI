@@ -2647,6 +2647,21 @@ class AbilitySpecsMixin:
             seen.add(key)
             specs.append({"source": source, "penalty": penalty})
 
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if isinstance(sr, dict) and sr.get("enhancement_traitoris_nightmares_master"):
+            bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
+            model_id = str(get_entity_id(model) or "")
+            if bearer_id and model_id and bearer_id == model_id:
+                source = "Nightmare's Master"
+                key = source.lower()
+                if key not in seen:
+                    seen.add(key)
+                    specs.append({"source": source, "penalty": 0})
+
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
         self._ability_cache[cache_key] = list(specs)

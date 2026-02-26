@@ -3695,6 +3695,48 @@ _CHAOS_KNIGHTS_HOUNDPACK_LANCE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _CHAOS_KNIGHTS_HOUNDPACK_LANCE_DESCRIPTORS.values()
 }
 
+_CHAOS_KNIGHTS_TRAITORIS_LANCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008516002": EnhancementToolDescriptor(
+        enhancement_id="000008516002",
+        name="Nightmare's Master",
+        timing="start_of_fight_phase",
+        target="enemy_units_within_bearer_engagement_range",
+        duration="instant",
+        effect="force_battleshock_for_enemy_units_within_bearer_engagement_range",
+    ),
+    "000008516003": EnhancementToolDescriptor(
+        enhancement_id="000008516003",
+        name="Tyrant's Shadow",
+        timing="end_of_command_phase",
+        target="objective_marker_within_range_you_control",
+        duration="until_opponent_has_higher_level_of_control",
+        effect="objective_marker_sticky_control_and_harbingers_deathly_terror",
+        effect_params={"grants_dread_key": "DEATHLY_TERROR"},
+    ),
+    "000008516004": EnhancementToolDescriptor(
+        enhancement_id="000008516004",
+        name="Malevolent Heraldry",
+        timing="on_random_harbingers_roll",
+        target="army_harbingers_roll",
+        duration="instant",
+        effect="optional_reroll_one_or_both_harbingers_dice",
+        effect_params={"reroll_modes": ("keep", "reroll_first", "reroll_second", "reroll_both")},
+    ),
+    "000008516005": EnhancementToolDescriptor(
+        enhancement_id="000008516005",
+        name="Veil of Medrengard",
+        timing="passive_defensive",
+        target="bearer",
+        duration="constant",
+        effect="bearer_attack_type_specific_invulnerable_save",
+        effect_params={"ranged_invulnerable_save": 4, "melee_invulnerable_save": 5},
+    ),
+}
+
+_CHAOS_KNIGHTS_TRAITORIS_LANCE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _CHAOS_KNIGHTS_TRAITORIS_LANCE_DESCRIPTORS.values()
+}
+
 _CHAOS_KNIGHTS_LORDS_OF_DREAD_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010308002": EnhancementToolDescriptor(
         enhancement_id="000010308002",
@@ -4077,6 +4119,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _CHAOS_KNIGHTS_HOUNDPACK_LANCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _CHAOS_KNIGHTS_TRAITORIS_LANCE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _CHAOS_KNIGHTS_LORDS_OF_DREAD_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -4160,6 +4205,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _RUBRICAE_PHALANX_BY_NAME.get(key)
         or _WARPBANE_TASK_FORCE_BY_NAME.get(key)
         or _CHAOS_KNIGHTS_HOUNDPACK_LANCE_BY_NAME.get(key)
+        or _CHAOS_KNIGHTS_TRAITORIS_LANCE_BY_NAME.get(key)
         or _CHAOS_KNIGHTS_LORDS_OF_DREAD_BY_NAME.get(key)
         or _VEILED_BLADE_ELIMINATION_FORCE_BY_NAME.get(key)
         or _GENESTEALER_CULTS_HOST_OF_ASCENSION_BY_NAME.get(key)

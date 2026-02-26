@@ -11866,6 +11866,9 @@ class GamePhaseHandlersMixin:
                 dg_mgr = getattr(army, "death_guard_detachments", None)
                 if dg_mgr is not None:
                     dg_mgr.on_command_phase_end(game=self, player=player)
+                ck_mgr = getattr(army, "chaos_knights_detachments", None)
+                if ck_mgr is not None and hasattr(ck_mgr, "on_command_phase_end"):
+                    ck_mgr.on_command_phase_end(game=self, player=player)
                 seen = set()
                 for unit in list(army.units):
                     root = unit.get_attached_unit_root()
@@ -11893,10 +11896,22 @@ class GamePhaseHandlersMixin:
                             if transport is None or not transport.is_within_objective_range(loc):
                                 continue
                         if hasattr(loc, "set_sticky_control"):
-                            loc.set_sticky_control(player, source="unit_sticky_objective")
+                            sticky_source = "unit_sticky_objective"
+                            if (
+                                str(getattr(loc, "sticky_source", "") or "").strip().lower() == "traitoris_tyrants_shadow"
+                                and getattr(loc, "sticky_controller", None) is player
+                            ):
+                                sticky_source = "traitoris_tyrants_shadow"
+                            loc.set_sticky_control(player, source=sticky_source)
                         else:
                             loc.sticky_controller = player
-                            loc.sticky_source = "unit_sticky_objective"
+                            if (
+                                str(getattr(loc, "sticky_source", "") or "").strip().lower() == "traitoris_tyrants_shadow"
+                                and getattr(loc, "sticky_controller", None) is player
+                            ):
+                                loc.sticky_source = "traitoris_tyrants_shadow"
+                            else:
+                                loc.sticky_source = "unit_sticky_objective"
                             loc.controlling_player = player
             gsc_mgr = getattr(army, "genestealer_cults_detachments", None)
             apply_rapid_takeover = (

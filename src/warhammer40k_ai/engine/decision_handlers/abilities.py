@@ -2514,8 +2514,34 @@ def _apply_choose_harbinger(game: object, request: DecisionRequest, result: Deci
     choice = payload.get("choice_key") or payload.get("key")
     applied = None
     if bool(payload.get("random", False)) or str(choice or "").strip().upper() == "ROLL":
-        rolls = payload.get("rolls")
+        rolls_raw = payload.get("rolls")
         selected_keys = payload.get("selected_keys")
+        rolls = []
+        for value in list(rolls_raw or []):
+            try:
+                rolls.append(int(value or 0))
+            except (TypeError, ValueError):
+                continue
+        queue_malevolent = getattr(ck_mgr, "queue_traitoris_malevolent_heraldry_reroll_choice", None) if ck_mgr is not None else None
+        if (
+            ability_key != "traitoris_paragons_of_terror_bonus"
+            and callable(queue_malevolent)
+            and rolls
+        ):
+            queued = queue_malevolent(
+                initial_rolls=list(rolls),
+                battle_round=int(battle_round or 0),
+                game=game,
+                player=getattr(army, "player", None),
+            )
+            if queued is not None:
+                try:
+                    player = getattr(army, "player", None)
+                    roll_text = ", ".join(str(int(r)) for r in list(rolls))
+                    _log_action_for_players(game, player, f"Harbingers of Dread: rolled {roll_text} (Malevolent Heraldry selection pending).")
+                except Exception:
+                    pass
+                return {"pending_malevolent_heraldry_reroll": True, "rolls": list(rolls)}
         if rolls or selected_keys:
             applied = mgr.apply_roll_results(rolls=rolls, selected_keys=selected_keys, battle_round=battle_round)
         else:
@@ -3395,6 +3421,78 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         mode = str(payload.get("reroll_mode", "") or payload.get("choice_key", "") or payload.get("key", "")).strip().lower()
         if mode not in {"keep", "reroll_first", "reroll_second", "reroll_both"}:
             return ("Experimental Augmentations reroll mode is invalid.",)
+        return ()
+    if ability == "traitoris_malevolent_heraldry":
+        if is_skip_choice(request, result):
+            return ("Malevolent Heraldry reroll selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Malevolent Heraldry army not found.",)
+        mgr = getattr(army, "chaos_knights_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_traitoris_lance", lambda: False)()):
+            return ("Malevolent Heraldry requires Traitoris Lance detachment.",)
+        has_pending = getattr(mgr, "has_pending_traitoris_malevolent_heraldry_rolls", None)
+        if not callable(has_pending) or not bool(has_pending()):
+            return ("Malevolent Heraldry has no pending random rolls.",)
+        mode = str(payload.get("reroll_mode", "") or payload.get("choice_key", "") or payload.get("key", "")).strip().lower()
+        allowed_modes = {
+            str(v or "").strip().lower()
+            for v in list(ctx.get("available_reroll_modes", []) or [])
+            if str(v or "").strip()
+        }
+        if allowed_modes and mode not in allowed_modes:
+            return ("Malevolent Heraldry reroll mode is not an eligible option.",)
+        if mode not in {"keep", "reroll_first", "reroll_second", "reroll_both"}:
+            return ("Malevolent Heraldry reroll mode is invalid.",)
+        return ()
+    if ability == "traitoris_tyrants_shadow_objective":
+        if is_skip_choice(request, result):
+            return ("Tyrant's Shadow objective selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return ("Tyrant's Shadow army not found.",)
+        mgr = getattr(army, "chaos_knights_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_traitoris_lance", lambda: False)()):
+            return ("Tyrant's Shadow requires Traitoris Lance detachment.",)
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id") or payload.get("unit_id") or ctx.get("source_unit_id") or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return ("Tyrant's Shadow source unit was not found.",)
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return ("Tyrant's Shadow source unit was not found.",)
+        objective_id = str(payload.get("objective_id") or ctx.get("objective_id") or "").strip()
+        if not objective_id:
+            return ("Tyrant's Shadow selection requires objective_id.",)
+        candidate_ids = {
+            str(v or "").strip()
+            for v in list(ctx.get("candidate_objective_ids", []) or [])
+            if str(v or "").strip()
+        }
+        if candidate_ids and objective_id not in candidate_ids:
+            return ("Tyrant's Shadow selected objective marker is not an eligible candidate.",)
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        validate_choice = getattr(mgr, "traitoris_tyrants_shadow_choice_is_valid", None)
+        if not callable(validate_choice):
+            return ("Tyrant's Shadow validation is unavailable.",)
+        valid, reason = validate_choice(
+            source_root,
+            objective_id,
+            game=game,
+            player=player,
+        )
+        if not bool(valid):
+            return (str(reason or "Tyrant's Shadow selection is invalid."),)
         return ()
     if ability == "da_big_hunt_prey":
         if is_skip_choice(request, result):
@@ -6229,6 +6327,61 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             f"{ability_name}: {reroll_label}; final rolls {rolls_text}; active augmentations {selected_label or 'none'}.",
         )
         return dict(outcome)
+    if ability == "traitoris_malevolent_heraldry":
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "chaos_knights_detachments", None)
+        if mgr is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        mode = str(payload.get("reroll_mode", "") or payload.get("choice_key", "") or payload.get("key", "")).strip().lower()
+        if not mode:
+            return None
+        resolve_fn = getattr(mgr, "resolve_traitoris_malevolent_heraldry_reroll", None)
+        if not callable(resolve_fn):
+            return None
+        try:
+            battle_round = int(ctx.get("battle_round", 0) or getattr(game, "turn", 0) or 0)
+        except (TypeError, ValueError):
+            battle_round = int(getattr(game, "turn", 0) or 0)
+        outcome = resolve_fn(mode, battle_round=battle_round)
+        if not isinstance(outcome, dict) or not bool(outcome.get("ok", False)):
+            return None
+
+        ability_name = str(ctx.get("ability_name", "") or "Malevolent Heraldry").strip() or "Malevolent Heraldry"
+        rolls = [int(v) for v in list(outcome.get("rolls", []) or [])]
+        selected_names = [
+            str(v or "").strip()
+            for v in list(outcome.get("selected_names", []) or [])
+            if str(v or "").strip()
+        ]
+        reroll_label_map = {
+            "keep": "kept initial rolls",
+            "reroll_first": "re-rolled the first die",
+            "reroll_second": "re-rolled the second die",
+            "reroll_both": "re-rolled both dice",
+        }
+        reroll_label = str(reroll_label_map.get(mode, mode) or mode)
+        rolls_text = ", ".join(str(v) for v in rolls) if rolls else "no rolls"
+        selected_label = ", ".join(selected_names)
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {reroll_label}; final rolls {rolls_text}; selected abilities {selected_label or 'none'}.",
+        )
+
+        queue_bonus = getattr(mgr, "queue_traitoris_paragons_bonus_choice", None)
+        if callable(queue_bonus):
+            queue_bonus(
+                battle_round=battle_round,
+                game=game,
+                player=getattr(army, "player", None),
+            )
+        return dict(outcome)
     if ability == "da_big_hunt_prey":
         payload = _option_payload(request, result)
         army = _resolve_army(game, request, payload)
@@ -8795,6 +8948,49 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             "objective_id": str(objective_id),
             "source_model_id": str(source_model_id),
         }
+    if ability == "traitoris_tyrants_shadow_objective":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        army = _resolve_army(game, request, payload)
+        if army is None:
+            return None
+        mgr = getattr(army, "chaos_knights_detachments", None)
+        if mgr is None:
+            return None
+        source_unit = resolve_unit(
+            game,
+            payload.get("source_unit_id") or payload.get("unit_id") or ctx.get("source_unit_id") or ctx.get("unit_id"),
+        )
+        if source_unit is None:
+            return None
+        source_root = (
+            source_unit.get_attached_unit_root()
+            if hasattr(source_unit, "get_attached_unit_root")
+            else source_unit
+        )
+        if source_root is None:
+            return None
+        objective_id = str(payload.get("objective_id") or ctx.get("objective_id") or "").strip()
+        if not objective_id:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            player = getattr(army, "player", None)
+        apply_choice = getattr(mgr, "apply_traitoris_tyrants_shadow_choice", None)
+        if not callable(apply_choice):
+            return None
+        objective = apply_choice(source_root, objective_id, game=game, player=player)
+        if objective is None:
+            return None
+        source_name = str(getattr(source_root, "name", "Unit") or "Unit")
+        objective_name = str(getattr(objective, "name", "") or "Objective marker")
+        _log_action_for_players(
+            game,
+            player,
+            f"Tyrant's Shadow: {source_name} selected {objective_name}.",
+        )
+        return objective
     if ability == "archons_will_objective":
         if is_skip_choice(request, result):
             return None

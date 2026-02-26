@@ -355,7 +355,7 @@ class HarbingersOfDreadManager:
             return set()
 
         try:
-            from ..utility.aura_utils import unit_within_range_of_unit
+            from ..utility.aura_utils import unit_within_range_of_point_3d, unit_within_range_of_unit
             from ..utility.entity_ids import get_entity_id
         except Exception:
             return set()
@@ -394,5 +394,29 @@ class HarbingersOfDreadManager:
                         break
                 except Exception:
                     continue
+
+            enemy_player = getattr(enemy_army, "player", None)
+            if enemy_player is None:
+                continue
+            for objective in list(getattr(game_map, "objectives", []) or []):
+                if objective is None:
+                    continue
+                loc = getattr(objective, "location", None)
+                if loc is None or bool(getattr(loc, "removed", False)):
+                    continue
+                sticky_source = str(getattr(loc, "sticky_source", "") or "").strip().lower()
+                if sticky_source != "traitoris_tyrants_shadow":
+                    continue
+                if getattr(loc, "controlling_player", None) is not enemy_player:
+                    continue
+                try:
+                    point = (float(getattr(loc, "x", 0.0)), float(getattr(loc, "y", 0.0)))
+                except (TypeError, ValueError):
+                    continue
+                if not unit_within_range_of_point_3d(unit, point, aura_range, use_attached_aggregate=True):
+                    continue
+                if mgr.is_dread_active(DEATHLY_TERROR.key):
+                    active.add(DEATHLY_TERROR.key)
+                break
 
         return active

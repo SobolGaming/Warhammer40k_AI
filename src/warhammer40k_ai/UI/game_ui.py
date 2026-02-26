@@ -7095,6 +7095,8 @@ class GameView:
                 "strategic_conqueror",
                 "strike_swiftly",
                 "archons_will_objective",
+                "traitoris_tyrants_shadow_objective",
+                "traitoris_malevolent_heraldry",
                 "singular_purpose",
                 "vanguard_of_dark_city",
                 "void_mine",
@@ -15376,6 +15378,14 @@ class GameView:
             title = ability_name or "Archon's Will"
             subtitle = "Select one objective marker on the battlefield."
             header = f"{getattr(source_unit, 'name', 'Model')} selects an objective marker."
+        elif str(ability_key) == "traitoris_tyrants_shadow_objective":
+            title = ability_name or "Tyrant's Shadow"
+            subtitle = "Select one objective marker you control within range of the bearer."
+            header = f"{getattr(source_unit, 'name', 'Model')} selects an objective marker."
+        elif str(ability_key) == "traitoris_malevolent_heraldry":
+            title = ability_name or "Malevolent Heraldry"
+            subtitle = "Re-roll one, both, or neither of the Harbingers random selection dice."
+            header = f"{getattr(source_unit, 'name', 'Model')} selects a reroll mode."
         elif str(ability_key) == "singular_purpose":
             title = ability_name or "Singular Purpose"
             subtitle = "Select one enemy unit or one objective marker."
