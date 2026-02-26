@@ -1051,6 +1051,66 @@ class StateAttachmentMixin:
         except Exception:
             return 0
 
+    def _canticles_binharic_courage_test_modifier(self, game=None) -> int:
+        """Return +1 when Binharic Courage (Mantra of Discipline) applies to this unit."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return 0
+        try:
+            if not bool(root.has_any_keyword("ADEPTUS MECHANICUS")):
+                return 0
+        except Exception:
+            return 0
+
+        if game is None:
+            try:
+                army = root.get_parent_army()
+            except Exception:
+                army = None
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        game_map = getattr(game, "map", None) if game is not None else None
+        if game_map is None:
+            return 0
+
+        from ...rules.adeptus_mechanicus_canticles import (
+            KEY_MANTRA_OF_DISCIPLINE,
+            unit_has_active_canticles,
+        )
+        from ...utility.aura_utils import unit_within_range_of_unit
+        from ...utility.entity_ids import get_entity_id
+
+        seen_sources: set[str] = set()
+        for source in list(game_map.get_friendly_units(root) or []):
+            if source is None:
+                continue
+            try:
+                source_root = source.get_attached_unit_root()
+            except Exception:
+                source_root = source
+            if source_root is None:
+                continue
+            source_id = str(get_entity_id(source_root) or "")
+            if source_id and source_id in seen_sources:
+                continue
+            if source_id:
+                seen_sources.add(source_id)
+            if not bool(unit_has_active_canticles(source_root, KEY_MANTRA_OF_DISCIPLINE)):
+                continue
+            try:
+                if not bool(source_root.has_any_keyword("ADEPTUS MECHANICUS")):
+                    continue
+            except Exception:
+                continue
+            try:
+                if bool(unit_within_range_of_unit(source_root, root, 6.0, use_attached_aggregate=True)):
+                    return 1
+            except Exception:
+                continue
+        return 0
+
     def pass_leadership_check(
         self,
         extra_reroll_sources: Optional[list[str]] = None,
@@ -1093,6 +1153,7 @@ class StateAttachmentMixin:
                     mod += int(val)
             except Exception:
                 pass
+            mod += int(self._canticles_binharic_courage_test_modifier(game=game) or 0)
             try:
                 root_for_mod = self.get_attached_unit_root()
             except Exception:
@@ -1317,6 +1378,7 @@ class StateAttachmentMixin:
             army = self.get_parent_army()
             game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
             mod = int(self._post_shoot_leadership_debuff_modifier(game))
+            mod += int(self._canticles_binharic_courage_test_modifier(game=game) or 0)
         except Exception:
             mod = 0
         try:
@@ -2120,6 +2182,18 @@ class StateAttachmentMixin:
                         continue
                     seen.add(lk)
                     kws.append(ks)
+                try:
+                    from ...rules.adeptus_mechanicus_canticles import (
+                        KEY_MANTRA_OF_DISCIPLINE,
+                        unit_has_active_canticles,
+                    )
+
+                    if bool(unit_has_active_canticles(u, KEY_MANTRA_OF_DISCIPLINE)):
+                        if "battleline" not in removed_keywords and "battleline" not in seen:
+                            seen.add("battleline")
+                            kws.append("Battleline")
+                except Exception:
+                    pass
                 if isinstance(sr, dict) and bool(sr.get("enhancement_hero_of_the_chapter", False)):
                     keyword = str(sr.get("enhancement_hero_of_the_chapter_keyword", "BATTLELINE") or "BATTLELINE").strip()
                     keyword_lower = keyword.lower()

@@ -5378,6 +5378,64 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if mode not in ("masters_of_the_shadowed_sky", "speed_of_the_kill", "visions_of_butchery"):
             return ("Vanguard of the Dark City choice must be Masters of the Shadowed Sky, Speed of the Kill, or Visions of Butchery.",)
         return ()
+    if ability == "canticles_of_the_omnissiah":
+        if is_skip_choice(request, result):
+            return ("Canticles of the Omnissiah selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Canticles of the Omnissiah source unit was not found.",)
+        from ...rules.adeptus_mechanicus_canticles import unit_has_canticles_of_the_omnissiah_ability
+
+        if not bool(unit_has_canticles_of_the_omnissiah_ability(source_unit)):
+            return ("Canticles of the Omnissiah is not active on the selected source unit.",)
+        mode = str(payload.get("canticles_mode", "") or "").strip().lower()
+        if mode not in ("invocation_of_machine_vengeance", "mantra_of_discipline", "shroudpsalm"):
+            return ("Canticles of the Omnissiah choice must be Invocation of Machine Vengeance, Mantra of Discipline, or Shroudpsalm.",)
+        return ()
+    if ability == "canticles_machine_vengeance_target":
+        if is_skip_choice(request, result):
+            return ("Invocation of Machine Vengeance target selection cannot be skipped.",)
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Invocation of Machine Vengeance source unit was not found.",)
+        try:
+            source_root = source_unit.get_attached_unit_root()
+        except Exception:
+            source_root = source_unit
+        if source_root is None:
+            return ("Invocation of Machine Vengeance source unit was not found.",)
+        source_sr = getattr(source_root, "special_rules", None)
+        if not isinstance(source_sr, dict):
+            return ("Invocation of Machine Vengeance is not active on the selected source unit.",)
+        selected_mode = str(source_sr.get("canticles_of_the_omnissiah_selected_mode", "") or "").strip().lower()
+        if selected_mode != "invocation_of_machine_vengeance":
+            return ("Invocation of Machine Vengeance is not active on the selected source unit.",)
+
+        target_unit_id = str(
+            payload.get("target_unit_id")
+            or payload.get("unit_id")
+            or ctx.get("target_unit_id")
+            or ""
+        ).strip()
+        if not target_unit_id:
+            return ("Invocation of Machine Vengeance selection requires target_unit_id.",)
+        candidate_ids = {str(val) for val in list(ctx.get("candidate_unit_ids", []) or []) if str(val)}
+        if candidate_ids and target_unit_id not in candidate_ids:
+            return ("Invocation of Machine Vengeance target unit is not an eligible candidate.",)
+        target_unit = resolve_unit(game, target_unit_id)
+        if target_unit is None:
+            return ("Invocation of Machine Vengeance target unit was not found.",)
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        target_army = target_root.get_parent_army() if target_root is not None and hasattr(target_root, "get_parent_army") else None
+        if source_army is not None and target_army is not None and source_army is target_army:
+            return ("Invocation of Machine Vengeance target must belong to an enemy unit.",)
+        return ()
     if ability == "void_mine":
         payload = _option_payload(request, result)
         source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
@@ -8794,6 +8852,238 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             f"{ability_name}: {source_name} selected {mode_label}.",
         )
         return {"mode": mode}
+    if ability == "canticles_of_the_omnissiah":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return None
+        mode = str(payload.get("canticles_mode", "") or "").strip().lower()
+        mode_to_key = {
+            "invocation_of_machine_vengeance": "INVOCATION_OF_MACHINE_VENGEANCE",
+            "mantra_of_discipline": "MANTRA_OF_DISCIPLINE",
+            "shroudpsalm": "SHROUDPSALM",
+        }
+        mode_key = mode_to_key.get(mode)
+        if not mode_key:
+            return None
+        try:
+            members = list(source_root.get_attached_unit_members() or [])
+        except Exception:
+            members = [source_root]
+        if not members:
+            members = [source_root]
+
+        from ...rules.adeptus_mechanicus_canticles import set_active_canticles
+
+        for member in list(members or []):
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr = dict(sr)
+            sr["canticles_of_the_omnissiah_selected_mode"] = mode
+            sr["canticles_of_the_omnissiah_selected_mode_key"] = mode_key
+            if mode != "invocation_of_machine_vengeance":
+                sr.pop("canticles_machine_vengeance_target_unit_id", None)
+            member.special_rules = sr
+            set_active_canticles(member, mode_key)
+
+        try:
+            player = getattr(source_root.get_parent_army(), "player", None)
+        except Exception:
+            player = None
+        if player is None:
+            player = _resolve_player(game, request, payload)
+        ability_name = str(ctx.get("ability_name", "") or "Canticles of the Omnissiah").strip() or "Canticles of the Omnissiah"
+        mode_label = mode.replace("_", " ").title()
+        source_name = str(getattr(source_root, "name", "Unit") or "Unit")
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {source_name} selected {mode_label}.",
+        )
+
+        if mode == "invocation_of_machine_vengeance" and hasattr(game, "request_decision"):
+            from ..decisions import DecisionOption as _DecisionOption
+            from ..decisions import DecisionRequest as _DecisionRequest
+
+            source_root_id = str(get_entity_id(source_root) or "")
+            enemy_candidates = []
+            seen_roots: set[str] = set()
+            for opp in list(getattr(game, "players", []) or []):
+                if opp is None or opp is player:
+                    continue
+                get_army = getattr(opp, "get_army", None)
+                opp_army = get_army() if callable(get_army) else getattr(opp, "army", None)
+                if opp_army is None:
+                    continue
+                for unit in list(getattr(opp_army, "units", []) or []):
+                    if unit is None:
+                        continue
+                    try:
+                        root = unit.get_attached_unit_root()
+                    except Exception:
+                        root = unit
+                    if root is None:
+                        continue
+                    root_id = str(get_entity_id(root) or "")
+                    if not root_id or root_id in seen_roots:
+                        continue
+                    seen_roots.add(root_id)
+                    if not bool(getattr(root, "is_alive", lambda: False)()):
+                        continue
+                    enemy_candidates.append(root)
+            enemy_candidates = sorted(
+                list(enemy_candidates or []),
+                key=lambda u: str(get_entity_id(u) or ""),
+            )
+            options = []
+            candidate_ids = []
+            for enemy_root in list(enemy_candidates or []):
+                target_id = str(get_entity_id(enemy_root) or "")
+                if not target_id:
+                    continue
+                candidate_ids.append(target_id)
+                options.append(
+                    _DecisionOption.create(
+                        str(getattr(enemy_root, "name", "Unit") or "Unit"),
+                        payload={
+                            "target_unit_id": target_id,
+                            "source_unit_id": source_root_id,
+                        },
+                    )
+                )
+            if options:
+                request_obj = _DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    "Invocation of Machine Vengeance: select one enemy unit to be your Machine Vengeance target.",
+                    player_id=getattr(player, "id", None),
+                    options=options,
+                    context={
+                        "ability": "canticles_machine_vengeance_target",
+                        "ability_name": "Invocation of Machine Vengeance",
+                        "phase": "Command phase",
+                        "source_unit_id": source_root_id,
+                        "unit_id": source_root_id,
+                        "candidate_unit_ids": list(candidate_ids),
+                        "optional": False,
+                    },
+                )
+                game.request_decision(request_obj)
+        return {"mode": mode, "mode_key": mode_key}
+    if ability == "canticles_machine_vengeance_target":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return None
+        target_unit = resolve_unit(
+            game,
+            payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"),
+        )
+        if target_unit is None:
+            return None
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        if target_root is None:
+            return None
+        try:
+            source_army = source_root.get_parent_army()
+        except Exception:
+            source_army = None
+        player = getattr(source_army, "player", None) if source_army is not None else None
+        if player is None:
+            player = _resolve_player(game, request, payload)
+        owner_id = str(getattr(player, "id", "") or "")
+        source_root_id = str(get_entity_id(source_root) or "")
+        target_root_id = str(get_entity_id(target_root) or "")
+        if not source_root_id or not target_root_id or not owner_id:
+            return None
+
+        # Clear stale marks from this source before applying the new target.
+        for p in list(getattr(game, "players", []) or []):
+            if p is None:
+                continue
+            get_army = getattr(p, "get_army", None)
+            army = get_army() if callable(get_army) else getattr(p, "army", None)
+            if army is None:
+                continue
+            seen_units: set[str] = set()
+            for unit in list(getattr(army, "units", []) or []):
+                if unit is None:
+                    continue
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None:
+                    continue
+                rid = str(get_entity_id(root) or "")
+                if rid and rid in seen_units:
+                    continue
+                if rid:
+                    seen_units.add(rid)
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if str(sr.get("canticles_machine_vengeance_owner", "") or "") != owner_id:
+                    continue
+                if str(sr.get("canticles_machine_vengeance_source_unit_id", "") or "") != source_root_id:
+                    continue
+                sr = dict(sr)
+                for key in (
+                    "canticles_machine_vengeance_active",
+                    "canticles_machine_vengeance_owner",
+                    "canticles_machine_vengeance_source_unit_id",
+                    "canticles_machine_vengeance_source",
+                    "canticles_machine_vengeance_keyword",
+                ):
+                    sr.pop(key, None)
+                root.special_rules = sr
+
+        try:
+            source_members = list(source_root.get_attached_unit_members() or [])
+        except Exception:
+            source_members = [source_root]
+        if not source_members:
+            source_members = [source_root]
+        for member in list(source_members or []):
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr = dict(sr)
+            sr["canticles_machine_vengeance_target_unit_id"] = target_root_id
+            member.special_rules = sr
+
+        target_sr = getattr(target_root, "special_rules", None)
+        if not isinstance(target_sr, dict):
+            target_sr = {}
+        target_sr = dict(target_sr)
+        target_sr["canticles_machine_vengeance_active"] = True
+        target_sr["canticles_machine_vengeance_owner"] = owner_id
+        target_sr["canticles_machine_vengeance_source_unit_id"] = source_root_id
+        target_sr["canticles_machine_vengeance_source"] = str(
+            ctx.get("ability_name", "") or "Invocation of Machine Vengeance"
+        ).strip() or "Invocation of Machine Vengeance"
+        target_sr["canticles_machine_vengeance_keyword"] = "adeptus mechanicus"
+        target_root.special_rules = target_sr
+
+        ability_name = str(ctx.get("ability_name", "") or "Invocation of Machine Vengeance").strip() or "Invocation of Machine Vengeance"
+        source_name = str(getattr(source_root, "name", "Unit") or "Unit")
+        target_name = str(getattr(target_root, "name", "Unit") or "Unit")
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {source_name} selected {target_name} as the Machine Vengeance target.",
+        )
+        return {"target_unit_id": target_root_id}
     if ability == "singular_purpose":
         if is_skip_choice(request, result):
             return None

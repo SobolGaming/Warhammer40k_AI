@@ -1672,6 +1672,35 @@ class PositioningMixin:
             return False
         return self.get_vanguard_of_dark_city_selected_mode() == mode
 
+    def has_canticles_of_the_omnissiah(self) -> bool:
+        cache_key = "canticles_of_the_omnissiah"
+        cache = getattr(self, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return bool(cache.get(cache_key))
+        found = False
+        try:
+            found, _ = self._find_ability_with_patterns(["canticles of the omnissiah"])
+        except Exception:
+            found = False
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = bool(found)
+        return bool(found)
+
+    def get_canticles_of_the_omnissiah_selected_mode(self) -> str:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return ""
+        return str(sr.get("canticles_of_the_omnissiah_selected_mode", "") or "").strip().lower()
+
+    def canticles_of_the_omnissiah_mode_active(self, mode_key: str) -> bool:
+        mode = str(mode_key or "").strip().lower()
+        if not mode:
+            return False
+        if not self.has_canticles_of_the_omnissiah():
+            return False
+        return self.get_canticles_of_the_omnissiah_selected_mode() == mode
+
     def command_phase_sticky_objective_prerequisites_met(self) -> bool:
         sr = getattr(self, "special_rules", None)
         if not isinstance(sr, dict):

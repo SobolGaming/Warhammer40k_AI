@@ -550,6 +550,18 @@ class ActionsMovementMixin:
                 return bool(unit_has_active_voice_of_triarch(self, key))
         except Exception:
             pass
+        try:
+            from ...rules.adeptus_mechanicus_canticles import (
+                ability_name_to_key,
+                unit_has_active_canticles,
+                unit_has_canticles_sub_ability,
+            )
+            name = ability if isinstance(ability, str) else getattr(ability, "name", "")
+            key = ability_name_to_key(name)
+            if key and unit_has_canticles_sub_ability(self):
+                return bool(unit_has_active_canticles(self, key))
+        except Exception:
+            pass
 
         # Power from Pain: pain abilities only apply while the unit is Empowered.
         try:
@@ -3898,6 +3910,39 @@ class ActionsMovementMixin:
                                     crit_hit_threshold = threshold if crit_hit_threshold is None else min(int(crit_hit_threshold), threshold)
                                     source = str(tsr.get("inflamed_infections_source", "") or "Inflamed Infections").strip() or "Inflamed Infections"
                                     crit_hit_reasons.append(f"{source}: critical hit on {int(threshold)}+")
+        except Exception:
+            pass
+
+        # Invocation of Machine Vengeance: friendly ADEPTUS MECHANICUS attacks
+        # can re-roll Hit rolls against the selected Machine Vengeance target.
+        try:
+            if target is not None:
+                target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+                target_sr = getattr(target_root, "special_rules", None)
+                if isinstance(target_sr, dict) and target_sr.get("canticles_machine_vengeance_active"):
+                    applies = True
+                    owner_id = str(target_sr.get("canticles_machine_vengeance_owner", "") or "")
+                    if owner_id:
+                        try:
+                            attacker_owner = str(getattr(getattr(root.get_parent_army(), "player", None), "id", "") or "")
+                        except Exception:
+                            attacker_owner = ""
+                        if attacker_owner and attacker_owner != owner_id:
+                            applies = False
+                    if applies:
+                        keyword = str(
+                            target_sr.get("canticles_machine_vengeance_keyword", "") or "adeptus mechanicus"
+                        ).strip()
+                        if keyword and not bool(root.has_any_keyword(keyword)):
+                            applies = False
+                    if applies:
+                        source = str(
+                            target_sr.get("canticles_machine_vengeance_source", "") or "Invocation of Machine Vengeance"
+                        ).strip() or "Invocation of Machine Vengeance"
+                        mods["reroll_hit_full"] = True
+                        reroll_hit_full_reasons.append(
+                            f"{source}: re-roll Hit roll vs Machine Vengeance target"
+                        )
         except Exception:
             pass
 

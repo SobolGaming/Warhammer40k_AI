@@ -3776,8 +3776,20 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Start of Fight phase: optional engaged enemy VEHICLE selection; on 4+ it suffers D6 mortal wounds and its melee weapon Weapon Skill is worsened by 1 until end of phase.",
         ),
+        ("ADM", "Canticles of the Omnissiah"): (
+            "Supported",
+            "Start of Command phase: Belisarius Cawl selects Invocation of Machine Vengeance, Mantra of Discipline, or Shroudpsalm until next Command phase.",
+        ),
+        ("ADM", "Invocation of Machine Vengeance"): (
+            "Supported",
+            "When selected via Canticles, choose one enemy unit; friendly ADEPTUS MECHANICUS attacks can re-roll Hit rolls against that Machine Vengeance target until next Command phase.",
+        ),
+        ("ADM", "Mantra of Discipline"): (
+            "Supported",
+            "When selected via Canticles, bearer gains BATTLELINE and Binharic Courage aura (+1 Objective Control and +1 to Battle-shock/Leadership tests for friendly ADEPTUS MECHANICUS within 6\").",
+        ),
         ("ADM", "Mechanicus Bodyguard"): ("Supported", "Conditional Lone Operative within 3\" of friendly ADEPTUS MECHANICUS units."),
-        ("ADM", "Shroudpsalm (Aura)"): ("Partial", "Stealth applied to bearer only; aura not propagated."),
+        ("ADM", "Shroudpsalm (Aura)"): ("Supported", "When selected via Canticles, friendly ADEPTUS MECHANICUS units within 6\" gain Stealth."),
         ("AM", "Alchemyk Counteragents"): ("Supported", "Feel No Pain 6+ against mortal wounds."),
         ("AM", "Desert Riders"): ("Partial", "Shoot and charge after Falling Back; ignores Move/Advance/Charge modifiers not handled."),
         ("AM", "Deathstrike Missile"): (
@@ -5078,6 +5090,9 @@ def _classify_ability_base(
         return inspiring_commander_support
     if chapter_restriction_support:
         return chapter_restriction_support
+    canticles_support = _canticles_of_the_omnissiah_support(name, description, faction_id=faction_id)
+    if canticles_support:
+        return canticles_support
     closest_m_veh_support = _closest_monster_vehicle_reroll_support(description)
     monster_vehicle_reroll_support = _monster_vehicle_reroll_support(description)
     unit_contains_oc_support = _unit_contains_oc_support(description)
@@ -8883,6 +8898,74 @@ def _command_phase_regain_wound_support(description: str) -> Optional[Tuple[str,
     if m.group("up_to"):
         return ("Supported", f"Start of Command phase: this model regains up to {amount} lost wound(s).")
     return ("Supported", f"Start of Command phase: this model regains {amount} lost wound(s).")
+
+
+def _canticles_of_the_omnissiah_support(
+    name: str,
+    description: str,
+    *,
+    faction_id: str = "",
+) -> Optional[Tuple[str, str]]:
+    if not name:
+        return None
+    fid = str(faction_id or "").strip().upper()
+    if fid and fid != "ADM":
+        return None
+    norm_name = _norm(name)
+    norm_desc = _norm_rules_text(description or "")
+
+    if norm_name == _norm("Canticles of the Omnissiah"):
+        pattern = (
+            r"(?:at the )?start of your command phase select one of the abilities in the canticles of the omnissiah section "
+            r"until the start of your next command phase this model has that ability"
+        )
+        if re.fullmatch(pattern, norm_desc):
+            return (
+                "Supported",
+                "Start of Command phase: select Invocation of Machine Vengeance, Mantra of Discipline, or Shroudpsalm until next Command phase.",
+            )
+        return None
+
+    if norm_name == _norm("Invocation of Machine Vengeance"):
+        pattern = (
+            r"(?:at the )?start of your command phase select one unit from your opponents army "
+            r"until the start of your next command phase that enemy unit is your machine vengeance target "
+            r"each time a model in a friendly adeptus mechanicus unit makes an attack that targets your machine vengeance target "
+            r"you can reroll the hit roll"
+        )
+        if re.fullmatch(pattern, norm_desc):
+            return (
+                "Supported",
+                "Command phase target selection and Machine Vengeance hit re-roll vs selected enemy unit are implemented for friendly ADEPTUS MECHANICUS attacks.",
+            )
+        return None
+
+    if norm_name == _norm("Mantra of Discipline"):
+        pattern = (
+            r"this model has the battleline keyword and has the following ability binharic courage aura "
+            r"while a friendly adeptus mechanicus unit is within 6 of this model add 1 to the objective control characteristic of models in that unit "
+            r"and each time you take a battle shock or leadership test for that unit add 1 to that test"
+        )
+        if re.fullmatch(pattern, norm_desc):
+            return (
+                "Supported",
+                "When selected via Canticles, bearer gains BATTLELINE and friendly ADEPTUS MECHANICUS units within 6\" gain +1 Objective Control and +1 to Battle-shock/Leadership tests.",
+            )
+        return None
+
+    if norm_name in {_norm("Shroudpsalm (Aura)"), _norm("Shroudpsalm")}:
+        pattern = (
+            r"while a friendly adeptus mechanicus unit is within 6 of this model "
+            r"(?:that unit ha(?:s|ve)|models in that unit have) the stealth ability"
+        )
+        if re.fullmatch(pattern, norm_desc):
+            return (
+                "Supported",
+                "When selected via Canticles, friendly ADEPTUS MECHANICUS units within 6\" gain Stealth.",
+            )
+        return None
+
+    return None
 
 
 def _start_shooting_phase_visible_battleshock_support(description: str) -> Optional[Tuple[str, str]]:

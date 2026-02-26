@@ -214,6 +214,7 @@ class GamePhaseHandlersMixin:
         self._on_phase_start_paragon_of_sanctity(player=player, phase=phase)
         self._on_phase_start_decoy_targets(player=player, phase=phase)
         self._on_phase_start_vanguard_of_dark_city(player=player, phase=phase)
+        self._on_phase_start_canticles_of_the_omnissiah(player=player, phase=phase)
         self._on_phase_start_chaos_daemons_detachment_rules(player=player, phase=phase)
         self._on_phase_start_space_marines_detachment_rules(player=player, phase=phase)
         self._on_phase_start_necrons_detachment_rules(player=player, phase=phase)
@@ -3617,6 +3618,183 @@ class GamePhaseHandlersMixin:
                 context={
                     "ability": "vanguard_of_dark_city",
                     "ability_name": "Vanguard of the Dark City",
+                    "phase": "Command phase",
+                    "source_unit_id": root_id,
+                    "unit_id": root_id,
+                    "optional": False,
+                },
+            )
+            self.request_decision(request)
+
+    def _on_phase_start_canticles_of_the_omnissiah(self, player=None, phase=None, **_kwargs) -> None:
+        """Command phase start: Belisarius Cawl selects one Canticles of the Omnissiah mode."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+
+        from ...rules.adeptus_mechanicus_canticles import (
+            KEY_INVOCATION_OF_MACHINE_VENGEANCE,
+            KEY_MANTRA_OF_DISCIPLINE,
+            KEY_SHROUDPSALM,
+            unit_has_canticles_of_the_omnissiah_ability,
+        )
+
+        owner_id = str(getattr(player, "id", "") or "")
+        if not owner_id:
+            return
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        # Expire previous Invocation of Machine Vengeance target marks at the start
+        # of this player's Command phase.
+        for p in list(getattr(self, "players", []) or []):
+            if p is None:
+                continue
+            opp_army = self._get_player_army(p)
+            if opp_army is None:
+                continue
+            seen_target_roots: set[str] = set()
+            for unit in sorted(list(getattr(opp_army, "units", []) or []), key=_unit_sort_key):
+                if unit is None:
+                    continue
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None:
+                    continue
+                root_id = str(get_entity_id(root) or "")
+                if root_id and root_id in seen_target_roots:
+                    continue
+                if root_id:
+                    seen_target_roots.add(root_id)
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if str(sr.get("canticles_machine_vengeance_owner", "") or "") != owner_id:
+                    continue
+                sr = dict(sr)
+                for key in (
+                    "canticles_machine_vengeance_active",
+                    "canticles_machine_vengeance_owner",
+                    "canticles_machine_vengeance_source_unit_id",
+                    "canticles_machine_vengeance_source",
+                    "canticles_machine_vengeance_keyword",
+                ):
+                    sr.pop(key, None)
+                root.special_rules = sr
+
+        queue = getattr(self, "decision_queue", None)
+        pending_sources: set[str] = set()
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "canticles_of_the_omnissiah":
+                    continue
+                source_id = str(ctx.get("source_unit_id", "") or "")
+                if source_id:
+                    pending_sources.add(source_id)
+
+        seen_roots: set[str] = set()
+        for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if not root_id or root_id in seen_roots:
+                continue
+            seen_roots.add(root_id)
+            if root_id in pending_sources:
+                continue
+            if not bool(getattr(root, "is_alive", lambda: False)()):
+                continue
+            if not bool(getattr(root, "deployed", False)):
+                continue
+            try:
+                if root.is_in_reserves() or root.is_embarked:
+                    continue
+            except Exception:
+                pass
+            if not bool(unit_has_canticles_of_the_omnissiah_ability(root)):
+                continue
+
+            # Active Canticles expire at the start of this unit's next Command phase.
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = [root]
+            if not members:
+                members = [root]
+            for member in list(members or []):
+                sr = getattr(member, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                sr = dict(sr)
+                changed = False
+                for key in (
+                    "canticles_of_the_omnissiah_selected_mode",
+                    "canticles_of_the_omnissiah_selected_mode_key",
+                    "canticles_machine_vengeance_target_unit_id",
+                ):
+                    if key in sr:
+                        sr.pop(key, None)
+                        changed = True
+                if changed:
+                    member.special_rules = sr
+                    invalidate = getattr(member, "_invalidate_ability_activity_cache", None)
+                    if callable(invalidate):
+                        invalidate()
+
+            options = [
+                DecisionOption.create(
+                    "Invocation of Machine Vengeance",
+                    payload={
+                        "canticles_mode": "invocation_of_machine_vengeance",
+                        "canticles_mode_key": str(KEY_INVOCATION_OF_MACHINE_VENGEANCE),
+                    },
+                ),
+                DecisionOption.create(
+                    "Mantra of Discipline",
+                    payload={
+                        "canticles_mode": "mantra_of_discipline",
+                        "canticles_mode_key": str(KEY_MANTRA_OF_DISCIPLINE),
+                    },
+                ),
+                DecisionOption.create(
+                    "Shroudpsalm (Aura)",
+                    payload={
+                        "canticles_mode": "shroudpsalm",
+                        "canticles_mode_key": str(KEY_SHROUDPSALM),
+                    },
+                ),
+            ]
+
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                "Canticles of the Omnissiah: select one Canticle until your next Command phase.",
+                player_id=getattr(player, "id", None),
+                options=options,
+                context={
+                    "ability": "canticles_of_the_omnissiah",
+                    "ability_name": "Canticles of the Omnissiah",
                     "phase": "Command phase",
                     "source_unit_id": root_id,
                     "unit_id": root_id,

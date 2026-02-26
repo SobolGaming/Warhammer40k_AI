@@ -7099,6 +7099,8 @@ class GameView:
                 "traitoris_malevolent_heraldry",
                 "singular_purpose",
                 "vanguard_of_dark_city",
+                "canticles_of_the_omnissiah",
+                "canticles_machine_vengeance_target",
                 "void_mine",
             ):
                 return
@@ -15394,6 +15396,14 @@ class GameView:
             title = ability_name or "Vanguard of the Dark City"
             subtitle = "Select one Vanguard mode until your next Command phase."
             header = f"{getattr(source_unit, 'name', 'Model')} selects a Vanguard mode."
+        elif str(ability_key) == "canticles_of_the_omnissiah":
+            title = ability_name or "Canticles of the Omnissiah"
+            subtitle = "Select one Canticle until your next Command phase."
+            header = f"{getattr(source_unit, 'name', 'Model')} selects a Canticle."
+        elif str(ability_key) == "canticles_machine_vengeance_target":
+            title = ability_name or "Invocation of Machine Vengeance"
+            subtitle = "Select one enemy unit to be the Machine Vengeance target."
+            header = f"{getattr(source_unit, 'name', 'Model')} selects a Machine Vengeance target."
         elif str(ability_key) == "void_mine":
             title = ability_name or "Void Mine"
             subtitle = "Select one enemy model moved over this move, or None."
