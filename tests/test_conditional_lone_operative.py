@@ -99,3 +99,52 @@ class TestConditionalLoneOperative(unittest.TestCase):
 
         support.models[0].set_location(10.0, 0.0, 0.0, 0.0)
         self.assertFalse(hero.has_lone_operative())
+
+    def test_conditional_lone_operative_unless_leading_requires_vehicle_and_not_leading(self):
+        game, army1, _army2 = _build_game()
+        ability = [
+            {
+                "name": "Enginseer",
+                "description": (
+                    "While this model is within 3\" of one or more friendly Adeptus Mechanicus Vehicle units, "
+                    "unless it is leading a unit, this model has the Lone Operative ability."
+                ),
+                "type": "Datasheet",
+                "parameter": "",
+            }
+        ]
+        enginseer = _make_unit(
+            "Tech-priest Enginseer",
+            abilities=ability,
+            keywords=["CHARACTER"],
+            faction_keywords=["ADEPTUS MECHANICUS"],
+        )
+        vehicle = _make_unit(
+            "Onager Dunecrawler",
+            keywords=["VEHICLE"],
+            faction_keywords=["ADEPTUS MECHANICUS"],
+        )
+        bodyguard = _make_unit(
+            "Skitarii Rangers",
+            keywords=["INFANTRY"],
+            faction_keywords=["ADEPTUS MECHANICUS"],
+        )
+        army1.add_unit(enginseer)
+        army1.add_unit(vehicle)
+        army1.add_unit(bodyguard)
+        enginseer.deployed = True
+        vehicle.deployed = True
+        bodyguard.deployed = True
+        enginseer.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        vehicle.models[0].set_location(10.0, 0.0, 0.0, 0.0)
+        bodyguard.models[0].set_location(1.0, 0.0, 0.0, 0.0)
+        game.map.units = [enginseer, vehicle, bodyguard]
+
+        self.assertFalse(enginseer.has_lone_operative())
+
+        vehicle.models[0].set_location(2.0, 0.0, 0.0, 0.0)
+        self.assertTrue(enginseer.has_lone_operative())
+
+        enginseer.attached_to = bodyguard
+        bodyguard.attached_leaders = [enginseer]
+        self.assertFalse(enginseer.has_lone_operative())

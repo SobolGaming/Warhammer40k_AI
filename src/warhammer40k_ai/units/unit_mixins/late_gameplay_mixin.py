@@ -2603,7 +2603,8 @@ class LateGameplayMixin:
                     r"while (?:this model|the bearer|this unit) is within (?P<range>\d+) of one or more "
                     r"(?P<other>other )?friendly (?P<keywords>.+?) units?"
                     r"(?P<exclude> excluding units with the lone operative ability)?"
-                    r"(?P<not_attached> if this unit is not an attached unit)? "
+                    r"(?P<not_attached> if this unit is not an attached unit)?"
+                    r"(?P<not_leading> unless (?:this model|the bearer|this unit|it) is leading a unit)? "
                     r"(?:this model|the bearer|this unit|it) has (?:the )?lone operative ability",
                     norm,
                     flags=re.IGNORECASE,
@@ -2631,6 +2632,7 @@ class LateGameplayMixin:
                             "requires_other": bool(m.group("other")),
                             "exclude_lone_operative": bool(m.group("exclude")),
                             "requires_not_attached": bool(m.group("not_attached")),
+                            "requires_not_leading": bool(m.group("not_leading")),
                             "source": str(name or "Lone Operative").strip() or "Lone Operative",
                         }
                     )
@@ -2684,6 +2686,12 @@ class LateGameplayMixin:
                                 leaders = list(getattr(self, "attached_leaders", []) or [])
                                 is_attached = bool(leaders)
                             if is_attached:
+                                continue
+                        if bool(rule.get("requires_not_leading")):
+                            is_leading = bool(getattr(self, "attached_to", None))
+                            if not is_leading:
+                                is_leading = bool(getattr(self, "is_attached_leader", False))
+                            if is_leading:
                                 continue
                         kw_phrase = str(rule.get("keywords") or "").strip()
                         kw_options = [kw_phrase]
