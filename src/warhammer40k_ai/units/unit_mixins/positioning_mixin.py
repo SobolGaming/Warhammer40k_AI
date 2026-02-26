@@ -7061,6 +7061,16 @@ class PositioningMixin:
             except Exception:
                 pass
         if not found:
+            try:
+                if self._attached_unit_has_active_leading_enhancement(
+                    "enhancement_the_blade_driven_deep",
+                    enhancement_id="000008490002",
+                    enhancement_name="the blade driven deep",
+                ):
+                    found = True
+            except Exception:
+                pass
+        if not found:
             found, _ = self._find_ability_with_patterns(["infiltrators", "infiltrate"])
         
         # Cache the result
@@ -7082,6 +7092,9 @@ class PositioningMixin:
             return True
         # Enhancement: Umbral Raptor grants Stealth to the bearer model.
         if isinstance(sr, dict) and sr.get("enhancement_umbral_raptor_stealth"):
+            return True
+        # Enhancement: Ghostweave Cloak grants Stealth to the bearer model.
+        if isinstance(sr, dict) and sr.get("enhancement_ghostweave_cloak_stealth"):
             return True
         # Enhancement: Phial of the Abyss grants Stealth to models in the bearer's unit.
         if isinstance(sr, dict) and sr.get("enhancement_phial_of_the_abyss"):

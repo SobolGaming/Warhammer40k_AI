@@ -7138,6 +7138,130 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return "Masters of Shadow"
         return "Shadow Masters"
 
+    def _vanguard_spearhead_enhancement_source_member(self, unit, flag_key: str):
+        root, member, sr = self._company_of_hunters_enhancement_source_member(unit, flag_key)
+        if root is None or member is None or not isinstance(sr, dict):
+            return root, None, None
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return root, None, None
+        return root, member, sr
+
+    def _vanguard_execute_and_redeploy_bearer_is_phobos(self, member, sr) -> bool:
+        if member is None or not isinstance(sr, dict):
+            return False
+        bearer = self._company_of_hunters_resolve_bearer_model(member, sr)
+        if bearer is None:
+            return False
+        alive_attr = getattr(bearer, "is_alive", True)
+        if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+            return False
+        has_any_keyword = getattr(bearer, "has_any_keyword", None)
+        if callable(has_any_keyword):
+            try:
+                if bool(has_any_keyword("PHOBOS")):
+                    return True
+            except Exception:
+                pass
+        has_keyword = getattr(bearer, "has_keyword", None)
+        if callable(has_keyword):
+            try:
+                if bool(has_keyword("PHOBOS")):
+                    return True
+            except Exception:
+                pass
+        parent_unit = getattr(bearer, "parent_unit", None)
+        if parent_unit is None:
+            return False
+        unit_has_any = getattr(parent_unit, "has_any_keyword", None)
+        if callable(unit_has_any):
+            try:
+                if bool(unit_has_any("PHOBOS")):
+                    return True
+            except Exception:
+                pass
+        unit_has = getattr(parent_unit, "has_keyword", None)
+        if callable(unit_has):
+            try:
+                if bool(unit_has("PHOBOS")):
+                    return True
+            except Exception:
+                pass
+        return False
+
+    def vanguard_execute_and_redeploy_reactive_move(self, unit, *, game=None) -> tuple[int, str]:
+        if not self.is_vanguard_spearhead():
+            return 0, ""
+        if unit is None:
+            return 0, ""
+        root, member, sr = self._vanguard_spearhead_enhancement_source_member(
+            unit,
+            "enhancement_execute_and_redeploy",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return 0, ""
+        if not self._company_of_hunters_member_has_live_bearer(member, sr):
+            return 0, ""
+        if bool(sr.get("enhancement_execute_and_redeploy_requires_bearer_phobos", True)):
+            if not self._vanguard_execute_and_redeploy_bearer_is_phobos(member, sr):
+                return 0, ""
+        if bool(sr.get("enhancement_execute_and_redeploy_once_per_shooting_phase", True)):
+            game_obj = self._resolve_game_context(game=game)
+            if game_obj is not None:
+                try:
+                    turn_now = int(getattr(game_obj, "turn", 0) or 0)
+                except Exception:
+                    turn_now = 0
+                phase_now = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+                owner_id = str(getattr(getattr(root.get_parent_army(), "player", None), "id", "") or "").strip()
+                used_owner = str(sr.get("enhancement_execute_and_redeploy_last_used_owner", "") or "").strip()
+                used_phase = str(sr.get("enhancement_execute_and_redeploy_last_used_phase", "") or "").strip().upper()
+                try:
+                    used_turn = int(sr.get("enhancement_execute_and_redeploy_last_used_turn", 0) or 0)
+                except Exception:
+                    used_turn = 0
+                if (
+                    phase_now == "SHOOTING_PHASE"
+                    and used_phase == phase_now
+                    and used_turn == turn_now
+                    and ((not owner_id) or owner_id == used_owner)
+                ):
+                    return 0, ""
+        try:
+            move_range = int(sr.get("enhancement_execute_and_redeploy_move_range", 6) or 6)
+        except Exception:
+            move_range = 6
+        if move_range <= 0:
+            return 0, ""
+        source = str(sr.get("enhancement_execute_and_redeploy_source", "") or "Execute and Redeploy").strip()
+        if not source:
+            source = "Execute and Redeploy"
+        return int(move_range), source
+
+    def mark_vanguard_execute_and_redeploy_used(self, unit, *, game=None) -> None:
+        if not self.is_vanguard_spearhead():
+            return
+        if unit is None:
+            return
+        root, member, sr = self._vanguard_spearhead_enhancement_source_member(
+            unit,
+            "enhancement_execute_and_redeploy",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is None:
+            return
+        try:
+            turn_now = int(getattr(game_obj, "turn", 0) or 0)
+        except Exception:
+            turn_now = 0
+        phase_now = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+        owner_id = str(getattr(getattr(root.get_parent_army(), "player", None), "id", "") or "").strip()
+        sr["enhancement_execute_and_redeploy_last_used_turn"] = int(turn_now)
+        sr["enhancement_execute_and_redeploy_last_used_owner"] = owner_id
+        sr["enhancement_execute_and_redeploy_last_used_phase"] = phase_now if phase_now else "SHOOTING_PHASE"
+        member.special_rules = sr
+
     def shadow_masters_ranged_hit_penalty(
         self,
         target_unit,

@@ -2532,6 +2532,56 @@ _SPACE_MARINES_COMPANY_OF_HUNTERS_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPACE_MARINES_COMPANY_OF_HUNTERS_DESCRIPTORS.values()
 }
 
+_SPACE_MARINES_VANGUARD_SPEARHEAD_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008490002": EnhancementToolDescriptor(
+        enhancement_id="000008490002",
+        name="The Blade Driven Deep",
+        timing="while_bearer_is_leading",
+        target="bearer_led_unit",
+        duration="constant_while_bearer_is_leading",
+        effect="grant_infiltrators_to_bearer_led_unit",
+        effect_params={"requires_bearer_leading": True},
+    ),
+    "000008490003": EnhancementToolDescriptor(
+        enhancement_id="000008490003",
+        name="Ghostweave Cloak",
+        timing="passive",
+        target="bearer_model",
+        duration="constant",
+        effect="grant_stealth_and_lone_operative_to_bearer",
+        effect_params={},
+    ),
+    "000008490004": EnhancementToolDescriptor(
+        enhancement_id="000008490004",
+        name="Execute and Redeploy",
+        timing="your_shooting_phase_after_bearer_unit_shoots",
+        target="bearer_unit",
+        duration="instant_optional_with_no_charge_until_end_of_turn",
+        effect="post_shoot_reactive_normal_move_no_charge_once_per_shooting_phase",
+        effect_params={
+            "move_range": 6,
+            "requires_not_engagement_range": True,
+            "requires_bearer_alive": True,
+            "requires_bearer_phobos": True,
+            "once_per_shooting_phase": True,
+        },
+    ),
+    "000008490005": EnhancementToolDescriptor(
+        enhancement_id="000008490005",
+        name="Shadow War Veteran",
+        timing="opponent_stratagem_targeting",
+        target="enemy_unit_within_range_of_bearer",
+        duration="constant",
+        effect="targeted_stratagem_cp_increase",
+        range_in=12.0,
+        effect_params={"cp_increase": 1, "ability_name": "Lord of Deceit (Aura)"},
+    ),
+}
+
+_SPACE_MARINES_VANGUARD_SPEARHEAD_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPACE_MARINES_VANGUARD_SPEARHEAD_DESCRIPTORS.values()
+}
+
 _SPACE_MARINES_SHADOWMARK_TALON_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000010466002": EnhancementToolDescriptor(
         enhancement_id="000010466002",
@@ -3353,6 +3403,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPACE_MARINES_COMPANY_OF_HUNTERS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPACE_MARINES_VANGUARD_SPEARHEAD_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPACE_MARINES_SHADOWMARK_TALON_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -3444,6 +3497,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SPACE_MARINES_SAGA_OF_THE_GREAT_WOLF_BY_NAME.get(key)
         or _SPACE_MARINES_STORMLANCE_TASK_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_COMPANY_OF_HUNTERS_BY_NAME.get(key)
+        or _SPACE_MARINES_VANGUARD_SPEARHEAD_BY_NAME.get(key)
         or _SPACE_MARINES_SHADOWMARK_TALON_BY_NAME.get(key)
         or _SPACE_MARINES_SPEARPOINT_TASK_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_COMPANIONS_OF_VEHEMENCE_BY_NAME.get(key)

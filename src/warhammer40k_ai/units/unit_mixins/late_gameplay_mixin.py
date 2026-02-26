@@ -2497,6 +2497,8 @@ class LateGameplayMixin:
             return True
         if isinstance(sr, dict) and sr.get("enhancement_umbral_raptor_lone_operative"):
             return True
+        if isinstance(sr, dict) and sr.get("enhancement_ghostweave_cloak_lone_operative"):
+            return True
         if isinstance(sr, dict) and sr.get("enhancement_spirit_stone_of_raelyth"):
             try:
                 game_map = self.get_parent_army().player.game.map

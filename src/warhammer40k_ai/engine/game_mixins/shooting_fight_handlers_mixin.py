@@ -386,7 +386,7 @@ class GameShootingFightHandlersMixin:
                     continue
                 ctx = dict(getattr(req, "context", {}) or {})
                 kind = str(ctx.get("reactive_move_kind", "") or "")
-                if kind not in ("tactical_acumen", "post_shoot_no_charge"):
+                if kind not in ("tactical_acumen", "post_shoot_no_charge", "execute_and_redeploy"):
                     continue
                 if str(ctx.get("unit_id", "") or "") == str(unit_id or ""):
                     return True
@@ -428,8 +428,6 @@ class GameShootingFightHandlersMixin:
             return
 
         unit_specs = attacker_unit.unit_post_shoot_reactive_move_no_charge_specs() or []
-        if not unit_specs:
-            return
 
         engaged = False
         try:
@@ -452,6 +450,35 @@ class GameShootingFightHandlersMixin:
                         continue
         except Exception:
             engaged = False
+
+        try:
+            attacker_army = attacker_unit.get_parent_army()
+        except Exception:
+            attacker_army = None
+        sm_mgr = getattr(attacker_army, "space_marines_detachments", None) if attacker_army is not None else None
+        execute_spec_fn = (
+            getattr(sm_mgr, "vanguard_execute_and_redeploy_reactive_move", None)
+            if sm_mgr is not None
+            else None
+        )
+        if callable(execute_spec_fn) and not engaged:
+            try:
+                execute_distance, execute_source = execute_spec_fn(attacker_unit, game=self)
+            except Exception:
+                execute_distance, execute_source = 0, ""
+            if int(execute_distance or 0) > 0:
+                self._queue_reactive_move_movement_decision(
+                    player=attacker_player,
+                    unit=attacker_unit,
+                    max_distance=int(execute_distance),
+                    kind="execute_and_redeploy",
+                    movement_type="reactive",
+                    source=execute_source or "Execute and Redeploy",
+                )
+                return
+
+        if not unit_specs:
+            return
 
         for spec in unit_specs:
             if bool(spec.get("requires_not_engaged", False)) and engaged:

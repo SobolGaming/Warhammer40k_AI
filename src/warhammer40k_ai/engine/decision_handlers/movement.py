@@ -1284,7 +1284,11 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
             member.mark_unhinged_vengeance_used(game)
     if movement_type == "reactive":
         _clear_battle_focus_reactive_flags(unit)
-        if str(ctx.get("reactive_move_kind", "") or "").strip() in ("tactical_acumen", "post_shoot_no_charge"):
+        if str(ctx.get("reactive_move_kind", "") or "").strip() in (
+            "tactical_acumen",
+            "post_shoot_no_charge",
+            "execute_and_redeploy",
+        ):
             sr = getattr(unit, "special_rules", None)
             if not isinstance(sr, dict):
                 sr = {}
@@ -1305,6 +1309,22 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
                 sr["tactical_acumen_no_charge_turn"] = 0
             unit.special_rules = sr
     reactive_kind = str(ctx.get("reactive_move_kind", "") or "").strip()
+    if movement_type == "reactive" and reactive_kind == "execute_and_redeploy":
+        try:
+            army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
+        except Exception:
+            army = None
+        sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+        mark_used_fn = (
+            getattr(sm_mgr, "mark_vanguard_execute_and_redeploy_used", None)
+            if sm_mgr is not None
+            else None
+        )
+        if callable(mark_used_fn):
+            try:
+                mark_used_fn(unit, game=game)
+            except Exception:
+                pass
     if movement_type == "gleaming_pinions" or reactive_kind == "gleaming_pinions":
         try:
             army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None

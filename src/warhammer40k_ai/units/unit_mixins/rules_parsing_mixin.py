@@ -1447,7 +1447,9 @@ class RulesParsingMixin:
                 "usage_key": f"STRATAGEM_CP_INCREASE:{usage_key}" if usage_key else "STRATAGEM_CP_INCREASE",
             }
             if isinstance(sr, dict) and (
-                bool(sr.get("enhancement_archraider")) or bool(sr.get("enhancement_coronal_susurrant"))
+                bool(sr.get("enhancement_archraider"))
+                or bool(sr.get("enhancement_coronal_susurrant"))
+                or bool(sr.get("enhancement_shadow_war_veteran"))
             ):
                 source_model_id = str(sr.get("enhancement_bearer_model_id", "") or "")
                 if source_model_id:
@@ -1455,6 +1457,7 @@ class RulesParsingMixin:
                     if (
                         ("archraider" in low_name and bool(sr.get("enhancement_archraider")))
                         or ("coronal susurrant" in low_name and bool(sr.get("enhancement_coronal_susurrant")))
+                        or ("shadow war veteran" in low_name and bool(sr.get("enhancement_shadow_war_veteran")))
                         or "lord of deceit" in norm
                     ):
                         spec["source_model_id"] = source_model_id

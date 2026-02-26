@@ -474,6 +474,9 @@ class Enhancement:
         is_stormlance_task_force = bool(
             sm_mgr and getattr(sm_mgr, "is_stormlance_task_force", lambda: False)()
         )
+        is_vanguard_spearhead = bool(
+            sm_mgr and getattr(sm_mgr, "is_vanguard_spearhead", lambda: False)()
+        )
         is_company_of_hunters = bool(
             sm_mgr and getattr(sm_mgr, "is_company_of_hunters", lambda: False)()
         )
@@ -2756,6 +2759,116 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_stormlance_hunters_instincts_bearer_model_id"] = bearer_id
+
+        if name == "the blade driven deep" or enh_id == "000008490002":
+            if not is_vanguard_spearhead:
+                return
+            unit.special_rules["enhancement_the_blade_driven_deep"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            unit.special_rules["enhancement_the_blade_driven_deep_requires_bearer_leading"] = bool(
+                params.get("requires_bearer_leading", True)
+            )
+            unit.special_rules["enhancement_the_blade_driven_deep_source"] = "The Blade Driven Deep"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_the_blade_driven_deep_bearer_model_id"] = bearer_id
+            invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate_cache):
+                invalidate_cache()
+
+        if name == "ghostweave cloak" or enh_id == "000008490003":
+            if not is_vanguard_spearhead:
+                return
+            unit.special_rules["enhancement_ghostweave_cloak"] = True
+            unit.special_rules["enhancement_ghostweave_cloak_stealth"] = True
+            unit.special_rules["enhancement_ghostweave_cloak_lone_operative"] = True
+            unit.special_rules["enhancement_ghostweave_cloak_source"] = "Ghostweave Cloak"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_ghostweave_cloak_bearer_model_id"] = bearer_id
+            invalidate_cache = getattr(unit, "_invalidate_ability_cache", None)
+            if callable(invalidate_cache):
+                invalidate_cache()
+
+        if name == "execute and redeploy" or enh_id == "000008490004":
+            if not is_vanguard_spearhead:
+                return
+            unit.special_rules["enhancement_execute_and_redeploy"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            move_range = _coerce_int(params.get("move_range", 6) or 6, default=6)
+            unit.special_rules["enhancement_execute_and_redeploy_move_range"] = int(max(1, move_range))
+            unit.special_rules["enhancement_execute_and_redeploy_requires_not_engagement_range"] = bool(
+                params.get("requires_not_engagement_range", True)
+            )
+            unit.special_rules["enhancement_execute_and_redeploy_requires_bearer_phobos"] = bool(
+                params.get("requires_bearer_phobos", True)
+            )
+            unit.special_rules["enhancement_execute_and_redeploy_once_per_shooting_phase"] = bool(
+                params.get("once_per_shooting_phase", True)
+            )
+            unit.special_rules["enhancement_execute_and_redeploy_source"] = "Execute and Redeploy"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_execute_and_redeploy_bearer_model_id"] = bearer_id
+
+        if name == "shadow war veteran" or enh_id == "000008490005":
+            if not is_vanguard_spearhead:
+                return
+            unit.special_rules["enhancement_shadow_war_veteran"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            aura_range = _coerce_int(params.get("range", 0), default=0)
+            if aura_range <= 0:
+                try:
+                    aura_range = int(getattr(desc, "range_in", 12) or 12)
+                except Exception:
+                    aura_range = 12
+            cp_increase = _coerce_int(params.get("cp_increase", 1) or 1, default=1)
+            ability_name = str(params.get("ability_name", "Lord of Deceit (Aura)") or "Lord of Deceit (Aura)").strip()
+            if not ability_name:
+                ability_name = "Lord of Deceit (Aura)"
+            unit.special_rules["enhancement_shadow_war_veteran_range"] = int(max(1, aura_range))
+            unit.special_rules["enhancement_shadow_war_veteran_cp_increase"] = int(max(1, cp_increase))
+            unit.special_rules["enhancement_shadow_war_veteran_source"] = "Shadow War Veteran"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_shadow_war_veteran_bearer_model_id"] = bearer_id
+            try:
+                if hasattr(unit, "_refresh_targeted_stratagem_cp_increase_flags"):
+                    unit._refresh_targeted_stratagem_cp_increase_flags()
+            except Exception:
+                pass
+            usage_key = "STRATAGEM_CP_INCREASE:SHADOW_WAR_VETERAN"
+            spec = {
+                "range": int(max(1, aura_range)),
+                "keyword": "",
+                "name": ability_name,
+                "description": str(getattr(self, "description", "") or ""),
+                "optional": False,
+                "limit": "",
+                "max_cp": None,
+                "cp_increase": int(max(1, cp_increase)),
+                "usage_key": usage_key,
+            }
+            if bearer_id:
+                spec["source_model_id"] = bearer_id
+            existing_specs = list(unit.special_rules.get("stratagem_target_cp_increase_aura", []) or [])
+            deduped_specs: list[dict] = []
+            seen_spec_keys: set[tuple[str, str]] = set()
+            for existing_spec in existing_specs + [spec]:
+                if not isinstance(existing_spec, dict):
+                    continue
+                key = (
+                    str(existing_spec.get("usage_key", "") or "").strip().upper(),
+                    str(existing_spec.get("source_model_id", "") or "").strip().lower(),
+                )
+                if key in seen_spec_keys:
+                    continue
+                seen_spec_keys.add(key)
+                deduped_specs.append(existing_spec)
+            unit.special_rules["stratagem_target_cp_increase_aura"] = deduped_specs
 
         if name in ("master-crafted weapon", "master crafted weapon") or enh_id == "000008778002":
             if not is_company_of_hunters:
