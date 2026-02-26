@@ -435,6 +435,9 @@ class Enhancement:
         is_firestorm_assault_force = bool(
             sm_mgr and getattr(sm_mgr, "is_firestorm_assault_force", lambda: False)()
         )
+        is_forgefathers_seekers = bool(
+            sm_mgr and getattr(sm_mgr, "is_forgefathers_seekers", lambda: False)()
+        )
         is_ironstorm_spearhead = bool(
             sm_mgr and getattr(sm_mgr, "is_ironstorm_spearhead", lambda: False)()
         )
@@ -1334,8 +1337,29 @@ class Enhancement:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_firestorm_champion_of_humanity_bearer_model_id"] = bearer_id
 
-        if enh_id == "000008482003" or (name == "war-tempered artifice" and is_firestorm_assault_force):
-            if not is_firestorm_assault_force:
+        if enh_id == "000010368002" or (name == "immolator" and is_forgefathers_seekers):
+            if not is_forgefathers_seekers:
+                return
+            unit.special_rules["enhancement_forgefathers_immolator"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            attacks_bonus = _coerce_int(params.get("attacks_bonus", 1) or 1, default=1)
+            requires_bearer_alive = bool(params.get("requires_bearer_alive", True))
+            unit.special_rules["enhancement_forgefathers_immolator_torrent_attacks_bonus"] = int(
+                max(0, attacks_bonus)
+            )
+            unit.special_rules["enhancement_forgefathers_immolator_requires_bearer_alive"] = bool(
+                requires_bearer_alive
+            )
+            unit.special_rules["enhancement_forgefathers_immolator_source"] = "Immolator"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_forgefathers_immolator_bearer_model_id"] = bearer_id
+
+        if enh_id in {"000008482003", "000010368003"} or (
+            name == "war-tempered artifice" and (is_firestorm_assault_force or is_forgefathers_seekers)
+        ):
+            if not (is_firestorm_assault_force or is_forgefathers_seekers):
                 return
             unit.special_rules["enhancement_firestorm_war_tempered_artifice"] = True
             desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
@@ -1352,8 +1376,10 @@ class Enhancement:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_firestorm_war_tempered_artifice_bearer_model_id"] = bearer_id
 
-        if enh_id == "000008482004" or (name == "forged in battle" and is_firestorm_assault_force):
-            if not is_firestorm_assault_force:
+        if enh_id in {"000008482004", "000010368004"} or (
+            name == "forged in battle" and (is_firestorm_assault_force or is_forgefathers_seekers)
+        ):
+            if not (is_firestorm_assault_force or is_forgefathers_seekers):
                 return
             unit.special_rules["enhancement_firestorm_forged_in_battle"] = True
             desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
@@ -1382,8 +1408,10 @@ class Enhancement:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_firestorm_forged_in_battle_bearer_model_id"] = bearer_id
 
-        if enh_id == "000008482005" or (name == "adamantine mantle" and is_firestorm_assault_force):
-            if not is_firestorm_assault_force:
+        if enh_id in {"000008482005", "000010368005"} or (
+            name == "adamantine mantle" and (is_firestorm_assault_force or is_forgefathers_seekers)
+        ):
+            if not (is_firestorm_assault_force or is_forgefathers_seekers):
                 return
             unit.special_rules["enhancement_firestorm_adamantine_mantle"] = True
             desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)

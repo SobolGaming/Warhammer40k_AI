@@ -4277,6 +4277,70 @@ class WargearProfile:
                     )
                     source_name = str(fb_source or "Fusion Blades").strip() or "Fusion Blades"
                     attack_result.attacks_special_modifiers.append(f"{source_name} +{int(fb_a_bonus)}A (selected weapon)")
+                if self.is_torrent():
+                    unit = getattr(attacker, "parent_unit", None)
+                    if unit is not None:
+                        try:
+                            root = unit.get_attached_unit_root()
+                        except Exception:
+                            root = unit
+                        try:
+                            members = list(root.get_attached_unit_members() or [])
+                        except Exception:
+                            members = []
+                        if not members:
+                            members = [root]
+                        members = sorted(members, key=lambda u: str(get_entity_id(u) or ""))
+                        immolator_bonus = 0
+                        immolator_source = "Immolator"
+                        for member in members:
+                            if member is None:
+                                continue
+                            sr = getattr(member, "special_rules", None)
+                            if not (isinstance(sr, dict) and bool(sr.get("enhancement_forgefathers_immolator"))):
+                                continue
+                            bearer_alive = False
+                            bearer_id = str(
+                                sr.get("enhancement_forgefathers_immolator_bearer_model_id", "")
+                                or sr.get("enhancement_bearer_model_id", "")
+                                or ""
+                            ).strip()
+                            if bearer_id:
+                                for model in list(getattr(member, "models", []) or []):
+                                    if str(get_entity_id(model) or "") != bearer_id:
+                                        continue
+                                    alive_attr = getattr(model, "is_alive", True)
+                                    bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                                    break
+                            if not bearer_alive:
+                                bearer = getattr(member, "_get_enhancement_bearer_model", lambda: None)()
+                                if bearer is not None:
+                                    alive_attr = getattr(bearer, "is_alive", True)
+                                    bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                            if bool(sr.get("enhancement_forgefathers_immolator_requires_bearer_alive", True)) and not bearer_alive:
+                                continue
+                            try:
+                                bonus = int(sr.get("enhancement_forgefathers_immolator_torrent_attacks_bonus", 1) or 1)
+                            except Exception:
+                                bonus = 1
+                            bonus = int(max(0, bonus))
+                            if bonus <= immolator_bonus:
+                                continue
+                            immolator_bonus = bonus
+                            immolator_source = str(
+                                sr.get("enhancement_forgefathers_immolator_source", "") or "Immolator"
+                            ).strip() or "Immolator"
+                        if immolator_bonus:
+                            atk_mods.append(
+                                Modifier(
+                                    ModifierOp.ADD,
+                                    int(immolator_bonus),
+                                    source="enhancement:forgefathers_immolator_torrent_attacks_add",
+                                )
+                            )
+                            attack_result.attacks_special_modifiers.append(
+                                f"{immolator_source} +{int(immolator_bonus)}A (Torrent)"
+                            )
         except Exception:
             pass
         try:
