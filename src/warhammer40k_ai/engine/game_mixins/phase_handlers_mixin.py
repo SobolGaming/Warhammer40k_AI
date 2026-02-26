@@ -12326,6 +12326,9 @@ class GamePhaseHandlersMixin:
                 ck_mgr = getattr(army, "chaos_knights_detachments", None)
                 if ck_mgr is not None and hasattr(ck_mgr, "on_command_phase_end"):
                     ck_mgr.on_command_phase_end(game=self, player=player)
+                adm_mgr = getattr(army, "adeptus_mechanicus_detachments", None)
+                if adm_mgr is not None and hasattr(adm_mgr, "on_command_phase_end"):
+                    adm_mgr.on_command_phase_end(game=self, player=player)
                 seen = set()
                 for unit in list(army.units):
                     root = unit.get_attached_unit_root()

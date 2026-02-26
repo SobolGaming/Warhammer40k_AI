@@ -18,6 +18,10 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
     _EXPLORATOR_MANIPLE_NAME = "Explorator Maniple"
     _ACQUISITION_ABILITY_KEY = "acquisition_at_any_cost"
     _ACQUISITION_SOURCE = "Acquisition At Any Cost"
+    _EXPLORATOR_MAGOS_SOURCE = "Magos"
+    _EXPLORATOR_GENETOR_SOURCE = "Genetor"
+    _EXPLORATOR_LOGIS_SOURCE = "Logis"
+    _EXPLORATOR_ARTISAN_SOURCE = "Artisan"
     _HALOSCREED_BATTLE_CLADE_NAME = "Haloscreed Battle Clade"
     _NOOSPHERIC_UNITS_ABILITY_KEY = "noospheric_transference_units"
     _NOOSPHERIC_OVERRIDE_ABILITY_KEY = "noospheric_transference_override"
@@ -1123,6 +1127,266 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
         if attacker_within or target_within:
             return True, f"{self._ACQUISITION_SOURCE} (Acquisition objective)"
         return False, ""
+
+    @staticmethod
+    def _model_within_objective_range(model, objective_point) -> bool:
+        if model is None or objective_point is None:
+            return False
+        try:
+            from shapely.geometry import Point as _ShPoint
+        except ImportError:
+            _ShPoint = None
+        if _ShPoint is not None:
+            get_base_shape = getattr(model, "get_base_shape", None)
+            base_shape = get_base_shape() if callable(get_base_shape) else None
+            if base_shape is not None and hasattr(base_shape, "intersects"):
+                try:
+                    objective_area = _ShPoint(
+                        float(getattr(objective_point, "x", 0.0) or 0.0),
+                        float(getattr(objective_point, "y", 0.0) or 0.0),
+                    ).buffer(float(getattr(objective_point, "control_radius", 0.0) or 0.0))
+                except (TypeError, ValueError):
+                    objective_area = None
+                if objective_area is not None and base_shape.intersects(objective_area):
+                    return True
+        get_location = getattr(model, "get_location", None)
+        location = get_location() if callable(get_location) else None
+        if not location or len(location) < 2:
+            return False
+        try:
+            x = float(location[0])
+            y = float(location[1])
+            ox = float(getattr(objective_point, "x", 0.0) or 0.0)
+            oy = float(getattr(objective_point, "y", 0.0) or 0.0)
+            radius = float(getattr(objective_point, "control_radius", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            return False
+        base_radius_fn = getattr(getattr(model, "model_base", None), "get_radius", None)
+        base_radius = base_radius_fn() if callable(base_radius_fn) else 1.0
+        try:
+            base_radius = float(base_radius or 0.0)
+        except (TypeError, ValueError):
+            base_radius = 1.0
+        return ((x - ox) ** 2 + (y - oy) ** 2) ** 0.5 <= float(radius + base_radius) + 1e-6
+
+    def _unit_within_active_acquisition_objective(
+        self,
+        unit,
+        *,
+        game=None,
+        game_map=None,
+        require_army_membership: bool = False,
+    ) -> bool:
+        if not self.is_explorator_maniple():
+            return False
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        if require_army_membership and not self._unit_in_army(root):
+            return False
+        active = self._active_acquisition_objective_point(game=game, game_map=game_map)
+        if not isinstance(active, tuple):
+            return False
+        _objective, objective_point = active
+        is_within = getattr(root, "is_within_objective_range", None)
+        if not callable(is_within):
+            return False
+        return bool(is_within(objective_point))
+
+    def explorator_unit_within_acquisition_objective(self, unit, *, game=None, game_map=None) -> bool:
+        return self._unit_within_active_acquisition_objective(
+            unit,
+            game=game,
+            game_map=game_map,
+            require_army_membership=True,
+        )
+
+    def _iter_explorator_enhancement_sources(self, enhancement_flag_key: str) -> list[tuple]:
+        if self.army is None:
+            return []
+        enhancement_key = str(enhancement_flag_key or "").strip()
+        if not enhancement_key:
+            return []
+        sources: list[tuple] = []
+        seen: set[tuple[str, str]] = set()
+        for unit in list(getattr(self.army, "units", []) or []):
+            root = self._attached_root(unit)
+            if root is None or not self._unit_in_army(root):
+                continue
+            if not self._unit_is_on_battlefield(root):
+                continue
+            root_id = self._entity_id(root) or str(id(root))
+            members = list(getattr(root, "get_attached_unit_members", lambda: [])() or [])
+            if not members:
+                members = [root]
+            for member in members:
+                if member is None:
+                    continue
+                special_rules = getattr(member, "special_rules", None)
+                if not isinstance(special_rules, dict) or not bool(special_rules.get(enhancement_key, False)):
+                    continue
+                get_bearer = getattr(member, "_get_enhancement_bearer_model", None)
+                bearer = get_bearer() if callable(get_bearer) else None
+                if bearer is None or not self._is_model_alive(bearer):
+                    continue
+                member_id = self._entity_id(member) or str(id(member))
+                dedupe_key = (str(root_id), str(member_id))
+                if dedupe_key in seen:
+                    continue
+                seen.add(dedupe_key)
+                sources.append((str(root_id), root, member, special_rules, bearer))
+        sources.sort(
+            key=lambda item: (
+                str(item[0] or ""),
+                self._entity_id(item[2]) or str(id(item[2])),
+            )
+        )
+        return sources
+
+    def explorator_genetor_invulnerable_save(self, target_model, *, attack_type: str = "", game=None, game_map=None) -> tuple[int, str]:
+        if not self.is_explorator_maniple():
+            return 0, ""
+        if target_model is None:
+            return 0, ""
+        target_unit = getattr(target_model, "parent_unit", None)
+        target_root = self._attached_root(target_unit)
+        if target_root is None or not self._unit_in_army(target_root):
+            return 0, ""
+        if not self._unit_is_on_battlefield(target_root):
+            return 0, ""
+        for _source_root_id, source_root, source_member, source_sr, _bearer in self._iter_explorator_enhancement_sources(
+            "enhancement_explorator_genetor"
+        ):
+            if source_root is not target_root:
+                continue
+            requires_leading = bool(source_sr.get("enhancement_explorator_genetor_requires_bearer_leading", True))
+            if requires_leading and not bool(getattr(source_member, "is_attached_leader", False)):
+                continue
+            requires_objective = bool(
+                source_sr.get("enhancement_explorator_genetor_requires_unit_within_acquisition_objective", True)
+            )
+            if requires_objective and not self.explorator_unit_within_acquisition_objective(
+                source_root,
+                game=game,
+                game_map=game_map,
+            ):
+                continue
+            try:
+                inv_value = int(source_sr.get("enhancement_explorator_genetor_invulnerable_save", 4) or 4)
+            except (TypeError, ValueError):
+                inv_value = 4
+            if inv_value <= 0:
+                continue
+            source_name = str(
+                source_sr.get("enhancement_explorator_genetor_source", "") or self._EXPLORATOR_GENETOR_SOURCE
+            ).strip() or self._EXPLORATOR_GENETOR_SOURCE
+            return int(inv_value), source_name
+        return 0, ""
+
+    def explorator_logis_hit_bonus(self, attacker_model, *, target_unit=None, game=None, game_map=None) -> tuple[int, str]:
+        if not self.is_explorator_maniple():
+            return 0, ""
+        if attacker_model is None or target_unit is None:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        attacker_root = self._attached_root(attacker_unit)
+        if attacker_root is None or not self._unit_in_army(attacker_root):
+            return 0, ""
+        if not self._unit_is_on_battlefield(attacker_root):
+            return 0, ""
+        target_root = self._attached_root(target_unit)
+        if target_root is None:
+            return 0, ""
+        for _source_root_id, source_root, source_member, source_sr, _bearer in self._iter_explorator_enhancement_sources(
+            "enhancement_explorator_logis"
+        ):
+            if source_root is not attacker_root:
+                continue
+            requires_leading = bool(source_sr.get("enhancement_explorator_logis_requires_bearer_leading", True))
+            if requires_leading and not bool(getattr(source_member, "is_attached_leader", False)):
+                continue
+            requires_objective = bool(
+                source_sr.get("enhancement_explorator_logis_requires_target_within_acquisition_objective", True)
+            )
+            if requires_objective and not self._unit_within_active_acquisition_objective(
+                target_root,
+                game=game,
+                game_map=game_map,
+                require_army_membership=False,
+            ):
+                continue
+            try:
+                bonus = int(source_sr.get("enhancement_explorator_logis_hit_bonus", 1) or 1)
+            except (TypeError, ValueError):
+                bonus = 1
+            if bonus <= 0:
+                continue
+            source_name = str(
+                source_sr.get("enhancement_explorator_logis_source", "") or self._EXPLORATOR_LOGIS_SOURCE
+            ).strip() or self._EXPLORATOR_LOGIS_SOURCE
+            return int(bonus), source_name
+        return 0, ""
+
+    def _resolve_explorator_magos_cp_gain(self, *, game=None, player=None) -> None:
+        if not self.is_explorator_maniple():
+            return
+        if game is None or player is None or self.army is None:
+            return
+        if player is not getattr(self.army, "player", None):
+            return
+        if not bool(getattr(game, "is_authoritative", True)):
+            return
+        active = self._active_acquisition_objective_point(game=game)
+        if not isinstance(active, tuple):
+            return
+        _objective, objective_point = active
+        for source_root_id, _source_root, _source_member, source_sr, bearer in self._iter_explorator_enhancement_sources(
+            "enhancement_explorator_magos"
+        ):
+            if not self._model_within_objective_range(bearer, objective_point):
+                continue
+            try:
+                roll_min = int(source_sr.get("enhancement_explorator_magos_roll_min", 4) or 4)
+            except (TypeError, ValueError):
+                roll_min = 4
+            roll_min = int(max(2, min(6, roll_min)))
+            try:
+                cp_gain = int(source_sr.get("enhancement_explorator_magos_cp_gain", 1) or 1)
+            except (TypeError, ValueError):
+                cp_gain = 1
+            cp_gain = int(max(0, cp_gain))
+            if cp_gain <= 0:
+                continue
+            roll = int(get_roll("D6") or 0)
+            if roll < roll_min:
+                continue
+            source_name = str(
+                source_sr.get("enhancement_explorator_magos_source", "") or self._EXPLORATOR_MAGOS_SOURCE
+            ).strip() or self._EXPLORATOR_MAGOS_SOURCE
+            gain_cp = getattr(player, "gain_command_points", None)
+            if not callable(gain_cp):
+                continue
+            gained = int(gain_cp(cp_gain, reason=source_name) or 0)
+            if gained <= 0:
+                continue
+            event_system = getattr(game, "event_system", None)
+            if event_system is not None:
+                event_system.publish(
+                    "command_points_gained",
+                    player=player,
+                    amount=int(gained),
+                    reason=source_name,
+                    source_unit_id=str(source_root_id or ""),
+                    source_ability=self._EXPLORATOR_MAGOS_SOURCE,
+                )
+
+    def on_command_phase_end(self, *, game=None, player=None) -> None:
+        if game is None or player is None:
+            return
+        if player is not getattr(self.army, "player", None):
+            return
+        if self.is_explorator_maniple():
+            self._resolve_explorator_magos_cp_gain(game=game, player=player)
 
     @classmethod
     def _normalize_noospheric_override_choice_key(cls, choice_key: str) -> str:

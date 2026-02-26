@@ -608,6 +608,9 @@ class Enhancement:
         is_data_psalm_conclave = bool(
             adm_mgr and getattr(adm_mgr, "is_data_psalm_conclave", lambda: False)()
         )
+        is_explorator_maniple = bool(
+            adm_mgr and getattr(adm_mgr, "is_explorator_maniple", lambda: False)()
+        )
         am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
         try:
             is_grizzled_company = bool(am_mgr and am_mgr.is_grizzled_company())
@@ -1039,6 +1042,107 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_temporcopia_bearer_model_id"] = bearer_id
+
+        if enh_id == "000008568002" or (name == "magos" and is_explorator_maniple):
+            if not is_explorator_maniple:
+                return
+            unit.special_rules["enhancement_explorator_magos"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                roll_min = int(params.get("roll_min", 4) or 4)
+            except (TypeError, ValueError):
+                roll_min = 4
+            try:
+                cp_gain = int(params.get("cp_gain", 1) or 1)
+            except (TypeError, ValueError):
+                cp_gain = 1
+            unit.special_rules["enhancement_explorator_magos_roll_min"] = int(max(2, min(6, roll_min)))
+            unit.special_rules["enhancement_explorator_magos_cp_gain"] = int(max(0, cp_gain))
+            unit.special_rules["enhancement_explorator_magos_source"] = "Magos"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_explorator_magos_bearer_model_id"] = bearer_id
+
+        if enh_id == "000008568003" or (name == "genetor" and is_explorator_maniple):
+            if not is_explorator_maniple:
+                return
+            unit.special_rules["enhancement_explorator_genetor"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                inv_value = int(params.get("invulnerable_save", 4) or 4)
+            except (TypeError, ValueError):
+                inv_value = 4
+            unit.special_rules["enhancement_explorator_genetor_invulnerable_save"] = int(max(2, min(7, inv_value)))
+            unit.special_rules["enhancement_explorator_genetor_requires_bearer_leading"] = bool(
+                params.get("requires_bearer_leading", True)
+            )
+            unit.special_rules["enhancement_explorator_genetor_requires_unit_within_acquisition_objective"] = bool(
+                params.get("requires_unit_within_acquisition_objective", True)
+            )
+            unit.special_rules["enhancement_explorator_genetor_source"] = "Genetor"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_explorator_genetor_bearer_model_id"] = bearer_id
+
+        if enh_id == "000008568004" or (name == "logis" and is_explorator_maniple):
+            if not is_explorator_maniple:
+                return
+            unit.special_rules["enhancement_explorator_logis"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                hit_bonus = int(params.get("hit_roll_bonus", 1) or 1)
+            except (TypeError, ValueError):
+                hit_bonus = 1
+            unit.special_rules["enhancement_explorator_logis_hit_bonus"] = int(max(0, hit_bonus))
+            unit.special_rules["enhancement_explorator_logis_requires_bearer_leading"] = bool(
+                params.get("requires_bearer_leading", True)
+            )
+            unit.special_rules["enhancement_explorator_logis_requires_target_within_acquisition_objective"] = bool(
+                params.get("requires_target_within_acquisition_objective", True)
+            )
+            unit.special_rules["enhancement_explorator_logis_source"] = "Logis"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_explorator_logis_bearer_model_id"] = bearer_id
+
+        if enh_id == "000008568005" or (name == "artisan" and is_explorator_maniple):
+            if not is_explorator_maniple:
+                return
+            unit.special_rules["enhancement_explorator_artisan"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            usage_limit = str(params.get("usage_limit", "phase") or "phase").strip().lower()
+            if usage_limit not in {"phase", "turn"}:
+                usage_limit = "phase"
+            allowed_roll_types = tuple(
+                sorted(
+                    {
+                        str(v or "").strip().lower()
+                        for v in list(params.get("allowed_roll_types", ("hit", "wound", "save")) or ("hit", "wound", "save"))
+                        if str(v or "").strip().lower() in {"hit", "wound", "save", "damage"}
+                    }
+                )
+            )
+            if not allowed_roll_types:
+                allowed_roll_types = ("hit", "wound", "save")
+            unit.special_rules["enhancement_explorator_artisan_usage"] = usage_limit
+            unit.special_rules["enhancement_explorator_artisan_allowed_roll_types"] = allowed_roll_types
+            unit.special_rules["enhancement_explorator_artisan_requires_bearer_leading"] = bool(
+                params.get("requires_bearer_leading", True)
+            )
+            unit.special_rules["enhancement_explorator_artisan_requires_unit_within_acquisition_objective"] = bool(
+                params.get("requires_unit_within_acquisition_objective", True)
+            )
+            unit.special_rules["enhancement_explorator_artisan_source"] = "Artisan"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_explorator_artisan_bearer_model_id"] = bearer_id
+            cache = getattr(unit, "_ability_cache", None)
+            if isinstance(cache, dict):
+                cache.pop("leading_unmodified_six_specs", None)
 
         if name == "decoy targets" or enh_id == "000009757002":
             if not is_veiled_blade_elimination_force:

@@ -6279,6 +6279,21 @@ class WargearProfile:
                         continue
             except Exception:
                 pass
+            try:
+                if spec.get("requires_explorator_acquisition_objective"):
+                    army = root.get_parent_army() if root is not None else None
+                    adm_mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+                    within_fn = (
+                        getattr(adm_mgr, "explorator_unit_within_acquisition_objective", None)
+                        if adm_mgr is not None
+                        else None
+                    )
+                    if not callable(within_fn):
+                        continue
+                    if not bool(within_fn(root, game=game, game_map=game_map)):
+                        continue
+            except Exception:
+                continue
             leader = spec.get("leader")
             ability_key = str(spec.get("ability_key", "") or "")
             if leader is None or not ability_key:
@@ -9227,6 +9242,21 @@ class WargearProfile:
                 bonus, reason = mgr.relentless_onslaught_hit_bonus(unit, target, game=game)
                 if bonus:
                     _add_hit_mod(int(bonus), reason)
+        except Exception:
+            pass
+        # Adeptus Mechanicus: Explorator Maniple (Logis).
+        try:
+            unit = attacker.parent_unit
+            army = unit.get_parent_army() if unit is not None else None
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            game_map = getattr(game, "map", None) if game is not None else None
+            mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+            bonus_fn = getattr(mgr, "explorator_logis_hit_bonus", None) if mgr is not None else None
+            if callable(bonus_fn):
+                bonus, source = bonus_fn(attacker, target_unit=target, game=game, game_map=game_map)
+                if int(bonus or 0):
+                    source_name = str(source or "Logis").strip() or "Logis"
+                    _add_hit_mod(int(bonus), f"+{int(bonus)} to hit from {source_name}")
         except Exception:
             pass
         # Chaos Space Marines: Huron's Marauders - Tyrannical Motivation.
@@ -17875,6 +17905,30 @@ class WargearProfile:
                     if current is None or int(current) > int(inv_value):
                         attack_instance["inv_save_override"] = int(inv_value)
                         source = str(inv_source or "Emanatus Force Field (Aura)").strip() or "Emanatus Force Field (Aura)"
+                        attack_instance["inv_save_override_reason"] = source
+        except Exception:
+            pass
+        # Adeptus Mechanicus: Explorator Maniple (Genetor).
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            attack_type = "melee" if (self.parent_wargear and self.parent_wargear.is_melee()) else "ranged"
+            army = t_unit.get_parent_army() if t_unit is not None else None
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            game_map = getattr(game, "map", None) if game is not None else None
+            adm_mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+            inv_fn = getattr(adm_mgr, "explorator_genetor_invulnerable_save", None) if adm_mgr is not None else None
+            if callable(inv_fn):
+                inv_value, inv_source = inv_fn(
+                    target_model,
+                    attack_type=attack_type,
+                    game=game,
+                    game_map=game_map,
+                )
+                if inv_value:
+                    current = attack_instance.get("inv_save_override", None)
+                    if current is None or int(current) > int(inv_value):
+                        attack_instance["inv_save_override"] = int(inv_value)
+                        source = str(inv_source or "Genetor").strip() or "Genetor"
                         attack_instance["inv_save_override_reason"] = source
         except Exception:
             pass

@@ -982,6 +982,66 @@ _DATA_PSALM_CONCLAVE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _DATA_PSALM_CONCLAVE_DESCRIPTORS.values()
 }
 
+_EXPLORATOR_MANIPLE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008568002": EnhancementToolDescriptor(
+        enhancement_id="000008568002",
+        name="Magos",
+        timing="end_of_command_phase",
+        target="bearer_on_acquisition_objective",
+        duration="instant",
+        effect="roll_for_command_point_gain_if_bearer_within_acquisition_objective",
+        effect_params={
+            "roll": "D6",
+            "roll_min": 4,
+            "cp_gain": 1,
+        },
+    ),
+    "000008568003": EnhancementToolDescriptor(
+        enhancement_id="000008568003",
+        name="Genetor",
+        timing="passive",
+        target="bearer_led_unit_within_acquisition_objective",
+        duration="constant",
+        effect="grant_invulnerable_save_to_bearer_led_unit_within_acquisition_objective",
+        effect_params={
+            "requires_bearer_leading": True,
+            "requires_unit_within_acquisition_objective": True,
+            "invulnerable_save": 4,
+        },
+    ),
+    "000008568004": EnhancementToolDescriptor(
+        enhancement_id="000008568004",
+        name="Logis",
+        timing="passive",
+        target="bearer_led_unit_attacks_vs_target_within_acquisition_objective",
+        duration="constant",
+        effect="add_hit_roll_bonus_for_bearer_led_unit_vs_target_within_acquisition_objective",
+        effect_params={
+            "requires_bearer_leading": True,
+            "requires_target_within_acquisition_objective": True,
+            "hit_roll_bonus": 1,
+        },
+    ),
+    "000008568005": EnhancementToolDescriptor(
+        enhancement_id="000008568005",
+        name="Artisan",
+        timing="after_hit_wound_or_save_roll_once_per_phase",
+        target="bearer_led_unit_within_acquisition_objective",
+        duration="instant_once_per_phase",
+        effect="set_one_hit_wound_or_save_roll_to_unmodified_six",
+        effect_params={
+            "requires_bearer_leading": True,
+            "requires_unit_within_acquisition_objective": True,
+            "usage_limit": "phase",
+            "allowed_roll_types": ("hit", "wound", "save"),
+        },
+    ),
+}
+
+_EXPLORATOR_MANIPLE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _EXPLORATOR_MANIPLE_DESCRIPTORS.values()
+}
+
 _INVASION_FLEET_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008348002": EnhancementToolDescriptor(
         enhancement_id="000008348002",
@@ -4077,6 +4137,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _DATA_PSALM_CONCLAVE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _EXPLORATOR_MANIPLE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _INVASION_FLEET_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -4271,6 +4334,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _RAD_ZONE_CORPS_BY_NAME.get(key)
         or _COHORT_CYBERNETICA_BY_NAME.get(key)
         or _DATA_PSALM_CONCLAVE_BY_NAME.get(key)
+        or _EXPLORATOR_MANIPLE_BY_NAME.get(key)
         or _INVASION_FLEET_BY_NAME.get(key)
         or _CABAL_OF_CHAOS_BY_NAME.get(key)
         or _SPECTACLE_OF_SPITE_BY_NAME.get(key)

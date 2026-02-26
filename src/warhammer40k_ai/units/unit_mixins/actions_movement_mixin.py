@@ -1944,6 +1944,87 @@ class ActionsMovementMixin:
                 }
             )
 
+        # Adeptus Mechanicus (Explorator Maniple) enhancement: Artisan.
+        # While the bearer is leading a unit that is within range of the Acquisition objective marker,
+        # once per phase, change one hit/wound/save roll for that unit to an unmodified 6.
+        holders = [root]
+        holders.extend(list(getattr(root, "attached_leaders", []) or []))
+        for holder in holders:
+            sr = getattr(holder, "special_rules", None)
+            if not isinstance(sr, dict) or not sr.get("enhancement_explorator_artisan"):
+                continue
+            bearer_id = str(
+                sr.get("enhancement_explorator_artisan_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+                or ""
+            )
+            if not bearer_id:
+                continue
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = [root]
+            if not members:
+                members = [root]
+            bearer_unit = None
+            for member in members:
+                if member is None:
+                    continue
+                for model in list(getattr(member, "models", []) or []):
+                    if str(get_entity_id(model) or "") != bearer_id:
+                        continue
+                    bearer_unit = member
+                    break
+                if bearer_unit is not None:
+                    break
+            if bearer_unit is None:
+                continue
+            requires_leading = bool(sr.get("enhancement_explorator_artisan_requires_bearer_leading", True))
+            if requires_leading and not bool(getattr(bearer_unit, "is_attached_leader", False)):
+                continue
+            usage = str(sr.get("enhancement_explorator_artisan_usage", "phase") or "phase").strip().lower()
+            if usage not in {"phase", "turn"}:
+                usage = "phase"
+            allowed_roll_types = tuple(
+                sorted(
+                    {
+                        str(v or "").strip().lower()
+                        for v in list(
+                            sr.get("enhancement_explorator_artisan_allowed_roll_types", ("hit", "wound", "save"))
+                            or ("hit", "wound", "save")
+                        )
+                        if str(v or "").strip().lower() in {"hit", "wound", "save", "damage"}
+                    }
+                )
+            )
+            if not allowed_roll_types:
+                allowed_roll_types = ("hit", "wound", "save")
+            leader_id = str(get_entity_id(bearer_unit) or "")
+            source = str(
+                sr.get("enhancement_explorator_artisan_source", "") or "Artisan"
+            ).strip() or "Artisan"
+            source_key = "explorator_artisan"
+            ability_key = f"leading_unmodified_six:{bearer_id}:{source_key}:{usage}"
+            key = (leader_id, source_key, False, usage, allowed_roll_types)
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "exclude_support_weapon": False,
+                    "leader": bearer_unit,
+                    "leader_id": leader_id,
+                    "ability_key": ability_key,
+                    "usage_limit": usage,
+                    "requires_bearer_leading": bool(requires_leading),
+                    "requires_explorator_acquisition_objective": bool(
+                        sr.get("enhancement_explorator_artisan_requires_unit_within_acquisition_objective", True)
+                    ),
+                    "allowed_roll_types": allowed_roll_types,
+                }
+            )
+
         if not isinstance(cache, dict):
             cache = {}
         cache[cache_key] = list(specs)
