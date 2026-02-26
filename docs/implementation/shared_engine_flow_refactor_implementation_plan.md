@@ -20,11 +20,15 @@ This creates behavior skew risk, duplicate setup flow logic, and duplicate UI/HU
 - One decision lifecycle across local and networked modes.
 - One shared UI/HUD projection path across local and networked modes.
 - One versioned, validated presentation payload schema used by both local and network runtimes.
+- Preserve strict engine/UI dependency boundaries (engine remains UI-agnostic).
 - No local network loopback for `scripts/main.py`.
 - Preserve deterministic command/event behavior and replay compatibility.
 - Preserve explicit player authority boundaries in network mode.
 - Preserve strict player-scoped visibility/redaction rules for projected HUD state.
 - Ensure reconnect/save-load/late-join flows rebuild equivalent HUD state from snapshot + transcript.
+- Ensure reconnect while a decision is pending restores the same chooser/candidates/mask/prompt state.
+- Define and enforce replay/save compatibility policy for presentation schema and artifacts.
+- Meet explicit projection/hydration performance and payload-size budgets.
 - Ensure new UI/HUD elements and bugfixes are implemented once and applied to both modes.
 
 ## Non-Goals
@@ -51,10 +55,12 @@ Introduce a shared authoritative session driver abstraction used by both runtime
   - Produces deterministic HUD/view-model state updates and UI prompt descriptors.
   - Applies per-player visibility/redaction before emission.
   - Emits the same versioned presentation payload contract to local HUD and network clients.
+  - Emits monotonic per-stream sequence metadata to support idempotent client application.
 
 - `PresentationStateHydrator` (new, shared state rebuild path)
   - Rebuilds HUD/view-model state from authoritative snapshot + event log for reconnect/save-load/late-join.
   - Uses the same projection logic and schema as live session updates.
+  - Rebuilds pending-decision UI state (chooser, candidates, mask, prompt payload) exactly.
 
 - `PlayerIntentGateway` (new, shared UI action intake)
   - Normalizes local HUD interactions and network client actions into the same serializable decision/action payloads.
@@ -66,6 +72,10 @@ Introduce a shared authoritative session driver abstraction used by both runtime
   - Network runner: one authoritative game + network command channel + shared presentation orchestrator + remote HUD/client sinks.
 
 The key difference between modes remains transport and player identity topology, not engine flow or presentation flow.
+
+### Boundary Rules
+- Engine modules (`src/warhammer40k_ai/engine/**`) must not import UI/presentation modules.
+- Presentation modules consume engine outputs and map them to serializable payloads, but do not embed new rules logic.
 
 ## PR Breakdown
 
@@ -104,11 +114,13 @@ The key difference between modes remains transport and player identity topology,
 - Implement in-process adapter for local session without sockets.
 - Define event envelope contract needed by shared presentation orchestration.
 - Define versioned presentation payload schema and strict encode/decode validation boundaries.
+- Define HUD payload ordering/idempotency contract (`stream_id`, `sequence_id`, duplicate/drop and gap handling semantics).
 
 ### Deliverables
 - New interface + adapters.
 - Network server refactor to use `NetworkCommandChannel` internally.
 - Presentation payload schema artifact + validators.
+- Ordering/idempotency contract doc + adapter plumbing for sequence metadata.
 - No `scripts/main.py` integration yet.
 
 ### Acceptance Criteria
@@ -116,15 +128,18 @@ The key difference between modes remains transport and player identity topology,
 - Channel interface supports both direct local subscribers and remote clients.
 - Channel payloads are sufficient for deterministic HUD projection without runtime-specific branches.
 - Presentation payloads include explicit schema version and pass strict validation in both local and network paths.
+- Client-side application semantics are idempotent for duplicates and deterministic for out-of-order/gap handling.
 
 ### Tests
 - Adapter-level tests (network adapter via stubs, in-process adapter unit tests).
 - Schema encode/decode round-trip and validation failure-path tests.
+- Ordering/idempotency tests (duplicate message, out-of-order delivery, gap detection/resync trigger).
 - Re-run `tests/test_network_server_client.py`.
 
 ### Docs
 - Update `docs/NETWORK_GAMEPLAY.md` and `docs/NETWORK_SAVELOAD_DESIGN.md` (transport vs orchestration responsibility split).
 - Add/Update schema contract documentation for presentation payloads.
+- Add ordering/idempotency contract details to `docs/NETWORK_GAMEPLAY.md`.
 
 ## PR 3 - Local Runtime Migration to Shared Driver (No Loopback)
 ### Scope
@@ -141,9 +156,11 @@ The key difference between modes remains transport and player identity topology,
 - No websocket usage in local mode.
 - Manual phase controls and local deployment interactions continue to work.
 - Local runtime consumes the same event envelope contract that network runtime uses.
+- Local path remains engine/UI boundary compliant (no UI imports into engine modules).
 
 ### Tests
 - Add local-runtime orchestration tests.
+- Add import-boundary tests asserting engine modules do not import UI/presentation modules.
 - Re-run impacted UI/decision tests (non-integration where possible).
 
 ### Docs
@@ -173,12 +190,14 @@ The key difference between modes remains transport and player identity topology,
 - UI dialog-to-decision mappings remain deterministic and serializable.
 - Hidden information is never projected to unauthorized players in either runtime.
 - Optional choice dialogs follow one-step selection with explicit `None` candidate; no split Yes/No + selection flows.
+- Projection modules remain outside engine package boundaries; no reverse dependency from engine to presentation layer.
 
 ### Tests
 - Add HUD projection determinism tests.
 - Add parity tests that replay the same transcript through local and network compositions and compare HUD outputs.
 - Add player-visibility redaction tests (authorized vs unauthorized projection payloads).
 - Add dialog mapping tests confirming deterministic action payloads and `None` path handling.
+- Add static import-boundary regression tests for engine->UI/presentation dependency direction.
 - Re-run impacted UI/HUD and decision tests.
 
 ### Docs
@@ -217,25 +236,39 @@ The key difference between modes remains transport and player identity topology,
 - Add regression coverage asserting local and network runtimes share equivalent authoritative command sequencing for setup milestones.
 - Add regression coverage asserting local and network runtimes share equivalent HUD prompt/update sequencing for the same authoritative transcript.
 - Add reconnect/save-load/late-join hydration parity checks using snapshot + transcript replay.
+- Add explicit reconnect-while-pending-decision parity checks (chooser/candidates/mask/prompt content).
 - Add shadow/diff cutover stage comparing legacy vs shared HUD projection prior to legacy-path removal.
+- Define replay/save compatibility policy and enforce it in load/replay paths (support matrix or fail-fast version gate).
+- Add performance regression gates for projection latency, hydration latency, and payload size.
 - Final cleanup of temporary compatibility scaffolding introduced in prior PRs.
 
 ### Deliverables
 - Parity regression tests (golden command/event sequence snapshots for setup milestones).
 - HUD parity regression tests (golden prompt/view-model sequence snapshots for representative phases).
 - Reconnect/save-load/late-join HUD hydration parity tests.
+- Pending-decision reconnect parity tests.
 - Shadow projection diff tooling/report for cutover gating.
+- Replay/save compatibility policy doc + fixtures (supported legacy artifacts or explicit unsupported-version failure fixtures).
+- Performance baseline report and regression tests/benchmarks for agreed scenarios.
 - Finalized runtime API surface.
 
 ### Acceptance Criteria
 - Local and network modes use the same core orchestration entrypoints.
 - No known setup/decision/HUD presentation divergence remains outside transport/topology concerns.
 - Rehydrated HUD state matches live-projected HUD state for the same authoritative history.
+- Pending-decision reconnect restores the same actionable decision surface before input resumes.
 - Shadow/diff run across representative scenarios shows no material divergence before legacy orchestration is removed.
+- Replay/save compatibility behavior is explicit, tested, and deterministic (either supported matrix or clear fail-fast errors).
+- Performance budgets are met in CI reference scenarios:
+  - HUD projection p95 <= 10 ms per authoritative event (reference transcript).
+  - Reconnect hydration <= 750 ms for reference snapshot + 2,000-event transcript.
+  - Serialized HUD payload size <= 64 KiB p95 per update (pre-transport compression).
 
 ### Tests
 - Run full suite due cross-cutting runtime changes:
   - `python -m pytest tests/`
+- Run dedicated performance and compatibility checks:
+  - `python -m pytest tests/ -m "integration" -k "hud and (performance or hydration or reconnect or compatibility)"`
 
 ### Docs
 - Finalize:
@@ -243,6 +276,8 @@ The key difference between modes remains transport and player identity topology,
   - `docs/NETWORK_GAMEPLAY.md`
   - `docs/NETWORK_DECISION_FLOW.md`
   - `docs/NETWORK_SAVELOAD_DESIGN.md`
+  - `docs/DECISION_RECORD_REPLAY.md`
+  - `docs/STATE_BLOB_SCHEMA.md`
 
 ## Risks and Mitigations
 - Risk: hidden behavior coupling in existing server setup loop.
@@ -255,6 +290,16 @@ The key difference between modes remains transport and player identity topology,
   - Mitigation: enforce projection-time redaction + player-scoped tests in PR 4.
 - Risk: schema drift between runtime producers/consumers.
   - Mitigation: versioned schema + strict validation and round-trip tests in PR 2.
+- Risk: engine/UI boundary erosion during refactor.
+  - Mitigation: static import-boundary tests and review gate in PR 3/PR 4.
+- Risk: duplicate/out-of-order network delivery causes HUD divergence.
+  - Mitigation: sequence/idempotency contract + adapter tests in PR 2 and parity tests in PR 6.
+- Risk: pending-decision reconnect mismatch leads to invalid or stale choices.
+  - Mitigation: explicit pending-decision hydration contract and parity tests in PR 6.
+- Risk: performance regression from shared projection layer.
+  - Mitigation: explicit budgets + perf regression checks in PR 6.
+- Risk: replay/save compatibility ambiguity at rollout.
+  - Mitigation: written compatibility policy + fixture tests and deterministic version gating in PR 6.
 - Risk: cutover regressions when removing legacy HUD path.
   - Mitigation: PR 6 shadow/diff gating before deleting legacy code.
 - Risk: event ordering drift.
@@ -264,6 +309,7 @@ The key difference between modes remains transport and player identity topology,
 - Merge PRs sequentially; do not batch.
 - Require green impacted tests per PR.
 - Run shadow projection diff in representative scenarios before removing legacy HUD path.
+- Require boundary, ordering/idempotency, compatibility, and performance gates to pass before legacy HUD path removal.
 - Run full `tests/` at PR 6 before declaring migration complete.
 
 ## Open Decisions for Developer Confirmation
@@ -272,11 +318,13 @@ The key difference between modes remains transport and player identity topology,
 - Canonical home for HUD projection schemas (`ui/`, `runtime/`, or dedicated `presentation/` module) while keeping engine/UI boundaries clean.
 - Versioning policy for presentation payload schema (strict bump rules and deprecation window expectations).
 - Canonical ownership point for visibility/redaction policy definitions.
+- Replay/save compatibility target: support N-1 artifacts vs explicit current-version-only fail-fast policy.
+- Final reference performance scenario(s) and CI hardware normalization rules for budget enforcement.
 
 ## Implementation Checklist
 - [ ] PR 1 merged: shared driver extraction with no behavior change.
-- [ ] PR 2 merged: channel abstraction + versioned presentation schema/validation in place.
-- [ ] PR 3 merged: local runner migrated to shared driver without loopback.
+- [ ] PR 2 merged: channel abstraction + versioned presentation schema/validation + ordering/idempotency contract in place.
+- [ ] PR 3 merged: local runner migrated to shared driver without loopback + engine/UI boundary tests passing.
 - [ ] PR 4 merged: shared UI/HUD orchestration + redaction + dialog mapping parity in place for local + network.
 - [ ] PR 5 merged: decision-controller de-duplication + DecisionRecord parity for UI intents complete.
-- [ ] PR 6 merged: parity regression coverage + hydration parity + shadow-diff cutover + cleanup + docs finalized.
+- [ ] PR 6 merged: parity regression + pending-decision reconnect parity + compatibility/perf gates + shadow-diff cutover + cleanup + docs finalized.
