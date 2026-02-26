@@ -2630,6 +2630,15 @@ class WargearProfile:
                     char_ap_bonus = 1
                 if char_ap_bonus:
                     ap_val -= int(char_ap_bonus)
+        if (
+            self.parent_wargear is not None
+            and callable(getattr(self.parent_wargear, "is_ranged", None))
+            and self.parent_wargear.is_ranged()
+        ):
+            sr = self._unit_special_rules(attacker)
+            bearer_bonus = int(sr.get("enhancement_bearer_ranged_ap_bonus", 0) or 0)
+            if bearer_bonus and self._attacker_is_enhancement_bearer(attacker, sr):
+                ap_val -= bearer_bonus
         attacker_unit = getattr(attacker, "parent_unit", None)
         get_parent_army = getattr(attacker_unit, "get_parent_army", None) if attacker_unit is not None else None
         army = get_parent_army() if callable(get_parent_army) else None

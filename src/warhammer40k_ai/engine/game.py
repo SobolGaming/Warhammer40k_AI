@@ -710,6 +710,133 @@ class Game(
                     take_test(int(getattr(self, "turn", 0) or 0))
                 tested_ids.add(unit_id)
 
+    def _apply_space_marines_the_angelic_host_visage_of_death_forced_tests(
+        self,
+        current_player,
+        tested_ids: set[str],
+    ) -> None:
+        if current_player is None:
+            return
+
+        def _get_army(player):
+            getter = getattr(self, "_get_player_army", None)
+            if callable(getter):
+                return getter(player)
+            if player is None:
+                return None
+            getter = getattr(player, "get_army", None)
+            if callable(getter):
+                return getter()
+            return getattr(player, "army", None)
+
+        current_army = _get_army(current_player)
+        if current_army is None:
+            return
+
+        seen_targets: set[str] = set()
+        for enemy_player in [p for p in (self.players or []) if p is not current_player]:
+            army = _get_army(enemy_player)
+            if army is None:
+                continue
+            mgr = getattr(army, "space_marines_detachments", None)
+            if mgr is None:
+                continue
+            is_angelic_host = bool(getattr(mgr, "is_the_angelic_host", lambda: False)())
+            if not is_angelic_host:
+                continue
+            get_sources = getattr(mgr, "the_angelic_host_visage_of_death_sources", None)
+            if not callable(get_sources):
+                continue
+            sources = list(get_sources() or [])
+            if not sources:
+                continue
+
+            for unit in list(getattr(current_army, "units", []) or []):
+                if unit is None:
+                    continue
+                get_root = getattr(unit, "get_attached_unit_root", None)
+                root = get_root() if callable(get_root) else unit
+                if root is None:
+                    continue
+                unit_id = str(get_entity_id(root) or "")
+                if not unit_id or unit_id in seen_targets:
+                    continue
+                seen_targets.add(unit_id)
+                if unit_id in tested_ids:
+                    continue
+
+                is_alive = getattr(root, "is_alive", None)
+                if callable(is_alive) and not bool(is_alive()):
+                    continue
+                if not bool(getattr(root, "deployed", True)):
+                    continue
+                reserve_status = str(getattr(root, "reserve_status", "deployed") or "deployed").strip().lower()
+                if reserve_status != "deployed":
+                    continue
+                is_in_reserves = getattr(root, "is_in_reserves", None)
+                if callable(is_in_reserves) and bool(is_in_reserves()):
+                    continue
+                if bool(getattr(root, "is_embarked", False)) or getattr(root, "embarked_in", None) is not None:
+                    continue
+
+                in_any_engagement = False
+                for source in list(sources or []):
+                    if not isinstance(source, dict):
+                        continue
+                    source_unit = source.get("unit")
+                    bearer_model = source.get("bearer_model")
+                    if source_unit is None or bearer_model is None:
+                        continue
+
+                    excluded = {
+                        str(v or "").strip().upper()
+                        for v in list(source.get("exclude_keywords_any", ()) or ())
+                        if str(v or "").strip()
+                    }
+                    if excluded:
+                        has_keyword = getattr(root, "has_any_keyword", None)
+                        if callable(has_keyword):
+                            if any(bool(has_keyword(keyword)) for keyword in sorted(excluded)):
+                                continue
+                        else:
+                            all_keywords = {
+                                str(v or "").strip().upper()
+                                for v in list(getattr(root, "keywords", []) or [])
+                                if str(v or "").strip()
+                            }
+                            all_keywords.update(
+                                str(v or "").strip().upper()
+                                for v in list(getattr(root, "faction_keywords", []) or [])
+                                if str(v or "").strip()
+                            )
+                            if all_keywords & excluded:
+                                continue
+
+                    in_range = False
+                    in_range_fn = getattr(source_unit, "_model_within_engagement_range_of_unit", None)
+                    if callable(in_range_fn):
+                        try:
+                            in_range = bool(in_range_fn(bearer_model, root))
+                        except Exception:
+                            in_range = False
+                    if not in_range:
+                        game_map = getattr(self, "map", None)
+                        if game_map is not None:
+                            try:
+                                in_range = bool(game_map.is_within_engagement_range(source_unit, root))
+                            except Exception:
+                                in_range = False
+                    if in_range:
+                        in_any_engagement = True
+                        break
+
+                if not in_any_engagement:
+                    continue
+                take_test = getattr(root, "take_battle_shock_test", None)
+                if callable(take_test):
+                    take_test(int(getattr(self, "turn", 0) or 0))
+                tested_ids.add(unit_id)
+
     def _on_battle_shock_test_resolved_shadow_form(self, unit=None, passed: bool = False, **_kwargs) -> None:
         if unit is None or passed:
             return
@@ -3618,6 +3745,58 @@ class Game(
                             unit=reacting_root,
                             kind="librarius_prescience",
                             movement_type="librarius_prescience",
+                            source=source,
+                            message=message,
+                            moving_unit=moving_root,
+                            range_value=int(trigger_range),
+                        )
+                rule_fn = getattr(sm_mgr, "the_angelic_host_gleaming_pinions_reactive_rule", None)
+                can_trigger_fn = getattr(sm_mgr, "the_angelic_host_gleaming_pinions_can_trigger", None)
+                if callable(rule_fn) and callable(can_trigger_fn) and callable(queue_confirmation):
+                    seen_reactors: set[str] = set()
+                    for candidate in list(getattr(reacting_army, "units", []) or []):
+                        if candidate is None:
+                            continue
+                        try:
+                            reacting_root = candidate.get_attached_unit_root()
+                        except Exception:
+                            reacting_root = candidate
+                        if reacting_root is None:
+                            continue
+                        reacting_id = str(get_entity_id(reacting_root) or "")
+                        if not reacting_id or reacting_id in seen_reactors:
+                            continue
+                        seen_reactors.add(reacting_id)
+                        rule = rule_fn(reacting_root, game=self)
+                        if not isinstance(rule, dict):
+                            continue
+                        try:
+                            trigger_range = int(rule.get("range", 9) or 9)
+                        except Exception:
+                            trigger_range = 9
+                        if not can_trigger_fn(
+                            reacting_root,
+                            game=self,
+                            game_map=game_map,
+                            moving_unit=moving_root,
+                            action=action_key,
+                        ):
+                            continue
+                        source = str(rule.get("source", "") or "Gleaming Pinions").strip() or "Gleaming Pinions"
+                        try:
+                            max_distance = int(rule.get("max_distance", 6) or 6)
+                        except Exception:
+                            max_distance = 6
+                        message = (
+                            f"{getattr(moving_root, 'name', 'Enemy unit')} ended a {action_key.replace('_', ' ')} move within "
+                            f"{int(trigger_range)}\" of {getattr(reacting_root, 'name', 'unit')}.\n\n"
+                            f"{source}: Make a Normal move of up to {int(max(1, max_distance))}\"?"
+                        )
+                        queue_confirmation(
+                            player=reacting_player,
+                            unit=reacting_root,
+                            kind="gleaming_pinions",
+                            movement_type="gleaming_pinions",
                             source=source,
                             message=message,
                             moving_unit=moving_root,
@@ -8601,6 +8780,9 @@ class Game(
                 uid = get_entity_id(unit)
                 tested_ids.add(uid)
 
+        # Space Marines (The Angelic Host): Visage of Death forces additional Battle-shock tests
+        # for enemy non-MONSTER/non-VEHICLE units within Engagement Range of the bearer model.
+        self._apply_space_marines_the_angelic_host_visage_of_death_forced_tests(current_player, tested_ids)
         # Chaos Space Marines terror detachments: Dread Talons/Nightmare Hunt force tests for
         # in-range enemy units and mark affected units to suppress additional tests this phase.
         self._apply_csm_dread_talons_terror_descends_forced_tests(current_player, tested_ids)

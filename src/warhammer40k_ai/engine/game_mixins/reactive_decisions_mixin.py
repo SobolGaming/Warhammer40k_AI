@@ -3361,6 +3361,7 @@ class GameReactiveDecisionsMixin:
                 "horde_move",
                 "unhinged_vengeance",
                 "librarius_prescience",
+                "gleaming_pinions",
             ):
                 return
             opt = None
@@ -3547,6 +3548,45 @@ class GameReactiveDecisionsMixin:
                     max_distance=max_distance,
                     kind=kind,
                     movement_type=movement_type or "librarius_prescience",
+                    source=source_name,
+                    range_value=rng,
+                )
+                return
+            if kind == "gleaming_pinions":
+                army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
+                sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                rule_fn = getattr(sm_mgr, "the_angelic_host_gleaming_pinions_reactive_rule", None) if sm_mgr is not None else None
+                can_trigger_fn = getattr(sm_mgr, "the_angelic_host_gleaming_pinions_can_trigger", None) if sm_mgr is not None else None
+                if not callable(rule_fn) or not callable(can_trigger_fn):
+                    return
+                moving_unit_id = str(ctx.get("reactive_move_moving_unit_id") or "")
+                moving_unit = self._resolve_unit_by_id(moving_unit_id)
+                if not can_trigger_fn(
+                    unit,
+                    game=self,
+                    game_map=getattr(self, "map", None),
+                    moving_unit=moving_unit,
+                ):
+                    return
+                rule = rule_fn(unit, game=self) or {}
+                source_name = str(rule.get("source", "") or source or "Gleaming Pinions").strip() or "Gleaming Pinions"
+                try:
+                    max_distance = int(rule.get("max_distance", 6) or 6)
+                except Exception:
+                    max_distance = 6
+                if max_distance <= 0:
+                    return
+                try:
+                    rng = int(ctx.get("reactive_move_range") or rule.get("range", 9) or 9)
+                except Exception:
+                    rng = 9
+                self._queue_reactive_move_movement_decision(
+                    player=player,
+                    unit=unit,
+                    moving_unit=moving_unit,
+                    max_distance=max_distance,
+                    kind=kind,
+                    movement_type=movement_type or "gleaming_pinions",
                     source=source_name,
                     range_value=rng,
                 )

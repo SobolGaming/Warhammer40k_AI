@@ -1468,6 +1468,64 @@ _SPACE_MARINES_ANGELIC_INHERITORS_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPACE_MARINES_ANGELIC_INHERITORS_DESCRIPTORS.values()
 }
 
+_SPACE_MARINES_THE_ANGELIC_HOST_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009190002": EnhancementToolDescriptor(
+        enhancement_id="000009190002",
+        name="Artisan of War",
+        timing="passive",
+        target="bearer_weapons_and_bearer",
+        duration="constant",
+        effect="improve_bearer_weapon_ap_and_set_bearer_save",
+        effect_params={
+            "bearer_weapon_ap_bonus": 1,
+            "save_characteristic": 2,
+        },
+    ),
+    "000009190003": EnhancementToolDescriptor(
+        enhancement_id="000009190003",
+        name="Visage of Death",
+        timing="opponent_command_phase_battleshock_step",
+        target="enemy_non_monster_non_vehicle_units_within_engagement_range_of_bearer",
+        duration="instant_each_opponent_command_phase",
+        effect="force_battleshock_for_enemy_units_within_bearer_engagement_range",
+        effect_params={
+            "exclude_keywords_any": ("MONSTER", "VEHICLE"),
+        },
+    ),
+    "000009190004": EnhancementToolDescriptor(
+        enhancement_id="000009190004",
+        name="Archangel's Shard",
+        timing="passive",
+        target="bearer_melee_weapons",
+        duration="constant",
+        effect="grant_bearer_melee_anti_chaos_and_lance",
+        effect_params={
+            "anti_keyword": "CHAOS",
+            "anti_value": 5,
+            "keywords": ("LANCE",),
+        },
+    ),
+    "000009190005": EnhancementToolDescriptor(
+        enhancement_id="000009190005",
+        name="Gleaming Pinions",
+        timing="on_enemy_move_ended_within_range",
+        target="bearer_unit",
+        duration="instant_once_per_turn",
+        effect="once_per_turn_reactive_normal_move_if_not_engaged",
+        effect_params={
+            "trigger_range": 9,
+            "max_reactive_move_distance": 6,
+            "trigger_actions": ("move", "advance", "fall_back"),
+            "requires_not_engaged": True,
+            "once_per_turn": True,
+        },
+    ),
+}
+
+_SPACE_MARINES_THE_ANGELIC_HOST_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPACE_MARINES_THE_ANGELIC_HOST_DESCRIPTORS.values()
+}
+
 _SPACE_MARINES_ANVIL_SIEGE_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008474002": EnhancementToolDescriptor(
         enhancement_id="000008474002",
@@ -3118,6 +3176,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPACE_MARINES_ANGELIC_INHERITORS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPACE_MARINES_THE_ANGELIC_HOST_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPACE_MARINES_ANVIL_SIEGE_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -3238,6 +3299,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _BLOOD_LEGION_BY_NAME.get(key)
         or _SPACE_MARINES_FIRST_COMPANY_TASK_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_ANGELIC_INHERITORS_BY_NAME.get(key)
+        or _SPACE_MARINES_THE_ANGELIC_HOST_BY_NAME.get(key)
         or _SPACE_MARINES_ANVIL_SIEGE_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_IRONSTORM_SPEARHEAD_BY_NAME.get(key)
         or _SPACE_MARINES_LIBERATOR_ASSAULT_GROUP_BY_NAME.get(key)

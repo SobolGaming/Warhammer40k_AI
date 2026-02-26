@@ -300,6 +300,7 @@ Lethal Surge uses a `CONFIRM_YES_NO` step and queues `MOVE_UNIT` with
 Fire and Fade and Reactive Reposition queue `MOVE_UNIT` with `movement_type="reactive"` and
 `reactive_move_kind="fire_and_fade"` / `reactive_move_kind="reactive_reposition"`.
 Tactical Acumen queues `MOVE_UNIT` with `movement_type="reactive"` and `reactive_move_kind="tactical_acumen"`.
+Gleaming Pinions uses `CONFIRM_YES_NO` then queues `MOVE_UNIT` with `movement_type="gleaming_pinions"` and `reactive_move_kind="gleaming_pinions"`.
 Setup reactive shoot/charge uses `DECLARE_SHOTS` with `out_of_phase=true` and `force_target_unit_id`.
 
 Shooting:

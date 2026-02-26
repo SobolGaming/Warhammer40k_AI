@@ -420,6 +420,9 @@ class Enhancement:
         is_angelic_inheritors = bool(
             sm_mgr and getattr(sm_mgr, "is_angelic_inheritors", lambda: False)()
         )
+        is_the_angelic_host = bool(
+            sm_mgr and getattr(sm_mgr, "is_the_angelic_host", lambda: False)()
+        )
         is_anvil_siege_force = bool(
             sm_mgr and getattr(sm_mgr, "is_anvil_siege_force", lambda: False)()
         )
@@ -2371,6 +2374,107 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_skjalds_foretelling_bearer_model_id"] = bearer_id
+
+        if name == "artisan of war" or enh_id == "000009190002":
+            if not is_the_angelic_host:
+                return
+            unit.special_rules["enhancement_artisan_of_war"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            ap_bonus = _coerce_int(params.get("bearer_weapon_ap_bonus", 1) or 1, default=1)
+            save_value = _coerce_int(params.get("save_characteristic", 2) or 2, default=2)
+            ap_bonus = int(max(0, ap_bonus))
+            save_value = int(max(2, save_value))
+            unit.special_rules["enhancement_artisan_of_war_bearer_ap_bonus"] = int(ap_bonus)
+            unit.special_rules["enhancement_artisan_of_war_save"] = int(save_value)
+            unit.special_rules["enhancement_bearer_melee_ap_bonus"] = int(
+                max(
+                    _coerce_int(unit.special_rules.get("enhancement_bearer_melee_ap_bonus", 0), default=0),
+                    ap_bonus,
+                )
+            )
+            unit.special_rules["enhancement_bearer_ranged_ap_bonus"] = int(
+                max(
+                    _coerce_int(unit.special_rules.get("enhancement_bearer_ranged_ap_bonus", 0), default=0),
+                    ap_bonus,
+                )
+            )
+            unit.special_rules["enhancement_artisan_of_war_source"] = "Artisan of War"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_artisan_of_war_bearer_model_id"] = bearer_id
+
+        if name == "visage of death" or enh_id == "000009190003":
+            if not is_the_angelic_host:
+                return
+            unit.special_rules["enhancement_visage_of_death"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            excluded = [
+                str(v or "").strip().upper()
+                for v in list(params.get("exclude_keywords_any", ("MONSTER", "VEHICLE")) or ())
+                if str(v or "").strip()
+            ]
+            if not excluded:
+                excluded = ["MONSTER", "VEHICLE"]
+            unit.special_rules["enhancement_visage_of_death_exclude_keywords_any"] = list(excluded)
+            unit.special_rules["enhancement_visage_of_death_source"] = "Visage of Death"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_visage_of_death_bearer_model_id"] = bearer_id
+
+        if name == "archangel's shard" or enh_id == "000009190004":
+            if not is_the_angelic_host:
+                return
+            unit.special_rules["enhancement_archangels_shard"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            anti_keyword = str(params.get("anti_keyword", "CHAOS") or "CHAOS").strip().upper() or "CHAOS"
+            anti_value = _coerce_int(params.get("anti_value", 5) or 5, default=5)
+            unit.special_rules["enhancement_archangels_shard_anti_keyword"] = anti_keyword
+            unit.special_rules["enhancement_archangels_shard_anti_value"] = int(max(2, anti_value))
+            unit.special_rules["enhancement_archangels_shard_lance"] = bool(
+                "LANCE"
+                in {
+                    str(v or "").strip().upper()
+                    for v in list(params.get("keywords", ("LANCE",)) or ())
+                    if str(v or "").strip()
+                }
+            )
+            unit.special_rules["enhancement_archangels_shard_source"] = "Archangel's Shard"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_archangels_shard_bearer_model_id"] = bearer_id
+
+        if name == "gleaming pinions" or enh_id == "000009190005":
+            if not is_the_angelic_host:
+                return
+            unit.special_rules["enhancement_gleaming_pinions"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            trigger_range = _coerce_int(params.get("trigger_range", 9) or 9, default=9)
+            max_distance = _coerce_int(params.get("max_reactive_move_distance", 6) or 6, default=6)
+            trigger_actions: list[str] = []
+            for value in list(params.get("trigger_actions", ("move", "advance", "fall_back")) or ()):
+                action_key = str(value or "").strip().lower()
+                if not action_key or action_key in trigger_actions:
+                    continue
+                trigger_actions.append(action_key)
+            if not trigger_actions:
+                trigger_actions = ["move", "advance", "fall_back"]
+            unit.special_rules["enhancement_gleaming_pinions_trigger_range"] = int(max(1, trigger_range))
+            unit.special_rules["enhancement_gleaming_pinions_max_reactive_move_distance"] = int(max(1, max_distance))
+            unit.special_rules["enhancement_gleaming_pinions_trigger_actions"] = list(trigger_actions)
+            unit.special_rules["enhancement_gleaming_pinions_requires_not_engaged"] = bool(
+                params.get("requires_not_engaged", True)
+            )
+            unit.special_rules["enhancement_gleaming_pinions_once_per_turn"] = bool(
+                params.get("once_per_turn", True)
+            )
+            unit.special_rules["enhancement_gleaming_pinions_source"] = "Gleaming Pinions"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_gleaming_pinions_bearer_model_id"] = bearer_id
 
         if name == "fury of the storm" or enh_id == "000008486002":
             if not is_stormlance_task_force:

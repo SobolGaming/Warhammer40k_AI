@@ -3677,6 +3677,61 @@ class PositioningMixin:
                 ]
         except Exception:
             pass
+        try:
+            atype = str(attack_type or "").strip().lower()
+            is_melee_attack = atype in ("", "any", "melee")
+            if is_melee_attack and self._attached_unit_model_is_enhancement_bearer(
+                model,
+                flag_key="enhancement_archangels_shard",
+                enhancement_id="000009190004",
+                enhancement_name="archangel's shard",
+                require_leading=False,
+            ):
+                try:
+                    root = self.get_attached_unit_root()
+                except Exception:
+                    root = self
+                source = "Archangel's Shard"
+                anti_keyword = "CHAOS"
+                anti_value = 5
+                has_lance = True
+                try:
+                    members = list(root.get_attached_unit_members() or [])
+                except Exception:
+                    members = [root]
+                if not members:
+                    members = [root]
+                for member in members:
+                    sr = getattr(member, "special_rules", None)
+                    if not isinstance(sr, dict):
+                        continue
+                    if not sr.get("enhancement_archangels_shard"):
+                        continue
+                    source = str(sr.get("enhancement_archangels_shard_source", "") or "").strip() or "Archangel's Shard"
+                    anti_keyword = (
+                        str(sr.get("enhancement_archangels_shard_anti_keyword", "CHAOS") or "CHAOS").strip().upper()
+                        or "CHAOS"
+                    )
+                    try:
+                        anti_value = int(sr.get("enhancement_archangels_shard_anti_value", 5) or 5)
+                    except Exception:
+                        anti_value = 5
+                    has_lance = bool(sr.get("enhancement_archangels_shard_lance", True))
+                    break
+                if has_lance:
+                    rules = list(rules or []) + [
+                        {"attack_type": "melee", "keyword": "LANCE", "source": source}
+                    ]
+                if anti_keyword:
+                    rules = list(rules or []) + [
+                        {
+                            "attack_type": "melee",
+                            "keyword": f"ANTI-{anti_keyword} {int(max(2, anti_value))}+",
+                            "source": source,
+                        }
+                    ]
+        except Exception:
+            pass
         atype = str(attack_type or "").strip().lower()
         is_ranged_attack = atype in ("", "any", "ranged")
         if is_ranged_attack and self._attached_unit_model_is_enhancement_bearer(

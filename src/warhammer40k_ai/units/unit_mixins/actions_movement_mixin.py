@@ -1194,12 +1194,15 @@ class ActionsMovementMixin:
         if model is None:
             return None, None
         special_rules = getattr(self, "special_rules", None)
-        blade_armour_dynamic = bool(
+        save_override_dynamic = bool(
             isinstance(special_rules, dict)
-            and bool(special_rules.get("enhancement_armour_of_antoninus", False))
+            and (
+                bool(special_rules.get("enhancement_armour_of_antoninus", False))
+                or bool(special_rules.get("enhancement_artisan_of_war", False))
+            )
         )
         cache_key = f"model_save_characteristic:{get_entity_id(model)}"
-        if (not blade_armour_dynamic) and cache_key in getattr(self, "_ability_cache", {}):
+        if (not save_override_dynamic) and cache_key in getattr(self, "_ability_cache", {}):
             return self._ability_cache[cache_key]
 
         best_value: Optional[int] = None
@@ -1219,6 +1222,23 @@ class ActionsMovementMixin:
                 if save_value > 0 and (best_value is None or save_value < best_value):
                     best_value = int(save_value)
                     best_source = str(save_source or "Armour of Antoninus").strip() or "Armour of Antoninus"
+        except Exception:
+            pass
+
+        # Space Marines (The Angelic Host): Artisan of War.
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            save_override_fn = (
+                getattr(mgr, "the_angelic_host_artisan_of_war_save_override", None) if mgr is not None else None
+            )
+            if callable(save_override_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                save_value, save_source = save_override_fn(model, game=game)
+                save_value = int(save_value or 0)
+                if save_value > 0 and (best_value is None or save_value < best_value):
+                    best_value = int(save_value)
+                    best_source = str(save_source or "Artisan of War").strip() or "Artisan of War"
         except Exception:
             pass
 
@@ -1282,7 +1302,7 @@ class ActionsMovementMixin:
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
-        if not blade_armour_dynamic:
+        if not save_override_dynamic:
             self._ability_cache[cache_key] = (best_value, best_source)
         return best_value, best_source
 

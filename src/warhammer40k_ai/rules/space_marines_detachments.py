@@ -6222,22 +6222,39 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         return root, None, None
 
     @staticmethod
-    def _company_of_hunters_member_has_live_bearer(member, sr) -> bool:
-        if member is None or not isinstance(sr, dict):
-            return False
+    def _company_of_hunters_resolve_bearer_model(member, sr):
         bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
         if bearer_id:
             for model in list(getattr(member, "models", []) or []):
-                if str(get_entity_id(model) or "") != bearer_id:
+                model_entity_id = str(get_entity_id(model) or "").strip()
+                model_local_id = str(getattr(model, "id", getattr(model, "_id", "")) or "").strip()
+                if bearer_id != model_entity_id and bearer_id != model_local_id:
                     continue
-                alive_attr = getattr(model, "is_alive", True)
-                return bool(alive_attr() if callable(alive_attr) else alive_attr)
+                return model
+            return None
+        return getattr(member, "_get_enhancement_bearer_model", lambda: None)()
+
+    @staticmethod
+    def _company_of_hunters_member_has_live_bearer(member, sr) -> bool:
+        if member is None or not isinstance(sr, dict):
             return False
-        bearer = getattr(member, "_get_enhancement_bearer_model", lambda: None)()
+        bearer = SpaceMarinesDetachmentManager._company_of_hunters_resolve_bearer_model(member, sr)
         if bearer is None:
             return False
         alive_attr = getattr(bearer, "is_alive", True)
         return bool(alive_attr() if callable(alive_attr) else alive_attr)
+
+    @staticmethod
+    def _company_of_hunters_model_is_live_bearer(model, member, sr) -> bool:
+        if model is None:
+            return False
+        bearer = SpaceMarinesDetachmentManager._company_of_hunters_resolve_bearer_model(member, sr)
+        if bearer is None:
+            return False
+        alive_attr = getattr(bearer, "is_alive", True)
+        if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+            return False
+        return str(get_entity_id(model) or "") == str(get_entity_id(bearer) or "")
 
     def company_of_hunters_mounted_strategist_applies(self, unit) -> bool:
         if not self.is_company_of_hunters():
@@ -6391,6 +6408,240 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         except (TypeError, ValueError):
             bonus = 1
         return max(0, int(bonus))
+
+    def the_angelic_host_artisan_of_war_save_override(
+        self,
+        model,
+        *,
+        game=None,
+    ) -> tuple[int, str]:
+        if not self.is_the_angelic_host():
+            return 0, ""
+        if model is None:
+            return 0, ""
+        unit = getattr(model, "parent_unit", None)
+        if unit is None:
+            return 0, ""
+        root, member, sr = self._company_of_hunters_enhancement_source_member(
+            unit,
+            "enhancement_artisan_of_war",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return 0, ""
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return 0, ""
+        if not self._company_of_hunters_model_is_live_bearer(model, member, sr):
+            return 0, ""
+        try:
+            save_value = int(sr.get("enhancement_artisan_of_war_save", 2) or 2)
+        except Exception:
+            save_value = 2
+        if save_value <= 0:
+            return 0, ""
+        source = str(sr.get("enhancement_artisan_of_war_source", "") or "Artisan of War").strip() or "Artisan of War"
+        return int(max(2, save_value)), source
+
+    def _the_angelic_host_turn_key(self, *, game=None) -> str:
+        game_obj = self._resolve_game_context(game=game)
+        try:
+            battle_round = int(getattr(game_obj, "turn", 0) or 0)
+        except Exception:
+            battle_round = 0
+        try:
+            current_player = getattr(game_obj, "get_current_player", lambda: None)()
+        except Exception:
+            current_player = None
+        owner = str(getattr(current_player, "id", "") or "").strip()
+        return f"{int(battle_round)}:{owner}"
+
+    def the_angelic_host_gleaming_pinions_used_this_turn(self, unit, *, game=None) -> bool:
+        root, member, sr = self._company_of_hunters_enhancement_source_member(
+            unit,
+            "enhancement_gleaming_pinions",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return False
+        return str(sr.get("enhancement_gleaming_pinions_used_turn_key", "") or "") == self._the_angelic_host_turn_key(
+            game=game
+        )
+
+    def mark_the_angelic_host_gleaming_pinions_used(self, unit, *, game=None) -> None:
+        root, member, sr = self._company_of_hunters_enhancement_source_member(
+            unit,
+            "enhancement_gleaming_pinions",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return
+        sr["enhancement_gleaming_pinions_used_turn_key"] = self._the_angelic_host_turn_key(game=game)
+        member.special_rules = sr
+
+    def the_angelic_host_gleaming_pinions_reactive_rule(self, unit, *, game=None) -> dict | None:
+        if not self.is_the_angelic_host():
+            return None
+        root, member, sr = self._company_of_hunters_enhancement_source_member(
+            unit,
+            "enhancement_gleaming_pinions",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return None
+        try:
+            if root.get_parent_army() is not self.army:
+                return None
+        except Exception:
+            return None
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return None
+        if not self._company_of_hunters_member_has_live_bearer(member, sr):
+            return None
+        try:
+            trigger_range = int(sr.get("enhancement_gleaming_pinions_trigger_range", 9) or 9)
+        except Exception:
+            trigger_range = 9
+        try:
+            max_distance = int(sr.get("enhancement_gleaming_pinions_max_reactive_move_distance", 6) or 6)
+        except Exception:
+            max_distance = 6
+        source = str(sr.get("enhancement_gleaming_pinions_source", "") or "Gleaming Pinions").strip()
+        if not source:
+            source = "Gleaming Pinions"
+        trigger_actions = [
+            str(v or "").strip().lower()
+            for v in list(sr.get("enhancement_gleaming_pinions_trigger_actions", []) or [])
+            if str(v or "").strip()
+        ]
+        if not trigger_actions:
+            trigger_actions = ["move", "advance", "fall_back"]
+        return {
+            "source": source,
+            "range": int(max(1, trigger_range)),
+            "max_distance": int(max(1, max_distance)),
+            "trigger_actions": tuple(dict.fromkeys(trigger_actions)),
+            "requires_not_engaged": bool(sr.get("enhancement_gleaming_pinions_requires_not_engaged", True)),
+            "once_per_turn": bool(sr.get("enhancement_gleaming_pinions_once_per_turn", True)),
+        }
+
+    def the_angelic_host_gleaming_pinions_can_trigger(
+        self,
+        unit,
+        *,
+        game=None,
+        game_map=None,
+        moving_unit=None,
+        action: str | None = None,
+    ) -> bool:
+        rule = self.the_angelic_host_gleaming_pinions_reactive_rule(unit, game=game)
+        if not isinstance(rule, dict):
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None or not self._unit_is_on_battlefield(root):
+            return False
+        if bool(rule.get("once_per_turn", True)) and self.the_angelic_host_gleaming_pinions_used_this_turn(root, game=game):
+            return False
+        game_obj = self._resolve_game_context(game=game)
+        gm = game_map if game_map is not None else (getattr(game_obj, "map", None) if game_obj is not None else None)
+        if gm is None:
+            return False
+
+        if bool(rule.get("requires_not_engaged", True)):
+            for enemy in list(gm.get_enemy_units(root) or []):
+                if enemy is None or not bool(getattr(enemy, "is_alive", lambda: False)()):
+                    continue
+                if not bool(getattr(enemy, "deployed", True)):
+                    continue
+                if bool(gm.is_within_engagement_range(root, enemy)):
+                    return False
+
+        if moving_unit is None:
+            return True
+        moving_root = self._attached_unit_root(moving_unit)
+        if moving_root is None or not self._unit_is_on_battlefield(moving_root):
+            return False
+        try:
+            if moving_root.get_parent_army() is self.army:
+                return False
+        except Exception:
+            return False
+
+        action_key = str(action or "").strip().lower()
+        trigger_actions = {str(v or "").strip().lower() for v in list(rule.get("trigger_actions", ()) or ())}
+        if action_key and trigger_actions and action_key not in trigger_actions:
+            return False
+
+        root_source, member, sr = self._company_of_hunters_enhancement_source_member(
+            root,
+            "enhancement_gleaming_pinions",
+        )
+        if root_source is None or member is None or not isinstance(sr, dict):
+            return False
+        bearer = self._company_of_hunters_resolve_bearer_model(member, sr)
+        if bearer is None:
+            return False
+        bearer_alive = getattr(bearer, "is_alive", True)
+        if not bool(bearer_alive() if callable(bearer_alive) else bearer_alive):
+            return False
+        range_value = float(rule.get("range", 9) or 9)
+        in_range_fn = getattr(root, "_model_within_range_of_unit", None)
+        if callable(in_range_fn):
+            try:
+                return bool(in_range_fn(bearer, moving_root, range_value))
+            except Exception:
+                pass
+        try:
+            distance = float(gm.get_distance_between_units(root, moving_root))
+        except Exception:
+            return False
+        return bool(distance <= range_value + 1e-6)
+
+    def the_angelic_host_visage_of_death_sources(self) -> list[dict]:
+        if not self.is_the_angelic_host():
+            return []
+        if self.army is None:
+            return []
+        out: list[dict] = []
+        seen: set[str] = set()
+        for root in list(self._iter_unique_army_roots() or []):
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if not root_id or root_id in seen:
+                continue
+            seen.add(root_id)
+            source_root, member, sr = self._company_of_hunters_enhancement_source_member(
+                root,
+                "enhancement_visage_of_death",
+            )
+            if source_root is None or member is None or not isinstance(sr, dict):
+                continue
+            if not self._unit_is_on_battlefield(source_root):
+                continue
+            if not self.attached_unit_is_adeptus_astartes(source_root):
+                continue
+            bearer = self._company_of_hunters_resolve_bearer_model(member, sr)
+            if bearer is None:
+                continue
+            bearer_alive = getattr(bearer, "is_alive", True)
+            if not bool(bearer_alive() if callable(bearer_alive) else bearer_alive):
+                continue
+            excluded = [
+                str(v or "").strip().upper()
+                for v in list(sr.get("enhancement_visage_of_death_exclude_keywords_any", ("MONSTER", "VEHICLE")) or ())
+                if str(v or "").strip()
+            ]
+            if not excluded:
+                excluded = ["MONSTER", "VEHICLE"]
+            source = str(sr.get("enhancement_visage_of_death_source", "") or "Visage of Death").strip()
+            if not source:
+                source = "Visage of Death"
+            out.append(
+                {
+                    "unit": source_root,
+                    "bearer_model": bearer,
+                    "exclude_keywords_any": tuple(excluded),
+                    "source": source,
+                }
+            )
+        out.sort(key=lambda item: str(get_entity_id(item.get("unit")) or ""))
+        return out
 
     def _emperors_shield_enhancement_source_member(self, unit, flag_key: str):
         root = self._attached_unit_root(unit)

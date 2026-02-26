@@ -1304,6 +1304,19 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
             except Exception:
                 sr["tactical_acumen_no_charge_turn"] = 0
             unit.special_rules = sr
+    reactive_kind = str(ctx.get("reactive_move_kind", "") or "").strip()
+    if movement_type == "gleaming_pinions" or reactive_kind == "gleaming_pinions":
+        try:
+            army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
+        except Exception:
+            army = None
+        sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+        mark_used_fn = getattr(sm_mgr, "mark_the_angelic_host_gleaming_pinions_used", None) if sm_mgr is not None else None
+        if callable(mark_used_fn):
+            try:
+                mark_used_fn(unit, game=game)
+            except Exception:
+                pass
     return None
 
 
