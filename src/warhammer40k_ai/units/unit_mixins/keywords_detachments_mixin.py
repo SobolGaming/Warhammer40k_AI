@@ -2360,6 +2360,7 @@ class KeywordsDetachmentsMixin:
         Also supports variants:
         - Hit + Wound re-rolls vs prey (no melee restriction).
         - Lethal Hits vs prey.
+        - Start-of-battle selected enemy unit with unit-wide Hit re-rolls vs that unit.
 
         Returns a rule dict with:
             - source: ability name
@@ -2417,15 +2418,39 @@ class KeywordsDetachmentsMixin:
                     continue
                 seen.add(key)
 
-                if "start of the first battle round" not in normalized:
-                    continue
-                if "select one enemy unit to be this model s prey" not in normalized:
+                classic_prey_selector = (
+                    "start of the first battle round" in normalized
+                    and "select one enemy unit to be this model s prey" in normalized
+                )
+                focused_hunters_selector = (
+                    "start of the battle" in normalized
+                    and "select one unit from your opponent s army" in normalized
+                    and "until the end of the battle" in normalized
+                )
+                if not (classic_prey_selector or focused_hunters_selector):
                     continue
 
                 repick_on_destroyed = (
                     "prey is destroyed" in normalized
                     and "select one new enemy unit" in normalized
                 )
+
+                # Pattern: start-of-battle chosen enemy, unit-wide hit re-rolls vs that unit.
+                if (
+                    focused_hunters_selector
+                    and _has_phrase(normalized, "each time a model in this unit makes an attack", "makes an attack")
+                    and _has_phrase(normalized, "targets that unit")
+                    and _has_phrase(normalized, "re roll the hit roll", "reroll the hit roll")
+                ):
+                    source = str(name or "Prey selection").strip() or "Prey selection"
+                    rule = {
+                        "source": source,
+                        "reroll_hit": True,
+                        "reroll_wound": False,
+                        "melee_only": False,
+                        "repick_on_destroyed": bool(repick_on_destroyed),
+                    }
+                    break
 
                 # Pattern: melee wound re-roll vs prey (unit-wide).
                 if (

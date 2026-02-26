@@ -115,6 +115,57 @@ class TestPreySelection(unittest.TestCase):
         self.assertTrue(bool(getattr(source_unit, "_prey_selection_melee_only", False)))
         self.assertFalse(bool(getattr(source_unit, "_prey_selection_reroll_hit", False)))
 
+    def test_prey_selection_start_of_battle_reroll_hit_variant(self):
+        army = Army("Adeptus Mechanicus", detachment_type="Other")
+        army.faction_id = "ADM"
+        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army.faction_id = "SM"
+
+        player = Player("Player", PlayerControl.REMOTE, army=army)
+        enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+
+        ability_desc = (
+            "At the start of the battle, select one unit from your opponent's army. "
+            "Until the end of the battle, each time a model in this unit makes an attack that targets that unit, "
+            "you can re-roll the Hit roll."
+        )
+        ability = Ability("Focused Hunters", "ADM", ability_desc, "Datasheet", "")
+
+        source_unit = self._make_unit(
+            "Sydonian Dragoons With Radium Jezzails",
+            army,
+            abilities=[ability],
+            faction_keywords=["ADEPTUS MECHANICUS"],
+        )
+        source_model = self._make_model("Dragoon", source_unit)
+        source_model.abilities = {"Focused Hunters": ability}
+        source_unit.models = [source_model]
+        army.units = [source_unit]
+
+        target_unit = self._make_unit("Target", enemy_army)
+        target_unit.models = [self._make_model("Target Model", target_unit)]
+        enemy_army.units = [target_unit]
+
+        game.rebuild_entity_registry()
+
+        army.on_battle_round_start(1)
+        pending = [
+            req for req in list(game.decision_queue.list() or [])
+            if req.decision_type == DECISION_CHOOSE_QUARRY
+            and str(getattr(req, "context", {}).get("ability", "")) == "prey_selection"
+        ]
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+
+        resolve_decision_command(game, request, request.options[0].option_id, player_id=player.id)
+        prey_ids = getattr(source_unit, "_prey_selection_prey_ids", set())
+        self.assertIn(target_unit._id, prey_ids)
+        self.assertTrue(bool(getattr(source_unit, "_prey_selection_reroll_hit", False)))
+        self.assertFalse(bool(getattr(source_unit, "_prey_selection_reroll_wound", False)))
+        self.assertFalse(bool(getattr(source_unit, "_prey_selection_melee_only", False)))
+
     def test_prey_wound_reroll_melee_only(self):
         game = SimpleNamespace(
             event_system=EventSystem(),

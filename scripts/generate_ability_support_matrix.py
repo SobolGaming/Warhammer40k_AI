@@ -213,18 +213,38 @@ def _extract_points_cap_clauses(text: str) -> list[str]:
 
 def _prey_selection_support(description: str) -> Optional[Tuple[str, str]]:
     """
-    Detect BR1 prey-selection abilities (e.g., Prey of the Blood God, Psychic Spoor)
-    and classify supported variants.
+    Detect prey-selection style abilities (e.g., Prey of the Blood God,
+    Psychic Spoor, Focused Hunters) and classify supported variants.
     """
     tokens = _norm_rules_text(description or "")
     if not tokens:
         return None
-    if "start of the first battle round" not in tokens:
-        return None
-    if "select one enemy unit to be this models prey" not in tokens:
+    classic_prey_selector = (
+        "start of the first battle round" in tokens
+        and "select one enemy unit to be this models prey" in tokens
+    )
+    focused_hunters_selector = (
+        "start of the battle" in tokens
+        and "select one unit from your opponents army" in tokens
+        and "until the end of the battle" in tokens
+    )
+    if not (classic_prey_selector or focused_hunters_selector):
         return None
 
     repick = "prey is destroyed" in tokens and "select one new enemy unit" in tokens
+
+    if (
+        focused_hunters_selector
+        and "each time a model in this unit makes an attack" in tokens
+        and "targets that unit" in tokens
+        and "reroll the hit roll" in tokens
+    ):
+        note = "Start of battle: select one enemy unit; attacks from this unit against it can re-roll Hit rolls."
+        if repick:
+            note += " Re-pick when prey is destroyed."
+        else:
+            note += " No re-pick on destruction."
+        return ("Supported", note)
 
     if ("melee attack" in tokens) and ("targets its prey" in tokens or "targets that prey" in tokens) and ("reroll the wound roll" in tokens):
         note = "BR1 prey selection; melee attacks vs prey can re-roll Wound rolls."
