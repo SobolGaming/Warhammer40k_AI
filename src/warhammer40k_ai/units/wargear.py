@@ -17621,6 +17621,26 @@ class WargearProfile:
                             attack_instance["inv_save_override_reason"] = source
         except Exception:
             pass
+        # Adeptus Mechanicus: Emanatus Force Field (Aura).
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            attack_type = "melee" if (self.parent_wargear and self.parent_wargear.is_melee()) else "ranged"
+            army = t_unit.get_parent_army() if t_unit is not None else None
+            adm_mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+            inv_fn = getattr(adm_mgr, "emanatus_force_field_invulnerable_save", None) if adm_mgr is not None else None
+            if callable(inv_fn):
+                inv_value, inv_source = inv_fn(
+                    target_model,
+                    attack_type=attack_type,
+                )
+                if inv_value:
+                    current = attack_instance.get("inv_save_override", None)
+                    if current is None or int(current) > int(inv_value):
+                        attack_instance["inv_save_override"] = int(inv_value)
+                        source = str(inv_source or "Emanatus Force Field (Aura)").strip() or "Emanatus Force Field (Aura)"
+                        attack_instance["inv_save_override_reason"] = source
+        except Exception:
+            pass
         # Imperial Agents: Imperialis Fleet (At all Costs - Acquire) 5+ invulnerable save.
         try:
             t_unit = getattr(target_model, "parent_unit", None)

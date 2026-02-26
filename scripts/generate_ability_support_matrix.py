@@ -3807,6 +3807,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Command phase: select one friendly ADEPTUS MECHANICUS unit within 3\" to regain D3 wounds; if that unit is a VEHICLE, it gains Feel No Pain 5+ until next Command phase.",
         ),
+        ("ADM", "Emanatus Force Field (Aura)"): (
+            "Supported",
+            "Friendly ADEPTUS MECHANICUS BATTLELINE models wholly within 6\" gain a 4+ invulnerable save against ranged attacks.",
+        ),
         ("ADM", "Canticles of the Omnissiah"): (
             "Supported",
             "Start of Command phase: Belisarius Cawl selects Invocation of Machine Vengeance, Mantra of Discipline, or Shroudpsalm until next Command phase.",
@@ -5190,6 +5194,7 @@ def _classify_ability_base(
     phase_end_leadership_cp_gain_support = _phase_end_leadership_cp_gain_support(description)
     command_phase_regain_wound_support = _command_phase_regain_wound_support(description)
     command_phase_model_repair_fnp_support = _command_phase_model_repair_fnp_support(description)
+    wholly_within_friendly_battleline_ranged_invuln_support = _wholly_within_friendly_battleline_ranged_invuln_support(description)
     start_shooting_phase_visible_battleshock_support = _start_shooting_phase_visible_battleshock_support(description)
     shooting_phase_dice_pool_mortal_support = _shooting_phase_dice_pool_mortal_support(description)
     start_shooting_phase_vehicle_mortal_heal_support = _start_shooting_phase_vehicle_mortal_heal_support(description)
@@ -5469,6 +5474,8 @@ def _classify_ability_base(
         return command_phase_regain_wound_support
     if command_phase_model_repair_fnp_support:
         return command_phase_model_repair_fnp_support
+    if wholly_within_friendly_battleline_ranged_invuln_support:
+        return wholly_within_friendly_battleline_ranged_invuln_support
     if start_shooting_phase_visible_battleshock_support:
         return start_shooting_phase_visible_battleshock_support
     if shooting_phase_dice_pool_mortal_support:
@@ -9040,6 +9047,28 @@ def _command_phase_model_repair_fnp_support(description: str) -> Optional[Tuple[
     return (
         "Supported",
         f"Command phase: select one friendly {keyword} model within {range_val}\"; it regains up to {heal} wounds and gains Feel No Pain {fnp}+ if it is a VEHICLE until next Command phase.",
+    )
+
+
+def _wholly_within_friendly_battleline_ranged_invuln_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"while a friendly (?P<keyword>[a-z0-9 ]+) battleline model is wholly within (?P<range>\d+) of this model "
+        r"that battleline model has a (?P<inv>\d+) invulnerable save against ranged attacks"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    keyword = str(m.group("keyword") or "").strip().upper()
+    range_val = str(m.group("range") or "6")
+    inv = str(m.group("inv") or "4")
+    return (
+        "Supported",
+        f"Friendly {keyword} BATTLELINE models wholly within {range_val}\" gain a {inv}+ invulnerable save against ranged attacks.",
     )
 
 

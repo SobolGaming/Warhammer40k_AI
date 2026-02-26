@@ -1274,6 +1274,86 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
             return False, ""
         return True, f"{self._STEALTH_OPTIMISATION_SOURCE} (Sicarian cover beyond 12\")"
 
+    def emanatus_force_field_invulnerable_save(
+        self,
+        target_model,
+        *,
+        attack_type: str = "",
+        game_map=None,
+    ) -> tuple[int, str]:
+        del game_map
+        if str(attack_type or "").strip().lower() != "ranged":
+            return 0, ""
+        if target_model is None or not self._is_model_alive(target_model):
+            return 0, ""
+
+        target_unit = getattr(target_model, "parent_unit", None)
+        target_root = self._attached_root(target_unit)
+        if target_root is None or not self._unit_in_army(target_root):
+            return 0, ""
+        if not self._unit_is_on_battlefield(target_root):
+            return 0, ""
+        if not self._unit_has_keyword(target_root, "BATTLELINE"):
+            return 0, ""
+        if not self._unit_has_keyword_or_faction(target_root, "ADEPTUS MECHANICUS", faction_id=self.faction_id):
+            return 0, ""
+
+        from ..utility.aura_utils import model_wholly_within_range_of_unit
+
+        seen: set[str] = set()
+        source_roots: list = []
+        for unit in list(getattr(self.army, "units", []) or []):
+            source_root = self._attached_root(unit)
+            if source_root is None:
+                continue
+            source_id = self._entity_id(source_root) or str(id(source_root))
+            if source_id in seen:
+                continue
+            seen.add(source_id)
+            source_roots.append(source_root)
+        source_roots.sort(key=lambda item: self._entity_id(item) or str(getattr(item, "name", "") or ""))
+
+        best_value = 0
+        best_source = ""
+        for source_root in source_roots:
+            if source_root is None or not self._unit_is_on_battlefield(source_root):
+                continue
+            get_rule = getattr(source_root, "get_emanatus_force_field_rule", None)
+            if not callable(get_rule):
+                continue
+            rule = get_rule()
+            if not isinstance(rule, dict):
+                continue
+            if bool(rule.get("target_requires_battleline", False)) and not self._unit_has_keyword(target_root, "BATTLELINE"):
+                continue
+            target_keyword = str(rule.get("target_keyword", "") or "").strip().upper()
+            if target_keyword and not self._unit_has_keyword_or_faction(target_root, target_keyword, faction_id=self.faction_id):
+                continue
+            try:
+                range_value = int(rule.get("range", 0) or 0)
+            except Exception:
+                range_value = 0
+            try:
+                inv_value = int(rule.get("invulnerable_save", 0) or 0)
+            except Exception:
+                inv_value = 0
+            if range_value <= 0 or inv_value <= 0:
+                continue
+            if not model_wholly_within_range_of_unit(
+                source_root,
+                target_model,
+                float(range_value),
+                use_attached_aggregate=True,
+            ):
+                continue
+            if best_value <= 0 or int(inv_value) < int(best_value):
+                best_value = int(inv_value)
+                best_source = str(rule.get("source", "") or "Emanatus Force Field").strip() or "Emanatus Force Field"
+
+        if best_value <= 0:
+            return 0, ""
+        return int(best_value), str(best_source or "Emanatus Force Field")
+
     def _iter_player_unit_roots(self, player) -> list:
         if player is None:
             return []

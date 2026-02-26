@@ -4108,6 +4108,82 @@ class KeywordsDetachmentsMixin:
         root._ability_cache[cache_key] = rule
         return rule
 
+    def get_emanatus_force_field_rule(self) -> Optional[dict]:
+        """
+        Return rule info for Emanatus Force Field-like abilities:
+        "While a friendly ADEPTUS MECHANICUS BATTLELINE model is wholly within 6" of this model,
+        that BATTLELINE model has a 4+ invulnerable save against ranged attacks."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "emanatus_force_field_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text_src = unit._strip_eligibility_prefix(text_src)
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if "friendly" not in normalized:
+                    continue
+                if "battleline model is wholly within" not in normalized:
+                    continue
+                if "that battleline model has a" not in normalized:
+                    continue
+                if "invulnerable save against ranged attacks" not in normalized:
+                    continue
+                m_range = re.search(r"battleline model is wholly within (\d+) of this model", normalized)
+                m_inv = re.search(
+                    r"that battleline model has a (\d+) invulnerable save against ranged attacks",
+                    normalized,
+                )
+                if not m_range or not m_inv:
+                    continue
+                try:
+                    range_value = int(m_range.group(1) or 0)
+                    inv_value = int(m_inv.group(1) or 0)
+                except Exception:
+                    continue
+                if range_value <= 0 or inv_value <= 0:
+                    continue
+                source = str(name or "Emanatus Force Field").strip() or "Emanatus Force Field"
+                target_keyword = "ADEPTUS MECHANICUS" if "friendly adeptus mechanicus battleline model" in normalized else ""
+                rule = {
+                    "source": source,
+                    "range": int(range_value),
+                    "invulnerable_save": int(inv_value),
+                    "attack_type": "ranged",
+                    "target_requires_battleline": True,
+                    "target_keyword": target_keyword,
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
     def get_selfless_protector_rule(self) -> Optional[dict]:
         """
         Return rule info for Selfless Protector-like abilities:
