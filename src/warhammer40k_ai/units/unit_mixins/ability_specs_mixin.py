@@ -6810,7 +6810,7 @@ class AbilitySpecsMixin:
             normalized = normalized.lower()
             normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
             normalized = re.sub(r"\s+", " ", normalized).strip()
-            if "moved over" not in normalized:
+            if "moved over" not in normalized and "moved across" not in normalized:
                 continue
             if "battle shock test" not in normalized:
                 continue
@@ -6884,7 +6884,7 @@ class AbilitySpecsMixin:
             normalized = normalized.lower()
             normalized = re.sub(r"[^a-z0-9+]+", " ", normalized)
             normalized = re.sub(r"\s+", " ", normalized).strip()
-            if "moved over" not in normalized or "mortal wound" not in normalized:
+            if ("moved over" not in normalized and "moved across" not in normalized) or "mortal wound" not in normalized:
                 continue
             if "for each model" in normalized:
                 continue
@@ -7010,7 +7010,7 @@ class AbilitySpecsMixin:
                 normalized = normalized.lower()
                 normalized = re.sub(r"[^a-z0-9+]+", " ", normalized)
                 normalized = re.sub(r"\s+", " ", normalized).strip()
-                if "moved over" not in normalized or "mortal wound" not in normalized:
+                if ("moved over" not in normalized and "moved across" not in normalized) or "mortal wound" not in normalized:
                     continue
                 if "for each model in this unit" not in normalized:
                     continue

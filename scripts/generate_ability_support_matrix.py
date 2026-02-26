@@ -3789,8 +3789,30 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ),
         ("CSM", "Swift Assault"): ("Supported", "Leading: unit ranged weapons gain Assault."),
         ("CSM", "Warp Strike"): ("Supported", "End of Fight: if destroyed an enemy unit and not engaged, enter Strategic Reserves."),
-        ("ADM", "Dynamic Efficiency"): ("Partial", "Charge-after-Advance/Fall Back supported; Desperate Escape rerolls not implemented."),
-        ("ADM", "Elevated Strider"): ("Partial", "Shoot-after-Fall-Back/Advance supported; Desperate Escape rerolls not implemented."),
+        ("ADM", "Dynamic Efficiency"): (
+            "Supported",
+            "Charge-after-Advance/Fall Back eligibility and Desperate Escape re-roll support are implemented.",
+        ),
+        ("ADM", "Elevated Strider"): (
+            "Supported",
+            "Shoot-after-Fall-Back/Advance eligibility and Desperate Escape re-roll support are implemented.",
+        ),
+        ("ADM", "Achillan Eye"): (
+            "Supported",
+            "Model attacks with radium jezzail re-roll Wound rolls vs INFANTRY, and Skatros transuranic arquebus attacks re-roll Wound rolls vs MONSTER/VEHICLE.",
+        ),
+        ("ADM", "Blistering Salvoes"): (
+            "Supported",
+            "Model attacks gain +1 to hit for belleros energy cannon vs INFANTRY and ferrumite cannon vs MONSTER/VEHICLE.",
+        ),
+        ("ADM", "Searing Conflagration"): (
+            "Supported",
+            "Phosphor torch attacks vs targets within objective range re-roll Wound rolls of 1; while within 6\" of friendly ADEPTUS MECHANICUS BATTLELINE, those attacks can re-roll Wound rolls instead.",
+        ),
+        ("ADM", "Optimised Gait"): (
+            "Supported",
+            "Advance/Charge rolls gain +1 baseline, improving to +2 while within 6\" of friendly ADEPTUS MECHANICUS BATTLELINE.",
+        ),
         ("ADM", "Enginseer"): (
             "Supported",
             "Conditional Lone Operative within 3\" of friendly ADEPTUS MECHANICUS VEHICLE units. Disabled while leading a unit.",
@@ -5102,6 +5124,100 @@ def _seed_ability_support_maps(abilities: List[dict], det_abilities_rows: List[d
         ABILITY_SUPPORT_BY_NAME_FACTION_DS[key] = val
 
 
+def _admech_named_datasheet_support(name: str, description: str, *, faction_id: str = "") -> Optional[Tuple[str, str]]:
+    fid = str(faction_id or "").strip().upper()
+    if fid != "ADM":
+        return None
+    name_norm = _norm(name)
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+
+    if name_norm == "achillan eye":
+        if (
+            "radium jezzail" in norm
+            and "targets an infantry unit" in norm
+            and "reroll the wound roll" in norm
+            and "skatros transuranic arquebus" in norm
+            and "targets a monster or vehicle unit" in norm
+        ):
+            return (
+                "Supported",
+                "Model attacks with radium jezzail re-roll Wound rolls vs INFANTRY, and Skatros transuranic arquebus attacks re-roll Wound rolls vs MONSTER/VEHICLE.",
+            )
+
+    if name_norm == "blistering salvoes":
+        if (
+            "belleros energy cannon" in norm
+            and "targets an infantry unit" in norm
+            and "add 1 to the hit roll" in norm
+            and "ferrumite cannon" in norm
+            and "targets a monster or vehicle unit" in norm
+        ):
+            return (
+                "Supported",
+                "Model attacks gain +1 to hit for belleros energy cannon vs INFANTRY and ferrumite cannon vs MONSTER/VEHICLE.",
+            )
+
+    if name_norm == "searing conflagration":
+        if (
+            "phosphor torch" in norm
+            and "targets an enemy unit within range of an objective marker" in norm
+            and "reroll a wound roll of 1" in norm
+            and "within 6 of one or more friendly adeptus mechanicus battleline units" in norm
+            and "reroll the wound roll instead" in norm
+        ):
+            return (
+                "Supported",
+                "Phosphor torch attacks vs targets within objective range re-roll Wound rolls of 1; while within 6\" of friendly ADEPTUS MECHANICUS BATTLELINE, those attacks can re-roll Wound rolls instead.",
+            )
+
+    if name_norm == "optimised gait":
+        pattern = (
+            r"add 1 to advance and charge rolls made for this unit "
+            r"while this unit is within (?P<range>\d+) of one or more friendly adeptus mechanicus battleline units "
+            r"add (?P<value>\d+) to advance and charge rolls made for this unit instead"
+        )
+        m = re.fullmatch(pattern, norm)
+        if m:
+            try:
+                range_value = int(m.group("range") or 0)
+            except (TypeError, ValueError):
+                range_value = 0
+            try:
+                value = int(m.group("value") or 0)
+            except (TypeError, ValueError):
+                value = 0
+            if range_value > 0 and value > 1:
+                return (
+                    "Supported",
+                    f"Advance/Charge rolls gain +1 baseline, improving to +{value} while within {range_value}\" of friendly ADEPTUS MECHANICUS BATTLELINE.",
+                )
+
+    if name_norm == "dynamic efficiency":
+        pattern = (
+            r"this unit is eligible to declare a charge in a turn in which it advanced or fell back "
+            r"and you can reroll desperate escape tests taken for models in this unit"
+        )
+        if re.fullmatch(pattern, norm):
+            return (
+                "Supported",
+                "Charge-after-Advance/Fall Back eligibility and Desperate Escape re-roll support are implemented.",
+            )
+
+    if name_norm == "elevated strider":
+        pattern = (
+            r"this unit is eligible to shoot in a turn in which it fell back or advanced "
+            r"and you can reroll desperate escape tests taken for models in this unit"
+        )
+        if re.fullmatch(pattern, norm):
+            return (
+                "Supported",
+                "Shoot-after-Fall-Back/Advance eligibility and Desperate Escape re-roll support are implemented.",
+            )
+    return None
+
+
 def _classify_ability_base(
     name: str,
     description: str,
@@ -5140,6 +5256,9 @@ def _classify_ability_base(
     canticles_support = _canticles_of_the_omnissiah_support(name, description, faction_id=faction_id)
     if canticles_support:
         return canticles_support
+    admech_named_support = _admech_named_datasheet_support(name, description, faction_id=faction_id)
+    if admech_named_support:
+        return admech_named_support
     closest_m_veh_support = _closest_monster_vehicle_reroll_support(description)
     monster_vehicle_reroll_support = _monster_vehicle_reroll_support(description)
     unit_contains_oc_support = _unit_contains_oc_support(description)
@@ -7651,6 +7770,13 @@ def _charge_end_mortal_wounds_support(description: str) -> Optional[Tuple[str, s
         r"each time (?:this models unit|this unit) ends a charge move select one enemy unit within engagement range of (?:this unit|this model) "
         r"(?:then |and (?:then )?)?roll one d6 for each model in (?:this unit|that unit|this models unit) for each 4\+? that enemy unit suffers d3 mortal wounds?"
     )
+    per_model_flat = (
+        r"each time (?:this models unit|this unit) ends a charge move select one enemy unit within engagement range of (?:this unit|this model|it) "
+        r"(?:then |and (?:then )?)?roll one d6 for each model in (?:this unit|that unit|this models unit)"
+        r"(?: that is within engagement range of that enemy unit)?"
+        r"(?: adding (?P<bonus>\d+) to the result if this unit started its charge move within (?P<range>\d+) of one or more friendly adeptus mechanicus battleline units)? "
+        r"for each 4\+? that enemy unit suffers 1 mortal wounds?"
+    )
     table = (
         r"each time (?:this models unit|this unit) ends a charge move select one enemy unit within engagement range of (?:this unit|this model) "
         r"(?:then |and (?:then )?)?roll one d6 on a 2 3 that enemy unit suffers 1 mortal wounds? on a 4 5 that enemy unit suffers d3 mortal wounds? on a 6 that enemy unit suffers d3 3 mortal wounds?"
@@ -7668,6 +7794,19 @@ def _charge_end_mortal_wounds_support(description: str) -> Optional[Tuple[str, s
         return (
             "Supported",
             "Charge end: pick an engaged enemy; D6 per model, each 4+ inflicts D3 mortal wounds.",
+        )
+    m_flat = re.fullmatch(per_model_flat, norm)
+    if m_flat:
+        bonus = str(m_flat.group("bonus") or "").strip()
+        range_value = str(m_flat.group("range") or "").strip()
+        if bonus and range_value:
+            return (
+                "Supported",
+                f"Charge end: pick an engaged enemy; roll D6 per engaged model, adding +{bonus} if the charge started within {range_value}\" of friendly ADEPTUS MECHANICUS BATTLELINE units, each 4+ inflicts 1 mortal wound.",
+            )
+        return (
+            "Supported",
+            "Charge end: pick an engaged enemy; roll D6 per engaged model, each 4+ inflicts 1 mortal wound.",
         )
     if re.fullmatch(table, norm):
         return (
@@ -8314,6 +8453,11 @@ def _unit_hit_reroll_ones_support(description: str) -> Optional[Tuple[str, str]]
         r"\s*[,;:]?\s*(?:you can\s*)?re-?roll the hit roll instead$",
         re.IGNORECASE,
     )
+    battleline_clause_re = re.compile(
+        r"^while this unit is within (?P<range>\d+)\s*\"? of one or more friendly adeptus mechanicus battleline units"
+        r"\s*[,;:]?\s*(?:you can\s*)?re-?roll the hit roll instead$",
+        re.IGNORECASE,
+    )
 
     base_sentences: List[str] = []
     base_atype = None
@@ -8351,6 +8495,7 @@ def _unit_hit_reroll_ones_support(description: str) -> Optional[Tuple[str, str]]
     objective_sentences = [s for s in sentences if objective_clause_re.match(s.lower())]
     closest_sentences = [s for s in sentences if closest_clause_re.match(s.lower())]
     charge_sentences = [s for s in sentences if charge_clause_re.match(s.lower())]
+    battleline_sentences = [s for s in sentences if battleline_clause_re.match(s.lower())]
     unsupported = [
         s
         for s in sentences
@@ -8358,6 +8503,7 @@ def _unit_hit_reroll_ones_support(description: str) -> Optional[Tuple[str, str]]
         and not objective_clause_re.match(s.lower())
         and not closest_clause_re.match(s.lower())
         and not charge_clause_re.match(s.lower())
+        and not battleline_clause_re.match(s.lower())
     ]
 
     if objective_sentences:
@@ -8366,6 +8512,14 @@ def _unit_hit_reroll_ones_support(description: str) -> Optional[Tuple[str, str]]
         notes.append("If the target is the closest eligible target, the Hit roll can be re-rolled instead (optional).")
     if charge_sentences:
         notes.append("If this unit made a Charge move this turn, the Hit roll can be re-rolled instead (optional).")
+    if battleline_sentences:
+        battleline_range = "6"
+        battleline_match = battleline_clause_re.match(battleline_sentences[0].lower())
+        if battleline_match:
+            battleline_range = str(battleline_match.group("range") or "6")
+        notes.append(
+            f"If this unit is within {battleline_range}\" of friendly ADEPTUS MECHANICUS BATTLELINE units, the Hit roll can be re-rolled instead (optional)."
+        )
 
     if multiple_bases or unsupported:
         notes.append("Additional clauses not handled.")
@@ -9350,6 +9504,36 @@ def _post_shoot_reactive_move_no_charge_support(description: str) -> Optional[Tu
     norm = _norm_rules_text(description)
     if not norm:
         return None
+    alt_pattern = (
+        r"in your shooting phase after this (?:model s unit|models unit|unit) has shot "
+        r"if it is not within engagement range of (?:one or more|any) enemy units "
+        r"(?:it|that unit|this unit) can do one of the following "
+        r"make a normal move of up to (?P<base_move>\d+) "
+        r"make a normal move of up to (?P<battleline_move>\d+) "
+        r"provided every model in this unit ends that move wholly within (?P<battleline_range>\d+) "
+        r"of one or more friendly adeptus mechanicus battleline units "
+        r"in either case if it does until the end of the turn (?:that unit|this unit) is not eligible to declare a charge"
+    )
+    alt_match = re.fullmatch(alt_pattern, norm)
+    if alt_match:
+        try:
+            base_move = int(alt_match.group("base_move") or 0)
+        except (TypeError, ValueError):
+            base_move = 0
+        try:
+            battleline_move = int(alt_match.group("battleline_move") or 0)
+        except (TypeError, ValueError):
+            battleline_move = 0
+        try:
+            battleline_range = int(alt_match.group("battleline_range") or 0)
+        except (TypeError, ValueError):
+            battleline_range = 0
+        if base_move > 0 and battleline_move > 0 and battleline_range > 0:
+            return (
+                "Supported",
+                f"After shooting (if not in Engagement Range): choose one Normal move option ({base_move}\" base, or {battleline_move}\" while ending wholly within {battleline_range}\" of friendly ADEPTUS MECHANICUS BATTLELINE); cannot charge this turn.",
+            )
+
     pattern = (
         r"in your shooting phase after this (?:model s unit|models unit|unit) has shot"
         r"(?: if it is not within engagement range of (?:one or more|any) enemy units)? "
@@ -10760,7 +10944,7 @@ def _move_over_mortal_wounds_support(description: str) -> Optional[Tuple[str, st
     pattern = (
         r"(?:once per battle(?:,)?\s+)?(?:(?:in|during) your movement phase(?:,)?\s+)?(?:each time|after) (?:this model|the bearer) ends a (?P<moves>[a-z ]+) move "
         r"(?:you can )?(?:select|choose) one enemy unit(?: excluding monsters and vehicles?(?: units)?)? "
-        r"(?:that )?(?:it )?moved over during that move "
+        r"(?:that )?(?:it )?moved (?:over|across) during that move "
         r"(?:if you do )?(?:and |then )?roll (?P<dice>\d+|one|two|three|four|five|six|seven|eight|nine|ten) d6 "
         r"(?:adding (?P<fly_bonus>\d+) to each result if that enemy unit can fly )?"
         r"for each (?P<threshold>\d)\+? that (?:enemy )?unit suffers (?P<mw>d3|d6|\d+) mortal wounds?"
@@ -10770,7 +10954,7 @@ def _move_over_mortal_wounds_support(description: str) -> Optional[Tuple[str, st
         unit_pattern = (
             r"(?:once per battle(?:,)?\s+)?(?:(?:in|during) your movement phase(?:,)?\s+)?(?:each time|after) this unit ends a (?P<moves>[a-z ]+) move "
             r"(?:you can )?(?:select|choose) one enemy unit(?: excluding monsters and vehicles?(?: units)?)? "
-            r"(?:that )?(?:it )?moved over during that move "
+            r"(?:that )?(?:it )?moved (?:over|across) during that move "
             r"(?:if you do )?(?:and |then )?roll (?:\d+|one|two|three|four|five|six|seven|eight|nine|ten) d6 for each model in this unit "
             r"(?:adding (?P<fly_bonus>\d+) to each result if that enemy unit can fly )?"
             r"for each (?P<threshold>\d)\+? that (?:enemy )?unit suffers (?P<mw>d3|d6|\d+) mortal wounds?"

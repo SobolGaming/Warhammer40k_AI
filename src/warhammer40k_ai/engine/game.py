@@ -3910,6 +3910,143 @@ class Game(
                         f"Relentless Raiders: no mortal wounds dealt to {mover_name}.",
                     )
 
+    def _unit_started_move_within_friendly_keyword_unit(
+        self,
+        unit,
+        *,
+        range_value: float,
+        required_keyword: str = "BATTLELINE",
+        required_faction_keyword: str = "",
+    ) -> bool:
+        if unit is None or float(range_value or 0.0) <= 0.0:
+            return False
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return False
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        if army is None:
+            return False
+
+        try:
+            from ..utility.aura_utils import distance_between_bases_3d
+        except Exception:
+            return False
+
+        start_bases = []
+        create_base_fn = getattr(root, "_create_potential_base", None)
+        try:
+            models = list(root.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(root, "models", []) or [])
+        for model in models:
+            if model is None:
+                continue
+            try:
+                alive_attr = getattr(model, "is_alive", True)
+                alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            except Exception:
+                alive = False
+            if not alive:
+                continue
+            start_base = None
+            path = getattr(model, "last_move_path", None)
+            if isinstance(path, list) and path:
+                node = path[0]
+                if isinstance(node, (list, tuple)) and len(node) >= 2:
+                    try:
+                        x = float(node[0])
+                        y = float(node[1])
+                        z = float(node[2]) if len(node) > 2 else float(getattr(model.model_base, "z", 0.0))
+                        facing = float(node[3]) if len(node) > 3 else float(getattr(model.model_base, "facing", 0.0))
+                    except Exception:
+                        x = y = z = facing = None
+                    if x is not None and callable(create_base_fn):
+                        try:
+                            start_base = create_base_fn(x, y, z, facing, model=model)
+                        except Exception:
+                            start_base = None
+            if start_base is None:
+                start_base = getattr(model, "model_base", None)
+            if start_base is None:
+                continue
+            start_bases.append(start_base)
+        if not start_bases:
+            return False
+
+        keyword = str(required_keyword or "").strip()
+        faction_keyword = str(required_faction_keyword or "").strip()
+        seen: set[str] = set()
+        for candidate in list(getattr(army, "units", []) or []):
+            if candidate is None:
+                continue
+            try:
+                cand_root = candidate.get_attached_unit_root()
+            except Exception:
+                cand_root = candidate
+            if cand_root is None or cand_root is root:
+                continue
+            cid = str(get_entity_id(cand_root) or "")
+            if cid and cid in seen:
+                continue
+            if cid:
+                seen.add(cid)
+            try:
+                if not cand_root.is_alive() or not bool(getattr(cand_root, "deployed", False)):
+                    continue
+            except Exception:
+                continue
+            try:
+                if cand_root.is_in_reserves():
+                    continue
+            except Exception:
+                pass
+            try:
+                if bool(getattr(cand_root, "is_embarked", False)) or bool(getattr(cand_root, "embarked_in", None)):
+                    continue
+            except Exception:
+                pass
+            try:
+                if keyword and not bool(cand_root.has_any_keyword(keyword)):
+                    continue
+            except Exception:
+                continue
+            if faction_keyword:
+                try:
+                    if not bool(cand_root.has_any_keyword(faction_keyword)):
+                        continue
+                except Exception:
+                    continue
+            try:
+                candidate_models = list(cand_root.get_attached_unit_models() or [])
+            except Exception:
+                candidate_models = list(getattr(cand_root, "models", []) or [])
+            for cand_model in candidate_models:
+                if cand_model is None:
+                    continue
+                try:
+                    alive_attr = getattr(cand_model, "is_alive", True)
+                    alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                except Exception:
+                    alive = False
+                if not alive:
+                    continue
+                cand_base = getattr(cand_model, "model_base", None)
+                if cand_base is None:
+                    continue
+                for start_base in start_bases:
+                    try:
+                        if float(distance_between_bases_3d(start_base, cand_base)) <= float(range_value) + 1e-6:
+                            return True
+                    except Exception:
+                        continue
+        return False
+
     def resolve_charge_end_mortal_wounds(self, unit, target_unit, spec) -> None:
         if unit is None or target_unit is None or not isinstance(spec, dict):
             return
@@ -3921,37 +4058,94 @@ class Game(
 
         from ..utility.dice import get_roll
 
+        try:
+            start_charge_bonus = int(spec.get("start_charge_bonus", 0) or 0)
+        except Exception:
+            start_charge_bonus = 0
+        try:
+            start_charge_range = int(spec.get("start_charge_range", 0) or 0)
+        except Exception:
+            start_charge_range = 0
+        started_within_required = False
+        if start_charge_bonus > 0 and start_charge_range > 0:
+            started_within_required = bool(
+                self._unit_started_move_within_friendly_keyword_unit(
+                    unit,
+                    range_value=float(start_charge_range),
+                    required_keyword=str(spec.get("start_charge_required_keyword", "") or "BATTLELINE"),
+                    required_faction_keyword=str(spec.get("start_charge_required_faction_keyword", "") or ""),
+                )
+            )
+
+        engagement_only = bool(spec.get("engagement_only", False))
+        model_within_engagement_range_of_unit = None
+        if engagement_only:
+            try:
+                from ..utility.aura_utils import model_within_engagement_range_of_unit as _model_within_engagement_range_of_unit
+
+                model_within_engagement_range_of_unit = _model_within_engagement_range_of_unit
+            except Exception:
+                model_within_engagement_range_of_unit = None
+
         total_mw = 0
         roll_summary = ""
         if kind == "per_model_4plus_d3":
             models = list(unit.get_attached_unit_models() or [])
             rolls = []
+            modified_rolls = []
             d3_rolls = []
             for m in models:
                 if not getattr(m, "is_alive", False):
                     continue
+                if engagement_only and callable(model_within_engagement_range_of_unit):
+                    try:
+                        if not bool(model_within_engagement_range_of_unit(m, target_unit)):
+                            continue
+                    except Exception:
+                        continue
                 r = int(get_roll("D6") or 0)
+                r_mod = int(r)
+                if started_within_required and start_charge_bonus:
+                    r_mod = int(r_mod + int(start_charge_bonus))
                 rolls.append(r)
-                if r >= 4:
+                modified_rolls.append(r_mod)
+                if r_mod >= 4:
                     d3 = int(get_roll("D3") or 0)
                     d3_rolls.append(d3)
                     total_mw += d3
             if rolls:
-                roll_summary = f"rolls={rolls}"
+                if started_within_required and start_charge_bonus:
+                    roll_summary = f"rolls={rolls} (+{int(start_charge_bonus)} -> {modified_rolls})"
+                else:
+                    roll_summary = f"rolls={rolls}"
                 if d3_rolls:
                     roll_summary += f", d3={d3_rolls}"
         elif kind == "per_model_4plus_1":
             models = list(unit.get_attached_unit_models() or [])
             rolls = []
+            modified_rolls = []
             for m in models:
                 if not getattr(m, "is_alive", False):
                     continue
+                if engagement_only and callable(model_within_engagement_range_of_unit):
+                    try:
+                        if not bool(model_within_engagement_range_of_unit(m, target_unit)):
+                            continue
+                    except Exception:
+                        continue
                 r = int(get_roll("D6") or 0)
+                r_mod = int(r)
+                if started_within_required and start_charge_bonus:
+                    r_mod = int(r_mod + int(start_charge_bonus))
                 rolls.append(r)
-                if r >= 4:
+                modified_rolls.append(r_mod)
+                if r_mod >= 4:
                     total_mw += 1
             if rolls:
-                roll_summary = f"rolls={rolls}"
+                if started_within_required and start_charge_bonus:
+                    roll_summary = f"rolls={rolls} (+{int(start_charge_bonus)} -> {modified_rolls})"
+                else:
+                    roll_summary = f"rolls={rolls}"
         elif kind == "per_model_engagement_flat_cap":
             from ..utility.aura_utils import model_within_engagement_range_of_unit
 
@@ -9973,6 +10167,49 @@ class Game(
                         continue
                     if val:
                         modifiers.append((val, source))
+
+            battleline_specs = list(sr.get("admech_optimised_gait_battleline_bonus", []) or [])
+            if battleline_specs:
+                within_fn = getattr(charging_unit, "_within_friendly_adeptus_mechanicus_battleline", None)
+                seen_specs: set[tuple[str, int, int]] = set()
+                for spec in battleline_specs:
+                    if not isinstance(spec, dict):
+                        continue
+                    source = str(spec.get("source", "") or "Optimised Gait").strip() or "Optimised Gait"
+                    try:
+                        range_value = int(spec.get("range", 0) or 0)
+                    except Exception:
+                        range_value = 0
+                    try:
+                        bonus_value = int(spec.get("value", 0) or 0)
+                    except Exception:
+                        bonus_value = 0
+                    if range_value <= 0 or bonus_value <= 0:
+                        continue
+                    key = (source.lower(), int(range_value), int(bonus_value))
+                    if key in seen_specs:
+                        continue
+                    seen_specs.add(key)
+                    applies = False
+                    if callable(within_fn):
+                        try:
+                            applies = bool(
+                                within_fn(
+                                    range_value=float(range_value),
+                                    game_map=getattr(self, "map", None),
+                                    include_self=False,
+                                )
+                            )
+                        except Exception:
+                            applies = False
+                    if not applies:
+                        continue
+                    modifiers.append(
+                        (
+                            int(bonus_value),
+                            f"{source}: +{int(bonus_value)} while within {int(range_value)}\" of friendly ADEPTUS MECHANICUS BATTLELINE",
+                        )
+                    )
 
             if our_time_active and our_time_bonus:
                 modifiers.append((int(our_time_bonus), our_time_source))

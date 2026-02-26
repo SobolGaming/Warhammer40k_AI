@@ -2358,7 +2358,7 @@ class ActionsMovementMixin:
             return list(cache.get(cache_key) or [])
 
         specs: list[dict] = []
-        seen: set[tuple[str, int, bool]] = set()
+        seen: set[tuple] = set()
         try:
             members = list(root.get_attached_unit_members() or [])
         except Exception:
@@ -2379,7 +2379,51 @@ class ActionsMovementMixin:
                 normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
                 normalized = re.sub(r"\s+", " ", normalized).strip()
                 m = member._POST_SHOOT_REACTIVE_MOVE_NO_CHARGE_RE.fullmatch(normalized)
+                m_battleline = None
                 if not m:
+                    m_battleline = member._POST_SHOOT_REACTIVE_MOVE_NO_CHARGE_BATTLELINE_ALT_RE.fullmatch(normalized)
+                    if not m_battleline:
+                        continue
+                if m_battleline:
+                    try:
+                        base_move = int(m_battleline.group("base_move") or 0)
+                    except Exception:
+                        base_move = 0
+                    try:
+                        battleline_move = int(m_battleline.group("battleline_move") or 0)
+                    except Exception:
+                        battleline_move = 0
+                    try:
+                        battleline_range = int(m_battleline.group("battleline_range") or 0)
+                    except Exception:
+                        battleline_range = 0
+                    if base_move <= 0 or battleline_move <= 0 or battleline_range <= 0:
+                        continue
+                    source = str(name or "Post-shoot reactive move").strip() or "Post-shoot reactive move"
+                    requires_not_engaged = "not within engagement range" in normalized
+                    key = (
+                        source.lower(),
+                        int(base_move),
+                        "",
+                        bool(requires_not_engaged),
+                        int(battleline_move),
+                        int(battleline_range),
+                    )
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    specs.append(
+                        {
+                            "source": source,
+                            "range": int(base_move),
+                            "range_roll": "",
+                            "requires_not_engaged": bool(requires_not_engaged),
+                            "battleline_wholly_within_max_distance": int(battleline_move),
+                            "battleline_wholly_within_range": int(battleline_range),
+                            "battleline_required_keyword": "BATTLELINE",
+                            "battleline_required_faction_keyword": "ADEPTUS MECHANICUS",
+                        }
+                    )
                     continue
                 range_expr = str(m.group("range_expr") or "").strip().upper()
                 range_roll = ""
@@ -4177,6 +4221,46 @@ class ActionsMovementMixin:
                         crit_hit_reasons.append(f"{source}: critical hit on {int(threshold)}+")
         except Exception:
             pass
+        try:
+            sr = getattr(root, "special_rules", None)
+            battleline_specs = list(sr.get("admech_breaching_command_battleline_full_reroll", []) or []) if isinstance(sr, dict) else []
+            if battleline_specs:
+                game_map = None
+                try:
+                    army_now = root.get_parent_army() if root is not None else None
+                    game_now = getattr(getattr(army_now, "player", None), "game", None) if army_now is not None else None
+                    game_map = getattr(game_now, "map", None) if game_now is not None else None
+                except Exception:
+                    game_map = None
+                seen_specs: set[tuple[str, int]] = set()
+                for spec in battleline_specs:
+                    if not isinstance(spec, dict):
+                        continue
+                    source = str(spec.get("source", "") or "Breaching Command").strip() or "Breaching Command"
+                    try:
+                        range_value = int(spec.get("range", 0) or 0)
+                    except Exception:
+                        range_value = 0
+                    if range_value <= 0:
+                        continue
+                    spec_key = (source.lower(), int(range_value))
+                    if spec_key in seen_specs:
+                        continue
+                    seen_specs.add(spec_key)
+                    if not bool(
+                        root._within_friendly_adeptus_mechanicus_battleline(
+                            range_value=float(range_value),
+                            game_map=game_map,
+                            include_self=False,
+                        )
+                    ):
+                        continue
+                    mods["reroll_hit_full"] = True
+                    reroll_hit_full_reasons.append(
+                        f"{source}: re-roll Hit roll while within {int(range_value)}\" of friendly ADEPTUS MECHANICUS BATTLELINE"
+                    )
+        except Exception:
+            pass
 
         mods["reroll_hit_values"] = tuple(sorted(reroll_hit_values))
         mods["reroll_hit_ones"] = bool(1 in reroll_hit_values)
@@ -5611,6 +5695,108 @@ class ActionsMovementMixin:
         """Return True if this unit is within range of an objective marker it controls."""
         return bool(self._within_controlled_objective_range(game_map))
 
+    def _is_within_friendly_keyword_unit(
+        self,
+        *,
+        range_value: float = 6.0,
+        required_keyword: str = "BATTLELINE",
+        required_faction_keyword: str = "",
+        game_map=None,
+        include_self: bool = False,
+    ) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        if army is None:
+            return False
+        if game_map is None:
+            try:
+                game = getattr(getattr(army, "player", None), "game", None)
+            except Exception:
+                game = None
+            game_map = getattr(game, "map", None) if game is not None else None
+
+        kw = str(required_keyword or "").strip()
+        faction_kw = str(required_faction_keyword or "").strip()
+        try:
+            from ...utility.aura_utils import unit_within_range_of_unit
+        except Exception:
+            return False
+
+        seen: set[str] = set()
+        for candidate in list(getattr(army, "units", []) or []):
+            if candidate is None:
+                continue
+            try:
+                cand_root = candidate.get_attached_unit_root()
+            except Exception:
+                cand_root = candidate
+            if cand_root is None:
+                continue
+            if not include_self and cand_root is root:
+                continue
+            cid = str(get_entity_id(cand_root) or "")
+            if cid and cid in seen:
+                continue
+            if cid:
+                seen.add(cid)
+            try:
+                if not cand_root.is_alive() or not bool(getattr(cand_root, "deployed", False)):
+                    continue
+            except Exception:
+                continue
+            try:
+                if cand_root.is_in_reserves():
+                    continue
+            except Exception:
+                pass
+            try:
+                if bool(getattr(cand_root, "is_embarked", False)) or bool(getattr(cand_root, "embarked_in", None)):
+                    continue
+            except Exception:
+                pass
+            try:
+                if kw and not bool(cand_root.has_any_keyword(kw)):
+                    continue
+            except Exception:
+                continue
+            if faction_kw:
+                try:
+                    if not bool(cand_root.has_any_keyword(faction_kw)):
+                        continue
+                except Exception:
+                    continue
+            try:
+                if unit_within_range_of_unit(root, cand_root, float(range_value), use_attached_aggregate=True):
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def _within_friendly_adeptus_mechanicus_battleline(
+        self,
+        *,
+        range_value: float = 6.0,
+        game_map=None,
+        include_self: bool = False,
+    ) -> bool:
+        return bool(
+            self._is_within_friendly_keyword_unit(
+                range_value=float(range_value),
+                required_keyword="BATTLELINE",
+                required_faction_keyword="ADEPTUS MECHANICUS",
+                game_map=game_map,
+                include_self=include_self,
+            )
+        )
+
     def can_reroll_advance_roll(self) -> bool:
         """
         Best-effort detection for abilities that allow re-rolling Advance rolls for this unit/model.
@@ -6528,6 +6714,52 @@ class ActionsMovementMixin:
                         continue
                     if val:
                         mods.append((val, source))
+            battleline_specs = list(sr.get("admech_optimised_gait_battleline_bonus", []) or [])
+            if battleline_specs:
+                game_map = None
+                try:
+                    army = self.get_parent_army()
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    game_map = getattr(game, "map", None) if game is not None else None
+                except Exception:
+                    game_map = None
+                seen_specs: set[tuple[str, int, int]] = set()
+                for spec in battleline_specs:
+                    if not isinstance(spec, dict):
+                        continue
+                    source = str(spec.get("source", "") or "Optimised Gait").strip() or "Optimised Gait"
+                    try:
+                        range_value = int(spec.get("range", 0) or 0)
+                    except Exception:
+                        range_value = 0
+                    try:
+                        bonus_value = int(spec.get("value", 0) or 0)
+                    except Exception:
+                        bonus_value = 0
+                    if range_value <= 0 or bonus_value <= 0:
+                        continue
+                    key = (source.lower(), int(range_value), int(bonus_value))
+                    if key in seen_specs:
+                        continue
+                    seen_specs.add(key)
+                    try:
+                        in_range = bool(
+                            self._within_friendly_adeptus_mechanicus_battleline(
+                                range_value=float(range_value),
+                                game_map=game_map,
+                                include_self=False,
+                            )
+                        )
+                    except Exception:
+                        in_range = False
+                    if not in_range:
+                        continue
+                    mods.append(
+                        (
+                            int(bonus_value),
+                            f"{source}: +{int(bonus_value)} while within {int(range_value)}\" of friendly ADEPTUS MECHANICUS BATTLELINE",
+                        )
+                    )
         try:
             from ...utility.aura_effects import get_aura_advance_charge_roll_modifiers
             aura_mods, _ = get_aura_advance_charge_roll_modifiers(self)

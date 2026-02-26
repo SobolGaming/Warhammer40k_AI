@@ -2425,6 +2425,21 @@ class LateGameplayMixin:
         models_destroyed = 0
         mod = int(roll_modifier or 0)
         reroll_failed_tests = False
+        reroll_sources: list[str] = []
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            sr_root = getattr(root, "special_rules", None)
+        except Exception:
+            sr_root = None
+        if isinstance(sr_root, dict) and bool(sr_root.get("unit_reroll_desperate_escape_tests")):
+            reroll_failed_tests = True
+            for src in list(sr_root.get("unit_reroll_desperate_escape_sources", []) or []):
+                label = str(src or "").strip()
+                if label:
+                    reroll_sources.append(label)
         try:
             army = self.get_parent_army()
         except Exception:
@@ -2438,10 +2453,16 @@ class LateGameplayMixin:
             )
             if callable(reroll_fn):
                 game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
-                reroll_failed_tests = bool(reroll_fn(self, game=game))
+                if bool(reroll_fn(self, game=game)):
+                    reroll_failed_tests = True
+                    reroll_sources.append("Lions Blade - Lord of Hunt")
         except Exception:
-            reroll_failed_tests = False
-        
+            pass
+
+        if reroll_failed_tests and reroll_sources:
+            unique_sources = ", ".join(dict.fromkeys(reroll_sources))
+            logger.info(f"{self.name} can re-roll failed Desperate Escape tests ({unique_sources}).")
+
         for i, model in enumerate(models_to_test):
             roll = get_roll("D6")
             final_roll = roll + mod

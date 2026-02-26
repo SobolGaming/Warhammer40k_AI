@@ -1132,6 +1132,8 @@ class RulesParsingMixin:
                 "enemy_fallback_desperate_escape_exclude_monster_vehicle",
                 "enemy_fallback_desperate_escape_bs_penalty",
                 "enemy_fallback_desperate_escape_sources",
+                "unit_reroll_desperate_escape_tests",
+                "unit_reroll_desperate_escape_sources",
             ):
                 if key in sr:
                     del sr[key]
@@ -1141,6 +1143,7 @@ class RulesParsingMixin:
         sources: list[str] = []
         exclude_monster_vehicle = False
         bs_penalty = 0
+        own_reroll_sources: list[str] = []
         for ab in self._iter_active_abilities():
             try:
                 if isinstance(ab, str):
@@ -1156,6 +1159,12 @@ class RulesParsingMixin:
                 continue
             if "desperate escape" not in text:
                 continue
+            if (
+                ("this unit" in text or "models in this unit" in text or "model in this unit" in text)
+                and bool(re.search(r"re\s*-?\s*roll", text, flags=re.IGNORECASE))
+            ):
+                if name:
+                    own_reroll_sources.append(name)
             if ("fall back" not in text) and ("falls back" not in text) and ("fallback" not in text):
                 continue
             if "excluding monsters and vehicles" in text or ("excluding monsters" in text and "vehicles" in text):
@@ -1172,6 +1181,9 @@ class RulesParsingMixin:
                 sr["enemy_fallback_desperate_escape_exclude_monster_vehicle"] = True
             if bs_penalty:
                 sr["enemy_fallback_desperate_escape_bs_penalty"] = int(bs_penalty)
+        if own_reroll_sources:
+            sr["unit_reroll_desperate_escape_tests"] = True
+            sr["unit_reroll_desperate_escape_sources"] = list(dict.fromkeys(own_reroll_sources))
         self.special_rules = sr
 
     def _refresh_targeted_stratagem_cp_discount_flags(self) -> None:
@@ -1967,18 +1979,54 @@ class RulesParsingMixin:
                     kind = "table_d6_2_5_6"
                 if not kind:
                     continue
+                engagement_only = bool(
+                    re.search(
+                        r"for\s+each\s+model\s+in\s+(?:this\s+unit|that\s+unit|this\s+model'?s\s+unit)\s+that\s+is\s+within\s+engagement\s+range\s+of\s+that\s+enemy\s+unit",
+                        low,
+                        flags=re.IGNORECASE,
+                    )
+                )
+                start_charge_bonus = 0
+                start_charge_range = 0
+                start_charge_match = re.search(
+                    r"adding\s+(?P<bonus>\d+)\s+to\s+the\s+result\s+if\s+this\s+unit\s+started\s+its\s+charge\s+move\s+within\s+"
+                    r"(?P<range>\d+)\s*\"?\s*of\s+one\s+or\s+more\s+friendly\s+adeptus\s+mechanicus\s+battleline\s+units",
+                    low,
+                    flags=re.IGNORECASE,
+                )
+                if start_charge_match:
+                    try:
+                        start_charge_bonus = int(start_charge_match.group("bonus") or 0)
+                    except Exception:
+                        start_charge_bonus = 0
+                    try:
+                        start_charge_range = int(start_charge_match.group("range") or 0)
+                    except Exception:
+                        start_charge_range = 0
                 source = str(name or "Charge Mortals").strip() or "Charge Mortals"
-                key = (kind, source.lower())
+                key = (
+                    kind,
+                    source.lower(),
+                    bool(engagement_only),
+                    int(start_charge_bonus),
+                    int(start_charge_range),
+                )
                 if key in seen:
                     continue
                 seen.add(key)
-                specs.append(
-                    {
-                        "kind": kind,
-                        "name": source,
-                        "description": str(desc or ""),
-                    }
-                )
+                spec = {
+                    "kind": kind,
+                    "name": source,
+                    "description": str(desc or ""),
+                }
+                if engagement_only:
+                    spec["engagement_only"] = True
+                if start_charge_bonus > 0 and start_charge_range > 0:
+                    spec["start_charge_bonus"] = int(start_charge_bonus)
+                    spec["start_charge_range"] = int(start_charge_range)
+                    spec["start_charge_required_keyword"] = "BATTLELINE"
+                    spec["start_charge_required_faction_keyword"] = "ADEPTUS MECHANICUS"
+                specs.append(spec)
 
         # Ghosts of the Webway enhancement: Cegorach's Coil
         for u in members:
@@ -2216,6 +2264,8 @@ class RulesParsingMixin:
                     "bearer_unit_phase_move_engagement_types",
                     "bearer_unit_phase_move_block_titanic_types",
                     "bearer_unit_auto_pass_desperate_escape",
+                    "admech_optimised_gait_battleline_bonus",
+                    "admech_breaching_command_battleline_full_reroll",
                     "enhancement_kunnin_but_brutal_active",
                 ):
                     if key in sr:
@@ -2269,6 +2319,9 @@ class RulesParsingMixin:
         grant_deep_strike = False
         kunnin_but_brutal_active = False
         agile_maneuver_reroll = False
+        advance_charge_base_bonus_by_source: dict[str, int] = {}
+        admech_battleline_advance_charge_specs: list[dict] = []
+        admech_breaching_command_specs: list[dict] = []
 
         def _iter_sentences(text: str) -> list[str]:
             if not text:
@@ -2358,34 +2411,91 @@ class RulesParsingMixin:
                 for sentence in _iter_sentences(text):
                     if not sentence:
                         continue
-                    m = self._BEARER_UNIT_ADVANCE_AND_CHARGE_BONUS_RE.search(sentence)
-                    if m:
+                    source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
+                    sentence_lower = sentence.lower()
+                    is_battleline_instead_clause = bool(
+                        re.search(
+                            r"while\s+this\s+unit\s+is\s+within\s+\d+\s*\"?\s*of\s+one\s+or\s+more\s+friendly\s+adeptus\s+mechanicus\s+battleline\s+units.*\binstead\b",
+                            sentence_lower,
+                            flags=re.IGNORECASE,
+                        )
+                    )
+                    matched_advance_and_charge = False
+                    if not is_battleline_instead_clause:
+                        m = self._BEARER_UNIT_ADVANCE_AND_CHARGE_BONUS_RE.search(sentence)
+                        if m:
+                            try:
+                                val = int(m.group(1))
+                            except Exception:
+                                val = None
+                            if val:
+                                matched_advance_and_charge = True
+                                advance_mods.append((val, source))
+                                charge_mods.append((val, source))
+                                source_key = source.lower()
+                                existing = int(advance_charge_base_bonus_by_source.get(source_key, 0) or 0)
+                                if int(val) > existing:
+                                    advance_charge_base_bonus_by_source[source_key] = int(val)
+                        if not matched_advance_and_charge:
+                            m = self._BEARER_UNIT_ADVANCE_BONUS_RE.search(sentence)
+                            if m:
+                                try:
+                                    val = int(m.group(1))
+                                except Exception:
+                                    val = None
+                                if val:
+                                    advance_mods.append((val, source))
+                            m = self._BEARER_UNIT_CHARGE_BONUS_RE.search(sentence)
+                            if m:
+                                try:
+                                    val = int(m.group(1))
+                                except Exception:
+                                    val = None
+                                if val:
+                                    charge_mods.append((val, source))
+
+                    optimised_gait_match = re.search(
+                        r"while\s+this\s+unit\s+is\s+within\s+(?P<range>\d+)\s*\"?\s*of\s+one\s+or\s+more\s+friendly\s+adeptus\s+mechanicus\s+battleline\s+units\s*,?\s*add\s+(?P<value>\d+)\s+to\s+advance\s+and\s+charge\s+rolls?\s+made\s+for\s+this\s+unit\s+instead",
+                        sentence_lower,
+                        flags=re.IGNORECASE,
+                    )
+                    if optimised_gait_match:
                         try:
-                            val = int(m.group(1))
+                            battleline_range = int(optimised_gait_match.group("range") or 0)
                         except Exception:
-                            val = None
-                        if val:
-                            source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
-                            advance_mods.append((val, source))
-                            charge_mods.append((val, source))
-                    m = self._BEARER_UNIT_ADVANCE_BONUS_RE.search(sentence)
-                    if m:
+                            battleline_range = 0
                         try:
-                            val = int(m.group(1))
+                            battleline_value = int(optimised_gait_match.group("value") or 0)
                         except Exception:
-                            val = None
-                        if val:
-                            source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
-                            advance_mods.append((val, source))
-                    m = self._BEARER_UNIT_CHARGE_BONUS_RE.search(sentence)
-                    if m:
+                            battleline_value = 0
+                        base_value = int(advance_charge_base_bonus_by_source.get(source.lower(), 0) or 0)
+                        extra_value = int(max(0, battleline_value - base_value))
+                        if battleline_range > 0 and extra_value > 0:
+                            admech_battleline_advance_charge_specs.append(
+                                {
+                                    "source": source,
+                                    "range": int(battleline_range),
+                                    "value": int(extra_value),
+                                }
+                            )
+
+                    breaching_command_match = re.search(
+                        r"while\s+this\s+unit\s+is\s+within\s+(?P<range>\d+)\s*\"?\s*of\s+one\s+or\s+more\s+friendly\s+adeptus\s+mechanicus\s+battleline\s+units\s*,?\s*you\s+can\s+re\s*-?\s*roll\s+the\s+hit\s+roll\s+instead",
+                        sentence_lower,
+                        flags=re.IGNORECASE,
+                    )
+                    if breaching_command_match:
                         try:
-                            val = int(m.group(1))
+                            battleline_range = int(breaching_command_match.group("range") or 0)
                         except Exception:
-                            val = None
-                        if val:
-                            source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
-                            charge_mods.append((val, source))
+                            battleline_range = 0
+                        if battleline_range > 0:
+                            admech_breaching_command_specs.append(
+                                {
+                                    "source": source,
+                                    "range": int(battleline_range),
+                                }
+                            )
 
                     m = self._BEARER_UNIT_LEADERSHIP_SET_RE.search(sentence)
                     if m:
@@ -3062,6 +3172,69 @@ class RulesParsingMixin:
                     sr = {}
                 sr["bearer_unit_phase_move_engagement_types"] = list(move_types_sorted)
                 u.special_rules = sr
+
+        if admech_battleline_advance_charge_specs:
+            deduped_specs: list[dict] = []
+            seen_specs: set[tuple[str, int, int]] = set()
+            for spec in admech_battleline_advance_charge_specs:
+                source = str(spec.get("source", "") or "").strip() or "Optimised Gait"
+                try:
+                    range_value = int(spec.get("range", 0) or 0)
+                except Exception:
+                    range_value = 0
+                try:
+                    value = int(spec.get("value", 0) or 0)
+                except Exception:
+                    value = 0
+                if range_value <= 0 or value <= 0:
+                    continue
+                key = (source.lower(), int(range_value), int(value))
+                if key in seen_specs:
+                    continue
+                seen_specs.add(key)
+                deduped_specs.append(
+                    {
+                        "source": source,
+                        "range": int(range_value),
+                        "value": int(value),
+                    }
+                )
+            if deduped_specs:
+                for u in members:
+                    sr = getattr(u, "special_rules", None)
+                    if not isinstance(sr, dict):
+                        sr = {}
+                    sr["admech_optimised_gait_battleline_bonus"] = list(deduped_specs)
+                    u.special_rules = sr
+
+        if admech_breaching_command_specs:
+            deduped_specs: list[dict] = []
+            seen_specs: set[tuple[str, int]] = set()
+            for spec in admech_breaching_command_specs:
+                source = str(spec.get("source", "") or "").strip() or "Breaching Command"
+                try:
+                    range_value = int(spec.get("range", 0) or 0)
+                except Exception:
+                    range_value = 0
+                if range_value <= 0:
+                    continue
+                key = (source.lower(), int(range_value))
+                if key in seen_specs:
+                    continue
+                seen_specs.add(key)
+                deduped_specs.append(
+                    {
+                        "source": source,
+                        "range": int(range_value),
+                    }
+                )
+            if deduped_specs:
+                for u in members:
+                    sr = getattr(u, "special_rules", None)
+                    if not isinstance(sr, dict):
+                        sr = {}
+                    sr["admech_breaching_command_battleline_full_reroll"] = list(deduped_specs)
+                    u.special_rules = sr
 
         if auto_pass_desperate_escape:
             for u in members:

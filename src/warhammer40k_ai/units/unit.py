@@ -3273,6 +3273,17 @@ class Unit(
         r"if it does until the end of the turn (?:that unit|this unit) is not eligible to declare a charge",
         re.IGNORECASE,
     )
+    _POST_SHOOT_REACTIVE_MOVE_NO_CHARGE_BATTLELINE_ALT_RE = re.compile(
+        r"in your shooting phase after this (?:model s unit|unit) has shot "
+        r"if it is not within engagement range of (?:one or more|any) enemy units "
+        r"(?:it|that unit|this unit) can do one of the following "
+        r"make a normal move of up to (?P<base_move>\d+)\s*\"?\s* "
+        r"make a normal move of up to (?P<battleline_move>\d+)\s*\"?\s* "
+        r"provided every model in this unit ends that move wholly within (?P<battleline_range>\d+)\s*\"?\s* "
+        r"of one or more friendly adeptus mechanicus battleline units "
+        r"in either case if it does until the end of the turn (?:that unit|this unit) is not eligible to declare a charge",
+        re.IGNORECASE,
+    )
     _SHADOW_FIELD_RE = re.compile(
         r"you cannot re roll invulnerable saving throws made for the bearer the first time an invulnerable saving throw made for the bearer is failed "
         r"until the end of the battle the bearer has no invulnerable save",
@@ -3748,7 +3759,7 @@ class Unit(
     _MOVE_OVER_MORTAL_WOUNDS_RE = re.compile(
         r"(?:(?:in|during) your movement phase(?:,)?\s+)?(?:each time|after) (?:this model|the bearer) ends a (?P<moves>[a-z ]+) move "
         r"(?:you can )?(?:select|choose) one enemy unit(?: excluding monsters? and vehicles?(?: units)?)? "
-        r"(?:that )?(?:it )?moved over during that move "
+        r"(?:that )?(?:it )?moved (?:over|across) during that move "
         r"(?:if you do )?(?:and |then )?roll (?P<dice>\d+|one|two|three|four|five|six|seven|eight|nine|ten) d6 "
         r"(?:adding (?P<fly_bonus>\d+) to each result if that enemy unit can fly )?"
         r"for each (?P<threshold>\d)\+ that (?:enemy )?unit suffers (?P<mw>d3|d6|\d+) mortal wounds?",
@@ -3757,7 +3768,7 @@ class Unit(
     _UNIT_MOVE_OVER_MORTAL_WOUNDS_RE = re.compile(
         r"(?:once per battle(?:,)?\s+)?(?:(?:in|during) your movement phase(?:,)?\s+)?(?:each time|after) this unit ends a (?P<moves>[a-z ]+) move "
         r"(?:you can )?(?:select|choose) one enemy unit(?: excluding monsters? and vehicles?(?: units)?)? "
-        r"(?:that )?(?:it )?moved over during that move "
+        r"(?:that )?(?:it )?moved (?:over|across) during that move "
         r"(?:if you do )?(?:and |then )?roll (?:\d+|one|two|three|four|five|six|seven|eight|nine|ten) d6 for each model in this unit "
         r"(?:adding (?P<fly_bonus>\d+) to each result if that enemy unit can fly )?"
         r"for each (?P<threshold>\d)\+? that (?:enemy )?unit suffers (?P<mw>d3|d6|\d+) mortal wounds?",

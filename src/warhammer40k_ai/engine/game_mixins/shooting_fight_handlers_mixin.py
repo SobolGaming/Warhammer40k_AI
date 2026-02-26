@@ -382,7 +382,8 @@ class GameShootingFightHandlersMixin:
             if queue is None or not hasattr(queue, "list"):
                 return False
             for req in list(queue.list() or []):
-                if str(getattr(req, "decision_type", "")) != DECISION_MOVE_UNIT:
+                decision_type = str(getattr(req, "decision_type", ""))
+                if decision_type not in (DECISION_MOVE_UNIT, DECISION_CONFIRM_YES_NO):
                     continue
                 ctx = dict(getattr(req, "context", {}) or {})
                 kind = str(ctx.get("reactive_move_kind", "") or "")
@@ -503,6 +504,54 @@ class GameShootingFightHandlersMixin:
             if max_distance <= 0:
                 continue
             source = str(spec.get("source", "") or "Post-shoot reactive move").strip() or "Post-shoot reactive move"
+            try:
+                battleline_distance = int(spec.get("battleline_wholly_within_max_distance", 0) or 0)
+            except Exception:
+                battleline_distance = 0
+            try:
+                battleline_range = int(spec.get("battleline_wholly_within_range", 0) or 0)
+            except Exception:
+                battleline_range = 0
+            if battleline_distance > 0 and battleline_range > 0:
+                unit_id = str(maybe_entity_id(attacker_unit) or "")
+                if not unit_id:
+                    continue
+                message = (
+                    f"{source}: Choose one option:\n"
+                    f"- Make a Normal move of up to {int(max_distance)}\".\n"
+                    f"- Make a Normal move of up to {int(battleline_distance)}\", provided every model in this unit "
+                    f"ends that move wholly within {int(battleline_range)}\" of one or more friendly ADEPTUS MECHANICUS BATTLELINE units."
+                )
+                request = DecisionRequest.create(
+                    DECISION_CONFIRM_YES_NO,
+                    source,
+                    player_id=getattr(attacker_player, "id", None),
+                    options=[
+                        DecisionOption.create(
+                            f"{int(max_distance)}\" Move",
+                            payload={"choice": True, "post_shoot_no_charge_mode": "base"},
+                        ),
+                        DecisionOption.create(
+                            f"{int(battleline_distance)}\" Battleline Move",
+                            payload={"choice": True, "post_shoot_no_charge_mode": "battleline_6"},
+                        ),
+                        DecisionOption.create("Skip", payload={"choice": False}),
+                    ],
+                    context={
+                        **self._reactive_move_context(
+                            kind="post_shoot_no_charge",
+                            unit_id=unit_id,
+                            movement_type="reactive",
+                            source=source,
+                        ),
+                        "message": message,
+                        "post_shoot_no_charge_base_max_distance": int(max_distance),
+                        "post_shoot_no_charge_battleline_max_distance": int(battleline_distance),
+                        "post_shoot_no_charge_battleline_range": int(battleline_range),
+                    },
+                )
+                self.request_decision(request)
+                return
             self._queue_reactive_move_movement_decision(
                 player=attacker_player,
                 unit=attacker_unit,

@@ -3360,6 +3360,7 @@ class GameReactiveDecisionsMixin:
             if kind not in (
                 "loping_speed",
                 "tactica_obliqua",
+                "post_shoot_no_charge",
                 "blood_surge",
                 "brazen_fury",
                 "horde_move",
@@ -3459,6 +3460,52 @@ class GameReactiveDecisionsMixin:
                     source=source,
                     range_value=rng,
                     extra_context={"tactica_obliqua_mode": "d6"},
+                )
+                return
+            if kind == "post_shoot_no_charge":
+                selected_mode = str(payload.get("post_shoot_no_charge_mode", "") or "base").strip().lower()
+                if selected_mode == "battleline_6":
+                    try:
+                        max_distance = int(ctx.get("post_shoot_no_charge_battleline_max_distance", 0) or 0)
+                    except Exception:
+                        max_distance = 0
+                    try:
+                        battleline_range = int(ctx.get("post_shoot_no_charge_battleline_range", 0) or 0)
+                    except Exception:
+                        battleline_range = 0
+                    if max_distance <= 0 or battleline_range <= 0:
+                        return
+                    self._queue_reactive_move_movement_decision(
+                        player=player,
+                        unit=unit,
+                        max_distance=max_distance,
+                        kind=kind,
+                        movement_type=movement_type or "reactive",
+                        source=source,
+                        extra_context={
+                            "tactica_obliqua_mode": "battleline_6",
+                            "tactica_obliqua_battleline_range": int(battleline_range),
+                        },
+                    )
+                    return
+                try:
+                    max_distance = int(ctx.get("post_shoot_no_charge_base_max_distance", 0) or 0)
+                except Exception:
+                    max_distance = 0
+                if max_distance <= 0:
+                    try:
+                        max_distance = int(ctx.get("max_distance", 0) or 0)
+                    except Exception:
+                        max_distance = 0
+                if max_distance <= 0:
+                    return
+                self._queue_reactive_move_movement_decision(
+                    player=player,
+                    unit=unit,
+                    max_distance=max_distance,
+                    kind=kind,
+                    movement_type=movement_type or "reactive",
+                    source=source,
                 )
                 return
             if kind == "loping_speed":

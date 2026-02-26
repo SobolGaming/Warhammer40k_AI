@@ -557,6 +557,117 @@ class WargearProfile:
             return bool(unit._weapon_name_matches([target_name], candidate))
         return self._normalize_weapon_name_key(candidate) == self._normalize_weapon_name_key(target_name)
 
+    def _target_has_any_keyword(self, target: Optional['Unit'], keywords: tuple[str, ...]) -> bool:
+        if target is None:
+            return False
+        for keyword in list(keywords or ()):
+            kw = str(keyword or "").strip().upper()
+            if not kw:
+                continue
+            try:
+                if bool(target.has_keyword(kw)):
+                    return True
+            except Exception:
+                pass
+            try:
+                if bool(target.has_any_keyword(kw)):
+                    return True
+            except Exception:
+                pass
+        return False
+
+    def _admech_datasheet_weapon_rules(self, attacker: 'Model') -> dict:
+        unit = getattr(attacker, "parent_unit", None)
+        if unit is None:
+            return {}
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return {}
+        cache_key = "admech_datasheet_weapon_rules"
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            stored = cache.get(cache_key)
+            return dict(stored) if isinstance(stored, dict) else {}
+
+        rules = {
+            "hit_bonus": [],
+            "wound_reroll_full": [],
+            "searing_conflagration": [],
+        }
+        seen_hit: set[tuple[str, str, tuple[str, ...], int]] = set()
+        seen_wound: set[tuple[str, str, tuple[str, ...]]] = set()
+        seen_searing: set[tuple[str, str, int]] = set()
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for member in members:
+            if member is None:
+                continue
+            for name, _desc in member._iter_ability_entries_for_rules(model=None):
+                low_name = str(name or "").strip().lower()
+                source = str(name or "Unit ability").strip() or "Unit ability"
+                if low_name == "blistering salvoes":
+                    hit_rules = (
+                        ("belleros energy cannon", ("INFANTRY",), 1),
+                        ("ferrumite cannon", ("MONSTER", "VEHICLE"), 1),
+                    )
+                    for weapon_name, target_keywords, value in hit_rules:
+                        key = (source.lower(), weapon_name, tuple(target_keywords), int(value))
+                        if key in seen_hit:
+                            continue
+                        seen_hit.add(key)
+                        rules["hit_bonus"].append(
+                            {
+                                "source": source,
+                                "weapon_name": weapon_name,
+                                "target_keywords_any": tuple(target_keywords),
+                                "value": int(value),
+                            }
+                        )
+                elif low_name == "achillan eye":
+                    wound_rules = (
+                        ("radium jezzail", ("INFANTRY",)),
+                        ("skatros transuranic arquebus", ("MONSTER", "VEHICLE")),
+                    )
+                    for weapon_name, target_keywords in wound_rules:
+                        key = (source.lower(), weapon_name, tuple(target_keywords))
+                        if key in seen_wound:
+                            continue
+                        seen_wound.add(key)
+                        rules["wound_reroll_full"].append(
+                            {
+                                "source": source,
+                                "weapon_name": weapon_name,
+                                "target_keywords_any": tuple(target_keywords),
+                            }
+                        )
+                elif low_name == "searing conflagration":
+                    key = (source.lower(), "phosphor torch", 6)
+                    if key in seen_searing:
+                        continue
+                    seen_searing.add(key)
+                    rules["searing_conflagration"].append(
+                        {
+                            "source": source,
+                            "weapon_name": "phosphor torch",
+                            "battleline_range": 6,
+                        }
+                    )
+
+        if not isinstance(cache, dict):
+            cache = {}
+        cache[cache_key] = dict(rules)
+        root._ability_cache = cache
+        return dict(rules)
+
     def _imperial_knights_thunderstomp_bonus(self, attacker: 'Model') -> tuple[int, int, str]:
         """
         Return (attacks_set, ap_bonus, source) for THUNDERSTOMP when active.
@@ -9395,6 +9506,31 @@ class WargearProfile:
                 _add_hit_mod(bonus, list(unit_hit_mods.get("hit_reasons", ()) or ()))
         except Exception:
             unit_hit_mods = None
+        try:
+            admech_rules = self._admech_datasheet_weapon_rules(attacker)
+            for rule in list(admech_rules.get("hit_bonus", []) or []):
+                if not isinstance(rule, dict):
+                    continue
+                weapon_name = str(rule.get("weapon_name", "") or "").strip()
+                if weapon_name and not self._weapon_name_matches_for_attacker(attacker, weapon_name):
+                    continue
+                target_keywords = tuple(str(v or "").strip().upper() for v in list(rule.get("target_keywords_any", ()) or ()) if str(v or "").strip())
+                if target_keywords and not self._target_has_any_keyword(target, target_keywords):
+                    continue
+                try:
+                    bonus_value = int(rule.get("value", 0) or 0)
+                except Exception:
+                    bonus_value = 0
+                if bonus_value == 0:
+                    continue
+                source_name = str(rule.get("source", "") or "Unit ability").strip() or "Unit ability"
+                target_label = "/".join(target_keywords) if target_keywords else "target"
+                _add_hit_mod(
+                    int(bonus_value),
+                    f"+{int(bonus_value)} to hit from {source_name} ({weapon_name} vs {target_label})",
+                )
+        except Exception:
+            pass
 
         # Model-specific: attack roll modifiers from parsed ability text.
         try:
@@ -14786,6 +14922,69 @@ class WargearProfile:
                 reroll_value_reasons.extend(list(unit_wound_mods.get("reroll_wound_reasons", ()) or ()))
                 if bool(unit_wound_mods.get("reroll_wound_full", False)):
                     reroll_full_reasons.extend(list(unit_wound_mods.get("reroll_wound_full_reasons", ()) or ()))
+        except Exception:
+            pass
+        try:
+            admech_rules = self._admech_datasheet_weapon_rules(attacker)
+            for rule in list(admech_rules.get("wound_reroll_full", []) or []):
+                if not isinstance(rule, dict):
+                    continue
+                weapon_name = str(rule.get("weapon_name", "") or "").strip()
+                if weapon_name and not self._weapon_name_matches_for_attacker(attacker, weapon_name):
+                    continue
+                target_keywords = tuple(str(v or "").strip().upper() for v in list(rule.get("target_keywords_any", ()) or ()) if str(v or "").strip())
+                if target_keywords and not self._target_has_any_keyword(target, target_keywords):
+                    continue
+                source_name = str(rule.get("source", "") or "Unit ability").strip() or "Unit ability"
+                target_label = "/".join(target_keywords) if target_keywords else "target"
+                reroll_full_reasons.append(f"{source_name}: re-roll Wound roll ({weapon_name} vs {target_label})")
+            for rule in list(admech_rules.get("searing_conflagration", []) or []):
+                if not isinstance(rule, dict):
+                    continue
+                weapon_name = str(rule.get("weapon_name", "") or "").strip()
+                if weapon_name and not self._weapon_name_matches_for_attacker(attacker, weapon_name):
+                    continue
+                unit = getattr(attacker, "parent_unit", None)
+                try:
+                    root = unit.get_attached_unit_root() if unit is not None and hasattr(unit, "get_attached_unit_root") else unit
+                except Exception:
+                    root = unit
+                if root is None:
+                    continue
+                objective_ok = False
+                try:
+                    game_map = self._get_game_map_from_model(attacker)
+                    objective_ok = bool(root._target_within_objective_range(target, game_map))
+                except Exception:
+                    objective_ok = False
+                if not objective_ok:
+                    continue
+                source_name = str(rule.get("source", "") or "Searing Conflagration").strip() or "Searing Conflagration"
+                reroll_wound_values.add(1)
+                reroll_value_reasons.append(
+                    f"{source_name}: re-roll Wound roll of 1 ({weapon_name} vs targets within objective range)"
+                )
+                try:
+                    battleline_range = int(rule.get("battleline_range", 0) or 0)
+                except Exception:
+                    battleline_range = 0
+                if battleline_range <= 0:
+                    continue
+                try:
+                    game_map = self._get_game_map_from_model(attacker)
+                    battleline_ok = bool(
+                        root._within_friendly_adeptus_mechanicus_battleline(
+                            range_value=float(battleline_range),
+                            game_map=game_map,
+                            include_self=False,
+                        )
+                    )
+                except Exception:
+                    battleline_ok = False
+                if battleline_ok:
+                    reroll_full_reasons.append(
+                        f"{source_name}: re-roll Wound roll ({weapon_name} vs targets within objective range while within {int(battleline_range)}\" of friendly ADEPTUS MECHANICUS BATTLELINE)"
+                    )
         except Exception:
             pass
         try:
