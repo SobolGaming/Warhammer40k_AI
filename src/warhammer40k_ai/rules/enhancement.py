@@ -601,6 +601,10 @@ class Enhancement:
             is_rad_zone_corps = bool(adm_mgr and adm_mgr.is_rad_zone_corps())
         except Exception:
             is_rad_zone_corps = False
+        try:
+            is_cohort_cybernetica = bool(adm_mgr and adm_mgr.is_cohort_cybernetica())
+        except Exception:
+            is_cohort_cybernetica = False
         am_mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
         try:
             is_grizzled_company = bool(am_mgr and am_mgr.is_grizzled_company())
@@ -868,6 +872,100 @@ class Enhancement:
             unit.special_rules["enhancement_autoclavic_denunciation"] = True
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "necromechanic" or enh_id == "000008572002":
+            if not is_cohort_cybernetica:
+                return
+            unit.special_rules["enhancement_necromechanic"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                range_inches = int(float(params.get("range", 12.0) or 12.0))
+            except Exception:
+                range_inches = 12
+            usage = str(params.get("usage", "battle_round") or "battle_round").strip().lower()
+            if usage not in {"battle_round", "battle"}:
+                usage = "battle_round"
+            unit.special_rules["enhancement_necromechanic_range"] = int(max(1, range_inches))
+            unit.special_rules["enhancement_necromechanic_usage"] = usage
+            unit.special_rules["enhancement_necromechanic_source"] = "Necromechanic"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_necromechanic_bearer_model_id"] = bearer_id
+
+        if name == "lord of machines" or enh_id == "000008572003":
+            if not is_cohort_cybernetica:
+                return
+            unit.special_rules["enhancement_lord_of_machines"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                range_inches = float(params.get("range", 12.0) or 12.0)
+            except Exception:
+                range_inches = 12.0
+            required_keywords = [
+                str(kw or "").strip().upper()
+                for kw in list(params.get("required_target_keywords", ("VEHICLE",)) or ("VEHICLE",))
+                if str(kw or "").strip()
+            ]
+            if not required_keywords:
+                required_keywords = ["VEHICLE"]
+            excluded_keywords = [
+                str(kw or "").strip().upper()
+                for kw in list(params.get("excluded_target_keywords", ()) or ())
+                if str(kw or "").strip()
+            ]
+            resolution_mode = str(params.get("resolution_mode", "leadership_test") or "leadership_test").strip().lower()
+            if not resolution_mode:
+                resolution_mode = "leadership_test"
+            unit.special_rules["enhancement_lord_of_machines_range"] = float(max(0.0, range_inches))
+            unit.special_rules["enhancement_lord_of_machines_required_target_keywords"] = list(required_keywords)
+            unit.special_rules["enhancement_lord_of_machines_excluded_target_keywords"] = list(excluded_keywords)
+            unit.special_rules["enhancement_lord_of_machines_resolution_mode"] = resolution_mode
+            unit.special_rules["enhancement_lord_of_machines_source"] = "Lord of Machines"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_lord_of_machines_bearer_model_id"] = bearer_id
+            cache = getattr(unit, "_ability_cache", None)
+            if isinstance(cache, dict):
+                cache_key = f"model_start_opponent_shooting_phase_disrupt:{bearer_id}"
+                cache.pop(cache_key, None)
+
+        if name == "emotionless clarity" or enh_id == "000008572004":
+            if not is_cohort_cybernetica:
+                return
+            unit.special_rules["enhancement_emotionless_clarity"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                range_inches = int(float(params.get("range", 12.0) or 12.0))
+            except Exception:
+                range_inches = 12
+            usage = str(params.get("usage", "turn") or "turn").strip().lower()
+            if usage not in {"turn", "battle_round"}:
+                usage = "turn"
+            unit.special_rules["enhancement_emotionless_clarity_range"] = int(max(1, range_inches))
+            unit.special_rules["enhancement_emotionless_clarity_usage"] = usage
+            unit.special_rules["enhancement_emotionless_clarity_source"] = "Emotionless Clarity"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_emotionless_clarity_bearer_model_id"] = bearer_id
+
+        if name == "arch-negator" or enh_id == "000008572005":
+            if not is_cohort_cybernetica:
+                return
+            unit.special_rules["enhancement_arch_negator"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            try:
+                anti_vehicle = int(params.get("anti_vehicle", 4) or 4)
+            except Exception:
+                anti_vehicle = 4
+            unit.special_rules["enhancement_arch_negator_anti_vehicle"] = int(max(2, anti_vehicle))
+            unit.special_rules["enhancement_arch_negator_source"] = "Arch-negator"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_arch_negator_bearer_model_id"] = bearer_id
 
         if name == "decoy targets" or enh_id == "000009757002":
             if not is_veiled_blade_elimination_force:

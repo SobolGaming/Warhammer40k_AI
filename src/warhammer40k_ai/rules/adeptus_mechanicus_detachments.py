@@ -48,6 +48,10 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
     _RADIAL_SUFFUSION_ENHANCEMENT_ID = "000008385002"
     _RADIAL_SUFFUSION_ENHANCEMENT_NAME = "radial suffusion"
     _RADIAL_SUFFUSION_EXTRA_RANGE_IN = 6.0
+    _EMOTIONLESS_CLARITY_FLAG_KEY = "enhancement_emotionless_clarity"
+    _EMOTIONLESS_CLARITY_RANGE_KEY = "enhancement_emotionless_clarity_range"
+    _EMOTIONLESS_CLARITY_SOURCE_KEY = "enhancement_emotionless_clarity_source"
+    _EMOTIONLESS_CLARITY_USAGE_KEY = "enhancement_emotionless_clarity_usage"
 
     def __init__(self, army=None):
         super().__init__(army)
@@ -1581,6 +1585,139 @@ class AdeptusMechanicusDetachmentManager(DetachmentManagerBase):
             targets.append(root)
         targets.sort(key=lambda item: self._entity_id(item) or str(getattr(item, "name", "") or ""))
         return targets
+
+    def _unit_is_legio_or_adeptus_mechanicus_vehicle(self, unit) -> bool:
+        if unit is None:
+            return False
+        root = self._attached_root(unit)
+        if root is None:
+            return False
+        if self._unit_has_keyword(root, self._LEGIO_CYBERNETICA_KEYWORD):
+            return True
+        if not self._unit_has_keyword(root, "VEHICLE"):
+            return False
+        return self._unit_has_keyword_or_faction(root, "ADEPTUS MECHANICUS", faction_id=self.faction_id)
+
+    def emotionless_clarity_auto_trigger_for_destroyed_model(
+        self,
+        destroyed_unit,
+        destroyed_model,
+        *,
+        game=None,
+    ) -> tuple[bool, str]:
+        if not self.is_cohort_cybernetica():
+            return False, ""
+        if destroyed_unit is None or destroyed_model is None:
+            return False, ""
+        target_root = self._attached_root(destroyed_unit)
+        if target_root is None or not self._unit_in_army(target_root):
+            return False, ""
+        if not self._unit_is_legio_or_adeptus_mechanicus_vehicle(target_root):
+            return False, ""
+        has_deadly_demise_fn = getattr(target_root, "has_deadly_demise", None)
+        if not callable(has_deadly_demise_fn):
+            return False, ""
+        has_deadly_demise, _damage_dice = has_deadly_demise_fn()
+        if not bool(has_deadly_demise):
+            return False, ""
+
+        if game is None:
+            owner = getattr(self.army, "player", None) if self.army is not None else None
+            game = getattr(owner, "game", None) if owner is not None else None
+
+        current_turn = 0
+        turn_owner_id = ""
+        if game is not None:
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0)
+            except (TypeError, ValueError):
+                current_turn = 0
+            get_current_player = getattr(game, "get_current_player", None)
+            if callable(get_current_player):
+                current_player = get_current_player()
+                turn_owner_id = str(getattr(current_player, "id", "") or "")
+
+        from ..utility.aura_utils import distance_between_models_bases_3d
+
+        sources: list[tuple[str, object, dict, object]] = []
+        seen_roots: set[str] = set()
+        for unit in list(getattr(self.army, "units", []) or []):
+            source_root = self._attached_root(unit)
+            if source_root is None:
+                continue
+            source_root_id = self._entity_id(source_root) or str(id(source_root))
+            if source_root_id in seen_roots:
+                continue
+            seen_roots.add(source_root_id)
+            if not self._unit_is_on_battlefield(source_root):
+                continue
+            members = list(getattr(source_root, "get_attached_unit_members", lambda: [])() or [])
+            if not members:
+                members = [source_root]
+            for source_unit in list(members or []):
+                if source_unit is None:
+                    continue
+                source_sr = getattr(source_unit, "special_rules", None)
+                if not isinstance(source_sr, dict) or not bool(source_sr.get(self._EMOTIONLESS_CLARITY_FLAG_KEY, False)):
+                    continue
+                get_bearer = getattr(source_unit, "_get_enhancement_bearer_model", None)
+                bearer = get_bearer() if callable(get_bearer) else None
+                if bearer is None:
+                    continue
+                if not self._is_model_alive(bearer):
+                    continue
+                try:
+                    range_in = float(source_sr.get(self._EMOTIONLESS_CLARITY_RANGE_KEY, 12) or 12)
+                except (TypeError, ValueError):
+                    range_in = 12.0
+                if range_in <= 0.0:
+                    continue
+                try:
+                    distance_in = float(distance_between_models_bases_3d(bearer, destroyed_model))
+                except (TypeError, ValueError):
+                    continue
+                if distance_in > range_in + 1e-6:
+                    continue
+                source_id = self._entity_id(source_unit) or self._entity_id(source_root) or str(id(source_unit))
+                sources.append((str(source_id), source_unit, source_sr, bearer))
+
+        if not sources:
+            return False, ""
+        sources.sort(key=lambda item: item[0])
+        for _source_id, source_unit, source_sr, _bearer in list(sources):
+            usage_scope = str(source_sr.get(self._EMOTIONLESS_CLARITY_USAGE_KEY, "turn") or "turn").strip().lower()
+            if usage_scope not in {"turn", "battle_round"}:
+                usage_scope = "turn"
+            already_used = False
+            if usage_scope == "battle_round":
+                try:
+                    used_round = int(source_sr.get("enhancement_emotionless_clarity_used_battle_round", 0) or 0)
+                except (TypeError, ValueError):
+                    used_round = 0
+                already_used = bool(current_turn > 0 and used_round == current_turn)
+            else:
+                try:
+                    used_turn = int(source_sr.get("enhancement_emotionless_clarity_used_turn", 0) or 0)
+                except (TypeError, ValueError):
+                    used_turn = 0
+                used_owner = str(source_sr.get("enhancement_emotionless_clarity_used_turn_owner", "") or "")
+                if current_turn > 0 and used_turn == current_turn:
+                    if not used_owner or not turn_owner_id or used_owner == turn_owner_id:
+                        already_used = True
+            if already_used:
+                continue
+
+            if usage_scope == "battle_round":
+                source_sr["enhancement_emotionless_clarity_used_battle_round"] = int(current_turn or 0)
+            else:
+                source_sr["enhancement_emotionless_clarity_used_turn"] = int(current_turn or 0)
+                if turn_owner_id:
+                    source_sr["enhancement_emotionless_clarity_used_turn_owner"] = str(turn_owner_id)
+            source_name = str(source_sr.get(self._EMOTIONLESS_CLARITY_SOURCE_KEY, "") or "Emotionless Clarity").strip() or "Emotionless Clarity"
+            source_sr["enhancement_emotionless_clarity_last_source"] = source_name
+            source_unit.special_rules = source_sr
+            return True, source_name
+        return False, ""
 
     def _pending_rad_bombardment_request(self, game, *, target_unit, battle_round: int):
         if game is None or target_unit is None:

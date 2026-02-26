@@ -4228,6 +4228,28 @@ class PositioningMixin:
             ]
         if is_ranged_attack and self._attached_unit_model_is_enhancement_bearer(
             model,
+            flag_key="enhancement_arch_negator",
+            enhancement_id="000008572005",
+            enhancement_name="arch-negator",
+            require_leading=False,
+        ):
+            try:
+                root = self.get_attached_unit_root()
+            except Exception:
+                root = self
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            try:
+                anti_vehicle = int(sr.get("enhancement_arch_negator_anti_vehicle", 4) or 4)
+            except Exception:
+                anti_vehicle = 4
+            source = str(sr.get("enhancement_arch_negator_source", "") or "Arch-negator").strip() or "Arch-negator"
+            rules = list(rules or []) + [
+                {"attack_type": "ranged", "keyword": f"ANTI-VEHICLE {int(max(2, anti_vehicle))}+", "source": source},
+            ]
+        if is_ranged_attack and self._attached_unit_model_is_enhancement_bearer(
+            model,
             flag_key="enhancement_micromelta_rounds",
             enhancement_id="000009757005",
             enhancement_name="micromelta rounds",

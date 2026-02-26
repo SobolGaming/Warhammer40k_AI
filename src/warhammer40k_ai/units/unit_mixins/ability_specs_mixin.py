@@ -5642,6 +5642,62 @@ class AbilitySpecsMixin:
                         }
                     )
 
+        if isinstance(sr, dict) and bool(sr.get("enhancement_lord_of_machines")):
+            try:
+                model_id = str(get_entity_id(model) or "")
+            except Exception:
+                model_id = ""
+            bearer_model_id = str(
+                sr.get("enhancement_lord_of_machines_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            if not bearer_model_id or not model_id or model_id == bearer_model_id:
+                source = str(sr.get("enhancement_lord_of_machines_source", "") or "Lord of Machines").strip() or "Lord of Machines"
+                try:
+                    range_value = int(float(sr.get("enhancement_lord_of_machines_range", 12.0) or 12.0))
+                except Exception:
+                    range_value = 12
+                resolution_mode = str(
+                    sr.get("enhancement_lord_of_machines_resolution_mode", "") or "leadership_test"
+                ).strip().lower() or "leadership_test"
+                required_keywords: list[str] = []
+                for keyword in list(sr.get("enhancement_lord_of_machines_required_target_keywords", ("VEHICLE",)) or ("VEHICLE",)):
+                    kw = str(keyword or "").strip().upper()
+                    if kw and kw not in required_keywords:
+                        required_keywords.append(kw)
+                excluded_keywords: list[str] = []
+                for keyword in list(sr.get("enhancement_lord_of_machines_excluded_target_keywords", ()) or ()):
+                    kw = str(keyword or "").strip().upper()
+                    if kw and kw not in excluded_keywords:
+                        excluded_keywords.append(kw)
+                key = (
+                    source.lower(),
+                    int(range_value),
+                    False,
+                    False,
+                    True,
+                    False,
+                    resolution_mode,
+                    tuple(required_keywords),
+                    tuple(excluded_keywords),
+                )
+                if range_value > 0 and key not in seen:
+                    seen.add(key)
+                    specs.append(
+                        {
+                            "source": source,
+                            "range": int(range_value),
+                            "mortal_on_one": False,
+                            "optional": True,
+                            "limit_one_per_army": False,
+                            "grant_ranged_hazardous": False,
+                            "resolution_mode": resolution_mode,
+                            "required_target_keywords": list(required_keywords),
+                            "excluded_target_keywords": list(excluded_keywords),
+                        }
+                    )
+
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
         self._ability_cache[cache_key] = list(specs)
@@ -7516,6 +7572,124 @@ class AbilitySpecsMixin:
                     if adept_entries:
                         adept_entries.sort(key=lambda entry: str(entry.get("source_unit_id", "") or ""))
                         sources.extend(adept_entries)
+
+        adm_mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+        try:
+            is_cohort_cybernetica = bool(adm_mgr and adm_mgr.is_cohort_cybernetica())
+        except Exception:
+            is_cohort_cybernetica = False
+        if is_cohort_cybernetica:
+            try:
+                has_legio_cybernetica = bool(root.has_any_keyword("LEGIO CYBERNETICA"))
+            except Exception:
+                try:
+                    has_legio_cybernetica = bool(root.has_keyword("LEGIO CYBERNETICA"))
+                except Exception:
+                    has_legio_cybernetica = False
+            try:
+                has_vehicle = bool(root.has_any_keyword("VEHICLE"))
+            except Exception:
+                try:
+                    has_vehicle = bool(root.has_keyword("VEHICLE"))
+                except Exception:
+                    has_vehicle = False
+            try:
+                has_adeptus_mechanicus = bool(root.has_any_keyword("ADEPTUS MECHANICUS"))
+            except Exception:
+                try:
+                    has_adeptus_mechanicus = bool(root.has_keyword("ADEPTUS MECHANICUS"))
+                except Exception:
+                    has_adeptus_mechanicus = False
+            target_eligible = bool(has_legio_cybernetica or (has_vehicle and has_adeptus_mechanicus))
+            if target_eligible:
+                from ...utility.aura_utils import distance_between_models_bases_3d
+
+                try:
+                    target_models = list(root.get_attached_unit_models() or [])
+                except Exception:
+                    target_models = list(getattr(root, "models", []) or [])
+                target_models = [m for m in list(target_models or []) if bool(getattr(m, "is_alive", True))]
+
+                if target_models and army is not None:
+                    try:
+                        army_units = list(getattr(army, "units", []) or [])
+                    except Exception:
+                        army_units = []
+                    seen_source_roots: set[str] = set()
+                    necromechanic_entries: list[dict] = []
+                    for unit in list(army_units or []):
+                        if unit is None:
+                            continue
+                        try:
+                            source_root = unit.get_attached_unit_root()
+                        except Exception:
+                            source_root = unit
+                        if source_root is None:
+                            continue
+                        source_root_id = str(get_entity_id(source_root) or "")
+                        if source_root_id and source_root_id in seen_source_roots:
+                            continue
+                        if source_root_id:
+                            seen_source_roots.add(source_root_id)
+                        try:
+                            if not source_root.is_alive() or not bool(getattr(source_root, "deployed", True)):
+                                continue
+                        except Exception:
+                            continue
+                        try:
+                            if source_root.is_in_reserves() or source_root.is_embarked:
+                                continue
+                        except Exception:
+                            pass
+                        try:
+                            members = list(source_root.get_attached_unit_members() or [])
+                        except Exception:
+                            members = [source_root]
+                        if not members:
+                            members = [source_root]
+                        for source_unit in list(members or []):
+                            if source_unit is None:
+                                continue
+                            source_sr = getattr(source_unit, "special_rules", None)
+                            if not isinstance(source_sr, dict) or not source_sr.get("enhancement_necromechanic"):
+                                continue
+                            source_bearer = getattr(source_unit, "_get_enhancement_bearer_model", lambda: None)()
+                            if source_bearer is None or not bool(getattr(source_bearer, "is_alive", True)):
+                                continue
+                            try:
+                                range_value = float(source_sr.get("enhancement_necromechanic_range", 12) or 12)
+                            except Exception:
+                                range_value = 12.0
+                            if range_value <= 0:
+                                continue
+                            in_range = False
+                            for target_model in list(target_models or []):
+                                try:
+                                    if float(distance_between_models_bases_3d(source_bearer, target_model)) <= float(range_value) + 1e-6:
+                                        in_range = True
+                                        break
+                                except Exception:
+                                    continue
+                            if not in_range:
+                                continue
+                            source_unit_id = str(get_entity_id(source_unit) or "")
+                            if not source_unit_id:
+                                continue
+                            source_name = str(source_sr.get("enhancement_necromechanic_source", "") or "Necromechanic").strip() or "Necromechanic"
+                            usage_scope = str(source_sr.get("enhancement_necromechanic_usage", "") or "battle_round").strip().lower()
+                            if usage_scope not in {"battle_round", "battle"}:
+                                usage_scope = "battle_round"
+                            necromechanic_entries.append(
+                                {
+                                    "source": source_name,
+                                    "usage_scope": usage_scope,
+                                    "usage_key": f"necromechanic:{source_unit_id}",
+                                    "source_unit_id": source_unit_id,
+                                }
+                            )
+                    if necromechanic_entries:
+                        necromechanic_entries.sort(key=lambda entry: str(entry.get("source_unit_id", "") or ""))
+                        sources.extend(necromechanic_entries)
 
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}

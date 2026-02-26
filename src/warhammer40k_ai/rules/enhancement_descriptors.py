@@ -871,6 +871,68 @@ _RAD_ZONE_CORPS_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _RAD_ZONE_CORPS_DESCRIPTORS.values()
 }
 
+_COHORT_CYBERNETICA_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008572002": EnhancementToolDescriptor(
+        enhancement_id="000008572002",
+        name="Necromechanic",
+        timing="when_friendly_legio_or_adeptus_mechanicus_vehicle_within_range_fails_save",
+        target="friendly_legio_cybernetica_or_adeptus_mechanicus_vehicle_model_within_range",
+        duration="once_per_battle_round",
+        effect="set_failed_save_attack_damage_to_zero",
+        range_in=12.0,
+        effect_params={
+            "range": 12.0,
+            "usage": "battle_round",
+            "required_target_keywords_any": ("LEGIO CYBERNETICA", "VEHICLE"),
+            "required_target_faction_keyword_for_vehicle": "ADEPTUS MECHANICUS",
+        },
+    ),
+    "000008572003": EnhancementToolDescriptor(
+        enhancement_id="000008572003",
+        name="Lord of Machines",
+        timing="start_of_opponent_shooting_phase",
+        target="enemy_vehicle_unit_within_range_visible",
+        duration="until_end_of_phase",
+        effect="leadership_test_then_hit_penalty_or_ineligible_to_shoot",
+        range_in=12.0,
+        effect_params={
+            "range": 12.0,
+            "required_target_keywords": ("VEHICLE",),
+            "resolution_mode": "leadership_test",
+            "optional": True,
+            "limit_one_per_army": False,
+        },
+    ),
+    "000008572004": EnhancementToolDescriptor(
+        enhancement_id="000008572004",
+        name="Emotionless Clarity",
+        timing="when_friendly_legio_or_adeptus_mechanicus_vehicle_within_range_is_destroyed",
+        target="friendly_legio_cybernetica_or_adeptus_mechanicus_vehicle_model_within_range_with_deadly_demise",
+        duration="once_per_turn",
+        effect="auto_trigger_deadly_demise",
+        range_in=12.0,
+        effect_params={
+            "range": 12.0,
+            "usage": "turn",
+            "required_target_keywords_any": ("LEGIO CYBERNETICA", "VEHICLE"),
+            "required_target_faction_keyword_for_vehicle": "ADEPTUS MECHANICUS",
+        },
+    ),
+    "000008572005": EnhancementToolDescriptor(
+        enhancement_id="000008572005",
+        name="Arch-negator",
+        timing="passive",
+        target="bearer_ranged_weapons",
+        duration="constant",
+        effect="grant_bearer_ranged_anti_keywords",
+        effect_params={"anti_vehicle": 4},
+    ),
+}
+
+_COHORT_CYBERNETICA_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _COHORT_CYBERNETICA_DESCRIPTORS.values()
+}
+
 _INVASION_FLEET_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008348002": EnhancementToolDescriptor(
         enhancement_id="000008348002",
@@ -3960,6 +4022,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _RAD_ZONE_CORPS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _COHORT_CYBERNETICA_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _INVASION_FLEET_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -4152,6 +4217,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _EXPERIMENTAL_PROTOTYPE_CADRE_BY_NAME.get(key)
         or _MONTKA_BY_NAME.get(key)
         or _RAD_ZONE_CORPS_BY_NAME.get(key)
+        or _COHORT_CYBERNETICA_BY_NAME.get(key)
         or _INVASION_FLEET_BY_NAME.get(key)
         or _CABAL_OF_CHAOS_BY_NAME.get(key)
         or _SPECTACLE_OF_SPITE_BY_NAME.get(key)

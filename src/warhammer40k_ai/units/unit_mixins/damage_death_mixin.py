@@ -1347,6 +1347,8 @@ class DamageDeathMixin:
         auto_trigger = False
         putrid_auto_trigger = False
         sanctified_auto_trigger = False
+        emotionless_auto_trigger = False
+        emotionless_source = ""
         try:
             putrid_auto_trigger = bool(getattr(dying_model, "_putrid_detonation_auto_trigger_once", False))
         except Exception:
@@ -1355,7 +1357,23 @@ class DamageDeathMixin:
             sanctified_auto_trigger = bool(getattr(dying_model, "_sanctified_immolation_auto_trigger_once", False))
         except Exception:
             sanctified_auto_trigger = False
-        auto_trigger = bool(putrid_auto_trigger or sanctified_auto_trigger)
+        try:
+            army = self.get_parent_army()
+        except Exception:
+            army = None
+        adm_mgr = getattr(army, "adeptus_mechanicus_detachments", None) if army is not None else None
+        trigger_fn = getattr(adm_mgr, "emotionless_clarity_auto_trigger_for_destroyed_model", None) if adm_mgr is not None else None
+        if callable(trigger_fn):
+            try:
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            except Exception:
+                game = None
+            try:
+                emotionless_auto_trigger, emotionless_source = trigger_fn(self, dying_model, game=game)
+            except Exception:
+                emotionless_auto_trigger = False
+                emotionless_source = ""
+        auto_trigger = bool(putrid_auto_trigger or sanctified_auto_trigger or emotionless_auto_trigger)
         if putrid_auto_trigger:
             try:
                 setattr(dying_model, "_putrid_detonation_auto_trigger_once", False)
@@ -1385,6 +1403,8 @@ class DamageDeathMixin:
         else:
             if sanctified_auto_trigger and not putrid_auto_trigger:
                 logger.info("Deadly Demise auto-triggered (Sanctified Immolation).")
+            elif emotionless_auto_trigger:
+                logger.info(f"Deadly Demise auto-triggered ({str(emotionless_source or 'Emotionless Clarity')}).")
             else:
                 logger.info("Deadly Demise auto-triggered (Putrid Detonation).")
 
