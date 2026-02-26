@@ -1256,6 +1256,24 @@ class Unit(
                         mods.append(Modifier(ModifierOp.ADD, int(bonus), source=f"detachment:{source_name}"))
             except Exception:
                 pass
+            try:
+                mode_active_fn = getattr(self, "battle_protocols_mode_active", None)
+                if callable(mode_active_fn) and bool(mode_active_fn("aegis_protocol")):
+                    is_kastelan_model = False
+                    has_any_keyword = getattr(model, "has_any_keyword", None)
+                    if callable(has_any_keyword):
+                        try:
+                            if bool(has_any_keyword("KASTELAN ROBOT")) or bool(has_any_keyword("KASTELAN ROBOTS")):
+                                is_kastelan_model = True
+                        except Exception:
+                            is_kastelan_model = False
+                    if not is_kastelan_model:
+                        keywords = [str(v or "").strip().upper() for v in list(getattr(model, "keywords", []) or [])]
+                        is_kastelan_model = "KASTELAN ROBOT" in keywords or "KASTELAN ROBOTS" in keywords
+                    if is_kastelan_model:
+                        mods.append(Modifier(ModifierOp.ADD, 1, source="ability:battle_protocols_aegis_toughness"))
+            except Exception:
+                pass
 
         if ckey == "leadership":
             if game_map is None:

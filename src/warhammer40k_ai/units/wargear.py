@@ -4431,6 +4431,44 @@ class WargearProfile:
             pass
 
         try:
+            if self.parent_wargear:
+                unit = getattr(attacker, "parent_unit", None)
+                mode_active_fn = getattr(unit, "battle_protocols_mode_active", None) if unit is not None else None
+                if callable(mode_active_fn):
+                    is_kastelan_model = False
+                    has_any_keyword = getattr(attacker, "has_any_keyword", None)
+                    if callable(has_any_keyword):
+                        try:
+                            if bool(has_any_keyword("KASTELAN ROBOT")) or bool(has_any_keyword("KASTELAN ROBOTS")):
+                                is_kastelan_model = True
+                        except Exception:
+                            is_kastelan_model = False
+                    if not is_kastelan_model:
+                        keywords = [str(v or "").strip().upper() for v in list(getattr(attacker, "keywords", []) or [])]
+                        is_kastelan_model = "KASTELAN ROBOT" in keywords or "KASTELAN ROBOTS" in keywords
+
+                    protocol_bonus = 0
+                    protocol_name = ""
+                    if is_kastelan_model and bool(self.parent_wargear.is_ranged()) and bool(mode_active_fn("protector_protocol")):
+                        protocol_bonus = 2
+                        protocol_name = "Protector Protocol"
+                    elif is_kastelan_model and bool(self.parent_wargear.is_melee()) and bool(mode_active_fn("conqueror_protocol")):
+                        protocol_bonus = 2
+                        protocol_name = "Conqueror Protocol"
+
+                    if protocol_bonus > 0:
+                        atk_mods.append(
+                            Modifier(
+                                ModifierOp.ADD,
+                                int(protocol_bonus),
+                                source="ability:battle_protocols_attacks_add",
+                            )
+                        )
+                        attack_result.attacks_special_modifiers.append(f"Battle Protocols ({protocol_name}) +{int(protocol_bonus)}A")
+        except Exception:
+            pass
+
+        try:
             if self.parent_wargear and self.parent_wargear.is_melee():
                 unit = getattr(attacker, "parent_unit", None)
                 bonus_fn = getattr(unit, "visions_of_butchery_attacks_bonus_for_weapon", None) if unit is not None else None

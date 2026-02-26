@@ -3799,6 +3799,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Start of Fight phase: optional engaged enemy VEHICLE selection; on 4+ it suffers D6 mortal wounds and its melee weapon Weapon Skill is worsened by 1 until end of phase.",
         ),
+        ("ADM", "Battle Protocols"): (
+            "Supported",
+            "Start of battle: if a Cybernetica Datasmith is leading KASTELAN ROBOTS, the unit enters Aegis Protocol; in each of your Command phases, optional CHOOSE_QUARRY selection sets Protector (+2 ranged Attacks), Conqueror (+2 melee Attacks), or Aegis (+1 Toughness for KASTELAN ROBOT models) until changed.",
+        ),
         ("ADM", "Vengeance for the Omnissiah"): (
             "Supported",
             "When a friendly ADEPTUS MECHANICUS VEHICLE model is destroyed within 12\", this model's axe has its Attacks characteristic set to 6 until end of battle.",
@@ -5204,6 +5208,7 @@ def _classify_ability_base(
     command_phase_model_repair_fnp_support = _command_phase_model_repair_fnp_support(description)
     wholly_within_friendly_battleline_ranged_invuln_support = _wholly_within_friendly_battleline_ranged_invuln_support(description)
     repulsor_grid_support = _repulsor_grid_support(description)
+    battle_protocols_support = _battle_protocols_support(description)
     start_shooting_phase_visible_battleshock_support = _start_shooting_phase_visible_battleshock_support(description)
     shooting_phase_dice_pool_mortal_support = _shooting_phase_dice_pool_mortal_support(description)
     start_shooting_phase_vehicle_mortal_heal_support = _start_shooting_phase_vehicle_mortal_heal_support(description)
@@ -5304,6 +5309,8 @@ def _classify_ability_base(
         return battlesuit_support_system_support
     if conditional_lone_operative_support:
         return conditional_lone_operative_support
+    if battle_protocols_support:
+        return battle_protocols_support
     if move_over_friendly_support:
         return move_over_friendly_support
     if move_over_low_terrain_support:
@@ -9119,6 +9126,32 @@ def _repulsor_grid_support(description: str) -> Optional[Tuple[str, str]]:
     return (
         "Supported",
         f"Ranged attacks allocated to {model_keyword} models: on unmodified save roll {threshold}, attacking unit suffers {mortal} mortal wound(s) after resolving attacks.",
+    )
+
+
+def _battle_protocols_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"at the start of the battle if this model is leading a kastelan robots unit that unit enters aegis protocols(?: see below)? "
+        r"in your command phase if this model is leading a kastelan robots unit you can select one protocol from those listed below for that unit to enter "
+        r"once a unit enters a protocol it remains in that protocol until it enters a different one "
+        r"protector protocol add (?P<ranged>\d+) to the attacks characteristic of ranged weapons equipped by kastelan robot models in that unit "
+        r"conqueror protocol add (?P<melee>\d+) to the attacks characteristic of melee weapons equipped by kastelan robot models in that unit "
+        r"aegis protocol add (?P<toughness>\d+) to the toughness characteristic of kastelan robot models in that unit"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    ranged = str(m.group("ranged") or "2")
+    melee = str(m.group("melee") or "2")
+    toughness = str(m.group("toughness") or "1")
+    return (
+        "Supported",
+        f"Start of battle: led KASTELAN ROBOTS enter Aegis Protocol. Command phase selection supports Protector Protocol (+{ranged} ranged Attacks), Conqueror Protocol (+{melee} melee Attacks), and Aegis Protocol (+{toughness} Toughness for KASTELAN ROBOT models) until changed.",
     )
 
 

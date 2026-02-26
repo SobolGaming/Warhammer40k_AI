@@ -7099,6 +7099,7 @@ class GameView:
                 "traitoris_malevolent_heraldry",
                 "singular_purpose",
                 "vanguard_of_dark_city",
+                "battle_protocols",
                 "canticles_of_the_omnissiah",
                 "canticles_machine_vengeance_target",
                 "void_mine",
@@ -15396,6 +15397,10 @@ class GameView:
             title = ability_name or "Vanguard of the Dark City"
             subtitle = "Select one Vanguard mode until your next Command phase."
             header = f"{getattr(source_unit, 'name', 'Model')} selects a Vanguard mode."
+        elif str(ability_key) == "battle_protocols":
+            title = ability_name or "Battle Protocols"
+            subtitle = "Select one protocol, or None to keep the current protocol."
+            header = f"{getattr(source_unit, 'name', 'Unit')} selects a Battle Protocol."
         elif str(ability_key) == "canticles_of_the_omnissiah":
             title = ability_name or "Canticles of the Omnissiah"
             subtitle = "Select one Canticle until your next Command phase."

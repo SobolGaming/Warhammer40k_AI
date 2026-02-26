@@ -215,6 +215,7 @@ class GamePhaseHandlersMixin:
         self._on_phase_start_decoy_targets(player=player, phase=phase)
         self._on_phase_start_vanguard_of_dark_city(player=player, phase=phase)
         self._on_phase_start_canticles_of_the_omnissiah(player=player, phase=phase)
+        self._on_phase_start_battle_protocols(player=player, phase=phase)
         self._on_phase_start_chaos_daemons_detachment_rules(player=player, phase=phase)
         self._on_phase_start_space_marines_detachment_rules(player=player, phase=phase)
         self._on_phase_start_necrons_detachment_rules(player=player, phase=phase)
@@ -3622,6 +3623,148 @@ class GamePhaseHandlersMixin:
                     "source_unit_id": root_id,
                     "unit_id": root_id,
                     "optional": False,
+                },
+            )
+            self.request_decision(request)
+
+    def _on_phase_start_battle_protocols(self, player=None, phase=None, **_kwargs) -> None:
+        """Command phase start: Cybernetica Datasmith Battle Protocols handling."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+
+        try:
+            battle_round = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            battle_round = 0
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        # Start of battle: if a Datasmith is leading KASTELAN ROBOTS, that unit enters Aegis Protocol.
+        if battle_round == 1 and not bool(getattr(self, "_battle_protocols_start_of_battle_initialized", False)):
+            for p in list(getattr(self, "players", []) or []):
+                if p is None:
+                    continue
+                army_obj = self._get_player_army(p)
+                if army_obj is None:
+                    continue
+                seen_roots: set[str] = set()
+                for unit in sorted(list(getattr(army_obj, "units", []) or []), key=_unit_sort_key):
+                    if unit is None:
+                        continue
+                    try:
+                        root = unit.get_attached_unit_root()
+                    except Exception:
+                        root = unit
+                    if root is None:
+                        continue
+                    root_id = str(get_entity_id(root) or "")
+                    if root_id and root_id in seen_roots:
+                        continue
+                    if root_id:
+                        seen_roots.add(root_id)
+                    if not bool(getattr(root, "is_alive", lambda: False)()):
+                        continue
+                    eligible_fn = getattr(root, "battle_protocols_source_is_eligible", None)
+                    if not callable(eligible_fn) or not bool(eligible_fn()):
+                        continue
+                    sr = getattr(root, "special_rules", None)
+                    if not isinstance(sr, dict):
+                        sr = {}
+                    current_mode = str(sr.get("battle_protocols_selected_mode", "") or "").strip().lower()
+                    if current_mode in ("protector_protocol", "conqueror_protocol", "aegis_protocol"):
+                        continue
+                    sr = dict(sr)
+                    sr["battle_protocols_selected_mode"] = "aegis_protocol"
+                    sr["battle_protocols_selected_mode_key"] = "AEGIS_PROTOCOL"
+                    root.special_rules = sr
+                    invalidate = getattr(root, "_invalidate_ability_activity_cache", None)
+                    if callable(invalidate):
+                        invalidate()
+            self._battle_protocols_start_of_battle_initialized = True
+
+        army = self._get_player_army(player)
+        if army is None:
+            return
+
+        queue = getattr(self, "decision_queue", None)
+        pending_sources: set[str] = set()
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "battle_protocols":
+                    continue
+                source_id = str(ctx.get("source_unit_id", "") or "")
+                if source_id:
+                    pending_sources.add(source_id)
+
+        seen_roots: set[str] = set()
+        for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if not root_id or root_id in seen_roots:
+                continue
+            seen_roots.add(root_id)
+            if root_id in pending_sources:
+                continue
+            if not bool(getattr(root, "is_alive", lambda: False)()):
+                continue
+            if not bool(getattr(root, "deployed", False)):
+                continue
+            try:
+                if root.is_in_reserves() or root.is_embarked:
+                    continue
+            except Exception:
+                pass
+            eligible_fn = getattr(root, "battle_protocols_source_is_eligible", None)
+            if not callable(eligible_fn) or not bool(eligible_fn()):
+                continue
+
+            options = [
+                DecisionOption.create("None (keep current protocol)", payload={"battle_protocols_mode": "none"}),
+                DecisionOption.create("Protector Protocol", payload={"battle_protocols_mode": "protector_protocol"}),
+                DecisionOption.create("Conqueror Protocol", payload={"battle_protocols_mode": "conqueror_protocol"}),
+                DecisionOption.create("Aegis Protocol", payload={"battle_protocols_mode": "aegis_protocol"}),
+            ]
+            current_mode_fn = getattr(root, "get_battle_protocols_selected_mode", None)
+            current_mode = str(current_mode_fn() if callable(current_mode_fn) else "").strip().lower()
+
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                "Battle Protocols: select one protocol for this unit (or None to keep the current protocol).",
+                player_id=getattr(player, "id", None),
+                options=options,
+                context={
+                    "ability": "battle_protocols",
+                    "ability_name": "Battle Protocols",
+                    "phase": "Command phase",
+                    "source_unit_id": root_id,
+                    "unit_id": root_id,
+                    "allowed_modes": [
+                        "none",
+                        "protector_protocol",
+                        "conqueror_protocol",
+                        "aegis_protocol",
+                    ],
+                    "current_mode": current_mode,
+                    "optional": True,
                 },
             )
             self.request_decision(request)

@@ -5473,6 +5473,33 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if mode not in ("masters_of_the_shadowed_sky", "speed_of_the_kill", "visions_of_butchery"):
             return ("Vanguard of the Dark City choice must be Masters of the Shadowed Sky, Speed of the Kill, or Visions of Butchery.",)
         return ()
+    if ability == "battle_protocols":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Battle Protocols source unit was not found.",)
+        try:
+            source_root = source_unit.get_attached_unit_root()
+        except Exception:
+            source_root = source_unit
+        if source_root is None:
+            return ("Battle Protocols source unit was not found.",)
+        eligible_fn = getattr(source_root, "battle_protocols_source_is_eligible", None)
+        if not callable(eligible_fn) or not bool(eligible_fn()):
+            return ("Battle Protocols is not active on the selected source unit.",)
+        if is_skip_choice(request, result):
+            return ()
+        mode = str(payload.get("battle_protocols_mode", "") or "").strip().lower()
+        allowed_modes = {str(v).strip().lower() for v in list(ctx.get("allowed_modes", []) or []) if str(v).strip()}
+        if not allowed_modes:
+            allowed_modes = {"none", "protector_protocol", "conqueror_protocol", "aegis_protocol"}
+        if not mode:
+            return ("Battle Protocols selection requires battle_protocols_mode.",)
+        if mode not in allowed_modes:
+            return ("Battle Protocols selected mode is not an eligible option.",)
+        if mode not in {"none", "protector_protocol", "conqueror_protocol", "aegis_protocol"}:
+            return ("Battle Protocols choice must be Protector Protocol, Conqueror Protocol, Aegis Protocol, or None.",)
+        return ()
     if ability == "canticles_of_the_omnissiah":
         if is_skip_choice(request, result):
             return ("Canticles of the Omnissiah selection cannot be skipped.",)
@@ -8947,6 +8974,65 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             f"{ability_name}: {source_name} selected {mode_label}.",
         )
         return {"mode": mode}
+    if ability == "battle_protocols":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return None
+        mode = str(payload.get("battle_protocols_mode", "") or "").strip().lower()
+        if is_skip_choice(request, result):
+            mode = "none"
+        if mode not in {"none", "protector_protocol", "conqueror_protocol", "aegis_protocol"}:
+            return None
+
+        try:
+            player = getattr(source_root.get_parent_army(), "player", None)
+        except Exception:
+            player = None
+        if player is None:
+            player = _resolve_player(game, request, payload)
+        ability_name = str(ctx.get("ability_name", "") or "Battle Protocols").strip() or "Battle Protocols"
+        source_name = str(getattr(source_root, "name", "Unit") or "Unit")
+
+        if mode == "none":
+            current_mode = str(getattr(source_root, "get_battle_protocols_selected_mode", lambda: "")() or "").strip().lower()
+            if current_mode:
+                mode_label = current_mode.replace("_", " ").title()
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"{ability_name}: {source_name} kept {mode_label}.",
+                )
+            return {"mode": "none"}
+
+        mode_to_key = {
+            "protector_protocol": "PROTECTOR_PROTOCOL",
+            "conqueror_protocol": "CONQUEROR_PROTOCOL",
+            "aegis_protocol": "AEGIS_PROTOCOL",
+        }
+        mode_key = mode_to_key.get(mode)
+        if not mode_key:
+            return None
+        sr = getattr(source_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr = dict(sr)
+        sr["battle_protocols_selected_mode"] = mode
+        sr["battle_protocols_selected_mode_key"] = mode_key
+        source_root.special_rules = sr
+        invalidate = getattr(source_root, "_invalidate_ability_activity_cache", None)
+        if callable(invalidate):
+            invalidate()
+        mode_label = mode.replace("_", " ").title()
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {source_name} selected {mode_label}.",
+        )
+        return {"mode": mode, "mode_key": mode_key}
     if ability == "canticles_of_the_omnissiah":
         if is_skip_choice(request, result):
             return None

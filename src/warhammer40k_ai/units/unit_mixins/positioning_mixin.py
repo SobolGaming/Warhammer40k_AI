@@ -1701,6 +1701,120 @@ class PositioningMixin:
             return False
         return self.get_canticles_of_the_omnissiah_selected_mode() == mode
 
+    def _unit_has_battle_protocols_ability_local(self) -> bool:
+        for ability in list(getattr(self, "possible_abilities", []) or []):
+            name = str(getattr(ability, "name", "") or "").replace("\u2019", "'").strip().lower()
+            if name == "battle protocols":
+                return True
+        return False
+
+    def _battle_protocols_unit_is_kastelan_robots(self) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        try:
+            if bool(root.has_any_keyword("KASTELAN ROBOT")) or bool(root.has_any_keyword("KASTELAN ROBOTS")):
+                return True
+        except Exception:
+            pass
+        name = str(getattr(root, "name", "") or "").replace("\u2019", "'").strip().lower()
+        return "kastelan robots" in name or "kastelan robot" in name
+
+    def has_battle_protocols(self) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        cache_key = "battle_protocols"
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return bool(cache.get(cache_key))
+
+        found = False
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        for member in list(members or []):
+            if member is None:
+                continue
+            if bool(member._unit_has_battle_protocols_ability_local()):
+                found = True
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = bool(found)
+        return bool(found)
+
+    def battle_protocols_source_is_eligible(self) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        if not bool(root.has_battle_protocols()):
+            return False
+        if not bool(root._battle_protocols_unit_is_kastelan_robots()):
+            return False
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for member in list(members or []):
+            if member is None:
+                continue
+            if not bool(member._unit_has_battle_protocols_ability_local()):
+                continue
+            if not bool(getattr(member, "is_attached_leader", False)):
+                continue
+            try:
+                if member.get_attached_unit_root() is not root:
+                    continue
+            except Exception:
+                continue
+            alive_fn = getattr(member, "is_alive", None)
+            if callable(alive_fn) and not bool(alive_fn()):
+                continue
+            return True
+        return False
+
+    def get_battle_protocols_selected_mode(self) -> str:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return ""
+        return str(sr.get("battle_protocols_selected_mode", "") or "").strip().lower()
+
+    def battle_protocols_mode_active(self, mode_key: str) -> bool:
+        mode = str(mode_key or "").strip().lower()
+        if not mode:
+            return False
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        if not bool(root.has_battle_protocols()):
+            return False
+        return str(root.get_battle_protocols_selected_mode() or "") == mode
+
     def command_phase_sticky_objective_prerequisites_met(self) -> bool:
         sr = getattr(self, "special_rules", None)
         if not isinstance(sr, dict):
