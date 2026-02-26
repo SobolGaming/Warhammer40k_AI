@@ -38,6 +38,27 @@ class HumanUIInterface:
         # In a full implementation, this would show a zone selection dialog
         return available_zones[0]
 
+    def declare_reserves(self, player) -> dict:
+        """
+        Return a deterministic reserves declaration for deployment flow.
+
+        Local UI currently does not expose a dedicated pre-deployment reserves
+        picker in this path, so default to deploying units unless a unit is
+        explicitly forced to start in reserves (for example, AIRCRAFT).
+        """
+        army = player.get_army() if player is not None else None
+        if army is None:
+            return {}
+        decisions: dict[str, str] = {}
+        for unit in list(getattr(army, "units", []) or []):
+            must_start = False
+            try:
+                must_start = bool(getattr(unit, "must_start_in_reserves", lambda: False)())
+            except Exception:
+                must_start = False
+            decisions[unit.id] = "reserves" if must_start else "deploy"
+        return decisions
+
     def choose_unit_deployment_position(
         self,
         unit: 'Unit',

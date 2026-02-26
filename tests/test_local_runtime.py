@@ -48,6 +48,8 @@ def test_local_runtime_uses_shared_driver_for_preformation_setup() -> None:
     game = _FakeGame()
     runtime = LocalAuthoritativeRuntime(
         game,
+        player1_army_file="army_lists/chaos_test.txt",
+        player2_army_file="army_lists/aeldari_test.txt",
         choose_random_mission=lambda _game: ({"id": "m1", "primary": "p", "deployment": "d", "layouts": [1]}, 1),
     )
     mirrored_commands: list[str] = []
@@ -57,6 +59,7 @@ def test_local_runtime_uses_shared_driver_for_preformation_setup() -> None:
 
     kinds = [kind for kind, _payload in game.commands]
     assert kinds == [
+        CMD_EXECUTE_SETUP_PHASE,
         CMD_ADVANCE_SETUP_PHASE,
         CMD_SELECT_MISSION,
         CMD_EXECUTE_SETUP_PHASE,
@@ -66,6 +69,8 @@ def test_local_runtime_uses_shared_driver_for_preformation_setup() -> None:
         CMD_EXECUTE_SETUP_PHASE,
         CMD_ADVANCE_SETUP_PHASE,
     ]
+    assert game.commands[0][1]["player1_army_file"] == "army_lists/chaos_test.txt"
+    assert game.commands[0][1]["player2_army_file"] == "army_lists/aeldari_test.txt"
     assert game.get_current_setup_phase() == SetupPhase.DECLARE_BATTLE_FORMATIONS
     assert mirrored_commands == kinds
 
@@ -74,6 +79,8 @@ def test_local_runtime_driver_managed_phase_predicate() -> None:
     game = _FakeGame()
     runtime = LocalAuthoritativeRuntime(
         game,
+        player1_army_file="army_lists/chaos_test.txt",
+        player2_army_file="army_lists/aeldari_test.txt",
         choose_random_mission=lambda _game: ({"id": "m1", "primary": "p", "deployment": "d", "layouts": [1]}, 1),
     )
 
@@ -86,6 +93,8 @@ def test_local_runtime_registers_two_local_facades() -> None:
     game = _FakeGame()
     runtime = LocalAuthoritativeRuntime(
         game,
+        player1_army_file="army_lists/chaos_test.txt",
+        player2_army_file="army_lists/aeldari_test.txt",
         choose_random_mission=lambda _game: ({"id": "m1", "primary": "p", "deployment": "d", "layouts": [1]}, 1),
     )
     runtime.register_local_player_facade("local_player1", "p1")

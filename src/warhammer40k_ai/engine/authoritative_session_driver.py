@@ -33,6 +33,8 @@ class AuthoritativeSessionDriver:
         set_formation_buffering: Callable[[bool], None],
         should_wait_for_formation_decisions: Callable[[], bool] | None = None,
         should_handle_phase: Callable[[SetupPhase], bool] | None = None,
+        skip_muster_phase: bool = True,
+        build_execute_setup_payload: Callable[[SetupPhase], dict] | None = None,
     ) -> None:
         self._get_game = get_game
         self._is_running = is_running
@@ -46,6 +48,8 @@ class AuthoritativeSessionDriver:
         self._set_formation_buffering = set_formation_buffering
         self._should_wait_for_formation_decisions = should_wait_for_formation_decisions or (lambda: True)
         self._should_handle_phase = should_handle_phase or (lambda _phase: True)
+        self._skip_muster_phase = bool(skip_muster_phase)
+        self._build_execute_setup_payload = build_execute_setup_payload or (lambda _phase: {})
         self._setup_lock = asyncio.Lock()
 
     async def run_setup_sequence(self) -> None:
@@ -57,6 +61,8 @@ class AuthoritativeSessionDriver:
                 return
 
             if game.get_current_setup_phase() == SetupPhase.MUSTER_ARMIES:
+                if not self._skip_muster_phase:
+                    await self._apply_command(self._create_execute_setup_command(SetupPhase.MUSTER_ARMIES))
                 await self._apply_command(GameCommand.create(CMD_ADVANCE_SETUP_PHASE))
 
             while self._is_running() and self._get_game() is game and game.is_in_setup_phase():
@@ -71,15 +77,15 @@ class AuthoritativeSessionDriver:
                             payload={"combination": dict(combo or {}), "layout": layout},
                         )
                     )
-                    await self._apply_command(GameCommand.create(CMD_EXECUTE_SETUP_PHASE))
+                    await self._apply_command(self._create_execute_setup_command(phase))
                     await self._apply_command(GameCommand.create(CMD_ADVANCE_SETUP_PHASE))
                     continue
                 if phase == SetupPhase.CREATE_BATTLEFIELD:
-                    await self._apply_command(GameCommand.create(CMD_EXECUTE_SETUP_PHASE))
+                    await self._apply_command(self._create_execute_setup_command(phase))
                     await self._apply_command(GameCommand.create(CMD_ADVANCE_SETUP_PHASE))
                     continue
                 if phase == SetupPhase.DETERMINE_ATTACKER_AND_DEFENDER:
-                    await self._apply_command(GameCommand.create(CMD_EXECUTE_SETUP_PHASE))
+                    await self._apply_command(self._create_execute_setup_command(phase))
                     await self._apply_command(GameCommand.create(CMD_ADVANCE_SETUP_PHASE))
                     continue
                 if phase == SetupPhase.DECLARE_BATTLE_FORMATIONS:
@@ -94,7 +100,7 @@ class AuthoritativeSessionDriver:
                             if not self._is_running() or self._get_game() is None:
                                 return
                             await self._apply_command_with_broadcast(
-                                GameCommand.create(CMD_EXECUTE_SETUP_PHASE),
+                                self._create_execute_setup_command(phase),
                                 False,
                             )
                             await self._apply_command_with_broadcast(
@@ -105,7 +111,11 @@ class AuthoritativeSessionDriver:
                             self._set_formation_buffering(False)
                         await self._broadcast_resync_all("formation_reveal")
                     else:
-                        await self._apply_command(GameCommand.create(CMD_EXECUTE_SETUP_PHASE))
+                        await self._apply_command(self._create_execute_setup_command(phase))
                         await self._apply_command(GameCommand.create(CMD_ADVANCE_SETUP_PHASE))
                     break
                 break
+
+    def _create_execute_setup_command(self, phase: SetupPhase) -> GameCommand:
+        payload = dict(self._build_execute_setup_payload(phase) or {})
+        return GameCommand.create(CMD_EXECUTE_SETUP_PHASE, payload=payload)

@@ -37,12 +37,18 @@ class LocalAuthoritativeRuntime:
         game: Game,
         *,
         choose_random_mission=None,
+        player1_army_file: str | None = None,
+        player2_army_file: str | None = None,
+        manual_phases: bool = False,
     ) -> None:
         self.game = game
         self.command_channel = InProcessCommandChannel()
         self.local_facades: list[LocalPlayerFacade] = []
         self._running = True
         self._formation_buffering = False
+        self._player1_army_file = player1_army_file
+        self._player2_army_file = player2_army_file
+        self._manual_phases = bool(manual_phases)
         self._choose_random_mission = choose_random_mission or self._default_choose_random_mission
         self.intent_gateway = PlayerIntentGateway(
             apply_command=self._submit_local_command,
@@ -62,6 +68,8 @@ class LocalAuthoritativeRuntime:
             set_formation_buffering=self._set_formation_buffering,
             should_wait_for_formation_decisions=lambda: False,
             should_handle_phase=lambda phase: phase in _DRIVER_MANAGED_SETUP_PHASES,
+            skip_muster_phase=False,
+            build_execute_setup_payload=self._build_execute_setup_payload,
         )
 
     def register_local_player_facade(self, facade_id: str, player_id: str) -> None:
@@ -131,6 +139,13 @@ class LocalAuthoritativeRuntime:
             layout_index = min(layout_index, len(layouts) - 1)
             layout = layouts[layout_index]
         return combo, int(layout)
+
+    def _build_execute_setup_payload(self, _phase: SetupPhase) -> dict:
+        return {
+            "player1_army_file": self._player1_army_file,
+            "player2_army_file": self._player2_army_file,
+            "manual_phases": self._manual_phases,
+        }
 
     async def _queue_formation_decisions(self):
         return []

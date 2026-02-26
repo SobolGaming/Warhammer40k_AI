@@ -125,7 +125,12 @@ def run_game_loop(player_configs: dict) -> None:
         player_configs["player1_army_file"],
         player_configs["player2_army_file"],
     )
-    runtime = LocalAuthoritativeRuntime(game)
+    runtime = LocalAuthoritativeRuntime(
+        game,
+        player1_army_file=player_configs["player1_army_file"],
+        player2_army_file=player_configs["player2_army_file"],
+        manual_phases=bool(player_configs.get("manual_phases", False)),
+    )
     runtime.register_local_player_facade("local_player1", player1.id)
     runtime.register_local_player_facade("local_player2", player2.id)
 

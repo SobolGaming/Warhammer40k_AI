@@ -128,6 +128,7 @@ class NetworkServer:
             broadcast_resync_all=self._broadcast_resync_all,
             set_formation_buffering=self._set_formation_buffering,
             should_wait_for_formation_decisions=lambda: True,
+            skip_muster_phase=True,
         )
 
     @property
