@@ -3776,6 +3776,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Start of Fight phase: optional engaged enemy VEHICLE selection; on 4+ it suffers D6 mortal wounds and its melee weapon Weapon Skill is worsened by 1 until end of phase.",
         ),
+        ("ADM", "Vengeance for the Omnissiah"): (
+            "Supported",
+            "When a friendly ADEPTUS MECHANICUS VEHICLE model is destroyed within 12\", this model's axe has its Attacks characteristic set to 6 until end of battle.",
+        ),
         ("ADM", "Canticles of the Omnissiah"): (
             "Supported",
             "Start of Command phase: Belisarius Cawl selects Invocation of Machine Vengeance, Mantra of Discipline, or Shroudpsalm until next Command phase.",
@@ -5210,6 +5214,7 @@ def _classify_ability_base(
     daemonic_allegiance_support = _daemonic_allegiance_wargear_support(description)
     reinforcements_denial_support = _reinforcements_denial_support(description)
     cp_on_destroy_support = _gain_cp_on_destroy_support(description)
+    friendly_destroyed_weapon_attacks_override_support = _friendly_destroyed_model_weapon_attacks_override_support(description)
     battlesuit_support_system_support = _battlesuit_support_system_support(name, description)
     attack_roll_rule_support = _attack_roll_rule_support(description)
     objective_attack_keyword_support = _objective_attack_keyword_support(description)
@@ -5279,6 +5284,8 @@ def _classify_ability_base(
         return ranged_targeting_restriction_support
     if fight_phase_below_starting_strength_fight_first_support:
         return fight_phase_below_starting_strength_fight_first_support
+    if friendly_destroyed_weapon_attacks_override_support:
+        return friendly_destroyed_weapon_attacks_override_support
     prey_selection_support = _prey_selection_support(description)
     if prey_selection_support:
         return prey_selection_support
@@ -10148,6 +10155,37 @@ def _gain_cp_on_destroy_support(description: str) -> Optional[Tuple[str, str]]:
         target_text = f"enemy {trigger}" if trigger in ("model", "unit") else "enemy unit/model"
 
     return ("Supported", f"Gain {cp} CP when {subject} destroys an {target_text}.")
+
+
+def _friendly_destroyed_model_weapon_attacks_override_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"if (?:a|an) friendly (?P<keyword>[a-z0-9 ]+?) model is destroyed within (?P<range>\d+) of this model "
+        r"until the end of the battle this model(?: s|s) (?P<weapon>[a-z0-9 ]+?) has an attacks characteristic of (?P<attacks>\d+)"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    keyword = str(m.group("keyword") or "").strip().upper()
+    weapon = str(m.group("weapon") or "").strip()
+    try:
+        range_value = int(m.group("range") or 0)
+    except (TypeError, ValueError):
+        range_value = 0
+    try:
+        attacks_value = int(m.group("attacks") or 0)
+    except (TypeError, ValueError):
+        attacks_value = 0
+    if not keyword or not weapon or range_value <= 0 or attacks_value <= 0:
+        return None
+    return (
+        "Supported",
+        f"When a friendly {keyword} model is destroyed within {range_value}\", this model's {weapon} is set to {attacks_value} Attacks until end of battle.",
+    )
 
 
 def _fall_back_shoot_support(description: str) -> Optional[Tuple[str, str]]:

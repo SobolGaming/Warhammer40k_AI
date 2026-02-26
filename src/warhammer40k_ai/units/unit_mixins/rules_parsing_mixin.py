@@ -858,7 +858,7 @@ class RulesParsingMixin:
                 else:
                     name = str(getattr(ab, "name", "") or "")
                     desc = str(getattr(ab, "description", "") or "") or name
-            except Exception:
+            except (AttributeError, TypeError, ValueError):
                 name = ""
                 desc = ""
             text = self._normalize_rules_text(desc or "")
@@ -876,6 +876,65 @@ class RulesParsingMixin:
                     "description": desc or "",
                     "keyword": keyword,
                 }
+        return None
+
+    def _scan_friendly_destroyed_model_weapon_attacks_override_ability(self):
+        """
+        Scan for abilities of the form:
+        "If a friendly <KEYWORDS> model is destroyed within X\" of this model,
+        until the end of the battle, this model's <WEAPON> has an Attacks
+        characteristic of Y."
+        """
+        pattern = re.compile(
+            r"if (?:a|an) friendly (?P<keyword>[a-z0-9 ]+?) (?P<destroyed_kind>model|unit) is destroyed within "
+            r"(?P<range>\d+) of this model until the end of the battle this model s "
+            r"(?P<weapon>[a-z0-9 ]+?) has an attacks characteristic of (?P<attacks>\d+)",
+            re.IGNORECASE,
+        )
+        for ab in self._iter_active_abilities():
+            if isinstance(ab, str):
+                name = ab
+                desc = ab
+            else:
+                raw_name = getattr(ab, "name", "")
+                raw_desc = getattr(ab, "description", "")
+                name = str(raw_name or "")
+                desc = str(raw_desc or "") or name
+
+            text = self._normalize_rules_text(desc or "")
+            if not text:
+                continue
+            norm = text.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+            norm = re.sub(r"'s\b", " s", norm)
+            norm = re.sub(r"[^a-z0-9]+", " ", norm)
+            norm = re.sub(r"\s+", " ", norm).strip()
+            match = pattern.fullmatch(norm)
+            if not match:
+                continue
+
+            try:
+                rng = int(match.group("range") or 0)
+            except (TypeError, ValueError):
+                rng = 0
+            try:
+                attacks_value = int(match.group("attacks") or 0)
+            except (TypeError, ValueError):
+                attacks_value = 0
+
+            keyword = str(match.group("keyword") or "").strip()
+            weapon = str(match.group("weapon") or "").strip()
+            destroyed_kind = str(match.group("destroyed_kind") or "model").strip().lower()
+            if rng <= 0 or attacks_value <= 0 or not keyword or not weapon:
+                continue
+            return {
+                "name": name or "Friendly destroyed model attacks override",
+                "description": desc or "",
+                "friendly_keyword": keyword,
+                "destroyed_kind": destroyed_kind,
+                "range": int(rng),
+                "weapon_name": weapon,
+                "attacks_value": int(attacks_value),
+            }
         return None
 
     def _scan_transport_reactive_disembark_ability(self):

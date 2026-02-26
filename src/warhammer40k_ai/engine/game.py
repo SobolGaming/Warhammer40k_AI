@@ -6075,6 +6075,170 @@ class Game(
             promote_fn()
         return
 
+    def _on_model_destroyed_friendly_destroyed_model_weapon_attacks_override(
+        self,
+        target_model=None,
+        target_unit=None,
+        **_kwargs,
+    ) -> None:
+        """
+        Apply model attack overrides for rules that trigger when a friendly model is destroyed nearby.
+
+        Example supported rule text:
+        "If a friendly ADEPTUS MECHANICUS VEHICLE model is destroyed within 12\" of this model,
+        until the end of the battle, this model's Omnissian axe has an Attacks characteristic of 6."
+        """
+        if target_model is None or target_unit is None:
+            return
+
+        try:
+            destroyed_root = target_unit.get_attached_unit_root()
+        except (AttributeError, TypeError, ValueError):
+            destroyed_root = target_unit
+        if destroyed_root is None:
+            return
+
+        try:
+            owner_army = destroyed_root.get_parent_army()
+        except (AttributeError, TypeError, ValueError):
+            owner_army = None
+        if owner_army is None:
+            return
+
+        try:
+            from ..utility.aura_utils import distance_between_models_bases_3d
+        except ImportError:
+            return
+
+        def _normalize_weapon_name(value: str) -> str:
+            text = re.sub(r"[^a-z0-9]+", " ", str(value or "").lower())
+            return re.sub(r"\s+", " ", text).strip()
+
+        processed_unit_ids: set[str] = set()
+        for candidate in list(getattr(owner_army, "units", []) or []):
+            if candidate is None:
+                continue
+            try:
+                root = candidate.get_attached_unit_root()
+            except (AttributeError, TypeError, ValueError):
+                root = candidate
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if root_id:
+                if root_id in processed_unit_ids:
+                    continue
+                processed_unit_ids.add(root_id)
+
+            get_ability = getattr(root, "get_friendly_destroyed_model_weapon_attacks_override_ability", None)
+            if not callable(get_ability):
+                continue
+            ability = get_ability()
+            if not isinstance(ability, dict):
+                continue
+            if str(ability.get("destroyed_kind", "model") or "model").strip().lower() != "model":
+                continue
+            if not self._unit_on_battlefield_for_reposition(root):
+                continue
+
+            friendly_keyword = str(ability.get("friendly_keyword", "") or "").strip()
+            if friendly_keyword:
+                match_keywords = getattr(root, "_unit_matches_keyword_phrase", None)
+                if not callable(match_keywords):
+                    continue
+                try:
+                    if not bool(match_keywords(destroyed_root, friendly_keyword, use_effective=False)):
+                        continue
+                except (AttributeError, TypeError, ValueError):
+                    continue
+
+            try:
+                trigger_range = float(ability.get("range", 0) or 0)
+            except (TypeError, ValueError):
+                trigger_range = 0.0
+            if trigger_range <= 0.0:
+                continue
+
+            try:
+                attacks_value = int(ability.get("attacks_value", 0) or 0)
+            except (TypeError, ValueError):
+                attacks_value = 0
+            if attacks_value <= 0:
+                continue
+
+            weapon_name = str(ability.get("weapon_name", "") or "").strip()
+            if not weapon_name:
+                continue
+
+            try:
+                source_models = list(root.get_attached_unit_models() or [])
+            except (AttributeError, TypeError, ValueError):
+                source_models = list(getattr(root, "models", []) or [])
+            if not source_models:
+                continue
+
+            in_range_models: list[Model] = []
+            for source_model in source_models:
+                if source_model is None:
+                    continue
+                try:
+                    alive_attr = getattr(source_model, "is_alive", True)
+                    is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                except (TypeError, ValueError):
+                    is_alive = False
+                if not is_alive:
+                    continue
+                try:
+                    distance = float(distance_between_models_bases_3d(source_model, target_model))
+                except (AttributeError, TypeError, ValueError):
+                    continue
+                if distance <= trigger_range + 1e-6:
+                    in_range_models.append(source_model)
+            if not in_range_models:
+                continue
+
+            ability_name = str(ability.get("name", "") or "Friendly destroyed model attacks override").strip()
+            if not ability_name:
+                ability_name = "Friendly destroyed model attacks override"
+            source_label = ability_name
+            normalized_source = _normalize_weapon_name(ability_name) or "friendly_destroyed_model_attacks_override"
+
+            # Add a coarse alias (last token) to handle weapon naming variants across datasheets
+            # while still preferring the exact parsed weapon phrase.
+            alias_candidates = [weapon_name]
+            normalized_weapon = _normalize_weapon_name(weapon_name)
+            if normalized_weapon:
+                tokens = [tok for tok in normalized_weapon.split(" ") if tok]
+                if len(tokens) > 1:
+                    last_token = tokens[-1]
+                    if last_token not in ("weapon", "weapons"):
+                        alias_candidates.append(last_token)
+            seen_aliases: set[str] = set()
+            weapon_aliases: list[str] = []
+            for candidate_name in alias_candidates:
+                norm = _normalize_weapon_name(candidate_name)
+                if not norm or norm in seen_aliases:
+                    continue
+                seen_aliases.add(norm)
+                weapon_aliases.append(candidate_name)
+            if not weapon_aliases:
+                continue
+
+            for source_model in in_range_models:
+                model_id = str(get_entity_id(source_model) or "")
+                set_override = getattr(source_model, "set_temporary_weapon_attacks_override", None)
+                if not callable(set_override):
+                    continue
+                for idx, alias in enumerate(weapon_aliases):
+                    key = f"{normalized_source}:{model_id}:{idx}"
+                    set_override(
+                        key=key,
+                        weapon_name=str(alias),
+                        attacks_value=int(attacks_value),
+                        source=source_label,
+                        expires_phase="",
+                    )
+
     def _on_model_destroyed_spirit_snare(
         self,
         attacker_model=None,

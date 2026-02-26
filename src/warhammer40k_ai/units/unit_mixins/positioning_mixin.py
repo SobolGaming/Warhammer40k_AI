@@ -2389,6 +2389,36 @@ class PositioningMixin:
         root._ability_cache[cache_key] = ability
         return ability
 
+    def get_friendly_destroyed_model_weapon_attacks_override_ability(self):
+        """
+        Return ability info dict for model-destruction triggered weapon attacks overrides.
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except (AttributeError, TypeError, ValueError):
+            root = self
+        cache_key = "friendly_destroyed_model_weapon_attacks_override_ability"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        ability = None
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except (AttributeError, TypeError, ValueError):
+            members = [root]
+        for member in members:
+            try:
+                ability = member._scan_friendly_destroyed_model_weapon_attacks_override_ability()
+            except (AttributeError, TypeError, ValueError):
+                ability = None
+            if ability:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = ability
+        return ability
+
     def get_transport_reactive_disembark_ability(self):
         """
         Return ability info dict for reactive transport disembark triggers, or None if not available.

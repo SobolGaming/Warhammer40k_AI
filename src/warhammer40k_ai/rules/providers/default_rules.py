@@ -45,6 +45,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
             name="core",
             subscriptions=[
                 ("model_destroyed", "_on_model_destroyed_rules"),
+                ("model_destroyed", "_on_model_destroyed_friendly_destroyed_model_weapon_attacks_override"),
                 ("model_destroyed", "_on_model_destroyed_tally_of_pestilence"),
                 ("model_destroyed", "_on_model_destroyed_phase_kill_tracking"),
                 ("model_destroyed", "_on_model_destroyed_spirit_snare"),
