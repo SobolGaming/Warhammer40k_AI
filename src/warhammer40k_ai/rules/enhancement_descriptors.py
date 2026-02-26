@@ -1526,6 +1526,65 @@ _SPACE_MARINES_THE_ANGELIC_HOST_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPACE_MARINES_THE_ANGELIC_HOST_DESCRIPTORS.values()
 }
 
+_SPACE_MARINES_THE_LOST_BRETHREN_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009186002": EnhancementToolDescriptor(
+        enhancement_id="000009186002",
+        name="Sanguinius' Grace",
+        timing="fight_phase_end",
+        target="bearer",
+        duration="instant_once_per_battle_optional",
+        effect="fight_one_additional_time_if_bearer_engaged_with_three_plus_enemy_models",
+        once_per_battle=True,
+        effect_params={
+            "min_enemy_models_in_engagement_range": 3,
+            "once_per_battle_key": "sanguinius_grace",
+        },
+    ),
+    "000009186003": EnhancementToolDescriptor(
+        enhancement_id="000009186003",
+        name="Blood Shard",
+        timing="on_bearer_destroyed",
+        target="bearer",
+        duration="resolve_at_end_of_phase_first_time",
+        effect="return_bearer_on_2plus_with_fixed_wounds",
+        once_per_battle=True,
+        effect_params={
+            "roll_min": 2,
+            "wounds_on_return": 3,
+            "return_on_death_key": "blood_shard",
+        },
+    ),
+    "000009186004": EnhancementToolDescriptor(
+        enhancement_id="000009186004",
+        name="To Slay the Warmaster",
+        timing="start_of_fight_phase",
+        target="enemy_character_unit_within_engagement_range_of_bearer",
+        duration="instant_once_per_battle_optional",
+        effect="select_character_unit_roll_six_d6_mortal_wounds_on_4plus_to_character_models",
+        once_per_battle=True,
+        effect_params={
+            "dice_count": 6,
+            "success_on": 4,
+            "once_per_battle_key": "to_slay_the_warmaster",
+        },
+    ),
+    "000009186005": EnhancementToolDescriptor(
+        enhancement_id="000009186005",
+        name="Vengeful Onslaught",
+        timing="on_bearer_destroyed",
+        target="friendly_death_company_models",
+        duration="until_end_of_owners_next_turn",
+        effect="hit_roll_bonus_for_friendly_death_company_models",
+        effect_params={
+            "hit_bonus": 1,
+        },
+    ),
+}
+
+_SPACE_MARINES_THE_LOST_BRETHREN_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPACE_MARINES_THE_LOST_BRETHREN_DESCRIPTORS.values()
+}
+
 _SPACE_MARINES_ANVIL_SIEGE_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008474002": EnhancementToolDescriptor(
         enhancement_id="000008474002",
@@ -3179,6 +3238,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPACE_MARINES_THE_ANGELIC_HOST_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPACE_MARINES_THE_LOST_BRETHREN_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPACE_MARINES_ANVIL_SIEGE_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -3300,6 +3362,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SPACE_MARINES_FIRST_COMPANY_TASK_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_ANGELIC_INHERITORS_BY_NAME.get(key)
         or _SPACE_MARINES_THE_ANGELIC_HOST_BY_NAME.get(key)
+        or _SPACE_MARINES_THE_LOST_BRETHREN_BY_NAME.get(key)
         or _SPACE_MARINES_ANVIL_SIEGE_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_IRONSTORM_SPEARHEAD_BY_NAME.get(key)
         or _SPACE_MARINES_LIBERATOR_ASSAULT_GROUP_BY_NAME.get(key)

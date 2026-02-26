@@ -1682,6 +1682,31 @@ class RulesParsingMixin:
                 }
             )
 
+        if isinstance(sr, dict) and sr.get("enhancement_blood_shard"):
+            bearer_id = str(
+                sr.get("enhancement_blood_shard_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+            ).strip()
+            try:
+                roll_min = int(sr.get("enhancement_blood_shard_roll_min", 2) or 2)
+            except (TypeError, ValueError):
+                roll_min = 2
+            try:
+                wounds = int(sr.get("enhancement_blood_shard_wounds", 3) or 3)
+            except (TypeError, ValueError):
+                wounds = 3
+            key = str(sr.get("enhancement_blood_shard_key", "blood_shard") or "blood_shard").strip().lower()
+            specs.append(
+                {
+                    "name": str(sr.get("enhancement_blood_shard_source", "Blood Shard") or "Blood Shard"),
+                    "roll_min": int(max(2, roll_min)),
+                    "wounds": int(max(1, wounds)),
+                    "skip_deadly_demise": False,
+                    "key": key if key else "blood_shard",
+                    "bearer_model_id": bearer_id,
+                }
+            )
+
         if isinstance(sr, dict) and sr.get("enhancement_indomitable_fury"):
             bearer_id = str(
                 sr.get("enhancement_indomitable_fury_bearer_model_id", "")

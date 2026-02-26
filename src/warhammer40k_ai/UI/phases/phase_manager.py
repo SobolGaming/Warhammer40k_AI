@@ -3484,6 +3484,20 @@ class BattlePhaseHandler(BasePhaseHandler):
                 if not isinstance(sr, dict):
                     sr = {}
                 sr["enhancement_rise_to_challenge_used"] = True
+                if bool(sr.get("enhancement_sanguinius_grace")):
+                    sr["enhancement_sanguinius_grace_used"] = True
+                    once_key = str(
+                        sr.get("enhancement_sanguinius_grace_once_key", "sanguinius_grace")
+                        or "sanguinius_grace"
+                    ).strip().lower()
+                    if once_key:
+                        mark_used = getattr(unit, "mark_unit_once_per_battle_used", None)
+                        if callable(mark_used):
+                            source_name = str(
+                                sr.get("enhancement_sanguinius_grace_source", "")
+                                or "Sanguinius' Grace"
+                            ).strip() or "Sanguinius' Grace"
+                            mark_used(once_key, ability_name=source_name)
                 unit.special_rules = sr
             except Exception:
                 pass

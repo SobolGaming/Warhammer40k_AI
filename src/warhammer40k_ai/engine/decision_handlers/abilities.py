@@ -12076,6 +12076,158 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         except Exception:
             pass
         return target_unit
+    if str(ctx.get("ability", "") or "") == "to_slay_the_warmaster":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        target_val = payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id")
+        target_unit = resolve_unit(game, target_val)
+        if target_unit is None:
+            return None
+        source_unit = resolve_unit(
+            game,
+            ctx.get("source_unit_id") or ctx.get("unit_id") or ctx.get("attacker_unit_id"),
+        )
+        if source_unit is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            try:
+                player = source_unit.get_parent_army().player
+            except Exception:
+                player = None
+        ability_name = str(ctx.get("ability_name", "") or "To Slay the Warmaster").strip() or "To Slay the Warmaster"
+        once_key = str(ctx.get("once_key", "") or "to_slay_the_warmaster").strip().lower() or "to_slay_the_warmaster"
+        try:
+            dice_count = int(ctx.get("dice_count", 6) or 6)
+        except Exception:
+            dice_count = 6
+        try:
+            success_on = int(ctx.get("success_on", 4) or 4)
+        except Exception:
+            success_on = 4
+        dice_count = max(1, int(dice_count))
+        success_on = max(2, min(6, int(success_on)))
+        from ...utility.dice import get_roll
+        from ...utility.event_bus import append_dice
+
+        rolls: list[int] = []
+        successes = 0
+        for _ in range(int(dice_count)):
+            roll = int(get_roll("D6") or 0)
+            rolls.append(int(roll))
+            if int(roll) >= int(success_on):
+                successes += 1
+        if player is not None:
+            try:
+                roll_text = ", ".join(str(int(v)) for v in list(rolls))
+                append_dice(
+                    player,
+                    f"{ability_name} rolls: {roll_text} ({int(successes)} success(es) on {int(success_on)}+).",
+                )
+            except Exception:
+                pass
+
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+
+        def _unit_has_character_keyword(unit_obj) -> bool:
+            if unit_obj is None:
+                return False
+            try:
+                if bool(unit_obj.has_any_keyword("CHARACTER")):
+                    return True
+            except Exception:
+                pass
+            try:
+                if bool(unit_obj.has_keyword("CHARACTER")):
+                    return True
+            except Exception:
+                pass
+            try:
+                keywords = list(getattr(unit_obj, "keywords", []) or []) + list(getattr(unit_obj, "faction_keywords", []) or [])
+            except Exception:
+                keywords = []
+            return any(str(v or "").strip().upper() == "CHARACTER" for v in keywords)
+
+        def _character_models_in_unit(unit_obj) -> list:
+            try:
+                models = (
+                    list(unit_obj.get_attached_unit_models() or [])
+                    if hasattr(unit_obj, "get_attached_unit_models")
+                    else list(getattr(unit_obj, "models", []) or [])
+                )
+            except Exception:
+                models = list(getattr(unit_obj, "models", []) or [])
+            result_models = []
+            for model in list(models or []):
+                alive_attr = getattr(model, "is_alive", True)
+                alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                if not alive:
+                    continue
+                is_character = False
+                has_keyword = getattr(model, "has_keyword", None)
+                if callable(has_keyword):
+                    try:
+                        is_character = bool(has_keyword("CHARACTER"))
+                    except Exception:
+                        is_character = False
+                if not is_character:
+                    try:
+                        model_keywords = list(getattr(model, "keywords", []) or [])
+                    except Exception:
+                        model_keywords = []
+                    is_character = any(str(v or "").strip().upper() == "CHARACTER" for v in model_keywords)
+                if is_character:
+                    result_models.append(model)
+            try:
+                result_models.sort(key=lambda m: str(get_entity_id(m) or ""))
+            except Exception:
+                result_models = list(result_models)
+            return result_models
+
+        applied = 0
+        game_map = getattr(game, "map", None)
+        if successes > 0 and target_root is not None:
+            if _unit_has_character_keyword(target_root):
+                for _ in range(int(successes)):
+                    candidates = _character_models_in_unit(target_root)
+                    if not candidates:
+                        break
+                    model = candidates[0]
+                    take_damage = getattr(model, "take_damage", None)
+                    if callable(take_damage):
+                        take_damage(
+                            1,
+                            is_mortal=True,
+                            game_map=game_map,
+                            damage_source="to_slay_the_warmaster",
+                        )
+                        applied += 1
+        try:
+            source_root = source_unit.get_attached_unit_root()
+        except Exception:
+            source_root = source_unit
+        if source_root is not None:
+            mark_used = getattr(source_root, "mark_unit_once_per_battle_used", None)
+            if callable(mark_used):
+                mark_used(once_key, ability_name=ability_name)
+            sr = getattr(source_root, "special_rules", None)
+            if isinstance(sr, dict):
+                sr["enhancement_to_slay_the_warmaster_used"] = True
+                source_root.special_rules = sr
+        try:
+            tname = str(getattr(target_root, "name", "Unit") or "Unit")
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {tname} suffers {int(applied)} mortal wound(s).",
+            )
+        except Exception:
+            pass
+        return target_unit
     if str(ctx.get("ability", "") or "") == "malice_made_manifest":
         if is_skip_choice(request, result):
             return None

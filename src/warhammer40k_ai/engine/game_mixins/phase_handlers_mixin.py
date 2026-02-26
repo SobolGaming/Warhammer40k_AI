@@ -4862,6 +4862,241 @@ class GamePhaseHandlersMixin:
                 )
                 self.request_decision(request)
 
+    def _on_phase_start_to_slay_the_warmaster(self, player=None, phase=None, **_kwargs) -> None:
+        """Fight phase start: The Lost Brethren To Slay the Warmaster target selection."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "FIGHT_PHASE":
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+
+        pending_units: set[str] = set()
+        try:
+            queue = getattr(self, "decision_queue", None)
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                        continue
+                    ctx = dict(getattr(req, "context", {}) or {})
+                    if str(ctx.get("ability", "") or "") != "to_slay_the_warmaster":
+                        continue
+                    uid = str(ctx.get("source_unit_id", "") or "")
+                    if uid:
+                        pending_units.add(uid)
+        except Exception:
+            pending_units = set()
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        def _unit_has_character_keyword(unit) -> bool:
+            if unit is None:
+                return False
+            try:
+                if bool(unit.has_any_keyword("CHARACTER")):
+                    return True
+            except Exception:
+                pass
+            try:
+                if bool(unit.has_keyword("CHARACTER")):
+                    return True
+            except Exception:
+                pass
+            try:
+                keys = list(getattr(unit, "keywords", []) or []) + list(getattr(unit, "faction_keywords", []) or [])
+            except Exception:
+                keys = []
+            return any(str(v or "").strip().upper() == "CHARACTER" for v in keys)
+
+        seen_roots: set[str] = set()
+        for p in list(getattr(self, "players", []) or []):
+            if p is None:
+                continue
+            army = p.get_army()
+            if army is None:
+                continue
+            for unit in sorted(list(army.units or []), key=_unit_sort_key):
+                if unit is None:
+                    continue
+                if not unit.is_alive() or not getattr(unit, "deployed", True):
+                    continue
+                try:
+                    if unit.is_in_reserves() or unit.is_embarked:
+                        continue
+                except Exception:
+                    pass
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None or not root.is_alive():
+                    continue
+                root_id = str(get_entity_id(root) or "")
+                if not root_id:
+                    continue
+                if root_id in seen_roots:
+                    continue
+                seen_roots.add(root_id)
+                if root_id in pending_units:
+                    continue
+
+                source_root, source_member, source_sr = self._attached_member_with_enhancement_flag(
+                    root,
+                    "enhancement_to_slay_the_warmaster",
+                )
+                if source_member is None or not isinstance(source_sr, dict):
+                    continue
+                bearer = getattr(source_member, "_get_enhancement_bearer_model", lambda: None)()
+                if bearer is None or not bool(getattr(bearer, "is_alive", True)):
+                    continue
+                once_key = str(
+                    source_sr.get("enhancement_to_slay_the_warmaster_once_key", "to_slay_the_warmaster")
+                    or "to_slay_the_warmaster"
+                ).strip().lower()
+                if once_key and bool(getattr(source_root, "has_used_unit_once_per_battle", lambda _k: False)(once_key)):
+                    continue
+
+                enemy_candidates = []
+                seen_enemy: set[str] = set()
+                for enemy in list(game_map.get_enemy_units(source_root) or []):
+                    if enemy is None:
+                        continue
+                    try:
+                        enemy_root = enemy.get_attached_unit_root()
+                    except Exception:
+                        enemy_root = enemy
+                    if enemy_root is None or not enemy_root.is_alive():
+                        continue
+                    enemy_id = str(get_entity_id(enemy_root) or "")
+                    if not enemy_id or enemy_id in seen_enemy:
+                        continue
+                    seen_enemy.add(enemy_id)
+                    try:
+                        if not getattr(enemy_root, "deployed", True):
+                            continue
+                        if enemy_root.is_in_reserves() or enemy_root.is_embarked:
+                            continue
+                    except Exception:
+                        pass
+                    if not _unit_has_character_keyword(enemy_root):
+                        continue
+                    try:
+                        if not game_map.is_within_engagement_range(source_root, enemy_root):
+                            continue
+                    except Exception:
+                        continue
+                    enemy_candidates.append(enemy_root)
+                if not enemy_candidates:
+                    continue
+
+                enemy_candidates = sorted(enemy_candidates, key=_unit_sort_key)
+                ability_name = (
+                    str(source_sr.get("enhancement_to_slay_the_warmaster_source", "") or "To Slay the Warmaster").strip()
+                    or "To Slay the Warmaster"
+                )
+                try:
+                    dice_count = int(source_sr.get("enhancement_to_slay_the_warmaster_dice_count", 6) or 6)
+                except Exception:
+                    dice_count = 6
+                try:
+                    success_on = int(source_sr.get("enhancement_to_slay_the_warmaster_success_on", 4) or 4)
+                except Exception:
+                    success_on = 4
+
+                from ..decisions import DecisionOption, DecisionRequest
+
+                options = [
+                    DecisionOption.create(
+                        str(getattr(enemy_root, "name", "Unit") or "Unit"),
+                        payload={"target_unit_id": get_entity_id(enemy_root)},
+                    )
+                    for enemy_root in enemy_candidates
+                ]
+                options.append(DecisionOption.create("None", payload={"action": "skip"}))
+                request = DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    f"{ability_name}: select one enemy CHARACTER unit within Engagement Range (or None).",
+                    player_id=getattr(p, "id", None),
+                    options=options,
+                    context={
+                        "ability": "to_slay_the_warmaster",
+                        "ability_name": ability_name,
+                        "source_unit_id": root_id,
+                        "source_member_unit_id": str(get_entity_id(source_member) or ""),
+                        "unit_id": root_id,
+                        "once_key": once_key or "to_slay_the_warmaster",
+                        "dice_count": int(max(1, dice_count)),
+                        "success_on": int(max(2, min(6, success_on))),
+                    },
+                )
+                self.request_decision(request)
+
+    def _on_phase_end_lost_brethren_vengeful_onslaught(self, player=None, phase=None, **_kwargs) -> None:
+        """Clear Lost Brethren Vengeful Onslaught buffs at the end of the owner's next turn."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "FIGHT_PHASE":
+            return
+        try:
+            current_player = self.get_current_player()
+        except Exception:
+            current_player = None
+        current_owner_id = str(getattr(current_player, "id", "") or "")
+        try:
+            turn_now = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn_now = 0
+        for p in list(getattr(self, "players", []) or []):
+            if p is None:
+                continue
+            army = self._get_player_army(p)
+            if army is None:
+                continue
+            sm_mgr = getattr(army, "space_marines_detachments", None)
+            if sm_mgr is None or not bool(getattr(sm_mgr, "is_the_lost_brethren", lambda: False)()):
+                continue
+            seen_roots: set[str] = set()
+            for unit in list(getattr(army, "units", []) or []):
+                if unit is None:
+                    continue
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None:
+                    continue
+                rid = str(get_entity_id(root) or "")
+                if rid and rid in seen_roots:
+                    continue
+                if rid:
+                    seen_roots.add(rid)
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict) or not bool(sr.get("lost_brethren_vengeful_onslaught_active")):
+                    continue
+                owner_id = str(sr.get("lost_brethren_vengeful_onslaught_owner_id", "") or "")
+                try:
+                    expires_turn = int(sr.get("lost_brethren_vengeful_onslaught_expires_turn", 0) or 0)
+                except Exception:
+                    expires_turn = 0
+                if owner_id and current_owner_id and owner_id != current_owner_id:
+                    continue
+                if expires_turn > 0 and turn_now < expires_turn:
+                    continue
+                for key in (
+                    "lost_brethren_vengeful_onslaught_active",
+                    "lost_brethren_vengeful_onslaught_owner_id",
+                    "lost_brethren_vengeful_onslaught_expires_turn",
+                    "lost_brethren_vengeful_onslaught_hit_bonus",
+                    "lost_brethren_vengeful_onslaught_source",
+                ):
+                    sr.pop(key, None)
+                root.special_rules = sr
+
     def _on_phase_start_prescient_redeployment(self, player=None, phase=None, **_kwargs) -> None:
         """Augurium Task Force: optional Movement phase strategic-reserves redeploy after Gate of Infinity."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

@@ -6837,6 +6837,56 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return "ones"
         return ""
 
+    def lost_brethren_vengeful_onslaught_hit_bonus(self, attacker_model, *, weapon_profile=None, game=None) -> tuple[int, str]:
+        _ = weapon_profile
+        if not self.is_the_lost_brethren():
+            return 0, ""
+        if attacker_model is None:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        if attacker_unit is None:
+            return 0, ""
+        try:
+            root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            root = attacker_unit
+        if root is None:
+            return 0, ""
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return 0, ""
+        if not self._unit_is_death_company(root):
+            return 0, ""
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get("lost_brethren_vengeful_onslaught_active")):
+            return 0, ""
+        owner_id = str(sr.get("lost_brethren_vengeful_onslaught_owner_id", "") or "").strip()
+        if owner_id:
+            unit_owner_id = str(getattr(getattr(root.get_parent_army(), "player", None), "id", "") or "").strip()
+            if unit_owner_id and owner_id != unit_owner_id:
+                return 0, ""
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is not None:
+            try:
+                turn_now = int(getattr(game_obj, "turn", 0) or 0)
+            except Exception:
+                turn_now = 0
+            try:
+                expires_turn = int(sr.get("lost_brethren_vengeful_onslaught_expires_turn", 0) or 0)
+            except Exception:
+                expires_turn = 0
+            if expires_turn > 0 and turn_now > expires_turn:
+                return 0, ""
+        try:
+            bonus = int(sr.get("lost_brethren_vengeful_onslaught_hit_bonus", 1) or 1)
+        except Exception:
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        source = str(sr.get("lost_brethren_vengeful_onslaught_source", "") or "Vengeful Onslaught").strip()
+        if not source:
+            source = "Vengeful Onslaught"
+        return int(bonus), source
+
     def masters_of_manoeuvre_shoot_after_advance_applies(self, unit, weapon_profile=None) -> bool:
         if not self.is_company_of_hunters():
             return False

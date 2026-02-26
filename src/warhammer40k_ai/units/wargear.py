@@ -8511,6 +8511,21 @@ class WargearProfile:
                     _add_hit_mod(int(pack_bonus), f"+{int(pack_bonus)} from {source_name}")
         except Exception:
             pass
+        # Space Marines: The Lost Brethren (Vengeful Onslaught) +1 to hit
+        # for DEATH COMPANY models until the end of the owner's next turn after the bearer is destroyed.
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            bonus_fn = getattr(sm_mgr, "lost_brethren_vengeful_onslaught_hit_bonus", None) if sm_mgr is not None else None
+            if callable(bonus_fn):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                bonus, source = bonus_fn(attacker, weapon_profile=self, game=game)
+                if bonus:
+                    source_name = str(source or "Vengeful Onslaught").strip() or "Vengeful Onslaught"
+                    _add_hit_mod(int(bonus), f"+{int(bonus)} from {source_name}")
+        except Exception:
+            pass
         # Tau Empire: Kroot Hunting Pack (Hunter's Instincts) +1 to hit vs targets below starting strength.
         try:
             unit = getattr(attacker, "parent_unit", None)

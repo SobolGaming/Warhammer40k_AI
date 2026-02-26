@@ -423,6 +423,9 @@ class Enhancement:
         is_the_angelic_host = bool(
             sm_mgr and getattr(sm_mgr, "is_the_angelic_host", lambda: False)()
         )
+        is_the_lost_brethren = bool(
+            sm_mgr and getattr(sm_mgr, "is_the_lost_brethren", lambda: False)()
+        )
         is_anvil_siege_force = bool(
             sm_mgr and getattr(sm_mgr, "is_anvil_siege_force", lambda: False)()
         )
@@ -2475,6 +2478,82 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_gleaming_pinions_bearer_model_id"] = bearer_id
+
+        if name in ("sanguinius' grace", "sanguinius grace") or enh_id == "000009186002":
+            if not is_the_lost_brethren:
+                return
+            unit.special_rules["enhancement_sanguinius_grace"] = True
+            # Reuse existing bonus-fight UI/decision flow.
+            unit.special_rules["enhancement_rise_to_challenge"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            once_key = str(params.get("once_per_battle_key", "sanguinius_grace") or "sanguinius_grace").strip().lower()
+            min_enemy_models = _coerce_int(
+                params.get("min_enemy_models_in_engagement_range", 3) or 3,
+                default=3,
+            )
+            unit.special_rules["enhancement_sanguinius_grace_once_key"] = once_key if once_key else "sanguinius_grace"
+            unit.special_rules["enhancement_sanguinius_grace_min_enemy_models_in_engagement_range"] = int(
+                max(1, min_enemy_models)
+            )
+            unit.special_rules["enhancement_sanguinius_grace_source"] = "Sanguinius' Grace"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_sanguinius_grace_bearer_model_id"] = bearer_id
+
+        if name == "blood shard" or enh_id == "000009186003":
+            if not is_the_lost_brethren:
+                return
+            unit.special_rules["enhancement_blood_shard"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            roll_min = _coerce_int(params.get("roll_min", 2) or 2, default=2)
+            return_wounds = _coerce_int(params.get("wounds_on_return", 3) or 3, default=3)
+            key = str(params.get("return_on_death_key", "blood_shard") or "blood_shard").strip().lower()
+            unit.special_rules["enhancement_blood_shard_roll_min"] = int(max(2, roll_min))
+            unit.special_rules["enhancement_blood_shard_wounds"] = int(max(1, return_wounds))
+            unit.special_rules["enhancement_blood_shard_key"] = key if key else "blood_shard"
+            unit.special_rules["enhancement_blood_shard_source"] = "Blood Shard"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_blood_shard_bearer_model_id"] = bearer_id
+            refresh_return = getattr(unit, "_refresh_return_on_death_flags", None)
+            if callable(refresh_return):
+                refresh_return()
+
+        if name == "to slay the warmaster" or enh_id == "000009186004":
+            if not is_the_lost_brethren:
+                return
+            unit.special_rules["enhancement_to_slay_the_warmaster"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            once_key = str(
+                params.get("once_per_battle_key", "to_slay_the_warmaster") or "to_slay_the_warmaster"
+            ).strip().lower()
+            dice_count = _coerce_int(params.get("dice_count", 6) or 6, default=6)
+            success_on = _coerce_int(params.get("success_on", 4) or 4, default=4)
+            unit.special_rules["enhancement_to_slay_the_warmaster_once_key"] = (
+                once_key if once_key else "to_slay_the_warmaster"
+            )
+            unit.special_rules["enhancement_to_slay_the_warmaster_dice_count"] = int(max(1, dice_count))
+            unit.special_rules["enhancement_to_slay_the_warmaster_success_on"] = int(max(2, min(6, success_on)))
+            unit.special_rules["enhancement_to_slay_the_warmaster_source"] = "To Slay the Warmaster"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_to_slay_the_warmaster_bearer_model_id"] = bearer_id
+
+        if name == "vengeful onslaught" or enh_id == "000009186005":
+            if not is_the_lost_brethren:
+                return
+            unit.special_rules["enhancement_vengeful_onslaught"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            hit_bonus = _coerce_int(params.get("hit_bonus", 1) or 1, default=1)
+            unit.special_rules["enhancement_vengeful_onslaught_hit_bonus"] = int(max(0, hit_bonus))
+            unit.special_rules["enhancement_vengeful_onslaught_source"] = "Vengeful Onslaught"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_vengeful_onslaught_bearer_model_id"] = bearer_id
 
         if name == "fury of the storm" or enh_id == "000008486002":
             if not is_stormlance_task_force:

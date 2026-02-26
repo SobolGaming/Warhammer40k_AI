@@ -5724,6 +5724,78 @@ class Game(
         root.special_rules = sr
 
     def _on_model_destroyed_rules(self, attacker_model=None, attacker_unit=None, target_model=None, target_unit=None, **_kwargs) -> None:
+        # Space Marines (The Lost Brethren): Vengeful Onslaught.
+        try:
+            if target_model is not None and target_unit is not None:
+                try:
+                    target_root = target_unit.get_attached_unit_root()
+                except Exception:
+                    target_root = target_unit
+                source_member = None
+                source_sr = {}
+                find_source = getattr(self, "_attached_member_with_enhancement_flag", None)
+                if callable(find_source):
+                    _src_root, source_member, source_sr = find_source(
+                        target_root,
+                        "enhancement_vengeful_onslaught",
+                    )
+                if source_member is not None and isinstance(source_sr, dict):
+                    alive_attr = getattr(target_model, "is_alive", False)
+                    target_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                    if not target_alive:
+                        bearer_id = str(
+                            source_sr.get("enhancement_vengeful_onslaught_bearer_model_id", "")
+                            or source_sr.get("enhancement_bearer_model_id", "")
+                            or ""
+                        ).strip()
+                        target_model_id = str(get_entity_id(target_model) or "").strip()
+                        if bearer_id and target_model_id and bearer_id == target_model_id:
+                            owner_army = target_root.get_parent_army() if target_root is not None else None
+                            sm_mgr = getattr(owner_army, "space_marines_detachments", None) if owner_army is not None else None
+                            if sm_mgr is not None and bool(getattr(sm_mgr, "is_the_lost_brethren", lambda: False)()):
+                                owner_player = getattr(owner_army, "player", None)
+                                owner_id = str(getattr(owner_player, "id", "") or "")
+                                current_player = self.get_current_player()
+                                current_player_id = str(getattr(current_player, "id", "") or "")
+                                turn_now = int(getattr(self, "turn", 0) or 0)
+                                expires_turn = int(turn_now + 1) if (owner_id and current_player_id == owner_id) else int(turn_now)
+                                source_name = str(
+                                    source_sr.get("enhancement_vengeful_onslaught_source", "")
+                                    or "Vengeful Onslaught"
+                                ).strip() or "Vengeful Onslaught"
+                                try:
+                                    hit_bonus = int(source_sr.get("enhancement_vengeful_onslaught_hit_bonus", 1) or 1)
+                                except Exception:
+                                    hit_bonus = 1
+                                seen_roots: set[str] = set()
+                                for unit in list(getattr(owner_army, "units", []) or []):
+                                    if unit is None:
+                                        continue
+                                    try:
+                                        root = unit.get_attached_unit_root()
+                                    except Exception:
+                                        root = unit
+                                    if root is None:
+                                        continue
+                                    rid = str(get_entity_id(root) or "")
+                                    if rid and rid in seen_roots:
+                                        continue
+                                    if rid:
+                                        seen_roots.add(rid)
+                                    if not bool(getattr(sm_mgr, "_unit_is_death_company", lambda _u: False)(root)):
+                                        continue
+                                    rsr = getattr(root, "special_rules", None)
+                                    if not isinstance(rsr, dict):
+                                        rsr = {}
+                                    rsr["lost_brethren_vengeful_onslaught_active"] = True
+                                    rsr["lost_brethren_vengeful_onslaught_owner_id"] = str(owner_id or "")
+                                    rsr["lost_brethren_vengeful_onslaught_expires_turn"] = int(expires_turn)
+                                    rsr["lost_brethren_vengeful_onslaught_hit_bonus"] = int(max(0, hit_bonus))
+                                    rsr["lost_brethren_vengeful_onslaught_source"] = source_name
+                                    root.special_rules = rsr
+        except Exception:
+            pass
+
         # Generic partial support for "gain CP when this model destroys an enemy KEYWORD unit/model".
         if attacker_unit is None or target_unit is None:
             return
@@ -7146,9 +7218,45 @@ class Game(
             except Exception:
                 pass
             sr = getattr(unit, "special_rules", None)
-            if not isinstance(sr, dict) or not sr.get("enhancement_rise_to_challenge"):
+            if not isinstance(sr, dict):
                 continue
-            if sr.get("enhancement_rise_to_challenge_used"):
+            has_rise_to_challenge = bool(sr.get("enhancement_rise_to_challenge"))
+            has_sanguinius_grace = bool(sr.get("enhancement_sanguinius_grace"))
+            if not (has_rise_to_challenge or has_sanguinius_grace):
+                continue
+            if has_rise_to_challenge and bool(sr.get("enhancement_rise_to_challenge_used")):
+                continue
+            if has_sanguinius_grace and bool(sr.get("enhancement_sanguinius_grace_used")):
+                continue
+            if has_sanguinius_grace:
+                once_key = str(
+                    sr.get("enhancement_sanguinius_grace_once_key", "sanguinius_grace")
+                    or "sanguinius_grace"
+                ).strip().lower()
+                if once_key and bool(getattr(unit, "has_used_unit_once_per_battle", lambda _k: False)(once_key)):
+                    continue
+            try:
+                min_enemy_models = int(
+                    sr.get("enhancement_sanguinius_grace_min_enemy_models_in_engagement_range", 3)
+                    or 3
+                )
+            except Exception:
+                min_enemy_models = 3
+            min_enemy_models = int(max(1, min_enemy_models))
+            try:
+                bearer_id = str(
+                    sr.get("enhancement_sanguinius_grace_bearer_model_id", "")
+                    or sr.get("enhancement_bearer_model_id", "")
+                    or ""
+                ).strip()
+            except Exception:
+                bearer_id = ""
+            if has_sanguinius_grace and not bearer_id:
+                get_bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+                bearer_model = get_bearer() if callable(get_bearer) else None
+                if bearer_model is not None:
+                    bearer_id = str(get_entity_id(bearer_model) or "").strip()
+            if has_rise_to_challenge and bool(sr.get("enhancement_rise_to_challenge_used")):
                 continue
             try:
                 if not self._unit_has_keyword(unit, "INFANTRY"):
@@ -7161,7 +7269,19 @@ class Game(
             else:
                 models = list(getattr(unit, "models", []) or [])
             bearer = None
+            if bearer_id:
+                for model in models:
+                    if str(get_entity_id(model) or "") != bearer_id:
+                        continue
+                    alive = getattr(model, "is_alive", True)
+                    if callable(alive):
+                        alive = alive()
+                    if alive:
+                        bearer = model
+                        break
             for model in models:
+                if bearer is not None:
+                    break
                 alive = getattr(model, "is_alive", True)
                 if callable(alive):
                     alive = alive()
@@ -7170,7 +7290,7 @@ class Game(
                     break
             if bearer is None:
                 continue
-            if self._count_enemy_models_in_engagement_range(unit, bearer) < 3:
+            if self._count_enemy_models_in_engagement_range(unit, bearer) < int(min_enemy_models):
                 continue
             candidates.append(unit)
         return candidates
