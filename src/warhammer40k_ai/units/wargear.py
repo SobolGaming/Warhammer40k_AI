@@ -4121,6 +4121,28 @@ class WargearProfile:
                         Modifier(ModifierOp.ADD, int(bearer_bonus), source="enhancement:bearer_melee_attacks_add")
                     )
                     attack_result.attacks_special_modifiers.append(f"Enhancement bearer +{bearer_bonus}A (melee)")
+            if bool(sr.get("enhancement_weapons_of_the_first_legion", False)) and self._attacker_is_enhancement_bearer(attacker, sr):
+                first_legion_extra = int(
+                    sr.get("enhancement_weapons_of_the_first_legion_battle_shocked_extra_bonus", 0) or 0
+                )
+                if first_legion_extra:
+                    attacker_unit = getattr(attacker, "parent_unit", None)
+                    is_battle_shocked = getattr(attacker_unit, "is_battle_shocked", None)
+                    if callable(is_battle_shocked) and bool(is_battle_shocked()):
+                        atk_mods.append(
+                            Modifier(
+                                ModifierOp.ADD,
+                                int(first_legion_extra),
+                                source="enhancement:weapons_of_the_first_legion_battle_shocked_attacks_add",
+                            )
+                        )
+                        source_name = str(
+                            sr.get("enhancement_weapons_of_the_first_legion_source", "")
+                            or "Weapons of the First Legion"
+                        ).strip() or "Weapons of the First Legion"
+                        attack_result.attacks_special_modifiers.append(
+                            f"{source_name} +{int(first_legion_extra)}A (Battle-shocked)"
+                        )
             feral_rage_charge_bonus = int(sr.get("enhancement_feral_rage_charge_bonus", 0) or 0)
             if feral_rage_charge_bonus and self._attacker_is_enhancement_bearer(attacker, sr):
                 unit = getattr(attacker, "parent_unit", None)
@@ -8526,6 +8548,20 @@ class WargearProfile:
                     _add_hit_mod(int(bonus), f"+{int(bonus)} from {source_name}")
         except Exception:
             pass
+        # Space Marines: Unforgiven Task Force (Stubborn Tenacity) +1 to hit
+        # while the bearer's unit is below Starting Strength and the bearer is leading.
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            bonus_fn = getattr(sm_mgr, "unforgiven_stubborn_tenacity_hit_bonus", None) if sm_mgr is not None else None
+            if callable(bonus_fn):
+                bonus, source = bonus_fn(attacker, weapon_profile=self)
+                if bonus:
+                    source_name = str(source or "Stubborn Tenacity").strip() or "Stubborn Tenacity"
+                    _add_hit_mod(int(bonus), f"+{int(bonus)} from {source_name}")
+        except Exception:
+            pass
         # Tau Empire: Kroot Hunting Pack (Hunter's Instincts) +1 to hit vs targets below starting strength.
         try:
             unit = getattr(attacker, "parent_unit", None)
@@ -12851,6 +12887,22 @@ class WargearProfile:
                 wound_result.setdefault("modifiers", []).append(
                     f"+{bearer_s_bonus}S from Enhancement bearer (melee)"
                 )
+            if bool(sr.get("enhancement_weapons_of_the_first_legion", False)) and self._attacker_is_enhancement_bearer(attacker, sr):
+                first_legion_extra = int(
+                    sr.get("enhancement_weapons_of_the_first_legion_battle_shocked_extra_bonus", 0) or 0
+                )
+                if first_legion_extra:
+                    attacker_unit = getattr(attacker, "parent_unit", None)
+                    is_battle_shocked = getattr(attacker_unit, "is_battle_shocked", None)
+                    if callable(is_battle_shocked) and bool(is_battle_shocked()):
+                        strength = strength + int(first_legion_extra)
+                        source_name = str(
+                            sr.get("enhancement_weapons_of_the_first_legion_source", "")
+                            or "Weapons of the First Legion"
+                        ).strip() or "Weapons of the First Legion"
+                        wound_result.setdefault("modifiers", []).append(
+                            f"+{int(first_legion_extra)}S from {source_name} (Battle-shocked)"
+                        )
             through_suffering_bonus = self._through_suffering_bonus(attacker, sr)
             if through_suffering_bonus:
                 strength = strength + int(through_suffering_bonus)
@@ -14206,6 +14258,28 @@ class WargearProfile:
                 )
                 if wound_bonus:
                     source_name = str(source or "Hunter's Instincts").strip() or "Hunter's Instincts"
+                    dice_modifier += int(wound_bonus)
+                    wound_result["modifiers"].append(
+                        f"+{int(wound_bonus)} to wound from {source_name}"
+                    )
+        except Exception:
+            pass
+        # Space Marines: Unforgiven Task Force (Stubborn Tenacity) +1 to wound
+        # while the bearer's unit is below Starting Strength and Battle-shocked.
+        try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            attacker_army = attacker_unit.get_parent_army() if attacker_unit is not None else None
+            sm_mgr = getattr(attacker_army, "space_marines_detachments", None) if attacker_army is not None else None
+            bonus_fn = getattr(sm_mgr, "unforgiven_stubborn_tenacity_wound_bonus", None) if sm_mgr is not None else None
+            if callable(bonus_fn):
+                wound_bonus, source = bonus_fn(
+                    attacker,
+                    target,
+                    weapon_profile=self,
+                    attack_instance=attack_instance,
+                )
+                if wound_bonus:
+                    source_name = str(source or "Stubborn Tenacity").strip() or "Stubborn Tenacity"
                     dice_modifier += int(wound_bonus)
                     wound_result["modifiers"].append(
                         f"+{int(wound_bonus)} to wound from {source_name}"
@@ -18715,6 +18789,28 @@ class WargearProfile:
                     Modifier(ModifierOp.ADD, int(bearer_d_bonus), source="enhancement:bearer_melee_damage_add")
                 )
                 damage_result['special_effects'].append(f"Enhancement bearer +{bearer_d_bonus}D (melee)")
+            if bool(sr.get("enhancement_weapons_of_the_first_legion", False)) and self._attacker_is_enhancement_bearer(attacker, sr):
+                first_legion_extra = int(
+                    sr.get("enhancement_weapons_of_the_first_legion_battle_shocked_extra_bonus", 0) or 0
+                )
+                if first_legion_extra:
+                    attacker_unit = getattr(attacker, "parent_unit", None)
+                    is_battle_shocked = getattr(attacker_unit, "is_battle_shocked", None)
+                    if callable(is_battle_shocked) and bool(is_battle_shocked()):
+                        damage_mods.append(
+                            Modifier(
+                                ModifierOp.ADD,
+                                int(first_legion_extra),
+                                source="enhancement:weapons_of_the_first_legion_battle_shocked_damage_add",
+                            )
+                        )
+                        source_name = str(
+                            sr.get("enhancement_weapons_of_the_first_legion_source", "")
+                            or "Weapons of the First Legion"
+                        ).strip() or "Weapons of the First Legion"
+                        damage_result['special_effects'].append(
+                            f"{source_name} +{int(first_legion_extra)}D (Battle-shocked)"
+                        )
             through_suffering_bonus = self._through_suffering_bonus(attacker, sr)
             if through_suffering_bonus:
                 damage_mods.append(

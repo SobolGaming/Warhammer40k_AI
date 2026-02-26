@@ -1585,6 +1585,67 @@ _SPACE_MARINES_THE_LOST_BRETHREN_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPACE_MARINES_THE_LOST_BRETHREN_DESCRIPTORS.values()
 }
 
+_SPACE_MARINES_UNFORGIVEN_TASK_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008771002": EnhancementToolDescriptor(
+        enhancement_id="000008771002",
+        name="Shroud of Heroes",
+        timing="on_bearer_destroyed",
+        target="bearer",
+        duration="resolve_at_end_of_phase_first_time",
+        effect="return_bearer_on_2plus_with_fixed_wounds_or_full_if_battleshocked",
+        once_per_battle=True,
+        effect_params={
+            "roll_min": 2,
+            "wounds_on_return": 3,
+            "wounds_on_return_if_battle_shocked": "full",
+            "return_on_death_key": "shroud_of_heroes",
+        },
+    ),
+    "000008771003": EnhancementToolDescriptor(
+        enhancement_id="000008771003",
+        name="Stubborn Tenacity",
+        timing="passive_while_leading",
+        target="bearer_unit_models",
+        duration="constant_conditional",
+        effect="add_hit_and_conditional_wound_bonus_while_below_starting_strength",
+        effect_params={
+            "hit_bonus": 1,
+            "wound_bonus_if_battle_shocked": 1,
+            "requires_below_starting_strength": True,
+            "requires_bearer_leading": True,
+        },
+    ),
+    "000008771004": EnhancementToolDescriptor(
+        enhancement_id="000008771004",
+        name="Weapons of the First Legion",
+        timing="passive",
+        target="bearer_melee_weapons",
+        duration="constant_battleshock_scaled",
+        effect="improve_bearer_melee_attacks_strength_damage_with_battleshock_scaling",
+        effect_params={
+            "base_bonus": 1,
+            "battle_shocked_bonus": 2,
+        },
+    ),
+    "000008771005": EnhancementToolDescriptor(
+        enhancement_id="000008771005",
+        name="Pennant of Remembrance",
+        timing="passive_while_leading",
+        target="bearer_unit_models",
+        duration="constant_battleshock_scaled",
+        effect="grant_unit_fnp_with_battleshock_scaling",
+        effect_params={
+            "feel_no_pain": 6,
+            "feel_no_pain_if_battle_shocked": 4,
+            "requires_bearer_leading": True,
+        },
+    ),
+}
+
+_SPACE_MARINES_UNFORGIVEN_TASK_FORCE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPACE_MARINES_UNFORGIVEN_TASK_FORCE_DESCRIPTORS.values()
+}
+
 _SPACE_MARINES_ANVIL_SIEGE_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008474002": EnhancementToolDescriptor(
         enhancement_id="000008474002",
@@ -3241,6 +3302,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPACE_MARINES_THE_LOST_BRETHREN_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPACE_MARINES_UNFORGIVEN_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPACE_MARINES_ANVIL_SIEGE_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -3363,6 +3427,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SPACE_MARINES_ANGELIC_INHERITORS_BY_NAME.get(key)
         or _SPACE_MARINES_THE_ANGELIC_HOST_BY_NAME.get(key)
         or _SPACE_MARINES_THE_LOST_BRETHREN_BY_NAME.get(key)
+        or _SPACE_MARINES_UNFORGIVEN_TASK_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_ANVIL_SIEGE_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_IRONSTORM_SPEARHEAD_BY_NAME.get(key)
         or _SPACE_MARINES_LIBERATOR_ASSAULT_GROUP_BY_NAME.get(key)

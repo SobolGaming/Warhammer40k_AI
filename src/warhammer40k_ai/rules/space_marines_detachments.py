@@ -625,6 +625,137 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return 0, ""
         return 1, "Grim Resolve (Command phase)"
 
+    def _unforgiven_enhancement_source_member(self, unit, flag_key: str):
+        root, member, sr = self._company_of_hunters_enhancement_source_member(unit, flag_key)
+        if root is None or member is None or not isinstance(sr, dict):
+            return root, None, None
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return root, None, None
+        return root, member, sr
+
+    @staticmethod
+    def _unforgiven_member_is_attached_leader(root, member) -> bool:
+        if root is None or member is None:
+            return False
+        if bool(getattr(member, "is_attached_leader", False)):
+            return True
+        try:
+            attached_leaders = list(getattr(root, "attached_leaders", []) or [])
+        except Exception:
+            attached_leaders = []
+        attached_ids = {
+            str(get_entity_id(leader) or "")
+            for leader in attached_leaders
+            if leader is not None
+        }
+        member_id = str(get_entity_id(member) or "")
+        return bool(member_id) and member_id in attached_ids
+
+    def unforgiven_stubborn_tenacity_hit_bonus(self, attacker_model, *, weapon_profile=None) -> tuple[int, str]:
+        _ = weapon_profile
+        if not self.is_unforgiven_task_force():
+            return 0, ""
+        if attacker_model is None:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        if attacker_unit is None:
+            return 0, ""
+        root, member, sr = self._unforgiven_enhancement_source_member(attacker_unit, "enhancement_stubborn_tenacity")
+        if root is None or member is None or not isinstance(sr, dict):
+            return 0, ""
+        if bool(sr.get("enhancement_stubborn_tenacity_requires_bearer_leading", True)):
+            if not self._unforgiven_member_is_attached_leader(root, member):
+                return 0, ""
+        if not self._company_of_hunters_member_has_live_bearer(member, sr):
+            return 0, ""
+        if bool(sr.get("enhancement_stubborn_tenacity_requires_below_starting_strength", True)):
+            is_below_starting_strength = getattr(root, "is_below_starting_strength", None)
+            if not callable(is_below_starting_strength) or not bool(is_below_starting_strength()):
+                return 0, ""
+        try:
+            bonus = int(sr.get("enhancement_stubborn_tenacity_hit_bonus", 1) or 1)
+        except Exception:
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        source = str(sr.get("enhancement_stubborn_tenacity_source", "") or "Stubborn Tenacity").strip()
+        if not source:
+            source = "Stubborn Tenacity"
+        return int(bonus), source
+
+    def unforgiven_stubborn_tenacity_wound_bonus(
+        self,
+        attacker_model,
+        target_unit=None,
+        *,
+        weapon_profile=None,
+        attack_instance=None,
+    ) -> tuple[int, str]:
+        _ = target_unit
+        _ = weapon_profile
+        _ = attack_instance
+        if not self.is_unforgiven_task_force():
+            return 0, ""
+        if attacker_model is None:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        if attacker_unit is None:
+            return 0, ""
+        root, member, sr = self._unforgiven_enhancement_source_member(attacker_unit, "enhancement_stubborn_tenacity")
+        if root is None or member is None or not isinstance(sr, dict):
+            return 0, ""
+        if bool(sr.get("enhancement_stubborn_tenacity_requires_bearer_leading", True)):
+            if not self._unforgiven_member_is_attached_leader(root, member):
+                return 0, ""
+        if not self._company_of_hunters_member_has_live_bearer(member, sr):
+            return 0, ""
+        if bool(sr.get("enhancement_stubborn_tenacity_requires_below_starting_strength", True)):
+            is_below_starting_strength = getattr(root, "is_below_starting_strength", None)
+            if not callable(is_below_starting_strength) or not bool(is_below_starting_strength()):
+                return 0, ""
+        is_battle_shocked = getattr(root, "is_battle_shocked", None)
+        if not callable(is_battle_shocked) or not bool(is_battle_shocked()):
+            return 0, ""
+        try:
+            bonus = int(sr.get("enhancement_stubborn_tenacity_wound_bonus_if_battle_shocked", 1) or 1)
+        except Exception:
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        source = str(sr.get("enhancement_stubborn_tenacity_source", "") or "Stubborn Tenacity").strip()
+        if not source:
+            source = "Stubborn Tenacity"
+        return int(bonus), source
+
+    def unforgiven_pennant_of_remembrance_fnp(self, unit, *, target_model=None) -> tuple[int, str]:
+        _ = target_model
+        if not self.is_unforgiven_task_force():
+            return 0, ""
+        if unit is None:
+            return 0, ""
+        root, member, sr = self._unforgiven_enhancement_source_member(unit, "enhancement_pennant_of_remembrance")
+        if root is None or member is None or not isinstance(sr, dict):
+            return 0, ""
+        if bool(sr.get("enhancement_pennant_of_remembrance_requires_bearer_leading", True)):
+            if not self._unforgiven_member_is_attached_leader(root, member):
+                return 0, ""
+        if not self._company_of_hunters_member_has_live_bearer(member, sr):
+            return 0, ""
+        is_battle_shocked = getattr(root, "is_battle_shocked", None)
+        battle_shocked = bool(is_battle_shocked()) if callable(is_battle_shocked) else False
+        key = "enhancement_pennant_of_remembrance_fnp_if_battle_shocked" if battle_shocked else "enhancement_pennant_of_remembrance_fnp"
+        default_value = 4 if battle_shocked else 6
+        try:
+            value = int(sr.get(key, default_value) or default_value)
+        except Exception:
+            value = default_value
+        if value <= 0:
+            return 0, ""
+        source = str(sr.get("enhancement_pennant_of_remembrance_source", "") or "Pennant of Remembrance").strip()
+        if not source:
+            source = "Pennant of Remembrance"
+        return int(max(2, value)), source
+
     def _unit_is_on_battlefield(self, unit) -> bool:
         if unit is None:
             return False

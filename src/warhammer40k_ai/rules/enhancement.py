@@ -426,6 +426,9 @@ class Enhancement:
         is_the_lost_brethren = bool(
             sm_mgr and getattr(sm_mgr, "is_the_lost_brethren", lambda: False)()
         )
+        is_unforgiven_task_force = bool(
+            sm_mgr and getattr(sm_mgr, "is_unforgiven_task_force", lambda: False)()
+        )
         is_anvil_siege_force = bool(
             sm_mgr and getattr(sm_mgr, "is_anvil_siege_force", lambda: False)()
         )
@@ -2554,6 +2557,117 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_vengeful_onslaught_bearer_model_id"] = bearer_id
+
+        if name == "shroud of heroes" or enh_id == "000008771002":
+            if not is_unforgiven_task_force:
+                return
+            unit.special_rules["enhancement_shroud_of_heroes"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            roll_min = _coerce_int(params.get("roll_min", 2) or 2, default=2)
+            return_wounds = _coerce_int(params.get("wounds_on_return", 3) or 3, default=3)
+            key = str(params.get("return_on_death_key", "shroud_of_heroes") or "shroud_of_heroes").strip().lower()
+            battle_shocked_wounds = str(
+                params.get("wounds_on_return_if_battle_shocked", "full")
+                or "full"
+            ).strip().lower()
+            if battle_shocked_wounds not in {"full", "d3", "d6"}:
+                battle_shocked_wounds = "full"
+            unit.special_rules["enhancement_shroud_of_heroes_roll_min"] = int(max(2, roll_min))
+            unit.special_rules["enhancement_shroud_of_heroes_wounds"] = int(max(1, return_wounds))
+            unit.special_rules["enhancement_shroud_of_heroes_key"] = key if key else "shroud_of_heroes"
+            unit.special_rules["enhancement_shroud_of_heroes_battle_shocked_wounds"] = battle_shocked_wounds
+            unit.special_rules["enhancement_shroud_of_heroes_source"] = "Shroud of Heroes"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_shroud_of_heroes_bearer_model_id"] = bearer_id
+            refresh_return = getattr(unit, "_refresh_return_on_death_flags", None)
+            if callable(refresh_return):
+                refresh_return()
+
+        if name == "stubborn tenacity" or enh_id == "000008771003":
+            if not is_unforgiven_task_force:
+                return
+            unit.special_rules["enhancement_stubborn_tenacity"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            hit_bonus = _coerce_int(params.get("hit_bonus", 1) or 1, default=1)
+            wound_bonus_bs = _coerce_int(params.get("wound_bonus_if_battle_shocked", 1) or 1, default=1)
+            unit.special_rules["enhancement_stubborn_tenacity_hit_bonus"] = int(max(0, hit_bonus))
+            unit.special_rules["enhancement_stubborn_tenacity_wound_bonus_if_battle_shocked"] = int(
+                max(0, wound_bonus_bs)
+            )
+            unit.special_rules["enhancement_stubborn_tenacity_requires_below_starting_strength"] = bool(
+                params.get("requires_below_starting_strength", True)
+            )
+            unit.special_rules["enhancement_stubborn_tenacity_requires_bearer_leading"] = bool(
+                params.get("requires_bearer_leading", True)
+            )
+            unit.special_rules["enhancement_stubborn_tenacity_source"] = "Stubborn Tenacity"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_stubborn_tenacity_bearer_model_id"] = bearer_id
+
+        if name == "weapons of the first legion" or enh_id == "000008771004":
+            if not is_unforgiven_task_force:
+                return
+            unit.special_rules["enhancement_weapons_of_the_first_legion"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            base_bonus = _coerce_int(params.get("base_bonus", 1) or 1, default=1)
+            battle_shocked_bonus = _coerce_int(
+                params.get("battle_shocked_bonus", 2) or 2,
+                default=2,
+            )
+            base_bonus = int(max(0, base_bonus))
+            battle_shocked_bonus = int(max(base_bonus, battle_shocked_bonus))
+            unit.special_rules["enhancement_bearer_melee_attacks_bonus"] = int(
+                max(
+                    _coerce_int(unit.special_rules.get("enhancement_bearer_melee_attacks_bonus", 0) or 0, default=0),
+                    base_bonus,
+                )
+            )
+            unit.special_rules["enhancement_bearer_melee_strength_bonus"] = int(
+                max(
+                    _coerce_int(unit.special_rules.get("enhancement_bearer_melee_strength_bonus", 0) or 0, default=0),
+                    base_bonus,
+                )
+            )
+            unit.special_rules["enhancement_bearer_melee_damage_bonus"] = int(
+                max(
+                    _coerce_int(unit.special_rules.get("enhancement_bearer_melee_damage_bonus", 0) or 0, default=0),
+                    base_bonus,
+                )
+            )
+            extra_bonus = int(max(0, battle_shocked_bonus - base_bonus))
+            unit.special_rules["enhancement_weapons_of_the_first_legion_battle_shocked_extra_bonus"] = extra_bonus
+            unit.special_rules["enhancement_weapons_of_the_first_legion_source"] = "Weapons of the First Legion"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_weapons_of_the_first_legion_bearer_model_id"] = bearer_id
+
+        if name == "pennant of remembrance" or enh_id == "000008771005":
+            if not is_unforgiven_task_force:
+                return
+            unit.special_rules["enhancement_pennant_of_remembrance"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            fnp_base = _coerce_int(params.get("feel_no_pain", 6) or 6, default=6)
+            fnp_battle_shocked = _coerce_int(
+                params.get("feel_no_pain_if_battle_shocked", 4) or 4,
+                default=4,
+            )
+            unit.special_rules["enhancement_pennant_of_remembrance_fnp"] = int(max(2, fnp_base))
+            unit.special_rules["enhancement_pennant_of_remembrance_fnp_if_battle_shocked"] = int(
+                max(2, fnp_battle_shocked)
+            )
+            unit.special_rules["enhancement_pennant_of_remembrance_requires_bearer_leading"] = bool(
+                params.get("requires_bearer_leading", True)
+            )
+            unit.special_rules["enhancement_pennant_of_remembrance_source"] = "Pennant of Remembrance"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_pennant_of_remembrance_bearer_model_id"] = bearer_id
 
         if name == "fury of the storm" or enh_id == "000008486002":
             if not is_stormlance_task_force:

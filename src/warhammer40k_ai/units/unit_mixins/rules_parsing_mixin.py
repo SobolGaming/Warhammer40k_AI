@@ -1621,6 +1621,7 @@ class RulesParsingMixin:
                     str(spec.get("key", "") or "").strip().lower(),
                     int(spec.get("roll_min", 0) or 0),
                     str(spec.get("wounds", "") or "").strip().lower(),
+                    str(spec.get("wounds_if_battle_shocked", "") or "").strip().lower(),
                     str(spec.get("model_name", "") or "").strip().lower(),
                     bool(spec.get("must_reattach_if_attached", False)),
                     bool(spec.get("requires_leadership_test", False)),
@@ -1679,6 +1680,40 @@ class RulesParsingMixin:
                     "skip_deadly_demise": False,
                     "key": key if key else "ordained_sacrifice",
                     "bearer_model_id": bearer_id,
+                }
+            )
+
+        if isinstance(sr, dict) and sr.get("enhancement_shroud_of_heroes"):
+            bearer_id = str(
+                sr.get("enhancement_shroud_of_heroes_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+            ).strip()
+            try:
+                roll_min = int(sr.get("enhancement_shroud_of_heroes_roll_min", 2) or 2)
+            except (TypeError, ValueError):
+                roll_min = 2
+            try:
+                wounds = int(sr.get("enhancement_shroud_of_heroes_wounds", 3) or 3)
+            except (TypeError, ValueError):
+                wounds = 3
+            key = str(sr.get("enhancement_shroud_of_heroes_key", "shroud_of_heroes") or "shroud_of_heroes").strip().lower()
+            battle_shocked_wounds = str(
+                sr.get("enhancement_shroud_of_heroes_battle_shocked_wounds", "full") or "full"
+            ).strip().lower()
+            if battle_shocked_wounds not in {"full", "d3", "d6"}:
+                try:
+                    battle_shocked_wounds = str(int(battle_shocked_wounds or 1))
+                except (TypeError, ValueError):
+                    battle_shocked_wounds = "full"
+            specs.append(
+                {
+                    "name": str(sr.get("enhancement_shroud_of_heroes_source", "Shroud of Heroes") or "Shroud of Heroes"),
+                    "roll_min": int(max(2, roll_min)),
+                    "wounds": int(max(1, wounds)),
+                    "skip_deadly_demise": False,
+                    "key": key if key else "shroud_of_heroes",
+                    "bearer_model_id": bearer_id,
+                    "wounds_if_battle_shocked": battle_shocked_wounds,
                 }
             )
 

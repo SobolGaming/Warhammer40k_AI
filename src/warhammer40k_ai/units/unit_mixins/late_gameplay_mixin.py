@@ -1598,6 +1598,23 @@ class LateGameplayMixin:
         except Exception:
             pass
         try:
+            army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            pennant_fnp_fn = (
+                getattr(sm_mgr, "unforgiven_pennant_of_remembrance_fnp", None)
+                if sm_mgr is not None
+                else None
+            )
+            if callable(pennant_fnp_fn):
+                pennant_fnp, _pennant_source = pennant_fnp_fn(self, target_model=target_model)
+                if int(pennant_fnp or 0) > 0:
+                    key = (int(pennant_fnp), "")
+                    seen = set((int(v), (c or "")) for v, c in result)
+                    if key not in seen:
+                        result.append((int(pennant_fnp), None))
+        except Exception:
+            pass
+        try:
             from ...utility.aura_effects import get_aura_fnp_entries
 
             aura_entries = list(get_aura_fnp_entries(self) or [])

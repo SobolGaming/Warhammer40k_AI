@@ -507,14 +507,31 @@ class DamageDeathMixin:
                         pos = getattr(self, "position", None)
                     except Exception:
                         pos = None
-                if spec.get("skip_deadly_demise"):
+                effective_spec = dict(spec or {})
+                wounds_if_battle_shocked = effective_spec.get("wounds_if_battle_shocked")
+                if wounds_if_battle_shocked is not None:
+                    is_battle_shocked = False
+                    is_battle_shocked_fn = getattr(self, "is_battle_shocked", None)
+                    if callable(is_battle_shocked_fn):
+                        try:
+                            is_battle_shocked = bool(is_battle_shocked_fn())
+                        except Exception:
+                            is_battle_shocked = False
+                    else:
+                        try:
+                            is_battle_shocked = bool(getattr(self, "battle_shocked", False))
+                        except Exception:
+                            is_battle_shocked = False
+                    if is_battle_shocked:
+                        effective_spec["wounds"] = wounds_if_battle_shocked
+                if effective_spec.get("skip_deadly_demise"):
                     try:
                         setattr(model, "_skip_deadly_demise_once", True)
                     except Exception:
                         pass
                 reattach_bodyguard_unit = None
                 was_attached_when_destroyed = False
-                if bool(spec.get("must_reattach_if_attached", False)):
+                if bool(effective_spec.get("must_reattach_if_attached", False)):
                     try:
                         reattach_bodyguard_unit = getattr(self, "attached_to", None)
                         was_attached_when_destroyed = reattach_bodyguard_unit is not None
@@ -528,19 +545,19 @@ class DamageDeathMixin:
                         position=pos,
                         phase_name=phase_name,
                         game_map=game_map,
-                        spec=spec,
+                        spec=effective_spec,
                         reattach_bodyguard_unit=reattach_bodyguard_unit,
                         was_attached_when_destroyed=bool(was_attached_when_destroyed),
                     )
                     try:
-                        label = str(spec.get("name") or "Return on Death")
+                        label = str(effective_spec.get("name") or "Return on Death")
                         logger.info(f"{label}: {model.name} will attempt to return at end of phase.")
                     except Exception:
                         pass
                 model.mark_used_once_per_battle(
                     once_key,
                     phase_name=phase_name,
-                    ability_name=str(spec.get("name") or "Return on Death"),
+                    ability_name=str(effective_spec.get("name") or "Return on Death"),
                     source="enhancement",
                 )
                 break
