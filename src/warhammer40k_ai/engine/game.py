@@ -1064,7 +1064,10 @@ class Game(
                 low = text.lower().replace("\u2019", "'").replace("\u0192?T", "'")
                 if "command phase" not in low or "regains" not in low or "wounds" not in low:
                     continue
-                m_single = re.search(r"one model in this unit regains up to (\d+|d3) lost wounds", low)
+                m_single = re.search(
+                    r"one model in this unit regains(?:\s+up\s+to)?\s+(\d+|d3)\s+lost wounds?",
+                    low,
+                )
                 if not m_single:
                     continue
                 single_model_regain_texts.add(low)
@@ -1111,14 +1114,14 @@ class Game(
                         and "this unit regains" not in low
                     ):
                         continue
-                    m = re.search(r"regains\s+(\d+|d3)", low)
+                    m = re.search(r"regains?\s+(?:up\s+to\s+)?(\d+|d3)\s+lost wounds?", low)
                     if not m:
                         continue
-                    token = m.group(1)
+                    token = str(m.group(1) or "").strip().lower()
                     if token == "d3":
                         amount = int(get_roll("D3") or 0)
                     else:
-                        amount = int(token)
+                        amount = int(token or 0)
                     if amount <= 0:
                         continue
                     base_wounds = int(getattr(model, "_base_wounds", getattr(model, "wounds", 0)) or 0)

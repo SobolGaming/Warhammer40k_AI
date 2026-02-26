@@ -218,6 +218,35 @@ class TestThousandSonsBatch1Abilities(unittest.TestCase):
         healed = [m.wounds for m in unit.models]
         self.assertEqual(sorted(healed), [1, 2])
 
+    def test_command_phase_self_heal_supports_up_to_d3_wording(self):
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+
+        ability = {
+            "name": "Regenerative Carapace",
+            "description": "At the start of your Command phase, this model regains up to D3 lost wounds.",
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        unit = _make_unit("Test Monster", abilities=[ability], model_count=1)
+        model = unit.models[0]
+        model.wounds = 1
+
+        army = Army("Thousand Sons", "Det")
+        army.faction_id = "TS"
+        army.add_unit(unit)
+        player = Player("TS", control=PlayerControl.REMOTE, army=army)
+        game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[player])
+
+        unit.deployed = True
+        unit.reserve_status = "deployed"
+
+        with patch("warhammer40k_ai.engine.game.get_roll", return_value=2):
+            game._apply_command_phase_regain_wounds(player)
+
+        self.assertEqual(int(model.wounds), int(model._base_wounds))
+
     def test_rites_of_coalescence_records_psyker_contains_gate(self):
         ability = {
             "name": "Rites of Coalescence",

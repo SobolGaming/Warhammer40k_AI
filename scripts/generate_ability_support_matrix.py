@@ -8873,13 +8873,16 @@ def _command_phase_regain_wound_support(description: str) -> Optional[Tuple[str,
     if not norm:
         return None
     pattern = (
-        r"(?:at the )?start of (?:each of )?your command phases? "
-        r"this model regains (?P<amt>\d+) lost wounds?"
+        r"(?:at the )?start of (?:(?:each|either) player s command phases?|(?:each of )?your command phases?) "
+        r"this model regains (?:(?P<up_to>up to) )?(?P<amt>\d+|d3) lost wounds?"
     )
     m = re.fullmatch(pattern, norm)
     if not m:
         return None
-    return ("Supported", f"Start of Command phase: this model regains {m.group('amt')} lost wound(s).")
+    amount = str(m.group("amt") or "").upper()
+    if m.group("up_to"):
+        return ("Supported", f"Start of Command phase: this model regains up to {amount} lost wound(s).")
+    return ("Supported", f"Start of Command phase: this model regains {amount} lost wound(s).")
 
 
 def _start_shooting_phase_visible_battleshock_support(description: str) -> Optional[Tuple[str, str]]:
