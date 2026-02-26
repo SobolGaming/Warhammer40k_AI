@@ -7354,6 +7354,30 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         take_test = getattr(target_root, "take_battle_shock_test", None)
         if not callable(take_test):
             return None
+        sm_mgr = getattr(source_army, "space_marines_detachments", None) if source_army is not None else None
+        test_modifier = 0
+        modifier_source = ""
+        modifier_fn = (
+            getattr(sm_mgr, "godhammer_battle_psalm_precentor_shock_and_awe_modifier", None)
+            if sm_mgr is not None
+            else None
+        )
+        if callable(modifier_fn):
+            try:
+                test_modifier, modifier_source = modifier_fn(source_root, game=game)
+            except Exception:
+                test_modifier, modifier_source = 0, ""
+        if int(test_modifier or 0):
+            sr = getattr(target_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            current = int(sr.get("battle_shock_test_modifier", 0) or 0)
+            sr["battle_shock_test_modifier"] = int(current + int(test_modifier))
+            reasons = list(sr.get("battle_shock_test_modifier_reasons", []) or [])
+            source_label = str(modifier_source or "Battle-psalm Precentor").strip() or "Battle-psalm Precentor"
+            reasons.append(source_label)
+            sr["battle_shock_test_modifier_reasons"] = reasons
+            target_root.special_rules = sr
         try:
             current_turn = int(getattr(game, "turn", 0) or 0)
         except Exception:
@@ -7367,12 +7391,14 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             (
                 f"{ability_name}: {getattr(target_root, 'name', 'Unit')} took a Battle-shock test "
                 f"after being selected as a charge target."
+                f"{' (modifier ' + str(int(test_modifier)) + ' from ' + str(modifier_source or 'Battle-psalm Precentor') + ').' if int(test_modifier or 0) else ''}"
             ),
         )
         return {
             "unit_id": str(get_entity_id(source_root) or ""),
             "target_unit_id": target_id,
             "battle_shocked": bool(battle_shocked),
+            "test_modifier": int(test_modifier or 0),
         }
     if ability == "rapid_drop_deployment":
         payload = _option_payload(request, result)

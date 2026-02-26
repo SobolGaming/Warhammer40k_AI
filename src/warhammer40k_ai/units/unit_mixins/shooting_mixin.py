@@ -3571,11 +3571,17 @@ class ShootingMixin:
                 return
         except Exception:
             return
-        if not self._attached_unit_has_enhancement_flag(
+        has_aggressive_deployment = self._attached_unit_has_enhancement_flag(
             "enhancement_aggressive_deployment",
             enhancement_id="000010086003",
             enhancement_name="aggressive deployment",
-        ):
+        )
+        has_herald_of_sacred_slaughter = self._attached_unit_has_enhancement_flag(
+            "enhancement_herald_of_sacred_slaughter",
+            enhancement_id="000010400005",
+            enhancement_name="herald of sacred slaughter",
+        )
+        if not (has_aggressive_deployment or has_herald_of_sacred_slaughter):
             return
         try:
             root = self.get_attached_unit_root()
@@ -3596,6 +3602,10 @@ class ShootingMixin:
                 val = float(sr.get("enhancement_aggressive_deployment_scouts_distance", 0) or 0)
             except Exception:
                 val = 0.0
+            try:
+                val = max(val, float(sr.get("enhancement_herald_of_sacred_slaughter_scouts_distance", 0) or 0))
+            except Exception:
+                pass
             if val > scouts_distance:
                 scouts_distance = val
         if scouts_distance <= 0:
@@ -3606,8 +3616,12 @@ class ShootingMixin:
         current = float(sr.get("enhancement_scout_distance", 0) or 0)
         if scouts_distance > current:
             sr["enhancement_scout_distance"] = scouts_distance
-        sr["enhancement_aggressive_deployment_active"] = True
-        sr["enhancement_aggressive_deployment_distance"] = scouts_distance
+        if has_aggressive_deployment:
+            sr["enhancement_aggressive_deployment_active"] = True
+            sr["enhancement_aggressive_deployment_distance"] = scouts_distance
+        if has_herald_of_sacred_slaughter:
+            sr["enhancement_herald_of_sacred_slaughter_active"] = True
+            sr["enhancement_herald_of_sacred_slaughter_distance"] = scouts_distance
         transport_unit.special_rules = sr
 
     def disembark(

@@ -1875,6 +1875,59 @@ _SPACE_MARINES_GLADIUS_TASK_FORCE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPACE_MARINES_GLADIUS_TASK_FORCE_DESCRIPTORS.values()
 }
 
+_SPACE_MARINES_GODHAMMER_ASSAULT_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010400002": EnhancementToolDescriptor(
+        enhancement_id="000010400002",
+        name="Paragon of Fury",
+        timing="passive_and_on_disembark",
+        target="bearer_melee_weapons",
+        duration="constant_conditional",
+        effect="bearer_melee_strength_bonus_and_disembark_damage_bonus",
+        effect_params={
+            "strength_bonus": 2,
+            "disembarked_from_transport_damage_bonus": 1,
+        },
+    ),
+    "000010400003": EnhancementToolDescriptor(
+        enhancement_id="000010400003",
+        name="Battle-psalm Precentor",
+        timing="on_shock_and_awe_battleshock",
+        target="enemy_unit_selected_for_shock_and_awe",
+        duration="instant",
+        effect="shock_and_awe_battleshock_test_modifier",
+        effect_params={
+            "battleshock_test_modifier": -1,
+        },
+    ),
+    "000010400004": EnhancementToolDescriptor(
+        enhancement_id="000010400004",
+        name="Augury Servo-host",
+        timing="start_of_shooting_phase",
+        target="enemy_unit_within_range_visible_to_bearer",
+        duration="until_end_of_phase",
+        effect="target_enemy_no_cover_until_end_of_phase",
+        range_in=12.0,
+        effect_params={
+            "range": 12,
+        },
+    ),
+    "000010400005": EnhancementToolDescriptor(
+        enhancement_id="000010400005",
+        name="Herald of Sacred Slaughter",
+        timing="declare_battle_formations",
+        target="dedicated_transport_with_bearer_embarked",
+        duration="scout_step",
+        effect="grant_scouts",
+        effect_params={
+            "scouts_distance": 9,
+        },
+    ),
+}
+
+_SPACE_MARINES_GODHAMMER_ASSAULT_FORCE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPACE_MARINES_GODHAMMER_ASSAULT_FORCE_DESCRIPTORS.values()
+}
+
 _SPACE_MARINES_IRONSTORM_SPEARHEAD_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008478002": EnhancementToolDescriptor(
         enhancement_id="000008478002",
@@ -3590,6 +3643,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPACE_MARINES_GLADIUS_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPACE_MARINES_GODHAMMER_ASSAULT_FORCE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPACE_MARINES_IRONSTORM_SPEARHEAD_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -3720,6 +3776,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SPACE_MARINES_FIRESTORM_ASSAULT_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_FORGEFATHERS_SEEKERS_BY_NAME.get(key)
         or _SPACE_MARINES_GLADIUS_TASK_FORCE_BY_NAME.get(key)
+        or _SPACE_MARINES_GODHAMMER_ASSAULT_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_IRONSTORM_SPEARHEAD_BY_NAME.get(key)
         or _SPACE_MARINES_LIBERATOR_ASSAULT_GROUP_BY_NAME.get(key)
         or _SPACE_MARINES_LIBRARIUS_CONCLAVE_BY_NAME.get(key)

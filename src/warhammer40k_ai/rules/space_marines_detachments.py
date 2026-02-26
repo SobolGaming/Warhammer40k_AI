@@ -4801,6 +4801,58 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
                 continue
         return 0, ""
 
+    def _godhammer_assault_force_enhancement_source_member(self, unit, flag_key: str):
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return None, None, None
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if not members:
+            members = [root]
+        members.sort(key=lambda member: str(get_entity_id(member) or ""))
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get(flag_key, False)):
+                return root, member, sr
+        return root, None, None
+
+    @staticmethod
+    def _godhammer_assault_force_resolve_bearer_model(member, sr):
+        bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "").strip()
+        if bearer_id:
+            for model in list(getattr(member, "models", []) or []):
+                model_entity_id = str(get_entity_id(model) or "").strip()
+                model_local_id = str(getattr(model, "id", getattr(model, "_id", "")) or "").strip()
+                if bearer_id != model_entity_id and bearer_id != model_local_id:
+                    continue
+                return model
+            return None
+        return getattr(member, "_get_enhancement_bearer_model", lambda: None)()
+
+    @staticmethod
+    def _godhammer_assault_force_member_has_live_bearer(member, sr) -> bool:
+        if member is None or not isinstance(sr, dict):
+            return False
+        bearer = SpaceMarinesDetachmentManager._godhammer_assault_force_resolve_bearer_model(member, sr)
+        if bearer is None:
+            return False
+        alive_attr = getattr(bearer, "is_alive", True)
+        return bool(alive_attr() if callable(alive_attr) else alive_attr)
+
+    @staticmethod
+    def _godhammer_assault_force_model_is_live_bearer(model, member, sr) -> bool:
+        if model is None:
+            return False
+        bearer = SpaceMarinesDetachmentManager._godhammer_assault_force_resolve_bearer_model(member, sr)
+        if bearer is None:
+            return False
+        alive_attr = getattr(bearer, "is_alive", True)
+        if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+            return False
+        return str(get_entity_id(model) or "") == str(get_entity_id(bearer) or "")
+
     def shock_and_awe_reacting_unit_is_eligible(self, unit, *, game=None) -> bool:
         if not self.is_godhammer_assault_force():
             return False
@@ -4869,6 +4921,117 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             if parent is not None and not bool(getattr(parent, "is_melee", lambda: False)()):
                 return 0, ""
         return 1, "Shock and Awe"
+
+    def godhammer_battle_psalm_precentor_shock_and_awe_modifier(self, unit, *, game=None) -> tuple[int, str]:
+        if not self.is_godhammer_assault_force():
+            return 0, ""
+        if unit is None:
+            return 0, ""
+        root, member, sr = self._godhammer_assault_force_enhancement_source_member(
+            unit,
+            "enhancement_battle_psalm_precentor",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return 0, ""
+        if not self._godhammer_assault_force_member_has_live_bearer(member, sr):
+            return 0, ""
+        if not self.shock_and_awe_reacting_unit_is_eligible(root, game=game):
+            return 0, ""
+        try:
+            modifier = int(sr.get("enhancement_battle_psalm_precentor_battleshock_test_modifier", -1) or -1)
+        except Exception:
+            modifier = -1
+        if modifier == 0:
+            return 0, ""
+        source = str(
+            sr.get("enhancement_battle_psalm_precentor_source", "") or "Battle-psalm Precentor"
+        ).strip() or "Battle-psalm Precentor"
+        return int(modifier), source
+
+    def godhammer_paragon_of_fury_melee_damage_bonus(
+        self,
+        attacker_model,
+        weapon_profile=None,
+        *,
+        game=None,
+    ) -> tuple[int, str]:
+        if not self.is_godhammer_assault_force():
+            return 0, ""
+        if attacker_model is None:
+            return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        if attacker_unit is None:
+            return 0, ""
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            if parent is not None and not bool(getattr(parent, "is_melee", lambda: False)()):
+                return 0, ""
+        root, member, sr = self._godhammer_assault_force_enhancement_source_member(
+            attacker_unit,
+            "enhancement_paragon_of_fury",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return 0, ""
+        attacker_root = self._attached_unit_root(attacker_unit)
+        if attacker_root is None or str(get_entity_id(attacker_root) or "") != str(get_entity_id(root) or ""):
+            return 0, ""
+        if not self._godhammer_assault_force_model_is_live_bearer(attacker_model, member, sr):
+            return 0, ""
+        if not self._attached_unit_disembarked_from_transport_this_round(root):
+            return 0, ""
+        try:
+            bonus = int(sr.get("enhancement_paragon_of_fury_disembark_damage_bonus", 1) or 1)
+        except Exception:
+            bonus = 1
+        if bonus <= 0:
+            return 0, ""
+        source = str(sr.get("enhancement_paragon_of_fury_source", "") or "Paragon of Fury").strip()
+        if not source:
+            source = "Paragon of Fury"
+        return int(bonus), source
+
+    def godhammer_augury_servo_host_source_entries(self, *, game=None) -> list[tuple]:
+        if not self.is_godhammer_assault_force():
+            return []
+        entries: list[tuple] = []
+        for root in list(self._iter_unique_army_roots() or []):
+            if root is None or not self._unit_is_on_battlefield(root):
+                continue
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = [root]
+            if not members:
+                members = [root]
+            members.sort(key=lambda member: str(get_entity_id(member) or ""))
+            for member in members:
+                if member is None:
+                    continue
+                sr = getattr(member, "special_rules", None)
+                if not isinstance(sr, dict) or not bool(sr.get("enhancement_augury_servo_host", False)):
+                    continue
+                bearer = self._godhammer_assault_force_resolve_bearer_model(member, sr)
+                if bearer is None:
+                    continue
+                alive_attr = getattr(bearer, "is_alive", True)
+                if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+                    continue
+                try:
+                    range_in = int(sr.get("enhancement_augury_servo_host_range", 12) or 12)
+                except Exception:
+                    range_in = 12
+                source_name = str(
+                    sr.get("enhancement_augury_servo_host_source", "") or "Augury Servo-host"
+                ).strip() or "Augury Servo-host"
+                entries.append((root, member, bearer, int(max(1, range_in)), source_name))
+        entries.sort(
+            key=lambda entry: (
+                str(get_entity_id(entry[0]) or ""),
+                str(get_entity_id(entry[1]) or ""),
+                str(get_entity_id(entry[2]) or ""),
+            )
+        )
+        return entries
 
     def _attached_unit_has_keyword(self, unit, keyword: str) -> bool:
         if unit is None:

@@ -222,6 +222,7 @@ class GamePhaseHandlersMixin:
         self._on_phase_start_master_of_wolves(player=player, phase=phase)
         self._on_phase_start_saga_of_the_hunter_enhancements(player=player, phase=phase)
         self._on_phase_start_ironstorm_spearhead_enhancements(player=player, phase=phase)
+        self._on_phase_start_godhammer_assault_force_enhancements(player=player, phase=phase)
         if pname:
             for p in list(getattr(self, "players", []) or []):
                 if p is None:
@@ -7964,6 +7965,126 @@ class GamePhaseHandlersMixin:
         except Exception:
             pass
         return True
+
+    def _on_phase_start_godhammer_assault_force_enhancements(self, player=None, phase=None, **_kwargs) -> None:
+        """Godhammer Assault Force: Augury Servo-host target selection at the start of your Shooting phase."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "SHOOTING_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        sm_mgr = getattr(army, "space_marines_detachments", None)
+        if sm_mgr is None or not bool(getattr(sm_mgr, "is_godhammer_assault_force", lambda: False)()):
+            return
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return
+
+        enemy_roots = list(self._collect_enemy_unit_roots(player) or [])
+        if not enemy_roots:
+            return
+        enemy_roots.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+
+        source_entries_fn = getattr(sm_mgr, "godhammer_augury_servo_host_source_entries", None)
+        if not callable(source_entries_fn):
+            return
+        source_entries = list(source_entries_fn(game=self) or [])
+        if not source_entries:
+            return
+
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+
+        queue = getattr(self, "decision_queue", None)
+
+        for source_root, source_unit, bearer_model, range_in, ability_name in list(source_entries or []):
+            source_unit_id = str(get_entity_id(source_unit) or "")
+            model_id = str(get_entity_id(bearer_model) or "")
+            if not source_unit_id or not model_id:
+                continue
+
+            if queue is not None and hasattr(queue, "list"):
+                duplicate = False
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+                        continue
+                    ctx = dict(getattr(req, "context", {}) or {})
+                    if str(ctx.get("ability", "") or "") != "post_shoot_no_cover":
+                        continue
+                    if str(ctx.get("ability_key", "") or "") != "godhammer_augury_servo_host":
+                        continue
+                    if str(ctx.get("model_id", "") or "") != model_id:
+                        continue
+                    if int(ctx.get("turn", current_turn) or current_turn) != int(current_turn):
+                        continue
+                    duplicate = True
+                    break
+                if duplicate:
+                    continue
+
+            candidates = list(
+                self._visible_enemy_candidates_for_model(
+                    source_unit=source_root,
+                    model=bearer_model,
+                    enemy_roots=enemy_roots,
+                    range_value=float(range_in or 0),
+                    game_map=game_map,
+                )
+                or []
+            )
+            if not candidates:
+                continue
+            candidates.sort(key=lambda unit: str(get_entity_id(unit) or ""))
+
+            options = []
+            for candidate in list(candidates or []):
+                target_id = str(get_entity_id(candidate) or "")
+                if not target_id:
+                    continue
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(candidate, "name", "Enemy unit") or "Enemy unit"),
+                        payload={
+                            "target_unit_id": target_id,
+                            "source_unit_id": source_unit_id,
+                            "model_id": model_id,
+                        },
+                    )
+                )
+            if not options:
+                continue
+
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                (
+                    f"{ability_name}: select one visible enemy unit within {int(range_in)}\"; "
+                    "that unit cannot gain Benefit of Cover this phase."
+                ),
+                player_id=getattr(player, "id", None),
+                options=options,
+                context={
+                    "ability": "post_shoot_no_cover",
+                    "ability_key": "godhammer_augury_servo_host",
+                    "ability_name": str(ability_name or "Augury Servo-host").strip() or "Augury Servo-host",
+                    "phase": "Shooting phase",
+                    "unit_id": source_unit_id,
+                    "source_unit_id": source_unit_id,
+                    "attacker_unit_id": source_unit_id,
+                    "model_id": model_id,
+                    "range": int(max(1, int(range_in or 1))),
+                    "expires_phase": "SHOOTING_PHASE",
+                    "expires_timing": "PHASE_END",
+                    "turn": int(current_turn or 0),
+                },
+            )
+            self.request_decision(request)
 
     def _on_phase_start_aeldari_enhancements(self, player=None, phase=None, **_kwargs) -> None:
         """Aeldari enhancements that trigger at the start of Command or Shooting phases."""

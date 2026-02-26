@@ -18964,6 +18964,36 @@ class WargearProfile:
                         )
             except Exception:
                 pass
+            try:
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                paragon_bonus_fn = (
+                    getattr(sm_mgr, "godhammer_paragon_of_fury_melee_damage_bonus", None)
+                    if sm_mgr is not None
+                    else None
+                )
+                if callable(paragon_bonus_fn):
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    paragon_bonus, paragon_source = paragon_bonus_fn(
+                        attacker,
+                        weapon_profile=self,
+                        game=game,
+                    )
+                    if int(paragon_bonus or 0):
+                        source_name = str(paragon_source or "Paragon of Fury").strip() or "Paragon of Fury"
+                        damage_mods.append(
+                            Modifier(
+                                ModifierOp.ADD,
+                                int(paragon_bonus),
+                                source="enhancement:paragon_of_fury_damage_add",
+                            )
+                        )
+                        damage_result['special_effects'].append(
+                            f"{source_name} +{int(paragon_bonus)}D (disembarked bearer melee)"
+                        )
+            except Exception:
+                pass
             possessed_blade = self._get_possessed_blade_state(attacker)
             if possessed_blade and possessed_blade.get("active", False) and possessed_blade.get("weapon_matches", False):
                 pb_damage = int(possessed_blade.get("active_damage_bonus", 0) or 0)

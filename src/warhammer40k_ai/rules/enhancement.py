@@ -435,6 +435,9 @@ class Enhancement:
         is_gladius_task_force = bool(
             sm_mgr and getattr(sm_mgr, "is_gladius_task_force", lambda: False)()
         )
+        is_godhammer_assault_force = bool(
+            sm_mgr and getattr(sm_mgr, "is_godhammer_assault_force", lambda: False)()
+        )
         is_firestorm_assault_force = bool(
             sm_mgr and getattr(sm_mgr, "is_firestorm_assault_force", lambda: False)()
         )
@@ -2087,6 +2090,69 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_veteran_of_behemoth_bearer_model_id"] = bearer_id
+
+        if name == "paragon of fury" or enh_id == "000010400002":
+            if not is_godhammer_assault_force:
+                return
+            unit.special_rules["enhancement_paragon_of_fury"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            strength_bonus = _coerce_int(params.get("strength_bonus", 2) or 2, default=2)
+            disembark_damage_bonus = _coerce_int(
+                params.get("disembarked_from_transport_damage_bonus", 1) or 1,
+                default=1,
+            )
+            unit.special_rules["enhancement_bearer_melee_strength_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_strength_bonus", 0) or 0
+            ) + int(max(0, strength_bonus))
+            unit.special_rules["enhancement_paragon_of_fury_disembark_damage_bonus"] = int(
+                max(0, disembark_damage_bonus)
+            )
+            unit.special_rules["enhancement_paragon_of_fury_source"] = "Paragon of Fury"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_paragon_of_fury_bearer_model_id"] = bearer_id
+
+        if name in ("battle-psalm precentor", "battle psalm precentor") or enh_id == "000010400003":
+            if not is_godhammer_assault_force:
+                return
+            unit.special_rules["enhancement_battle_psalm_precentor"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            test_modifier = _coerce_int(params.get("battleshock_test_modifier", -1) or -1, default=-1)
+            unit.special_rules["enhancement_battle_psalm_precentor_battleshock_test_modifier"] = int(test_modifier)
+            unit.special_rules["enhancement_battle_psalm_precentor_source"] = "Battle-psalm Precentor"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_battle_psalm_precentor_bearer_model_id"] = bearer_id
+
+        if name in ("augury servo-host", "augury servo host") or enh_id == "000010400004":
+            if not is_godhammer_assault_force:
+                return
+            unit.special_rules["enhancement_augury_servo_host"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            range_val = _coerce_int(params.get("range", 12) or 12, default=12)
+            unit.special_rules["enhancement_augury_servo_host_range"] = int(max(1, range_val))
+            unit.special_rules["enhancement_augury_servo_host_source"] = "Augury Servo-host"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_augury_servo_host_bearer_model_id"] = bearer_id
+
+        if name == "herald of sacred slaughter" or enh_id == "000010400005":
+            if not is_godhammer_assault_force:
+                return
+            unit.special_rules["enhancement_herald_of_sacred_slaughter"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            scouts_distance = _coerce_int(params.get("scouts_distance", 9) or 9, default=9)
+            unit.special_rules["enhancement_herald_of_sacred_slaughter_scouts_distance"] = int(
+                max(0, scouts_distance)
+            )
+            unit.special_rules["enhancement_herald_of_sacred_slaughter_source"] = "Herald of Sacred Slaughter"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_herald_of_sacred_slaughter_bearer_model_id"] = bearer_id
 
         if name in ("wolves' wisdom", "wolves wisdom") or enh_id == "000009851002":
             if not is_champions_of_fenris:
