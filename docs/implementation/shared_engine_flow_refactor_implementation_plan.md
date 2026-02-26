@@ -333,9 +333,9 @@ The key difference between modes remains transport and player identity topology,
 - Performance gating policy: fixed reference transcript fixture on pinned CI runner class for budget enforcement.
 
 ## Implementation Checklist
-- [ ] PR 1 merged: shared driver extraction with no behavior change.
-- [ ] PR 2 merged: channel abstraction + versioned presentation schema/validation + ordering/idempotency contract in place.
-- [ ] PR 3 merged: local runner migrated to shared driver without loopback + engine/UI boundary tests passing.
-- [ ] PR 4 merged: shared UI/HUD orchestration + redaction + dialog mapping parity in place for local + network.
-- [ ] PR 5 merged: decision-controller de-duplication + DecisionRecord parity for UI intents complete.
-- [ ] PR 6 merged: parity regression + pending-decision reconnect parity + compatibility/perf gates + shadow-diff cutover + cleanup + docs finalized.
+- [x] PR 1 merged: shared driver extraction with no behavior change.
+- [x] PR 2 merged: channel abstraction + versioned presentation schema/validation + ordering/idempotency contract in place.
+- [x] PR 3 merged: local runner migrated to shared driver without loopback + engine/UI boundary tests passing.
+- [x] PR 4 merged: shared UI/HUD orchestration + redaction + dialog mapping parity in place for local + network.
+- [x] PR 5 merged: decision-controller de-duplication + DecisionRecord parity for UI intents complete.
+- [x] PR 6 merged: parity regression + pending-decision reconnect parity + compatibility/perf gates + shadow-diff cutover + cleanup + docs finalized.
