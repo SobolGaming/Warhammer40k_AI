@@ -1890,6 +1890,30 @@ class ShootingMixin:
                     leadership_reroll_sources.append(source_name)
         if not auto_passed:
             try:
+                army = self.get_parent_army()
+            except Exception:
+                army = None
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            tempered_sources_fn = (
+                getattr(sm_mgr, "wrath_of_the_rock_tempered_in_battle_reroll_sources", None)
+                if sm_mgr is not None
+                else None
+            )
+            if callable(tempered_sources_fn):
+                try:
+                    tempered_sources = list(tempered_sources_fn(self, game=game) or [])
+                except Exception:
+                    tempered_sources = []
+                if tempered_sources:
+                    seen = {str(s or "") for s in list(leadership_reroll_sources or [])}
+                    for source in tempered_sources:
+                        source_name = str(source or "")
+                        if not source_name or source_name in seen:
+                            continue
+                        seen.add(source_name)
+                        leadership_reroll_sources.append(source_name)
+        if not auto_passed:
+            try:
                 from ...utility.aura_effects import get_aura_battleshock_test_reroll_sources
                 aura_sources = list(get_aura_battleshock_test_reroll_sources(self, game_map=getattr(game, "map", None)) or [])
             except Exception:

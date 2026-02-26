@@ -4260,6 +4260,21 @@ class KeywordsDetachmentsMixin:
                 inner_circle_deathwing_assault_bonus = 0
         if inner_circle_deathwing_assault_bonus > 0:
             total_bonus += int(inner_circle_deathwing_assault_bonus)
+        wrath_of_the_rock_deathwing_assault_bonus = 0
+        wrath_of_the_rock_deathwing_assault_bonus_fn = (
+            getattr(sm_mgr, "wrath_of_the_rock_deathwing_assault_strategic_reserves_round_bonus", None)
+            if sm_mgr is not None
+            else None
+        )
+        if callable(wrath_of_the_rock_deathwing_assault_bonus_fn):
+            try:
+                wrath_of_the_rock_deathwing_assault_bonus = int(
+                    wrath_of_the_rock_deathwing_assault_bonus_fn(root, game=game) or 0
+                )
+            except (TypeError, ValueError):
+                wrath_of_the_rock_deathwing_assault_bonus = 0
+        if wrath_of_the_rock_deathwing_assault_bonus > 0:
+            total_bonus += int(wrath_of_the_rock_deathwing_assault_bonus)
         try:
             rule = root.get_strategic_reserves_round_bonus_rule()
         except Exception:

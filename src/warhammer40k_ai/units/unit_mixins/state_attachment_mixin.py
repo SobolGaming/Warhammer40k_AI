@@ -1148,6 +1148,36 @@ class StateAttachmentMixin:
             seen_proud = {str(src or "").strip().lower() for src in list(reroll_sources or []) if str(src or "").strip()}
             if "proud and vainglorious" not in seen_proud:
                 reroll_sources.append("Proud and Vainglorious")
+        try:
+            army = root.get_parent_army() if root is not None else None
+        except Exception:
+            army = None
+        sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+        tempered_sources_fn = (
+            getattr(sm_mgr, "wrath_of_the_rock_tempered_in_battle_reroll_sources", None)
+            if sm_mgr is not None
+            else None
+        )
+        if callable(tempered_sources_fn):
+            try:
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            except Exception:
+                game = None
+            try:
+                tempered_sources = list(tempered_sources_fn(root, game=game) or [])
+            except Exception:
+                tempered_sources = []
+            if tempered_sources:
+                seen_tempered = {str(src or "").strip().lower() for src in list(reroll_sources or []) if str(src or "").strip()}
+                for src in tempered_sources:
+                    label = str(src or "").strip()
+                    if not label:
+                        continue
+                    key = label.lower()
+                    if key in seen_tempered:
+                        continue
+                    seen_tempered.add(key)
+                    reroll_sources.append(label)
         if extra_reroll_sources:
             seen = {str(src or "").strip().lower() for src in reroll_sources if str(src or "").strip()}
             for src in list(extra_reroll_sources or []):

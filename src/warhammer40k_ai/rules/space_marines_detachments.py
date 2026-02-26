@@ -7692,6 +7692,110 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return 0, ""
         return 1, "Dutiful Tenacity"
 
+    def wrath_of_the_rock_tempered_in_battle_reroll_sources(self, unit, *, game=None) -> list[str]:
+        if not self.is_wrath_of_the_rock():
+            return []
+        target_root = self._attached_unit_root(unit)
+        if target_root is None:
+            return []
+        try:
+            if target_root.get_parent_army() is not self.army:
+                return []
+        except Exception:
+            return []
+        if not self.attached_unit_is_adeptus_astartes(target_root):
+            return []
+        if not self._unit_is_on_battlefield(target_root):
+            return []
+        game_obj = self._resolve_game_context(game=game)
+        game_map = getattr(game_obj, "map", None) if game_obj is not None else None
+        out: list[str] = []
+        seen: set[str] = set()
+        for candidate_root in list(self._iter_unique_army_roots() or []):
+            if candidate_root is None or not self._unit_is_on_battlefield(candidate_root):
+                continue
+            source_root, member, sr = self._company_of_hunters_enhancement_source_member(
+                candidate_root,
+                "enhancement_tempered_in_battle",
+            )
+            if source_root is None or member is None or not isinstance(sr, dict):
+                continue
+            if not self.attached_unit_is_adeptus_astartes(source_root):
+                continue
+            if not self._company_of_hunters_member_has_live_bearer(member, sr):
+                continue
+            reroll_battle_shock = bool(sr.get("enhancement_tempered_in_battle_reroll_battle_shock", True))
+            reroll_leadership = bool(sr.get("enhancement_tempered_in_battle_reroll_leadership", True))
+            if not reroll_battle_shock and not reroll_leadership:
+                continue
+            bearer = self._company_of_hunters_resolve_bearer_model(member, sr)
+            if bearer is None:
+                continue
+            try:
+                aura_range = float(sr.get("enhancement_tempered_in_battle_range", 6.0) or 6.0)
+            except Exception:
+                aura_range = 6.0
+            if aura_range <= 0.0:
+                continue
+            in_range = False
+            in_range_fn = getattr(target_root, "_model_within_range_of_unit", None)
+            if callable(in_range_fn):
+                try:
+                    in_range = bool(in_range_fn(bearer, target_root, float(aura_range)))
+                except Exception:
+                    in_range = False
+            if (not in_range) and game_map is not None:
+                try:
+                    distance = float(game_map.get_distance_between_units(source_root, target_root))
+                except Exception:
+                    distance = -1.0
+                if distance >= 0.0 and distance <= float(aura_range) + 1e-6:
+                    in_range = True
+            if not in_range:
+                continue
+            source_name = str(
+                sr.get("enhancement_tempered_in_battle_source", "") or "Tempered in Battle (Aura)"
+            ).strip()
+            if not source_name:
+                source_name = "Tempered in Battle (Aura)"
+            key = source_name.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(source_name)
+        out.sort()
+        return out
+
+    def wrath_of_the_rock_deathwing_assault_strategic_reserves_round_bonus(self, unit, *, game=None) -> int:
+        _ = game
+        if not self.is_wrath_of_the_rock():
+            return 0
+        root, member, sr = self._company_of_hunters_enhancement_source_member(
+            unit,
+            "enhancement_wrath_of_the_rock_deathwing_assault",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return 0
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return 0
+        if not self._company_of_hunters_member_has_live_bearer(member, sr):
+            return 0
+        if bool(sr.get("enhancement_wrath_of_the_rock_deathwing_assault_requires_deep_strike", True)):
+            has_deep_strike = getattr(root, "has_deep_strike", None)
+            if not callable(has_deep_strike) or not bool(has_deep_strike()):
+                return 0
+        started_in_reserves = bool(getattr(root, "_started_in_reserves", False))
+        if not started_in_reserves:
+            return 0
+        in_strategic_reserves = getattr(root, "is_in_strategic_reserves", None)
+        if not callable(in_strategic_reserves) or not bool(in_strategic_reserves()):
+            return 0
+        try:
+            bonus = int(sr.get("enhancement_wrath_of_the_rock_deathwing_assault_round_bonus", 1) or 1)
+        except Exception:
+            bonus = 1
+        return int(max(0, bonus))
+
     def red_thirst_applies(self, unit) -> bool:
         if unit is None:
             return False

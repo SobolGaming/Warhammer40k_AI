@@ -2048,6 +2048,63 @@ _SPACE_MARINES_INNER_CIRCLE_TASK_FORCE_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPACE_MARINES_INNER_CIRCLE_TASK_FORCE_DESCRIPTORS.values()
 }
 
+_SPACE_MARINES_WRATH_OF_THE_ROCK_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010155002": EnhancementToolDescriptor(
+        enhancement_id="000010155002",
+        name="Tempered in Battle (Aura)",
+        timing="passive_aura",
+        target="friendly_adeptus_astartes_units_within_aura",
+        duration="constant_while_bearer_alive",
+        effect="aura_reroll_battleshock_and_leadership_tests",
+        range_in=6.0,
+        effect_params={
+            "range": 6,
+            "reroll_tests": ("battle_shock", "leadership"),
+        },
+    ),
+    "000010155003": EnhancementToolDescriptor(
+        enhancement_id="000010155003",
+        name="Ancient Weapons",
+        timing="passive",
+        target="bearer_melee_weapons",
+        duration="constant_while_bearer_alive",
+        effect="bearer_melee_strength_ap_damage_bonus",
+        effect_params={
+            "bearer_melee_strength_bonus": 2,
+            "bearer_melee_ap_bonus": 1,
+            "bearer_melee_damage_bonus": 1,
+        },
+    ),
+    "000010155004": EnhancementToolDescriptor(
+        enhancement_id="000010155004",
+        name="Deathwing Assault",
+        timing="passive_while_in_reserves",
+        target="bearer_unit_with_deep_strike",
+        duration="while_in_reserves",
+        effect="strategic_reserves_setup_round_bonus_for_deep_strike",
+        effect_params={
+            "strategic_reserves_setup_round_bonus": 1,
+            "requires_deep_strike": True,
+        },
+    ),
+    "000010155005": EnhancementToolDescriptor(
+        enhancement_id="000010155005",
+        name="Lord of the Ravenwing",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant_while_bearer_alive",
+        effect="bearer_unit_reroll_advance_and_charge",
+        effect_params={
+            "reroll_advance": True,
+            "reroll_charge": True,
+        },
+    ),
+}
+
+_SPACE_MARINES_WRATH_OF_THE_ROCK_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPACE_MARINES_WRATH_OF_THE_ROCK_DESCRIPTORS.values()
+}
+
 _SPACE_MARINES_IRONSTORM_SPEARHEAD_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008478002": EnhancementToolDescriptor(
         enhancement_id="000008478002",
@@ -3772,6 +3829,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPACE_MARINES_INNER_CIRCLE_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPACE_MARINES_WRATH_OF_THE_ROCK_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPACE_MARINES_IRONSTORM_SPEARHEAD_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -3905,6 +3965,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SPACE_MARINES_GODHAMMER_ASSAULT_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_HAMMER_OF_AVERNII_BY_NAME.get(key)
         or _SPACE_MARINES_INNER_CIRCLE_TASK_FORCE_BY_NAME.get(key)
+        or _SPACE_MARINES_WRATH_OF_THE_ROCK_BY_NAME.get(key)
         or _SPACE_MARINES_IRONSTORM_SPEARHEAD_BY_NAME.get(key)
         or _SPACE_MARINES_LIBERATOR_ASSAULT_GROUP_BY_NAME.get(key)
         or _SPACE_MARINES_LIBRARIUS_CONCLAVE_BY_NAME.get(key)

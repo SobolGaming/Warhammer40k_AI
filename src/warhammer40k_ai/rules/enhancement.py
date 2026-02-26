@@ -444,6 +444,9 @@ class Enhancement:
         is_inner_circle_task_force = bool(
             sm_mgr and getattr(sm_mgr, "is_inner_circle_task_force", lambda: False)()
         )
+        is_wrath_of_the_rock = bool(
+            sm_mgr and getattr(sm_mgr, "is_wrath_of_the_rock", lambda: False)()
+        )
         is_firestorm_assault_force = bool(
             sm_mgr and getattr(sm_mgr, "is_firestorm_assault_force", lambda: False)()
         )
@@ -2374,7 +2377,7 @@ class Enhancement:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_singular_will_bearer_model_id"] = bearer_id
 
-        if name == "deathwing assault" or enh_id == "000008774005":
+        if enh_id == "000008774005" or (name == "deathwing assault" and is_inner_circle_task_force):
             if not is_inner_circle_task_force:
                 return
             unit.special_rules["enhancement_inner_circle_deathwing_assault"] = True
@@ -2394,6 +2397,94 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_inner_circle_deathwing_assault_bearer_model_id"] = bearer_id
+
+        if name in ("tempered in battle (aura)", "tempered in battle aura", "tempered in battle") or enh_id == "000010155002":
+            if not is_wrath_of_the_rock:
+                return
+            unit.special_rules["enhancement_tempered_in_battle"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            range_raw = params.get("range", getattr(desc, "range_in", 6.0) if desc is not None else 6.0)
+            try:
+                aura_range = float(range_raw if range_raw is not None else 6.0)
+            except Exception:
+                aura_range = 6.0
+            reroll_tests = {
+                str(value or "").strip().lower()
+                for value in list(params.get("reroll_tests", ("battle_shock", "leadership")) or ())
+                if str(value or "").strip()
+            }
+            if not reroll_tests:
+                reroll_tests = {"battle_shock", "leadership"}
+            unit.special_rules["enhancement_tempered_in_battle_range"] = float(max(0.0, aura_range))
+            unit.special_rules["enhancement_tempered_in_battle_reroll_battle_shock"] = bool(
+                "battle_shock" in reroll_tests
+            )
+            unit.special_rules["enhancement_tempered_in_battle_reroll_leadership"] = bool(
+                "leadership" in reroll_tests
+            )
+            unit.special_rules["enhancement_tempered_in_battle_source"] = "Tempered in Battle (Aura)"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_tempered_in_battle_bearer_model_id"] = bearer_id
+
+        if name == "ancient weapons" or enh_id == "000010155003":
+            if not is_wrath_of_the_rock:
+                return
+            unit.special_rules["enhancement_ancient_weapons"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            strength_bonus = _coerce_int(params.get("bearer_melee_strength_bonus", 2) or 2, default=2)
+            ap_bonus = _coerce_int(params.get("bearer_melee_ap_bonus", 1) or 1, default=1)
+            damage_bonus = _coerce_int(params.get("bearer_melee_damage_bonus", 1) or 1, default=1)
+            strength_bonus = int(max(0, strength_bonus))
+            ap_bonus = int(max(0, ap_bonus))
+            damage_bonus = int(max(0, damage_bonus))
+            existing_strength = _coerce_int(unit.special_rules.get("enhancement_bearer_melee_strength_bonus", 0), default=0)
+            existing_ap = _coerce_int(unit.special_rules.get("enhancement_bearer_melee_ap_bonus", 0), default=0)
+            existing_damage = _coerce_int(unit.special_rules.get("enhancement_bearer_melee_damage_bonus", 0), default=0)
+            unit.special_rules["enhancement_bearer_melee_strength_bonus"] = int(max(existing_strength, strength_bonus))
+            unit.special_rules["enhancement_bearer_melee_ap_bonus"] = int(max(existing_ap, ap_bonus))
+            unit.special_rules["enhancement_bearer_melee_damage_bonus"] = int(max(existing_damage, damage_bonus))
+            unit.special_rules["enhancement_ancient_weapons_strength_bonus"] = int(strength_bonus)
+            unit.special_rules["enhancement_ancient_weapons_ap_bonus"] = int(ap_bonus)
+            unit.special_rules["enhancement_ancient_weapons_damage_bonus"] = int(damage_bonus)
+            unit.special_rules["enhancement_ancient_weapons_source"] = "Ancient Weapons"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_ancient_weapons_bearer_model_id"] = bearer_id
+
+        if enh_id == "000010155004" or (name == "deathwing assault" and is_wrath_of_the_rock):
+            if not is_wrath_of_the_rock:
+                return
+            unit.special_rules["enhancement_wrath_of_the_rock_deathwing_assault"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            round_bonus = _coerce_int(
+                params.get("strategic_reserves_setup_round_bonus", 1) or 1,
+                default=1,
+            )
+            unit.special_rules["enhancement_wrath_of_the_rock_deathwing_assault_round_bonus"] = int(
+                max(0, int(round_bonus))
+            )
+            unit.special_rules["enhancement_wrath_of_the_rock_deathwing_assault_requires_deep_strike"] = bool(
+                params.get("requires_deep_strike", True)
+            )
+            unit.special_rules["enhancement_wrath_of_the_rock_deathwing_assault_source"] = "Deathwing Assault"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_wrath_of_the_rock_deathwing_assault_bearer_model_id"] = bearer_id
+
+        if name == "lord of the ravenwing" or enh_id == "000010155005":
+            if not is_wrath_of_the_rock:
+                return
+            unit.special_rules["enhancement_lord_of_the_ravenwing"] = True
+            unit.special_rules["enhancement_reroll_advance"] = True
+            unit.special_rules["enhancement_charge_reroll"] = True
+            unit.special_rules["enhancement_lord_of_the_ravenwing_source"] = "Lord of the Ravenwing"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_lord_of_the_ravenwing_bearer_model_id"] = bearer_id
 
         if name in ("wolves' wisdom", "wolves wisdom") or enh_id == "000009851002":
             if not is_champions_of_fenris:
