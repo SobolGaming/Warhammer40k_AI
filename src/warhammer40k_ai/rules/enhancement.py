@@ -447,6 +447,9 @@ class Enhancement:
         is_wrath_of_the_rock = bool(
             sm_mgr and getattr(sm_mgr, "is_wrath_of_the_rock", lambda: False)()
         )
+        is_wrathful_procession = bool(
+            sm_mgr and getattr(sm_mgr, "is_wrathful_procession", lambda: False)()
+        )
         is_firestorm_assault_force = bool(
             sm_mgr and getattr(sm_mgr, "is_firestorm_assault_force", lambda: False)()
         )
@@ -2485,6 +2488,51 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_lord_of_the_ravenwing_bearer_model_id"] = bearer_id
+
+        if name == "pyrebrand" or enh_id == "000009843002":
+            if not is_wrathful_procession:
+                return
+            unit.special_rules["enhancement_pyrebrand"] = True
+            unit.special_rules["enhancement_pyrebrand_source"] = "Pyrebrand"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_pyrebrand_bearer_model_id"] = bearer_id
+
+        if name == "sacred rage" or enh_id == "000009843003":
+            if not is_wrathful_procession:
+                return
+            unit.special_rules["enhancement_fight_first_once_per_battle"] = True
+            unit.special_rules["enhancement_sacred_rage_source"] = "Sacred Rage"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_sacred_rage_bearer_model_id"] = bearer_id
+
+        if name in ("taramond's censer", "taramonds censer", "taramond s censer") or enh_id == "000009843004":
+            if not is_wrathful_procession:
+                return
+            unit.special_rules["enhancement_taramonds_censer"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            test_modifier = _coerce_int(
+                params.get("battle_shock_test_modifier", -1) or -1,
+                default=-1,
+            )
+            if test_modifier > 0:
+                test_modifier = -int(test_modifier)
+            unit.special_rules["enhancement_taramonds_censer_battle_shock_test_modifier"] = int(test_modifier)
+            unit.special_rules["enhancement_taramonds_censer_source"] = "Taramond's Censer"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_taramonds_censer_bearer_model_id"] = bearer_id
+
+        if name == "benediction of fury" or enh_id == "000009843005":
+            if not is_wrathful_procession:
+                return
+            unit.special_rules["enhancement_benediction_of_fury"] = True
+            unit.special_rules["enhancement_benediction_of_fury_source"] = "Benediction of Fury"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_benediction_of_fury_bearer_model_id"] = bearer_id
 
         if name in ("wolves' wisdom", "wolves wisdom") or enh_id == "000009851002":
             if not is_champions_of_fenris:

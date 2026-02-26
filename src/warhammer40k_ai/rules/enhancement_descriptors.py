@@ -2105,6 +2105,52 @@ _SPACE_MARINES_WRATH_OF_THE_ROCK_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPACE_MARINES_WRATH_OF_THE_ROCK_DESCRIPTORS.values()
 }
 
+_SPACE_MARINES_WRATHFUL_PROCESSION_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009843002": EnhancementToolDescriptor(
+        enhancement_id="000009843002",
+        name="Pyrebrand",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant_while_bearer_alive",
+        effect="bearer_unit_gains_stealth",
+    ),
+    "000009843003": EnhancementToolDescriptor(
+        enhancement_id="000009843003",
+        name="Sacred Rage",
+        timing="start_of_fight_phase_once_per_battle",
+        target="bearer_unit",
+        duration="until_end_of_phase",
+        effect="bearer_unit_gains_fights_first_once_per_battle",
+        once_per_battle=True,
+    ),
+    "000009843004": EnhancementToolDescriptor(
+        enhancement_id="000009843004",
+        name="Taramond's Censer",
+        timing="start_of_fight_phase",
+        target="enemy_units_within_engagement_range_of_bearer_unit",
+        duration="instant",
+        effect="engagement_range_enemy_units_take_battleshock_with_modifier",
+        effect_params={
+            "battle_shock_test_modifier": -1,
+        },
+    ),
+    "000009843005": EnhancementToolDescriptor(
+        enhancement_id="000009843005",
+        name="Benediction of Fury",
+        timing="passive",
+        target="bearer_melee_weapons",
+        duration="constant_while_bearer_alive",
+        effect="bearer_melee_gains_devastating_wounds",
+        effect_params={
+            "keywords": ("DEVASTATING WOUNDS",),
+        },
+    ),
+}
+
+_SPACE_MARINES_WRATHFUL_PROCESSION_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPACE_MARINES_WRATHFUL_PROCESSION_DESCRIPTORS.values()
+}
+
 _SPACE_MARINES_IRONSTORM_SPEARHEAD_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008478002": EnhancementToolDescriptor(
         enhancement_id="000008478002",
@@ -3832,6 +3878,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPACE_MARINES_WRATH_OF_THE_ROCK_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPACE_MARINES_WRATHFUL_PROCESSION_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPACE_MARINES_IRONSTORM_SPEARHEAD_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -3966,6 +4015,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SPACE_MARINES_HAMMER_OF_AVERNII_BY_NAME.get(key)
         or _SPACE_MARINES_INNER_CIRCLE_TASK_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_WRATH_OF_THE_ROCK_BY_NAME.get(key)
+        or _SPACE_MARINES_WRATHFUL_PROCESSION_BY_NAME.get(key)
         or _SPACE_MARINES_IRONSTORM_SPEARHEAD_BY_NAME.get(key)
         or _SPACE_MARINES_LIBERATOR_ASSAULT_GROUP_BY_NAME.get(key)
         or _SPACE_MARINES_LIBRARIUS_CONCLAVE_BY_NAME.get(key)

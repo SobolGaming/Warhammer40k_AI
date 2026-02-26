@@ -3822,6 +3822,43 @@ class PositioningMixin:
                 ]
         except Exception:
             pass
+        try:
+            attack_kind = str(attack_type or "").strip().lower()
+            is_melee_attack = attack_kind in ("", "any", "melee")
+            if is_melee_attack and self._attached_unit_model_is_enhancement_bearer(
+                model,
+                flag_key="enhancement_benediction_of_fury",
+                enhancement_id="000009843005",
+                enhancement_name="benediction of fury",
+                require_leading=False,
+            ):
+                source = "Benediction of Fury"
+                try:
+                    root = self.get_attached_unit_root()
+                except Exception:
+                    root = self
+                try:
+                    members = list(root.get_attached_unit_members() or [])
+                except Exception:
+                    members = [root]
+                if not members:
+                    members = [root]
+                for member in members:
+                    sr = getattr(member, "special_rules", None)
+                    if not isinstance(sr, dict):
+                        continue
+                    if not bool(sr.get("enhancement_benediction_of_fury")):
+                        continue
+                    source = (
+                        str(sr.get("enhancement_benediction_of_fury_source", "") or "Benediction of Fury").strip()
+                        or "Benediction of Fury"
+                    )
+                    break
+                rules = list(rules or []) + [
+                    {"attack_type": "melee", "keyword": "DEVASTATING WOUNDS", "source": source}
+                ]
+        except Exception:
+            pass
         atype = str(attack_type or "").strip().lower()
         is_ranged_attack = atype in ("", "any", "ranged")
         if is_ranged_attack and self._attached_unit_model_is_enhancement_bearer(
@@ -7238,6 +7275,13 @@ class PositioningMixin:
             return True
         # Enhancement: Phial of the Abyss grants Stealth to models in the bearer's unit.
         if isinstance(sr, dict) and sr.get("enhancement_phial_of_the_abyss"):
+            return True
+        # Wrathful Procession: Pyrebrand grants Stealth to models in the bearer's unit.
+        if self._attached_unit_has_active_enhancement(
+            "enhancement_pyrebrand",
+            enhancement_id="000009843002",
+            enhancement_name="pyrebrand",
+        ):
             return True
         # Rad-Zone Corps: Malphonic Susurrus grants Stealth while the bearer is leading.
         if self._attached_unit_has_active_leading_enhancement(

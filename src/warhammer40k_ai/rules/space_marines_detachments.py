@@ -1109,6 +1109,171 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return 0, ""
         return 5, "Zealous Litanies (Chant of Deathless Devotion)"
 
+    def _wrathful_procession_enhancement_source_member(self, unit, flag_key: str):
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return None, None, {}
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        try:
+            members.sort(key=lambda member: str(get_entity_id(member) or ""))
+        except Exception:
+            pass
+        for member in list(members or []):
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get(flag_key, False)):
+                return root, member, sr
+        return root, None, {}
+
+    @staticmethod
+    def _wrathful_procession_resolve_bearer_model(member, sr):
+        bearer = getattr(member, "_get_enhancement_bearer_model", lambda: None)()
+        if bearer is None:
+            bearer_id = str(
+                sr.get("enhancement_taramonds_censer_bearer_model_id", "")
+                or sr.get("enhancement_bearer_model_id", "")
+                or ""
+            ).strip()
+            if bearer_id:
+                for model in list(getattr(member, "models", []) or []):
+                    if str(get_entity_id(model) or "") != bearer_id:
+                        continue
+                    bearer = model
+                    break
+        return bearer
+
+    def wrathful_procession_apply_taramonds_censer_start_of_fight(self, unit, *, game=None) -> int:
+        if not self.is_wrathful_procession():
+            return 0
+        root, member, sr = self._wrathful_procession_enhancement_source_member(
+            unit,
+            "enhancement_taramonds_censer",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return 0
+        try:
+            if root.get_parent_army() is not self.army:
+                return 0
+        except Exception:
+            return 0
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return 0
+
+        bearer = self._wrathful_procession_resolve_bearer_model(member, sr)
+        if bearer is None:
+            return 0
+        alive_attr = getattr(bearer, "is_alive", True)
+        if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+            return 0
+
+        game_obj = self._resolve_game_context(game=game)
+        if game_obj is None or not bool(getattr(game_obj, "is_authoritative", True)):
+            return 0
+        phase_name = str(getattr(getattr(game_obj, "phase", None), "name", "") or "").strip().upper()
+        if phase_name != "FIGHT_PHASE":
+            return 0
+        game_map = getattr(game_obj, "map", None)
+        if game_map is None:
+            return 0
+
+        try:
+            turn_now = int(getattr(game_obj, "turn", 0) or 0)
+        except Exception:
+            turn_now = 0
+        try:
+            current_player = getattr(game_obj, "get_current_player", lambda: None)()
+            current_player_id = str(getattr(current_player, "id", "") or "")
+        except Exception:
+            current_player_id = ""
+        phase_key = f"{phase_name}:{int(turn_now)}:{current_player_id}"
+        if str(sr.get("enhancement_taramonds_censer_last_phase_key", "") or "") == phase_key:
+            return 0
+        sr["enhancement_taramonds_censer_last_phase_key"] = phase_key
+        member.special_rules = sr
+
+        try:
+            test_modifier = int(sr.get("enhancement_taramonds_censer_battle_shock_test_modifier", -1) or -1)
+        except Exception:
+            test_modifier = -1
+        if test_modifier > 0:
+            test_modifier = -int(test_modifier)
+        source = str(sr.get("enhancement_taramonds_censer_source", "") or "Taramond's Censer").strip() or "Taramond's Censer"
+
+        from ..utility.aura_utils import model_within_engagement_range_of_unit
+        from ..utility.event_bus import append_action
+
+        def _root_in_engagement_with_enemy(enemy_root) -> bool:
+            within_fn = getattr(game_map, "is_within_engagement_range", None)
+            if callable(within_fn):
+                try:
+                    return bool(within_fn(root, enemy_root))
+                except Exception:
+                    pass
+            for model in list(getattr(root, "models", []) or []):
+                try:
+                    if model_within_engagement_range_of_unit(model, enemy_root):
+                        return True
+                except Exception:
+                    continue
+            return False
+
+        enemy_roots = []
+        seen_enemy_ids: set[str] = set()
+        for enemy in list(getattr(game_map, "get_enemy_units", lambda _u: [])(root) or []):
+            enemy_root = self._attached_unit_root(enemy)
+            if enemy_root is None:
+                continue
+            enemy_id = str(get_entity_id(enemy_root) or "")
+            if not enemy_id or enemy_id in seen_enemy_ids:
+                continue
+            seen_enemy_ids.add(enemy_id)
+            try:
+                if enemy_root.get_parent_army() is self.army:
+                    continue
+            except Exception:
+                continue
+            try:
+                if not enemy_root.is_alive() or not bool(getattr(enemy_root, "deployed", True)):
+                    continue
+                if enemy_root.is_in_reserves() or enemy_root.is_embarked:
+                    continue
+            except Exception:
+                continue
+            enemy_roots.append(enemy_root)
+        enemy_roots.sort(key=lambda value: str(get_entity_id(value) or ""))
+
+        owner_player = getattr(self.army, "player", None) if self.army is not None else None
+        applied = 0
+        for enemy_root in list(enemy_roots or []):
+            if not _root_in_engagement_with_enemy(enemy_root):
+                continue
+            target_sr = getattr(enemy_root, "special_rules", None)
+            if not isinstance(target_sr, dict):
+                target_sr = {}
+            if test_modifier:
+                current = int(target_sr.get("battle_shock_test_modifier", 0) or 0)
+                target_sr["battle_shock_test_modifier"] = int(current + int(test_modifier))
+                reasons = list(target_sr.get("battle_shock_test_modifier_reasons", []) or [])
+                reasons.append(f"{source}: {int(test_modifier)}")
+                target_sr["battle_shock_test_modifier_reasons"] = reasons
+            enemy_root.special_rules = target_sr
+            take_test = getattr(enemy_root, "take_battle_shock_test", None)
+            if callable(take_test):
+                take_test(int(turn_now or 1))
+            if owner_player is not None:
+                append_action(
+                    owner_player,
+                    f"{source}: {getattr(enemy_root, 'name', 'Unit')} takes a Battle-shock test ({int(test_modifier)}).",
+                )
+            applied += 1
+        return int(applied)
+
     def clear_legendary_slayers_state(self) -> None:
         self.beastslayer_tally = 0
         self.beastslayer_target = 0

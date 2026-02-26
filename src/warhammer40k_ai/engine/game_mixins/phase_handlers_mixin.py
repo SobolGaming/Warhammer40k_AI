@@ -600,6 +600,20 @@ class GamePhaseHandlersMixin:
                     except Exception:
                         pass
 
+                    # Wrathful Procession: Taramond's Censer (start of Fight phase, enemies in engagement range test Battle-shock at -1).
+                    try:
+                        if pname == "FIGHT_PHASE":
+                            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                            apply_fn = (
+                                getattr(sm_mgr, "wrathful_procession_apply_taramonds_censer_start_of_fight", None)
+                                if sm_mgr is not None
+                                else None
+                            )
+                            if callable(apply_fn):
+                                apply_fn(root, game=self)
+                    except Exception:
+                        pass
+
                     # Angelic Inheritors: Troubling Visions (once per battle, your Command phase).
                     find_source = getattr(self, "_attached_member_with_enhancement_flag", None)
                     source_member = None
