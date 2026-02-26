@@ -68,20 +68,22 @@ Introduce a shared authoritative session driver abstraction used by both runtime
   - Preserves DecisionRecord invariants for valid and invalid attempts.
 
 - Runtime compositions:
-  - Local runner: one authoritative game + in-process command channel + shared presentation orchestrator + local HUD sink(s).
+  - Local runner: one authoritative game + in-process command channel + shared presentation orchestrator + two explicit local client facades + local HUD sink(s).
+    - Authoritative orchestration runs on a single deterministic loop (no threaded authoritative state mutation).
+    - Any optional UI/render threading is read-only and must dispatch actions through `PlayerIntentGateway`.
   - Network runner: one authoritative game + network command channel + shared presentation orchestrator + remote HUD/client sinks.
 
 The key difference between modes remains transport and player identity topology, not engine flow or presentation flow.
 
 ### Boundary Rules
 - Engine modules (`src/warhammer40k_ai/engine/**`) must not import UI/presentation modules.
-- Presentation modules consume engine outputs and map them to serializable payloads, but do not embed new rules logic.
+- Presentation modules in `src/warhammer40k_ai/ui/**` consume engine outputs and map them to serializable payloads, but do not embed new rules logic.
 
 ## PR Breakdown
 
 ## PR 1 - Extract Shared Authoritative Setup/Command Driver
 ### Scope
-- Introduce a new shared orchestration module under `src/warhammer40k_ai/engine/` (or `src/warhammer40k_ai/runtime/` if preferred after review).
+- Introduce a new shared orchestration module under `src/warhammer40k_ai/engine/`.
 - Move setup-driving behavior currently embedded in `NetworkServer._run_setup_sequence()` into reusable driver methods.
 - Keep existing network behavior unchanged by delegating from `NetworkServer` to the new driver.
 
@@ -115,6 +117,7 @@ The key difference between modes remains transport and player identity topology,
 - Define event envelope contract needed by shared presentation orchestration.
 - Define versioned presentation payload schema and strict encode/decode validation boundaries.
 - Define HUD payload ordering/idempotency contract (`stream_id`, `sequence_id`, duplicate/drop and gap handling semantics).
+- Adopt schema policy: `major.minor`; major mismatch is fail-fast, minor increments are additive-only.
 
 ### Deliverables
 - New interface + adapters.
@@ -129,6 +132,7 @@ The key difference between modes remains transport and player identity topology,
 - Channel payloads are sufficient for deterministic HUD projection without runtime-specific branches.
 - Presentation payloads include explicit schema version and pass strict validation in both local and network paths.
 - Client-side application semantics are idempotent for duplicates and deterministic for out-of-order/gap handling.
+- Schema compatibility behavior matches policy (`major` mismatch reject, `minor` additive accepted).
 
 ### Tests
 - Adapter-level tests (network adapter via stubs, in-process adapter unit tests).
@@ -140,12 +144,14 @@ The key difference between modes remains transport and player identity topology,
 - Update `docs/NETWORK_GAMEPLAY.md` and `docs/NETWORK_SAVELOAD_DESIGN.md` (transport vs orchestration responsibility split).
 - Add/Update schema contract documentation for presentation payloads.
 - Add ordering/idempotency contract details to `docs/NETWORK_GAMEPLAY.md`.
+- Document schema version policy and bump rules in presentation schema docs.
 
 ## PR 3 - Local Runtime Migration to Shared Driver (No Loopback)
 ### Scope
 - Add a local authoritative runtime composition used by `scripts/main.py`.
 - Route local setup/phase advancement through the shared driver + in-process channel.
 - Preserve local UI behavior while replacing bespoke orchestration branches.
+- Model local mode as two explicit local client facades over the shared in-process channel (no network loopback).
 
 ### Deliverables
 - New local runtime bootstrap helper used by `scripts/main.py`.
@@ -157,6 +163,7 @@ The key difference between modes remains transport and player identity topology,
 - Manual phase controls and local deployment interactions continue to work.
 - Local runtime consumes the same event envelope contract that network runtime uses.
 - Local path remains engine/UI boundary compliant (no UI imports into engine modules).
+- Local runtime uses one authoritative loop; no threaded direct mutation of authoritative game/session state.
 
 ### Tests
 - Add local-runtime orchestration tests.
@@ -174,12 +181,14 @@ The key difference between modes remains transport and player identity topology,
 - Add `PlayerIntentGateway` so HUD actions enter the same decision/action pipeline in both modes.
 - Enforce per-player visibility/redaction in shared projection path.
 - Enforce deterministic dialog-to-decision mapping for optional choices (single selection dialog with explicit `None` option).
+- Keep visibility/redaction policy ownership in the shared `ui/` projection layer, applied before network send.
 
 ### Deliverables
 - Shared presentation orchestrator + projection interfaces.
 - Canonical HUD update/prompt payload schema usable by local and remote clients.
 - Local and network sink adapters that consume identical presentation payloads.
 - Shared redaction policy implementation and projection filters.
+- Explicit redaction policy module under `src/warhammer40k_ai/ui/` used by both local and network projection paths.
 - Dialog-to-decision mapping table coverage for all migrated HUD prompts.
 - Removal (or deprecation) of duplicate local/network HUD orchestration branches.
 
@@ -238,7 +247,7 @@ The key difference between modes remains transport and player identity topology,
 - Add reconnect/save-load/late-join hydration parity checks using snapshot + transcript replay.
 - Add explicit reconnect-while-pending-decision parity checks (chooser/candidates/mask/prompt content).
 - Add shadow/diff cutover stage comparing legacy vs shared HUD projection prior to legacy-path removal.
-- Define replay/save compatibility policy and enforce it in load/replay paths (support matrix or fail-fast version gate).
+- Define replay/save compatibility policy and enforce it in load/replay paths (current-version-only fail-fast for this phase).
 - Add performance regression gates for projection latency, hydration latency, and payload size.
 - Final cleanup of temporary compatibility scaffolding introduced in prior PRs.
 
@@ -248,7 +257,7 @@ The key difference between modes remains transport and player identity topology,
 - Reconnect/save-load/late-join HUD hydration parity tests.
 - Pending-decision reconnect parity tests.
 - Shadow projection diff tooling/report for cutover gating.
-- Replay/save compatibility policy doc + fixtures (supported legacy artifacts or explicit unsupported-version failure fixtures).
+- Replay/save compatibility policy doc + fixtures (current-version success + unsupported-version deterministic fail-fast fixtures).
 - Performance baseline report and regression tests/benchmarks for agreed scenarios.
 - Finalized runtime API surface.
 
@@ -258,11 +267,12 @@ The key difference between modes remains transport and player identity topology,
 - Rehydrated HUD state matches live-projected HUD state for the same authoritative history.
 - Pending-decision reconnect restores the same actionable decision surface before input resumes.
 - Shadow/diff run across representative scenarios shows no material divergence before legacy orchestration is removed.
-- Replay/save compatibility behavior is explicit, tested, and deterministic (either supported matrix or clear fail-fast errors).
+- Replay/save compatibility behavior is explicit, tested, and deterministic (current-version-only success + fail-fast on unsupported versions).
 - Performance budgets are met in CI reference scenarios:
   - HUD projection p95 <= 10 ms per authoritative event (reference transcript).
   - Reconnect hydration <= 750 ms for reference snapshot + 2,000-event transcript.
   - Serialized HUD payload size <= 64 KiB p95 per update (pre-transport compression).
+  - Budgets measured on pinned CI runner class using a fixed reference transcript fixture.
 
 ### Tests
 - Run full suite due cross-cutting runtime changes:
@@ -278,6 +288,7 @@ The key difference between modes remains transport and player identity topology,
   - `docs/NETWORK_SAVELOAD_DESIGN.md`
   - `docs/DECISION_RECORD_REPLAY.md`
   - `docs/STATE_BLOB_SCHEMA.md`
+  - Add replay/save compatibility policy section (current-version-only fail-fast) and schema versioning policy notes.
 
 ## Risks and Mitigations
 - Risk: hidden behavior coupling in existing server setup loop.
@@ -299,7 +310,7 @@ The key difference between modes remains transport and player identity topology,
 - Risk: performance regression from shared projection layer.
   - Mitigation: explicit budgets + perf regression checks in PR 6.
 - Risk: replay/save compatibility ambiguity at rollout.
-  - Mitigation: written compatibility policy + fixture tests and deterministic version gating in PR 6.
+  - Mitigation: written current-version-only policy + fixture tests and deterministic version gating in PR 6.
 - Risk: cutover regressions when removing legacy HUD path.
   - Mitigation: PR 6 shadow/diff gating before deleting legacy code.
 - Risk: event ordering drift.
@@ -312,14 +323,14 @@ The key difference between modes remains transport and player identity topology,
 - Require boundary, ordering/idempotency, compatibility, and performance gates to pass before legacy HUD path removal.
 - Run full `tests/` at PR 6 before declaring migration complete.
 
-## Open Decisions for Developer Confirmation
-- Preferred module location for shared driver (`engine/` vs `network/` vs new `runtime/`).
-- Whether to model local mode as two explicit local client facades, or a simpler single-process controller pair over the same in-process channel.
-- Canonical home for HUD projection schemas (`ui/`, `runtime/`, or dedicated `presentation/` module) while keeping engine/UI boundaries clean.
-- Versioning policy for presentation payload schema (strict bump rules and deprecation window expectations).
-- Canonical ownership point for visibility/redaction policy definitions.
-- Replay/save compatibility target: support N-1 artifacts vs explicit current-version-only fail-fast policy.
-- Final reference performance scenario(s) and CI hardware normalization rules for budget enforcement.
+## Resolved Defaults
+- Shared driver module location: `src/warhammer40k_ai/engine/`.
+- Local topology: two explicit local client facades over in-process channel with one non-threaded authoritative loop.
+- HUD projection/redaction/schema module home: `src/warhammer40k_ai/ui/`.
+- Presentation schema version policy: `major.minor`; major mismatch fail-fast, minor additive-only.
+- Visibility/redaction ownership: shared `ui/` projection layer, applied before outbound network emission.
+- Replay/save compatibility policy for this refactor phase: current-version-only with deterministic fail-fast on unsupported versions.
+- Performance gating policy: fixed reference transcript fixture on pinned CI runner class for budget enforcement.
 
 ## Implementation Checklist
 - [ ] PR 1 merged: shared driver extraction with no behavior change.
