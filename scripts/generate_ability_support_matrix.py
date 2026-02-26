@@ -3803,6 +3803,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "When a friendly ADEPTUS MECHANICUS VEHICLE model is destroyed within 12\", this model's axe has its Attacks characteristic set to 6 until end of battle.",
         ),
+        ("ADM", "Omnissiah's Blessing"): (
+            "Supported",
+            "Command phase: select one friendly ADEPTUS MECHANICUS unit within 3\" to regain D3 wounds; if that unit is a VEHICLE, it gains Feel No Pain 5+ until next Command phase.",
+        ),
         ("ADM", "Canticles of the Omnissiah"): (
             "Supported",
             "Start of Command phase: Belisarius Cawl selects Invocation of Machine Vengeance, Mantra of Discipline, or Shroudpsalm until next Command phase.",
@@ -5185,6 +5189,7 @@ def _classify_ability_base(
     command_phase_bonus_cp_support = _command_phase_bonus_cp_support(description)
     phase_end_leadership_cp_gain_support = _phase_end_leadership_cp_gain_support(description)
     command_phase_regain_wound_support = _command_phase_regain_wound_support(description)
+    command_phase_model_repair_fnp_support = _command_phase_model_repair_fnp_support(description)
     start_shooting_phase_visible_battleshock_support = _start_shooting_phase_visible_battleshock_support(description)
     shooting_phase_dice_pool_mortal_support = _shooting_phase_dice_pool_mortal_support(description)
     start_shooting_phase_vehicle_mortal_heal_support = _start_shooting_phase_vehicle_mortal_heal_support(description)
@@ -5462,6 +5467,8 @@ def _classify_ability_base(
         return phase_end_leadership_cp_gain_support
     if command_phase_regain_wound_support:
         return command_phase_regain_wound_support
+    if command_phase_model_repair_fnp_support:
+        return command_phase_model_repair_fnp_support
     if start_shooting_phase_visible_battleshock_support:
         return start_shooting_phase_visible_battleshock_support
     if shooting_phase_dice_pool_mortal_support:
@@ -9010,6 +9017,30 @@ def _command_phase_regain_wound_support(description: str) -> Optional[Tuple[str,
     if m.group("up_to"):
         return ("Supported", f"Start of Command phase: this model regains up to {amount} lost wound(s).")
     return ("Supported", f"Start of Command phase: this model regains {amount} lost wound(s).")
+
+
+def _command_phase_model_repair_fnp_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"in your command phase select one friendly (?P<keyword>[a-z0-9 ]+) model within (?P<range>\d+) of this model "
+        r"that model regains up to (?P<heal>d3|\d+) lost wounds and if it is a vehicle model until the start of your next command phase "
+        r"that model has the feel no pain (?P<fnp>\d+) ability(?: each model can only be selected for this ability once per (?:turn|command phase))?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    keyword = str(m.group("keyword") or "friendly").strip().upper()
+    range_val = str(m.group("range") or "3")
+    heal = str(m.group("heal") or "D3").upper()
+    fnp = str(m.group("fnp") or "5")
+    return (
+        "Supported",
+        f"Command phase: select one friendly {keyword} model within {range_val}\"; it regains up to {heal} wounds and gains Feel No Pain {fnp}+ if it is a VEHICLE until next Command phase.",
+    )
 
 
 def _canticles_of_the_omnissiah_support(

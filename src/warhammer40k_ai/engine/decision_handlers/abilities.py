@@ -5135,6 +5135,101 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
         if not in_engagement:
             return ("Data-spike target must be within Engagement Range of the source unit.",)
         return ()
+    if ability == "master_of_mechanisms":
+        if is_skip_choice(request, result):
+            return ()
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return ("Master of Mechanisms source unit was not found.",)
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or ctx.get("target_unit_id"))
+        if target_unit is None:
+            return ("Master of Mechanisms target unit was not found.",)
+
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        if source_root is None or target_root is None:
+            return ("Master of Mechanisms source/target unit root was not found.",)
+
+        allow_self_target = bool(ctx.get("allow_self_target", False))
+        if source_root is target_root and not allow_self_target:
+            return ("Master of Mechanisms target cannot be the source unit.",)
+        if not bool(getattr(target_root, "is_alive", lambda: False)()):
+            return ("Master of Mechanisms target must be alive.",)
+        if not bool(getattr(target_root, "deployed", True)):
+            return ("Master of Mechanisms target must be on the battlefield.",)
+        try:
+            if target_root.is_in_reserves() or target_root.is_embarked:
+                return ("Master of Mechanisms target must be on the battlefield.",)
+        except Exception:
+            pass
+
+        source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+        if source_army is None or target_army is None or source_army is not target_army:
+            return ("Master of Mechanisms target must be friendly.",)
+
+        target_requires_vehicle = bool(ctx.get("target_requires_vehicle", False))
+        if target_requires_vehicle:
+            has_vehicle = bool(getattr(target_root, "has_any_keyword", lambda _k: False)("VEHICLE"))
+            if not has_vehicle:
+                return ("Master of Mechanisms target must have the VEHICLE keyword.",)
+
+        target_keyword = str(ctx.get("target_keyword", "") or "").strip().upper()
+        if target_keyword:
+            has_keyword = bool(getattr(target_root, "has_any_keyword", lambda _k: False)(target_keyword))
+            if not has_keyword:
+                return (f"Master of Mechanisms target must have keyword {target_keyword}.",)
+
+        try:
+            range_inches = float(ctx.get("range", 3) or 3)
+        except Exception:
+            range_inches = 3.0
+        model = resolve_model(game, ctx.get("model_id"))
+        if model is None:
+            try:
+                source_models = (
+                    list(source_root.get_attached_unit_models() or [])
+                    if hasattr(source_root, "get_attached_unit_models")
+                    else list(getattr(source_root, "models", []) or [])
+                )
+            except Exception:
+                source_models = list(getattr(source_root, "models", []) or [])
+            for src_model in list(source_models or []):
+                alive_attr = getattr(src_model, "is_alive", False)
+                if bool(alive_attr() if callable(alive_attr) else alive_attr):
+                    model = src_model
+                    break
+        if model is None:
+            return ("Master of Mechanisms bearer model was not found.",)
+        in_range = True
+        in_range_fn = getattr(game, "_unit_within_range_of_model", None)
+        if callable(in_range_fn):
+            in_range = bool(in_range_fn(model, target_root, range_value=float(range_inches)))
+        else:
+            try:
+                from ...utility.aura_utils import model_within_range_of_unit
+
+                in_range = bool(model_within_range_of_unit(model, target_root, float(range_inches)))
+            except Exception:
+                in_range = True
+        if not in_range:
+            return ("Master of Mechanisms target is out of range.",)
+
+        target_sr = getattr(target_root, "special_rules", None)
+        if isinstance(target_sr, dict):
+            owner_id = str(ctx.get("turn_owner", "") or "")
+            try:
+                turn = int(ctx.get("turn", 0) or 0)
+            except Exception:
+                turn = 0
+            if (
+                owner_id
+                and str(target_sr.get("master_of_mechanisms_selected_turn_owner", "") or "") == owner_id
+                and int(target_sr.get("master_of_mechanisms_selected_turn", 0) or 0) == turn
+            ):
+                return ("Master of Mechanisms target has already been selected this Command phase.",)
+        return ()
     if ability == "data_psalm_benediction":
         if is_skip_choice(request, result):
             return ("Benedictions of the Omnissiah selection cannot be skipped.",)
@@ -12086,11 +12181,14 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         if player is not None:
             append_dice(player, f"{ability_name} roll: {heal}")
         try:
-            hit_bonus = int(ctx.get("hit_bonus", 1) or 1)
+            hit_bonus = int(ctx.get("hit_bonus", 0) or 0)
         except Exception:
-            hit_bonus = 1
-        if hit_bonus <= 0:
-            hit_bonus = 1
+            hit_bonus = 0
+        try:
+            fnp_value = int(ctx.get("fnp_value", 0) or 0)
+        except Exception:
+            fnp_value = 0
+        fnp_requires_vehicle = bool(ctx.get("fnp_requires_vehicle", False))
         get_target_root = getattr(target_unit, "get_attached_unit_root", None)
         target_root = get_target_root() if callable(get_target_root) else target_unit
         get_models = getattr(target_root, "get_attached_unit_models", None)
@@ -12120,16 +12218,58 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         turn = int(getattr(game, "turn", 0) or 0)
         tsr["master_of_mechanisms_selected_turn_owner"] = owner_id
         tsr["master_of_mechanisms_selected_turn"] = int(turn or 0)
-        tsr["master_of_mechanisms_hit_bonus_active"] = True
-        tsr["master_of_mechanisms_hit_bonus"] = int(hit_bonus)
-        tsr["master_of_mechanisms_hit_bonus_owner"] = owner_id
+        if hit_bonus > 0:
+            tsr["master_of_mechanisms_hit_bonus_active"] = True
+            tsr["master_of_mechanisms_hit_bonus"] = int(hit_bonus)
+            tsr["master_of_mechanisms_hit_bonus_owner"] = owner_id
+        else:
+            tsr.pop("master_of_mechanisms_hit_bonus_active", None)
+            tsr.pop("master_of_mechanisms_hit_bonus", None)
+            tsr.pop("master_of_mechanisms_hit_bonus_owner", None)
+        has_vehicle_keyword = False
+        try:
+            has_vehicle_keyword = bool(target_root.has_any_keyword("VEHICLE"))
+        except Exception:
+            has_vehicle_keyword = False
+        fnp_applies = bool(fnp_value > 0 and (not fnp_requires_vehicle or has_vehicle_keyword))
+        if fnp_applies:
+            for m in list(models or []):
+                try:
+                    alive_attr = getattr(m, "is_alive", False)
+                    alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                except Exception:
+                    alive = False
+                if not alive:
+                    continue
+                set_fnp = getattr(m, "set_temporary_fnp", None)
+                if callable(set_fnp):
+                    try:
+                        set_fnp(
+                            key="master_of_mechanisms_fnp",
+                            value=int(fnp_value),
+                            source=ability_name,
+                        )
+                    except Exception:
+                        pass
+            tsr["master_of_mechanisms_fnp_active"] = True
+            tsr["master_of_mechanisms_fnp_value"] = int(fnp_value)
+            tsr["master_of_mechanisms_fnp_owner"] = owner_id
+        else:
+            tsr.pop("master_of_mechanisms_fnp_active", None)
+            tsr.pop("master_of_mechanisms_fnp_value", None)
+            tsr.pop("master_of_mechanisms_fnp_owner", None)
         tsr["master_of_mechanisms_source"] = ability_name
         target_root.special_rules = tsr
         tname = str(getattr(target_root, "name", "Unit") or "Unit")
+        summary_parts = [f"regains up to {int(heal)} wounds"]
+        if hit_bonus > 0:
+            summary_parts.append(f"gets +{int(hit_bonus)} to hit until next Command phase")
+        if fnp_applies:
+            summary_parts.append(f"gains Feel No Pain {int(fnp_value)}+ until next Command phase")
         _log_action_for_players(
             game,
             player,
-            f"{ability_name}: {tname} regains up to {int(heal)} wounds and gets +{int(hit_bonus)} to hit until next Command phase.",
+            f"{ability_name}: {tname} {' and '.join(summary_parts)}.",
         )
         return target_root
     if str(ctx.get("ability", "") or "") == "forgewrought_expertise":

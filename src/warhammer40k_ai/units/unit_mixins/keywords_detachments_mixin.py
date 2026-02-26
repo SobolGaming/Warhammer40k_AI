@@ -1650,9 +1650,10 @@ class KeywordsDetachmentsMixin:
     def get_command_phase_vehicle_repair_hit_bonus_rule(self) -> Optional[dict]:
         """
         Return rule info for command-phase abilities that:
-        - select one friendly VEHICLE within X"
+        - select one friendly target within X"
         - heal it (typically D3)
-        - grant +Hit until the start of your next Command phase
+        - optionally grant +Hit until the start of your next Command phase
+        - optionally grant Feel No Pain until the start of your next Command phase
 
         Covers wording variants such as Master of Mechanisms and Blessing of the Omnissiah.
         """
@@ -1695,11 +1696,26 @@ class KeywordsDetachmentsMixin:
                     continue
                 if "select one friendly" not in norm:
                     continue
-                if "vehicle" not in norm:
-                    continue
                 if "regains" not in norm or "lost wounds" not in norm:
                     continue
-                if "hit roll" not in norm or "until the start of your next command phase" not in norm:
+
+                target_phrase = ""
+                m_target = re.search(r"select\s+one\s+friendly\s+(.+?)\s+within\s+\d+", norm)
+                if m_target:
+                    target_phrase = str(m_target.group(1) or "").strip()
+                target_requires_vehicle = "vehicle" in target_phrase
+                target_keyword = ""
+                if "adeptus mechanicus" in norm:
+                    target_keyword = "ADEPTUS MECHANICUS"
+                elif "grey knights" in norm:
+                    target_keyword = "GREY KNIGHTS"
+                elif "heretic astartes" in norm:
+                    target_keyword = "HERETIC ASTARTES"
+
+                has_next_command_phase_duration = "until the start of your next command phase" in norm
+                has_hit_bonus_clause = bool(has_next_command_phase_duration and "hit roll" in norm)
+                has_fnp_clause = bool(has_next_command_phase_duration and "feel no pain" in norm)
+                if not has_hit_bonus_clause and not has_fnp_clause:
                     continue
                 range_value = 3
                 m_range = re.search(r"within\s+(\d+)", norm)
@@ -1720,21 +1736,61 @@ class KeywordsDetachmentsMixin:
                             heal_flat = int(token)
                         except Exception:
                             heal_flat = 0
-                hit_bonus = 1
-                m_hit = re.search(r"add\s+(\d+)\s+to\s+the\s+hit\s+roll", norm)
-                if m_hit:
+
+                hit_bonus = 0
+                if has_hit_bonus_clause:
+                    hit_bonus = 1
+                    m_hit = re.search(r"add\s+(\d+)\s+to\s+the\s+hit\s+roll", norm)
+                    if m_hit:
+                        try:
+                            hit_bonus = int(m_hit.group(1) or 1)
+                        except Exception:
+                            hit_bonus = 1
+
+                fnp_value = 0
+                fnp_requires_vehicle = False
+                m_fnp = re.search(
+                    r"(if\s+(?:that model|it)\s+is\s+a\s+vehicle\s+model\s+)?until\s+the\s+start\s+of\s+your\s+next\s+command\s+phase\s+"
+                    r"(?:that|the)?\s*model\s+has\s+(?:the\s+)?feel\s+no\s+pain\s+(\d+)\s+ability",
+                    norm,
+                )
+                if m_fnp:
                     try:
-                        hit_bonus = int(m_hit.group(1) or 1)
+                        fnp_value = int(m_fnp.group(2) or 0)
                     except Exception:
-                        hit_bonus = 1
+                        fnp_value = 0
+                    fnp_requires_vehicle = bool(m_fnp.group(1))
+                elif has_fnp_clause:
+                    m_fnp_any = re.search(r"feel\s+no\s+pain\s+(\d+)\s+ability", norm)
+                    if m_fnp_any:
+                        try:
+                            fnp_value = int(m_fnp_any.group(1) or 0)
+                        except Exception:
+                            fnp_value = 0
+
+                if hit_bonus <= 0 and fnp_value <= 0:
+                    continue
+
+                allow_self_target = (
+                    "select one friendly adeptus mechanicus model within" in norm
+                    and "other friendly" not in norm
+                )
                 source = str(name or "Master of Mechanisms").strip() or "Master of Mechanisms"
                 rule = {
                     "source": source,
                     "range": int(range_value),
                     "heal_roll": str(heal_roll or ""),
                     "heal_flat": int(heal_flat or 0),
-                    "hit_bonus": int(hit_bonus or 1),
-                    "limit_once_per_turn": "only be selected for this ability once per turn" in norm,
+                    "hit_bonus": int(hit_bonus or 0),
+                    "fnp_value": int(fnp_value or 0),
+                    "fnp_requires_vehicle": bool(fnp_requires_vehicle),
+                    "target_requires_vehicle": bool(target_requires_vehicle),
+                    "target_keyword": str(target_keyword or "").strip().upper(),
+                    "allow_self_target": bool(allow_self_target),
+                    "limit_once_per_turn": (
+                        "only be selected for this ability once per turn" in norm
+                        or "only be selected for this ability once per command phase" in norm
+                    ),
                 }
                 break
             if rule is not None:

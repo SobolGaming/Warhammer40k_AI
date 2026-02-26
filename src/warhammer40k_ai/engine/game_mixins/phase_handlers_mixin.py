@@ -6864,9 +6864,20 @@ class GamePhaseHandlersMixin:
                 continue
             seen.add(uid)
             sr = getattr(root, "special_rules", None)
-            if not isinstance(sr, dict) or not sr.get("master_of_mechanisms_hit_bonus_active"):
+            if not isinstance(sr, dict):
                 continue
-            if str(sr.get("master_of_mechanisms_hit_bonus_owner", "") or "") != owner_id:
+            has_hit_bonus = bool(sr.get("master_of_mechanisms_hit_bonus_active"))
+            has_fnp_bonus = bool(sr.get("master_of_mechanisms_fnp_active"))
+            has_selection_marker = (
+                "master_of_mechanisms_selected_turn_owner" in sr
+                or "master_of_mechanisms_selected_turn" in sr
+            )
+            if not has_hit_bonus and not has_fnp_bonus and not has_selection_marker:
+                continue
+            effect_owner = str(sr.get("master_of_mechanisms_hit_bonus_owner", "") or "")
+            if not effect_owner:
+                effect_owner = str(sr.get("master_of_mechanisms_fnp_owner", "") or "")
+            if effect_owner != owner_id:
                 continue
             try:
                 selected_turn = int(sr.get("master_of_mechanisms_selected_turn", 0) or 0)
@@ -6874,10 +6885,32 @@ class GamePhaseHandlersMixin:
                 selected_turn = 0
             if selected_turn and current_turn and selected_turn == current_turn:
                 continue
+            try:
+                models = (
+                    list(root.get_attached_unit_models() or [])
+                    if hasattr(root, "get_attached_unit_models")
+                    else list(getattr(root, "models", []) or [])
+                )
+            except Exception:
+                models = list(getattr(root, "models", []) or [])
+            for model in list(models or []):
+                clear_fnp = getattr(model, "set_temporary_fnp", None)
+                if callable(clear_fnp):
+                    try:
+                        clear_fnp(
+                            key="master_of_mechanisms_fnp",
+                            value=0,
+                            source=str(sr.get("master_of_mechanisms_source", "") or "Master of Mechanisms"),
+                        )
+                    except Exception:
+                        pass
             for key in (
                 "master_of_mechanisms_hit_bonus_active",
                 "master_of_mechanisms_hit_bonus",
                 "master_of_mechanisms_hit_bonus_owner",
+                "master_of_mechanisms_fnp_active",
+                "master_of_mechanisms_fnp_value",
+                "master_of_mechanisms_fnp_owner",
                 "master_of_mechanisms_source",
                 "master_of_mechanisms_selected_turn_owner",
                 "master_of_mechanisms_selected_turn",
@@ -6955,6 +6988,11 @@ class GamePhaseHandlersMixin:
                     "heal_roll": "D3",
                     "heal_flat": 0,
                     "hit_bonus": 1,
+                    "fnp_value": 0,
+                    "fnp_requires_vehicle": False,
+                    "target_requires_vehicle": True,
+                    "target_keyword": "",
+                    "allow_self_target": False,
                 }
             try:
                 selection_range = float(rule.get("range", 3) or 3)
@@ -6964,9 +7002,17 @@ class GamePhaseHandlersMixin:
                 selection_range = 3.0
             ability_name = str(rule.get("source", "") or "Master of Mechanisms").strip() or "Master of Mechanisms"
             try:
-                hit_bonus = int(rule.get("hit_bonus", 1) or 1)
+                hit_bonus = int(rule.get("hit_bonus", 0) or 0)
             except Exception:
-                hit_bonus = 1
+                hit_bonus = 0
+            try:
+                fnp_value = int(rule.get("fnp_value", 0) or 0)
+            except Exception:
+                fnp_value = 0
+            fnp_requires_vehicle = bool(rule.get("fnp_requires_vehicle", False))
+            target_requires_vehicle = bool(rule.get("target_requires_vehicle", False))
+            target_keyword = str(rule.get("target_keyword", "") or "").strip().upper()
+            allow_self_target = bool(rule.get("allow_self_target", False))
             heal_roll = str(rule.get("heal_roll", "") or "").strip().upper()
             try:
                 heal_flat = int(rule.get("heal_flat", 0) or 0)
@@ -6974,7 +7020,7 @@ class GamePhaseHandlersMixin:
                 heal_flat = 0
             if not heal_roll and heal_flat <= 0:
                 heal_roll = "D3"
-            if hit_bonus <= 0:
+            if hit_bonus <= 0 and fnp_value <= 0:
                 continue
             try:
                 models = list(root.get_attached_unit_models() or [])
@@ -7003,7 +7049,7 @@ class GamePhaseHandlersMixin:
                 if not target_id or target_id in seen_targets:
                     continue
                 seen_targets.add(target_id)
-                if target_root is root:
+                if target_root is root and not allow_self_target:
                     continue
                 if not target_root.is_alive() or not getattr(target_root, "deployed", True):
                     continue
@@ -7012,11 +7058,18 @@ class GamePhaseHandlersMixin:
                         continue
                 except Exception:
                     pass
-                try:
-                    if not target_root.has_any_keyword("VEHICLE"):
+                if target_requires_vehicle:
+                    try:
+                        if not target_root.has_any_keyword("VEHICLE"):
+                            continue
+                    except Exception:
                         continue
-                except Exception:
-                    continue
+                if target_keyword:
+                    try:
+                        if not target_root.has_any_keyword(target_keyword):
+                            continue
+                    except Exception:
+                        continue
                 if not model_within_range_of_unit(bearer, target_root, selection_range):
                     continue
                 tsr = getattr(target_root, "special_rules", None)
@@ -7041,9 +7094,12 @@ class GamePhaseHandlersMixin:
             )
             if not options:
                 continue
+            prompt_target = "friendly VEHICLE unit" if target_requires_vehicle else "friendly unit"
+            if target_keyword and not target_requires_vehicle:
+                prompt_target = f"friendly {target_keyword} unit"
             request = DecisionRequest.create(
                 DECISION_CHOOSE_QUARRY,
-                f"{ability_name}: select a friendly VEHICLE unit within {int(selection_range)}\" (or None).",
+                f"{ability_name}: select a {prompt_target} within {int(selection_range)}\" (or None).",
                 player_id=getattr(player, "id", None),
                 options=options,
                 context={
@@ -7056,6 +7112,11 @@ class GamePhaseHandlersMixin:
                     "model_id": str(get_entity_id(bearer) or ""),
                     "range": int(selection_range),
                     "hit_bonus": int(hit_bonus),
+                    "fnp_value": int(fnp_value),
+                    "fnp_requires_vehicle": bool(fnp_requires_vehicle),
+                    "target_requires_vehicle": bool(target_requires_vehicle),
+                    "target_keyword": str(target_keyword or ""),
+                    "allow_self_target": bool(allow_self_target),
                     "heal_roll": heal_roll,
                     "heal_flat": int(heal_flat),
                     "turn_owner": owner_id,
