@@ -441,6 +441,9 @@ class Enhancement:
         is_hammer_of_avernii = bool(
             sm_mgr and getattr(sm_mgr, "is_hammer_of_avernii", lambda: False)()
         )
+        is_inner_circle_task_force = bool(
+            sm_mgr and getattr(sm_mgr, "is_inner_circle_task_force", lambda: False)()
+        )
         is_firestorm_assault_force = bool(
             sm_mgr and getattr(sm_mgr, "is_firestorm_assault_force", lambda: False)()
         )
@@ -2277,6 +2280,120 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_steel_font_bearer_model_id"] = bearer_id
+
+        if name == "champion of the deathwing" or enh_id == "000008774002":
+            if not is_inner_circle_task_force:
+                return
+            unit.special_rules["enhancement_champion_of_the_deathwing"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            crit_threshold = _coerce_int(
+                params.get("critical_hit_threshold_within_vowed_objective", 5) or 5,
+                default=5,
+            )
+            unit.special_rules["enhancement_champion_of_the_deathwing_crit_threshold"] = int(
+                max(2, int(crit_threshold))
+            )
+            unit.special_rules["enhancement_champion_of_the_deathwing_source"] = "Champion of the Deathwing"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_champion_of_the_deathwing_bearer_model_id"] = bearer_id
+
+        if name == "eye of the unseen" or enh_id == "000008774003":
+            if not is_inner_circle_task_force:
+                return
+            unit.special_rules["enhancement_eye_of_the_unseen"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            roll_min = _coerce_int(params.get("roll_min", 5) or 5, default=5)
+            cp_gain = _coerce_int(params.get("cp_gain", 1) or 1, default=1)
+            roll_bonus = _coerce_int(
+                params.get("roll_bonus_if_bearer_within_vowed_objective", 1) or 1,
+                default=1,
+            )
+            source_name = "Eye of the Unseen"
+            unit.special_rules["enhancement_eye_of_the_unseen_source"] = source_name
+            specs = list(unit.special_rules.get("stratagem_target_cp_refund_specs", []) or [])
+            spec = {
+                "roll_min": int(max(2, roll_min)),
+                "cp_gain": int(max(1, cp_gain)),
+                "name": source_name,
+                "description": str(getattr(self, "description", "") or ""),
+            }
+            if roll_bonus > 0:
+                spec["roll_bonus"] = int(roll_bonus)
+                spec["roll_bonus_if_source_model_within_vowed_objective"] = True
+            if bearer_id:
+                spec["source_model_id"] = bearer_id
+            dedupe_key = (
+                int(spec.get("roll_min", 0) or 0),
+                int(spec.get("cp_gain", 0) or 0),
+                str(spec.get("name", "") or "").strip().lower(),
+                int(spec.get("roll_bonus", 0) or 0),
+                bool(spec.get("roll_bonus_if_source_model_within_vowed_objective", False)),
+                str(spec.get("source_model_id", "") or "").strip(),
+            )
+            seen_spec_keys = set()
+            deduped_specs: list[dict] = []
+            for existing in specs:
+                key = (
+                    int(existing.get("roll_min", 0) or 0),
+                    int(existing.get("cp_gain", 0) or 0),
+                    str(existing.get("name", "") or "").strip().lower(),
+                    int(existing.get("roll_bonus", 0) or 0),
+                    bool(existing.get("roll_bonus_if_source_model_within_vowed_objective", False)),
+                    str(existing.get("source_model_id", "") or "").strip(),
+                )
+                if key in seen_spec_keys:
+                    continue
+                seen_spec_keys.add(key)
+                deduped_specs.append(existing)
+            if dedupe_key not in seen_spec_keys:
+                deduped_specs.append(spec)
+            unit.special_rules["stratagem_target_cp_refund_specs"] = deduped_specs
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_eye_of_the_unseen_bearer_model_id"] = bearer_id
+
+        if name == "singular will" or enh_id == "000008774004":
+            if not is_inner_circle_task_force:
+                return
+            unit.special_rules["enhancement_singular_will"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            pile_in_bonus = _coerce_int(params.get("pile_in_distance_bonus", 3) or 3, default=3)
+            consolidate_bonus = _coerce_int(params.get("consolidate_distance_bonus", 3) or 3, default=3)
+            unit.special_rules["enhancement_singular_will_pile_in_distance_bonus"] = int(
+                max(0, int(pile_in_bonus))
+            )
+            unit.special_rules["enhancement_singular_will_consolidate_distance_bonus"] = int(
+                max(0, int(consolidate_bonus))
+            )
+            unit.special_rules["enhancement_singular_will_source"] = "Singular Will"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_singular_will_bearer_model_id"] = bearer_id
+
+        if name == "deathwing assault" or enh_id == "000008774005":
+            if not is_inner_circle_task_force:
+                return
+            unit.special_rules["enhancement_inner_circle_deathwing_assault"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            params = _descriptor_params(desc)
+            round_bonus = _coerce_int(
+                params.get("strategic_reserves_setup_round_bonus", 1) or 1,
+                default=1,
+            )
+            unit.special_rules["enhancement_inner_circle_deathwing_assault_round_bonus"] = int(
+                max(0, int(round_bonus))
+            )
+            unit.special_rules["enhancement_inner_circle_deathwing_assault_requires_deep_strike"] = bool(
+                params.get("requires_deep_strike", True)
+            )
+            unit.special_rules["enhancement_inner_circle_deathwing_assault_source"] = "Deathwing Assault"
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+                unit.special_rules["enhancement_inner_circle_deathwing_assault_bearer_model_id"] = bearer_id
 
         if name in ("wolves' wisdom", "wolves wisdom") or enh_id == "000009851002":
             if not is_champions_of_fenris:

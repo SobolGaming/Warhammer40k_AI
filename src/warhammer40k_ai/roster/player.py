@@ -492,6 +492,7 @@ class Player:
                 str(bonus_keyword),
                 int(bonus_range),
                 str(spec.get("roll_bonus_if_target_has_keyword", "") or "").strip().upper(),
+                bool(spec.get("roll_bonus_if_source_model_within_vowed_objective", False)),
                 str(spec.get("source_model_id", "") or "").strip(),
             )
             if key in seen:
@@ -507,6 +508,7 @@ class Player:
                 str(item.get("roll_bonus_keyword", "") or "").strip().upper(),
                 int(item.get("roll_bonus_range", 0) or 0),
                 str(item.get("roll_bonus_if_target_has_keyword", "") or "").strip().upper(),
+                int(bool(item.get("roll_bonus_if_source_model_within_vowed_objective", False))),
                 str(item.get("source_model_id", "") or "").strip(),
             )
         )
@@ -575,6 +577,9 @@ class Player:
                 roll_bonus_range = float(spec.get("roll_bonus_range", 0) or 0)
             except (TypeError, ValueError):
                 roll_bonus_range = 0.0
+            roll_bonus_if_source_model_within_vowed_objective = bool(
+                spec.get("roll_bonus_if_source_model_within_vowed_objective", False)
+            )
             roll_bonus = 0
             if roll_bonus_value > 0 and roll_bonus_keyword and roll_bonus_range > 0:
                 if self._friendly_keyword_within_range_of_unit(
@@ -586,6 +591,18 @@ class Player:
             if roll_bonus_value > 0 and roll_bonus_target_keyword:
                 if self._unit_has_keyword(root, roll_bonus_target_keyword):
                     roll_bonus = max(int(roll_bonus), int(roll_bonus_value))
+            if roll_bonus_value > 0 and roll_bonus_if_source_model_within_vowed_objective:
+                source_model_id = str(spec.get("source_model_id", "") or "").strip()
+                army = self.get_army()
+                sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                within_vowed_fn = (
+                    getattr(sm_mgr, "inner_circle_source_model_within_vowed_objective", None)
+                    if sm_mgr is not None
+                    else None
+                )
+                if callable(within_vowed_fn):
+                    if bool(within_vowed_fn(root, source_model_id=source_model_id, game=game)):
+                        roll_bonus = max(int(roll_bonus), int(roll_bonus_value))
             effective_roll = int(roll + roll_bonus)
             gained = 0
             if effective_roll >= roll_min and cp_gain > 0:

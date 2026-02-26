@@ -4801,6 +4801,190 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
                 continue
         return 0, ""
 
+    def _inner_circle_enhancement_source_member(self, unit, flag_key: str):
+        root = self._attached_unit_root(unit)
+        if root is None:
+            return None, None, None
+        get_members = getattr(root, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else [root]
+        if not members:
+            members = [root]
+        members.sort(key=lambda member: str(get_entity_id(member) or ""))
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get(flag_key, False)):
+                return root, member, sr
+        return root, None, None
+
+    @staticmethod
+    def _inner_circle_resolve_bearer_model(member, sr):
+        bearer_id = str(
+            sr.get("enhancement_champion_of_the_deathwing_bearer_model_id", "")
+            or sr.get("enhancement_eye_of_the_unseen_bearer_model_id", "")
+            or sr.get("enhancement_singular_will_bearer_model_id", "")
+            or sr.get("enhancement_inner_circle_deathwing_assault_bearer_model_id", "")
+            or sr.get("enhancement_bearer_model_id", "")
+            or ""
+        ).strip()
+        if bearer_id:
+            for model in list(getattr(member, "models", []) or []):
+                model_entity_id = str(get_entity_id(model) or "").strip()
+                model_local_id = str(getattr(model, "id", getattr(model, "_id", "")) or "").strip()
+                if bearer_id != model_entity_id and bearer_id != model_local_id:
+                    continue
+                return model
+            return None
+        return getattr(member, "_get_enhancement_bearer_model", lambda: None)()
+
+    @staticmethod
+    def _inner_circle_member_has_live_bearer(member, sr) -> bool:
+        if member is None or not isinstance(sr, dict):
+            return False
+        bearer = SpaceMarinesDetachmentManager._inner_circle_resolve_bearer_model(member, sr)
+        if bearer is None:
+            return False
+        alive_attr = getattr(bearer, "is_alive", True)
+        return bool(alive_attr() if callable(alive_attr) else alive_attr)
+
+    @staticmethod
+    def _inner_circle_model_is_live_bearer(model, member, sr) -> bool:
+        if model is None or member is None or not isinstance(sr, dict):
+            return False
+        bearer = SpaceMarinesDetachmentManager._inner_circle_resolve_bearer_model(member, sr)
+        if bearer is None:
+            return False
+        alive_attr = getattr(bearer, "is_alive", True)
+        if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+            return False
+        return str(get_entity_id(model) or "") == str(get_entity_id(bearer) or "")
+
+    def _inner_circle_model_within_vowed_objective_range(self, model, *, game=None) -> bool:
+        if model is None:
+            return False
+        objective_locations = self.vowed_target_objective_locations(game=game)
+        if not objective_locations:
+            return False
+        for location in list(objective_locations or []):
+            if location is None:
+                continue
+            try:
+                sx, sy, _sz, _facing = model.get_location()
+                dx = float(sx) - float(getattr(location, "x", 0.0))
+                dy = float(sy) - float(getattr(location, "y", 0.0))
+                radius = float(getattr(location, "control_radius", 0.0) or 0.0)
+                model_base = getattr(model, "model_base", None)
+                model_radius = float(getattr(model_base, "get_radius", lambda: 1.0)())
+                if (dx * dx + dy * dy) ** 0.5 <= (radius + model_radius):
+                    return True
+            except Exception:
+                pass
+            parent_unit = getattr(model, "parent_unit", None)
+            is_within = getattr(parent_unit, "is_within_objective_range", None) if parent_unit is not None else None
+            if callable(is_within):
+                try:
+                    if bool(is_within(location)):
+                        return True
+                except Exception:
+                    continue
+        return False
+
+    def inner_circle_champion_of_the_deathwing_crit_hit_threshold(
+        self,
+        attacker_model,
+        *,
+        weapon_profile=None,
+        game=None,
+    ) -> tuple[int, str]:
+        if not self.is_inner_circle_task_force():
+            return 0, ""
+        if attacker_model is None:
+            return 0, ""
+        if weapon_profile is not None:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            if parent is None or not bool(getattr(parent, "is_melee", lambda: False)()):
+                return 0, ""
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+        root, member, sr = self._inner_circle_enhancement_source_member(
+            attacker_unit,
+            "enhancement_champion_of_the_deathwing",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return 0, ""
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return 0, ""
+        if not self._inner_circle_model_is_live_bearer(attacker_model, member, sr):
+            return 0, ""
+        if not self._inner_circle_model_within_vowed_objective_range(attacker_model, game=game):
+            return 0, ""
+        try:
+            threshold = int(sr.get("enhancement_champion_of_the_deathwing_crit_threshold", 5) or 5)
+        except (TypeError, ValueError):
+            threshold = 5
+        threshold = int(max(2, threshold))
+        source = str(sr.get("enhancement_champion_of_the_deathwing_source", "") or "Champion of the Deathwing").strip()
+        if not source:
+            source = "Champion of the Deathwing"
+        return threshold, source
+
+    def inner_circle_source_model_within_vowed_objective(self, unit, *, source_model_id: str = "", game=None) -> bool:
+        if not self.is_inner_circle_task_force():
+            return False
+        model_id = str(source_model_id or "").strip()
+        if not model_id:
+            return False
+        root = self._attached_unit_root(unit)
+        if root is None or not self.attached_unit_is_adeptus_astartes(root):
+            return False
+        get_models = getattr(root, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+        for model in list(models or []):
+            if model is None:
+                continue
+            model_entity_id = str(get_entity_id(model) or "").strip()
+            model_local_id = str(getattr(model, "id", getattr(model, "_id", "")) or "").strip()
+            if model_id != model_entity_id and model_id != model_local_id:
+                continue
+            alive_attr = getattr(model, "is_alive", True)
+            if not bool(alive_attr() if callable(alive_attr) else alive_attr):
+                return False
+            return self._inner_circle_model_within_vowed_objective_range(model, game=game)
+        return False
+
+    def inner_circle_deathwing_assault_strategic_reserves_round_bonus(self, unit, *, game=None) -> int:
+        if not self.is_inner_circle_task_force():
+            return 0
+        if unit is None:
+            return 0
+        root, member, sr = self._inner_circle_enhancement_source_member(
+            unit,
+            "enhancement_inner_circle_deathwing_assault",
+        )
+        if root is None or member is None or not isinstance(sr, dict):
+            return 0
+        if not self.attached_unit_is_adeptus_astartes(root):
+            return 0
+        if not self._inner_circle_member_has_live_bearer(member, sr):
+            return 0
+        if bool(sr.get("enhancement_inner_circle_deathwing_assault_requires_deep_strike", True)):
+            has_deep_strike = getattr(root, "has_deep_strike", None)
+            if not callable(has_deep_strike) or not bool(has_deep_strike()):
+                return 0
+        in_reserves = getattr(root, "is_in_reserves", None)
+        if callable(in_reserves):
+            if not bool(in_reserves()):
+                return 0
+        else:
+            reserve_status = str(getattr(root, "reserve_status", "") or "").strip().lower()
+            if reserve_status in {"", "deployed"}:
+                return 0
+        try:
+            bonus = int(sr.get("enhancement_inner_circle_deathwing_assault_round_bonus", 1) or 1)
+        except (TypeError, ValueError):
+            bonus = 1
+        return max(0, int(bonus))
+
     def _godhammer_assault_force_enhancement_source_member(self, unit, flag_key: str):
         root = self._attached_unit_root(unit)
         if root is None:

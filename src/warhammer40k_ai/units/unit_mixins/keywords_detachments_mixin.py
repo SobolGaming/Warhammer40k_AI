@@ -4245,6 +4245,21 @@ class KeywordsDetachmentsMixin:
                 stormlance_hunters_instincts_bonus = 0
         if stormlance_hunters_instincts_bonus > 0:
             total_bonus += int(stormlance_hunters_instincts_bonus)
+        inner_circle_deathwing_assault_bonus = 0
+        inner_circle_deathwing_assault_bonus_fn = (
+            getattr(sm_mgr, "inner_circle_deathwing_assault_strategic_reserves_round_bonus", None)
+            if sm_mgr is not None
+            else None
+        )
+        if callable(inner_circle_deathwing_assault_bonus_fn):
+            try:
+                inner_circle_deathwing_assault_bonus = int(
+                    inner_circle_deathwing_assault_bonus_fn(root, game=game) or 0
+                )
+            except (TypeError, ValueError):
+                inner_circle_deathwing_assault_bonus = 0
+        if inner_circle_deathwing_assault_bonus > 0:
+            total_bonus += int(inner_circle_deathwing_assault_bonus)
         try:
             rule = root.get_strategic_reserves_round_bonus_rule()
         except Exception:

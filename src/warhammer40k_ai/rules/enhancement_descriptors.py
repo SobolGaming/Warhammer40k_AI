@@ -1993,6 +1993,61 @@ _SPACE_MARINES_HAMMER_OF_AVERNII_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPACE_MARINES_HAMMER_OF_AVERNII_DESCRIPTORS.values()
 }
 
+_SPACE_MARINES_INNER_CIRCLE_TASK_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008774002": EnhancementToolDescriptor(
+        enhancement_id="000008774002",
+        name="Champion of the Deathwing",
+        timing="passive_and_conditional_on_vowed_objective",
+        target="bearer_melee_weapons",
+        duration="constant_conditional",
+        effect="bearer_melee_lethal_hits_and_critical_hits_on_5plus_within_vowed_objective",
+        effect_params={
+            "critical_hit_threshold_within_vowed_objective": 5,
+        },
+    ),
+    "000008774003": EnhancementToolDescriptor(
+        enhancement_id="000008774003",
+        name="Eye of the Unseen",
+        timing="when_bearer_unit_targeted_by_stratagem",
+        target="bearer_unit",
+        duration="instant",
+        effect="targeted_stratagem_cp_refund_with_vowed_objective_bonus",
+        effect_params={
+            "roll_min": 5,
+            "cp_gain": 1,
+            "roll_bonus_if_bearer_within_vowed_objective": 1,
+        },
+    ),
+    "000008774004": EnhancementToolDescriptor(
+        enhancement_id="000008774004",
+        name="Singular Will",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="bearer_unit_pile_in_and_consolidate_distance_bonus",
+        effect_params={
+            "pile_in_distance_bonus": 3,
+            "consolidate_distance_bonus": 3,
+        },
+    ),
+    "000008774005": EnhancementToolDescriptor(
+        enhancement_id="000008774005",
+        name="Deathwing Assault",
+        timing="passive_while_in_reserves",
+        target="bearer_unit_with_deep_strike",
+        duration="while_in_reserves",
+        effect="strategic_reserves_setup_round_bonus_for_deep_strike",
+        effect_params={
+            "strategic_reserves_setup_round_bonus": 1,
+            "requires_deep_strike": True,
+        },
+    ),
+}
+
+_SPACE_MARINES_INNER_CIRCLE_TASK_FORCE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPACE_MARINES_INNER_CIRCLE_TASK_FORCE_DESCRIPTORS.values()
+}
+
 _SPACE_MARINES_IRONSTORM_SPEARHEAD_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008478002": EnhancementToolDescriptor(
         enhancement_id="000008478002",
@@ -3714,6 +3769,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPACE_MARINES_HAMMER_OF_AVERNII_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPACE_MARINES_INNER_CIRCLE_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPACE_MARINES_IRONSTORM_SPEARHEAD_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -3846,6 +3904,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SPACE_MARINES_GLADIUS_TASK_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_GODHAMMER_ASSAULT_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_HAMMER_OF_AVERNII_BY_NAME.get(key)
+        or _SPACE_MARINES_INNER_CIRCLE_TASK_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_IRONSTORM_SPEARHEAD_BY_NAME.get(key)
         or _SPACE_MARINES_LIBERATOR_ASSAULT_GROUP_BY_NAME.get(key)
         or _SPACE_MARINES_LIBRARIUS_CONCLAVE_BY_NAME.get(key)

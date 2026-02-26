@@ -3785,6 +3785,43 @@ class PositioningMixin:
                     ]
         except Exception:
             pass
+        try:
+            atype = str(attack_type or "").strip().lower()
+            is_melee_attack = atype in ("", "any", "melee")
+            if is_melee_attack and self._attached_unit_model_is_enhancement_bearer(
+                model,
+                flag_key="enhancement_champion_of_the_deathwing",
+                enhancement_id="000008774002",
+                enhancement_name="champion of the deathwing",
+                require_leading=False,
+            ):
+                source = "Champion of the Deathwing"
+                try:
+                    root = self.get_attached_unit_root()
+                except Exception:
+                    root = self
+                try:
+                    members = list(root.get_attached_unit_members() or [])
+                except Exception:
+                    members = [root]
+                if not members:
+                    members = [root]
+                for member in members:
+                    sr = getattr(member, "special_rules", None)
+                    if not isinstance(sr, dict):
+                        continue
+                    if not bool(sr.get("enhancement_champion_of_the_deathwing")):
+                        continue
+                    source = (
+                        str(sr.get("enhancement_champion_of_the_deathwing_source", "") or "Champion of the Deathwing").strip()
+                        or "Champion of the Deathwing"
+                    )
+                    break
+                rules = list(rules or []) + [
+                    {"attack_type": "melee", "keyword": "LETHAL HITS", "source": source}
+                ]
+        except Exception:
+            pass
         atype = str(attack_type or "").strip().lower()
         is_ranged_attack = atype in ("", "any", "ranged")
         if is_ranged_attack and self._attached_unit_model_is_enhancement_bearer(
@@ -5003,6 +5040,50 @@ class PositioningMixin:
                 if root.attached_unit_has_blessings_of_khorne():
                     if mgr.is_blessing_active_for_unit("RAGE_FUELLED_INVIGORATION", root, battle_round=br):
                         override = max(float(override or 0.0), 6.0)
+        except Exception:
+            pass
+
+        try:
+            members = list(root.get_attached_unit_members() or []) if hasattr(root, "get_attached_unit_members") else [root]
+            if not members:
+                members = [root]
+            for member in members:
+                sr_member = getattr(member, "special_rules", None)
+                if not isinstance(sr_member, dict):
+                    continue
+                if not bool(sr_member.get("enhancement_singular_will", False)):
+                    continue
+                bearer = None
+                bearer_id = str(
+                    sr_member.get("enhancement_singular_will_bearer_model_id", "")
+                    or sr_member.get("enhancement_bearer_model_id", "")
+                    or ""
+                ).strip()
+                if bearer_id:
+                    for model in list(getattr(member, "models", []) or []):
+                        model_entity_id = str(get_entity_id(model) or "").strip()
+                        model_local_id = str(getattr(model, "id", getattr(model, "_id", "")) or "").strip()
+                        if bearer_id != model_entity_id and bearer_id != model_local_id:
+                            continue
+                        bearer = model
+                        break
+                if bearer is None:
+                    get_bearer = getattr(member, "_get_enhancement_bearer_model", None)
+                    if callable(get_bearer):
+                        bearer = get_bearer()
+                if bearer is None:
+                    continue
+                alive_attr = getattr(bearer, "is_alive", True)
+                bearer_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                if not bearer_alive:
+                    continue
+                if kind == "pile_in":
+                    bonus = int(sr_member.get("enhancement_singular_will_pile_in_distance_bonus", 3) or 3)
+                else:
+                    bonus = int(sr_member.get("enhancement_singular_will_consolidate_distance_bonus", 3) or 3)
+                if bonus <= 0:
+                    continue
+                override = max(float(override or 0.0), 3.0 + float(bonus))
         except Exception:
             pass
 
