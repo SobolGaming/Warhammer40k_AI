@@ -432,6 +432,9 @@ class Enhancement:
         is_anvil_siege_force = bool(
             sm_mgr and getattr(sm_mgr, "is_anvil_siege_force", lambda: False)()
         )
+        is_gladius_task_force = bool(
+            sm_mgr and getattr(sm_mgr, "is_gladius_task_force", lambda: False)()
+        )
         is_firestorm_assault_force = bool(
             sm_mgr and getattr(sm_mgr, "is_firestorm_assault_force", lambda: False)()
         )
@@ -1984,9 +1987,15 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 
-        if name == "armour of antoninus" or enh_id == "000010633002":
-            if not is_blade_of_ultramar:
+        if (
+            name in ("armour of antoninus", "artificer armour")
+            or enh_id in ("000010633002", "000008353002")
+        ):
+            if not (is_blade_of_ultramar or is_gladius_task_force):
                 return
+            source_name = "Armour of Antoninus"
+            if name == "artificer armour" or enh_id == "000008353002":
+                source_name = "Artificer Armour"
             unit.special_rules["enhancement_armour_of_antoninus"] = True
             desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
             params = _descriptor_params(desc)
@@ -1996,18 +2005,24 @@ class Enhancement:
             _ensure_enhancement_fnp_entry(
                 unit,
                 int(max(2, fnp_value)),
-                source="Armour of Antoninus",
+                source=source_name,
                 tag="armour_of_antoninus_bearer",
                 source_model_id=bearer_id,
             )
-            unit.special_rules["enhancement_armour_of_antoninus_source"] = "Armour of Antoninus"
+            unit.special_rules["enhancement_armour_of_antoninus_source"] = source_name
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_armour_of_antoninus_bearer_model_id"] = bearer_id
 
-        if name == "oath of macragge" or enh_id == "000010633003":
-            if not is_blade_of_ultramar:
+        if (
+            name in ("oath of macragge", "the honour vehement")
+            or enh_id in ("000010633003", "000008353003")
+        ):
+            if not (is_blade_of_ultramar or is_gladius_task_force):
                 return
+            source_name = "Oath of Macragge"
+            if name == "the honour vehement" or enh_id == "000008353003":
+                source_name = "The Honour Vehement"
             unit.special_rules["enhancement_oath_of_macragge"] = True
             desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
             params = _descriptor_params(desc)
@@ -2017,27 +2032,39 @@ class Enhancement:
             assault_bonus = int(max(base_bonus, assault_bonus))
             unit.special_rules["enhancement_oath_of_macragge_base_bonus"] = int(base_bonus)
             unit.special_rules["enhancement_oath_of_macragge_assault_bonus"] = int(assault_bonus)
-            unit.special_rules["enhancement_oath_of_macragge_source"] = "Oath of Macragge"
+            unit.special_rules["enhancement_oath_of_macragge_source"] = source_name
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_oath_of_macragge_bearer_model_id"] = bearer_id
 
-        if name == "student of the codex" or enh_id == "000010633004":
-            if not is_blade_of_ultramar:
+        if (
+            name in ("student of the codex", "adept of the codex")
+            or enh_id in ("000010633004", "000008353004")
+        ):
+            if not (is_blade_of_ultramar or is_gladius_task_force):
                 return
+            source_name = "Student of the Codex"
+            if name == "adept of the codex" or enh_id == "000008353004":
+                source_name = "Adept of the Codex"
             unit.special_rules["enhancement_student_of_the_codex"] = True
             desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
             params = _descriptor_params(desc)
             doctrine = str(params.get("doctrine", "TACTICAL") or "TACTICAL").strip().upper() or "TACTICAL"
             unit.special_rules["enhancement_student_of_the_codex_doctrine"] = doctrine
-            unit.special_rules["enhancement_student_of_the_codex_source"] = "Student of the Codex"
+            unit.special_rules["enhancement_student_of_the_codex_source"] = source_name
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_student_of_the_codex_bearer_model_id"] = bearer_id
 
-        if name == "veteran of behemoth" or enh_id == "000010633005":
-            if not is_blade_of_ultramar:
+        if (
+            name in ("veteran of behemoth", "fire discipline")
+            or enh_id in ("000010633005", "000008353005")
+        ):
+            if not (is_blade_of_ultramar or is_gladius_task_force):
                 return
+            source_name = "Veteran of Behemoth"
+            if name == "fire discipline" or enh_id == "000008353005":
+                source_name = "Fire Discipline"
             unit.special_rules["enhancement_veteran_of_behemoth"] = True
             desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
             params = _descriptor_params(desc)
@@ -2056,7 +2083,7 @@ class Enhancement:
             unit.special_rules["enhancement_veteran_of_behemoth_advance_reroll_doctrine"] = (
                 advance_reroll_doctrine
             )
-            unit.special_rules["enhancement_veteran_of_behemoth_source"] = "Veteran of Behemoth"
+            unit.special_rules["enhancement_veteran_of_behemoth_source"] = source_name
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
                 unit.special_rules["enhancement_veteran_of_behemoth_bearer_model_id"] = bearer_id

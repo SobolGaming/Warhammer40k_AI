@@ -5675,7 +5675,7 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         return str(get_entity_id(model) or "") == str(get_entity_id(bearer) or "")
 
     def blade_of_ultramar_student_of_the_codex_active_doctrine(self, unit, *, game=None) -> str:
-        if not self.is_blade_of_ultramar():
+        if not (self.is_blade_of_ultramar() or self.is_gladius_task_force()):
             return ""
         root, member, sr = self._blade_of_ultramar_enhancement_source_member(
             unit,
@@ -5723,7 +5723,7 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         *,
         game=None,
     ) -> tuple[int, str]:
-        if not self.is_blade_of_ultramar():
+        if not (self.is_blade_of_ultramar() or self.is_gladius_task_force()):
             return 0, ""
         if attacker_model is None:
             return 0, ""
@@ -5760,7 +5760,7 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         *,
         game=None,
     ) -> tuple[int, str]:
-        if not self.is_blade_of_ultramar():
+        if not (self.is_blade_of_ultramar() or self.is_gladius_task_force()):
             return 0, ""
         if model is None:
             return 0, ""
@@ -5793,7 +5793,7 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         *,
         game=None,
     ) -> tuple[int, str]:
-        if not self.is_blade_of_ultramar():
+        if not (self.is_blade_of_ultramar() or self.is_gladius_task_force()):
             return 0, ""
         if attacker_model is None:
             return 0, ""
@@ -5840,7 +5840,7 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
         return int(bonus), source
 
     def blade_of_ultramar_veteran_of_behemoth_reroll_advance_applies(self, unit, *, game=None) -> bool:
-        if not self.is_blade_of_ultramar():
+        if not (self.is_blade_of_ultramar() or self.is_gladius_task_force()):
             return False
         root, member, sr = self._blade_of_ultramar_enhancement_source_member(
             unit,

@@ -1819,6 +1819,62 @@ _SPACE_MARINES_FORGEFATHERS_SEEKERS_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SPACE_MARINES_FORGEFATHERS_SEEKERS_DESCRIPTORS.values()
 }
 
+_SPACE_MARINES_GLADIUS_TASK_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008353002": EnhancementToolDescriptor(
+        enhancement_id="000008353002",
+        name="Artificer Armour",
+        timing="passive",
+        target="bearer",
+        duration="constant",
+        effect="bearer_save_and_fnp",
+        effect_params={
+            "save_characteristic": 2,
+            "feel_no_pain": 5,
+        },
+    ),
+    "000008353003": EnhancementToolDescriptor(
+        enhancement_id="000008353003",
+        name="The Honour Vehement",
+        timing="passive",
+        target="bearer_melee_weapons",
+        duration="constant_conditional",
+        effect="bearer_melee_attacks_strength_bonus_with_assault_doctrine_scaling",
+        effect_params={
+            "base_bonus": 1,
+            "assault_doctrine_bonus": 2,
+        },
+    ),
+    "000008353004": EnhancementToolDescriptor(
+        enhancement_id="000008353004",
+        name="Adept of the Codex",
+        timing="start_of_command_phase_optional",
+        target="bearer_unit",
+        duration="until_next_command_phase",
+        effect="unit_tactical_doctrine_override",
+        effect_params={
+            "doctrine": "TACTICAL",
+            "optional": True,
+        },
+    ),
+    "000008353005": EnhancementToolDescriptor(
+        enhancement_id="000008353005",
+        name="Fire Discipline",
+        timing="passive_while_leading_and_doctrine_conditional",
+        target="bearer_unit_ranged_weapons_and_advance_rolls",
+        duration="constant_conditional",
+        effect="grant_sustained_hits_and_devastator_advance_reroll",
+        effect_params={
+            "sustained_hits": 1,
+            "requires_leading": True,
+            "advance_reroll_requires_doctrine": "DEVASTATOR",
+        },
+    ),
+}
+
+_SPACE_MARINES_GLADIUS_TASK_FORCE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SPACE_MARINES_GLADIUS_TASK_FORCE_DESCRIPTORS.values()
+}
+
 _SPACE_MARINES_IRONSTORM_SPEARHEAD_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008478002": EnhancementToolDescriptor(
         enhancement_id="000008478002",
@@ -3531,6 +3587,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SPACE_MARINES_FORGEFATHERS_SEEKERS_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SPACE_MARINES_GLADIUS_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _SPACE_MARINES_IRONSTORM_SPEARHEAD_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -3660,6 +3719,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _SPACE_MARINES_ANVIL_SIEGE_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_FIRESTORM_ASSAULT_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_FORGEFATHERS_SEEKERS_BY_NAME.get(key)
+        or _SPACE_MARINES_GLADIUS_TASK_FORCE_BY_NAME.get(key)
         or _SPACE_MARINES_IRONSTORM_SPEARHEAD_BY_NAME.get(key)
         or _SPACE_MARINES_LIBERATOR_ASSAULT_GROUP_BY_NAME.get(key)
         or _SPACE_MARINES_LIBRARIUS_CONCLAVE_BY_NAME.get(key)

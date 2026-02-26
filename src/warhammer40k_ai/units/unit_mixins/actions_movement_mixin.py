@@ -1259,7 +1259,7 @@ class ActionsMovementMixin:
         best_value: Optional[int] = None
         best_source: Optional[str] = None
 
-        # Space Marines (Blade of Ultramar): Armour of Antoninus.
+        # Space Marines (Blade of Ultramar / Gladius Task Force): bearer save override.
         try:
             army = self.get_parent_army()
             mgr = getattr(army, "space_marines_detachments", None) if army is not None else None

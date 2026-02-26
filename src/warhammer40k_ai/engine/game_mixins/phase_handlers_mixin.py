@@ -683,7 +683,7 @@ class GamePhaseHandlersMixin:
                                             instance_key=f"{unit_id}:{once_key}:{pname}:{int(current_round)}",
                                         )
 
-                    # Blade of Ultramar: Student of the Codex (start of your Command phase).
+                    # Blade of Ultramar / Gladius Task Force: Student of the Codex style doctrine override.
                     find_source = getattr(self, "_attached_member_with_enhancement_flag", None)
                     source_member = None
                     source_sr = {}
